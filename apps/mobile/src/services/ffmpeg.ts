@@ -1,6 +1,13 @@
 import { Platform } from 'react-native';
 import { EventEmitter, requireNativeModule } from 'expo-modules-core';
 
+import {
+  adaptArgsForMobileEncoders,
+  isHardwareMobileCodec,
+  preferredMobileVideoCodec,
+  stripAssFilters,
+} from '@/lib/ffmpegArgs';
+
 type FFmpegProgress = {
   time: number;
   totalDuration?: number;
@@ -147,6 +154,35 @@ export async function runFfmpeg(
   args: string[],
   options?: { onProgress?: (ratio: number) => void },
 ): Promise<void> {
+  const preferred = preferredMobileVideoCodec(Platform.OS);
+  const adapted = adaptArgsForMobileEncoders(args, preferred);
+  try {
+    await runFfmpegWithCaptionFallback(adapted, options);
+  } catch (error) {
+    if (!adapted.some(isHardwareMobileCodec)) throw error;
+    console.warn(`[FFmpeg] ${preferred} failed, falling back to mpeg4`, error);
+    await runFfmpegWithCaptionFallback(adaptArgsForMobileEncoders(args, 'mpeg4'), options);
+  }
+}
+
+async function runFfmpegWithCaptionFallback(
+  args: string[],
+  options?: { onProgress?: (ratio: number) => void },
+): Promise<void> {
+  try {
+    await runFfmpegRaw(args, options);
+  } catch (error) {
+    const withoutAss = stripAssFilters(args);
+    if (!withoutAss) throw error;
+    console.warn('[FFmpeg] ASS caption filter failed, retrying without burned-in captions', error);
+    await runFfmpegRaw(withoutAss, options);
+  }
+}
+
+async function runFfmpegRaw(
+  args: string[],
+  options?: { onProgress?: (ratio: number) => void },
+): Promise<void> {
   const result = await executeNative(args, {
     onProgress: (progress) => {
       if (progress.totalDuration && progress.totalDuration > 0) {
@@ -161,6 +197,8 @@ export async function runFfmpeg(
     throw new Error(`FFmpeg exited with code ${result.returnCode}${detail}`);
   }
 }
+
+export { adaptArgsForMobileEncoders };
 
 export interface SegmentRange {
   startTime: number;
@@ -303,11 +341,10 @@ export async function extractThumbnail(
   const input = normalizeFfmpegPath(inputPath);
   const out = normalizeFfmpegPath(outputPath);
   const seek = String(Math.max(0, timestampSeconds));
-  // Remux-only native FFmpeg cannot decode frames to JPEG; fail soft.
   try {
     await runFfmpeg(['-ss', seek, '-i', input, '-frames:v', '1', '-q:v', '2', '-y', out]);
   } catch (error) {
-    console.warn('[FFmpeg] thumbnail extract skipped (decode unsupported)', error);
+    console.warn('[FFmpeg] thumbnail extract failed', error);
   }
 }
 

@@ -157,6 +157,24 @@ defmodule ClippsterServer.Storage do
   end
 
   @doc """
+  Generates a storage key for personal (user-owned) branding assets.
+  """
+  def generate_user_asset_key(user_id, asset_type, filename) do
+    timestamp = DateTime.utc_now() |> DateTime.to_unix()
+    sanitized_filename = sanitize_filename(filename)
+    "user-assets/#{user_id}/#{asset_type}/#{timestamp}_#{sanitized_filename}"
+  end
+
+  @doc """
+  Generates a storage key for personal branding asset thumbnails.
+  """
+  def generate_user_asset_thumbnail_key(user_id, asset_type, filename) do
+    timestamp = DateTime.utc_now() |> DateTime.to_unix()
+    sanitized_filename = sanitize_filename(filename)
+    "user-assets/#{user_id}/#{asset_type}/thumbnails/#{timestamp}_#{sanitized_filename}"
+  end
+
+  @doc """
   Generates a storage key for user cloud media assets.
   Format: users/{user_id}/projects/{project_id}/{asset_id}/{filename}
   """

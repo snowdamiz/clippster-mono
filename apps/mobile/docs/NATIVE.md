@@ -6,44 +6,62 @@ Desktop Clippster runs FFmpeg as a **Tauri sidecar** (a separate `ffmpeg` binary
 
 Mobile uses **`ffmpeg-expo`**: FFmpeg is compiled into the app as a native Expo module (same role as the desktop sidecar, different packaging).
 
-Settings → **FFmpeg (dev build)** calls `getVersion()`. If it says `Unavailable (requires dev build)`, the installed APK was built before `ffmpeg-expo` was linked.
+Settings → **FFmpeg (dev build)** calls `getVersion()`. If it says `Unavailable (requires dev build)`, the installed app was built before `ffmpeg-expo` was linked.
 
 ### Rebuild after adding or changing native modules
 
-Metro/`expo start --android` only reloads JavaScript. It does **not** rebuild native code. After adding `ffmpeg-expo`, `expo-image`, or editing `app.config.ts` plugins:
+Metro/`expo start` only reloads JavaScript. It does **not** rebuild native code. After adding `ffmpeg-expo`, changing `patches/ffmpeg-expo+0.0.2.patch`, or editing `app.config.ts` plugins, rebuild **both** platforms you use:
 
 ```bash
-# From repo root (recommended)
+# From repo root
 yarn mobile:android
+yarn mobile:ios
 
-# Or force rebuild when starting dev
+# Force Android rebuild when starting Metro
 MOBILE_REBUILD_ANDROID=1 yarn mobile
+# or: yarn workspace mobile dev --rebuild-android
 
-# Or from apps/mobile
-yarn dev --rebuild-android
+# From apps/mobile
+yarn android
+yarn ios
 ```
 
-EAS development builds also work:
+EAS development builds:
 
 ```bash
 cd apps/mobile
 eas build --profile development --platform android
+eas build --profile development --platform ios
 ```
 
 - **Expo Go:** not supported — no native FFmpeg
-- **Dev client:** must be rebuilt when native dependencies change
+- **Dev client:** must be rebuilt when native dependencies / patches change
 
 ### LGPL note
 
 `ffmpeg-expo` ships LGPL-compliant builds without GPL codecs (see plugin `enableEncoders` / `enableDecoders` in `app.config.ts`). Product distribution must comply with FFmpeg LGPL obligations (provide license notice, allow library relinking).
 
-### Native remux / HLS ingest
+### Full CLI (Android + iOS)
 
-The JNI layer opens local files **or HTTP/HLS/DASH URLs** (`-headers`, `-user_agent`, reconnect). Video stays stream-copy. Audio can be `-c:a copy` (optional `-bsf:a aac_adtstoasc`) or `-c:a aac -b:a 128k` — same as desktop Kick (`CopyVideoAacAudio`). MP4 mux always writes `movflags=faststart` and rewrites monotonic timestamps so segment joins do not freeze ExoPlayer.
+Both platforms call the embedded FFmpeg CLI (`expo_ffmpeg_execute`), so full argument lists work: `-filter_complex`, multi-input maps, AAC encode, JPEG frame extract, and stream-copy remux.
 
-Full video encode (`libx264`) and JPEG frame extract are still not implemented in the session wrapper.
+| Platform | Shared / framework libs | CLI entry |
+|----------|-------------------------|-----------|
+| Android | Package `binaryReleaseTag` `.so` (HLS + filters) + `libexpo_ffmpeg.a` from embed release | `ffmpeg_session.cpp` → `expo_ffmpeg_execute` |
+| iOS | Embed-release `FFmpeg.xcframework` (CLI baked into `libffmpeg.a`) | `FFmpegBridge.swift` → `expo_ffmpeg_execute` |
 
-After changing `ffmpeg-expo` native C++ (via `patches/ffmpeg-expo+0.0.2.patch`), rebuild the Android dev client. Metro reload is not enough.
+`scripts/setup-ffmpeg-cli.mjs` runs on `postinstall` (after `ffmpeg-expo`’s own postinstall) and installs those CLI bits. Skip with `SKIP_FFMPEG_DOWNLOAD=1`.
+
+Desktop export plans use `libx264`. Mobile rewrites that in `apps/mobile/src/lib/ffmpegArgs.ts`:
+
+- Android → `h264_mediacodec` (fallback `mpeg4`)
+- iOS → `h264_videotoolbox` (fallback `mpeg4`)
+
+If burned-in ASS captions fail (no libass), `runFfmpeg` retries without the `ass=` filter.
+
+When regenerating `patches/ffmpeg-expo+0.0.2.patch`, exclude downloaded artifacts (`android/include`, `android/jniLibs/**/libexpo_ffmpeg.a`, `ios/Frameworks`, `.cxx`) so the patch stays source-only (~35KB).
+
+After changing the patch or CLI setup, rebuild the Android **and** iOS dev clients. Metro reload is not enough.
 
 ## SQLite (`expo-sqlite`)
 

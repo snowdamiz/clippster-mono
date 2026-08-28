@@ -52,6 +52,18 @@ export { createOrganizationAssetsApi } from './organizationAssetsApi';
 export type { OrganizationAssetsApi, ServerOrganizationAsset } from './organizationAssetsApi';
 export { createOrganizationProfilesApi } from './organizationProfilesApi';
 export type { OrganizationProfilesApi, ServerOrganizationCreatorProfile } from './organizationProfilesApi';
+export { createUserBrandingApi } from './userBrandingApi';
+export type {
+  UserBrandingApi,
+  ServerUserAsset,
+  ServerUserCreatorProfile,
+  UserAssetType,
+  UserCreatorProfileScope,
+} from './userBrandingApi';
+export { createUserPreferencesApi } from './userPreferencesApi';
+export type { UserPreferencesApi, UserPreferences } from './userPreferencesApi';
+export { createAccountApi } from './accountApi';
+export type { AccountApi, AccountApiResponse } from './accountApi';
 export { createOrganizationsApi } from './organizationsApi';
 export type { OrganizationsApi, Organization, OrganizationInvitation } from './organizationsApi';
 export { createCloudProjectsApi } from './cloudProjectsApi';

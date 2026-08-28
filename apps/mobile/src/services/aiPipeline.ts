@@ -31,7 +31,8 @@ const DEFAULT_PROMPT =
 
 /**
  * Desktop (Tauri) uses 25 min MP3 chunks at -q:a 8.
- * Mobile remux stub can only stream-copy AAC, so keep slices shorter to stay
+ * Mobile remux can stream-copy AAC; keep slices shorter to stay
+ * within Whisper upload limits and avoid long encode waits.
  * near Lemonfox-friendly sizes (~10–12MB) before any server compress.
  */
 const CHUNK_DURATION_MINUTES = 10;

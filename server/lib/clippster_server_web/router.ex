@@ -314,6 +314,19 @@ defmodule ClippsterServerWeb.Router do
     get("/user/preferences", UserPreferencesController, :get_preferences)
     patch("/user/preferences", UserPreferencesController, :update_preferences)
 
+    # Personal branding (creator profiles + assets — cross-device sync)
+    get("/user/branding", UserCreatorProfileController, :bundle)
+    get("/user/assets", UserAssetController, :index)
+    get("/user/assets/:id", UserAssetController, :show)
+    post("/user/assets", UserAssetController, :create)
+    put("/user/assets/:id", UserAssetController, :update)
+    delete("/user/assets/:id", UserAssetController, :delete)
+    get("/user/creator-profiles", UserCreatorProfileController, :index)
+    get("/user/creator-profiles/:id", UserCreatorProfileController, :show)
+    post("/user/creator-profiles", UserCreatorProfileController, :create)
+    put("/user/creator-profiles/:id", UserCreatorProfileController, :update)
+    delete("/user/creator-profiles/:id", UserCreatorProfileController, :delete)
+
     # User restrictions
     get("/user/restrictions", RestrictionController, :get_user_restrictions)
 

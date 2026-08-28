@@ -220,7 +220,7 @@ export default function ProjectsScreen() {
     setMenuProject(null);
     appAlert(
       'Delete project',
-      `Delete “${project.name}”? This cannot be undone.`,
+      `Delete “${project.name}”? Built clips stay in Clips. Unbuilt clips and the downloaded video are removed.`,
       [
         { text: 'Cancel', style: 'cancel' },
         {

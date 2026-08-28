@@ -19,6 +19,24 @@ interface CheckoutResponse {
   error?: string;
 }
 
+interface CryptoQuoteResponse {
+  success: boolean;
+  quote?: {
+    amount: string | number;
+    currency?: string;
+    address?: string;
+    expires_at?: string;
+    [key: string]: unknown;
+  };
+  error?: string;
+}
+
+interface CryptoConfirmResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
 export function createSubscriptionApi(client: ApiClient) {
   return {
     getStatus() {
@@ -38,6 +56,14 @@ export function createSubscriptionApi(client: ApiClient) {
         billing_interval: options?.billing_interval ?? 'monthly',
         return_context: options?.return_context ?? 'mobile',
       });
+    },
+
+    getCryptoQuote(tier: string) {
+      return client.post<CryptoQuoteResponse>('/subscription/crypto-quote', { tier });
+    },
+
+    confirmCryptoPayment(payload: Record<string, unknown>) {
+      return client.post<CryptoConfirmResponse>('/subscription/crypto-confirm', payload);
     },
   };
 }

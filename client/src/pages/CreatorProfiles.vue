@@ -30,6 +30,10 @@
             <Search class="creators-search__icon" />
             <Input v-model="searchQuery" class="creators-search__input" placeholder="Search creators..." />
           </div>
+          <Button size="sm" class="creators-add-btn" variant="outline" :disabled="syncingPersonal" @click="syncPersonalToCloud">
+            <Cloud :size="14" class="creators-add-btn__icon" />
+            {{ syncingPersonal ? 'Syncing…' : 'Sync personal to cloud' }}
+          </Button>
           <Button size="sm" class="creators-add-btn" @click="openCreateDialog">
             <Plus class="creators-add-btn__icon" />
             {{ activeTab === 'global' ? 'Add Global Profile' : 'Add Creator' }}
@@ -1076,6 +1080,7 @@
   import { useProfileContext } from '@/composables/useProfileContext';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
+  import { syncPersonalBranding } from '@/services/personalBrandingSync';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import { useCreatorPageLiveMonitoring } from '@/composables/useCreatorPageLiveMonitoring';
@@ -1087,6 +1092,7 @@
   import {
     Users,
     Plus,
+    Cloud,
     Edit,
     Video,
     Download,
@@ -1329,6 +1335,7 @@
   const campaigns = ref<DisplayCampaign[]>([]);
   const expandedCampaigns = ref<Set<number>>(new Set());
   const searchQuery = ref('');
+  const syncingPersonal = ref(false);
   const showProfileDialog = ref(false);
   const creatorToEdit = ref<DisplayCreatorProfile | null>(null);
   const showDeleteDialog = ref(false);
@@ -1404,6 +1411,22 @@
   const userProfiles = computed(() => {
     return sortedCreators.value.filter(c => !c.isOrgProfile && !c.campaign_id);
   });
+
+  async function syncPersonalToCloud() {
+    if (syncingPersonal.value) return;
+    syncingPersonal.value = true;
+    try {
+      const result = await syncPersonalBranding();
+      success(
+        `Personal branding synced — ${result.upsertedProfiles} profiles, ${result.uploadedAssets} uploaded, ${result.downloadedAssets} downloaded`
+      );
+      await loadCreators();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Personal branding sync failed');
+    } finally {
+      syncingPersonal.value = false;
+    }
+  }
 
   // Load creators on mount
   onMounted(async () => {

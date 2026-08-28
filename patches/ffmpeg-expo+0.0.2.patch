@@ -1,3 +1,75 @@
+diff --git a/node_modules/ffmpeg-expo/android/CMakeLists.txt b/node_modules/ffmpeg-expo/android/CMakeLists.txt
+index 49303e9..1922ce4 100644
+--- a/node_modules/ffmpeg-expo/android/CMakeLists.txt
++++ b/node_modules/ffmpeg-expo/android/CMakeLists.txt
+@@ -4,13 +4,12 @@ project(ffmpeg-jni)
+ set(CMAKE_CXX_STANDARD 17)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ 
+-# Find required packages
+ find_library(log-lib log)
++find_library(android-lib android)
++find_library(mediandk-lib mediandk)
+ 
+-# FFmpeg library paths
+ set(FFMPEG_LIB_DIR ${CMAKE_SOURCE_DIR}/jniLibs/${ANDROID_ABI})
+ 
+-# Add FFmpeg shared libraries
+ add_library(avcodec SHARED IMPORTED)
+ set_target_properties(avcodec PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libavcodec.so)
+ 
+@@ -26,27 +25,44 @@ set_target_properties(swresample PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/
+ add_library(swscale SHARED IMPORTED)
+ set_target_properties(swscale PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libswscale.so)
+ 
+-# Include directories for FFmpeg headers
++add_library(avfilter SHARED IMPORTED)
++set_target_properties(avfilter PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libavfilter.so)
++
++add_library(avdevice SHARED IMPORTED)
++set_target_properties(avdevice PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libavdevice.so)
++
++add_library(expo-ffmpeg-cli STATIC IMPORTED)
++set_target_properties(expo-ffmpeg-cli PROPERTIES
++    IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libexpo_ffmpeg.a
++)
++
+ include_directories(${CMAKE_SOURCE_DIR}/include)
+ 
+-# Build our JNI wrapper
+ add_library(ffmpeg-jni SHARED
+     src/main/cpp/ffmpeg_jni.cpp
+     src/main/cpp/ffmpeg_session.cpp
+     src/main/cpp/ffmpeg_progress.cpp
+ )
+ 
+-# Link libraries
+-target_link_libraries(ffmpeg-jni
++set(FFMPEG_JNI_LIBS
+     ${log-lib}
+-    avcodec
++    ${android-lib}
++    expo-ffmpeg-cli
++    avfilter
+     avformat
+-    avutil
++    avcodec
++    avdevice
+     swresample
+     swscale
++    avutil
+ )
+ 
+-# Set library output name
++if(mediandk-lib)
++    list(APPEND FFMPEG_JNI_LIBS ${mediandk-lib})
++endif()
++
++target_link_libraries(ffmpeg-jni ${FFMPEG_JNI_LIBS})
++
+ set_target_properties(ffmpeg-jni PROPERTIES
+     LIBRARY_OUTPUT_NAME "ffmpeg-jni"
+ )
 diff --git a/node_modules/ffmpeg-expo/android/build.gradle b/node_modules/ffmpeg-expo/android/build.gradle
 new file mode 100644
 index 0000000..9b482eb
@@ -136,6 +208,34 @@ index 81a20da..0000000
 -    // Expo modules
 -    implementation("expo.modules:expo-modules-core:1.11.8")
 -}
+diff --git a/node_modules/ffmpeg-expo/android/src/main/cpp/expo_ffmpeg.h b/node_modules/ffmpeg-expo/android/src/main/cpp/expo_ffmpeg.h
+new file mode 100644
+index 0000000..0e98c52
+--- /dev/null
++++ b/node_modules/ffmpeg-expo/android/src/main/cpp/expo_ffmpeg.h
+@@ -0,0 +1,22 @@
++#ifndef EXPO_FFMPEG_H
++#define EXPO_FFMPEG_H
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++typedef int (*expo_ffmpeg_cancel_callback)(void *opaque);
++
++/**
++ * Embedded FFmpeg CLI entry (libexpo_ffmpeg.a).
++ * Parses full argv including -filter_complex, encoders, and multi-input maps.
++ */
++int expo_ffmpeg_execute(int argc, char **argv,
++                        expo_ffmpeg_cancel_callback cancel_callback,
++                        void *cancel_opaque);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif
 diff --git a/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_jni.cpp b/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_jni.cpp
 index 05cf8b1..21de612 100644
 --- a/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_jni.cpp
@@ -219,37 +319,24 @@ index b91d64c..35c8e8c 100644
  
  #endif // FFMPEG_JNI_H
 diff --git a/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_session.cpp b/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_session.cpp
-index d8b774f..c620379 100644
+index d8b774f..2005371 100644
 --- a/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_session.cpp
 +++ b/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_session.cpp
-@@ -1,9 +1,25 @@
+@@ -1,9 +1,10 @@
  #include "ffmpeg_jni.h"
- #include <android/log.h>
--#include <vector>
-+#include <cstdarg>
-+#include <cstdio>
- #include <cstring>
- #include <regex>
- #include <sstream>
-+#include <string>
-+#include <strings.h>
-+#include <unordered_map>
-+#include <vector>
++#include "expo_ffmpeg.h"
 +
-+extern "C" {
-+#include <libavcodec/avcodec.h>
-+#include <libavcodec/bsf.h>
-+#include <libavutil/audio_fifo.h>
-+#include <libavutil/channel_layout.h>
-+#include <libavutil/dict.h>
-+#include <libavutil/opt.h>
-+#include <libavutil/samplefmt.h>
-+#include <libswresample/swresample.h>
-+}
+ #include <android/log.h>
++#include <mutex>
++#include <string>
+ #include <vector>
+-#include <cstring>
+-#include <regex>
+-#include <sstream>
  
  #define LOG_TAG "FFmpegSession"
  #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
-@@ -11,16 +27,31 @@
+@@ -11,305 +12,59 @@
  
  namespace ffmpeg {
  
@@ -257,88 +344,81 @@ index d8b774f..c620379 100644
  extern thread_local FFmpegSession* currentSession;
  
 -// Progress parsing from FFmpeg stderr output
-+static void sessionLog(int level, const char* message) {
-+    if (level <= AV_LOG_ERROR) {
-+        LOGE("%s", message);
-+    } else {
-+        LOGI("%s", message);
-+    }
-+    if (currentSession) {
-+        currentSession->notifyLog(level, message);
-+    }
-+}
-+
-+static void sessionLogf(int level, const char* fmt, ...) {
-+    char buf[1024];
-+    va_list args;
-+    va_start(args, fmt);
-+    vsnprintf(buf, sizeof(buf), fmt, args);
-+    va_end(args);
-+    sessionLog(level, buf);
-+}
-+
- class ProgressParser {
- public:
-     void parseLine(const std::string& line, FFmpegSession* session) {
+-class ProgressParser {
+-public:
+-    void parseLine(const std::string& line, FFmpegSession* session) {
 -        // FFmpeg progress lines look like:
 -        // frame=  123 fps= 24 q=28.0 size=    1234kB time=00:00:05.12 bitrate= 197.4kbits/s speed=1.23x
 -        
-         if (line.find("frame=") == std::string::npos && 
-             line.find("size=") == std::string::npos) {
-             return;
-@@ -33,7 +64,6 @@ public:
-         double fps = 0;
-         int64_t size = 0;
-         
+-        if (line.find("frame=") == std::string::npos && 
+-            line.find("size=") == std::string::npos) {
+-            return;
+-        }
+-        
+-        int64_t time = 0;
+-        double bitrate = 0;
+-        double speed = 0;
+-        int frame = 0;
+-        double fps = 0;
+-        int64_t size = 0;
+-        
 -        // Parse time
-         std::regex timeRegex("time=([0-9]+):([0-9]+):([0-9.]+)");
-         std::smatch timeMatch;
-         if (std::regex_search(line, timeMatch, timeRegex)) {
-@@ -43,92 +73,460 @@ public:
-             time = static_cast<int64_t>((hours * 3600 + minutes * 60 + seconds) * 1000);
-         }
-         
+-        std::regex timeRegex("time=([0-9]+):([0-9]+):([0-9.]+)");
+-        std::smatch timeMatch;
+-        if (std::regex_search(line, timeMatch, timeRegex)) {
+-            int hours = std::stoi(timeMatch[1].str());
+-            int minutes = std::stoi(timeMatch[2].str());
+-            double seconds = std::stod(timeMatch[3].str());
+-            time = static_cast<int64_t>((hours * 3600 + minutes * 60 + seconds) * 1000);
+-        }
+-        
 -        // Parse bitrate
-         std::regex bitrateRegex("bitrate=\\s*([0-9.]+)kbits/s");
-         std::smatch bitrateMatch;
-         if (std::regex_search(line, bitrateMatch, bitrateRegex)) {
-             bitrate = std::stod(bitrateMatch[1].str());
-         }
-         
+-        std::regex bitrateRegex("bitrate=\\s*([0-9.]+)kbits/s");
+-        std::smatch bitrateMatch;
+-        if (std::regex_search(line, bitrateMatch, bitrateRegex)) {
+-            bitrate = std::stod(bitrateMatch[1].str());
+-        }
+-        
 -        // Parse speed
-         std::regex speedRegex("speed=\\s*([0-9.]+)x");
-         std::smatch speedMatch;
-         if (std::regex_search(line, speedMatch, speedRegex)) {
-             speed = std::stod(speedMatch[1].str());
-         }
-         
+-        std::regex speedRegex("speed=\\s*([0-9.]+)x");
+-        std::smatch speedMatch;
+-        if (std::regex_search(line, speedMatch, speedRegex)) {
+-            speed = std::stod(speedMatch[1].str());
+-        }
+-        
 -        // Parse frame
-         std::regex frameRegex("frame=\\s*([0-9]+)");
-         std::smatch frameMatch;
-         if (std::regex_search(line, frameMatch, frameRegex)) {
-             frame = std::stoi(frameMatch[1].str());
-         }
-         
+-        std::regex frameRegex("frame=\\s*([0-9]+)");
+-        std::smatch frameMatch;
+-        if (std::regex_search(line, frameMatch, frameRegex)) {
+-            frame = std::stoi(frameMatch[1].str());
+-        }
++namespace {
+ 
 -        // Parse fps
-         std::regex fpsRegex("fps=\\s*([0-9.]+)");
-         std::smatch fpsMatch;
-         if (std::regex_search(line, fpsMatch, fpsRegex)) {
-             fps = std::stod(fpsMatch[1].str());
-         }
-         
+-        std::regex fpsRegex("fps=\\s*([0-9.]+)");
+-        std::smatch fpsMatch;
+-        if (std::regex_search(line, fpsMatch, fpsRegex)) {
+-            fps = std::stod(fpsMatch[1].str());
+-        }
++std::mutex executionMutex;
+ 
 -        // Parse size
-         std::regex sizeRegex("size=\\s*([0-9]+)kB");
-         std::smatch sizeMatch;
-         if (std::regex_search(line, sizeMatch, sizeRegex)) {
-             size = std::stoll(sizeMatch[1].str()) * 1024;
-         }
-         
+-        std::regex sizeRegex("size=\\s*([0-9]+)kB");
+-        std::smatch sizeMatch;
+-        if (std::regex_search(line, sizeMatch, sizeRegex)) {
+-            size = std::stoll(sizeMatch[1].str()) * 1024;
+-        }
+-        
 -        // Notify if we have meaningful data
-         if (time > 0 || frame > 0 || size > 0) {
-             session->notifyProgress(time, bitrate, speed, frame, fps, size);
-         }
-     }
- };
+-        if (time > 0 || frame > 0 || size > 0) {
+-            session->notifyProgress(time, bitrate, speed, frame, fps, size);
+-        }
+-    }
+-};
++int shouldCancel(void* opaque) {
++    auto* session = static_cast<FFmpegSession*>(opaque);
++    return session && session->isCancelled() ? 1 : 0;
++}
  
 -// FFmpeg command execution using the library API
 -// Note: This is a simplified implementation. For full ffmpeg command-line compatibility,
@@ -346,464 +426,87 @@ index d8b774f..c620379 100644
 -// 1. Build ffmpeg with main() exposed as a library function
 -// 2. Implement command-line parsing and use avcodec/avformat APIs directly
 -// 3. Use a subprocess (not recommended for mobile)
-+struct CommandOptions {
-+    const char* inputFile = nullptr;
-+    const char* outputFile = nullptr;
-+    const char* videoCodec = nullptr;
-+    const char* audioCodec = nullptr;
-+    const char* audioBsf = nullptr;
-+    const char* headers = nullptr;
-+    const char* userAgent = nullptr;
-+    int64_t audioBitrate = 128000;
-+    bool overwrite = false;
-+    bool dropVideo = false;
-+    bool dropAudio = false;
-+    bool wantsFrameExtract = false;
-+    double startSeconds = -1;
-+    double durationSeconds = -1;
-+};
-+
-+static bool looksLikeImageOutput(const char* path) {
-+    if (!path) return false;
-+    const char* dot = strrchr(path, '.');
-+    if (!dot) return false;
-+    return strcasecmp(dot, ".jpg") == 0 || strcasecmp(dot, ".jpeg") == 0 ||
-+           strcasecmp(dot, ".png") == 0 || strcasecmp(dot, ".webp") == 0 ||
-+           strcasecmp(dot, ".bmp") == 0;
-+}
-+
-+static CommandOptions parseArgs(const std::vector<char*>& argv) {
-+    CommandOptions opts;
-+    for (size_t i = 1; i < argv.size(); i++) {
-+        const char* arg = argv[i];
-+        if (strcmp(arg, "-i") == 0 && i + 1 < argv.size()) {
-+            opts.inputFile = argv[++i];
-+        } else if (strcmp(arg, "-c:v") == 0 && i + 1 < argv.size()) {
-+            opts.videoCodec = argv[++i];
-+        } else if ((strcmp(arg, "-c:a") == 0 || strcmp(arg, "-acodec") == 0) && i + 1 < argv.size()) {
-+            opts.audioCodec = argv[++i];
-+        } else if (strcmp(arg, "-bsf:a") == 0 && i + 1 < argv.size()) {
-+            opts.audioBsf = argv[++i];
-+        } else if (strcmp(arg, "-ss") == 0 && i + 1 < argv.size()) {
-+            opts.startSeconds = atof(argv[++i]);
-+        } else if (strcmp(arg, "-t") == 0 && i + 1 < argv.size()) {
-+            opts.durationSeconds = atof(argv[++i]);
-+        } else if (strcmp(arg, "-headers") == 0 && i + 1 < argv.size()) {
-+            opts.headers = argv[++i];
-+        } else if (strcmp(arg, "-user_agent") == 0 && i + 1 < argv.size()) {
-+            opts.userAgent = argv[++i];
-+        } else if (strcmp(arg, "-b:a") == 0 && i + 1 < argv.size()) {
-+            const char* rate = argv[++i];
-+            double value = atof(rate);
-+            if (strchr(rate, 'k') || strchr(rate, 'K')) {
-+                value *= 1000;
-+            }
-+            if (value > 0) opts.audioBitrate = static_cast<int64_t>(value);
-+        } else if (strcmp(arg, "-vn") == 0) {
-+            opts.dropVideo = true;
-+        } else if (strcmp(arg, "-an") == 0) {
-+            opts.dropAudio = true;
-+        } else if (strcmp(arg, "-y") == 0) {
-+            opts.overwrite = true;
-+        } else if (strcmp(arg, "-frames:v") == 0 || strcmp(arg, "-vframes") == 0) {
-+            opts.wantsFrameExtract = true;
-+            if (i + 1 < argv.size() && argv[i + 1][0] != '-') {
-+                ++i;
-+            }
-+        } else if (arg[0] != '-' && i == argv.size() - 1) {
-+            opts.outputFile = arg;
-+        } else if (strcmp(arg, "-q:a") == 0 ||
-+                   strcmp(arg, "-q:v") == 0 || strcmp(arg, "-c") == 0 ||
-+                   strcmp(arg, "-movflags") == 0 || strcmp(arg, "-fflags") == 0 ||
-+                   strcmp(arg, "-avoid_negative_ts") == 0 ||
-+                   strcmp(arg, "-map") == 0 || strcmp(arg, "-reconnect") == 0 ||
-+                   strcmp(arg, "-reconnect_streamed") == 0 ||
-+                   strcmp(arg, "-reconnect_delay_max") == 0 ||
-+                   strcmp(arg, "-http_persistent") == 0 ||
-+                   strcmp(arg, "-multiple_requests") == 0 ||
-+                   strcmp(arg, "-timeout") == 0 || strcmp(arg, "-rw_timeout") == 0 ||
-+                   strcmp(arg, "-probesize") == 0 || strcmp(arg, "-analyzeduration") == 0 ||
-+                   strcmp(arg, "-max_muxing_queue_size") == 0) {
-+            if (i + 1 < argv.size() && argv[i + 1][0] != '-') {
-+                ++i;
-+            }
-+        }
-+    }
-+    return opts;
-+}
-+
-+static bool isCopyCodec(const char* codec) {
-+    return codec == nullptr || strcmp(codec, "copy") == 0;
-+}
-+
-+static bool isAacEncode(const char* codec) {
-+    return codec != nullptr && strcmp(codec, "aac") == 0;
-+}
-+
-+struct AudioXcode {
-+    AVCodecContext* dec = nullptr;
-+    AVCodecContext* enc = nullptr;
-+    SwrContext* swr = nullptr;
-+    AVAudioFifo* fifo = nullptr;
-+    AVFrame* decFrame = nullptr;
-+    AVFrame* encFrame = nullptr;
-+    AVFrame* convFrame = nullptr;
-+    AVPacket* encPkt = nullptr;
-+    int64_t nextPts = 0;
-+    int outIndex = -1;
-+};
-+
-+static void freeAudioXcode(AudioXcode& x) {
-+    av_packet_free(&x.encPkt);
-+    av_frame_free(&x.decFrame);
-+    av_frame_free(&x.encFrame);
-+    av_frame_free(&x.convFrame);
-+    if (x.fifo) {
-+        av_audio_fifo_free(x.fifo);
-+        x.fifo = nullptr;
-+    }
-+    swr_free(&x.swr);
-+    avcodec_free_context(&x.dec);
-+    avcodec_free_context(&x.enc);
-+}
-+
-+static void freeAudioXcodes(std::unordered_map<int, AudioXcode>& xcodes) {
-+    for (auto& entry : xcodes) {
-+        freeAudioXcode(entry.second);
-+    }
-+    xcodes.clear();
-+}
-+
-+static int setupAudioXcode(AVStream* inStream, AVStream* outStream, int64_t bitrate, AudioXcode* xcode) {
-+    const AVCodec* decoder = avcodec_find_decoder(inStream->codecpar->codec_id);
-+    const AVCodec* encoder = avcodec_find_encoder(AV_CODEC_ID_AAC);
-+    if (!decoder || !encoder) {
-+        sessionLog(AV_LOG_ERROR, "AAC transcode requires audio decoder + aac encoder");
-+        return AVERROR_DECODER_NOT_FOUND;
-+    }
-+
-+    xcode->dec = avcodec_alloc_context3(decoder);
-+    xcode->enc = avcodec_alloc_context3(encoder);
-+    if (!xcode->dec || !xcode->enc) return AVERROR(ENOMEM);
-+
-+    int ret = avcodec_parameters_to_context(xcode->dec, inStream->codecpar);
-+    if (ret < 0) return ret;
-+    ret = avcodec_open2(xcode->dec, decoder, nullptr);
-+    if (ret < 0) return ret;
-+
-+    xcode->enc->sample_rate = xcode->dec->sample_rate > 0 ? xcode->dec->sample_rate : 48000;
-+    ret = av_channel_layout_copy(&xcode->enc->ch_layout, &xcode->dec->ch_layout);
-+    if (ret < 0 || xcode->enc->ch_layout.nb_channels <= 0) {
-+        av_channel_layout_default(&xcode->enc->ch_layout, 2);
-+    }
-+    xcode->enc->bit_rate = bitrate > 0 ? bitrate : 128000;
-+    xcode->enc->sample_fmt = encoder->sample_fmts ? encoder->sample_fmts[0] : AV_SAMPLE_FMT_FLTP;
-+    xcode->enc->time_base = AVRational{1, xcode->enc->sample_rate};
-+    outStream->time_base = xcode->enc->time_base;
-+
-+    ret = avcodec_open2(xcode->enc, encoder, nullptr);
-+    if (ret < 0) return ret;
-+
-+    ret = avcodec_parameters_from_context(outStream->codecpar, xcode->enc);
-+    if (ret < 0) return ret;
-+    outStream->codecpar->codec_tag = 0;
-+
-+    ret = swr_alloc_set_opts2(
-+        &xcode->swr,
-+        &xcode->enc->ch_layout, xcode->enc->sample_fmt, xcode->enc->sample_rate,
-+        &xcode->dec->ch_layout, xcode->dec->sample_fmt, xcode->dec->sample_rate,
-+        0, nullptr);
-+    if (ret < 0) return ret;
-+    ret = swr_init(xcode->swr);
-+    if (ret < 0) return ret;
-+
-+    xcode->decFrame = av_frame_alloc();
-+    xcode->encFrame = av_frame_alloc();
-+    xcode->convFrame = av_frame_alloc();
-+    xcode->encPkt = av_packet_alloc();
-+    xcode->fifo = av_audio_fifo_alloc(
-+        xcode->enc->sample_fmt, xcode->enc->ch_layout.nb_channels, 1024);
-+    if (!xcode->decFrame || !xcode->encFrame || !xcode->convFrame ||
-+        !xcode->encPkt || !xcode->fifo) {
-+        return AVERROR(ENOMEM);
-+    }
-+
-+    xcode->encFrame->format = xcode->enc->sample_fmt;
-+    xcode->encFrame->sample_rate = xcode->enc->sample_rate;
-+    xcode->encFrame->nb_samples = xcode->enc->frame_size > 0 ? xcode->enc->frame_size : 1024;
-+    ret = av_channel_layout_copy(&xcode->encFrame->ch_layout, &xcode->enc->ch_layout);
-+    if (ret < 0) return ret;
-+    ret = av_frame_get_buffer(xcode->encFrame, 0);
-+    if (ret < 0) return ret;
-+
-+    xcode->outIndex = outStream->index;
-+    sessionLogf(AV_LOG_INFO, "Audio transcode AAC %dHz %dch %lldbps",
-+        xcode->enc->sample_rate, xcode->enc->ch_layout.nb_channels,
-+        static_cast<long long>(xcode->enc->bit_rate));
-+    return 0;
-+}
-+
-+static void freeBsfs(std::unordered_map<int, AVBSFContext*>& bsfByOutIndex) {
-+    for (auto& entry : bsfByOutIndex) {
-+        av_bsf_free(&entry.second);
-+    }
-+    bsfByOutIndex.clear();
-+}
-+
-+struct StreamClock {
-+    int64_t lastDts = AV_NOPTS_VALUE;
-+};
-+
-+/**
-+ * Concatenated HLS/MPEG-TS has discontinuities at every segment join.
-+ * ExoPlayer freezes when DTS goes backwards — rewrite a monotonic timeline.
-+ */
-+static void rescaleAndFixTs(AVPacket* pkt, AVRational inTb, AVRational outTb, StreamClock& clock) {
-+    if (pkt->pts != AV_NOPTS_VALUE) {
-+        pkt->pts = av_rescale_q_rnd(
-+            pkt->pts, inTb, outTb,
-+            static_cast<AVRounding>(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
-+    }
-+    if (pkt->dts != AV_NOPTS_VALUE) {
-+        pkt->dts = av_rescale_q_rnd(
-+            pkt->dts, inTb, outTb,
-+            static_cast<AVRounding>(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
-+    }
-+    if (pkt->duration > 0) {
-+        pkt->duration = av_rescale_q(pkt->duration, inTb, outTb);
-+    }
-+    if (pkt->dts == AV_NOPTS_VALUE) {
-+        pkt->dts = pkt->pts;
-+    }
-+    if (pkt->pts == AV_NOPTS_VALUE) {
-+        pkt->pts = pkt->dts;
-+    }
-+    if (pkt->dts == AV_NOPTS_VALUE) {
-+        pkt->dts = clock.lastDts == AV_NOPTS_VALUE ? 0 : clock.lastDts + 1;
-+        pkt->pts = pkt->dts;
-+    }
-+    if (clock.lastDts != AV_NOPTS_VALUE && pkt->dts <= clock.lastDts) {
-+        const int64_t shift = clock.lastDts - pkt->dts + 1;
-+        pkt->dts += shift;
-+        if (pkt->pts != AV_NOPTS_VALUE) {
-+            pkt->pts += shift;
-+        }
-+    }
-+    if (pkt->pts != AV_NOPTS_VALUE && pkt->pts < pkt->dts) {
-+        pkt->pts = pkt->dts;
-+    }
-+    clock.lastDts = pkt->dts;
-+    pkt->pos = -1;
-+}
-+
-+static int ensureConvFrame(AudioXcode& xcode, int nbSamples) {
-+    if (xcode.convFrame->data[0] && xcode.convFrame->nb_samples >= nbSamples) {
-+        return 0;
-+    }
-+    av_frame_unref(xcode.convFrame);
-+    xcode.convFrame->format = xcode.enc->sample_fmt;
-+    xcode.convFrame->sample_rate = xcode.enc->sample_rate;
-+    xcode.convFrame->nb_samples = nbSamples;
-+    int ret = av_channel_layout_copy(&xcode.convFrame->ch_layout, &xcode.enc->ch_layout);
-+    if (ret < 0) return ret;
-+    return av_frame_get_buffer(xcode.convFrame, 0);
-+}
-+
-+static int writeEncodedAudio(AVFormatContext* outputCtx, AudioXcode& xcode, StreamClock& clock) {
-+    int ret = 0;
-+    while (ret >= 0) {
-+        ret = avcodec_receive_packet(xcode.enc, xcode.encPkt);
-+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) return 0;
-+        if (ret < 0) return ret;
-+        xcode.encPkt->stream_index = xcode.outIndex;
-+        AVStream* outStream = outputCtx->streams[xcode.outIndex];
-+        rescaleAndFixTs(xcode.encPkt, xcode.enc->time_base, outStream->time_base, clock);
-+        ret = av_interleaved_write_frame(outputCtx, xcode.encPkt);
-+        av_packet_unref(xcode.encPkt);
-+    }
-+    return ret;
-+}
-+
-+static int encodeFifoAudio(AVFormatContext* outputCtx, AudioXcode& xcode, StreamClock& clock, bool flush) {
-+    const int frameSize = xcode.enc->frame_size > 0 ? xcode.enc->frame_size : 1024;
-+    if (flush) {
-+        const int remain = av_audio_fifo_size(xcode.fifo);
-+        if (remain > 0 && remain < frameSize) {
-+            const int pad = frameSize - remain;
-+            uint8_t** silence = nullptr;
-+            int ret = av_samples_alloc_array_and_samples(
-+                &silence, nullptr, xcode.enc->ch_layout.nb_channels, pad, xcode.enc->sample_fmt, 0);
-+            if (ret < 0) return ret;
-+            av_samples_set_silence(silence, 0, pad, xcode.enc->ch_layout.nb_channels, xcode.enc->sample_fmt);
-+            ret = av_audio_fifo_write(xcode.fifo, reinterpret_cast<void**>(silence), pad);
-+            av_freep(&silence[0]);
-+            av_freep(&silence);
-+            if (ret < 0) return ret;
-+        }
-+    }
-+
-+    while (av_audio_fifo_size(xcode.fifo) >= frameSize) {
-+        int ret = av_frame_make_writable(xcode.encFrame);
-+        if (ret < 0) return ret;
-+        xcode.encFrame->nb_samples = frameSize;
-+        if (av_audio_fifo_read(xcode.fifo, reinterpret_cast<void**>(xcode.encFrame->data), frameSize) < frameSize) {
-+            return AVERROR(EINVAL);
-+        }
-+        xcode.encFrame->pts = xcode.nextPts;
-+        xcode.nextPts += frameSize;
-+        ret = avcodec_send_frame(xcode.enc, xcode.encFrame);
-+        if (ret < 0) return ret;
-+        ret = writeEncodedAudio(outputCtx, xcode, clock);
-+        if (ret < 0) return ret;
-+    }
-+    return 0;
-+}
-+
-+static int convertDecodedAudio(AVFormatContext* outputCtx, AudioXcode& xcode, StreamClock& clock) {
-+    int outSamples = swr_get_out_samples(xcode.swr, xcode.decFrame->nb_samples);
-+    if (outSamples < 1) outSamples = xcode.decFrame->nb_samples;
-+    int ret = ensureConvFrame(xcode, outSamples);
-+    if (ret < 0) return ret;
-+    ret = swr_convert(
-+        xcode.swr,
-+        xcode.convFrame->extended_data, outSamples,
-+        reinterpret_cast<const uint8_t**>(xcode.decFrame->extended_data),
-+        xcode.decFrame->nb_samples);
-+    av_frame_unref(xcode.decFrame);
-+    if (ret < 0) return ret;
-+    if (ret > 0) {
-+        if (av_audio_fifo_write(xcode.fifo, reinterpret_cast<void**>(xcode.convFrame->extended_data), ret) < 0) {
-+            return AVERROR(ENOMEM);
-+        }
-+    }
-+    return encodeFifoAudio(outputCtx, xcode, clock, false);
-+}
-+
-+static int transcodeAudioPacket(
-+    AVFormatContext* outputCtx,
-+    AudioXcode& xcode,
-+    AVPacket* pkt,
-+    StreamClock& clock
-+) {
-+    int ret = avcodec_send_packet(xcode.dec, pkt);
-+    if (ret < 0) return ret;
-+
-+    while (true) {
-+        ret = avcodec_receive_frame(xcode.dec, xcode.decFrame);
-+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) return 0;
-+        if (ret < 0) return ret;
-+        ret = convertDecodedAudio(outputCtx, xcode, clock);
-+        if (ret < 0) return ret;
-+    }
-+}
-+
-+static int flushAudioXcode(AVFormatContext* outputCtx, AudioXcode& xcode, StreamClock& clock) {
-+    int ret = avcodec_send_packet(xcode.dec, nullptr);
-+    if (ret < 0 && ret != AVERROR_EOF) return ret;
-+    while (true) {
-+        ret = avcodec_receive_frame(xcode.dec, xcode.decFrame);
-+        if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) break;
-+        if (ret < 0) return ret;
-+        ret = convertDecodedAudio(outputCtx, xcode, clock);
-+        if (ret < 0) return ret;
-+    }
-+
-+    int leftover = swr_get_out_samples(xcode.swr, 0);
-+    if (leftover > 0) {
-+        ret = ensureConvFrame(xcode, leftover);
-+        if (ret < 0) return ret;
-+        ret = swr_convert(xcode.swr, xcode.convFrame->extended_data, leftover, nullptr, 0);
-+        if (ret < 0) return ret;
-+        if (ret > 0 && av_audio_fifo_write(xcode.fifo, reinterpret_cast<void**>(xcode.convFrame->extended_data), ret) < 0) {
-+            return AVERROR(ENOMEM);
-+        }
-+    }
-+
-+    ret = encodeFifoAudio(outputCtx, xcode, clock, true);
-+    if (ret < 0) return ret;
-+    ret = avcodec_send_frame(xcode.enc, nullptr);
-+    if (ret < 0 && ret != AVERROR_EOF) return ret;
-+    return writeEncodedAudio(outputCtx, xcode, clock);
-+}
-+
-+int executeCommand(const std::vector<char*>& argv);
++} // namespace
  
  int FFmpegSession::execute(JNIEnv* env, jobjectArray args, int logLevel, jobject callback) {
++    std::lock_guard<std::mutex> executionLock(executionMutex);
      setCallback(env, callback);
      currentSession = this;
-     
+-    
 -    // Set FFmpeg log level
 +    installFfmpegLogCallback();
      av_log_set_level(logLevel);
-     
+ 
 -    // Convert Java String array to C++ vector
-     int argc = env->GetArrayLength(args);
+-    int argc = env->GetArrayLength(args);
++    const int argCount = env->GetArrayLength(args);
      std::vector<std::string> argStrings;
 -    std::vector<char*> argv;
 -    
 -    // First arg should be "ffmpeg"
 -    argStrings.push_back("ffmpeg");
 -    argv.push_back(const_cast<char*>(argStrings.back().c_str()));
-+    argStrings.reserve(static_cast<size_t>(argc) + 1);
-+    argStrings.emplace_back("ffmpeg");
-     
-     for (int i = 0; i < argc; i++) {
-         jstring arg = (jstring)env->GetObjectArrayElement(args, i);
-         const char* str = env->GetStringUTFChars(arg, nullptr);
+-    
+-    for (int i = 0; i < argc; i++) {
+-        jstring arg = (jstring)env->GetObjectArrayElement(args, i);
+-        const char* str = env->GetStringUTFChars(arg, nullptr);
 -        argStrings.push_back(str);
 -        argv.push_back(const_cast<char*>(argStrings.back().c_str()));
-+        argStrings.emplace_back(str ? str : "");
-         env->ReleaseStringUTFChars(arg, str);
+-        env->ReleaseStringUTFChars(arg, str);
++    argStrings.reserve(static_cast<size_t>(argCount) + 1);
++    argStrings.emplace_back("ffmpeg");
++
++    for (int i = 0; i < argCount; i++) {
++        auto arg = static_cast<jstring>(env->GetObjectArrayElement(args, i));
++        const char* value = env->GetStringUTFChars(arg, nullptr);
++        argStrings.emplace_back(value ? value : "");
++        env->ReleaseStringUTFChars(arg, value);
 +        env->DeleteLocalRef(arg);
      }
-     
+ 
 -    LOGI("Executing FFmpeg with %d arguments", (int)argv.size());
 -    for (size_t i = 0; i < argv.size(); i++) {
 -        LOGI("  arg[%zu]: %s", i, argv[i]);
-+    // Build argv AFTER argStrings is fully populated — .c_str() is invalidated by reallocation.
 +    std::vector<char*> argv;
 +    argv.reserve(argStrings.size());
-+    for (auto& s : argStrings) {
-+        argv.push_back(s.data());
++    for (auto& arg : argStrings) {
++        argv.push_back(arg.data());
      }
-     
+ 
 -    // For this implementation, we use the FFmpeg libraries directly
 -    // The actual command execution requires either:
 -    // 1. Patching FFmpeg to expose ffmpeg_main()
 -    // 2. Implementing a command parser
 -    //
 -    // Below is a simplified transcoding implementation that handles common cases
-+    sessionLogf(AV_LOG_INFO, "Executing FFmpeg with %d arguments", (int)argv.size());
-+    for (int i = 0; i < (int)argv.size(); i++) {
-+        sessionLogf(AV_LOG_INFO, "  arg[%d]: %s", i, argv[i] ? argv[i] : "(null)");
-+    }
-     
-     int result = executeCommand(argv);
++    LOGI("Executing embedded FFmpeg with %d arguments", static_cast<int>(argv.size()));
++    const int result = expo_ffmpeg_execute(
++        static_cast<int>(argv.size()),
++        argv.data(),
++        shouldCancel,
++        this);
+ 
+-    int result = executeCommand(argv);
 +    if (result != 0) {
-+        sessionLogf(AV_LOG_ERROR, "FFmpeg command failed with code %d", result);
++        LOGE("FFmpeg command failed with code %d", result);
 +    }
-     
+ 
      currentSession = nullptr;
      clearCallback(env);
-@@ -136,161 +534,394 @@ int FFmpegSession::execute(JNIEnv* env, jobjectArray args, int logLevel, jobject
+-    
      return result;
  }
  
 -// Simplified FFmpeg command execution
 -// This handles basic transcode commands: -i input -c:v codec -c:a codec output
-+/**
-+ * Remux/extract: copy video, copy or AAC-encode audio, optional BSF.
-+ * Opens local files or HTTP/HLS/DASH URLs (headers + user_agent).
-+ */
- int executeCommand(const std::vector<char*>& argv) {
+-int executeCommand(const std::vector<char*>& argv) {
 -    // Parse command line arguments
 -    const char* inputFile = nullptr;
 -    const char* outputFile = nullptr;
 -    const char* videoCodec = nullptr;
 -    const char* audioCodec = nullptr;
 -    bool overwrite = false;
-+    CommandOptions opts = parseArgs(argv);
-     
+-    
 -    for (size_t i = 1; i < argv.size(); i++) {
 -        if (strcmp(argv[i], "-i") == 0 && i + 1 < argv.size()) {
 -            inputFile = argv[++i];
@@ -816,327 +519,102 @@ index d8b774f..c620379 100644
 -        } else if (argv[i][0] != '-' && i == argv.size() - 1) {
 -            outputFile = argv[i];
 -        }
-+    if (!opts.inputFile) {
-+        sessionLog(AV_LOG_ERROR, "No input file specified");
-+        return 1;
-+    }
-+    if (!opts.outputFile) {
-+        sessionLog(AV_LOG_ERROR, "No output file specified");
-+        return 1;
-     }
- 
+-    }
+-    
 -    if (!inputFile) {
 -        LOGE("No input file specified");
-+    const bool encodeAac = isAacEncode(opts.audioCodec);
-+    if (!isCopyCodec(opts.videoCodec) || (!isCopyCodec(opts.audioCodec) && !encodeAac)) {
-+        sessionLogf(AV_LOG_ERROR,
-+            "Video must stay copy; audio may be copy or aac (got v=%s a=%s).",
-+            opts.videoCodec ? opts.videoCodec : "copy",
-+            opts.audioCodec ? opts.audioCodec : "copy");
-         return 1;
-     }
-     
+-        return 1;
+-    }
+-    
 -    if (!outputFile) {
 -        LOGE("No output file specified");
-+    if (opts.wantsFrameExtract || looksLikeImageOutput(opts.outputFile)) {
-+        sessionLog(AV_LOG_ERROR,
-+            "Frame/image extract is not supported by this remux stub (no video decode)");
-         return 1;
-     }
-     
+-        return 1;
+-    }
+-    
 -    LOGI("Input: %s, Output: %s", inputFile, outputFile);
 -    LOGI("Video codec: %s, Audio codec: %s", 
 -         videoCodec ? videoCodec : "copy",
 -         audioCodec ? audioCodec : "copy");
-+    sessionLogf(AV_LOG_INFO, "Input: %s, Output: %s (vn=%d an=%d aac=%d bsf=%s)",
-+         opts.inputFile, opts.outputFile, opts.dropVideo, opts.dropAudio, encodeAac ? 1 : 0,
-+         opts.audioBsf ? opts.audioBsf : "none");
-     
+-    
 -    // Open input
-     AVFormatContext* inputCtx = nullptr;
+-    AVFormatContext* inputCtx = nullptr;
 -    int ret = avformat_open_input(&inputCtx, inputFile, nullptr, nullptr);
-+    AVFormatContext* outputCtx = nullptr;
-+    AVPacket* pkt = nullptr;
-+    std::unordered_map<int, int> streamMap;
-+    std::unordered_map<int, AVBSFContext*> bsfByOutIndex;
-+    std::unordered_map<int, AudioXcode> audioXcodes;
-+    int ret = 0;
-+
-+    static bool networkReady = false;
-+    if (!networkReady) {
-+        avformat_network_init();
-+        networkReady = true;
-+    }
-+
-+    AVDictionary* inOpts = nullptr;
-+    if (opts.headers && opts.headers[0]) {
-+        av_dict_set(&inOpts, "headers", opts.headers, 0);
-+    }
-+    if (opts.userAgent && opts.userAgent[0]) {
-+        av_dict_set(&inOpts, "user_agent", opts.userAgent, 0);
-+    }
-+    const bool isHttp = strncmp(opts.inputFile, "http://", 7) == 0 ||
-+                        strncmp(opts.inputFile, "https://", 8) == 0;
-+    if (isHttp) {
-+        av_dict_set(&inOpts, "reconnect", "1", 0);
-+        av_dict_set(&inOpts, "reconnect_streamed", "1", 0);
-+        av_dict_set(&inOpts, "reconnect_delay_max", "5", 0);
-+        av_dict_set(&inOpts, "http_persistent", "1", 0);
-+        av_dict_set(&inOpts, "multiple_requests", "1", 0);
-+        av_dict_set(&inOpts, "timeout", "5000000", 0);
-+        av_dict_set(&inOpts, "rw_timeout", "5000000", 0);
-+    }
-+
-+    ret = avformat_open_input(&inputCtx, opts.inputFile, nullptr, &inOpts);
-+    av_dict_free(&inOpts);
-     if (ret < 0) {
-         char errbuf[AV_ERROR_MAX_STRING_SIZE];
-         av_strerror(ret, errbuf, sizeof(errbuf));
+-    if (ret < 0) {
+-        char errbuf[AV_ERROR_MAX_STRING_SIZE];
+-        av_strerror(ret, errbuf, sizeof(errbuf));
 -        LOGE("Failed to open input: %s", errbuf);
-+        sessionLogf(AV_LOG_ERROR, "Failed to open input: %s", errbuf);
-         return ret;
-     }
-+    inputCtx->flags |= AVFMT_FLAG_GENPTS;
-     
-     ret = avformat_find_stream_info(inputCtx, nullptr);
-     if (ret < 0) {
+-        return ret;
+-    }
+-    
+-    ret = avformat_find_stream_info(inputCtx, nullptr);
+-    if (ret < 0) {
 -        LOGE("Failed to find stream info");
-+        sessionLog(AV_LOG_ERROR, "Failed to find stream info");
-         avformat_close_input(&inputCtx);
-         return ret;
-     }
-     
+-        avformat_close_input(&inputCtx);
+-        return ret;
+-    }
+-    
 -    // Create output context
 -    AVFormatContext* outputCtx = nullptr;
 -    ret = avformat_alloc_output_context2(&outputCtx, nullptr, nullptr, outputFile);
-+    if (opts.startSeconds > 0) {
-+        int64_t seekTs = static_cast<int64_t>(opts.startSeconds * AV_TIME_BASE);
-+        int seekRet = av_seek_frame(inputCtx, -1, seekTs, AVSEEK_FLAG_BACKWARD);
-+        if (seekRet < 0) {
-+            sessionLogf(AV_LOG_ERROR, "Seek to %.3fs failed: %d", opts.startSeconds, seekRet);
-+        }
-+    }
-+
-+    // .m4a must use ipod/mp4 muxer; guessing from extension alone can fail on Android paths.
-+    const char* formatName = nullptr;
-+    {
-+        const char* out = opts.outputFile;
-+        size_t len = strlen(out);
-+        auto endsWith = [out, len](const char* suffix) {
-+            size_t slen = strlen(suffix);
-+            return len >= slen && strcasecmp(out + (len - slen), suffix) == 0;
-+        };
-+        if (endsWith(".m4a") || endsWith(".aac")) {
-+            formatName = "ipod";
-+        } else if (endsWith(".mp4") || endsWith(".m4v") || endsWith(".mov")) {
-+            formatName = "mp4";
-+        } else if (endsWith(".ts") || endsWith(".m2ts")) {
-+            formatName = "mpegts";
-+        }
-+    }
-+
-+    ret = avformat_alloc_output_context2(&outputCtx, nullptr, formatName, opts.outputFile);
-     if (ret < 0 || !outputCtx) {
+-    if (ret < 0 || !outputCtx) {
 -        LOGE("Failed to create output context");
-+        sessionLogf(AV_LOG_ERROR, "Failed to create output context (format=%s)",
-+            formatName ? formatName : "auto");
-         avformat_close_input(&inputCtx);
+-        avformat_close_input(&inputCtx);
 -        return ret;
-+        return ret < 0 ? ret : AVERROR_UNKNOWN;
-     }
-+    sessionLogf(AV_LOG_INFO, "Output format: %s",
-+        outputCtx->oformat && outputCtx->oformat->name ? outputCtx->oformat->name : "unknown");
-     
+-    }
+-    
 -    // Copy streams
-     for (unsigned int i = 0; i < inputCtx->nb_streams; i++) {
-         AVStream* inStream = inputCtx->streams[i];
+-    for (unsigned int i = 0; i < inputCtx->nb_streams; i++) {
+-        AVStream* inStream = inputCtx->streams[i];
 -        AVStream* outStream = avformat_new_stream(outputCtx, nullptr);
-+        AVMediaType type = inStream->codecpar->codec_type;
-+        
-+        if (type == AVMEDIA_TYPE_VIDEO && opts.dropVideo) continue;
-+        if (type == AVMEDIA_TYPE_AUDIO && opts.dropAudio) continue;
-+        if (type != AVMEDIA_TYPE_VIDEO && type != AVMEDIA_TYPE_AUDIO && type != AVMEDIA_TYPE_SUBTITLE) {
-+            continue;
-+        }
- 
-+        AVStream* outStream = avformat_new_stream(outputCtx, nullptr);
-         if (!outStream) {
--            LOGE("Failed to create output stream");
-+            sessionLog(AV_LOG_ERROR, "Failed to create output stream");
-+            ret = AVERROR(ENOMEM);
-+            freeAudioXcodes(audioXcodes);
-+            freeBsfs(bsfByOutIndex);
-             avformat_close_input(&inputCtx);
-             avformat_free_context(outputCtx);
--            return AVERROR(ENOMEM);
-+            return ret;
-+        }
-+
-+        if (type == AVMEDIA_TYPE_AUDIO && encodeAac) {
-+            AudioXcode xcode;
-+            ret = setupAudioXcode(inStream, outStream, opts.audioBitrate, &xcode);
-+            if (ret < 0) {
-+                freeAudioXcode(xcode);
-+                char errbuf[AV_ERROR_MAX_STRING_SIZE];
-+                av_strerror(ret, errbuf, sizeof(errbuf));
-+                sessionLogf(AV_LOG_ERROR, "Failed to setup AAC transcode: %s", errbuf);
-+                freeAudioXcodes(audioXcodes);
-+                freeBsfs(bsfByOutIndex);
-+                avformat_close_input(&inputCtx);
-+                avformat_free_context(outputCtx);
-+                return ret;
-+            }
-+            streamMap[static_cast<int>(i)] = outStream->index;
-+            audioXcodes[outStream->index] = xcode;
-+            continue;
-         }
-         
-         ret = avcodec_parameters_copy(outStream->codecpar, inStream->codecpar);
-         if (ret < 0) {
--            LOGE("Failed to copy codec parameters");
-+            sessionLog(AV_LOG_ERROR, "Failed to copy codec parameters");
-+            freeAudioXcodes(audioXcodes);
-+            freeBsfs(bsfByOutIndex);
-             avformat_close_input(&inputCtx);
-             avformat_free_context(outputCtx);
-             return ret;
-         }
 -        
-         outStream->codecpar->codec_tag = 0;
-+        streamMap[static_cast<int>(i)] = outStream->index;
-+
-+        if (type == AVMEDIA_TYPE_AUDIO && opts.audioBsf && opts.audioBsf[0] != '\0') {
-+            const AVBitStreamFilter* filter = av_bsf_get_by_name(opts.audioBsf);
-+            if (!filter) {
-+                sessionLogf(AV_LOG_ERROR, "Unknown bitstream filter: %s", opts.audioBsf);
-+                freeAudioXcodes(audioXcodes);
-+            freeBsfs(bsfByOutIndex);
-+                avformat_close_input(&inputCtx);
-+                avformat_free_context(outputCtx);
-+                return AVERROR_BSF_NOT_FOUND;
-+            }
-+            AVBSFContext* bsf = nullptr;
-+            ret = av_bsf_alloc(filter, &bsf);
-+            if (ret < 0) {
-+                freeAudioXcodes(audioXcodes);
-+            freeBsfs(bsfByOutIndex);
-+                avformat_close_input(&inputCtx);
-+                avformat_free_context(outputCtx);
-+                return ret;
-+            }
-+            ret = avcodec_parameters_copy(bsf->par_in, inStream->codecpar);
-+            if (ret < 0) {
-+                av_bsf_free(&bsf);
-+                freeAudioXcodes(audioXcodes);
-+            freeBsfs(bsfByOutIndex);
-+                avformat_close_input(&inputCtx);
-+                avformat_free_context(outputCtx);
-+                return ret;
-+            }
-+            bsf->time_base_in = inStream->time_base;
-+            ret = av_bsf_init(bsf);
-+            if (ret < 0) {
-+                sessionLogf(AV_LOG_ERROR, "Failed to init bitstream filter %s", opts.audioBsf);
-+                av_bsf_free(&bsf);
-+                freeAudioXcodes(audioXcodes);
-+            freeBsfs(bsfByOutIndex);
-+                avformat_close_input(&inputCtx);
-+                avformat_free_context(outputCtx);
-+                return ret;
-+            }
-+            ret = avcodec_parameters_copy(outStream->codecpar, bsf->par_out);
-+            if (ret < 0) {
-+                av_bsf_free(&bsf);
-+                freeAudioXcodes(audioXcodes);
-+            freeBsfs(bsfByOutIndex);
-+                avformat_close_input(&inputCtx);
-+                avformat_free_context(outputCtx);
-+                return ret;
-+            }
-+            outStream->codecpar->codec_tag = 0;
-+            bsfByOutIndex[outStream->index] = bsf;
-+            sessionLogf(AV_LOG_INFO, "Applied audio BSF %s on stream %u", opts.audioBsf, i);
-+        }
-+    }
-+
-+    if (outputCtx->nb_streams == 0) {
-+        sessionLog(AV_LOG_ERROR, "No streams selected for output");
-+        freeAudioXcodes(audioXcodes);
-+            freeBsfs(bsfByOutIndex);
-+        avformat_close_input(&inputCtx);
-+        avformat_free_context(outputCtx);
-+        return AVERROR(EINVAL);
-     }
-     
+-        if (!outStream) {
+-            LOGE("Failed to create output stream");
+-            avformat_close_input(&inputCtx);
+-            avformat_free_context(outputCtx);
+-            return AVERROR(ENOMEM);
+-        }
+-        
+-        ret = avcodec_parameters_copy(outStream->codecpar, inStream->codecpar);
+-        if (ret < 0) {
+-            LOGE("Failed to copy codec parameters");
+-            avformat_close_input(&inputCtx);
+-            avformat_free_context(outputCtx);
+-            return ret;
+-        }
+-        
+-        outStream->codecpar->codec_tag = 0;
+-    }
+-    
 -    // Open output file
-     if (!(outputCtx->oformat->flags & AVFMT_NOFILE)) {
+-    if (!(outputCtx->oformat->flags & AVFMT_NOFILE)) {
 -        ret = avio_open(&outputCtx->pb, outputFile, AVIO_FLAG_WRITE);
-+        ret = avio_open(&outputCtx->pb, opts.outputFile, AVIO_FLAG_WRITE);
-         if (ret < 0) {
+-        if (ret < 0) {
 -            LOGE("Failed to open output file");
-+            sessionLog(AV_LOG_ERROR, "Failed to open output file");
-+            freeAudioXcodes(audioXcodes);
-+            freeBsfs(bsfByOutIndex);
-             avformat_close_input(&inputCtx);
-             avformat_free_context(outputCtx);
-             return ret;
-         }
-     }
-     
+-            avformat_close_input(&inputCtx);
+-            avformat_free_context(outputCtx);
+-            return ret;
+-        }
+-    }
+-    
 -    // Write header
 -    ret = avformat_write_header(outputCtx, nullptr);
-+    AVDictionary* muxOpts = nullptr;
-+    if (formatName && (strcmp(formatName, "mp4") == 0 || strcmp(formatName, "ipod") == 0)) {
-+        av_dict_set(&muxOpts, "movflags", "faststart", 0);
-+        av_dict_set(&muxOpts, "avoid_negative_ts", "make_zero", 0);
-+        sessionLog(AV_LOG_INFO, "MP4 mux: movflags=faststart avoid_negative_ts=make_zero");
-+    }
-+    ret = avformat_write_header(outputCtx, &muxOpts);
-+    av_dict_free(&muxOpts);
-     if (ret < 0) {
+-    if (ret < 0) {
 -        LOGE("Failed to write header");
-+        char errbuf[AV_ERROR_MAX_STRING_SIZE];
-+        av_strerror(ret, errbuf, sizeof(errbuf));
-+        sessionLogf(AV_LOG_ERROR, "Failed to write header: %s", errbuf);
-+        freeAudioXcodes(audioXcodes);
-+            freeBsfs(bsfByOutIndex);
-         avformat_close_input(&inputCtx);
+-        avformat_close_input(&inputCtx);
 -        if (!(outputCtx->oformat->flags & AVFMT_NOFILE))
-+        if (!(outputCtx->oformat->flags & AVFMT_NOFILE) && outputCtx->pb) {
-             avio_closep(&outputCtx->pb);
-+        }
-         avformat_free_context(outputCtx);
-         return ret;
-     }
-     
+-            avio_closep(&outputCtx->pb);
+-        avformat_free_context(outputCtx);
+-        return ret;
+-    }
+-    
 -    // Copy packets
 -    AVPacket* pkt = av_packet_alloc();
-+    std::unordered_map<int, StreamClock> clocks;
-+
-+    pkt = av_packet_alloc();
-+    if (!pkt) {
-+        freeAudioXcodes(audioXcodes);
-+            freeBsfs(bsfByOutIndex);
-+        avformat_close_input(&inputCtx);
-+        if (!(outputCtx->oformat->flags & AVFMT_NOFILE) && outputCtx->pb) {
-+            avio_closep(&outputCtx->pb);
-+        }
-+        avformat_free_context(outputCtx);
-+        return AVERROR(ENOMEM);
-+    }
-+
-     int64_t lastProgress = 0;
+-    int64_t lastProgress = 0;
 -    ProgressParser progressParser;
-+    int64_t endTs = AV_NOPTS_VALUE;
-+    if (opts.durationSeconds > 0) {
-+        double endSec = (opts.startSeconds > 0 ? opts.startSeconds : 0) + opts.durationSeconds;
-+        endTs = static_cast<int64_t>(endSec * AV_TIME_BASE);
-+    }
-     
-+    ret = 0;
-     while (av_read_frame(inputCtx, pkt) >= 0) {
+-    
+-    while (av_read_frame(inputCtx, pkt) >= 0) {
 -        // Check for cancellation
-         if (currentSession && currentSession->isCancelled()) {
+-        if (currentSession && currentSession->isCancelled()) {
 -            LOGI("Session cancelled");
 -            av_packet_free(&pkt);
 -            avformat_close_input(&inputCtx);
@@ -1144,19 +622,9 @@ index d8b774f..c620379 100644
 -                avio_closep(&outputCtx->pb);
 -            avformat_free_context(outputCtx);
 -            return 255;
-+            sessionLog(AV_LOG_INFO, "Session cancelled");
-+            av_packet_unref(pkt);
-+            ret = 255;
-+            break;
-+        }
-+
-+        auto mapped = streamMap.find(pkt->stream_index);
-+        if (mapped == streamMap.end()) {
-+            av_packet_unref(pkt);
-+            continue;
-         }
-         
-         AVStream* inStream = inputCtx->streams[pkt->stream_index];
+-        }
+-        
+-        AVStream* inStream = inputCtx->streams[pkt->stream_index];
 -        AVStream* outStream = outputCtx->streams[pkt->stream_index];
 -        
 -        // Rescale timestamps
@@ -1172,17 +640,8 @@ index d8b774f..c620379 100644
 -        if (ret < 0) {
 -            LOGE("Error writing packet");
 -            break;
-+        int outIndex = mapped->second;
-+        AVStream* outStream = outputCtx->streams[outIndex];
-+
-+        if (endTs != AV_NOPTS_VALUE && pkt->pts != AV_NOPTS_VALUE) {
-+            int64_t ptsAbs = av_rescale_q(pkt->pts, inStream->time_base, AV_TIME_BASE_Q);
-+            if (ptsAbs > endTs) {
-+                av_packet_unref(pkt);
-+                break;
-+            }
-         }
- 
+-        }
+-        
 -        // Report progress periodically
 -        if (currentSession && pkt->pts != AV_NOPTS_VALUE) {
 -            int64_t pts_ms = av_rescale_q(pkt->pts, outStream->time_base, {1, 1000});
@@ -1190,125 +649,30 @@ index d8b774f..c620379 100644
 -                int64_t duration_ms = 0;
 -                if (inputCtx->duration != AV_NOPTS_VALUE) {
 -                    duration_ms = inputCtx->duration / (AV_TIME_BASE / 1000);
-+        auto xcodeIt = audioXcodes.find(outIndex);
-+        if (xcodeIt != audioXcodes.end()) {
-+            ret = transcodeAudioPacket(outputCtx, xcodeIt->second, pkt, clocks[outIndex]);
-+            av_packet_unref(pkt);
-+            if (ret < 0) {
-+                char errbuf[AV_ERROR_MAX_STRING_SIZE];
-+                av_strerror(ret, errbuf, sizeof(errbuf));
-+                sessionLogf(AV_LOG_ERROR, "Audio transcode failed: %s", errbuf);
-+                break;
-+            }
-+            continue;
-+        }
-+        
-+        pkt->stream_index = outIndex;
-+
-+        auto bsfIt = bsfByOutIndex.find(outIndex);
-+        if (bsfIt != bsfByOutIndex.end()) {
-+            AVBSFContext* bsf = bsfIt->second;
-+            ret = av_bsf_send_packet(bsf, pkt);
-+            if (ret < 0) {
-+                sessionLog(AV_LOG_ERROR, "BSF send failed");
-+                av_packet_unref(pkt);
-+                break;
-+            }
-+            while (true) {
-+                AVPacket* filtered = av_packet_alloc();
-+                if (!filtered) {
-+                    ret = AVERROR(ENOMEM);
-+                    break;
-+                }
-+                ret = av_bsf_receive_packet(bsf, filtered);
-+                if (ret == AVERROR(EAGAIN) || ret == AVERROR_EOF) {
-+                    av_packet_free(&filtered);
-+                    ret = 0;
-+                    break;
-                 }
+-                }
 -                double speed = 1.0; // Would need timing to calculate actual speed
 -                currentSession->notifyProgress(pts_ms, 0, speed, 0, 0, outputCtx->pb ? avio_tell(outputCtx->pb) : 0);
-+                if (ret < 0) {
-+                    sessionLog(AV_LOG_ERROR, "BSF receive failed");
-+                    av_packet_free(&filtered);
-+                    break;
-+                }
-+                filtered->stream_index = outIndex;
-+                rescaleAndFixTs(filtered, bsf->time_base_out, outStream->time_base, clocks[outIndex]);
-+                ret = av_interleaved_write_frame(outputCtx, filtered);
-+                av_packet_free(&filtered);
-+                if (ret < 0) {
-+                    sessionLog(AV_LOG_ERROR, "Error writing filtered packet");
-+                    break;
-+                }
-+            }
-+            if (ret < 0) break;
-+        } else {
-+            rescaleAndFixTs(pkt, inStream->time_base, outStream->time_base, clocks[outIndex]);
-+
-+            ret = av_interleaved_write_frame(outputCtx, pkt);
-+            if (ret < 0) {
-+                sessionLog(AV_LOG_ERROR, "Error writing packet");
-+                av_packet_unref(pkt);
-+                break;
-+            }
-+        }
-+
-+        if (currentSession && outStream->nb_frames % 30 == 0) {
-+            int64_t pts_ms = 0;
-+            if (pkt->pts != AV_NOPTS_VALUE) {
-+                pts_ms = av_rescale_q(pkt->pts, outStream->time_base, {1, 1000});
-+            }
-+            if (pts_ms - lastProgress >= 100) {
-+                currentSession->notifyProgress(pts_ms, 0, 1.0, 0, 0,
-+                    outputCtx->pb ? avio_tell(outputCtx->pb) : 0);
-                 lastProgress = pts_ms;
-             }
-         }
-@@ -298,18 +929,35 @@ int executeCommand(const std::vector<char*>& argv) {
-         av_packet_unref(pkt);
-     }
-     
+-                lastProgress = pts_ms;
+-            }
+-        }
+-        
+-        av_packet_unref(pkt);
+-    }
+-    
 -    // Write trailer
 -    av_write_trailer(outputCtx);
-+    if (ret >= 0 || ret == AVERROR_EOF) {
-+        for (auto& entry : audioXcodes) {
-+            int flushRet = flushAudioXcode(outputCtx, entry.second, clocks[entry.first]);
-+            if (flushRet < 0 && flushRet != AVERROR_EOF) {
-+                char errbuf[AV_ERROR_MAX_STRING_SIZE];
-+                av_strerror(flushRet, errbuf, sizeof(errbuf));
-+                sessionLogf(AV_LOG_ERROR, "Audio flush failed: %s", errbuf);
-+                ret = flushRet;
-+                break;
-+            }
-+        }
-+    }
-+    if (ret >= 0 || ret == AVERROR_EOF) {
-+        av_write_trailer(outputCtx);
-+        ret = 0;
-+        sessionLog(AV_LOG_INFO, "Remux/extract complete");
-+    }
-     
+-    
 -    // Cleanup
-     av_packet_free(&pkt);
-+    freeAudioXcodes(audioXcodes);
-+            freeBsfs(bsfByOutIndex);
-     avformat_close_input(&inputCtx);
+-    av_packet_free(&pkt);
+-    avformat_close_input(&inputCtx);
 -    if (!(outputCtx->oformat->flags & AVFMT_NOFILE))
 -        avio_closep(&outputCtx->pb);
 -    avformat_free_context(outputCtx);
 -    
 -    LOGI("Transcode complete");
 -    return 0;
-+    if (outputCtx) {
-+        if (!(outputCtx->oformat->flags & AVFMT_NOFILE) && outputCtx->pb) {
-+            avio_closep(&outputCtx->pb);
-+        }
-+        avformat_free_context(outputCtx);
-+    }
-+    return ret;
- }
- 
+-}
+-
  } // namespace ffmpeg
 diff --git a/node_modules/ffmpeg-expo/android/src/main/java/expo/modules/ffmpeg/FFmpegSession.kt b/node_modules/ffmpeg-expo/android/src/main/java/expo/modules/ffmpeg/FFmpegSession.kt
 index 9a9e31d..7ea56fe 100644
@@ -1334,3 +698,325 @@ index 9a9e31d..7ea56fe 100644
                  }
              }
          }
+diff --git a/node_modules/ffmpeg-expo/ios/FFmpeg.h b/node_modules/ffmpeg-expo/ios/FFmpeg.h
+index 3a55215..09c5913 100644
+--- a/node_modules/ffmpeg-expo/ios/FFmpeg.h
++++ b/node_modules/ffmpeg-expo/ios/FFmpeg.h
+@@ -1,6 +1,4 @@
+ // FFmpeg umbrella header for iOS
+-// This header imports all FFmpeg headers needed by the module
+-
+ #ifndef FFmpeg_h
+ #define FFmpeg_h
+ 
+@@ -14,4 +12,10 @@
+ #include <libswresample/swresample.h>
+ #include <libswscale/swscale.h>
+ 
++#if __has_include(<expo_ffmpeg.h>)
++#include <expo_ffmpeg.h>
++#elif __has_include("expo_ffmpeg.h")
++#include "expo_ffmpeg.h"
++#endif
++
+ #endif /* FFmpeg_h */
+diff --git a/node_modules/ffmpeg-expo/ios/FFmpegBridge.swift b/node_modules/ffmpeg-expo/ios/FFmpegBridge.swift
+index ee0dc00..a1886e8 100644
+--- a/node_modules/ffmpeg-expo/ios/FFmpegBridge.swift
++++ b/node_modules/ffmpeg-expo/ios/FFmpegBridge.swift
+@@ -2,20 +2,29 @@ import Foundation
+ 
+ typealias FFmpegLogCallback = @convention(c) (UnsafeMutableRawPointer?, Int32, UnsafePointer<CChar>?) -> Void
+ 
+-/// Bridge to FFmpeg C library
+-class FFmpegBridge {
++private final class CancellationContext {
++    let shouldCancel: () -> Bool
++
++    init(_ shouldCancel: @escaping () -> Bool) {
++        self.shouldCancel = shouldCancel
++    }
++}
+ 
++private let cancellationCallback: @convention(c) (UnsafeMutableRawPointer?) -> Int32 = { context in
++    guard let context else { return 1 }
++    let cancellation = Unmanaged<CancellationContext>.fromOpaque(context).takeUnretainedValue()
++    return cancellation.shouldCancel() ? 1 : 0
++}
++
++/// Bridge to FFmpeg C library — uses embedded CLI (`expo_ffmpeg_execute`) for full command support.
++class FFmpegBridge {
+     private static var logCallback: ((UnsafeMutableRawPointer?, Int32, UnsafePointer<CChar>?) -> Void)?
+     private static var logCallbackContext: UnsafeMutableRawPointer?
+ 
+-    /// Get FFmpeg version string
+     static func getVersion() -> String {
+-        // This would call av_version_info() from FFmpeg
+-        // For now, return a placeholder until FFmpeg is linked
+-        return String(cString: av_version_info())
++        String(cString: av_version_info())
+     }
+ 
+-    /// Set log callback for receiving FFmpeg log messages
+     static func setLogCallback(
+         _ context: UnsafeMutableRawPointer?,
+         callback: @escaping (UnsafeMutableRawPointer?, Int32, UnsafePointer<CChar>?) -> Void
+@@ -23,213 +32,42 @@ class FFmpegBridge {
+         logCallbackContext = context
+         logCallback = callback
+ 
+-        // Set FFmpeg's log callback
+-        av_log_set_callback { ptr, level, fmt, valist in
+-            guard let callback = FFmpegBridge.logCallback else { return }
+-            
+-            // Format the log message
++        av_log_set_callback { _, level, format, arguments in
++            guard let callback = FFmpegBridge.logCallback, let format else { return }
++            // Forward warnings+ only — verbose demux floods JS.
++            if level > AV_LOG_WARNING { return }
+             var message = [CChar](repeating: 0, count: 1024)
+-            vsnprintf(&message, 1024, fmt, valist)
+-            
++            vsnprintf(&message, message.count, format, arguments)
+             callback(FFmpegBridge.logCallbackContext, level, message)
+         }
+     }
+ 
+-    /// Clear the log callback
+     static func clearLogCallback() {
+         logCallback = nil
+         logCallbackContext = nil
+         av_log_set_callback(nil)
+     }
+ 
+-    /// Execute FFmpeg command
+-    /// - Parameters:
+-    ///   - args: Command arguments (without "ffmpeg" prefix)
+-    ///   - logLevel: FFmpeg log level
+-    ///   - shouldCancel: Closure called to check if execution should be cancelled
+-    /// - Returns: Exit code (0 = success)
++    /// Execute FFmpeg command via embedded CLI (filter_complex, encoders, multi-input).
+     static func execute(
+         args: [String],
+         logLevel: Int32,
+         shouldCancel: @escaping () -> Bool
+     ) -> Int32 {
+-        // Set log level
+         av_log_set_level(logLevel)
+-        
+-        // For actual implementation, this would:
+-        // 1. Parse command line arguments
+-        // 2. Use avformat/avcodec APIs to perform the operation
+-        // 3. Or call a patched ffmpeg_main() function
+-        
+-        // Simplified implementation using avformat for remuxing
+-        return executeTranscode(args: args, shouldCancel: shouldCancel)
+-    }
+-    
+-    /// Simplified transcode implementation using FFmpeg libraries
+-    private static func executeTranscode(
+-        args: [String],
+-        shouldCancel: @escaping () -> Bool
+-    ) -> Int32 {
+-        // Parse arguments
+-        var inputFile: String?
+-        var outputFile: String?
+-        var overwrite = false
+-        
+-        var i = 0
+-        while i < args.count {
+-            if args[i] == "-i" && i + 1 < args.count {
+-                i += 1
+-                inputFile = args[i]
+-            } else if args[i] == "-y" {
+-                overwrite = true
+-            } else if !args[i].hasPrefix("-") && i == args.count - 1 {
+-                outputFile = args[i]
+-            }
+-            i += 1
+-        }
+-        
+-        guard let input = inputFile, let output = outputFile else {
+-            av_log(nil, AV_LOG_ERROR, "Missing input or output file\n")
+-            return 1
+-        }
+-        
+-        // Open input file
+-        var inputCtx: UnsafeMutablePointer<AVFormatContext>?
+-        var ret = avformat_open_input(&inputCtx, input, nil, nil)
+-        if ret < 0 {
+-            av_log(nil, AV_LOG_ERROR, "Could not open input file\n")
+-            return ret
+-        }
+-        
+-        defer {
+-            avformat_close_input(&inputCtx)
+-        }
+-        
+-        ret = avformat_find_stream_info(inputCtx, nil)
+-        if ret < 0 {
+-            av_log(nil, AV_LOG_ERROR, "Could not find stream info\n")
+-            return ret
+-        }
+-        
+-        // Create output context
+-        var outputCtx: UnsafeMutablePointer<AVFormatContext>?
+-        ret = avformat_alloc_output_context2(&outputCtx, nil, nil, output)
+-        if ret < 0 || outputCtx == nil {
+-            av_log(nil, AV_LOG_ERROR, "Could not create output context\n")
+-            return ret
+-        }
+-        
+-        defer {
+-            if let ctx = outputCtx {
+-                if (ctx.pointee.oformat.pointee.flags & AVFMT_NOFILE) == 0 {
+-                    avio_closep(&ctx.pointee.pb)
+-                }
+-                avformat_free_context(ctx)
+-            }
+-        }
+-        
+-        // Copy streams
+-        guard let inCtx = inputCtx else { return -1 }
+-        
+-        for i in 0..<Int(inCtx.pointee.nb_streams) {
+-            let inStream = inCtx.pointee.streams[i]!
+-            let outStream = avformat_new_stream(outputCtx, nil)
+-            
+-            guard let outStream = outStream else {
+-                av_log(nil, AV_LOG_ERROR, "Could not create output stream\n")
+-                return AVERROR(ENOMEM)
+-            }
+-            
+-            ret = avcodec_parameters_copy(outStream.pointee.codecpar, inStream.pointee.codecpar)
+-            if ret < 0 {
+-                av_log(nil, AV_LOG_ERROR, "Could not copy codec parameters\n")
+-                return ret
+-            }
+-            
+-            outStream.pointee.codecpar.pointee.codec_tag = 0
+-        }
+-        
+-        // Open output file
+-        if let ctx = outputCtx, (ctx.pointee.oformat.pointee.flags & AVFMT_NOFILE) == 0 {
+-            ret = avio_open(&ctx.pointee.pb, output, AVIO_FLAG_WRITE)
+-            if ret < 0 {
+-                av_log(nil, AV_LOG_ERROR, "Could not open output file\n")
+-                return ret
+-            }
+-        }
+-        
+-        // Write header
+-        ret = avformat_write_header(outputCtx, nil)
+-        if ret < 0 {
+-            av_log(nil, AV_LOG_ERROR, "Could not write header\n")
+-            return ret
+-        }
+-        
+-        // Copy packets
+-        let packet = av_packet_alloc()
+-        defer { av_packet_free(UnsafeMutablePointer(&packet)) }
+-        
+-        while av_read_frame(inputCtx, packet) >= 0 {
+-            // Check cancellation
+-            if shouldCancel() {
+-                return 255
+-            }
+-            
+-            guard let pkt = packet, let outCtx = outputCtx else { break }
+-            
+-            let inStream = inCtx.pointee.streams[Int(pkt.pointee.stream_index)]!
+-            let outStream = outCtx.pointee.streams[Int(pkt.pointee.stream_index)]!
+-            
+-            // Rescale timestamps
+-            pkt.pointee.pts = av_rescale_q_rnd(
+-                pkt.pointee.pts,
+-                inStream.pointee.time_base,
+-                outStream.pointee.time_base,
+-                AVRounding(rawValue: AV_ROUND_NEAR_INF.rawValue | AV_ROUND_PASS_MINMAX.rawValue)
+-            )
+-            pkt.pointee.dts = av_rescale_q_rnd(
+-                pkt.pointee.dts,
+-                inStream.pointee.time_base,
+-                outStream.pointee.time_base,
+-                AVRounding(rawValue: AV_ROUND_NEAR_INF.rawValue | AV_ROUND_PASS_MINMAX.rawValue)
+-            )
+-            pkt.pointee.duration = av_rescale_q(
+-                pkt.pointee.duration,
+-                inStream.pointee.time_base,
+-                outStream.pointee.time_base
+-            )
+-            pkt.pointee.pos = -1
+-            
+-            ret = av_interleaved_write_frame(outputCtx, packet)
+-            if ret < 0 {
+-                av_log(nil, AV_LOG_ERROR, "Error writing packet\n")
+-                break
+-            }
+-            
+-            av_packet_unref(packet)
+-        }
+-        
+-        // Write trailer
+-        av_write_trailer(outputCtx)
+-        
+-        return 0
++        let cancellation = Unmanaged.passRetained(CancellationContext(shouldCancel))
++        defer { cancellation.release() }
++
++        let arguments = ["ffmpeg"] + args
++        let duplicatedArguments = arguments.map { strdup($0) }
++        defer { duplicatedArguments.forEach { free($0) } }
++        var argv = duplicatedArguments
++
++        return expo_ffmpeg_execute(
++            Int32(argv.count),
++            &argv,
++            cancellationCallback,
++            cancellation.toOpaque()
++        )
+     }
+ }
+-
+-// MARK: - FFmpeg C Function Declarations
+-// These would be imported from the FFmpeg headers via a bridging header
+-
+-// Note: In actual implementation, these declarations would come from
+-// importing the FFmpeg headers through a module.modulemap or bridging header.
+-// The declarations below are placeholders to show the expected interface.
+-
+-/*
+- Add to a bridging header or module.modulemap:
+- 
+- #include <libavcodec/avcodec.h>
+- #include <libavformat/avformat.h>
+- #include <libavutil/avutil.h>
+- #include <libavutil/log.h>
+- #include <libswresample/swresample.h>
+- #include <libswscale/swscale.h>
+- */
+diff --git a/node_modules/ffmpeg-expo/ios/expo_ffmpeg.h b/node_modules/ffmpeg-expo/ios/expo_ffmpeg.h
+new file mode 100644
+index 0000000..f697ac5
+--- /dev/null
++++ b/node_modules/ffmpeg-expo/ios/expo_ffmpeg.h
+@@ -0,0 +1,19 @@
++#ifndef EXPO_FFMPEG_H
++#define EXPO_FFMPEG_H
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++typedef int (*expo_ffmpeg_cancel_callback)(void *opaque);
++
++/* argv follows main(3) conventions. The callback may be NULL. */
++int expo_ffmpeg_execute(int argc, char **argv,
++                        expo_ffmpeg_cancel_callback cancel_callback,
++                        void *cancel_opaque);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif

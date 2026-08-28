@@ -102,6 +102,28 @@ export default function ProfileScreen() {
         <CreditsRow />
 
         <View className="gap-2">
+          <Text className="text-xs font-semibold uppercase tracking-wide text-muted">Account</Text>
+          <MenuRow
+            icon="shield-checkmark-outline"
+            title="Email & password"
+            subtitle="Change login email or password"
+            onPress={() => router.push('/profile/security' as never)}
+          />
+          <MenuRow
+            icon="options-outline"
+            title="Preferences"
+            subtitle="Notifications and time format (synced)"
+            onPress={() => router.push('/profile/preferences' as never)}
+          />
+          <MenuRow
+            icon="color-palette-outline"
+            title="Creator branding"
+            subtitle="Intros, outros, watermarks — synced with desktop"
+            onPress={() => router.push('/profile/branding' as never)}
+          />
+        </View>
+
+        <View className="gap-2">
           <Text className="text-xs font-semibold uppercase tracking-wide text-muted">Subscription</Text>
           <MenuRow
             icon="card-outline"

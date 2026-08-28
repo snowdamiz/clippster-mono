@@ -18,6 +18,9 @@ import {
   createTokendApi,
   createKickApi,
   createSubscriptionApi,
+  createUserBrandingApi,
+  createUserPreferencesApi,
+  createAccountApi,
 } from '@clippster/api-client';
 import { fetch as expoFetch } from 'expo/fetch';
 import { getApiBaseUrl } from '@/lib/config';
@@ -58,4 +61,7 @@ export const organizationsApi = createOrganizationsApi(apiClient);
 export const cloudProjectsApi = createCloudProjectsApi(apiClient);
 export const tokendApi = createTokendApi(apiClient);
 export const kickApi = createKickApi(apiClient);
+export const userBrandingApi = createUserBrandingApi(apiClient);
+export const userPreferencesApi = createUserPreferencesApi(apiClient);
+export const accountApi = createAccountApi(apiClient);
 export { apiClient };

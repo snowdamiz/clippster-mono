@@ -16,7 +16,7 @@
     "setup:binaries": "node scripts/setup-binaries.mjs",
     "dev": "node scripts/dev-setup.mjs && concurrently \"yarn server\" \"yarn tauri\" \"yarn landing\" \"yarn mobile\" --names \"server,client,landing,mobile\" --prefix-colors \"blue,magenta,cyan,green\"",
     "prepare": "husky",
-    "postinstall": "patch-package && node scripts/setup-ffmpeg-headers.mjs && node node_modules/ffmpeg-expo/scripts/postinstall.js",
+    "postinstall": "patch-package && node scripts/setup-ffmpeg-headers.mjs && node node_modules/ffmpeg-expo/scripts/postinstall.js && node scripts/setup-ffmpeg-cli.mjs",
     "format": "cd client && prettier --write \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
     "format:check": "cd client && prettier --check \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
     "format:all": "prettier --write \"client/**/*.{vue,js,ts,json,css,scss,md}\"",

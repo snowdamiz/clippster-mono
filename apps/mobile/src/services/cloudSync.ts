@@ -7,7 +7,7 @@ import type { CloudProjectSnapshot } from '@clippster/cloud-sync-schema';
 import { Platform } from 'react-native';
 import { createCloudProjectsApi } from '@clippster/api-client';
 import { apiClient } from './api';
-import { getAllProjects, deleteProject, getRawVideoByProjectId, updateRawVideoFilePath } from './database';
+import { getAllProjects, deleteProject, deleteProjectWithRetention, getRawVideoByProjectId, updateRawVideoFilePath } from './database';
 import {
   getAllCloudSyncMeta,
   getCloudSyncMeta,
@@ -253,7 +253,7 @@ export async function queueProjectSync(projectId: string): Promise<void> {
 
 /**
  * User-initiated delete: soft-delete on the server (so sync won't restore it),
- * then wipe local DB rows + on-disk media.
+ * then wipe local project media while retaining built / in-editor clips.
  */
 export async function deleteProjectEverywhere(projectId: string): Promise<void> {
   if (CLOUD_SYNC_ENABLED) {
@@ -264,7 +264,13 @@ export async function deleteProjectEverywhere(projectId: string): Promise<void> 
     }
     await clearPendingPush(projectId);
   }
-  await deleteProject(projectId);
+  const { listInEditorClipIds, deleteEditDocument } = await import('@/lib/timeline/editStorage');
+  const inEditorClipIds = await listInEditorClipIds();
+  const result = await deleteProjectWithRetention(projectId, inEditorClipIds);
+  await deleteEditDocument('project', projectId);
+  for (const clipId of result.deletedClipIds) {
+    await deleteEditDocument('clip', clipId);
+  }
 }
 
 export async function getStorageQuota() {
