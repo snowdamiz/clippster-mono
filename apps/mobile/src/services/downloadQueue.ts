@@ -11,6 +11,7 @@ import {
   updateRawVideoFilePath,
 } from '@/services/database';
 import {
+  downloadStreamToMp4,
   extractThumbnail,
   isFfmpegAvailable,
   probeDuration,
@@ -18,6 +19,7 @@ import {
   type SegmentRange,
 } from '@/services/ffmpeg';
 import { downloadHlsToTs } from '@/services/hlsDownload';
+import { ensurePlayableVideo } from '@/services/ensurePlayableVideo';
 import { buildSegmentJobs } from '@/lib/timeRange';
 import { getHlsRequestHeaders, shouldUseFfmpegDownload } from '@/lib/streamDownload';
 
@@ -271,6 +273,65 @@ async function processQueue(): Promise<void> {
   }
 }
 
+async function downloadHlsVod(
+  job: DownloadJob,
+  streamUrl: string,
+  outputPath: string,
+  downloadId: string,
+  segment?: SegmentRange,
+): Promise<string> {
+  const headers = getHlsRequestHeaders(streamUrl, job.sourceUrl);
+
+  if (await isFfmpegAvailable()) {
+    try {
+      updateJob(job.id, { status: 'downloading', progress: 8, message: 'Downloading stream…' });
+      await downloadStreamToMp4(streamUrl, outputPath, {
+        headers,
+        segment,
+        onProgress: (ratio) => {
+          updateJob(job.id, {
+            progress: 8 + ratio * 82,
+            message: `Downloading… ${Math.round(ratio * 100)}%`,
+          });
+        },
+      });
+      return outputPath;
+    } catch (error) {
+      console.warn('[Download] Native HLS ingest failed, falling back to JS segments', error);
+    }
+  }
+
+  const rawTsPath = `${VIDEO_DIR}${downloadId}.ts`;
+  await downloadHlsToTs(streamUrl, rawTsPath, {
+    pageUrl: job.sourceUrl,
+    segment,
+    onProgress: (ratio) => {
+      updateJob(job.id, {
+        progress: 5 + ratio * 70,
+        message: `Downloading… ${Math.round(ratio * 100)}%`,
+      });
+    },
+  });
+
+  if (await isFfmpegAvailable()) {
+    updateJob(job.id, { status: 'remuxing', progress: 78, message: 'Remuxing to MP4…' });
+    try {
+      await remuxToMp4(rawTsPath, outputPath, (ratio) => {
+        updateJob(job.id, {
+          progress: 78 + ratio * 17,
+          message: `Remuxing… ${Math.round(ratio * 100)}%`,
+        });
+      });
+      await FileSystem.deleteAsync(rawTsPath, { idempotent: true });
+      return outputPath;
+    } catch {
+      return rawTsPath;
+    }
+  }
+
+  return rawTsPath;
+}
+
 async function runDownload(job: DownloadJob): Promise<void> {
   updateJob(job.id, { status: 'resolving', progress: 2, message: 'Resolving stream…' });
 
@@ -309,31 +370,21 @@ async function runDownload(job: DownloadJob): Promise<void> {
     authHeaders = token ? { Authorization: `Bearer ${token}` } : undefined;
     title = job.title !== 'Downloading…' ? job.title : `Tokend ${ref.id}`;
   } else {
-    const preResolved = job.streamUrl?.trim();
-    const resolveTarget = preResolved || job.sourceUrl;
-
-    // Kick/Twitch HLS: download segments in JS with browser headers.
-    // ffmpeg-expo is a remux stub and ignores -headers, so native HLS open always fails.
-    if (shouldUseFfmpegDownload(resolveTarget)) {
-      streamUrl = resolveTarget;
-      useFfmpegDownload = true;
-    } else {
-      const resolved = await mediaApi.resolveUrl(resolveTarget, { platform: job.platform });
-      if (!resolved.success || !resolved.streams?.length) {
-        throw new Error(resolved.error ?? 'Could not resolve download URL');
-      }
-
-      const url = resolved.streams[0]?.url;
-      if (!url) {
-        throw new Error('No stream URL returned');
-      }
-      streamUrl = url;
-      if (job.title === 'Downloading…' || !job.title) {
-        title = resolved.title ?? job.title;
-      }
-      durationSeconds = resolved.duration_seconds ?? null;
-      useFfmpegDownload = shouldUseFfmpegDownload(streamUrl);
+    const resolved = await mediaApi.resolveUrl(job.sourceUrl, {
+      platform: job.platform,
+      quality: '720',
+    });
+    const resolvedUrl = resolved.success ? resolved.streams?.[0]?.url : undefined;
+    const url = resolvedUrl || job.streamUrl?.trim();
+    if (!url) {
+      throw new Error(resolved.error ?? 'Could not resolve download URL');
     }
+    streamUrl = url;
+    if (job.title === 'Downloading…' || !job.title) {
+      title = resolved.title ?? job.title;
+    }
+    durationSeconds = resolved.duration_seconds ?? null;
+    useFfmpegDownload = shouldUseFfmpegDownload(streamUrl);
   }
 
   updateJob(job.id, { title, status: 'downloading', progress: 5, message: 'Downloading…' });
@@ -349,34 +400,7 @@ async function runDownload(job: DownloadJob): Promise<void> {
   const segment = job.segmentRange;
 
   if (useFfmpegDownload) {
-    const rawTsPath = `${VIDEO_DIR}${downloadId}.ts`;
-    await downloadHlsToTs(streamUrl, rawTsPath, {
-      pageUrl: job.sourceUrl,
-      segment,
-      onProgress: (ratio) => {
-        updateJob(job.id, {
-          progress: 5 + ratio * 70,
-          message: `Downloading… ${Math.round(ratio * 100)}%`,
-        });
-      },
-    });
-
-    if (await isFfmpegAvailable()) {
-      updateJob(job.id, { status: 'remuxing', progress: 78, message: 'Remuxing to MP4…' });
-      try {
-        await remuxToMp4(rawTsPath, outputPath, (ratio) => {
-          updateJob(job.id, {
-            progress: 78 + ratio * 17,
-            message: `Remuxing… ${Math.round(ratio * 100)}%`,
-          });
-        });
-        await FileSystem.deleteAsync(rawTsPath, { idempotent: true });
-      } catch {
-        outputPath = rawTsPath;
-      }
-    } else {
-      outputPath = rawTsPath;
-    }
+    outputPath = await downloadHlsVod(job, streamUrl, outputPath, downloadId, segment);
   } else {
     const rawPath = `${VIDEO_DIR}${downloadId}_raw`;
 
@@ -433,6 +457,8 @@ async function runDownload(job: DownloadJob): Promise<void> {
       // ignore cleanup errors
     }
   }
+
+  outputPath = await ensurePlayableVideo(outputPath);
 
   let duration = durationSeconds;
   if (job.segmentRange) {

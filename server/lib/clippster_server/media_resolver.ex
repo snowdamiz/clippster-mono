@@ -383,15 +383,28 @@ defmodule ClippsterServer.MediaResolver do
   end
 
   defp sort_formats(formats, "best") do
-    Enum.sort_by(formats, fn f -> {f["height"] || 0, f["tbr"] || 0} end, :desc)
+    Enum.sort_by(formats, fn f -> {format_height(f), f["tbr"] || 0} end, :desc)
+  end
+
+  # Mobile asks for 720: pick the best format at or below ~720p, else fall back.
+  defp sort_formats(formats, "720") do
+    capped =
+      formats
+      |> Enum.filter(fn f -> format_height(f) > 0 and format_height(f) <= 800 end)
+      |> Enum.sort_by(fn f -> {format_height(f), f["tbr"] || 0} end, :desc)
+
+    if capped == [], do: sort_formats(formats, "best"), else: capped
   end
 
   defp sort_formats(formats, _quality), do: sort_formats(formats, "best")
+
+  defp format_height(format), do: format["height"] || 0
 
   defp stream_entry(url, format, meta) do
     %{
       url: url,
       format: format,
+      height: meta["height"],
       expires_at: format_expires(meta)
     }
   end

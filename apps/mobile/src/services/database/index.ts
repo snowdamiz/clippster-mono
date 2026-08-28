@@ -50,6 +50,8 @@ export async function initDatabase(openDatabase: () => SQLiteDatabase): Promise<
   const db = openDatabase();
   dbInstance = db;
 
+  // Required for ON DELETE CASCADE. Default is OFF in SQLite / expo-sqlite.
+  await db.execAsync('PRAGMA foreign_keys = ON');
   await db.execAsync(APP_METADATA_TABLE_SQL);
 
   const currentVersion = await getSchemaVersion(db);
@@ -125,9 +127,91 @@ export async function getProject(id: string): Promise<Project | null> {
   );
 }
 
+function isDeletableLocalPath(path: string | null | undefined): path is string {
+  if (!path) return false;
+  if (
+    path.startsWith('pending://') ||
+    path.startsWith('clip://') ||
+    path.startsWith('http://') ||
+    path.startsWith('https://')
+  ) {
+    return false;
+  }
+  return true;
+}
+
+function playableSiblingPath(path: string): string | null {
+  if (path.endsWith('.play.mp4')) return null;
+  return path.replace(/\.[^./]+$/, '') + '.play.mp4';
+}
+
+async function deleteLocalMediaFile(path: string): Promise<void> {
+  const FileSystem = await import('expo-file-system/legacy');
+  try {
+    await FileSystem.deleteAsync(path, { idempotent: true });
+  } catch {
+    // File may already be gone.
+  }
+  const playable = playableSiblingPath(path);
+  if (playable) {
+    try {
+      await FileSystem.deleteAsync(playable, { idempotent: true });
+    } catch {
+      // ignore
+    }
+  }
+}
+
+/** Collect on-disk media for a project, delete those files, then cascade-delete DB rows. */
 export async function deleteProject(id: string): Promise<void> {
   const db = getDatabase();
+  const paths = new Set<string>();
+
+  const project = await getProject(id);
+  if (isDeletableLocalPath(project?.thumbnail_path)) {
+    paths.add(project.thumbnail_path);
+  }
+
+  const rawVideos = await db.getAllAsync<{ file_path: string | null; thumbnail_path: string | null }>(
+    'SELECT file_path, thumbnail_path FROM raw_videos WHERE project_id = ?',
+    [id],
+  );
+  for (const raw of rawVideos) {
+    if (isDeletableLocalPath(raw.file_path)) paths.add(raw.file_path);
+    if (isDeletableLocalPath(raw.thumbnail_path)) paths.add(raw.thumbnail_path);
+  }
+
+  const clips = await db.getAllAsync<{
+    file_path: string | null;
+    built_thumbnail_path: string | null;
+  }>('SELECT file_path, built_thumbnail_path FROM clips WHERE project_id = ?', [id]);
+  for (const clip of clips) {
+    if (isDeletableLocalPath(clip.file_path)) paths.add(clip.file_path);
+    if (isDeletableLocalPath(clip.built_thumbnail_path)) paths.add(clip.built_thumbnail_path);
+  }
+
+  const builds = await db.getAllAsync<{ file_path: string | null; thumbnail_path: string | null }>(
+    `SELECT cb.file_path, cb.thumbnail_path
+     FROM clip_builds cb
+     INNER JOIN clips c ON c.id = cb.clip_id
+     WHERE c.project_id = ?`,
+    [id],
+  );
+  for (const build of builds) {
+    if (isDeletableLocalPath(build.file_path)) paths.add(build.file_path);
+    if (isDeletableLocalPath(build.thumbnail_path)) paths.add(build.thumbnail_path);
+  }
+
+  for (const path of paths) {
+    await deleteLocalMediaFile(path);
+  }
+
   await db.runAsync('DELETE FROM projects WHERE id = ?', [id]);
+}
+
+export async function touchProject(projectId: string): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync('UPDATE projects SET updated_at = ? WHERE id = ?', [timestamp(), projectId]);
 }
 
 export { DB_NAME };
@@ -139,10 +223,14 @@ export {
   createTranscriptRecord,
   getTranscriptByProjectId,
   getClipsByProjectId,
+  getProjectClipRows,
   getAllClips,
   persistDetectedClips,
   addManualClip,
+  deleteClip,
   deleteClipsByProjectId,
+  updateClipBuiltThumbnail,
+  type ProjectClipRow,
 } from './workspace';
 export {
   getClipSegmentsByClipId,

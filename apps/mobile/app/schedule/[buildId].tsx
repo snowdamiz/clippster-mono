@@ -11,7 +11,6 @@ import * as FileSystem from 'expo-file-system/legacy';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Pressable,
   ScrollView,
@@ -34,6 +33,7 @@ import {
 import { getClipBuildById, getClipById, type ClipBuildRow } from '@/services/database/clips';
 import { uploadMediaWithProgress } from '@/services/mediaUpload';
 import { tokens } from '@/theme/tokens';
+import { appAlert } from '@/lib/appAlert';
 
 function parseAspectRatios(raw: string | null): string[] {
   if (!raw) return [];
@@ -72,7 +72,7 @@ export default function ScheduleScreen() {
     if (!buildId) return;
     const buildRow = await getClipBuildById(buildId);
     if (!buildRow || buildRow.status !== 'completed') {
-      Alert.alert('Export not found', 'This export is not available for scheduling.');
+      appAlert('Export not found', 'This export is not available for scheduling.');
       router.back();
       return;
     }
@@ -146,11 +146,11 @@ export default function ScheduleScreen() {
 
   async function handleSchedule() {
     if (!build || !accountId) {
-      Alert.alert('Missing account', 'Connect a social account for this platform first.');
+      appAlert('Missing account', 'Connect a social account for this platform first.');
       return;
     }
     if (postingContext !== 'personal' && !orgId) {
-      Alert.alert('Missing organization', 'Select an organization for this post.');
+      appAlert('Missing organization', 'Select an organization for this post.');
       return;
     }
 
@@ -158,7 +158,7 @@ export default function ScheduleScreen() {
     try {
       const fileInfo = await FileSystem.getInfoAsync(build.file_path);
       if (!fileInfo.exists) {
-        Alert.alert('File missing', 'The exported clip file could not be found.');
+        appAlert('File missing', 'The exported clip file could not be found.');
         return;
       }
 
@@ -180,7 +180,7 @@ export default function ScheduleScreen() {
       );
 
       if (!uploadResult.success || !uploadResult.media_url) {
-        Alert.alert('Upload failed', uploadResult.error ?? 'Could not upload clip.');
+        appAlert('Upload failed', uploadResult.error ?? 'Could not upload clip.');
         return;
       }
 
@@ -196,7 +196,7 @@ export default function ScheduleScreen() {
       } else {
         scheduleTime = new Date(scheduledAt);
         if (!isValidScheduleTime(scheduleTime)) {
-          Alert.alert('Invalid time', 'Schedule at least 5 minutes in the future.');
+          appAlert('Invalid time', 'Schedule at least 5 minutes in the future.');
           return;
         }
       }
@@ -214,14 +214,14 @@ export default function ScheduleScreen() {
           media_type: mediaType,
         });
         if (!publish.success) {
-          Alert.alert('Publish failed', publish.message ?? publish.error ?? 'Failed to publish to Tokend');
+          appAlert('Publish failed', publish.message ?? publish.error ?? 'Failed to publish to Tokend');
           return;
         }
         void analyticsApi.trackEvent({
           event_type: 'post_scheduled',
           metadata: { platform, provider: 'tokend', immediate: true },
         });
-        Alert.alert('Published', 'Clip published to Tokend.');
+        appAlert('Published', 'Clip published to Tokend.');
         router.replace('/(tabs)/posts');
         return;
       }
@@ -247,9 +247,9 @@ export default function ScheduleScreen() {
       if (!response.success) {
         const message = response.error ?? 'Failed to schedule post';
         if (message.toLowerCase().includes('subscription') || message.includes('403')) {
-          Alert.alert('Subscription required', 'Scheduling requires an active subscription.');
+          appAlert('Subscription required', 'Scheduling requires an active subscription.');
         } else {
-          Alert.alert('Schedule failed', message);
+          appAlert('Schedule failed', message);
         }
         return;
       }
@@ -259,12 +259,12 @@ export default function ScheduleScreen() {
         metadata: { platform, post_id: response.post?.id },
       });
 
-      Alert.alert('Scheduled', postNow ? 'Post is publishing soon.' : 'Post scheduled successfully.', [
+      appAlert('Scheduled', postNow ? 'Post is publishing soon.' : 'Post scheduled successfully.', [
         { text: 'View posts', onPress: () => router.replace('/(tabs)/posts') },
         { text: 'OK', onPress: () => router.back() },
       ]);
     } catch (error) {
-      Alert.alert(
+      appAlert(
         'Error',
         error instanceof Error ? error.message : 'Something went wrong.',
       );

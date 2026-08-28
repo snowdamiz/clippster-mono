@@ -3,10 +3,11 @@ import { formatMetricCount, getSocialPlatformLabel } from '@clippster/api-client
 import { Ionicons } from '@expo/vector-icons';
 import * as WebBrowser from 'expo-web-browser';
 import { useState } from 'react';
-import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { tokens } from '@/theme/tokens';
+import { appAlert } from '@/lib/appAlert';
 
 interface PostAnalyticsSheetProps {
   visible: boolean;
@@ -89,7 +90,7 @@ export function PostAnalyticsSheet({
 
   async function handleCancel() {
     if (!post || !onCancel) return;
-    Alert.alert('Cancel post', 'Remove this post from the schedule?', [
+    appAlert('Cancel post', 'Remove this post from the schedule?', [
       { text: 'Keep', style: 'cancel' },
       {
         text: 'Cancel post',

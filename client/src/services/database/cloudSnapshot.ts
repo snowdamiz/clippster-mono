@@ -118,7 +118,7 @@ export async function buildProjectSnapshot(projectId: string): Promise<CloudProj
             duration: raw.duration ?? null,
             platform: raw.platform ?? null,
             source_url: raw.source_url ?? null,
-            cloud_media_asset_id: null,
+            cloud_media_asset_id: getCloudMediaAssetIdForSnapshot(projectId),
             local_file_hash: null,
             original_filename: raw.original_filename ?? null,
             thumbnail_path: raw.thumbnail_path ?? null,
@@ -133,6 +133,17 @@ export async function buildProjectSnapshot(projectId: string): Promise<CloudProj
     transcripts,
     clip_builds: clipBuilds,
   };
+}
+
+function getCloudMediaAssetIdForSnapshot(projectId: string): string | null {
+  try {
+    // Lazy require avoids circular import at module load.
+    // eslint-disable-next-line @typescript-eslint/no-require-imports
+    const { getCloudMediaAssetId } = require('../cloudSync') as typeof import('../cloudSync');
+    return getCloudMediaAssetId(projectId);
+  } catch {
+    return null;
+  }
 }
 
 export async function mergeSnapshotIntoDatabase(snapshot: CloudProjectSnapshot): Promise<void> {

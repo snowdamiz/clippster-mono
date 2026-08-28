@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
-import { Alert, Image, Linking, Pressable, ScrollView, Text, View } from 'react-native';
+import { Image, Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { CreditsRow } from '@/components/account/AccountSettingsPanel';
 import { MenuRow } from '@/components/navigation/MenuRow';
@@ -13,6 +13,7 @@ import { confirmAccountDeletion } from '@/lib/confirmAccountDeletion';
 import { getAppVersion } from '@/lib/config';
 import { clipperProfilesApi, authApi } from '@/services/api';
 import { tokens } from '@/theme/tokens';
+import { appAlert } from '@/lib/appAlert';
 
 const PRIVACY_URL = 'https://clippster.app/privacy';
 const TERMS_URL = 'https://clippster.app/terms';
@@ -55,7 +56,7 @@ export default function ProfileScreen() {
         try {
           const result = await authApi.deleteAccount();
           if (!result.success) {
-            Alert.alert('Error', result.error ?? result.message ?? 'Could not delete account');
+            appAlert('Error', result.error ?? result.message ?? 'Could not delete account');
             return;
           }
           await logout();

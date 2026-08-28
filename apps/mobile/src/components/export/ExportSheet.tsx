@@ -3,7 +3,8 @@ import { router } from 'expo-router';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import { useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
+import { appAlert } from '@/lib/appAlert';
 
 import type { ClipBuildProgress } from '@/services/clipBuildPipeline';
 import { cancelClipBuild } from '@/services/clipBuildPipeline';
@@ -41,15 +42,15 @@ export function ExportSheet({
     try {
       const permission = await MediaLibrary.requestPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission needed', 'Allow photo library access to save exports.');
+        appAlert('Permission needed', 'Allow photo library access to save exports.');
         return;
       }
       for (const path of completedPaths) {
         await MediaLibrary.saveToLibraryAsync(path);
       }
-      Alert.alert('Saved', 'Exported clip saved to your camera roll.');
+      appAlert('Saved', 'Exported clip saved to your camera roll.');
     } catch (error) {
-      Alert.alert('Save failed', error instanceof Error ? error.message : String(error));
+      appAlert('Save failed', error instanceof Error ? error.message : String(error));
     } finally {
       setSaving(false);
     }
@@ -59,12 +60,12 @@ export function ExportSheet({
     if (!completedPaths[0]) return;
     try {
       if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert('Unavailable', 'Sharing is not available on this device.');
+        appAlert('Unavailable', 'Sharing is not available on this device.');
         return;
       }
       await Sharing.shareAsync(completedPaths[0], { mimeType: 'video/mp4' });
     } catch (error) {
-      Alert.alert('Share failed', error instanceof Error ? error.message : String(error));
+      appAlert('Share failed', error instanceof Error ? error.message : String(error));
     }
   }
 

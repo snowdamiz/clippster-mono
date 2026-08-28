@@ -1,6 +1,9 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useMemo, useRef } from 'react';
 import { PanResponder, Pressable, ScrollView, Text, View } from 'react-native';
+import { FilmstripFrames } from '@/components/timeline/FilmstripFrames';
+import { PlayheadMarker } from '@/components/timeline/PlayheadMarker';
+import { TrimHandle } from '@/components/timeline/TrimHandle';
 import {
   clipTimelineRanges,
   timelineDuration,
@@ -9,9 +12,10 @@ import {
 } from '@/lib/timeline/editDocument';
 import { tokens } from '@/theme/tokens';
 
-const CLIP_COLORS = ['#334155', '#3f3f46', '#1e3a5f', '#3f2d4d', '#3f3a1d'];
-const MIN_PPS = 4;
-const MAX_PPS = 28;
+const MIN_PPS = 8;
+const MAX_PPS = 48;
+const VIDEO_HEIGHT = 64;
+const OVERLAY_HEIGHT = 28;
 
 interface FilmstripTimelineProps {
   doc: EditDocument;
@@ -57,7 +61,7 @@ export function FilmstripTimeline({
 }: FilmstripTimelineProps) {
   const ranges = clipTimelineRanges(doc);
   const total = Math.max(timelineDuration(doc), 1);
-  const width = Math.max(total * pixelsPerSecond, 120);
+  const width = Math.max(total * pixelsPerSecond, 160);
   const pinchStart = useRef(0);
   const ppsStart = useRef(pixelsPerSecond);
   const ppsRef = useRef(pixelsPerSecond);
@@ -70,9 +74,10 @@ export function FilmstripTimeline({
         onPanResponderMove: (event) => {
           const touches = event.nativeEvent.touches;
           if (touches.length < 2) return;
-          const dx = touches[0].pageX - touches[1].pageX;
-          const dy = touches[0].pageY - touches[1].pageY;
-          const distance = Math.hypot(dx, dy);
+          const distance = Math.hypot(
+            touches[0].pageX - touches[1].pageX,
+            touches[0].pageY - touches[1].pageY,
+          );
           if (pinchStart.current <= 0) {
             pinchStart.current = distance;
             ppsStart.current = ppsRef.current;
@@ -89,11 +94,16 @@ export function FilmstripTimeline({
     [onPixelsPerSecondChange],
   );
 
-  const ticks = [];
-  for (let t = 0; t <= total; t += 5) ticks.push(t);
+  const ticks: number[] = [];
+  const tickStep = pixelsPerSecond >= 20 ? 1 : 5;
+  for (let time = 0; time <= total; time += tickStep) ticks.push(time);
+  const hasImages = doc.images.length > 0;
+  const hasAudio = doc.audio.length > 0;
+  const trackStackHeight =
+    20 + VIDEO_HEIGHT + (hasImages ? OVERLAY_HEIGHT + 18 : 0) + (hasAudio ? OVERLAY_HEIGHT + 18 : 0);
 
   return (
-    <View className="border-t border-border bg-surfaceMuted">
+    <View className="border-t border-border bg-background">
       <ScrollView horizontal showsHorizontalScrollIndicator={false} bounces={false}>
         <View {...pinch.panHandlers} style={{ width: width + 32, paddingHorizontal: 16, paddingVertical: 8 }}>
           <Pressable
@@ -102,11 +112,11 @@ export function FilmstripTimeline({
             }}
             style={{ width }}
           >
-            <View style={{ width, height: 14, marginBottom: 4 }}>
+            <View style={{ width, height: 16, marginBottom: 4 }}>
               {ticks.map((tick) => (
                 <Text
                   key={tick}
-                  className="absolute text-[10px] text-muted"
+                  className="absolute text-[10px] tabular-nums text-muted"
                   style={{ left: tick * pixelsPerSecond }}
                 >
                   {formatTick(tick)}
@@ -114,10 +124,17 @@ export function FilmstripTimeline({
               ))}
             </View>
 
-            <TrackLabel label="Video" />
-            <View style={{ width, height: 56, marginBottom: 6 }}>
+            <View
+              style={{
+                width,
+                height: VIDEO_HEIGHT,
+                marginBottom: hasImages || hasAudio ? 8 : 0,
+                borderRadius: 10,
+                backgroundColor: '#0c0c0e',
+              }}
+            >
               {ranges.map((range, index) => {
-                const clipWidth = Math.max(24, (range.end - range.start) * pixelsPerSecond);
+                const clipWidth = Math.max(36, (range.end - range.start) * pixelsPerSecond);
                 const selected = range.clip.id === selectedId;
                 return (
                   <View
@@ -126,19 +143,21 @@ export function FilmstripTimeline({
                       position: 'absolute',
                       left: range.start * pixelsPerSecond,
                       width: clipWidth,
-                      height: 56,
+                      height: VIDEO_HEIGHT,
                       zIndex: index,
                     }}
                   >
                     {index > 0 ? (
                       <Pressable
                         onPress={() => onSelect(range.clip.id, 'cut')}
-                        className="absolute -left-3 top-4 z-10 h-6 w-6 items-center justify-center rounded-md bg-background"
+                        className="absolute -left-3 top-5 z-10 h-6 w-6 items-center justify-center rounded-md bg-background"
                       >
                         <Ionicons
                           name={transitionIcon(range.clip.transitionIn)}
                           size={12}
-                          color={range.clip.transitionIn === 'none' ? tokens.colors.muted : tokens.colors.accent}
+                          color={
+                            range.clip.transitionIn === 'none' ? tokens.colors.muted : tokens.colors.accent
+                          }
                         />
                       </Pressable>
                     ) : null}
@@ -146,103 +165,107 @@ export function FilmstripTimeline({
                       onPress={() => onSelect(range.clip.id, 'video')}
                       style={{
                         width: clipWidth,
-                        height: 56,
-                        borderRadius: 8,
+                        height: VIDEO_HEIGHT,
+                        borderRadius: 10,
                         overflow: 'hidden',
-                        borderWidth: selected ? 2 : 1,
-                        borderColor: selected ? tokens.colors.accent : tokens.colors.border,
-                        backgroundColor: CLIP_COLORS[index % CLIP_COLORS.length],
+                        borderWidth: selected ? 2 : 0,
+                        borderColor: '#ffffff',
                       }}
                     >
-                      <View className="absolute bottom-1 left-2 right-2">
+                      <FilmstripFrames
+                        path={range.clip.sourcePath}
+                        start={range.clip.sourceStart}
+                        end={range.clip.sourceEnd}
+                        width={clipWidth}
+                        height={VIDEO_HEIGHT}
+                      />
+                      <View className="absolute bottom-0 left-0 right-0 bg-black/55 px-2 py-1">
                         <Text className="text-[10px] font-semibold text-white" numberOfLines={1}>
                           {range.clip.muted ? 'Muted · ' : ''}
                           {range.clip.effect ? 'FX · ' : ''}
-                          {range.clip.label} · {formatTick(range.end - range.start)}
+                          {range.clip.label}
                         </Text>
                       </View>
-                      {selected ? (
-                        <>
-                          <TrimHandle
-                            edge="start"
-                            onMove={(dx) =>
-                              onTrimVideo(
-                                range.clip.id,
-                                'start',
-                                range.clip.sourceStart + (dx / pixelsPerSecond) * range.clip.speed,
-                              )
-                            }
-                            onEnd={onTrimEnd}
-                          />
-                          <TrimHandle
-                            edge="end"
-                            onMove={(dx) =>
-                              onTrimVideo(
-                                range.clip.id,
-                                'end',
-                                range.clip.sourceEnd + (dx / pixelsPerSecond) * range.clip.speed,
-                              )
-                            }
-                            onEnd={onTrimEnd}
-                          />
-                        </>
-                      ) : null}
                     </Pressable>
+                    {selected ? (
+                      <>
+                        <TrimHandle
+                          edge="start"
+                          onMove={(dx) =>
+                            onTrimVideo(
+                              range.clip.id,
+                              'start',
+                              range.clip.sourceStart + (dx / pixelsPerSecond) * range.clip.speed,
+                            )
+                          }
+                          onEnd={onTrimEnd}
+                        />
+                        <TrimHandle
+                          edge="end"
+                          onMove={(dx) =>
+                            onTrimVideo(
+                              range.clip.id,
+                              'end',
+                              range.clip.sourceEnd + (dx / pixelsPerSecond) * range.clip.speed,
+                            )
+                          }
+                          onEnd={onTrimEnd}
+                        />
+                      </>
+                    ) : null}
                   </View>
                 );
               })}
             </View>
 
-            <TrackLabel label="Images" />
-            <OverlayTrack
-              width={width}
-              pixelsPerSecond={pixelsPerSecond}
-              items={doc.images.map((item) => ({
-                id: item.id,
-                start: item.timelineStart,
-                duration: item.duration,
-                label: item.label,
-                color: '#6d28d9',
-              }))}
-              selectedId={selectedId}
-              onSelect={(id) => onSelect(id, 'image')}
-            />
+            {hasImages ? (
+              <>
+                <Text className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                  Images
+                </Text>
+                <OverlayTrack
+                  width={width}
+                  pixelsPerSecond={pixelsPerSecond}
+                  items={doc.images.map((item) => ({
+                    id: item.id,
+                    start: item.timelineStart,
+                    duration: item.duration,
+                    label: item.label,
+                    color: '#6d28d9',
+                  }))}
+                  selectedId={selectedId}
+                  onSelect={(id) => onSelect(id, 'image')}
+                />
+              </>
+            ) : null}
 
-            <TrackLabel label="Music" />
-            <OverlayTrack
-              width={width}
-              pixelsPerSecond={pixelsPerSecond}
-              items={doc.audio.map((item) => ({
-                id: item.id,
-                start: item.timelineStart,
-                duration: item.sourceEnd - item.sourceStart,
-                label: item.label,
-                color: '#166534',
-              }))}
-              selectedId={selectedId}
-              onSelect={(id) => onSelect(id, 'audio')}
-            />
+            {hasAudio ? (
+              <>
+                <Text className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">
+                  Music
+                </Text>
+                <OverlayTrack
+                  width={width}
+                  pixelsPerSecond={pixelsPerSecond}
+                  items={doc.audio.map((item) => ({
+                    id: item.id,
+                    start: item.timelineStart,
+                    duration: item.sourceEnd - item.sourceStart,
+                    label: item.label,
+                    color: '#166534',
+                  }))}
+                  selectedId={selectedId}
+                  onSelect={(id) => onSelect(id, 'audio')}
+                />
+              </>
+            ) : null}
 
-            <View
-              pointerEvents="none"
-              style={{
-                position: 'absolute',
-                top: 8,
-                bottom: 8,
-                left: playhead * pixelsPerSecond,
-                width: 2,
-                backgroundColor: tokens.colors.accent,
-              }}
-            />
+            <PlayheadMarker x={playhead * pixelsPerSecond} height={trackStackHeight} />
           </Pressable>
         </View>
       </ScrollView>
     </View>
   );
-}
-
-function TrackLabel({ label }: { label: string }) {
-  return <Text className="mb-1 text-[10px] font-semibold uppercase tracking-wide text-muted">{label}</Text>;
 }
 
 function OverlayTrack({
@@ -259,7 +282,7 @@ function OverlayTrack({
   onSelect: (id: string) => void;
 }) {
   return (
-    <View style={{ width, height: 28, marginBottom: 6, borderRadius: 6, backgroundColor: '#0f0f12' }}>
+    <View style={{ width, height: OVERLAY_HEIGHT, marginBottom: 6, borderRadius: 8, backgroundColor: '#0c0c0e' }}>
       {items.map((item) => (
         <Pressable
           key={item.id}
@@ -270,7 +293,7 @@ function OverlayTrack({
             width: Math.max(16, item.duration * pixelsPerSecond),
             top: 3,
             bottom: 3,
-            borderRadius: 4,
+            borderRadius: 6,
             backgroundColor: item.color,
             borderWidth: selectedId === item.id ? 2 : 0,
             borderColor: '#ffffff',
@@ -283,54 +306,6 @@ function OverlayTrack({
           </Text>
         </Pressable>
       ))}
-    </View>
-  );
-}
-
-function TrimHandle({
-  edge,
-  onMove,
-  onEnd,
-}: {
-  edge: 'start' | 'end';
-  onMove: (dx: number) => void;
-  onEnd?: () => void;
-}) {
-  const lastX = useRef(0);
-  const pan = useMemo(
-    () =>
-      PanResponder.create({
-        onStartShouldSetPanResponder: () => true,
-        onMoveShouldSetPanResponder: () => true,
-        onPanResponderGrant: (event) => {
-          lastX.current = event.nativeEvent.pageX;
-        },
-        onPanResponderMove: (event) => {
-          const x = event.nativeEvent.pageX;
-          onMove(x - lastX.current);
-          lastX.current = x;
-        },
-        onPanResponderRelease: () => onEnd?.(),
-        onPanResponderTerminate: () => onEnd?.(),
-      }),
-    [onMove, onEnd],
-  );
-
-  return (
-    <View
-      {...pan.panHandlers}
-      style={{
-        position: 'absolute',
-        top: 0,
-        bottom: 0,
-        [edge === 'start' ? 'left' : 'right']: 0,
-        width: 14,
-        backgroundColor: tokens.colors.accent,
-        justifyContent: 'center',
-        alignItems: 'center',
-      }}
-    >
-      <View className="h-6 w-0.5 rounded-full bg-white" />
     </View>
   );
 }

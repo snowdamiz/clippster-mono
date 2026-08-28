@@ -1,9 +1,10 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { Alert, Modal, Pressable, ScrollView, Text, View } from 'react-native';
+import { Modal, Pressable, ScrollView, Text, View } from 'react-native';
 import type { GateActionType } from '@/lib/subscriptionAccess';
 import { useAccount } from '@/context/AccountContext';
 import { tokens } from '@/theme/tokens';
+import { appAlert } from '@/lib/appAlert';
 
 function headerForType(type: GateActionType): {
   title: string;
@@ -45,7 +46,7 @@ export function SubscriptionGateSheet() {
   async function handleSubscribe(tierId: string) {
     const result = await subscribeToTier(tierId);
     if (!result.success) {
-      Alert.alert('Checkout failed', result.error ?? 'Could not open checkout');
+      appAlert('Checkout failed', result.error ?? 'Could not open checkout');
       return;
     }
     if (result.outcome === 'paid') {

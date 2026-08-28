@@ -1,5 +1,6 @@
 import type { Clip, ClipSegment, ClipVersion, Project, RawVideo, Transcript } from '@clippster/shared-types';
-import { generateId, getDatabase, timestamp } from './index';
+import { generateClipThumbnailAtTimestamp } from '@/services/clipThumbnailGeneration';
+import { generateId, getDatabase, timestamp, touchProject } from './index';
 
 export type { RawVideo, Clip, ClipVersion, ClipSegment, Transcript };
 
@@ -202,27 +203,52 @@ export async function persistDetectedClips(
     [sessionId, projectId, prompt, 'claude-3.5-sonnet-chunked', clips.length, now],
   );
 
-  await deleteClipsByProjectId(projectId);
+  if (clips.length === 0) {
+    await touchProject(projectId);
+    return sessionId;
+  }
 
-  for (const [index, clip] of clips.entries()) {
+  const existing = await getClipsByProjectId(projectId);
+  const existingKeys = new Set(
+    existing.map((clip) => `${(clip.start_time ?? 0).toFixed(2)}-${(clip.end_time ?? 0).toFixed(2)}`),
+  );
+  let orderIndex = existing.length;
+
+  for (const clip of clips) {
+    const rangeKey = `${clip.startTime.toFixed(2)}-${clip.endTime.toFixed(2)}`;
+    if (existingKeys.has(rangeKey)) continue;
+    existingKeys.add(rangeKey);
+
     const clipId = generateId();
     const versionId = generateId();
     const duration = clip.endTime - clip.startTime;
+    const midpoint = clip.startTime + duration / 2;
+    let builtThumbnailPath: string | null = null;
+    try {
+      builtThumbnailPath = await generateClipThumbnailAtTimestamp(
+        videoFilePath,
+        midpoint,
+        clipId,
+      );
+    } catch (error) {
+      console.warn('[Clips] detection thumbnail failed', clipId, error);
+    }
 
     await db.runAsync(
       `INSERT INTO clips (
-        id, project_id, name, file_path, duration, start_time, end_time,
+        id, project_id, name, file_path, built_thumbnail_path, duration, start_time, end_time,
         order_index, current_version_id, detection_session_id, created_at, updated_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         clipId,
         projectId,
         clip.name,
         videoFilePath,
+        builtThumbnailPath,
         duration,
         clip.startTime,
         clip.endTime,
-        index,
+        orderIndex,
         versionId,
         sessionId,
         now,
@@ -234,8 +260,8 @@ export async function persistDetectedClips(
       `INSERT INTO clip_versions (
         id, clip_id, session_id, version_number, name, description,
         start_time, end_time, confidence_score, virality_score,
-        change_type, created_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        detection_reason, change_type, created_at
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         versionId,
         clipId,
@@ -247,6 +273,7 @@ export async function persistDetectedClips(
         clip.endTime,
         clip.confidenceScore ?? null,
         clip.viralityScore ?? null,
+        clip.description ?? null,
         'detected',
         now,
       ],
@@ -278,8 +305,10 @@ export async function persistDetectedClips(
         ],
       );
     }
+    orderIndex += 1;
   }
 
+  await touchProject(projectId);
   return sessionId;
 }
 
@@ -327,17 +356,25 @@ export async function addManualClip(
   const existing = await getClipsByProjectId(projectId);
   const orderIndex = existing.length;
   const clipName = name?.trim() || `Clip ${orderIndex + 1}`;
+  const midpoint = startTime + duration / 2;
+  let builtThumbnailPath: string | null = null;
+  try {
+    builtThumbnailPath = await generateClipThumbnailAtTimestamp(videoFilePath, midpoint, clipId);
+  } catch (error) {
+    console.warn('[Clips] manual clip thumbnail failed', clipId, error);
+  }
 
   await db.runAsync(
     `INSERT INTO clips (
-      id, project_id, name, file_path, duration, start_time, end_time,
+      id, project_id, name, file_path, built_thumbnail_path, duration, start_time, end_time,
       order_index, current_version_id, detection_session_id, created_at, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     [
       clipId,
       projectId,
       clipName,
       videoFilePath,
+      builtThumbnailPath,
       duration,
       startTime,
       endTime,
@@ -363,6 +400,7 @@ export async function addManualClip(
     [generateId(), versionId, 0, startTime, endTime, duration, null, now],
   );
 
+  await touchProject(projectId);
   return clipId;
 }
 
@@ -377,6 +415,84 @@ export async function getClipsByProjectId(projectId: string): Promise<Clip[]> {
      ORDER BY COALESCE(order_index, 999999), start_time ASC`,
     [projectId],
   );
+}
+
+export interface ProjectClipRow {
+  id: string;
+  name: string | null;
+  start_time: number | null;
+  end_time: number | null;
+  duration: number | null;
+  virality_score: number | null;
+  confidence_score: number | null;
+  detection_reason: string | null;
+  built_thumbnail_path: string | null;
+  thumbnail_path: string | null;
+}
+
+export async function updateClipBuiltThumbnail(clipId: string, thumbnailPath: string): Promise<void> {
+  const db = getDatabase();
+  const clip = await db.getFirstAsync<{ project_id: string | null }>(
+    'SELECT project_id FROM clips WHERE id = ?',
+    [clipId],
+  );
+  await db.runAsync(
+    'UPDATE clips SET built_thumbnail_path = ?, updated_at = ? WHERE id = ?',
+    [thumbnailPath, timestamp(), clipId],
+  );
+  if (clip?.project_id) await touchProject(clip.project_id);
+}
+
+export async function getProjectClipRows(projectId: string): Promise<ProjectClipRow[]> {
+  const db = getDatabase();
+  return db.getAllAsync<ProjectClipRow>(
+    `SELECT
+        c.id,
+        c.name,
+        c.start_time,
+        c.end_time,
+        c.duration,
+        cv.virality_score,
+        cv.confidence_score,
+        COALESCE(cv.detection_reason, cv.description) AS detection_reason,
+        c.built_thumbnail_path,
+        COALESCE(
+          c.built_thumbnail_path,
+          (
+            SELECT cb.thumbnail_path
+            FROM clip_builds cb
+            WHERE cb.clip_id = c.id
+              AND cb.status = 'completed'
+              AND cb.thumbnail_path IS NOT NULL
+            ORDER BY cb.build_number DESC
+            LIMIT 1
+          )
+        ) AS thumbnail_path
+     FROM clips c
+     LEFT JOIN clip_versions cv ON cv.id = c.current_version_id
+     WHERE c.project_id = ?
+     ORDER BY COALESCE(c.order_index, 999999), c.start_time ASC`,
+    [projectId],
+  );
+}
+
+export async function deleteClip(clipId: string): Promise<void> {
+  const db = getDatabase();
+  const clip = await db.getFirstAsync<{ project_id: string | null }>(
+    'SELECT project_id FROM clips WHERE id = ?',
+    [clipId],
+  );
+  const versions = await db.getAllAsync<{ id: string }>(
+    'SELECT id FROM clip_versions WHERE clip_id = ?',
+    [clipId],
+  );
+  for (const version of versions) {
+    await db.runAsync('DELETE FROM clip_segments WHERE clip_version_id = ?', [version.id]);
+  }
+  await db.runAsync('DELETE FROM clip_builds WHERE clip_id = ?', [clipId]);
+  await db.runAsync('DELETE FROM clip_versions WHERE clip_id = ?', [clipId]);
+  await db.runAsync('DELETE FROM clips WHERE id = ?', [clipId]);
+  if (clip?.project_id) await touchProject(clip.project_id);
 }
 
 export async function getAllClips(): Promise<Clip[]> {

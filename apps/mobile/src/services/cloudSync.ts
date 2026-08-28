@@ -22,6 +22,12 @@ import {
   mergeSnapshotIntoDatabase,
 } from './database/snapshot';
 
+/**
+ * Cross-device cloud sync is disabled. Desktop and mobile are independent apps.
+ * Flip this when implementing https://github.com/snowdamiz/clippster-mono/issues/667
+ */
+export const CLOUD_SYNC_ENABLED = false;
+
 const DEVICE_ID_KEY = 'cloud_sync_device_id';
 const SYNC_TOKEN_KEY = 'cloud_sync_token';
 const PENDING_PUSH_KEY = 'cloud_sync_pending_push';
@@ -96,6 +102,7 @@ async function clearPendingPush(projectId: string): Promise<void> {
 }
 
 export async function getProjectSyncStatuses(): Promise<Record<string, CloudSyncMeta['sync_status']>> {
+  if (!CLOUD_SYNC_ENABLED) return {};
   const rows = await getAllCloudSyncMeta();
   const map: Record<string, CloudSyncMeta['sync_status']> = {};
   for (const row of rows) {
@@ -105,11 +112,13 @@ export async function getProjectSyncStatuses(): Promise<Record<string, CloudSync
 }
 
 export async function registerDevice(): Promise<void> {
+  if (!CLOUD_SYNC_ENABLED) return;
   const deviceId = await getDeviceId();
   await cloudApi.registerDevice(deviceId, Platform.OS, `${Platform.OS} device`);
 }
 
 export async function pushProject(projectId: string, force = false): Promise<boolean> {
+  if (!CLOUD_SYNC_ENABLED) return false;
   const snapshot = await buildProjectSnapshot(projectId);
   if (!snapshot) return false;
 
@@ -164,6 +173,7 @@ export async function pushProject(projectId: string, force = false): Promise<boo
 }
 
 export async function ensurePendingCloudVodDownloaded(projectId: string): Promise<void> {
+  if (!CLOUD_SYNC_ENABLED) return;
   const raw = await getRawVideoByProjectId(projectId);
   if (!raw?.file_path?.startsWith('pending://')) return;
 
@@ -183,6 +193,7 @@ export async function ensurePendingCloudVodDownloaded(projectId: string): Promis
 }
 
 export async function pullProject(projectId: string): Promise<boolean> {
+  if (!CLOUD_SYNC_ENABLED) return false;
   const response = await cloudApi.getProject(projectId);
   if (!response.success || !response.snapshot) return false;
   await mergeSnapshotIntoDatabase(response.snapshot);
@@ -192,6 +203,7 @@ export async function pullProject(projectId: string): Promise<boolean> {
 }
 
 export async function syncAllProjects(): Promise<void> {
+  if (!CLOUD_SYNC_ENABLED) return;
   if (syncInProgress) return;
   if (!(await canSyncOverCurrentNetwork())) return;
 
@@ -233,9 +245,26 @@ export async function syncAllProjects(): Promise<void> {
 }
 
 export async function queueProjectSync(projectId: string): Promise<void> {
+  if (!CLOUD_SYNC_ENABLED) return;
   await addPendingPush(projectId);
   await markProjectPending(projectId);
   void syncAllProjects();
+}
+
+/**
+ * User-initiated delete: soft-delete on the server (so sync won't restore it),
+ * then wipe local DB rows + on-disk media.
+ */
+export async function deleteProjectEverywhere(projectId: string): Promise<void> {
+  if (CLOUD_SYNC_ENABLED) {
+    try {
+      await cloudApi.deleteProject(projectId);
+    } catch (error) {
+      console.warn('[CloudSync] cloud delete failed; local delete continues', error);
+    }
+    await clearPendingPush(projectId);
+  }
+  await deleteProject(projectId);
 }
 
 export async function getStorageQuota() {

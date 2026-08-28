@@ -1,158 +1,133 @@
-import { useEventListener } from 'expo';
 import { Ionicons } from '@expo/vector-icons';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   Text,
-  useWindowDimensions,
   View,
 } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { ClipActionSheet } from '@/components/workspace/ClipActionSheet';
 import { ClipDetectionSheet, type ClipDetectionPlan } from '@/components/editor/ClipDetectionSheet';
-import { ClipMoreSheet } from '@/components/editor/ClipMoreSheet';
-import { ClipTrimBar } from '@/components/editor/ClipTrimBar';
-import type { EditorToolId } from '@/components/editor/ClipMoreSheet';
-import { VideoPlayerControls } from '@/components/editor/VideoPlayerControls';
-import { ExportSheet } from '@/components/export/ExportSheet';
-import { SubtitleOverlay } from '@/components/subtitles/SubtitleOverlay';
-import { SubtitleSheet } from '@/components/subtitles/SubtitleSheet';
-import { TextBoxOverlay } from '@/components/textbox/TextBoxOverlay';
-import { TextBoxSheet } from '@/components/textbox/TextBoxSheet';
-import { SegmentTimeline } from '@/components/workspace/SegmentTimeline';
-import type { Clip, ClipSegment, Project } from '@clippster/shared-types';
-import type { ClipTextBoxState, SubtitleSettings } from '@clippster/shared-types';
-import { upsertClipTextPerRatioGeometry } from '@clippster/shared-types';
+import { ClipListCard } from '@/components/workspace/ClipListCard';
+import { VodPreview } from '@/components/workspace/VodPreview';
+import { ScreenHeader } from '@/components/ScreenHeader';
+import { Button } from '@/components/ui/button';
+import type { Project } from '@clippster/shared-types';
 import { AiPipeline, type AiPipelineProgress } from '@/services/aiPipeline';
 import {
-  buildClipExport,
-  cancelClipBuild,
-  type ClipBuildProgress,
-} from '@/services/clipBuildPipeline';
-import { loadEditDocument } from '@/lib/timeline/editStorage';
-import { buildTimelineExport } from '@/services/timelineExport';
-import { transcriptWordsFromRaw } from '@/lib/subtitleVisibleWords';
-import {
   addManualClip,
-  getClipSegmentsByClipId,
-  getClipSubtitleSettings,
-  getClipTextOverlay,
+  deleteClip,
   getClipsByProjectId,
   getProject,
+  getProjectClipRows,
   getRawVideoByProjectId,
   getTranscriptByProjectId,
+  updateClipBuiltThumbnail,
   updateClipSubtitleSettings,
-  updateClipTextOverlay,
-  updateClipTimeRange,
+  updateRawVideoFilePath,
+  type ProjectClipRow,
 } from '@/services/database';
+import { generateMissingClipThumbnails } from '@/services/clipThumbnailGeneration';
+import { ensurePlayableVideo } from '@/services/ensurePlayableVideo';
 import { useAccount } from '@/context/AccountContext';
 import { settingsFromPresetId } from '@/lib/captionPresets';
-import { transcriptWordsForClip } from '@/lib/subtitleVisibleWords';
 import { tokens } from '@/theme/tokens';
+import { appAlert } from '@/lib/appAlert';
 
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = Math.floor(seconds % 60);
-  return `${mins}:${secs.toString().padStart(2, '0')}`;
-}
-
-function ProjectWorkspace({
-  projectId,
-  project,
-  videoPath,
-  clips,
-  hasTranscript,
-  transcriptJson,
-  openDetectInitially,
-  onRefresh,
-}: {
-  projectId: string;
-  project: Project;
-  videoPath: string;
-  clips: Clip[];
-  hasTranscript: boolean;
-  transcriptJson: string | null;
-  openDetectInitially?: boolean;
-  onRefresh: () => Promise<void>;
-}) {
+export default function ProjectDetailScreen() {
   const router = useRouter();
   const { requireSubscription } = useAccount();
-  const [activeClipId, setActiveClipId] = useState<string | null>(clips[0]?.id ?? null);
-  const [segments, setSegments] = useState<ClipSegment[]>([]);
+  const { id, detect } = useLocalSearchParams<{ id: string; detect?: string }>();
+  const [project, setProject] = useState<Project | null>(null);
+  const [videoPath, setVideoPath] = useState<string | null>(null);
+  const [videoDuration, setVideoDuration] = useState(0);
+  const [projectThumbnail, setProjectThumbnail] = useState<string | null>(null);
+  const [clips, setClips] = useState<ProjectClipRow[]>([]);
+  const [hasTranscript, setHasTranscript] = useState(false);
+  const [loading, setLoading] = useState(true);
   const [aiProgress, setAiProgress] = useState<AiPipelineProgress | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
-  const [subtitleSettings, setSubtitleSettings] = useState<SubtitleSettings | null>(null);
-  const [textBox, setTextBox] = useState<ClipTextBoxState | null>(null);
-  const [showSubtitleSheet, setShowSubtitleSheet] = useState(false);
-  const [showTextBoxSheet, setShowTextBoxSheet] = useState(false);
-  const [showExportSheet, setShowExportSheet] = useState(false);
-  const [exportProgress, setExportProgress] = useState<ClipBuildProgress | null>(null);
-  const [previewRatio, setPreviewRatio] = useState<'9:16' | '16:9'>('16:9');
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const segmentEndRef = useRef<number | null>(null);
-  const [playheadTime, setPlayheadTime] = useState(0);
   const [showDetectSheet, setShowDetectSheet] = useState(false);
-  const [showMoreSheet, setShowMoreSheet] = useState(false);
-  const [trimStart, setTrimStart] = useState(0);
-  const [trimEnd, setTrimEnd] = useState(30);
-  const trimTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [menuClip, setMenuClip] = useState<ProjectClipRow | null>(null);
+  const [playheadTime, setPlayheadTime] = useState(0);
+  const aiPipelineRef = useRef<AiPipeline | null>(null);
+  const openedDetectRef = useRef(false);
+  const thumbGenRef = useRef(false);
 
-  const activeClip = useMemo(
-    () => clips.find((c) => c.id === activeClipId) ?? null,
-    [clips, activeClipId],
+  const loadWorkspace = useCallback(async (options?: { silent?: boolean }) => {
+    if (!id) return;
+    if (!options?.silent) setLoading(true);
+    try {
+      const [projectRow, rawVideo, transcript] = await Promise.all([
+        getProject(id),
+        getRawVideoByProjectId(id),
+        getTranscriptByProjectId(id),
+      ]);
+      let clipRows: ProjectClipRow[] = [];
+      try {
+        clipRows = await getProjectClipRows(id);
+      } catch (error) {
+        console.warn('[Project] getProjectClipRows failed, falling back', error);
+        const fallback = await getClipsByProjectId(id);
+        clipRows = fallback.map((clip) => ({
+          id: clip.id,
+          name: clip.name,
+          start_time: clip.start_time,
+          end_time: clip.end_time,
+          duration: clip.duration,
+          virality_score: null,
+          confidence_score: null,
+          detection_reason: null,
+          built_thumbnail_path: null,
+          thumbnail_path: null,
+        }));
+      }
+      let vodPath = rawVideo?.file_path ?? null;
+      if (vodPath && !vodPath.startsWith('pending://')) {
+        const playable = await ensurePlayableVideo(vodPath);
+        if (playable !== vodPath) {
+          await updateRawVideoFilePath(id, playable);
+          vodPath = playable;
+        }
+      }
+      setProject(projectRow);
+      setVideoPath(vodPath);
+      setVideoDuration(rawVideo?.duration ?? 0);
+      setProjectThumbnail(rawVideo?.thumbnail_path ?? projectRow?.thumbnail_path ?? null);
+      setHasTranscript(!!transcript);
+      setClips(clipRows);
+
+      if (vodPath && !vodPath.startsWith('pending://') && clipRows.some((c) => !c.built_thumbnail_path)) {
+        void (async () => {
+          if (thumbGenRef.current) return;
+          thumbGenRef.current = true;
+          try {
+            const saved = await generateMissingClipThumbnails(vodPath, clipRows, async (clipId, path) => {
+              await updateClipBuiltThumbnail(clipId, path);
+            });
+            if (saved > 0) {
+              const refreshed = await getProjectClipRows(id);
+              setClips(refreshed);
+            }
+          } finally {
+            thumbGenRef.current = false;
+          }
+        })();
+      }
+    } catch (error) {
+      console.warn('[Project] failed to load workspace', error);
+    } finally {
+      setLoading(false);
+    }
+  }, [id]);
+
+  useFocusEffect(
+    useCallback(() => {
+      void loadWorkspace({ silent: true });
+    }, [loadWorkspace]),
   );
-
-  const player = useVideoPlayer(videoPath, (instance) => {
-    instance.timeUpdateEventInterval = 0.25;
-  });
-
-  useEventListener(player, 'timeUpdate', (payload: { currentTime: number }) => {
-    setPlayheadTime(payload.currentTime);
-    const end = segmentEndRef.current;
-    if (end != null && payload.currentTime >= end) {
-      player.pause();
-      segmentEndRef.current = null;
-    }
-  });
-
-  const [, setPlaybackEpoch] = useState(0);
-  useEventListener(player, 'playingChange', () => {
-    setPlaybackEpoch((value) => value + 1);
-  });
-  useEventListener(player, 'volumeChange', () => {
-    setPlaybackEpoch((value) => value + 1);
-  });
-
-  const loadClipData = useCallback(async (clipId: string) => {
-    const [segs, subs, text] = await Promise.all([
-      getClipSegmentsByClipId(clipId),
-      getClipSubtitleSettings(clipId),
-      getClipTextOverlay(clipId),
-    ]);
-    setSegments(segs);
-    setSubtitleSettings(subs);
-    setTextBox(text);
-  }, []);
-
-  useEffect(() => {
-    if (activeClipId) void loadClipData(activeClipId);
-  }, [activeClipId, loadClipData]);
-
-  useEffect(() => {
-    if (!activeClip) return;
-    setTrimStart(activeClip.start_time ?? 0);
-    setTrimEnd(activeClip.end_time ?? (activeClip.start_time ?? 0) + 30);
-  }, [activeClip?.id]);
-
-  useEffect(() => {
-    if (!activeClipId && clips[0]?.id) {
-      setActiveClipId(clips[0].id);
-    }
-  }, [clips, activeClipId]);
 
   const openDetectSheet = useCallback(async () => {
     if (aiBusy) return;
@@ -166,36 +141,13 @@ function ProjectWorkspace({
   }, [aiBusy, requireSubscription]);
 
   useEffect(() => {
-    if (!openDetectInitially) return;
+    if (detect !== '1' || openedDetectRef.current || loading || !videoPath) return;
+    openedDetectRef.current = true;
     void openDetectSheet();
-  }, [openDetectInitially, openDetectSheet]);
-
-  async function runTranscribe() {
-    const allowed = await requireSubscription({
-      context: 'Transcribe VOD',
-      type: 'ai',
-      aiOnly: true,
-    });
-    if (!allowed) return;
-
-    setAiBusy(true);
-    const pipeline = new AiPipeline(setAiProgress);
-    try {
-      await pipeline.transcribeProject(projectId);
-      await onRefresh();
-    } catch (error) {
-      setAiProgress({
-        stage: 'error',
-        progress: 0,
-        message: 'Transcription failed',
-        error: error instanceof Error ? error.message : String(error),
-      });
-    } finally {
-      setAiBusy(false);
-    }
-  }
+  }, [detect, loading, openDetectSheet, videoPath]);
 
   async function confirmDetect(plan: ClipDetectionPlan) {
+    if (!id) return;
     setShowDetectSheet(false);
     setAiBusy(true);
     setAiProgress({
@@ -216,20 +168,21 @@ function ProjectWorkspace({
     }
 
     const pipeline = new AiPipeline(setAiProgress);
+    aiPipelineRef.current = pipeline;
     try {
       if (!hasTranscript) {
-        await pipeline.transcribeProject(projectId);
-        await onRefresh();
+        await pipeline.transcribeProject(id);
+        await loadWorkspace({ silent: true });
       }
-      const found = await pipeline.detectClips(projectId, {
+      const found = await pipeline.detectClips(id, {
         prompt: plan.prompt.content,
         startTime: plan.startTime,
         endTime: plan.endTime,
       });
-      await onRefresh();
+      await loadWorkspace({ silent: true });
 
       if (plan.subtitlesEnabled) {
-        const detected = await getClipsByProjectId(projectId);
+        const detected = await getProjectClipRows(id);
         const settings = settingsFromPresetId(plan.subtitlePresetId);
         settings.enabled = true;
         await Promise.all(
@@ -237,455 +190,250 @@ function ProjectWorkspace({
             updateClipSubtitleSettings(clip.id, true, plan.subtitlePresetId, settings),
           ),
         );
-        if (activeClipId) {
-          setSubtitleSettings(settings);
-        }
       }
       if (found === 0) {
-        Alert.alert('No clips found', 'Try a different prompt or a wider time range.');
+        appAlert('No clips found', 'Try a different prompt or a wider time range.');
       }
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
-      setAiProgress({
-        stage: 'error',
-        progress: 0,
-        message: 'Detection failed',
-        error: message,
-      });
-      Alert.alert('Detection failed', message);
+      if (message === 'Cancelled') {
+        setAiProgress({ stage: 'idle', progress: 0, message: 'Cancelled' });
+      } else {
+        setAiProgress({
+          stage: 'error',
+          progress: 0,
+          message: 'Detection failed',
+          error: message,
+        });
+        appAlert('Detection failed', message);
+      }
     } finally {
+      aiPipelineRef.current = null;
       setAiBusy(false);
     }
   }
 
-  async function createClipAtPlayhead() {
-    const duration = player.duration && player.duration > 0 ? player.duration : playheadTime + 30;
+  function cancelAi() {
+    aiPipelineRef.current?.cancel();
+    setAiProgress({ stage: 'idle', progress: 0, message: 'Cancelling…' });
+  }
+
+  async function createClip() {
+    if (!id || !videoPath) return;
+    const duration = videoDuration > 0 ? videoDuration : playheadTime + 30;
     const start = Math.max(0, playheadTime);
     const end = Math.min(duration, start + 30);
     try {
-      const clipId = await addManualClip(
-        projectId,
-        videoPath,
-        start,
-        end > start ? end : start + 30,
-      );
-      await onRefresh();
-      setActiveClipId(clipId);
-      setTrimStart(start);
-      setTrimEnd(end > start ? end : start + 30);
-      segmentEndRef.current = null;
-      player.currentTime = start;
-      player.play();
+      const clipId = await addManualClip(id, videoPath, start, end > start ? end : start + 30);
+      const { queueProjectSync } = await import('@/services/cloudSync');
+      void queueProjectSync(id);
+      await loadWorkspace({ silent: true });
+      router.push({ pathname: '/clip/[id]', params: { id: clipId } });
     } catch (error) {
-      Alert.alert('Could not create clip', error instanceof Error ? error.message : String(error));
+      appAlert('Could not create clip', error instanceof Error ? error.message : String(error));
     }
   }
 
-  function persistTrim(start: number, end: number) {
-    if (!activeClipId) return;
-    if (trimTimerRef.current) clearTimeout(trimTimerRef.current);
-    trimTimerRef.current = setTimeout(() => {
-      void (async () => {
-        await updateClipTimeRange(activeClipId, start, end);
-        await onRefresh();
-        await loadClipData(activeClipId);
-      })();
-    }, 250);
+  function openClip(clipId: string) {
+    router.push({ pathname: '/clip/[id]', params: { id: clipId } });
   }
 
-  function playClip(clip: Clip) {
-    setActiveClipId(clip.id);
-    if (clip.start_time == null || clip.end_time == null) return;
-    segmentEndRef.current = clip.end_time;
-    player.currentTime = clip.start_time;
-    player.play();
-  }
-
-  const clipStart = activeClip?.start_time ?? 0;
-  const clipEnd = activeClip?.end_time ?? clipStart;
-  const clipRelativeTime = playheadTime - clipStart;
-
-  const subtitleWords = useMemo(() => {
-    if (!hasTranscript || !activeClip || !transcriptJson) return [];
-    return transcriptWordsForClip(transcriptJson, clipStart, clipEnd);
-  }, [hasTranscript, activeClip, transcriptJson, clipStart, clipEnd]);
-
-  const landscapeWidth = windowWidth;
-  const landscapeHeight = landscapeWidth * (9 / 16);
-  const portraitHeight = Math.min(windowHeight * 0.42, landscapeHeight + 24);
-  const portraitWidth = portraitHeight * (9 / 16);
-  const videoWidth = previewRatio === '9:16' ? portraitWidth : landscapeWidth;
-  const videoHeight = previewRatio === '9:16' ? portraitHeight : landscapeHeight;
-
-  async function handleExport(options: {
-    ratios: ('9:16' | '16:9')[];
-    remuxOnly: boolean;
-  }) {
-    if (!activeClipId) return;
-    setExportProgress({ state: 'building', progress: 0, message: 'Starting...' });
-    try {
-      const timeline =
-        (await loadEditDocument('clip', activeClipId)) ??
-        (await loadEditDocument('project', projectId));
-      if (timeline && timeline.videos.length > 0 && !options.remuxOnly) {
-        const words = transcriptJson ? transcriptWordsFromRaw(transcriptJson) : [];
-        await buildTimelineExport(timeline, {
-          ratios: options.ratios,
-          wordsBySourcePath: videoPath ? { [videoPath]: words } : {},
-          clipId: activeClipId,
-          projectId,
-          onProgress: setExportProgress,
-        });
-      } else {
-        await buildClipExport(activeClipId, projectId, {
-          ratios: options.ratios,
-          remuxOnly: options.remuxOnly,
-          onProgress: setExportProgress,
-        });
-      }
-    } catch (error) {
-      if ((error as Error).message !== 'Export cancelled') {
-        Alert.alert('Export failed', error instanceof Error ? error.message : String(error));
-      }
-    }
-  }
-
-  function handleToolPress(tool: EditorToolId) {
-    switch (tool) {
-      case 'edit':
-        if (activeClipId) {
-          router.push({ pathname: '/edit/[kind]/[id]', params: { kind: 'clip', id: activeClipId } });
-        }
-        break;
-      case 'transcribe':
-        void runTranscribe();
-        break;
-      case 'framing':
-        router.push(`/framing/${projectId}`);
-        break;
-      case 'subtitles':
-        setShowSubtitleSheet(true);
-        break;
-      case 'text':
-        setShowTextBoxSheet(true);
-        break;
-      case 'ratio-9-16':
-        setPreviewRatio('9:16');
-        break;
-      case 'ratio-16-9':
-        setPreviewRatio('16:9');
-        break;
-    }
-  }
-
-  return (
-    <View className="flex-1 bg-background">
-      <SafeAreaView edges={['top']} className="border-b border-border bg-background">
-        <View className="flex-row items-center justify-between px-4 py-2">
-          <Pressable onPress={() => router.back()} className="py-1">
-            <Text className="text-sm font-medium text-accent">← Back</Text>
-          </Pressable>
-          <Text className="flex-1 text-center text-base font-semibold text-foreground" numberOfLines={1}>
-            {project.name}
-          </Text>
-          <Pressable
-            onPress={() => setShowExportSheet(true)}
-            disabled={!activeClipId}
-            className={`rounded-lg px-3 py-1.5 ${activeClipId ? 'bg-primary' : 'bg-surfaceMuted'}`}
-          >
-            <Text
-              className={`text-sm font-semibold ${
-                activeClipId ? 'text-primary-foreground' : 'text-muted'
-              }`}
-            >
-              Export
-            </Text>
-          </Pressable>
-        </View>
-      </SafeAreaView>
-
-      <View className="bg-black">
-        <View className="items-center">
-          <View
-            className="relative"
-            style={{ width: videoWidth, height: videoHeight }}
-          >
-            <VideoView
-              player={player}
-              style={{
-                width: videoWidth,
-                height: videoHeight,
-                backgroundColor: '#000',
-              }}
-              nativeControls={false}
-              contentFit={previewRatio === '9:16' ? 'cover' : 'contain'}
-            />
-            {subtitleSettings?.enabled && activeClip ? (
-              <SubtitleOverlay
-                settings={subtitleSettings}
-                words={subtitleWords}
-                currentTime={clipRelativeTime}
-                targetRatio={previewRatio}
-                frameWidth={videoWidth}
-                frameHeight={videoHeight}
-                sampleFallback
-              />
-            ) : null}
-            {textBox?.enabled ? (
-              <TextBoxOverlay
-                state={textBox}
-                currentTime={clipRelativeTime}
-                frameWidth={videoWidth}
-                onPositionChange={(x, y) => {
-                  const next = upsertClipTextPerRatioGeometry(textBox, previewRatio, {
-                    x,
-                    y,
-                    widthPct: textBox.widthPct,
-                  });
-                  setTextBox(next);
-                  if (activeClipId) void updateClipTextOverlay(activeClipId, next);
-                }}
-              />
-            ) : null}
-          </View>
-        </View>
-        <VideoPlayerControls
-          player={player}
-          currentTime={playheadTime}
-          duration={player.duration ?? 0}
-          onSeek={(seconds) => {
-            segmentEndRef.current = null;
-            player.currentTime = seconds;
-            setPlayheadTime(seconds);
-          }}
-        />
-        {activeClip ? (
-          <ClipTrimBar
-            startTime={trimStart}
-            endTime={trimEnd}
-            videoDuration={player.duration ?? trimEnd}
-            onChangeStart={(start) => {
-              setTrimStart(start);
-              segmentEndRef.current = null;
-              player.currentTime = start;
-              setPlayheadTime(start);
-              persistTrim(start, trimEnd);
-            }}
-            onChangeEnd={(end) => {
-              setTrimEnd(end);
-              segmentEndRef.current = null;
-              player.currentTime = Math.max(trimStart, end - 0.25);
-              setPlayheadTime(Math.max(trimStart, end - 0.25));
-              persistTrim(trimStart, end);
-            }}
-          />
-        ) : null}
-        {activeClip ? (
-          <View className="flex-row items-center justify-end border-t border-border bg-surface px-4 py-2">
-            <Pressable
-              onPress={() => setShowMoreSheet(true)}
-              className="flex-row items-center gap-1.5 rounded-lg border border-border px-3 py-1.5"
-            >
-              <Ionicons name="ellipsis-horizontal" size={16} color={tokens.colors.foreground} />
-              <Text className="text-xs font-semibold text-foreground">More</Text>
-            </Pressable>
-          </View>
-        ) : null}
-      </View>
-
-      {activeClip ? (
-        <SegmentTimeline
-          clipId={activeClip.id}
-          clipStart={clipStart}
-          segments={segments}
-          currentTime={playheadTime}
-          onSeek={(t) => {
-            player.currentTime = t;
-            setPlayheadTime(t);
-          }}
-          onSegmentsChange={() => void loadClipData(activeClip.id)}
-        />
-      ) : (
-        <View className="mx-4 rounded-lg border border-dashed border-border px-4 py-3">
-          <Text className="text-center text-sm text-muted">
-            Detect clips with AI, or tap New clip to mark a segment at the playhead. Drag Start and
-            End to trim while the video plays.
-          </Text>
-        </View>
-      )}
-
-      {aiProgress ? (
-        <Text className="px-4 py-1 text-xs text-muted">
-          {aiProgress.message}
-          {aiProgress.error ? ` — ${aiProgress.error}` : ''}
-        </Text>
-      ) : null}
-
-      <View className="border-t border-border py-2">
-        <View className="mb-2 flex-row items-center justify-between px-4">
-          <Text className="text-xs font-semibold uppercase tracking-wide text-muted">
-            Clips ({clips.length})
-          </Text>
-          <View className="flex-row gap-2">
-            <Pressable
-              onPress={() => void openDetectSheet()}
-              disabled={aiBusy}
-              className="rounded-lg bg-primary px-3 py-1.5"
-            >
-              <Text className="text-xs font-semibold text-primary-foreground">Detect clips</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => void createClipAtPlayhead()}
-              className="rounded-lg border border-border bg-surface px-3 py-1.5"
-            >
-              <Text className="text-xs font-semibold text-foreground">New clip</Text>
-            </Pressable>
-          </View>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerClassName="gap-2 px-4">
-          {clips.map((item) => {
-            const selected = item.id === activeClipId;
-            return (
-              <Pressable
-                key={item.id}
-                onPress={() => playClip(item)}
-                className={`rounded-lg border px-3 py-2 ${
-                  selected ? 'border-accent bg-accent/10' : 'border-border bg-surface'
-                }`}
-              >
-                <Text className="text-sm font-medium text-foreground" numberOfLines={1}>
-                  {item.name ?? 'Clip'}
-                </Text>
-                <Text className="text-xs text-muted">
-                  {formatTime(item.start_time ?? 0)} – {formatTime(item.end_time ?? 0)}
-                </Text>
-              </Pressable>
-            );
-          })}
-        </ScrollView>
-      </View>
-
-      <ClipMoreSheet
-        visible={showMoreSheet}
-        activeRatio={previewRatio}
-        hasTranscript={hasTranscript}
-        aiBusy={aiBusy}
-        onClose={() => setShowMoreSheet(false)}
-        onToolPress={handleToolPress}
-      />
-
-      <SubtitleSheet
-        visible={showSubtitleSheet}
-        settings={subtitleSettings}
-        hasTranscript={hasTranscript}
-        onClose={() => setShowSubtitleSheet(false)}
-        onSave={(enabled, presetId, settings) => {
-          if (!activeClipId) return;
+  function handleDeleteClip(clip: ProjectClipRow) {
+    appAlert('Delete clip', `Delete “${clip.name || 'Untitled Clip'}”? This cannot be undone.`, [
+      { text: 'Cancel', style: 'cancel' },
+      {
+        text: 'Delete',
+        style: 'destructive',
+        onPress: () => {
           void (async () => {
-            await updateClipSubtitleSettings(activeClipId, enabled, presetId, settings);
-            setSubtitleSettings(settings);
+            await deleteClip(clip.id);
             const { queueProjectSync } = await import('@/services/cloudSync');
-            void queueProjectSync(projectId);
+            if (id) void queueProjectSync(id);
+            await loadWorkspace({ silent: true });
           })();
-        }}
-      />
-
-      <TextBoxSheet
-        visible={showTextBoxSheet}
-        state={textBox}
-        clipDuration={(activeClip?.duration ?? activeClip?.end_time ?? 0) - clipStart}
-        onClose={() => setShowTextBoxSheet(false)}
-        onSave={(state) => {
-          if (!activeClipId) return;
-          void (async () => {
-            await updateClipTextOverlay(activeClipId, state);
-            setTextBox(state);
-            const { queueProjectSync } = await import('@/services/cloudSync');
-            void queueProjectSync(projectId);
-          })();
-        }}
-      />
-
-      <ExportSheet
-        visible={showExportSheet}
-        progress={exportProgress}
-        onClose={() => {
-          if (exportProgress?.state === 'building') cancelClipBuild();
-          setShowExportSheet(false);
-        }}
-        onExport={handleExport}
-      />
-
-      <ClipDetectionSheet
-        visible={showDetectSheet}
-        videoDuration={player.duration ?? 0}
-        starting={aiBusy}
-        onClose={() => {
-          if (!aiBusy) setShowDetectSheet(false);
-        }}
-        onConfirm={(plan) => void confirmDetect(plan)}
-      />
-
-    </View>
-  );
-}
-
-export default function ProjectDetailScreen() {
-  const { id, detect } = useLocalSearchParams<{ id: string; detect?: string }>();
-  const [project, setProject] = useState<Project | null>(null);
-  const [videoPath, setVideoPath] = useState<string | null>(null);
-  const [clips, setClips] = useState<Clip[]>([]);
-  const [hasTranscript, setHasTranscript] = useState(false);
-  const [transcriptJson, setTranscriptJson] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
-
-  async function loadWorkspace(options?: { silent?: boolean }) {
-    if (!id) return;
-    if (!options?.silent) setLoading(true);
-    try {
-      const [projectRow, rawVideo, transcript, clipRows] = await Promise.all([
-        getProject(id),
-        getRawVideoByProjectId(id),
-        getTranscriptByProjectId(id),
-        getClipsByProjectId(id),
-      ]);
-      setProject(projectRow);
-      setVideoPath(rawVideo?.file_path ?? null);
-      setHasTranscript(!!transcript);
-      setTranscriptJson(transcript?.raw_json ?? null);
-      setClips(clipRows);
-    } finally {
-      setLoading(false);
-    }
+        },
+      },
+    ]);
   }
 
-  useEffect(() => {
-    void loadWorkspace();
-  }, [id]);
+  const detecting = aiBusy && clips.length === 0;
 
   return (
     <>
       <Stack.Screen options={{ headerShown: false }} />
       <View className="flex-1 bg-background">
         {loading ? (
-          <View className="flex-1 items-center justify-center">
+          <View className="flex-1 items-center justify-center px-6">
             <ActivityIndicator color={tokens.colors.accent} />
+            <Text className="mt-3 text-center text-xs text-muted">Preparing video for playback…</Text>
           </View>
         ) : !videoPath || !project || !id ? (
           <View className="flex-1 items-center justify-center px-6">
             <Text className="text-center text-muted">Video file is missing from device storage.</Text>
           </View>
         ) : (
-          <ProjectWorkspace
-            projectId={id}
-            project={project}
-            videoPath={videoPath}
-            clips={clips}
-            hasTranscript={hasTranscript}
-            transcriptJson={transcriptJson}
-            openDetectInitially={detect === '1'}
-            onRefresh={() => loadWorkspace({ silent: true })}
-          />
+          <>
+            <ScreenHeader
+              title={project.name}
+              subtitle={
+                clips.length > 0
+                  ? `${clips.length} clip${clips.length === 1 ? '' : 's'} detected`
+                  : 'No clips yet'
+              }
+              showBack
+            />
+
+            <VodPreview
+              videoPath={videoPath}
+              onTimeChange={setPlayheadTime}
+              onDurationChange={(seconds) => {
+                if (seconds > 0) setVideoDuration(seconds);
+              }}
+            />
+
+            {aiProgress && !detecting ? (
+              <View className="flex-row items-center gap-3 border-b border-border px-4 py-2">
+                <View className="flex-1">
+                  <View className="h-1 overflow-hidden rounded-full bg-white/5">
+                    <View
+                      className="h-full rounded-full bg-accent"
+                      style={{ width: `${Math.max(aiProgress.progress, 5)}%` }}
+                    />
+                  </View>
+                  <Text className="mt-1 text-[10px] text-muted" numberOfLines={1}>
+                    {aiProgress.message}
+                    {aiProgress.error ? ` — ${aiProgress.error}` : ''}
+                  </Text>
+                </View>
+                {aiBusy ? (
+                  <Pressable onPress={cancelAi} className="rounded-lg border border-border px-3 py-1.5">
+                    <Text className="text-xs font-semibold text-foreground">Cancel</Text>
+                  </Pressable>
+                ) : null}
+              </View>
+            ) : null}
+
+            {detecting ? (
+              <View className="flex-1 items-center justify-center px-6">
+                <View className="mb-4 h-10 w-10 items-center justify-center rounded-full border border-border bg-surface">
+                  <ActivityIndicator color={tokens.colors.accent} />
+                </View>
+                <Text className="text-xs font-semibold uppercase tracking-wide text-foreground">
+                  Detecting clips
+                </Text>
+                <Text className="mt-2 max-w-[240px] text-center text-xs text-muted">
+                  {aiProgress?.message ?? 'Analyzing your video…'}
+                </Text>
+                <View className="mt-5 h-1 w-full max-w-xs overflow-hidden rounded-full bg-white/10">
+                  <View
+                    className="h-full rounded-full bg-accent"
+                    style={{ width: `${Math.max(aiProgress?.progress ?? 0, 5)}%` }}
+                  />
+                </View>
+                <Pressable
+                  onPress={cancelAi}
+                  className="mt-4 flex-row items-center gap-1.5 rounded-md px-2.5 py-1.5"
+                >
+                  <Ionicons name="stop-circle-outline" size={14} color={tokens.colors.muted} />
+                  <Text className="text-[11px] font-medium text-muted">Cancel</Text>
+                </Pressable>
+              </View>
+            ) : clips.length > 0 ? (
+              <ScrollView
+                className="flex-1"
+                contentContainerClassName="gap-3 px-4 py-4 pb-10"
+                showsVerticalScrollIndicator={false}
+              >
+                <View className="mb-1 flex-row items-center justify-between">
+                  <View className="flex-row items-center gap-2">
+                    <View className="h-1.5 w-1.5 rounded-full bg-accent" />
+                    <Text className="text-[11px] font-semibold uppercase tracking-wider text-muted">
+                      Detected
+                    </Text>
+                    <Text className="text-[10px] text-muted">{clips.length}</Text>
+                  </View>
+                  <View className="flex-row items-center gap-2">
+                    <Pressable
+                      onPress={() => void createClip()}
+                      className="rounded-md border border-border bg-surface px-2.5 py-1"
+                    >
+                      <Text className="text-[11px] font-semibold text-foreground">Add</Text>
+                    </Pressable>
+                    <Pressable
+                      onPress={() => void openDetectSheet()}
+                      disabled={aiBusy}
+                      className="flex-row items-center gap-1 rounded-md bg-primary px-2.5 py-1"
+                    >
+                      <Ionicons name="sparkles" size={11} color={tokens.colors.primaryForeground} />
+                      <Text className="text-[11px] font-semibold text-primary-foreground">Detect</Text>
+                    </Pressable>
+                  </View>
+                </View>
+                {clips.map((clip, index) => (
+                  <ClipListCard
+                    key={clip.id}
+                    clip={clip}
+                    index={index + 1}
+                    fallbackThumbnail={projectThumbnail}
+                    onPress={() => openClip(clip.id)}
+                    onMore={() => setMenuClip(clip)}
+                  />
+                ))}
+              </ScrollView>
+            ) : (
+              <View className="flex-1 items-center justify-center px-6">
+                <View className="mb-6 h-16 w-16 items-center justify-center rounded-xl border border-accent/25 bg-accent/15">
+                  <Ionicons name="videocam-outline" size={28} color={tokens.colors.accent} />
+                </View>
+                <Text className="text-sm font-semibold text-foreground">No Clips Yet</Text>
+                <Text className="mt-2 max-w-[220px] text-center text-xs leading-relaxed text-muted">
+                  Start detecting clips from your video using AI-powered analysis
+                </Text>
+                <View className="mt-6 gap-2">
+                  <Button
+                    title="Detect Clips"
+                    onPress={() => void openDetectSheet()}
+                    disabled={aiBusy}
+                  />
+                  <Button title="Add Clip" variant="outline" onPress={() => void createClip()} />
+                </View>
+              </View>
+            )}
+
+            <ClipActionSheet
+              visible={menuClip != null}
+              clipName={menuClip?.name || 'Untitled Clip'}
+              onClose={() => setMenuClip(null)}
+              onOpen={() => {
+                if (!menuClip) return;
+                const clipId = menuClip.id;
+                setMenuClip(null);
+                openClip(clipId);
+              }}
+              onEdit={() => {
+                if (!menuClip) return;
+                const clipId = menuClip.id;
+                setMenuClip(null);
+                router.push({ pathname: '/edit/[kind]/[id]', params: { kind: 'clip', id: clipId } });
+              }}
+              onDelete={() => {
+                if (!menuClip) return;
+                const clip = menuClip;
+                setMenuClip(null);
+                handleDeleteClip(clip);
+              }}
+            />
+
+            <ClipDetectionSheet
+              visible={showDetectSheet}
+              videoDuration={videoDuration}
+              starting={aiBusy}
+              onClose={() => {
+                if (!aiBusy) setShowDetectSheet(false);
+              }}
+              onConfirm={(plan) => void confirmDetect(plan)}
+            />
+          </>
         )}
       </View>
     </>

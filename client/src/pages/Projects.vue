@@ -241,12 +241,7 @@
                   <!-- Title -->
                   <h3 class="project-card__title" :title="project.name">
                     {{ project.name }}
-                    <span
-                      v-if="getCloudSyncLabel(project.id) !== 'Local'"
-                      class="project-card__cloud-badge"
-                    >
-                      {{ getCloudSyncLabel(project.id) }}
-                    </span>
+                    <!-- Cloud sync badge disabled: desktop/mobile are independent apps. -->
                   </h3>
 
                   <!-- Metadata Row -->
@@ -1306,7 +1301,6 @@
 </template>
 
 <script setup lang="ts">
-  import { getProjectSyncStatus, syncAllProjects } from '@/services/cloudSync';
   import { invoke } from '@tauri-apps/api/core';
   import { formatDateTime, formatDate, toDate } from '@/utils/dateTimeUtils';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -6129,20 +6123,11 @@
     }
   }
 
-  function getCloudSyncLabel(projectId: string): string {
-    const status = getProjectSyncStatus(projectId);
-    if (status === 'synced') return 'Synced';
-    if (status === 'pending') return 'Pending';
-    if (status === 'conflict') return 'Conflict';
-    return 'Local';
-  }
-
   onMounted(async () => {
     // Initialize downloads state from persistence
     await initializeDownloads();
 
     await loadProjects();
-    void syncAllProjects().then(() => loadProjects());
     await loadFolderPrompts();
 
     // Silently backfill metadata for any videos imported without duration/thumbnail

@@ -73,6 +73,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-secure-store',
     'expo-sqlite',
     'expo-video',
+    'expo-image',
     [
       'expo-splash-screen',
       {

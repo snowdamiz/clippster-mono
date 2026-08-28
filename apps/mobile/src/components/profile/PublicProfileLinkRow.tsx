@@ -1,7 +1,8 @@
 import { Ionicons } from '@expo/vector-icons';
-import { Alert, Platform, Pressable, Share, Text, View } from 'react-native';
+import { Platform, Pressable, Share, Text, View } from 'react-native';
 import { getPublicProfilePath, getPublicProfileUrl } from '@/lib/publicProfileUrl';
 import { tokens } from '@/theme/tokens';
+import { appAlert } from '@/lib/appAlert';
 
 interface PublicProfileLinkRowProps {
   slug: string;
@@ -17,7 +18,7 @@ export function PublicProfileLinkRow({ slug }: PublicProfileLinkRowProps) {
     if (Platform.OS === 'web' && typeof navigator !== 'undefined' && navigator.clipboard) {
       try {
         await navigator.clipboard.writeText(url);
-        Alert.alert('Copied', 'Profile link copied to clipboard.');
+        appAlert('Copied', 'Profile link copied to clipboard.');
         return;
       } catch {
         // fall through to share / alert
@@ -31,7 +32,7 @@ export function PublicProfileLinkRow({ slug }: PublicProfileLinkRowProps) {
           : { message: url, title: 'Public profile link' },
       );
     } catch {
-      Alert.alert('Profile link', url);
+      appAlert('Profile link', url);
     }
   }
 

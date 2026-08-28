@@ -10,6 +10,7 @@ export type MediaPlatform =
 export interface MediaStream {
   url: string;
   format: string;
+  height?: number | null;
   expires_at: string | null;
 }
 

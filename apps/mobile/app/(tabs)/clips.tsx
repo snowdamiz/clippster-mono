@@ -4,7 +4,6 @@ import * as Sharing from 'expo-sharing';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Image,
   Pressable,
@@ -21,6 +20,7 @@ import {
   type BuiltClipItem,
 } from '@/services/database';
 import { tokens } from '@/theme/tokens';
+import { appAlert } from '@/lib/appAlert';
 
 function formatDuration(seconds: number | null | undefined): string {
   if (!seconds || seconds <= 0) return '—';
@@ -87,7 +87,7 @@ export default function ClipsScreen() {
 
   async function shareClip(item: BuiltClipItem) {
     if (!(await Sharing.isAvailableAsync())) {
-      Alert.alert('Unavailable', 'Sharing is not available on this device.');
+      appAlert('Unavailable', 'Sharing is not available on this device.');
       return;
     }
     await Sharing.shareAsync(item.build.file_path, { mimeType: 'video/mp4' });

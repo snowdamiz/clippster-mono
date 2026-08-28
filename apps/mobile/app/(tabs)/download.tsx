@@ -135,7 +135,7 @@ export default function DownloadScreen() {
       }
 
       if (isDirectVideoUrl(platform, input)) {
-        const resolved = await mediaApi.resolveUrl(input, { platform });
+        const resolved = await mediaApi.resolveUrl(input, { platform, quality: '720' });
         if (!resolved.success) {
           throw new Error(resolved.error ?? 'Could not resolve this video URL');
         }

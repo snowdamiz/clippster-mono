@@ -2,8 +2,9 @@ import type { ManualFramingConfig } from '@clippster/shared-types';
 import { createDefaultManualRegion, MAX_POI_REGIONS } from '@clippster/shared-types';
 import type { VideoPlayer } from 'expo-video';
 import { VideoView } from 'expo-video';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
 import { DraggableRegionFrame } from './DraggableRegionFrame';
+import { appAlert } from '@/lib/appAlert';
 
 interface SourcePanelProps {
   config: ManualFramingConfig;
@@ -31,7 +32,7 @@ export function SourcePanel({
 
   function addRegion() {
     if (config.regions.length >= MAX_POI_REGIONS) {
-      Alert.alert('Limit reached', `Maximum ${MAX_POI_REGIONS} regions.`);
+      appAlert('Limit reached', `Maximum ${MAX_POI_REGIONS} regions.`);
       return;
     }
     onChange({

@@ -3,7 +3,7 @@
  * Desktop uses yt-dlp + ffmpeg for these; mobile resolves via server yt-dlp then ffmpeg locally.
  */
 
-const CHROME_USER_AGENT =
+export const CHROME_USER_AGENT =
   'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
 
 export function shouldUseFfmpegDownload(url: string): boolean {
@@ -43,6 +43,15 @@ function resolveHlsReferer(inputUrl: string, pageUrl?: string): { referer: strin
   }
   if (lower.includes('twitch') || lower.includes('ttvnw')) {
     return { referer: 'https://www.twitch.tv/', origin: 'https://www.twitch.tv' };
+  }
+  if (lower.includes('youtube') || lower.includes('googlevideo') || lower.includes('youtu.be')) {
+    return { referer: 'https://www.youtube.com/', origin: 'https://www.youtube.com' };
+  }
+  if (lower.includes('twitter') || lower.includes('x.com') || lower.includes('twimg') || lower.includes('video.twimg')) {
+    return { referer: 'https://x.com/', origin: 'https://x.com' };
+  }
+  if (lower.includes('rumble')) {
+    return { referer: 'https://rumble.com/', origin: 'https://rumble.com' };
   }
   if (pageUrl) {
     try {

@@ -1,12 +1,13 @@
 import { useState } from 'react';
 import { router } from 'expo-router';
-import { ActivityIndicator, Alert, Pressable, ScrollView, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { PlanTierCard } from '@/components/subscription/PlanTierCard';
 import { useAccount } from '@/context/AccountContext';
 import { useAuth } from '@/context/AuthContext';
 import { mergeDisplayTiers, type BillingInterval } from '@/lib/planCatalog';
 import { tokens } from '@/theme/tokens';
+import { appAlert } from '@/lib/appAlert';
 
 export default function BillingScreen() {
   const { logout } = useAuth();
@@ -38,7 +39,7 @@ export default function BillingScreen() {
 
       const result = await subscribeToTier(tierId, { billing_interval: interval });
       if (!result.success) {
-        Alert.alert('Checkout failed', result.error ?? 'Could not open checkout');
+        appAlert('Checkout failed', result.error ?? 'Could not open checkout');
         return;
       }
       if (result.outcome === 'paid') {

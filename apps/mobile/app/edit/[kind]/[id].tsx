@@ -1,6 +1,6 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, Text, useWindowDimensions, View } from 'react-native';
+import { ActivityIndicator, Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { EffectsSheet } from '@/components/editor/EffectsSheet';
 import { ExportSheet } from '@/components/export/ExportSheet';
@@ -9,7 +9,9 @@ import { AddMediaSheet, type MediaAddRequest } from '@/components/timeline/AddMe
 import { EditorToolDock } from '@/components/timeline/EditorToolDock';
 import { FilmstripTimeline } from '@/components/timeline/FilmstripTimeline';
 import { MusicPlayer, PreviewStage } from '@/components/timeline/PreviewStage';
+import { VideoThumbnailProvider } from '@/components/media/HiddenThumbnailPlayer';
 import { VideoPlayerControls } from '@/components/editor/VideoPlayerControls';
+import { useSmoothClock } from '@/hooks/useSmoothClock';
 import { settingsFromPresetId } from '@/lib/captionPresets';
 import { transcriptWordsFromRaw } from '@/lib/subtitleVisibleWords';
 import { pickEditorAudio, pickEditorImage, pickEditorVideo, recordEditorVideo } from '@/lib/timeline/editorMedia';
@@ -55,6 +57,7 @@ import {
 import type { ClipBuildProgress } from '@/services/clipBuildPipeline';
 import { buildTimelineExport } from '@/services/timelineExport';
 import { parseSubtitleSettings } from '@clippster/shared-types';
+import { appAlert } from '@/lib/appAlert';
 
 export default function TimelineEditorScreen() {
   const router = useRouter();
@@ -153,7 +156,7 @@ export default function TimelineEditorScreen() {
       created.captions.settings.enabled = created.captions.enabled;
       setDoc(created);
     } catch (error) {
-      Alert.alert('Could not open editor', error instanceof Error ? error.message : String(error));
+      appAlert('Could not open editor', error instanceof Error ? error.message : String(error));
       router.back();
     } finally {
       setLoading(false);
@@ -202,10 +205,15 @@ function TimelineEditor({
   const router = useRouter();
   const { width: windowWidth, height: windowHeight } = useWindowDimensions();
   const [saving, setSaving] = useState(false);
-  const [playhead, setPlayhead] = useState(0);
   const [playing, setPlaying] = useState(false);
   const [seekKey, setSeekKey] = useState(0);
-  const [pixelsPerSecond, setPixelsPerSecond] = useState(8);
+  const [pixelsPerSecond, setPixelsPerSecond] = useState(24);
+  const [mediaTime, setMediaTime] = useState(0);
+  const { time: playhead, seek } = useSmoothClock({
+    playing,
+    duration: timelineDuration(doc),
+    onEnd: () => setPlaying(false),
+  });
   const [selectedId, setSelectedId] = useState<string | null>(doc.videos[0]?.id ?? null);
   const [selectedKind, setSelectedKind] = useState<'video' | 'image' | 'audio' | 'cut'>('video');
   const [captionsSelected, setCaptionsSelected] = useState(false);
@@ -218,8 +226,8 @@ function TimelineEditor({
   const historyRef = useRef<{ past: EditDocument[]; future: EditDocument[] }>({ past: [], future: [] });
   const [, setHistoryEpoch] = useState(0);
 
-  const resolved = resolveTimelineTime(doc, playhead);
-  const music = activeAudio(doc, playhead);
+  const resolved = resolveTimelineTime(doc, mediaTime);
+  const music = activeAudio(doc, mediaTime);
   const wordsBySource = useMemo(
     () => (sourcePath ? { [sourcePath]: words } : {}),
     [sourcePath, words],
@@ -254,12 +262,14 @@ function TimelineEditor({
 
   const seekTimeline = useCallback(
     (timelineTime: number) => {
-      const next = resolveTimelineTime(doc, timelineTime);
-      setPlayhead(Math.max(0, Math.min(timelineTime, timelineDuration(doc))));
+      const nextTime = Math.max(0, Math.min(timelineTime, timelineDuration(doc)));
+      const next = resolveTimelineTime(doc, nextTime);
+      setMediaTime(nextTime);
+      seek(nextTime);
       if (next) setSelectedId(next.clip.id);
       setSeekKey((value) => value + 1);
     },
-    [doc],
+    [doc, seek],
   );
 
   function handleVideoTime(sourceTime: number) {
@@ -268,16 +278,22 @@ function TimelineEditor({
       const nextIndex = resolved.clipIndex + 1;
       const next = doc.videos[nextIndex];
       if (next) {
-        setPlayhead(timelineTimeForSource(doc, nextIndex, next.sourceStart));
+        const nextTime = timelineTimeForSource(doc, nextIndex, next.sourceStart);
+        setMediaTime(nextTime);
+        seek(nextTime);
         setSelectedId(next.id);
         setSeekKey((value) => value + 1);
       } else {
+        const end = timelineDuration(doc);
         setPlaying(false);
-        setPlayhead(timelineDuration(doc));
+        setMediaTime(end);
+        seek(end);
       }
       return;
     }
-    setPlayhead(timelineTimeForSource(doc, resolved.clipIndex, sourceTime));
+    const nextTime = timelineTimeForSource(doc, resolved.clipIndex, sourceTime);
+    setMediaTime(nextTime);
+    seek(nextTime);
   }
 
   async function handleSave(): Promise<EditDocument | null> {
@@ -311,7 +327,7 @@ function TimelineEditor({
       onDocChange(next);
       return next;
     } catch (error) {
-      Alert.alert('Could not save edit', error instanceof Error ? error.message : String(error));
+      appAlert('Could not save edit', error instanceof Error ? error.message : String(error));
       return null;
     } finally {
       setSaving(false);
@@ -414,7 +430,7 @@ function TimelineEditor({
         }),
       );
     } catch (error) {
-      Alert.alert('Could not add media', error instanceof Error ? error.message : String(error));
+      appAlert('Could not add media', error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -438,6 +454,7 @@ function TimelineEditor({
   }, [resolved]);
 
   return (
+    <VideoThumbnailProvider paths={doc.videos.map((clip) => clip.sourcePath)}>
     <View className="flex-1 bg-background">
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView edges={['top', 'bottom']} className="flex-1">
@@ -496,7 +513,7 @@ function TimelineEditor({
             <MusicPlayer
               key={`${music.id}-${seekKey}`}
               path={music.sourcePath}
-              sourceTime={music.sourceStart + (playhead - music.timelineStart)}
+              sourceTime={music.sourceStart + (mediaTime - music.timelineStart)}
               volume={music.volume}
               playing={playing}
             />
@@ -647,12 +664,13 @@ function TimelineEditor({
                 onProgress: setExportProgress,
               });
             } catch (error) {
-              Alert.alert('Export failed', error instanceof Error ? error.message : String(error));
+              appAlert('Export failed', error instanceof Error ? error.message : String(error));
             }
           })();
         }}
       />
     </View>
+    </VideoThumbnailProvider>
   );
 }
 

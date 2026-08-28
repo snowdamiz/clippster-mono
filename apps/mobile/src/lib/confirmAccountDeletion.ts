@@ -1,7 +1,7 @@
-import { Alert } from 'react-native';
+import { appAlert } from '@/lib/appAlert';
 
 export function confirmAccountDeletion(onConfirm: () => void | Promise<void>) {
-  Alert.alert(
+  appAlert(
     'Delete your account?',
     'This deactivates your Clippster account and cancels active subscriptions. Your projects and clips will no longer be accessible.',
     [
@@ -9,7 +9,7 @@ export function confirmAccountDeletion(onConfirm: () => void | Promise<void>) {
       {
         text: 'Continue',
         onPress: () => {
-          Alert.alert(
+          appAlert(
             'Delete permanently?',
             'This cannot be undone. You will need to create a new account to use Clippster again.',
             [

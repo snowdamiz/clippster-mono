@@ -13,7 +13,6 @@
   import AnnouncementDialog from '@/components/AnnouncementDialog.vue';
   import SocialTokenExpiredDialog from '@/components/SocialTokenExpiredDialog.vue';
   import OrganizationInviteDialog from '@/components/OrganizationInviteDialog.vue';
-  import CloudConflictDialog from '@/components/sync/CloudConflictDialog.vue';
   import FloatingChat from '@/components/chat/FloatingChat.vue';
   import AudioPlayer from '@/components/AudioPlayer.vue';
   import { useAnnouncements } from '@/composables/useAnnouncements';
@@ -643,7 +642,7 @@
         @decline="handleDeclineInvitation"
       />
 
-      <CloudConflictDialog />
+      <!-- CloudConflictDialog disabled: desktop/mobile are independent until cloud sync ships. -->
 
       <!-- Floating Chat Widget (Messenger-style popout) -->
       <FloatingChat />

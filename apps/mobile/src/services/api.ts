@@ -19,6 +19,7 @@ import {
   createKickApi,
   createSubscriptionApi,
 } from '@clippster/api-client';
+import { fetch as expoFetch } from 'expo/fetch';
 import { getApiBaseUrl } from '@/lib/config';
 import { clearAuthSession, getStoredToken } from './authStorage';
 
@@ -35,6 +36,8 @@ const apiClient = createApiClient({
     unauthorizedHandler?.();
   },
   platform: 'mobile',
+  // Required for FormData + expo-file-system File uploads (Expo SDK 56+).
+  fetchImpl: expoFetch as typeof fetch,
 });
 
 export const authApi = createAuthApi(apiClient);

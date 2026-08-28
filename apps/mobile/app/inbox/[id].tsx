@@ -4,7 +4,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   ScrollView,
   Text,
@@ -16,6 +15,7 @@ import { Card } from '@/components/ui/card';
 import { sharedClipsApi } from '@/services/api';
 import { downloadAndImportSharedClip } from '@/services/sharedClipImport';
 import { tokens } from '@/theme/tokens';
+import { appAlert } from '@/lib/appAlert';
 
 export default function SharedClipDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -48,7 +48,7 @@ export default function SharedClipDetailScreen() {
   async function handleDownload() {
     if (!clip) return;
     if (clip.days_until_expiration <= 0) {
-      Alert.alert('Expired', 'This clip has expired and can no longer be downloaded.');
+      appAlert('Expired', 'This clip has expired and can no longer be downloaded.');
       return;
     }
 
@@ -56,13 +56,13 @@ export default function SharedClipDetailScreen() {
     try {
       const result = await downloadAndImportSharedClip(clip);
       if (result.success && result.projectId) {
-        Alert.alert('Imported', 'Clip saved to your workspace.', [
+        appAlert('Imported', 'Clip saved to your workspace.', [
           { text: 'Open project', onPress: () => router.push(`/project/${result.projectId}`) },
           { text: 'OK' },
         ]);
         await load();
       } else {
-        Alert.alert('Download failed', result.error ?? 'Could not download clip');
+        appAlert('Download failed', result.error ?? 'Could not download clip');
       }
     } finally {
       setDownloading(false);

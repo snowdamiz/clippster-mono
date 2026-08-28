@@ -11,6 +11,7 @@ import 'react-native-reanimated';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { AuthProvider } from '@/context/AuthContext';
 import { AccountProvider } from '@/context/AccountContext';
+import { DialogProvider } from '@/context/DialogContext';
 import { PlanGateGuard } from '@/components/subscription/PlanGateGuard';
 import { SubscriptionGateSheet } from '@/components/subscription/SubscriptionGateSheet';
 import { CloudSyncProvider } from '@/context/CloudSyncContext';
@@ -62,6 +63,7 @@ export default function RootLayout() {
       <AuthProvider>
         <AccountProvider>
         <CloudSyncProvider>
+        <DialogProvider>
         <ThemeProvider value={navigationTheme}>
           <PlanGateGuard>
           <StatusBar style="light" />
@@ -74,6 +76,7 @@ export default function RootLayout() {
             <Stack.Screen name="(tabs)" />
             <Stack.Screen name="auth/google/callback" options={{ headerShown: false }} />
             <Stack.Screen name="project/[id]" options={{ headerShown: false }} />
+            <Stack.Screen name="clip/[id]" options={{ headerShown: false }} />
             <Stack.Screen name="edit/[kind]/[id]" options={{ headerShown: false }} />
             <Stack.Screen name="schedule/[buildId]" options={{ headerShown: false }} />
             <Stack.Screen name="framing/[projectId]" options={{ headerShown: false }} />
@@ -86,8 +89,9 @@ export default function RootLayout() {
           </Stack>
           </PlanGateGuard>
         </ThemeProvider>
-        </CloudSyncProvider>
         <SubscriptionGateSheet />
+        </DialogProvider>
+        </CloudSyncProvider>
         </AccountProvider>
       </AuthProvider>
     </AppErrorBoundary>

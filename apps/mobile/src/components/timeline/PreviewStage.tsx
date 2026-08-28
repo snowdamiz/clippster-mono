@@ -163,7 +163,7 @@ function PreviewVideo({
   onDuration?: (seconds: number) => void;
 }) {
   const player = useVideoPlayer(path, (instance) => {
-    instance.timeUpdateEventInterval = 0.1;
+    instance.timeUpdateEventInterval = 0.25;
     instance.currentTime = sourceTime;
     instance.playbackRate = speed;
     instance.muted = muted;

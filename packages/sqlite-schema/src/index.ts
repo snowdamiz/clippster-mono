@@ -231,6 +231,12 @@ CREATE TABLE IF NOT EXISTS cloud_sync_meta (
   FOREIGN KEY (project_id) REFERENCES projects(id) ON DELETE CASCADE
 );`,
   },
+  {
+    version: 11,
+    name: 'clip_built_thumbnail',
+    sql: `-- Mobile migration 011: clip preview thumbnails (matches desktop clips.built_thumbnail_path)
+ALTER TABLE clips ADD COLUMN built_thumbnail_path TEXT;`,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;

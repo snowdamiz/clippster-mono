@@ -318,6 +318,8 @@ export function useDownloads() {
                 frameRate: undefined, // We don't have this info from the basic download
                 codec: event.payload.codec,
                 fileSize: event.payload.file_size,
+                platform: download.provider ?? null,
+                sourceUrl: download.videoUrl ?? null,
                 // Segment tracking information
                 sourceClipId: download.sourceClipId,
                 sourceMintId: download.mintId,

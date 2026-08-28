@@ -157,6 +157,8 @@ export interface RawVideo {
   codec: string | null;
   file_size: number | null;
   original_project_id: string | null;
+  platform: string | null;
+  source_url: string | null;
   created_at: number;
   updated_at: number;
   // Segment tracking fields

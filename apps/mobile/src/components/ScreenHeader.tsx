@@ -22,7 +22,6 @@ export function ScreenHeader({
   return (
     <SafeAreaView edges={['top']} className="bg-background">
       <View className="border-b border-border">
-        <View className="h-[3px] bg-accent" />
         <View className="px-4 pb-3 pt-2">
           <View className="flex-row items-center justify-between">
             <View className="flex-1 flex-row items-center gap-2">
@@ -34,8 +33,10 @@ export function ScreenHeader({
               {showLogo ? (
                 <ClippsterLogo iconSize={28} wordmarkHeight={18} />
               ) : title ? (
-                <View>
-                  <Text className="text-lg font-bold text-foreground">{title}</Text>
+                <View className="min-w-0 flex-1 pr-2">
+                  <Text className="text-lg font-bold text-foreground" numberOfLines={2}>
+                    {title}
+                  </Text>
                   {subtitle ? (
                     <Text className="text-[13px] text-muted">{subtitle}</Text>
                   ) : null}

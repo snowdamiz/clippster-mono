@@ -14,6 +14,8 @@ export async function createRawVideo(
     frameRate?: number;
     codec?: string;
     fileSize?: number;
+    platform?: string;
+    sourceUrl?: string;
     // Segment tracking options
     sourceClipId?: string;
     sourceMintId?: string;
@@ -31,7 +33,7 @@ export async function createRawVideo(
 
   try {
     await db.execute(
-      'INSERT INTO raw_videos (id, project_id, file_path, original_filename, thumbnail_path, duration, width, height, frame_rate, codec, file_size, created_at, updated_at, source_clip_id, source_mint_id, segment_number, is_segment, segment_start_time, segment_end_time, original_project_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
+      'INSERT INTO raw_videos (id, project_id, file_path, original_filename, thumbnail_path, duration, width, height, frame_rate, codec, file_size, platform, source_url, created_at, updated_at, source_clip_id, source_mint_id, segment_number, is_segment, segment_start_time, segment_end_time, original_project_id, user_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)',
       [
         id,
         options?.projectId || null,
@@ -44,6 +46,8 @@ export async function createRawVideo(
         options?.frameRate || null,
         options?.codec || null,
         options?.fileSize || null,
+        options?.platform || null,
+        options?.sourceUrl || null,
         now,
         now,
         options?.sourceClipId || null,

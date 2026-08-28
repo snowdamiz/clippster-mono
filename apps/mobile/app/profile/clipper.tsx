@@ -15,7 +15,6 @@ import { router } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   Pressable,
   RefreshControl,
@@ -38,6 +37,7 @@ import { useAuth } from '@/context/AuthContext';
 import { clipperProfilesApi } from '@/services/api';
 import { getCompletedClipBuilds } from '@/services/database/clips';
 import { tokens } from '@/theme/tokens';
+import { appAlert } from '@/lib/appAlert';
 
 type Tab = 'edit' | 'channels' | 'portfolio';
 type MainSection = 'clipper' | 'account';
@@ -113,7 +113,7 @@ export default function ProfileScreen() {
     if (response.success) {
       await loadProfile();
     } else {
-      Alert.alert('Error', response.error ?? 'Failed to update visibility');
+      appAlert('Error', response.error ?? 'Failed to update visibility');
       setIsPublic(!value);
     }
   }
@@ -134,10 +134,10 @@ export default function ProfileScreen() {
         looking_for_work: lookingForWork,
       });
       if (response.success) {
-        Alert.alert('Saved', 'Your clipper profile has been updated.');
+        appAlert('Saved', 'Your clipper profile has been updated.');
         await loadProfile();
       } else {
-        Alert.alert('Error', response.error ?? 'Failed to save profile');
+        appAlert('Error', response.error ?? 'Failed to save profile');
       }
     } finally {
       setSaving(false);
@@ -157,13 +157,13 @@ export default function ProfileScreen() {
     if (response.success) {
       await loadProfile();
     } else {
-      Alert.alert('Upload failed', response.error ?? 'Could not upload avatar');
+      appAlert('Upload failed', response.error ?? 'Could not upload avatar');
     }
   }
 
   async function addChannelLink() {
     if (!newLinkUrl.trim()) {
-      Alert.alert('URL required', 'Enter a channel URL.');
+      appAlert('URL required', 'Enter a channel URL.');
       return;
     }
     const response = await clipperProfilesApi.createChannelLink({
@@ -176,7 +176,7 @@ export default function ProfileScreen() {
       setNewLinkUsername('');
       await loadProfile();
     } else {
-      Alert.alert('Error', response.error ?? 'Failed to add channel link');
+      appAlert('Error', response.error ?? 'Failed to add channel link');
     }
   }
 
@@ -197,14 +197,14 @@ export default function ProfileScreen() {
     if (response.success) {
       await loadProfile();
     } else {
-      Alert.alert('Upload failed', response.error ?? 'Could not upload portfolio clip');
+      appAlert('Upload failed', response.error ?? 'Could not upload portfolio clip');
     }
   }
 
   async function addPortfolioFromExport() {
     const builds = await getCompletedClipBuilds(20);
     if (builds.length === 0) {
-      Alert.alert('No exports', 'Export a clip first from a project.');
+      appAlert('No exports', 'Export a clip first from a project.');
       return;
     }
     const build = builds[0];
@@ -216,7 +216,7 @@ export default function ProfileScreen() {
     if (response.success) {
       await loadProfile();
     } else {
-      Alert.alert('Upload failed', response.error ?? 'Could not add export to portfolio');
+      appAlert('Upload failed', response.error ?? 'Could not add export to portfolio');
     }
   }
 

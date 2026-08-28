@@ -3,7 +3,7 @@ import type { CloudProjectSnapshot } from '@clippster/cloud-sync-schema';
 import { buildProjectSnapshot } from './database/snapshot';
 import { getRawVideoByProjectId } from './database';
 import { upsertCloudSyncMeta, getCloudSyncMeta } from './database/cloud-sync-meta';
-import { cloudApi, pushProject } from './cloudSync';
+import { CLOUD_SYNC_ENABLED, cloudApi, pushProject } from './cloudSync';
 
 export interface VodUploadProgress {
   projectId: string;
@@ -35,6 +35,7 @@ export function getVodUploadProgress(projectId: string): VodUploadProgress | und
 }
 
 export async function setStoreVodInCloud(projectId: string, enabled: boolean): Promise<void> {
+  if (!CLOUD_SYNC_ENABLED) return;
   if (enabled) {
     await upsertCloudSyncMeta(projectId, { store_vod_in_cloud: 1 });
     void uploadRawVod(projectId);
@@ -68,6 +69,7 @@ async function pushProjectWithSnapshot(projectId: string, snapshot: CloudProject
 }
 
 export async function uploadRawVod(projectId: string): Promise<void> {
+  if (!CLOUD_SYNC_ENABLED) return;
   const raw = await getRawVideoByProjectId(projectId);
   if (!raw?.file_path || raw.file_path.startsWith('pending://')) return;
 

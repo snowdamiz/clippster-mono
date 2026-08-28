@@ -4,7 +4,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   ScrollView,
   Text,
@@ -18,6 +17,7 @@ import { analyticsApi, campaignApi, userSocialApi } from '@/services/api';
 import { getCompletedClipBuilds, type ClipBuildRow } from '@/services/database/clips';
 import { uploadMediaWithProgress } from '@/services/mediaUpload';
 import { tokens } from '@/theme/tokens';
+import { appAlert } from '@/lib/appAlert';
 
 export default function CampaignSubmitScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -71,11 +71,11 @@ export default function CampaignSubmitScreen() {
   async function handleSubmit() {
     const build = builds.find((b) => b.id === selectedBuildId);
     if (!build) {
-      Alert.alert('Select export', 'Choose a completed export to submit.');
+      appAlert('Select export', 'Choose a completed export to submit.');
       return;
     }
     if (!accountId) {
-      Alert.alert('Connect account', 'Connect a social account for the selected platform first.');
+      appAlert('Connect account', 'Connect a social account for the selected platform first.');
       return;
     }
 
@@ -87,7 +87,7 @@ export default function CampaignSubmitScreen() {
         (p) => setUploadProgress(p.fraction),
       );
       if (!upload.success || !upload.media_url) {
-        Alert.alert('Upload failed', upload.error ?? 'Could not upload clip');
+        appAlert('Upload failed', upload.error ?? 'Could not upload clip');
         return;
       }
 
@@ -102,11 +102,11 @@ export default function CampaignSubmitScreen() {
           event_type: 'campaign_submitted',
           metadata: { campaign_id: campaignId },
         });
-        Alert.alert('Submitted', 'Your clip has been submitted for review.', [
+        appAlert('Submitted', 'Your clip has been submitted for review.', [
           { text: 'OK', onPress: () => router.back() },
         ]);
       } else {
-        Alert.alert('Error', response.error ?? 'Submission failed');
+        appAlert('Error', response.error ?? 'Submission failed');
       }
     } finally {
       setSubmitting(false);

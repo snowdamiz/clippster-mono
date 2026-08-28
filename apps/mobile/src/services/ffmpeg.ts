@@ -7,6 +7,12 @@ type FFmpegProgress = {
   sessionId?: string;
 };
 
+type FFmpegLogEvent = {
+  sessionId?: string;
+  level?: string;
+  message?: string;
+};
+
 type ExpoFFmpegNative = {
   run: (
     sessionId: string,
@@ -17,13 +23,16 @@ type ExpoFFmpegNative = {
   getVersion: () => string;
 };
 
-let nativeModule: ExpoFFmpegNative | null | undefined;
-let progressEmitter: {
+type FFmpegEmitter = {
   addListener: (
-    eventName: 'onProgress',
-    listener: (event: FFmpegProgress) => void,
+    eventName: 'onProgress' | 'onLog',
+    listener: (event: FFmpegProgress | FFmpegLogEvent) => void,
   ) => { remove: () => void };
-} | null = null;
+};
+
+let nativeModule: ExpoFFmpegNative | null | undefined;
+let progressEmitter: FFmpegEmitter | null = null;
+let activeSessionId: string | null = null;
 
 const FFMPEG_UNAVAILABLE =
   'FFmpeg is not available in this build. Rebuild the dev client: yarn mobile:android (or EAS development build). Expo Go cannot download HLS streams.';
@@ -45,7 +54,7 @@ function getNativeModule(): ExpoFFmpegNative | null {
       return null;
     }
     nativeModule = mod;
-    progressEmitter = new EventEmitter(mod as never) as typeof progressEmitter;
+    progressEmitter = new EventEmitter(mod as never) as FFmpegEmitter;
     return nativeModule;
   } catch {
     nativeModule = null;
@@ -67,20 +76,54 @@ async function executeNative(
   }
 
   const sessionId = generateSessionId();
-  let subscription: { remove: () => void } | undefined;
+  activeSessionId = sessionId;
+  const logChunks: string[] = [];
+  let progressSub: { remove: () => void } | undefined;
+  let logSub: { remove: () => void } | undefined;
+
+  console.log('[FFmpeg] run', args.join(' '));
 
   if (options?.onProgress) {
-    subscription = progressEmitter.addListener('onProgress', (event: FFmpegProgress) => {
-      if (event.sessionId === sessionId) {
-        options.onProgress?.(event);
+    progressSub = progressEmitter.addListener('onProgress', (event) => {
+      const progress = event as FFmpegProgress;
+      if (progress.sessionId === sessionId) {
+        options.onProgress?.(progress);
       }
     });
   }
 
+  // Native C++ LOGE goes to logcat only; onLog is what reaches Metro.
+  logSub = progressEmitter.addListener('onLog', (event) => {
+    const logEvent = event as FFmpegLogEvent;
+    if (logEvent.sessionId !== sessionId) return;
+    const line = logEvent.message?.trim();
+    if (!line) return;
+    logChunks.push(line);
+    console.log(`[FFmpeg:${logEvent.level ?? 'log'}] ${line}`);
+  });
+
   try {
-    return await mod.run(sessionId, args, { logLevel: 32 });
+    // AV_LOG_INFO = 32 (native expects AV levels, not the JS string-index mapping)
+    const result = await mod.run(sessionId, args, { logLevel: 32 });
+    const combined = [result.output?.trim(), logChunks.join('\n').trim()].filter(Boolean).join('\n');
+    console.log('[FFmpeg] done', { returnCode: result.returnCode, outputChars: combined.length });
+    return { returnCode: result.returnCode, output: combined || result.output };
   } finally {
-    subscription?.remove();
+    if (activeSessionId === sessionId) {
+      activeSessionId = null;
+    }
+    progressSub?.remove();
+    logSub?.remove();
+  }
+}
+
+export function cancelFfmpeg(): void {
+  const mod = getNativeModule();
+  if (!mod || !activeSessionId) return;
+  try {
+    mod.cancel(activeSessionId);
+  } catch {
+    // ignore
   }
 }
 
@@ -128,92 +171,191 @@ function normalizeFfmpegPath(path: string): string {
   return path.replace(/^file:\/\//, '');
 }
 
-function buildSegmentInputArgs(inputUrl: string, segment?: SegmentRange): string[] {
-  const args: string[] = [];
-  if (segment && segment.startTime > 0) {
-    args.push('-ss', String(segment.startTime));
-  }
-  args.push('-i', inputUrl);
-  if (segment) {
-    const duration = segment.endTime - segment.startTime;
-    if (duration > 0) {
-      args.push('-t', String(duration));
+/** Keep http(s) URLs intact so native FFmpeg can open HLS/DASH. */
+function ffmpegInputPath(path: string): string {
+  if (/^https?:\/\//i.test(path)) return path;
+  return normalizeFfmpegPath(path);
+}
+
+export interface StreamDownloadOptions {
+  headers?: Record<string, string>;
+  userAgent?: string;
+  segment?: SegmentRange;
+  onProgress?: (ratio: number) => void;
+}
+
+function ffmpegHeaderBlob(headers?: Record<string, string>): string {
+  if (!headers) return '';
+  const lines = Object.entries(headers)
+    .filter(([key]) => key.toLowerCase() !== 'user-agent')
+    .map(([key, value]) => `${key}: ${value}`);
+  return lines.length ? `${lines.join('\r\n')}\r\n` : '';
+}
+
+/**
+ * Desktop Kick path: FFmpeg opens the HLS/DASH URL, copies video, encodes AAC, faststart.
+ * Falls back to stream-copy + aac_adtstoasc if AAC encode is unavailable.
+ */
+export async function downloadStreamToMp4(
+  streamUrl: string,
+  outputPath: string,
+  options?: StreamDownloadOptions,
+): Promise<void> {
+  const input = ffmpegInputPath(streamUrl);
+  const out = normalizeFfmpegPath(outputPath);
+  const headerBlob = ffmpegHeaderBlob(options?.headers);
+  const userAgent =
+    options?.userAgent ??
+    options?.headers?.['User-Agent'] ??
+    options?.headers?.['user-agent'];
+  const isHls =
+    /\.m3u8/i.test(streamUrl) ||
+    streamUrl.includes('/playlist') ||
+    streamUrl.includes('/manifest');
+
+  const buildArgs = (audio: 'aac' | 'copy') => {
+    const args: string[] = [];
+    if (isHls) {
+      args.push(
+        '-reconnect',
+        '1',
+        '-reconnect_streamed',
+        '1',
+        '-reconnect_delay_max',
+        '5',
+        '-http_persistent',
+        '1',
+        '-multiple_requests',
+        '1',
+      );
     }
+    if (headerBlob) {
+      args.push('-headers', headerBlob);
+    }
+    if (userAgent) {
+      args.push('-user_agent', userAgent);
+    }
+    if (options?.segment) {
+      args.push('-ss', String(options.segment.startTime));
+    }
+    args.push('-i', input, '-c:v', 'copy');
+    if (audio === 'aac') {
+      args.push('-c:a', 'aac', '-b:a', '128k');
+    } else {
+      args.push('-c:a', 'copy', '-bsf:a', 'aac_adtstoasc');
+    }
+    if (options?.segment) {
+      args.push('-t', String(Math.max(0, options.segment.endTime - options.segment.startTime)));
+    }
+    args.push('-avoid_negative_ts', 'make_zero', '-movflags', '+faststart', '-y', out);
+    return args;
+  };
+
+  try {
+    await runFfmpeg(buildArgs('aac'), { onProgress: options?.onProgress });
+  } catch (error) {
+    console.warn('[FFmpeg] AAC ingest failed, falling back to copy + aac_adtstoasc', error);
+    await runFfmpeg(buildArgs('copy'), { onProgress: options?.onProgress });
   }
-  return args;
 }
 
-function buildFfmpegInputArgs(inputUrl: string, segment?: SegmentRange): string[] {
-  return buildSegmentInputArgs(inputUrl, segment);
-}
-
+/**
+ * Remux via stream-copy into MP4.
+ * Applies aac_adtstoasc so MPEG-TS AAC (ADTS) can land in MP4/M4A.
+ */
 export async function remuxToMp4(
   inputPath: string,
   outputPath: string,
   onProgress?: (ratio: number) => void,
   segment?: SegmentRange,
 ): Promise<void> {
-  const inputArgs = buildFfmpegInputArgs(normalizeFfmpegPath(inputPath), segment);
+  const input = normalizeFfmpegPath(inputPath);
   const out = normalizeFfmpegPath(outputPath);
+
+  const buildArgs = (withBsf: boolean) => {
+    const args: string[] = ['-fflags', '+genpts'];
+    if (segment) {
+      args.push('-ss', String(segment.startTime));
+    }
+    args.push('-i', input, '-c:v', 'copy', '-c:a', 'copy');
+    if (withBsf) {
+      args.push('-bsf:a', 'aac_adtstoasc');
+    }
+    if (segment) {
+      args.push('-t', String(Math.max(0, segment.endTime - segment.startTime)));
+    }
+    args.push('-avoid_negative_ts', 'make_zero', '-movflags', '+faststart', '-y', out);
+    return args;
+  };
+
   try {
-    await runFfmpeg([...inputArgs, '-c', 'copy', '-movflags', '+faststart', '-y', out], {
-      onProgress,
-    });
+    await runFfmpeg(buildArgs(true), { onProgress });
   } catch {
-    await runFfmpeg(
-      [
-        ...inputArgs,
-        '-c:v',
-        'libx264',
-        '-preset',
-        'veryfast',
-        '-c:a',
-        'aac',
-        '-movflags',
-        '+faststart',
-        '-y',
-        out,
-      ],
-      { onProgress },
-    );
+    await runFfmpeg(buildArgs(false), { onProgress });
   }
 }
 
-export async function extractThumbnail(inputPath: string, outputPath: string): Promise<void> {
+export async function extractThumbnail(
+  inputPath: string,
+  outputPath: string,
+  timestampSeconds = 1,
+): Promise<void> {
   const input = normalizeFfmpegPath(inputPath);
   const out = normalizeFfmpegPath(outputPath);
-  await runFfmpeg(['-ss', '1', '-i', input, '-frames:v', '1', '-q:v', '2', '-y', out]);
+  const seek = String(Math.max(0, timestampSeconds));
+  // Remux-only native FFmpeg cannot decode frames to JPEG; fail soft.
+  try {
+    await runFfmpeg(['-ss', seek, '-i', input, '-frames:v', '1', '-q:v', '2', '-y', out]);
+  } catch (error) {
+    console.warn('[FFmpeg] thumbnail extract skipped (decode unsupported)', error);
+  }
 }
 
+/**
+ * Extract audio-only for Whisper (desktop-equivalent size path).
+ * Prefers AAC stream-copy + aac_adtstoasc → .m4a (works for Kick HLS/.ts).
+ */
+export async function extractAudioForTranscription(
+  inputPath: string,
+  outputPath: string,
+  onProgress?: (ratio: number) => void,
+  startSeconds?: number,
+  endSeconds?: number,
+): Promise<string> {
+  const input = normalizeFfmpegPath(inputPath);
+  const m4aOut = normalizeFfmpegPath(outputPath).replace(/\.mp3$/i, '.m4a');
+
+  const timed = (extra: string[]) => {
+    const args: string[] = [];
+    const start = startSeconds ?? 0;
+    if (start > 0) {
+      args.push('-ss', String(start));
+    }
+    args.push('-i', input);
+    if (endSeconds != null) {
+      args.push('-t', String(Math.max(0, endSeconds - start)));
+    }
+    return [...args, '-vn', ...extra, '-y', m4aOut];
+  };
+
+  try {
+    await runFfmpeg(timed(['-c:a', 'copy', '-bsf:a', 'aac_adtstoasc']), { onProgress });
+    return m4aOut;
+  } catch (withBsf) {
+    console.warn('[FFmpeg] audio extract with BSF failed, retrying copy-only', withBsf);
+    await runFfmpeg(timed(['-c:a', 'copy']), { onProgress });
+    return m4aOut;
+  }
+}
+
+/** @deprecated Prefer extractAudioForTranscription (m4a). Kept for call-site compatibility. */
 export async function extractAudioMp3(
   inputPath: string,
   outputPath: string,
   startSeconds?: number,
   endSeconds?: number,
 ): Promise<string> {
-  const input = normalizeFfmpegPath(inputPath);
-  const mp3Out = normalizeFfmpegPath(outputPath);
-  const m4aOut = mp3Out.replace(/\.mp3$/i, '.m4a');
-
-  const buildArgs = (outPath: string, audioCodec: string[], extra: string[] = []) => {
-    const args: string[] = [];
-    if (startSeconds != null && startSeconds > 0) {
-      args.push('-ss', String(startSeconds));
-    }
-    args.push('-i', input);
-    if (endSeconds != null && startSeconds != null) {
-      args.push('-t', String(endSeconds - startSeconds));
-    }
-    return [...args, '-vn', ...audioCodec, ...extra, '-y', outPath];
-  };
-
-  try {
-    await runFfmpeg(buildArgs(mp3Out, ['-acodec', 'libmp3lame', '-q:a', '4']));
-    return mp3Out;
-  } catch {
-    await runFfmpeg(buildArgs(m4aOut, ['-acodec', 'aac', '-b:a', '128k']));
-    return m4aOut;
-  }
+  return extractAudioForTranscription(inputPath, outputPath, undefined, startSeconds, endSeconds);
 }
 
 export async function probeDuration(inputPath: string): Promise<number | null> {

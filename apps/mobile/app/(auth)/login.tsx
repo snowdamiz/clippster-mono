@@ -68,7 +68,12 @@ export default function LoginScreen() {
 
               {error ? <Text className="text-sm text-red-400">{error}</Text> : null}
 
-              <Button title="Sign in" onPress={handleLogin} disabled={loading || !email || !password} />
+              <Button
+                title="Sign in"
+                variant="accent"
+                onPress={handleLogin}
+                disabled={loading || !email || !password}
+              />
 
               <Separator />
 

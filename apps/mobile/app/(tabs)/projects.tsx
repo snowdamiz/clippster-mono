@@ -3,7 +3,6 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Image,
   Modal,
@@ -21,11 +20,10 @@ import { useAccount } from '@/context/AccountContext';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import type { Project } from '@clippster/shared-types';
-import type { CloudSyncStatus } from '@clippster/cloud-sync-schema';
-import { createProject, deleteProject, getAllProjects, getRawVideoByProjectId } from '@/services/database';
+import { createProject, getAllProjects, getRawVideoByProjectId } from '@/services/database';
 import { pickAndImportLocalVideo, recordAndImportLocalVideo } from '@/services/localVideoImport';
 import { tokens } from '@/theme/tokens';
-import { getProjectSyncStatuses, queueProjectSync, syncAllProjects } from '@/services/cloudSync';
+import { deleteProjectEverywhere } from '@/services/cloudSync';
 import {
   backfillProjectThumbnail,
   getDownloadJobs,
@@ -36,11 +34,11 @@ import {
   subscribeDownloadQueue,
   type DownloadJob,
 } from '@/services/downloadQueue';
+import { appAlert } from '@/lib/appAlert';
 
 interface ProjectRow extends Project {
   platform?: string | null;
   duration?: number | null;
-  syncStatus?: CloudSyncStatus;
   thumbnailUri?: string | null;
 }
 
@@ -51,20 +49,6 @@ function toLocalImageUri(path: string | null | undefined): string | null {
   }
   return `file://${path}`;
 }
-
-const SYNC_LABEL: Record<CloudSyncStatus, string> = {
-  synced: 'Synced',
-  pending: 'On this device',
-  conflict: 'Sync conflict',
-  'local-only': 'On this device',
-};
-
-const SYNC_BADGE_COLOR: Record<CloudSyncStatus, string> = {
-  synced: 'text-success',
-  pending: 'text-muted',
-  conflict: 'text-destructive',
-  'local-only': 'text-muted',
-};
 
 function formatDuration(seconds: number | null | undefined): string {
   if (!seconds || seconds <= 0) return '';
@@ -83,7 +67,6 @@ export default function ProjectsScreen() {
   const [creating, setCreating] = useState(false);
   const [importing, setImporting] = useState(false);
   const [jobs, setJobs] = useState<DownloadJob[]>([]);
-  const [syncing, setSyncing] = useState(false);
   const [menuProject, setMenuProject] = useState<ProjectRow | null>(null);
 
   useEffect(() => {
@@ -94,7 +77,7 @@ export default function ProjectsScreen() {
   const loadProjects = useCallback(async () => {
     setLoading(true);
     try {
-      const [rows, syncStatuses] = await Promise.all([getAllProjects(), getProjectSyncStatuses()]);
+      const rows = await getAllProjects();
       const enriched = await Promise.all(
         rows.map(async (project) => {
           const raw = await getRawVideoByProjectId(project.id);
@@ -103,7 +86,6 @@ export default function ProjectsScreen() {
             ...project,
             platform: raw?.platform ?? null,
             duration: raw?.duration ?? null,
-            syncStatus: syncStatuses[project.id] ?? 'local-only',
             thumbnailUri: toLocalImageUri(
               project.thumbnail_path ?? raw?.thumbnail_path ?? jobThumb ?? null,
             ),
@@ -163,8 +145,6 @@ export default function ProjectsScreen() {
     setCreating(true);
     try {
       await createProject(trimmed);
-      const project = (await getAllProjects()).find((p) => p.name === trimmed);
-      if (project) await queueProjectSync(project.id);
       closeCreateModal();
       await loadProjects();
     } finally {
@@ -238,7 +218,7 @@ export default function ProjectsScreen() {
     if (!menuProject) return;
     const project = menuProject;
     setMenuProject(null);
-    Alert.alert(
+    appAlert(
       'Delete project',
       `Delete “${project.name}”? This cannot be undone.`,
       [
@@ -248,7 +228,7 @@ export default function ProjectsScreen() {
           style: 'destructive',
           onPress: () => {
             void (async () => {
-              await deleteProject(project.id);
+              await deleteProjectEverywhere(project.id);
               await loadProjects();
             })();
           },
@@ -287,15 +267,6 @@ export default function ProjectsScreen() {
 
       <View className="mt-4 flex-row items-center justify-between px-4">
         <Text className="text-sm font-semibold text-foreground">Your projects</Text>
-        <Pressable
-          onPress={() => {
-            setSyncing(true);
-            void syncAllProjects().then(loadProjects).finally(() => setSyncing(false));
-          }}
-          disabled={syncing}
-        >
-          <Text className="text-sm text-accent">{syncing ? 'Syncing…' : 'Sync'}</Text>
-        </Pressable>
       </View>
 
       {loading ? (
@@ -353,11 +324,6 @@ export default function ProjectsScreen() {
                   {item.platform ? `${item.platform}` : 'Local'}
                   {item.duration != null ? ` · ${formatDuration(item.duration)}` : ''}
                 </Text>
-                {item.syncStatus && item.syncStatus !== 'pending' && item.syncStatus !== 'local-only' ? (
-                  <Text className={`text-xs ${SYNC_BADGE_COLOR[item.syncStatus]}`}>
-                    {SYNC_LABEL[item.syncStatus]}
-                  </Text>
-                ) : null}
               </View>
             </Pressable>
           )}

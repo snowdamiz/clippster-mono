@@ -312,6 +312,10 @@ export async function healSchema(): Promise<void> {
       'CREATE INDEX IF NOT EXISTS idx_audio_playlist_items_position ON audio_playlist_items(playlist_id, position)'
     );
 
+    // --- Cloud sync: raw_videos source metadata ---
+    await addColumnIfMissing(db, 'raw_videos', 'platform', 'TEXT');
+    await addColumnIfMissing(db, 'raw_videos', 'source_url', 'TEXT');
+
     await healProjectTimestamps(db);
     await healStaleProjectBranding(db);
 

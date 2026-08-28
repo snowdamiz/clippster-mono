@@ -7,8 +7,9 @@ import { fileURLToPath } from 'url';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const mobileRoot = path.resolve(__dirname, '..');
 
-/** First choice matches the port we used interactively when 8081 was taken. */
-const METRO_PORTS = [8082, 8083, 8084, 8085];
+/** Pin Metro to one port so the dev client does not keep a stale bundler URL. Override with METRO_PORT. */
+const DEFAULT_METRO_PORT = Number(process.env.METRO_PORT) || 8082;
+const METRO_PORTS = [DEFAULT_METRO_PORT, 8083, 8084, 8085];
 
 function killProcessOnPort(port) {
   try {
@@ -71,13 +72,34 @@ function isPortInUse(port, host = '127.0.0.1', timeoutMs = 500) {
 }
 
 async function findMetroPort() {
+  if (!(await isPortInUse(DEFAULT_METRO_PORT))) {
+    return DEFAULT_METRO_PORT;
+  }
+
   for (const port of METRO_PORTS) {
+    if (port === DEFAULT_METRO_PORT) continue;
     if (!(await isPortInUse(port))) {
+      console.warn(
+        `Port ${DEFAULT_METRO_PORT} is busy — using ${port}. Reload the dev client if it still points at ${DEFAULT_METRO_PORT}.`,
+      );
       return port;
     }
   }
 
   return null;
+}
+
+function launchAndroidDevClient(port) {
+  const bundlerUrl = `http://10.0.2.2:${port}`;
+  const deepLink = `exp+clippster://expo-development-client/?url=${encodeURIComponent(bundlerUrl)}`;
+  try {
+    execSync(`adb shell am start -a android.intent.action.VIEW -d "${deepLink}"`, {
+      stdio: 'ignore',
+    });
+    console.log(`Opened dev client → ${bundlerUrl}`);
+  } catch {
+    console.warn(`Could not open dev client (${bundlerUrl}). Shake device → change bundle location manually.`);
+  }
 }
 
 function listAndroidDevices() {
@@ -178,7 +200,10 @@ console.log(`Starting Expo dev server on port ${port}`);
 
 if (launchAndroid) {
   setupAndroidPortReverse(getPhoenixDevPort());
+  setupAndroidPortReverse(port);
   console.log(`Android device detected (${androidDevices[0]}) — launching app`);
+  // Delay launch until Metro is listening (expo start spawns asynchronously).
+  setTimeout(() => launchAndroidDevClient(port), 8000);
 } else {
   console.log('No Android device detected — Metro only (start an emulator or run yarn mobile:android)');
 }

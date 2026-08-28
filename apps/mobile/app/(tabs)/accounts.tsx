@@ -4,7 +4,6 @@ import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Pressable,
   RefreshControl,
   ScrollView,
@@ -20,6 +19,7 @@ import { startPostForMeOAuth } from '@/services/postForMeOAuth';
 import { startPostForMeOrgOAuth } from '@/services/postForMeOrgOAuth';
 import { startTokendConnect, startTokendOrgConnect } from '@/services/tokendOAuth';
 import { tokens } from '@/theme/tokens';
+import { appAlert } from '@/lib/appAlert';
 
 export default function AccountsScreen() {
   const [accounts, setAccounts] = useState<UserSocialAccount[]>([]);
@@ -83,12 +83,12 @@ export default function AccountsScreen() {
       if (result.success) {
         setShowConnect(false);
         await loadAccounts();
-        Alert.alert('Connected', `${getSocialPlatformLabel(platform)} account linked successfully.`);
+        appAlert('Connected', `${getSocialPlatformLabel(platform)} account linked successfully.`);
       } else {
-        Alert.alert('Connection failed', result.error ?? 'Could not connect account.');
+        appAlert('Connection failed', result.error ?? 'Could not connect account.');
       }
     } catch (error) {
-      Alert.alert(
+      appAlert(
         'Connection failed',
         error instanceof Error ? error.message : 'Could not connect account.',
       );
@@ -98,7 +98,7 @@ export default function AccountsScreen() {
   }
 
   function handleDisconnect(accountId: number) {
-    Alert.alert('Disconnect account', 'Remove this social account?', [
+    appAlert('Disconnect account', 'Remove this social account?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Disconnect',
@@ -107,7 +107,7 @@ export default function AccountsScreen() {
           void (async () => {
             const response = await userSocialApi.disconnectAccount(accountId);
             if (response.success) await loadAccounts();
-            else Alert.alert('Error', response.error ?? 'Failed to disconnect');
+            else appAlert('Error', response.error ?? 'Failed to disconnect');
           })();
         },
       },
@@ -126,9 +126,9 @@ export default function AccountsScreen() {
       if (result.success) {
         setShowConnect(false);
         await loadOrgAccounts(selectedOrgId);
-        Alert.alert('Connected', `Organization ${getSocialPlatformLabel(platform)} account linked.`);
+        appAlert('Connected', `Organization ${getSocialPlatformLabel(platform)} account linked.`);
       } else {
-        Alert.alert('Connection failed', result.error ?? 'Could not connect org account.');
+        appAlert('Connection failed', result.error ?? 'Could not connect org account.');
       }
     } finally {
       setConnectingOrgPlatform(null);
@@ -137,7 +137,7 @@ export default function AccountsScreen() {
 
   function handleOrgDisconnect(accountId: number) {
     if (!selectedOrgId) return;
-    Alert.alert('Disconnect account', 'Remove this organization social account?', [
+    appAlert('Disconnect account', 'Remove this organization social account?', [
       { text: 'Cancel', style: 'cancel' },
       {
         text: 'Disconnect',
@@ -146,7 +146,7 @@ export default function AccountsScreen() {
           void (async () => {
             const response = await userSocialApi.disconnectOrgAccount(selectedOrgId, accountId);
             if (response.success) await loadOrgAccounts(selectedOrgId);
-            else Alert.alert('Error', response.error ?? 'Failed to disconnect');
+            else appAlert('Error', response.error ?? 'Failed to disconnect');
           })();
         },
       },

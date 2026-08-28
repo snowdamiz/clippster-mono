@@ -4010,12 +4010,26 @@ expo-image-loader@~56.0.3:
   resolved "https://registry.yarnpkg.com/expo-image-loader/-/expo-image-loader-56.0.3.tgz#665112665e78d0fd9629f6160e2ca419d7f0c5c6"
   integrity sha512-JgUo4fUeU1ZC+z8iBFj8v7yoGQnZrLbOVPyNE+DWVrld55F2F6R1ck+rmdm/8TNWLz1LhNQfD7c3XYP1ZikxXA==
 
+expo-image-manipulator@~56.0.5:
+  version "56.0.25"
+  resolved "https://registry.yarnpkg.com/expo-image-manipulator/-/expo-image-manipulator-56.0.25.tgz#d21a9240a2f83d33ae2c1dcc5ab1f5ab8292b825"
+  integrity sha512-12eo/bRfTSYfU+IaZ2gzbcXJX/vFUOszBTZ4dkde8pf0OvcMHBVEGGBY+BPgEDCCNcml/knFSvOwIRHFTHplTw==
+  dependencies:
+    expo-image-loader "~56.0.3"
+
 expo-image-picker@~56.0.24:
   version "56.0.24"
   resolved "https://registry.yarnpkg.com/expo-image-picker/-/expo-image-picker-56.0.24.tgz#4e96a5059a020ce7ba15161598e13927ddfd4e4f"
   integrity sha512-5GuHVqHUhf9RM96MDZwHdsSh9F/H7DmXKnDbXlONNK8+AwTsSDwB1NSwLZgl8CxlPbZXYaGcELVJdLLscXvZng==
   dependencies:
     expo-image-loader "~56.0.3"
+
+expo-image@~56.0.12:
+  version "56.0.12"
+  resolved "https://registry.yarnpkg.com/expo-image/-/expo-image-56.0.12.tgz#d0d014b46a123ba506883f114fcdf60cfeace39d"
+  integrity sha512-R1LDk/D/VazqcmT1OIEBV7+BDezyyJbi594ZstlklCR6aMUBNBcjQNxoEa8YaIxNdT3BsRS46/VDHpmHg4B23Q==
+  dependencies:
+    sf-symbols-typescript "^2.2.0"
 
 expo-json-utils@~56.0.0:
   version "56.0.0"
@@ -6903,7 +6917,7 @@ setprototypeof@~1.2.0:
   resolved "https://registry.npmjs.org/setprototypeof/-/setprototypeof-1.2.0.tgz"
   integrity sha512-E5LDX7Wrp85Kil5bhZv46j8jOeboKq5JMmYM3gVGdGH8xFpPWXUMsNrlODCrkoxMEeNi/XZIwuRvY4XNwYMJpw==
 
-sf-symbols-typescript@^2.0.0, sf-symbols-typescript@^2.1.0:
+sf-symbols-typescript@^2.0.0, sf-symbols-typescript@^2.1.0, sf-symbols-typescript@^2.2.0:
   version "2.2.0"
   resolved "https://registry.npmjs.org/sf-symbols-typescript/-/sf-symbols-typescript-2.2.0.tgz"
   integrity sha512-TPbeg0b7ylrswdGCji8FRGFAKuqbpQlLbL8SOle3j1iHSs5Ob5mhvMAxWN2UItOjgALAB5Zp3fmMfj8mbWvXKw==
