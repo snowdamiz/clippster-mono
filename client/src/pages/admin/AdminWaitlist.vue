@@ -294,6 +294,7 @@
   import { UserPlus, Users, Activity, RefreshCw, Loader2, Copy, Download, AlertTriangle, RefreshCcw } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import api from '@/services/api';
+  import { useToast } from '@/composables/useToast';
 
   interface WaitlistEntry {
     id: number;
@@ -329,6 +330,7 @@
     duration_months: 1,
     allowed_tiers: ['creator']
   });
+  const { error: showErrorToast } = useToast();
 
   const fetchWaitlist = async () => {
     loading.value = true;
@@ -369,13 +371,18 @@
     }
   };
 
-  const exportWaitlistEmailsCsv = () => {
+  const exportWaitlistEmailsCsv = async () => {
     const emails = waitlistEntries.value.map((entry) => entry.email).filter(Boolean);
     if (!emails.length) {
-      error.value = 'No emails to export';
+      showErrorToast('Export failed', 'No emails to export');
       return;
     }
-    downloadEmailsCsv(emails, 'waitlist-emails.csv');
+    try {
+      await downloadEmailsCsv(emails, 'waitlist-emails.csv');
+    } catch (err) {
+      console.error('Failed to export waitlist emails:', err);
+      showErrorToast('Export failed', err instanceof Error ? err.message : 'Failed to export emails CSV');
+    }
   };
 
   const inviteEntry = async (entryId: number) => {
