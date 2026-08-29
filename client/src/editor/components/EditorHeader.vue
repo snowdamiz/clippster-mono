@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, inject } from "vue";
 import { useEditor } from "../composables/useEditor";
 import { useRouter } from "vue-router";
 import ExportButton from "./ExportButton.vue";
@@ -44,6 +44,10 @@ const { activeSocialOverlay } = useEditorUIState();
 const { saveAsWatermark } = useWatermarkExport();
 const { availableCampaigns, isSubmitting, isLoadingCampaigns, loadMyCampaigns, submitImageToCampaign } = useCampaignImageSubmit();
 const router = useRouter();
+const imageEditorExitToProjects = inject<(() => Promise<void>) | null>(
+	"imageEditorExitToProjects",
+	null,
+);
 
 // Image export state
 const imageExportFormat = ref<ImageExportFormat>("png");
@@ -181,7 +185,7 @@ const isRenamingTitle = ref(false);
 const renameInput = ref("");
 const vodInfo = ref<{ platform: string; streamerName: string | null } | null>(null);
 
-const aspectPresets = [
+const videoAspectPresets = [
 	{ width: 1920, height: 1080, label: "16:9" },
 	{ width: 1080, height: 1920, label: "9:16" },
 	{ width: 1080, height: 1080, label: "1:1" },
@@ -189,6 +193,19 @@ const aspectPresets = [
 	{ width: 1280, height: 720, label: "YouTube HD" },
 	{ width: 3840, height: 2160, label: "YouTube 4K" },
 ];
+
+const imageAspectPresets = [
+	{ width: 1280, height: 720, label: "YT Thumbnail" },
+	{ width: 1920, height: 1080, label: "16:9" },
+	{ width: 1080, height: 1080, label: "Square" },
+	{ width: 1080, height: 1350, label: "IG Portrait" },
+	{ width: 1080, height: 1920, label: "Story / Short" },
+	{ width: 1500, height: 500, label: "X Banner" },
+];
+
+const aspectPresets = computed(() =>
+	isImageMode.value ? imageAspectPresets : videoAspectPresets,
+);
 
 const activeProject = computed(() => {
 	void version.value;
@@ -200,7 +217,7 @@ const canvasWidth = computed(() => activeProject.value?.settings?.canvasSize?.wi
 const canvasHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
 
 const currentAspectLabel = computed(() => {
-	const match = aspectPresets.find((p) => p.width === canvasWidth.value && p.height === canvasHeight.value);
+	const match = aspectPresets.value.find((p) => p.width === canvasWidth.value && p.height === canvasHeight.value);
 	return match ? match.label : `${canvasWidth.value}×${canvasHeight.value}`;
 });
 
@@ -386,13 +403,24 @@ async function handleExit() {
 		console.error("Failed to prepare project exit:", error);
 	}
 
+	// Image mode: sync thumbnail + project_data before navigating so Design Projects matches canvas.
+	if (isImageMode.value && imageEditorExitToProjects) {
+		try {
+			await imageEditorExitToProjects();
+		} catch (error) {
+			console.error("Failed to exit image editor:", error);
+			await router.push("/design-studio");
+		}
+		return;
+	}
+
 	try {
 		editor.project.closeProject();
 	} catch (error) {
 		console.error("Failed to close project:", error);
 	}
 
-	router.push(isImageMode.value ? "/design-studio" : "/video-editor");
+	router.push("/video-editor");
 }
 
 async function handleRename() {
@@ -532,8 +560,8 @@ function cancelRename() {
 			<div v-if="showAspectMenu" class="fixed inset-0 z-[199]" @click="showAspectMenu = false" />
 		</div>
 
-		<!-- Use 16:9 (non-16:9 canvas; same as Manual POI target panel) -->
-		<template v-if="!is169Canvas">
+		<!-- Use 16:9 (non-16:9 canvas; video POI framing — not for image editor) -->
+		<template v-if="!isImageMode && !is169Canvas">
 			<div class="h-3 w-px bg-white/20" />
 			<label
 				class="flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors"

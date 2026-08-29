@@ -6,6 +6,7 @@ import {
 	Plus,
 	Trash2,
 	Image as ImageIcon,
+	Paintbrush,
 	Search,
 	Check,
 	Play,
@@ -58,6 +59,7 @@ const showAuthModal = ref(false);
 let cloudAutosaveTimer: ReturnType<typeof setTimeout> | null = null;
 let unsubScenes: (() => void) | null = null;
 let unsubTimeline: (() => void) | null = null;
+let inflightCloudSync: Promise<void> | null = null;
 
 const CANVAS_PRESETS = [
 	{ id: "youtube-720", label: "YouTube 1280×720", width: 1280, height: 720 },
@@ -79,6 +81,20 @@ const coverForClipId = ref<string | null>((route.query.coverForClip as string) |
 provide("coverForClipId", coverForClipId);
 const backendProjectId = computed(() => projectManager.projectId.value);
 provide("imageEditorBackendProjectId", backendProjectId);
+
+/** Exit edit → projects list after thumbnail refresh + cloud sync (avoids stale cards). */
+async function exitToProjects() {
+	stopCloudAutosave();
+	try {
+		await syncToCloud({ flush: true });
+	} finally {
+		projectManager.closeProject();
+		EditorCore.reset();
+		coverForClipId.value = null;
+	}
+	await router.push({ path: "/design-studio" });
+}
+provide("imageEditorExitToProjects", exitToProjects);
 
 const isEditRoute = computed(() => route.name === "design-studio-edit");
 const hasProjectId = computed(() => !!route.query.projectId);
@@ -237,6 +253,8 @@ async function loadEditorProject(id: number) {
 		const backendProject = await projectManager.loadProject(id);
 		await openDocument(backendProject.project_data);
 		startCloudAutosave();
+		// Refresh list card from current canvas (heals stale template thumbnails).
+		void syncToCloud();
 	} catch (err) {
 		console.error("Failed to load image editor:", err);
 		editorError.value = err instanceof Error ? err.message : "Failed to load editor";
@@ -483,28 +501,45 @@ function stopCloudAutosave() {
 	unsubTimeline = null;
 }
 
-async function syncToCloud(_opts: { flush?: boolean } = {}) {
+async function syncToCloud(opts: { flush?: boolean } = {}) {
 	if (!projectManager.project.value) return;
-	if (isSyncing.value) return;
 
-	isSyncing.value = true;
-	try {
-		const doc = await flushAndSerializeActiveImageProject();
-		if (!doc) return;
-
-		const canvas = doc.settings?.canvasSize;
-		await projectManager.saveProject({
-			name: doc.metadata.name,
-			project_data: doc,
-			thumbnail_url: doc.metadata.thumbnail,
-			canvas_width: canvas?.width,
-			canvas_height: canvas?.height,
-		});
-	} catch (e) {
-		console.warn("[ImageEditor] Cloud autosave failed:", e);
-	} finally {
-		isSyncing.value = false;
+	// Debounced autosave can skip if busy; exit flush must wait then sync again.
+	if (inflightCloudSync) {
+		await inflightCloudSync;
+		if (!opts.flush || !projectManager.project.value) return;
 	}
+
+	const run = async () => {
+		isSyncing.value = true;
+		try {
+			const editor = EditorCore.getInstance();
+			if (editor.project.getActiveOrNull()) {
+				await editor.project.refreshThumbnail();
+			}
+
+			const doc = await flushAndSerializeActiveImageProject();
+			if (!doc) return;
+
+			const canvas = doc.settings?.canvasSize;
+			await projectManager.saveProject({
+				name: doc.metadata.name,
+				project_data: doc,
+				thumbnail_url: doc.metadata.thumbnail,
+				canvas_width: canvas?.width,
+				canvas_height: canvas?.height,
+			});
+		} catch (e) {
+			console.warn("[ImageEditor] Cloud autosave failed:", e);
+		} finally {
+			isSyncing.value = false;
+		}
+	};
+
+	inflightCloudSync = run().finally(() => {
+		inflightCloudSync = null;
+	});
+	await inflightCloudSync;
 }
 
 async function loadProjects() {
@@ -635,13 +670,7 @@ function selectAllProjects() {
 }
 
 function backToProjects() {
-	stopCloudAutosave();
-	void syncToCloud({ flush: true }).finally(() => {
-		projectManager.closeProject();
-		EditorCore.reset();
-		coverForClipId.value = null;
-		router.push({ path: "/design-studio" });
-	});
+	void exitToProjects();
 }
 
 function formatCanvasSize(project: ProjectSummary): string {
@@ -687,8 +716,12 @@ function getRelativeTime(dateStr: string): string {
 		title="Image Editor"
 		description="Create and manage your image design projects"
 		:show-header="true"
-		:icon="ImageIcon"
+		:icon="Paintbrush"
 	>
+		<template #badge>
+			<span class="imageeditor-beta-badge">Beta</span>
+		</template>
+
 		<template #actions>
 			<div class="imageeditor-header-actions">
 				<div class="imageeditor-header__search">
@@ -931,6 +964,20 @@ function getRelativeTime(dateStr: string): string {
 </template>
 
 <style scoped>
+.imageeditor-beta-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 0.2rem 0.5rem;
+	font-size: 0.6875rem;
+	font-weight: 700;
+	line-height: 1;
+	letter-spacing: 0.02em;
+	border-radius: 0.375rem;
+	background-color: var(--sidebar-accent);
+	color: #000;
+	text-transform: uppercase;
+}
+
 .imageeditor__content {
 	display: flex;
 	flex-direction: column;

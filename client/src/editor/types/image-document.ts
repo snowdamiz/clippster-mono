@@ -26,19 +26,26 @@ export type PixelToolId =
 	| "marquee-rect"
 	| "marquee-ellipse"
 	| "lasso"
+	| "polygonal-lasso"
 	| "magic-wand"
 	| "crop"
 	| "brush"
+	| "pencil"
 	| "eraser"
+	| "background-eraser"
+	| "magic-eraser"
 	| "fill"
 	| "gradient"
 	| "eyedropper"
 	| "text"
 	| "shape"
+	| "shape-rect"
+	| "shape-ellipse"
 	| "hand"
 	| "zoom"
 	| "clone"
-	| "heal";
+	| "heal"
+	| "spot-heal";
 
 export interface PixelSelection {
 	type: "rect" | "ellipse" | "path" | "mask";

@@ -74,7 +74,7 @@ export async function triggerGeneration(
   const token = authStore.token || localStorage.getItem('auth_token');
   const baseUrl =
     api.defaults.baseURL ||
-    (import.meta.env.DEV ? 'http://localhost:4000/api' : 'https://api.clippster.app/api');
+    (import.meta.env.DEV ? 'http://127.0.0.1:4000/api' : 'https://api.clippster.app/api');
 
   const response = await fetch(`${baseUrl}/ai/chat/sessions/${sessionId}/generate`, {
     method: 'POST',

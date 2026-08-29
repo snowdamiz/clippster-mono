@@ -3,7 +3,7 @@ import { useAuthStore } from '../stores/auth';
 import { isSocialTokenExpiredApiError } from '@/utils/socialAuthErrors';
 
 const getBaseUrl = () => {
-  let url = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : 'https://api.clippster.app/api');
+  let url = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://127.0.0.1:4000/api' : 'https://api.clippster.app/api');
 
   // Remove trailing slash if present
   if (url.endsWith('/')) {

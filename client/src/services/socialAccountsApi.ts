@@ -718,7 +718,7 @@ const POST_FOR_ME_STATUS_TIMEOUT_MS = 180000;
 function getApiBase(): string {
   return (
     import.meta.env.VITE_API_URL ||
-    (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app')
+    (import.meta.env.DEV ? 'http://127.0.0.1:4000' : 'https://api.clippster.app')
   );
 }
 

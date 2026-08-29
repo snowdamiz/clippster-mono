@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { ref, watch, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useFontManager } from "../../../composables/useFontManager";
+import { useImageMode } from "../../../composables/useImageMode";
 import type { TextElement, TextBubbleStyle, TextCase } from "../../../types/timeline";
 
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
@@ -34,17 +35,26 @@ const props = defineProps<{
 
 const { editor } = useEditor({ subscribe: false });
 const { allFonts, uploadCustomFont, ensureFontLoaded } = useFontManager();
+const { isImageMode } = useImageMode();
 
 // ── Top-level tabs (CapCut style) ──
 type TopTab = "style" | "effects" | "bubble" | "animate" | "keyframes";
 const activeTopTab = ref<TopTab>("style");
-const topTabs: { id: TopTab; label: string; icon: any }[] = [
-	{ id: 'style', label: 'Style', icon: Baseline },
-	{ id: 'effects', label: 'Effects', icon: Sparkles },
-	{ id: 'bubble', label: 'Bubble', icon: MessageSquare },
-	{ id: 'animate', label: 'Animate', icon: Zap },
-	{ id: 'keyframes', label: 'Keyframes', icon: Diamond },
+const allTopTabs: { id: TopTab; label: string; icon: any }[] = [
+	{ id: "style", label: "Style", icon: Baseline },
+	{ id: "effects", label: "Effects", icon: Sparkles },
+	{ id: "bubble", label: "Bubble", icon: MessageSquare },
+	{ id: "animate", label: "Animate", icon: Zap },
+	{ id: "keyframes", label: "Keyframes", icon: Diamond },
 ];
+const topTabs = computed(() =>
+	isImageMode.value
+		? allTopTabs.filter((t) => t.id !== "animate" && t.id !== "keyframes")
+		: allTopTabs,
+);
+watch(topTabs, (tabs) => {
+	if (!tabs.some((t) => t.id === activeTopTab.value)) activeTopTab.value = "style";
+});
 
 // ── Input refs ──
 const fontSizeInput = ref(props.element.fontSize.toString());
@@ -711,8 +721,8 @@ const quickStyles = [
 				<ElementTimingFields :element="element" :track-id="trackId" />
 			</div>
 
-			<!-- ── Fade In/Out ── -->
-			<div class="space-y-2 border-t border-white/10 pt-4">
+			<!-- ── Fade In/Out (video only) ── -->
+			<div v-if="!isImageMode" class="space-y-2 border-t border-white/10 pt-4">
 				<span class="text-zinc-300 font-medium">Fade</span>
 				<div class="space-y-1">
 					<label class="text-zinc-500">Fade In</label>
@@ -925,7 +935,7 @@ const quickStyles = [
 		<!-- ═══════════════════════════════════════════ -->
 		<!-- TAB: Animate                               -->
 		<!-- ═══════════════════════════════════════════ -->
-		<div v-else-if="activeTopTab === 'animate'" class="flex-1 overflow-y-auto">
+		<div v-else-if="!isImageMode && activeTopTab === 'animate'" class="flex-1 overflow-y-auto">
 			<AnimationProperties
 				:element-id="element.id"
 				:track-id="trackId"
@@ -936,7 +946,7 @@ const quickStyles = [
 			/>
 		</div>
 
-		<div v-else-if="activeTopTab === 'keyframes'" class="flex-1 overflow-y-auto">
+		<div v-else-if="!isImageMode && activeTopTab === 'keyframes'" class="flex-1 overflow-y-auto">
 			<KeyframeEditorPanel :track-id="trackId" :element="element" />
 		</div>
 		</div>

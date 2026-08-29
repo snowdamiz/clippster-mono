@@ -1,13 +1,18 @@
 <script setup lang="ts">
+import { computed } from "vue";
 import { useRouter } from "vue-router";
 import { Type, Sparkles, ExternalLink } from "lucide-vue-next";
 import { buildTextElement } from "@/editor/lib/timeline/element-utils";
 import { TIMELINE_CONSTANTS } from "@/editor/constants/timeline-constants";
 import { useEditor } from "@/editor/composables/useEditor";
-import { ref } from "vue";
+import { useAuthStore } from "@/stores/auth";
+import { canAccessAIVideo } from "@/utils/aiVideoAccess";
 
 const router = useRouter();
+const authStore = useAuthStore();
 const { editor } = useEditor();
+
+const hasThumbnailAccess = computed(() => canAccessAIVideo(authStore.user));
 
 const quickTexts = [
 	"MAKE IT HAPPEN",
@@ -30,24 +35,44 @@ function addTextToCanvas(text: string) {
 }
 
 function openThumbnailGenerator() {
+	if (!hasThumbnailAccess.value) return;
 	router.push("/ai-thumbnail");
 }
 </script>
 
 <template>
 	<div class="flex h-full flex-col gap-4 overflow-y-auto p-4">
-		<div class="rounded-lg border border-purple-500/30 bg-purple-600/10 p-3">
+		<div
+			class="rounded-lg border p-3"
+			:class="
+				hasThumbnailAccess
+					? 'border-purple-500/30 bg-purple-600/10'
+					: 'border-white/10 bg-white/[0.03] opacity-60'
+			"
+		>
 			<div class="mb-2 flex items-center gap-2">
-				<Sparkles class="size-4 text-purple-400" />
+				<Sparkles class="size-4" :class="hasThumbnailAccess ? 'text-purple-400' : 'text-zinc-500'" />
 				<h3 class="text-xs font-semibold text-zinc-200">AI Thumbnail Generator</h3>
+				<span
+					v-if="!hasThumbnailAccess"
+					class="ml-auto rounded bg-white/5 px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none text-zinc-500"
+				>
+					Coming Soon
+				</span>
 			</div>
 			<p class="mb-3 text-[10px] leading-relaxed text-zinc-400">
 				Chat-based thumbnail creation with Quick (flat PNG) or Editable (layered project) modes,
-				video frames, references, and 3 refinement rounds.
+				references, and 3 refinement rounds.
 			</p>
 			<button
 				type="button"
-				class="flex w-full items-center justify-center gap-1.5 rounded-md bg-purple-600 px-3 py-2 text-xs font-medium text-white transition-colors hover:bg-purple-500"
+				class="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors"
+				:class="
+					hasThumbnailAccess
+						? 'bg-purple-600 text-white hover:bg-purple-500'
+						: 'cursor-not-allowed bg-zinc-700 text-zinc-400'
+				"
+				:disabled="!hasThumbnailAccess"
 				@click="openThumbnailGenerator"
 			>
 				Open AI Thumbnail

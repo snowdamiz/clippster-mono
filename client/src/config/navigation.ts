@@ -133,15 +133,16 @@ export const navigationItems: NavigationItem[] = [
     path: '/design-studio',
     icon: Paintbrush,
     group: 'create',
+    badge: 'Beta',
   },
   {
-    name: 'AI Video Creator',
+    name: 'AI Video Editor',
     path: '/ai-video',
     icon: Wand2,
     group: 'create',
   },
   {
-    name: 'AI Thumbnail',
+    name: 'AI Thumbnail Creator',
     path: '/ai-thumbnail',
     icon: Sparkles,
     group: 'create',

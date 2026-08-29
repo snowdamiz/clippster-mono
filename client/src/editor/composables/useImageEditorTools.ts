@@ -9,8 +9,19 @@ import { processMediaAssets } from "../lib/media/processing";
 import { buildImageElement, buildTextElement } from "../lib/timeline/element-utils";
 import { TIMELINE_CONSTANTS } from "../constants/timeline-constants";
 import { useEditorUIState } from "./useEditorUIState";
+import {
+	findFlyoutSlotForTool,
+	IMAGE_TOOL_BY_ID,
+	IMAGE_TOOL_FLYouts,
+	IMAGE_TOOL_RAIL,
+	toolsSharingShortcut,
+} from "../constants/image-tool-flyouts";
 
 const activeTool = ref<PixelToolId>("move");
+/** Last-selected tool id per flyout slot (Photoshop: toolbar shows last used). */
+const flyoutLastTool = ref<Record<string, PixelToolId>>(
+	Object.fromEntries(IMAGE_TOOL_FLYouts.map((s) => [s.id, s.defaultTool])),
+);
 const brushSize = ref(24);
 const brushOpacity = ref(1);
 const brushHardness = ref(0.8);
@@ -22,6 +33,8 @@ const strokeColor = ref("#000000");
 const shapeKind = ref<"rect" | "ellipse">("rect");
 const marqueeKind = ref<"rect" | "ellipse">("rect");
 const marqueeDraft = ref<PixelSelection | null>(null);
+/** Softness remembered when switching Brush ↔ Pencil. */
+let brushHardnessBeforePencil = 0.8;
 
 export function useImageEditorTools() {
 	const tool = computed(() => activeTool.value);
@@ -51,17 +64,78 @@ export function useImageEditorTools() {
 		}
 	}
 
+	const TOOLS_NEEDING_IMAGE: PixelToolId[] = [
+		"crop",
+		"magic-wand",
+		"brush",
+		"pencil",
+		"eraser",
+		"background-eraser",
+		"magic-eraser",
+		"fill",
+		"clone",
+		"heal",
+		"spot-heal",
+		"gradient",
+	];
+
+	function syncToolAliases(id: PixelToolId) {
+		if (id === "marquee-rect") marqueeKind.value = "rect";
+		if (id === "marquee-ellipse") marqueeKind.value = "ellipse";
+		if (id === "shape-rect" || id === "shape") {
+			shapeKind.value = "rect";
+		}
+		if (id === "shape-ellipse") shapeKind.value = "ellipse";
+
+		if (id === "pencil") {
+			if (brushHardness.value < 0.99) brushHardnessBeforePencil = brushHardness.value;
+			brushHardness.value = 1;
+		} else if (id === "brush" && brushHardness.value >= 0.99 && brushHardnessBeforePencil < 0.99) {
+			brushHardness.value = brushHardnessBeforePencil;
+		}
+	}
+
 	function activateTool(id: PixelToolId) {
-		setTool(id);
-		if (id === "crop") {
+		const normalized: PixelToolId = id === "shape" ? "shape-rect" : id;
+		syncToolAliases(normalized);
+		setTool(normalized);
+
+		const slot = findFlyoutSlotForTool(normalized);
+		if (slot) {
+			flyoutLastTool.value = { ...flyoutLastTool.value, [slot.id]: normalized };
+		}
+
+		if (TOOLS_NEEDING_IMAGE.includes(normalized)) {
 			selectFirstImageIfNeeded();
-			enterCropMode();
-		} else if (id === "magic-wand") {
-			selectFirstImageIfNeeded();
-			if (isCropMode.value) exitCropMode();
+		}
+		if (normalized === "crop") {
+			queueMicrotask(() => {
+				if (activeTool.value === "crop") enterCropMode();
+			});
 		} else if (isCropMode.value) {
 			exitCropMode();
 		}
+	}
+
+	/** Visible tool for a flyout slot (last selected or default). */
+	function getSlotVisibleTool(slotId: string): PixelToolId {
+		const slot = IMAGE_TOOL_FLYouts.find((s) => s.id === slotId);
+		if (!slot) return "move";
+		return flyoutLastTool.value[slotId] ?? slot.defaultTool;
+	}
+
+	/** Photoshop: Shift+letter cycles tools that share a shortcut. */
+	function cycleToolsByShortcut(shortcut: string) {
+		const tools = toolsSharingShortcut(shortcut);
+		if (tools.length === 0) return;
+		const idx = tools.findIndex((t) => t.id === activeTool.value);
+		const next = tools[idx < 0 ? 0 : (idx + 1) % tools.length];
+		activateTool(next.id);
+	}
+
+	/** @deprecated Prefer cycleToolsByShortcut("E") */
+	function cycleEraserTools() {
+		cycleToolsByShortcut("E");
 	}
 
 	function getOrCreateImageDocument() {
@@ -300,6 +374,11 @@ export function useImageEditorTools() {
 		activeTool: tool,
 		setTool,
 		activateTool,
+		cycleEraserTools,
+		cycleToolsByShortcut,
+		getSlotVisibleTool,
+		flyoutLastTool,
+		selectFirstImageIfNeeded,
 		brushSize,
 		brushOpacity,
 		brushHardness,
@@ -322,26 +401,4 @@ export function useImageEditorTools() {
 	};
 }
 
-export const IMAGE_TOOL_RAIL: Array<{
-	id: PixelToolId;
-	label: string;
-	shortcut: string;
-	group: "select" | "paint" | "type" | "nav";
-}> = [
-	{ id: "move", label: "Move", shortcut: "V", group: "select" },
-	{ id: "marquee-rect", label: "Marquee", shortcut: "M", group: "select" },
-	{ id: "lasso", label: "Lasso", shortcut: "L", group: "select" },
-	{ id: "magic-wand", label: "Wand", shortcut: "W", group: "select" },
-	{ id: "crop", label: "Crop", shortcut: "C", group: "select" },
-	{ id: "brush", label: "Brush", shortcut: "B", group: "paint" },
-	{ id: "eraser", label: "Eraser", shortcut: "E", group: "paint" },
-	{ id: "fill", label: "Fill", shortcut: "G", group: "paint" },
-	{ id: "gradient", label: "Gradient", shortcut: "R", group: "paint" },
-	{ id: "clone", label: "Clone", shortcut: "S", group: "paint" },
-	{ id: "heal", label: "Heal", shortcut: "J", group: "paint" },
-	{ id: "eyedropper", label: "Eyedropper", shortcut: "I", group: "paint" },
-	{ id: "text", label: "Type", shortcut: "T", group: "type" },
-	{ id: "shape", label: "Shape", shortcut: "U", group: "type" },
-	{ id: "hand", label: "Hand", shortcut: "H", group: "nav" },
-	{ id: "zoom", label: "Zoom", shortcut: "Z", group: "nav" },
-];
+export { IMAGE_TOOL_RAIL, IMAGE_TOOL_FLYouts, IMAGE_TOOL_BY_ID, findFlyoutSlotForTool };

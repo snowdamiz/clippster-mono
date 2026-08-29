@@ -599,7 +599,7 @@
 
         paymentStatus.value = 'Verifying payment...';
         try {
-          const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
+          const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://127.0.0.1:4000' : 'https://api.clippster.app');
           const confirmResponse = await fetch(`${API_BASE}/api/payments/confirm`, {
             method: 'POST',
             headers: {
@@ -634,7 +634,7 @@
         }
       });
 
-      const apiBase = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
+      const apiBase = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://127.0.0.1:4000' : 'https://api.clippster.app');
       await invoke('open_wallet_payment_window', {
         packKey: selectedPack.value.key,
         packName: selectedPack.value.key.charAt(0).toUpperCase() + selectedPack.value.key.slice(1),

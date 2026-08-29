@@ -11,6 +11,10 @@ import { useImageMode } from "../../composables/useImageMode";
 import { useImageEditorTools } from "../../composables/useImageEditorTools";
 import { blitScratchToOverlay, useImageRasterPaint } from "../../composables/useImageRasterPaint";
 import { useImageCloneStamp } from "../../composables/useImageCloneStamp";
+import {
+	magicEraseAtCanvasPoint,
+	useImageBackgroundEraser,
+} from "../../composables/useImageBackgroundEraser";
 import { selectionBoundingBox } from "../../lib/image-layer-mapping";
 import { applyLinearGradient } from "../../lib/image-pixel-edits";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
@@ -62,6 +66,9 @@ const {
 	marqueeKind,
 	getLiveSelection,
 	strokeColor,
+	wandTolerance,
+	wandContiguous,
+	brushSize,
 } = useImageEditorTools();
 const {
 	cloneSource,
@@ -78,6 +85,13 @@ const {
 	continueStroke,
 	endStroke,
 } = useImageRasterPaint();
+const {
+	startBgErase,
+	continueBgErase,
+	endBgErase,
+	bgEraseScratch,
+	bgErasePreviewActive,
+} = useImageBackgroundEraser();
 const showSafeZones = ref(true);
 const marqueeDrag = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
 const lassoPoints = ref<Array<{ x: number; y: number }>>([]);
@@ -303,6 +317,25 @@ const is916 = computed(() => {
 	return canvasWidth.value === 1080 && canvasHeight.value === 1920;
 });
 
+watch(isImageMode, (enabled) => {
+	if (!enabled) return;
+	const project = editor.project.getActiveOrNull();
+	if (!project) return;
+	const bg = project.settings.background;
+	const color = bg?.type === "color" ? (bg.color || "").toLowerCase() : "";
+	// Migrate the old image-mode default (solid black) to Photoshop-style transparency.
+	if (
+		!bg ||
+		color === "#000000" ||
+		color === "#000" ||
+		color === "black"
+	) {
+		void editor.project.updateSettings({
+			settings: { background: { type: "color", color: "transparent" } },
+		});
+	}
+}, { immediate: true });
+
 watch(is916, (val) => {
 	if (!val && !isImageMode.value) {
 		activeSocialOverlay.value = null;
@@ -311,10 +344,16 @@ watch(is916, (val) => {
 });
 const fps = computed(() => activeProject.value?.settings?.fps ?? 30);
 const background = computed(() => activeProject.value?.settings?.background ?? { type: "color" as const, color: "#000000" });
+const isTransparentCanvas = computed(() => {
+	const bg = background.value;
+	if (!bg || bg.type !== "color") return isImageMode.value;
+	const c = (bg.color || "").toLowerCase();
+	return c === "transparent" || c === "rgba(0,0,0,0)" || c === "#00000000";
+});
 
 const renderer = shallowRef<CanvasRenderer | null>(null);
 
-watch([layoutWidth, layoutHeight, fps, previewBackingSize], ([w, h, f, backing]) => {
+watch([layoutWidth, layoutHeight, fps, previewBackingSize, isTransparentCanvas], ([w, h, f, backing, transparent]) => {
 	// Use a DOM canvas-backed renderer for preview. Several transition effects rely on
 	// alpha/clip compositing that is unreliable when the destination context is OffscreenCanvas
 	// in Chromium/Electron, which makes wipes/crossfades appear as no-ops in preview.
@@ -328,6 +367,7 @@ watch([layoutWidth, layoutHeight, fps, previewBackingSize], ([w, h, f, backing])
 		previewEffectProcessing: true,
 		backingWidth: backing.width,
 		backingHeight: backing.height,
+		clearStyle: transparent ? "transparent" : "black",
 	});
 	lastFrame = -1;
 	lastScene = null;
@@ -528,6 +568,7 @@ const previewLoop = useRafLoop(() => {
 requestPreviewFrame = previewLoop.requestFrame;
 
 const canvasBackground = computed(() => {
+	if (isTransparentCanvas.value) return "transparent";
 	const bg = background.value;
 	if (!bg) return "transparent";
 	return bg.type === "blur" ? "transparent" : bg.color;
@@ -705,11 +746,13 @@ function onCanvasPointerDown(event: PointerEvent) {
 		return;
 	}
 
-	if (activeTool.value === "shape") {
+	if (activeTool.value === "shape" || activeTool.value === "shape-rect" || activeTool.value === "shape-ellipse") {
 		event.preventDefault();
 		event.stopPropagation();
 		const pt = canvasNormFromEvent(event);
-		void insertShapeLayer(shapeKind.value, pt ? canvasPositionFromNorm(pt) : undefined);
+		const kind =
+			activeTool.value === "shape-ellipse" || shapeKind.value === "ellipse" ? "ellipse" : "rect";
+		void insertShapeLayer(kind, pt ? canvasPositionFromNorm(pt) : undefined);
 		setTool("move");
 		return;
 	}
@@ -755,16 +798,41 @@ function onCanvasPointerDown(event: PointerEvent) {
 			const rect = canvas.getBoundingClientRect();
 			const x = Math.floor(((event.clientX - rect.left) / rect.width) * canvas.width);
 			const y = Math.floor(((event.clientY - rect.top) / rect.height) * canvas.height);
-			const ctx = canvas.getContext("2d", { willReadFrequently: true });
+			// Must match the preview canvas's existing context attributes (willReadFrequently:false)
+			// or getContext returns null.
+			const ctx = canvas.getContext("2d");
 			if (!ctx) return;
-			const pixel = ctx.getImageData(Math.max(0, x), Math.max(0, y), 1, 1).data;
+			const pixel = ctx.getImageData(
+				Math.min(canvas.width - 1, Math.max(0, x)),
+				Math.min(canvas.height - 1, Math.max(0, y)),
+				1,
+				1,
+			).data;
 			fillColor.value = `#${[pixel[0], pixel[1], pixel[2]]
 				.map((c) => c.toString(16).padStart(2, "0"))
 				.join("")}`;
-			setTool("move");
+			setTool("brush");
 		} catch (e) {
 			console.warn("[PreviewPanel] Eyedropper sample failed:", e);
 		}
+		return;
+	}
+
+	if (activeTool.value === "magic-eraser") {
+		event.preventDefault();
+		event.stopPropagation();
+		const canvas = canvasRef.value;
+		if (!canvas) return;
+		const rect = canvas.getBoundingClientRect();
+		if (rect.width <= 0 || rect.height <= 0) return;
+		const canvasX = ((event.clientX - rect.left) / rect.width) * projectWidth.value;
+		const canvasY = ((event.clientY - rect.top) / rect.height) * projectHeight.value;
+		void magicEraseAtCanvasPoint({
+			canvasX,
+			canvasY,
+			tolerance: wandTolerance.value,
+			contiguous: wandContiguous.value,
+		});
 		return;
 	}
 
@@ -793,18 +861,24 @@ function onCanvasPointerDown(event: PointerEvent) {
 		return;
 	}
 
-	if (activeTool.value === "brush" || activeTool.value === "eraser") {
+	if (activeTool.value === "brush" || activeTool.value === "pencil" || activeTool.value === "eraser") {
 		event.preventDefault();
 		event.stopPropagation();
 		const canvas = canvasRef.value;
 		if (!canvas) return;
 		if (!startStroke(event, canvas)) return;
+		const eraseMode = activeTool.value === "eraser";
+
+		const blit = () => {
+			if (scratchCanvas.value && paintOverlayRef.value) {
+				blitScratchToOverlay(scratchCanvas.value, paintOverlayRef.value, eraseMode ? "erase" : "paint");
+			}
+		};
+		queueMicrotask(blit);
 
 		const onMove = (e: PointerEvent) => {
 			continueStroke(e, canvas);
-			if (scratchCanvas.value && paintOverlayRef.value) {
-				blitScratchToOverlay(scratchCanvas.value, paintOverlayRef.value);
-			}
+			blit();
 		};
 		const onUp = async () => {
 			window.removeEventListener("pointermove", onMove);
@@ -820,12 +894,66 @@ function onCanvasPointerDown(event: PointerEvent) {
 		return;
 	}
 
-	if (activeTool.value === "clone" || activeTool.value === "heal") {
+	if (activeTool.value === "background-eraser") {
 		event.preventDefault();
 		event.stopPropagation();
 		const canvas = canvasRef.value;
 		if (!canvas) return;
-		if (event.altKey || !cloneSource.value) {
+
+		const blit = () => {
+			const scratch = bgEraseScratch.value;
+			if (scratch && paintOverlayRef.value) {
+				blitScratchToOverlay(scratch, paintOverlayRef.value, "erase");
+			}
+		};
+
+		const onMove = (e: PointerEvent) => {
+			continueBgErase(e, canvas);
+			blit();
+		};
+		const onUp = async () => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			// Keep checkerboard overlay until media commit finishes to avoid a blank flash.
+			await endBgErase();
+			if (paintOverlayRef.value) {
+				const ctx = paintOverlayRef.value.getContext("2d");
+				if (ctx) ctx.clearRect(0, 0, paintOverlayRef.value.width, paintOverlayRef.value.height);
+			}
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		void startBgErase(event, canvas).then((started) => {
+			if (!started) {
+				window.removeEventListener("pointermove", onMove);
+				window.removeEventListener("pointerup", onUp);
+				return;
+			}
+			blit();
+		});
+		return;
+	}
+
+	if (activeTool.value === "clone" || activeTool.value === "heal" || activeTool.value === "spot-heal") {
+		event.preventDefault();
+		event.stopPropagation();
+		const canvas = canvasRef.value;
+		if (!canvas) return;
+		if (activeTool.value === "spot-heal") {
+			// Spot Healing samples nearby texture automatically (no Alt-click).
+			const rect = canvas.getBoundingClientRect();
+			const project = editor.project.getActiveOrNull();
+			if (project && rect.width > 0) {
+				const offset = Math.max(8, brushSize.value);
+				const x =
+					((event.clientX - rect.left) / rect.width) * project.settings.canvasSize.width + offset;
+				const y = ((event.clientY - rect.top) / rect.height) * project.settings.canvasSize.height;
+				cloneSource.value = {
+					canvasX: Math.min(project.settings.canvasSize.width, Math.max(0, x)),
+					canvasY: Math.min(project.settings.canvasSize.height, Math.max(0, y)),
+				};
+			}
+		} else if (event.altKey || !cloneSource.value) {
 			setSourceFromEvent(event, canvas);
 			return;
 		}
@@ -886,11 +1014,35 @@ function onCanvasPointerDown(event: PointerEvent) {
 		return;
 	}
 
-	if (activeTool.value === "lasso") {
+	if (activeTool.value === "lasso" || activeTool.value === "polygonal-lasso") {
 		event.preventDefault();
 		event.stopPropagation();
 		const pt = canvasNormFromEvent(event);
 		if (!pt) return;
+
+		if (activeTool.value === "polygonal-lasso") {
+			if (lassoPoints.value.length === 0) {
+				lassoPoints.value = [pt];
+				return;
+			}
+			const first = lassoPoints.value[0];
+			const close =
+				lassoPoints.value.length >= 3 && Math.hypot(pt.x - first.x, pt.y - first.y) < 0.02;
+			if (close || event.detail === 2) {
+				const points = close ? lassoPoints.value : [...lassoPoints.value, pt];
+				lassoPoints.value = [];
+				const box = selectionBoundingBox(points);
+				if (!box) {
+					setSelection(null);
+					return;
+				}
+				setSelection({ type: "path", points, ...box });
+				return;
+			}
+			lassoPoints.value = [...lassoPoints.value, pt];
+			return;
+		}
+
 		lassoPoints.value = [pt];
 		const onMove = (e: PointerEvent) => {
 			const next = canvasNormFromEvent(e);
@@ -916,7 +1068,7 @@ function onCanvasPointerDown(event: PointerEvent) {
 		return;
 	}
 
-	if (activeTool.value !== "marquee-rect") return;
+	if (activeTool.value !== "marquee-rect" && activeTool.value !== "marquee-ellipse") return;
 	event.preventDefault();
 	event.stopPropagation();
 	const pt = canvasNormFromEvent(event);
@@ -945,8 +1097,10 @@ function onCanvasPointerDown(event: PointerEvent) {
 			setSelection(null);
 			return;
 		}
+		const ellipse =
+			activeTool.value === "marquee-ellipse" || marqueeKind.value === "ellipse";
 		setSelection({
-			type: marqueeKind.value === "ellipse" ? "ellipse" : "rect",
+			type: ellipse ? "ellipse" : "rect",
 			x,
 			y,
 			width,
@@ -988,7 +1142,10 @@ const liveMarqueeStyle = computed(() => {
 			top: `${y * 100}%`,
 			width: `${w * 100}%`,
 			height: `${h * 100}%`,
-			borderRadius: marqueeKind.value === "ellipse" ? "50%" : undefined,
+			borderRadius:
+				activeTool.value === "marquee-ellipse" || marqueeKind.value === "ellipse"
+					? "50%"
+					: undefined,
 		};
 	}
 	if (drag && (drag.type === "rect" || drag.type === "ellipse")) {
@@ -1042,7 +1199,8 @@ const gradientPreview = computed(() => {
 const cloneSourceMarker = computed(() => {
 	const src = cloneSource.value;
 	if (!src || !isImageMode.value) return null;
-	if (activeTool.value !== "clone" && activeTool.value !== "heal") return null;
+	if (activeTool.value !== "clone" && activeTool.value !== "heal" && activeTool.value !== "spot-heal")
+		return null;
 	return {
 		left: `${(src.canvasX / projectWidth.value) * 100}%`,
 		top: `${(src.canvasY / projectHeight.value) * 100}%`,
@@ -1054,12 +1212,18 @@ const canvasCursor = computed(() => {
 	const tool = activeTool.value;
 	if (
 		tool === "brush" ||
+		tool === "pencil" ||
 		tool === "eraser" ||
+		tool === "background-eraser" ||
+		tool === "magic-eraser" ||
 		tool === "marquee-rect" ||
+		tool === "marquee-ellipse" ||
 		tool === "lasso" ||
+		tool === "polygonal-lasso" ||
 		tool === "gradient" ||
 		tool === "clone" ||
 		tool === "heal" ||
+		tool === "spot-heal" ||
 		tool === "fill" ||
 		tool === "magic-wand" ||
 		tool === "eyedropper"
@@ -1068,7 +1232,9 @@ const canvasCursor = computed(() => {
 	}
 	if (tool === "hand") return "grab";
 	if (tool === "zoom") return "zoom-in";
-	if (tool === "text" || tool === "shape") return "cell";
+	if (tool === "text" || tool === "shape" || tool === "shape-rect" || tool === "shape-ellipse") {
+		return "cell";
+	}
 	return undefined;
 });
 
@@ -1464,6 +1630,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 			<div
 				:class="[
 					'preview-canvas-wrapper relative',
+					isTransparentCanvas ? 'preview-canvas-wrapper--checkerboard' : '',
 					isImageMode
 						? 'shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
 						: 'rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]',
@@ -1503,13 +1670,12 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					:canvas-width="projectWidth"
 					:canvas-height="projectHeight"
 				/>
-				<!-- YouTube/social safe-zone guides in image mode -->
+				<!-- Title-safe guides in image mode -->
 				<div
 					v-if="isImageMode && showSafeZones && !activeSocialOverlay"
 					class="pointer-events-none absolute inset-0 z-10"
 					aria-hidden="true"
 				>
-					<!-- Spec-aligned center safe rect (~1100×620 @ 720p) -->
 					<div
 						class="absolute rounded border border-dashed border-cyan-400/35"
 						:style="{
@@ -1518,17 +1684,12 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 							top: safeAreaInset.vertical,
 							bottom: safeAreaInset.vertical,
 						}"
+						title="Title-safe area"
 					/>
-					<!-- Duration badge (bottom-right) -->
-					<div
-						class="absolute bottom-[3%] right-[2%] h-[8%] min-h-[18px] w-[14%] min-w-[48px] rounded-sm border border-amber-400/50 bg-amber-400/10"
-						title="YouTube duration badge safe zone"
-					/>
-					<span class="absolute bottom-[3.5%] right-[2.5%] text-[9px] font-medium text-amber-300/70">TIME</span>
 				</div>
 				<!-- Live brush/eraser stroke preview -->
 				<canvas
-					v-if="isImageMode && paintPreviewActive"
+					v-show="isImageMode && (paintPreviewActive || bgErasePreviewActive)"
 					ref="paintOverlayRef"
 					:width="projectWidth"
 					:height="projectHeight"
@@ -1657,6 +1818,14 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 	max-width: 100%;
 	max-height: calc(100% - 2rem);
 	flex-shrink: 0;
+}
+
+/* Photoshop-style transparency grid (preview only — never baked into export). */
+.preview-canvas-wrapper--checkerboard {
+	background-color: #ffffff;
+	background-image: repeating-conic-gradient(#c8c8c8 0% 25%, #ffffff 0% 50%);
+	background-size: 16px 16px;
+	background-position: 0 0;
 }
 
 .preview-quality__input {

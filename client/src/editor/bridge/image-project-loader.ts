@@ -31,7 +31,7 @@ export async function createImageProject(
 	const {
 		name = "Untitled Design",
 		canvasSize = DEFAULT_IMAGE_CANVAS,
-		background = { type: "color" as const, color: "#000000" },
+		background = { type: "color" as const, color: "transparent" },
 	} = options;
 
 	EditorCore.reset();
@@ -69,14 +69,28 @@ export async function loadImageProject(projectId: string): Promise<EditorCore> {
 	const active = editor.project.getActiveOrNull();
 	if (active) {
 		const settings = active.settings as unknown as Record<string, unknown>;
+		const patches: Record<string, unknown> = {};
 		if (!settings.imageDocument) {
 			const size = active.settings.canvasSize || DEFAULT_IMAGE_CANVAS;
-			editor.project.updateSettings({
-				settings: attachImageDocumentToSettings(
+			Object.assign(
+				patches,
+				attachImageDocumentToSettings(
 					{ ...active.settings },
 					createEmptyImageDocument(size.width, size.height),
-				) as any,
-			});
+				),
+			);
+		}
+		// Image designs use a Photoshop-style transparent canvas (checkerboard in UI).
+		const bg = active.settings.background;
+		if (
+			!bg ||
+			(bg.type === "color" &&
+				(bg.color === "#000000" || bg.color === "#000" || bg.color === "black"))
+		) {
+			patches.background = { type: "color", color: "transparent" };
+		}
+		if (Object.keys(patches).length > 0) {
+			editor.project.updateSettings({ settings: patches as any });
 		}
 	}
 

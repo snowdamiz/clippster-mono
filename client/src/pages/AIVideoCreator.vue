@@ -1,6 +1,6 @@
 <template>
   <PageLayout
-    title="AI Video Creator"
+    title="AI Video Editor"
     description="Create and manage your AI video projects"
     :show-header="true"
     :icon="Wand2"
@@ -252,7 +252,7 @@
                   <div v-else class="preview-placeholder">
                     <div class="placeholder-visual">
                       <div class="visual-circle"><Wand2 :size="40" /></div>
-                      <h3>AI Video Creator</h3>
+                      <h3>AI Video Editor</h3>
                       <p v-if="mediaItems.length === 0">Start chatting with AI to plan and generate your video</p>
                       <p v-else>Then chat with AI to plan and generate your video</p>
                       <div class="placeholder-steps">

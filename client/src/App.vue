@@ -45,6 +45,7 @@
   } from '@/composables/useLivestreamMonitoring';
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { API_BASE, API_ORIGIN } from '@/lib/apiBase';
 
   // Platform detection for OS-specific styling (e.g., rounded corners on macOS)
   const detectedPlatform = ref<string>('unknown');
@@ -455,6 +456,23 @@
     window.addEventListener('titlebar-platform-override', handlePlatformOverride as EventListener);
     window.addEventListener('streamer-went-live', handleStreamerWentLive as EventListener);
     window.addEventListener('user-preferences-loaded', handlePreferencesLoaded as EventListener);
+
+    // Fail fast if VITE_API_URL points at the wrong process (common on Windows when
+    // localhost → ::1 hits Docker on :4000 while Phoenix only binds 127.0.0.1).
+    try {
+      const health = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
+      if (!health.ok) {
+        console.error(
+          `[App] API health check failed (${health.status}) at ${API_ORIGIN}. ` +
+            'If another service (e.g. Docker) owns localhost:4000, set VITE_API_URL=http://127.0.0.1:4000 and restart Vite/Tauri.'
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[App] API unreachable at ${API_ORIGIN}. Is mix phx.server running?`,
+        err
+      );
+    }
 
     // Run independent startup tasks in parallel:
     // - Auth check + announcements (announcements depend on auth, but both are independent of DB)

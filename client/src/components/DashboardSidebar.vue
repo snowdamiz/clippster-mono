@@ -56,7 +56,12 @@
                     </span>
                     <span
                       v-if="item.badge && !isCollapsed"
-                      class="ml-auto px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none rounded bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)] whitespace-nowrap"
+                      class="ml-auto px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none rounded whitespace-nowrap"
+                      :class="
+                        item.badge === 'Beta'
+                          ? 'bg-[var(--sidebar-accent)] text-black'
+                          : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)]'
+                      "
                     >
                       {{ item.badge }}
                     </span>
@@ -71,7 +76,7 @@
                       'justify-center px-0': isCollapsed,
                       'gap-3 px-3': !isCollapsed,
                     }"
-                    :title="isCollapsed ? item.name : undefined"
+                    :title="isCollapsed ? item.badge ? `${item.name} (${item.badge})` : item.name : undefined"
                   >
                     <div class="relative flex items-center justify-center shrink-0">
                       <div
@@ -128,6 +133,17 @@
                       class="ml-auto flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-md"
                     >
                       {{ liveCreatorsCount > 99 ? '99+' : liveCreatorsCount }}
+                    </span>
+                    <span
+                      v-if="item.badge && !isCollapsed && item.name !== 'Messages' && item.name !== 'Live' && item.name !== 'My Creators'"
+                      class="ml-auto px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none rounded whitespace-nowrap"
+                      :class="
+                        item.badge === 'Beta'
+                          ? 'bg-[var(--sidebar-accent)] text-black'
+                          : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)]'
+                      "
+                    >
+                      {{ item.badge }}
                     </span>
                   </router-link>
                 </li>
@@ -526,8 +542,9 @@
       }
       return true;
     }).map((item) => {
-      // Dynamically disable AI Video Creator for non-authorized users
-      if (item.path === '/ai-video') {
+      // Dynamically disable AI Video Editor / AI Thumbnail Creator for non-authorized users
+      // (same grant: admin, or ai_editor_enabled + Creator/Pro)
+      if (item.path === '/ai-video' || item.path === '/ai-thumbnail') {
         const hasAccess = canAccessAIVideo(authStore.user);
         return {
           ...item,

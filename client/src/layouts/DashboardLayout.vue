@@ -12,7 +12,10 @@
       <div class="flex-1 min-h-0 dashboard-container">
         <slot>
           <router-view v-slot="{ Component }">
-            <transition name="fade" mode="out-in"><component :is="Component" class="h-full" /></transition>
+            <!-- Avoid mode="out-in": a setup crash on the entering page can leave a permanent blank content area -->
+            <transition name="fade">
+              <component :is="Component" :key="route.fullPath" class="h-full" />
+            </transition>
           </router-view>
         </slot>
       </div>
@@ -26,6 +29,7 @@
 
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
+  import { useRoute } from 'vue-router';
   import DashboardSidebar from '@/components/DashboardSidebar.vue';
   import AuthModal from '@/components/AuthModal.vue';
   import GlobalAudioPlayer from '@/components/GlobalAudioPlayer.vue';
@@ -33,6 +37,7 @@
   import { subscriptionStillCoversAccess } from '@/composables/useSubscription';
   import { useSidebarState } from '@/composables/useSidebarState';
 
+  const route = useRoute();
   const authStore = useAuthStore();
   const { isCollapsed } = useSidebarState();
   const showAuthModal = ref(false);

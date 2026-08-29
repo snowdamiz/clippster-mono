@@ -2,11 +2,14 @@
 import { computed } from "vue";
 import { ACTIONS, type TActionDefinition, type TActionCategory } from "../lib/actions/definitions";
 import { X } from "lucide-vue-next";
+import { useImageMode } from "../composables/useImageMode";
 
 defineProps<{ open: boolean }>();
 const emit = defineEmits<{ (e: "close"): void }>();
 
-const categories: { key: TActionCategory; label: string }[] = [
+const { isImageMode } = useImageMode();
+
+const allCategories: { key: TActionCategory; label: string }[] = [
 	{ key: "playback", label: "Playback" },
 	{ key: "navigation", label: "Navigation" },
 	{ key: "editing", label: "Editing" },
@@ -15,6 +18,12 @@ const categories: { key: TActionCategory; label: string }[] = [
 	{ key: "timeline", label: "Timeline" },
 	{ key: "controls", label: "Controls" },
 ];
+
+const categories = computed(() =>
+	isImageMode.value
+		? allCategories.filter((c) => c.key !== "playback" && c.key !== "timeline")
+		: allCategories,
+);
 
 const supplementalShortcuts: Partial<Record<string, string[]>> = {
 	"toggle-elements-muted-selected": ["m"],

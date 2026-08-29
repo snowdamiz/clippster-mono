@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { ref, watch } from "vue";
+import { ref, watch, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
+import { useImageMode } from "../../../composables/useImageMode";
 import type { StickerElement } from "../../../types/timeline";
 import { Sticker, Trash2, RotateCcw, Diamond } from "lucide-vue-next";
 import AnimationProperties from "./AnimationProperties.vue";
@@ -15,10 +16,17 @@ const props = defineProps<{
 
 type TopTab = "sticker" | "keyframes";
 const activeTab = ref<TopTab>("sticker");
-const topTabs: { id: TopTab; label: string; icon: typeof Sticker }[] = [
+const allTopTabs: { id: TopTab; label: string; icon: typeof Sticker }[] = [
 	{ id: "sticker", label: "Sticker", icon: Sticker },
 	{ id: "keyframes", label: "Keyframes", icon: Diamond },
 ];
+const { isImageMode } = useImageMode();
+const topTabs = computed(() =>
+	isImageMode.value ? allTopTabs.filter((t) => t.id !== "keyframes") : allTopTabs,
+);
+watch(topTabs, (tabs) => {
+	if (!tabs.some((t) => t.id === activeTab.value)) activeTab.value = "sticker";
+});
 
 const { editor } = useEditor({ subscribe: false });
 const { selectedElements } = useElementSelection();
@@ -324,8 +332,8 @@ function handleDelete() {
 			</div>
 		</div>
 
-		<!-- Animation -->
-		<div class="space-y-1.5">
+		<!-- Animation (video only) -->
+		<div v-if="!isImageMode" class="space-y-1.5">
 			<label class="text-xs font-medium text-zinc-300">Animation</label>
 			<div class="rounded-md border border-white/5 bg-white/[0.01]">
 				<AnimationProperties
@@ -351,7 +359,7 @@ function handleDelete() {
 		</div>
 			</div>
 
-			<div v-else-if="activeTab === 'keyframes'">
+			<div v-else-if="!isImageMode && activeTab === 'keyframes'">
 				<KeyframeEditorPanel :track-id="trackId" :element="element" />
 			</div>
 		</div>

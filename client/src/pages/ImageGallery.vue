@@ -12,13 +12,14 @@ import {
 	Grid,
 	List,
 	Loader2,
-	FolderOpen,
 	Pencil,
 	Download,
-	Filter,
 	Upload,
+	Check,
+	X,
 } from "lucide-vue-next";
-import { Button } from "@/components/ui/button";
+import PageLayout from "@/components/PageLayout.vue";
+import CustomDropdown from "@/components/CustomDropdown.vue";
 
 const router = useRouter();
 
@@ -26,12 +27,14 @@ const images = ref<ImageAsset[]>([]);
 const isLoading = ref(true);
 const viewMode = ref<"grid" | "list">("grid");
 const searchQuery = ref("");
-const filterType = ref<string>("all");
+const filterType = ref("all");
 const thumbnailCache = ref<Map<string, string>>(new Map());
 const selectedIds = ref<Set<string>>(new Set());
+const isUploading = ref(false);
+const isBatchExporting = ref(false);
 
 const filterOptions = [
-	{ value: "all", label: "All" },
+	{ value: "all", label: "All Types" },
 	{ value: "thumbnail", label: "Thumbnails" },
 	{ value: "cover", label: "Covers" },
 	{ value: "watermark", label: "Watermarks" },
@@ -69,7 +72,6 @@ async function loadImages() {
 	isLoading.value = true;
 	try {
 		images.value = await getAllImageAssets();
-		// Load thumbnails
 		for (const img of images.value) {
 			if (img.file_path && !thumbnailCache.value.has(img.id)) {
 				try {
@@ -104,8 +106,6 @@ function openInEditor(image: ImageAsset) {
 function createNew() {
 	router.push({ path: "/design-studio" });
 }
-
-const isUploading = ref(false);
 
 async function uploadImages() {
 	if (isUploading.value) return;
@@ -181,7 +181,7 @@ function selectAll() {
 	selectedIds.value = new Set(filteredImages.value.map((img) => img.id));
 }
 
-function deselectAll() {
+function clearSelection() {
 	selectedIds.value = new Set();
 }
 
@@ -198,7 +198,10 @@ async function deleteSelected() {
 	await loadImages();
 }
 
-const isBatchExporting = ref(false);
+async function deleteOne(id: string) {
+	selectedIds.value = new Set([id]);
+	await deleteSelected();
+}
 
 async function batchExport() {
 	if (isBatchExporting.value || selectedIds.value.size === 0) return;
@@ -206,7 +209,7 @@ async function batchExport() {
 
 	try {
 		const { open } = await import("@tauri-apps/plugin-dialog");
-		const { copyFile, mkdir, exists } = await import("@tauri-apps/plugin-fs");
+		const { copyFile } = await import("@tauri-apps/plugin-fs");
 
 		const destDir = await open({ directory: true, title: "Select export folder" });
 		if (!destDir) {
@@ -260,260 +263,867 @@ function formatDimensions(w: number | null, h: number | null): string {
 </script>
 
 <template>
-	<div class="flex h-full flex-col bg-zinc-950 text-zinc-200">
-		<!-- Header -->
-		<div class="flex items-center justify-between border-b border-white/10 px-6 py-4">
-			<div>
-				<h1 class="text-lg font-semibold">Image Library</h1>
-				<p class="text-xs text-zinc-500">{{ filteredImages.length }} image{{ filteredImages.length !== 1 ? "s" : "" }}</p>
-			</div>
-			<div class="flex items-center gap-2">
-				<template v-if="hasSelection">
-					<button
-						type="button"
-						class="rounded-md px-2 py-1 text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
-						@click="deselectAll"
-					>
-						Deselect All
-					</button>
-					<Button variant="outline" size="sm" :disabled="isBatchExporting" @click="batchExport">
-						<Download class="mr-1 size-3.5" />
-						{{ isBatchExporting ? 'Exporting...' : `Export (${selectedIds.size})` }}
-					</Button>
-					<Button variant="destructive" size="sm" @click="deleteSelected">
-						<Trash2 class="mr-1 size-3.5" />
-						Delete ({{ selectedIds.size }})
-					</Button>
-				</template>
-				<button
-					v-if="filteredImages.length > 0 && !hasSelection"
-					type="button"
-					class="rounded-md px-2 py-1 text-[10px] text-zinc-500 hover:text-zinc-300 transition-colors"
-					@click="selectAll"
-				>
-					Select All
-				</button>
-				<Button variant="outline" size="sm" :disabled="isUploading" @click="uploadImages">
-					<Upload class="mr-1 size-3.5" />
-					{{ isUploading ? 'Uploading...' : 'Upload' }}
-				</Button>
-				<Button size="sm" @click="createNew">
-					<Plus class="mr-1 size-3.5" />
-					New Design
-				</Button>
-			</div>
-		</div>
+	<div class="projects">
+		<PageLayout
+			title="Image Library"
+			description="Manage your uploaded images and design exports"
+			:show-header="true"
+			:icon="ImageIcon"
+		>
+			<template #actions>
+				<div class="projects-header-actions">
+					<template v-if="hasSelection">
+						<div class="projects-bulk-actions">
+							<span class="projects-bulk-actions__count">{{ selectedIds.size }} selected</span>
+							<button type="button" class="projects-bulk-actions__btn" :disabled="isBatchExporting" @click="batchExport">
+								<Download :size="16" />
+								{{ isBatchExporting ? "Exporting..." : "Export" }}
+							</button>
+							<button type="button" class="projects-bulk-actions__btn projects-bulk-actions__btn--danger" @click="deleteSelected">
+								<Trash2 :size="16" />
+								Delete
+							</button>
+							<button type="button" class="projects-bulk-actions__btn" @click="clearSelection">
+								<X :size="16" />
+								Clear
+							</button>
+						</div>
+					</template>
+					<template v-else>
+						<div class="projects-header__search">
+							<Search class="projects-header__search-icon" />
+							<input
+								v-model="searchQuery"
+								type="text"
+								placeholder="Search images..."
+								class="projects-header__search-input"
+							/>
+						</div>
 
-		<!-- Toolbar -->
-		<div class="flex items-center gap-3 border-b border-white/10 px-6 py-2">
-			<!-- Search -->
-			<div class="flex flex-1 items-center gap-2 rounded-md bg-white/5 px-3 py-1.5">
-				<Search class="size-3.5 text-zinc-500" />
-				<input
-					v-model="searchQuery"
-					type="text"
-					placeholder="Search images..."
-					class="flex-1 bg-transparent text-xs text-zinc-200 outline-none placeholder:text-zinc-600"
-				/>
-			</div>
+						<CustomDropdown
+							v-model="filterType"
+							:options="filterOptions"
+							placeholder="Type"
+							class="projects-header__filter"
+							trigger-class="projects-header__dropdown-trigger"
+						/>
 
-			<!-- Filter -->
-			<div class="flex items-center gap-1">
-				<Filter class="size-3.5 text-zinc-500" />
-				<select
-					v-model="filterType"
-					class="rounded bg-white/5 px-2 py-1 text-xs text-zinc-300 outline-none"
-				>
-					<option v-for="opt in filterOptions" :key="opt.value" :value="opt.value">
-						{{ opt.label }}
-					</option>
-				</select>
-			</div>
+						<div class="projects-header__view-toggle">
+							<button
+								type="button"
+								class="projects-header__view-btn"
+								:class="{ 'projects-header__view-btn--active': viewMode === 'grid' }"
+								title="Grid View"
+								@click="viewMode = 'grid'"
+							>
+								<Grid class="projects-header__view-icon" />
+							</button>
+							<button
+								type="button"
+								class="projects-header__view-btn"
+								:class="{ 'projects-header__view-btn--active': viewMode === 'list' }"
+								title="List View"
+								@click="viewMode = 'list'"
+							>
+								<List class="projects-header__view-icon" />
+							</button>
+						</div>
 
-			<!-- View toggle -->
-			<div class="flex items-center rounded-md bg-white/5">
-				<button
-					type="button"
-					:class="['rounded-l-md px-2 py-1.5', viewMode === 'grid' ? 'bg-purple-600/30 text-purple-400' : 'text-zinc-500 hover:text-zinc-300']"
-					@click="viewMode = 'grid'"
-				>
-					<Grid class="size-3.5" />
-				</button>
-				<button
-					type="button"
-					:class="['rounded-r-md px-2 py-1.5', viewMode === 'list' ? 'bg-purple-600/30 text-purple-400' : 'text-zinc-500 hover:text-zinc-300']"
-					@click="viewMode = 'list'"
-				>
-					<List class="size-3.5" />
-				</button>
-			</div>
-		</div>
+						<button
+							v-if="filteredImages.length > 0"
+							type="button"
+							class="projects-bulk-actions__btn"
+							@click="selectAll"
+						>
+							<Check :size="16" />
+							Select All
+						</button>
 
-		<!-- Content -->
-		<div class="flex-1 overflow-y-auto p-6">
-			<!-- Loading -->
-			<div v-if="isLoading" class="flex items-center justify-center py-20">
-				<Loader2 class="size-6 animate-spin text-zinc-500" />
-			</div>
+						<button type="button" class="projects-create-btn" :disabled="isUploading" @click="uploadImages">
+							<Upload class="projects-create-btn__icon" />
+							{{ isUploading ? "Uploading..." : "Upload" }}
+						</button>
 
-			<!-- Empty state -->
-			<div v-else-if="filteredImages.length === 0" class="flex flex-col items-center justify-center py-20 gap-3">
-				<div class="rounded-full bg-white/5 p-4">
-					<ImageIcon class="size-8 text-zinc-600" />
+						<button type="button" class="projects-create-btn" @click="createNew">
+							<Plus class="projects-create-btn__icon" />
+							New Design
+						</button>
+					</template>
 				</div>
-				<p class="text-sm text-zinc-500">No images yet</p>
-				<p class="text-xs text-zinc-600">Upload images or export from the Image Editor</p>
-				<Button size="sm" class="mt-2" @click="createNew">
-					<Plus class="mr-1 size-3.5" />
-					Create Design
-				</Button>
-			</div>
+			</template>
 
-			<!-- Grid view -->
 			<div
-				v-else-if="viewMode === 'grid'"
-				class="grid gap-4"
-				style="grid-template-columns: repeat(auto-fill, minmax(200px, 1fr))"
+				class="projects__content"
+				:class="{ 'projects__content--empty': !isLoading && filteredImages.length === 0 }"
 			>
-				<div
-					v-for="img in filteredImages"
-					:key="img.id"
-					class="group relative overflow-hidden rounded-lg border transition-all cursor-pointer"
-					:class="selectedIds.has(img.id) ? 'border-purple-500 ring-1 ring-purple-500/50' : 'border-white/10 hover:border-white/20'"
-					@click="openInEditor(img)"
-				>
-					<!-- Checkbox -->
-					<div
-						class="absolute top-2 left-2 z-10"
-						@click.stop="toggleSelect(img.id)"
-					>
-						<div
-							:class="[
-								'size-5 rounded border flex items-center justify-center transition-colors',
-								selectedIds.has(img.id)
-									? 'bg-purple-600 border-purple-600'
-									: 'border-white/20 bg-black/40 opacity-0 group-hover:opacity-100',
-							]"
-						>
-							<svg v-if="selectedIds.has(img.id)" class="size-3 text-white" viewBox="0 0 12 12" fill="none">
-								<path d="M2 6L5 9L10 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-							</svg>
+				<div v-if="images.length > 0 || isLoading" class="projects__heading">
+					<h1 class="projects__title">Image Library</h1>
+					<p class="projects__subtitle">Manage your uploaded images and design exports</p>
+				</div>
+
+				<div v-if="isLoading" class="projects__loading">
+					<div class="projects__grid">
+						<div v-for="i in 6" :key="`skeleton-${i}`" class="project-card project-card--skeleton">
+							<div class="project-card__skeleton-bg"></div>
+							<div class="project-card__bottom">
+								<div class="projects-skeleton__card-title"></div>
+								<div class="projects-skeleton__card-meta"></div>
+							</div>
 						</div>
-					</div>
-
-					<!-- Thumbnail -->
-					<div class="aspect-video bg-zinc-900 flex items-center justify-center">
-						<img
-							v-if="thumbnailCache.get(img.id)"
-							:src="thumbnailCache.get(img.id)"
-							:alt="img.name"
-							class="h-full w-full object-cover"
-						/>
-						<ImageIcon v-else class="size-8 text-zinc-800" />
-					</div>
-
-					<!-- Info -->
-					<div class="p-3">
-						<div class="truncate text-sm font-medium text-zinc-200">{{ img.name }}</div>
-						<div class="mt-1 flex items-center gap-2 text-[10px] text-zinc-500">
-							<span v-if="img.image_type" class="rounded bg-white/5 px-1.5 py-0.5">{{ img.image_type }}</span>
-							<span>{{ formatDimensions(img.width, img.height) }}</span>
-							<span>{{ formatSize(img.file_size) }}</span>
-						</div>
-						<div class="mt-1 text-[10px] text-zinc-600">{{ formatDate(img.created_at) }}</div>
-					</div>
-
-					<!-- Hover actions -->
-					<div class="absolute top-2 right-2 hidden items-center gap-1 group-hover:flex">
-						<button
-							type="button"
-							class="rounded bg-black/60 p-1 text-zinc-400 hover:text-white"
-							title="Edit"
-							@click.stop="openInEditor(img)"
-						>
-							<Pencil class="size-3.5" />
-						</button>
-						<button
-							type="button"
-							class="rounded bg-black/60 p-1 text-zinc-400 hover:text-red-400"
-							title="Delete"
-							@click.stop="() => { selectedIds = new Set([img.id]); deleteSelected(); }"
-						>
-							<Trash2 class="size-3.5" />
-						</button>
 					</div>
 				</div>
-			</div>
 
-			<!-- List view -->
-			<div v-else class="space-y-1">
-				<div
-					v-for="img in filteredImages"
-					:key="img.id"
-					class="group flex items-center gap-3 rounded-lg border px-3 py-2 transition-all cursor-pointer"
-					:class="selectedIds.has(img.id) ? 'border-purple-500 bg-purple-500/5' : 'border-white/5 hover:bg-white/5'"
-					@click="openInEditor(img)"
-				>
-					<!-- Checkbox -->
-					<div @click.stop="toggleSelect(img.id)">
+				<div v-else-if="filteredImages.length > 0" class="projects__main">
+					<div v-if="viewMode === 'grid'" class="projects__grid">
 						<div
-							:class="[
-								'size-4 rounded border flex items-center justify-center transition-colors',
-								selectedIds.has(img.id)
-									? 'bg-purple-600 border-purple-600'
-									: 'border-white/20',
-							]"
+							v-for="img in filteredImages"
+							:key="img.id"
+							class="project-card"
+							:class="{ 'project-card--selected': selectedIds.has(img.id) }"
+							@click="openInEditor(img)"
 						>
-							<svg v-if="selectedIds.has(img.id)" class="size-2.5 text-white" viewBox="0 0 12 12" fill="none">
-								<path d="M2 6L5 9L10 3" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
-							</svg>
+							<div
+								class="project-card__checkbox"
+								:class="{ 'project-card__checkbox--visible': selectedIds.has(img.id) }"
+								@click.stop="toggleSelect(img.id)"
+							>
+								<div
+									class="project-card__checkbox-inner"
+									:class="{ 'project-card__checkbox-inner--checked': selectedIds.has(img.id) }"
+								>
+									<Check v-if="selectedIds.has(img.id)" class="project-card__checkbox-icon" />
+								</div>
+							</div>
+
+							<div
+								v-if="thumbnailCache.get(img.id)"
+								class="project-card__thumbnail"
+								:style="{ backgroundImage: `url(${thumbnailCache.get(img.id)})` }"
+							></div>
+							<div v-else class="project-card__thumbnail project-card__thumbnail--empty">
+								<div class="project-card__empty-icon">
+									<ImageIcon class="project-card__folder-icon" />
+								</div>
+							</div>
+							<div class="project-card__thumbnail-gradient"></div>
+
+							<div class="project-card__bottom">
+								<h3 class="project-card__title">{{ img.name }}</h3>
+								<div class="project-card__meta">
+									<span v-if="img.image_type" class="project-card__info">{{ img.image_type }}</span>
+									<span v-if="img.image_type" class="project-card__dot"></span>
+									<span class="project-card__info">{{ formatDimensions(img.width, img.height) }}</span>
+									<span class="project-card__dot"></span>
+									<span class="project-card__info">{{ formatDate(img.created_at) }}</span>
+								</div>
+							</div>
+
+							<div class="project-card__hover-actions">
+								<button
+									type="button"
+									class="project-card__action-btn"
+									title="Edit"
+									@click.stop="openInEditor(img)"
+								>
+									<Pencil class="project-card__action-icon" />
+								</button>
+								<button
+									type="button"
+									class="project-card__action-btn project-card__action-btn--danger"
+									title="Delete"
+									@click.stop="deleteOne(img.id)"
+								>
+									<Trash2 class="project-card__action-icon" />
+								</button>
+							</div>
 						</div>
 					</div>
 
-					<!-- Thumbnail -->
-					<div class="size-10 shrink-0 overflow-hidden rounded bg-zinc-900 flex items-center justify-center">
-						<img
-							v-if="thumbnailCache.get(img.id)"
-							:src="thumbnailCache.get(img.id)"
-							:alt="img.name"
-							class="h-full w-full object-cover"
-						/>
-						<ImageIcon v-else class="size-4 text-zinc-700" />
-					</div>
+					<div v-else class="image-list">
+						<div
+							v-for="img in filteredImages"
+							:key="img.id"
+							class="image-list__row"
+							:class="{ 'image-list__row--selected': selectedIds.has(img.id) }"
+							@click="openInEditor(img)"
+						>
+							<div class="image-list__check" @click.stop="toggleSelect(img.id)">
+								<div
+									class="project-card__checkbox-inner"
+									:class="{ 'project-card__checkbox-inner--checked': selectedIds.has(img.id) }"
+								>
+									<Check v-if="selectedIds.has(img.id)" class="project-card__checkbox-icon" />
+								</div>
+							</div>
 
-					<!-- Info -->
-					<div class="min-w-0 flex-1">
-						<div class="truncate text-xs font-medium text-zinc-200">{{ img.name }}</div>
-						<div class="flex items-center gap-2 text-[10px] text-zinc-500">
-							<span v-if="img.image_type" class="rounded bg-white/5 px-1 py-0.5">{{ img.image_type }}</span>
-							<span>{{ formatDimensions(img.width, img.height) }}</span>
+							<div class="image-list__thumb">
+								<img
+									v-if="thumbnailCache.get(img.id)"
+									:src="thumbnailCache.get(img.id)"
+									:alt="img.name"
+								/>
+								<ImageIcon v-else class="image-list__thumb-icon" />
+							</div>
+
+							<div class="image-list__info">
+								<div class="image-list__name">{{ img.name }}</div>
+								<div class="image-list__meta">
+									<span v-if="img.image_type">{{ img.image_type }}</span>
+									<span>{{ formatDimensions(img.width, img.height) }}</span>
+									<span>{{ formatSize(img.file_size) }}</span>
+									<span>{{ formatDate(img.created_at) }}</span>
+								</div>
+							</div>
+
+							<div class="image-list__actions">
+								<button type="button" class="image-list__action" title="Edit" @click.stop="openInEditor(img)">
+									<Pencil :size="14" />
+								</button>
+								<button
+									type="button"
+									class="image-list__action image-list__action--danger"
+									title="Delete"
+									@click.stop="deleteOne(img.id)"
+								>
+									<Trash2 :size="14" />
+								</button>
+							</div>
 						</div>
-					</div>
-
-					<div class="text-[10px] text-zinc-600">{{ formatSize(img.file_size) }}</div>
-					<div class="text-[10px] text-zinc-600">{{ formatDate(img.created_at) }}</div>
-
-					<!-- Actions -->
-					<div class="hidden items-center gap-1 group-hover:flex">
-						<button
-							type="button"
-							class="rounded p-1 text-zinc-500 hover:text-white"
-							title="Edit"
-							@click.stop="openInEditor(img)"
-						>
-							<Pencil class="size-3.5" />
-						</button>
-						<button
-							type="button"
-							class="rounded p-1 text-zinc-500 hover:text-red-400"
-							title="Delete"
-							@click.stop="() => { selectedIds = new Set([img.id]); deleteSelected(); }"
-						>
-							<Trash2 class="size-3.5" />
-						</button>
 					</div>
 				</div>
+
+				<div v-else class="projects__empty">
+					<div class="projects__empty-icon-wrapper">
+						<ImageIcon class="projects__empty-icon" />
+					</div>
+					<h3 class="projects__empty-title">No images yet</h3>
+					<p class="projects__empty-description">Upload images or export from the Image Editor</p>
+					<button type="button" class="projects-create-btn" @click="createNew">
+						<Plus class="projects-create-btn__icon" />
+						Create Design
+					</button>
+				</div>
 			</div>
-		</div>
+		</PageLayout>
 	</div>
 </template>
+
+<style scoped>
+.projects {
+	display: flex;
+	flex-direction: column;
+	height: 100%;
+	width: 100%;
+	overflow: hidden;
+}
+
+.projects-header-actions {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.projects-header__search {
+	position: relative;
+	width: 200px;
+}
+
+.projects-header__search-icon {
+	position: absolute;
+	left: 0.625rem;
+	top: 50%;
+	transform: translateY(-50%);
+	width: 14px;
+	height: 14px;
+	color: var(--sidebar-text-muted);
+	pointer-events: none;
+}
+
+.projects-header__search-input {
+	width: 100%;
+	padding-left: 2rem;
+	height: 32px;
+	background-color: var(--sidebar-surface);
+	border: 1px solid var(--sidebar-border);
+	border-radius: 6px;
+	font-size: 0.75rem;
+	color: var(--sidebar-text);
+}
+
+.projects-header__search-input:focus {
+	border-color: var(--sidebar-accent);
+	outline: none;
+}
+
+.projects-header__filter {
+	width: 140px;
+}
+
+:deep(.projects-header__dropdown-trigger) {
+	height: 32px;
+	background-color: var(--sidebar-surface);
+	border: 1px solid var(--sidebar-border);
+	border-radius: 6px;
+	font-size: 0.75rem;
+}
+
+.projects-header__view-toggle {
+	display: flex;
+	align-items: center;
+	background-color: var(--sidebar-surface);
+	border: 1px solid var(--sidebar-border);
+	border-radius: 6px;
+	overflow: hidden;
+}
+
+.projects-header__view-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 32px;
+	height: 30px;
+	background: transparent;
+	border: none;
+	color: var(--sidebar-text-muted);
+	cursor: pointer;
+}
+
+.projects-header__view-btn:hover {
+	color: var(--sidebar-text);
+}
+
+.projects-header__view-btn--active {
+	background-color: var(--sidebar-hover);
+	color: var(--sidebar-accent);
+}
+
+.projects-header__view-icon {
+	width: 14px;
+	height: 14px;
+}
+
+.projects-create-btn {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	height: 32px;
+	padding: 0 0.875rem;
+	background-color: var(--sidebar-accent);
+	color: var(--sidebar-bg);
+	border: none;
+	border-radius: 6px;
+	font-size: 0.75rem;
+	font-weight: 600;
+	cursor: pointer;
+	transition: all 150ms ease;
+}
+
+.projects-create-btn:hover:not(:disabled) {
+	opacity: 0.9;
+}
+
+.projects-create-btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.projects-create-btn__icon {
+	width: 14px;
+	height: 14px;
+}
+
+.projects-bulk-actions {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+}
+
+.projects-bulk-actions__count {
+	font-size: 0.75rem;
+	font-weight: 600;
+	color: var(--sidebar-text);
+	margin-right: 0.25rem;
+}
+
+.projects-bulk-actions__btn {
+	display: flex;
+	align-items: center;
+	gap: 0.375rem;
+	height: 32px;
+	padding: 0 0.75rem;
+	background: var(--sidebar-surface);
+	border: 1px solid var(--sidebar-border);
+	border-radius: 6px;
+	color: var(--sidebar-text);
+	font-size: 0.75rem;
+	font-weight: 500;
+	cursor: pointer;
+	transition: all 150ms ease;
+}
+
+.projects-bulk-actions__btn:hover:not(:disabled) {
+	border-color: var(--sidebar-accent);
+	color: var(--sidebar-accent);
+}
+
+.projects-bulk-actions__btn--danger:hover:not(:disabled) {
+	border-color: #ef4444;
+	color: #ef4444;
+}
+
+.projects-bulk-actions__btn:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+
+.projects__content {
+	display: flex;
+	flex-direction: column;
+	gap: 1.5rem;
+	padding: 1.5rem;
+	width: 100%;
+	flex: 1;
+}
+
+.projects__content--empty {
+	justify-content: center;
+	align-items: center;
+}
+
+.projects__heading {
+	margin-bottom: 0.5rem;
+}
+
+.projects__title {
+	font-size: 1.5rem;
+	font-weight: 700;
+	color: var(--sidebar-text);
+	margin: 0 0 0.2rem;
+	letter-spacing: -0.02em;
+}
+
+.projects__subtitle {
+	font-size: 0.875rem;
+	color: var(--sidebar-text-muted);
+	margin: 0;
+	line-height: 1.5;
+}
+
+.projects__main {
+	display: flex;
+	flex-direction: column;
+	gap: 1.5rem;
+	padding-bottom: 2rem;
+}
+
+.projects__loading {
+	display: flex;
+	flex-direction: column;
+	gap: 1.5rem;
+}
+
+.projects__grid {
+	display: grid;
+	grid-template-columns: repeat(1, 1fr);
+	gap: 1.25rem;
+}
+
+@media (min-width: 1024px) {
+	.projects__grid {
+		grid-template-columns: repeat(2, 1fr);
+	}
+}
+
+@media (min-width: 1400px) {
+	.projects__grid {
+		grid-template-columns: repeat(3, 1fr);
+	}
+}
+
+@media (min-width: 2200px) {
+	.projects__grid {
+		grid-template-columns: repeat(5, 1fr);
+	}
+}
+
+.project-card {
+	position: relative;
+	background-color: var(--sidebar-surface);
+	border: 1px solid var(--sidebar-border);
+	border-radius: 10px;
+	overflow: hidden;
+	cursor: pointer;
+	transition: all 200ms ease;
+	aspect-ratio: 16 / 9;
+}
+
+.project-card:hover {
+	border-color: rgba(255, 255, 255, 0.15);
+	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+	transform: scale(1.02);
+}
+
+.project-card--selected {
+	border-color: var(--sidebar-accent);
+	box-shadow: 0 0 0 1px var(--sidebar-accent);
+}
+
+.project-card--skeleton {
+	pointer-events: none;
+}
+
+.project-card__skeleton-bg {
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-surface) 50%, var(--sidebar-hover) 75%);
+	background-size: 200% 100%;
+	animation: shimmer 1.5s infinite;
+}
+
+.projects-skeleton__card-title,
+.projects-skeleton__card-meta {
+	height: 12px;
+	border-radius: 4px;
+	background: rgba(255, 255, 255, 0.08);
+}
+
+.projects-skeleton__card-title {
+	width: 60%;
+	margin-bottom: 0.5rem;
+}
+
+.projects-skeleton__card-meta {
+	width: 40%;
+	height: 10px;
+}
+
+@keyframes shimmer {
+	0% {
+		background-position: 200% 0;
+	}
+	100% {
+		background-position: -200% 0;
+	}
+}
+
+.project-card__thumbnail {
+	position: absolute;
+	inset: 0;
+	z-index: 0;
+	background-size: cover;
+	background-position: center;
+	background-repeat: no-repeat;
+}
+
+.project-card__thumbnail--empty {
+	background-color: var(--sidebar-hover);
+}
+
+.project-card__thumbnail-gradient {
+	position: absolute;
+	inset: 0;
+	background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.35) 45%, transparent 70%);
+	z-index: 1;
+	pointer-events: none;
+}
+
+.project-card__empty-icon {
+	position: absolute;
+	inset: 0;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	opacity: 0.2;
+}
+
+.project-card__folder-icon {
+	width: 64px;
+	height: 64px;
+	color: var(--sidebar-text);
+}
+
+.project-card__bottom {
+	position: absolute;
+	bottom: 0;
+	left: 0;
+	right: 0;
+	z-index: 5;
+	padding: 1rem;
+	display: flex;
+	flex-direction: column;
+	gap: 0.375rem;
+}
+
+.project-card__title {
+	font-size: 1rem;
+	font-weight: 700;
+	color: white;
+	margin: 0;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+	line-height: 1.3;
+}
+
+.project-card__meta {
+	display: flex;
+	align-items: center;
+	gap: 0.5rem;
+	font-size: 0.75rem;
+	font-weight: 500;
+	color: rgba(255, 255, 255, 0.7);
+	flex-wrap: wrap;
+}
+
+.project-card__info {
+	color: rgba(255, 255, 255, 0.7);
+}
+
+.project-card__dot {
+	width: 3px;
+	height: 3px;
+	border-radius: 50%;
+	background-color: rgba(255, 255, 255, 0.4);
+	flex-shrink: 0;
+}
+
+.project-card__checkbox {
+	position: absolute;
+	top: 1rem;
+	right: 1rem;
+	z-index: 30;
+	opacity: 0;
+	transition: opacity 150ms ease;
+}
+
+.project-card:hover .project-card__checkbox,
+.project-card__checkbox--visible {
+	opacity: 1;
+}
+
+.project-card__checkbox-inner {
+	width: 24px;
+	height: 24px;
+	border-radius: 6px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background-color: rgba(0, 0, 0, 0.6);
+	border: 1px solid rgba(255, 255, 255, 0.45);
+	color: white;
+	cursor: pointer;
+	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+	transition: all 150ms ease;
+}
+
+.project-card__checkbox-inner--checked {
+	background-color: var(--sidebar-accent);
+	border-color: var(--sidebar-accent);
+	color: var(--sidebar-bg);
+}
+
+.project-card__checkbox-icon {
+	width: 16px;
+	height: 16px;
+}
+
+.project-card__hover-actions {
+	position: absolute;
+	inset: 0;
+	z-index: 10;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 0.75rem;
+	background-color: rgba(0, 0, 0, 0.4);
+	opacity: 0;
+	transition: opacity 200ms ease;
+}
+
+.project-card:hover .project-card__hover-actions {
+	opacity: 1;
+}
+
+.project-card__action-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	padding: 0.5rem;
+	background-color: rgba(255, 255, 255, 0.9);
+	border: none;
+	border-radius: 9999px;
+	color: #1f2937;
+	cursor: pointer;
+	transition: all 150ms ease;
+	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+}
+
+.project-card__action-btn:hover {
+	background-color: white;
+	transform: scale(1.1);
+}
+
+.project-card__action-btn--danger:hover {
+	background-color: #fecaca;
+	color: #dc2626;
+}
+
+.project-card__action-icon {
+	width: 20px;
+	height: 20px;
+}
+
+.projects__empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	text-align: center;
+	gap: 0.75rem;
+}
+
+.projects__empty-icon-wrapper {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 72px;
+	height: 72px;
+	background-color: var(--sidebar-hover);
+	border-radius: 16px;
+	margin-bottom: 0.5rem;
+}
+
+.projects__empty-icon {
+	width: 32px;
+	height: 32px;
+	color: var(--sidebar-text-muted);
+}
+
+.projects__empty-title {
+	font-size: 1.125rem;
+	font-weight: 600;
+	color: var(--sidebar-text);
+	margin: 0;
+}
+
+.projects__empty-description {
+	font-size: 0.875rem;
+	color: var(--sidebar-text-muted);
+	margin: 0 0 0.5rem;
+}
+
+.image-list {
+	display: flex;
+	flex-direction: column;
+	gap: 0.375rem;
+}
+
+.image-list__row {
+	display: flex;
+	align-items: center;
+	gap: 0.75rem;
+	padding: 0.625rem 0.75rem;
+	border: 1px solid var(--sidebar-border);
+	border-radius: 8px;
+	background: var(--sidebar-surface);
+	cursor: pointer;
+	transition: all 150ms ease;
+}
+
+.image-list__row:hover {
+	border-color: rgba(255, 255, 255, 0.15);
+	background: var(--sidebar-hover);
+}
+
+.image-list__row--selected {
+	border-color: var(--sidebar-accent);
+	box-shadow: inset 0 0 0 1px var(--sidebar-accent);
+}
+
+.image-list__check {
+	flex-shrink: 0;
+}
+
+.image-list__thumb {
+	width: 48px;
+	height: 48px;
+	border-radius: 6px;
+	overflow: hidden;
+	background: var(--sidebar-hover);
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	flex-shrink: 0;
+}
+
+.image-list__thumb img {
+	width: 100%;
+	height: 100%;
+	object-fit: cover;
+}
+
+.image-list__thumb-icon {
+	width: 18px;
+	height: 18px;
+	color: var(--sidebar-text-muted);
+	opacity: 0.5;
+}
+
+.image-list__info {
+	min-width: 0;
+	flex: 1;
+}
+
+.image-list__name {
+	font-size: 0.8125rem;
+	font-weight: 600;
+	color: var(--sidebar-text);
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.image-list__meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 0.5rem;
+	margin-top: 0.2rem;
+	font-size: 0.6875rem;
+	color: var(--sidebar-text-muted);
+}
+
+.image-list__actions {
+	display: flex;
+	align-items: center;
+	gap: 0.25rem;
+	opacity: 0;
+	transition: opacity 150ms ease;
+}
+
+.image-list__row:hover .image-list__actions {
+	opacity: 1;
+}
+
+.image-list__action {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	width: 28px;
+	height: 28px;
+	border: none;
+	border-radius: 6px;
+	background: transparent;
+	color: var(--sidebar-text-muted);
+	cursor: pointer;
+}
+
+.image-list__action:hover {
+	background: rgba(255, 255, 255, 0.08);
+	color: var(--sidebar-text);
+}
+
+.image-list__action--danger:hover {
+	color: #ef4444;
+}
+</style>

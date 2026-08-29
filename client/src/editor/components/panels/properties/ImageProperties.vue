@@ -20,6 +20,7 @@ import ColorCurvesPanel from "./ColorCurvesPanel.vue";
 import ColorWheelsPanel from "./ColorWheelsPanel.vue";
 import LutPanel from "./LutPanel.vue";
 import ElementTimingFields from "./ElementTimingFields.vue";
+import { useImageMode } from "../../../composables/useImageMode";
 
 const props = defineProps<{
 	element: ImageElement;
@@ -28,6 +29,7 @@ const props = defineProps<{
 
 const { editor } = useEditor({ subscribe: false });
 const { selectedElements } = useElementSelection();
+const { isImageMode } = useImageMode();
 
 function isRangeInputTarget(target: EventTarget | null): boolean {
 	return target instanceof HTMLInputElement && target.type === "range";
@@ -87,7 +89,7 @@ const ca = computed(() => ({ ...DEFAULT_COLOR_ADJUSTMENTS, ...props.element.colo
 type TopTab = "image" | "adjust" | "grading" | "animate" | "masks" | "keyframes";
 const activeTab = ref<TopTab>("image");
 
-const topTabs: { id: TopTab; label: string; icon: any }[] = [
+const allTopTabs: { id: TopTab; label: string; icon: any }[] = [
 	{ id: "image", label: "Image", icon: Image },
 	{ id: "adjust", label: "Adjust", icon: SlidersHorizontal },
 	{ id: "grading", label: "Grade", icon: Wand2 },
@@ -95,6 +97,16 @@ const topTabs: { id: TopTab; label: string; icon: any }[] = [
 	{ id: "masks", label: "Masks", icon: Scissors },
 	{ id: "keyframes", label: "Keyframes", icon: Diamond },
 ];
+
+const topTabs = computed(() =>
+	isImageMode.value
+		? allTopTabs.filter((t) => t.id !== "animate" && t.id !== "keyframes")
+		: allTopTabs,
+);
+
+watch(topTabs, (tabs) => {
+	if (!tabs.some((t) => t.id === activeTab.value)) activeTab.value = "image";
+});
 
 /** Show file name only when `name` was stored as a full path (Windows or POSIX). */
 const displayFileName = computed(() => {
@@ -345,7 +357,7 @@ function handleDelete() {
 		<div class="space-y-1.5">
 			<div class="flex items-center justify-between">
 				<label class="text-xs text-zinc-500">Opacity</label>
-				<KeyframeToggle :active="hasKf('opacity')" label="opacity" @toggle="toggleOpacityKeyframe" />
+				<KeyframeToggle v-if="!isImageMode" :active="hasKf('opacity')" label="opacity" @toggle="toggleOpacityKeyframe" />
 			</div>
 			<div class="flex items-center gap-2">
 				<input type="range" :value="element.opacity * 100" min="0" max="100" step="1" class="flex-1" @input="handleOpacitySlider" />
@@ -376,8 +388,8 @@ function handleDelete() {
 			</select>
 		</div>
 
-		<!-- Fade In / Out -->
-		<div class="space-y-1.5">
+		<!-- Fade In / Out (video only) -->
+		<div v-if="!isImageMode" class="space-y-1.5">
 			<label class="text-xs text-zinc-500">Fade</label>
 			<div class="flex items-center gap-3">
 				<div class="flex flex-1 flex-col gap-1">
@@ -404,10 +416,10 @@ function handleDelete() {
 			</div>
 
 			<!-- Scale -->
-			<div class="space-y-1.5" :class="scaleKf.isKeyframed.value ? 'rounded-md border border-amber-500/20 p-2' : ''">
+			<div class="space-y-1.5" :class="!isImageMode && scaleKf.isKeyframed.value ? 'rounded-md border border-amber-500/20 p-2' : ''">
 				<div class="flex items-center justify-between">
 					<label class="text-xs text-zinc-500">Scale</label>
-					<KeyframeToggle :active="scaleKf.isKeyframed.value" label="scale" @toggle="scaleKf.toggleKeyframe" />
+					<KeyframeToggle v-if="!isImageMode" :active="scaleKf.isKeyframed.value" label="scale" @toggle="scaleKf.toggleKeyframe" />
 				</div>
 				<div class="flex items-center gap-2">
 					<input type="range" :value="scaleKf.displayValue.value * 100" min="10" max="500" step="1" class="flex-1" @input="handleScaleSlider" />
@@ -417,27 +429,27 @@ function handleDelete() {
 
 			<!-- Position -->
 			<div class="grid grid-cols-2 gap-2">
-				<div class="space-y-1" :class="posXKf.isKeyframed.value ? 'rounded-md border border-amber-500/20 p-2' : ''">
+				<div class="space-y-1" :class="!isImageMode && posXKf.isKeyframed.value ? 'rounded-md border border-amber-500/20 p-2' : ''">
 					<div class="flex items-center justify-between">
 						<label class="text-xs text-zinc-500">Position X</label>
-						<KeyframeToggle :active="posXKf.isKeyframed.value" label="position X" @toggle="posXKf.toggleKeyframe" />
+						<KeyframeToggle v-if="!isImageMode" :active="posXKf.isKeyframed.value" label="position X" @toggle="posXKf.toggleKeyframe" />
 					</div>
 					<input type="number" :value="posXInput" step="1" class="h-7 w-full rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handlePosX((e.target as HTMLInputElement).value)" />
 				</div>
-				<div class="space-y-1" :class="posYKf.isKeyframed.value ? 'rounded-md border border-amber-500/20 p-2' : ''">
+				<div class="space-y-1" :class="!isImageMode && posYKf.isKeyframed.value ? 'rounded-md border border-amber-500/20 p-2' : ''">
 					<div class="flex items-center justify-between">
 						<label class="text-xs text-zinc-500">Position Y</label>
-						<KeyframeToggle :active="posYKf.isKeyframed.value" label="position Y" @toggle="posYKf.toggleKeyframe" />
+						<KeyframeToggle v-if="!isImageMode" :active="posYKf.isKeyframed.value" label="position Y" @toggle="posYKf.toggleKeyframe" />
 					</div>
 					<input type="number" :value="posYInput" step="1" class="h-7 w-full rounded-sm border border-white/10 bg-white/5 px-2 text-center text-xs text-zinc-200" @input="(e) => handlePosY((e.target as HTMLInputElement).value)" />
 				</div>
 			</div>
 
 			<!-- Rotation -->
-			<div class="space-y-1.5" :class="rotationKf.isKeyframed.value ? 'rounded-md border border-amber-500/20 p-2' : ''">
+			<div class="space-y-1.5" :class="!isImageMode && rotationKf.isKeyframed.value ? 'rounded-md border border-amber-500/20 p-2' : ''">
 				<div class="flex items-center justify-between">
 					<label class="text-xs text-zinc-500">Rotation</label>
-					<KeyframeToggle :active="rotationKf.isKeyframed.value" label="rotation" @toggle="rotationKf.toggleKeyframe" />
+					<KeyframeToggle v-if="!isImageMode" :active="rotationKf.isKeyframed.value" label="rotation" @toggle="rotationKf.toggleKeyframe" />
 				</div>
 				<div class="flex items-center gap-2">
 					<input type="range" :value="rotationKf.displayValue.value" min="-360" max="360" step="1" class="flex-1" @input="handleRotateSlider" />
@@ -477,8 +489,8 @@ function handleDelete() {
 			</div>
 		</div>
 
-		<!-- Chromakey (Green Screen) -->
-		<div class="space-y-3">
+		<!-- Chromakey (Green Screen) — video only -->
+		<div v-if="!isImageMode" class="space-y-3">
 			<button class="flex w-full items-center justify-between" @click="showChromakey = !showChromakey">
 				<div class="flex items-center gap-1.5">
 					<Pipette class="size-3.5 text-zinc-500" />
@@ -545,7 +557,7 @@ function handleDelete() {
 			<div v-if="showEffects" class="space-y-2">
 				<div v-if="effects.length === 0" class="rounded-md border border-dashed border-white/10 px-3 py-4 text-center">
 					<p class="text-[11px] text-zinc-600">No effects applied</p>
-					<p class="mt-0.5 text-[10px] text-zinc-700">Add effects from the Effects panel</p>
+					<p class="mt-0.5 text-[10px] text-zinc-700">{{ isImageMode ? "No effects on this layer" : "Add effects from the Effects panel" }}</p>
 				</div>
 
 				<div v-for="effect in effects" :key="effect.id" class="rounded-md border border-white/5 bg-white/[0.02]">
@@ -958,8 +970,8 @@ function handleDelete() {
 					</div>
 				</div>
 
-				<!-- Animate -->
-				<div v-else-if="activeTab === 'animate'" class="flex flex-col">
+				<!-- Animate (video only) -->
+				<div v-else-if="!isImageMode && activeTab === 'animate'" class="flex flex-col">
 					<div class="flex shrink-0 items-center border-b border-white/10 px-3 py-1.5">
 						<span class="text-sm text-zinc-400">Animate</span>
 					</div>
@@ -983,8 +995,8 @@ function handleDelete() {
 					<MasksPanel :element="element" :track-id="trackId" />
 				</div>
 
-				<!-- Keyframes -->
-				<div v-else-if="activeTab === 'keyframes'">
+				<!-- Keyframes (video only) -->
+				<div v-else-if="!isImageMode && activeTab === 'keyframes'">
 					<KeyframeEditorPanel :track-id="trackId" :element="element" />
 				</div>
 			</div>

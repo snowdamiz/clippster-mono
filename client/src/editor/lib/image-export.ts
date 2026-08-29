@@ -51,7 +51,7 @@ export async function renderActiveProjectToImageBlob(
 			mediaAssets: editor.media.getAssets(),
 			duration,
 			canvasSize: { width, height },
-			background: project.settings.background ?? { type: "color", color: "#000000" },
+			background: project.settings.background ?? { type: "color", color: "transparent" },
 			transitions: (() => {
 				try {
 					return editor.scenes.getActiveScene()?.transitions ?? [];
@@ -62,6 +62,11 @@ export async function renderActiveProjectToImageBlob(
 			canvasSourceFraming: project.settings.canvasSourceFraming ?? null,
 		});
 
+		const bg = project.settings.background;
+		const transparent =
+			editor.imageMode ||
+			(bg?.type === "color" && (bg.color === "transparent" || bg.color === "rgba(0,0,0,0)"));
+
 		const renderer = new CanvasRenderer({
 			width,
 			height,
@@ -71,6 +76,7 @@ export async function renderActiveProjectToImageBlob(
 			previewEffectProcessing: false,
 			backingWidth: width,
 			backingHeight: height,
+			clearStyle: transparent ? "transparent" : "black",
 		});
 
 		const target = document.createElement("canvas");

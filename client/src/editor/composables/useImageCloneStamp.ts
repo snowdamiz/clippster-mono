@@ -168,7 +168,7 @@ export function useImageCloneStamp() {
 		const radius = Math.max(1, brushSize.value / 2);
 		const hardness = brushHardness.value;
 		const opacity = brushOpacity.value;
-		const heal = activeTool.value === "heal";
+		const heal = activeTool.value === "heal" || activeTool.value === "spot-heal";
 		const dest = workCtx.getImageData(0, 0, work.width, work.height);
 		const r2 = radius * radius;
 
@@ -240,7 +240,13 @@ export function useImageCloneStamp() {
 		}
 		try {
 			await writeNativeCanvasToMedia(mediaId, work);
-			recordImageEditHistory(activeTool.value === "heal" ? "Heal" : "Clone");
+			recordImageEditHistory(
+				activeTool.value === "spot-heal"
+					? "Spot heal"
+					: activeTool.value === "heal"
+						? "Heal"
+						: "Clone",
+			);
 		} catch (e) {
 			console.error("[useImageCloneStamp] Commit failed:", e);
 		}
