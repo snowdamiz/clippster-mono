@@ -1,5 +1,5 @@
 import type { MediaPlatform } from '@clippster/shared-types';
-import { extractTokendChannel } from '@/services/tokend';
+import { extractTokendChannel } from '@/services/tokendUrl';
 
 /** UI + search platform detection — mirrors desktop StreamVods.vue heuristics. */
 export function detectPlatformFromInput(input: string): MediaPlatform | null {
