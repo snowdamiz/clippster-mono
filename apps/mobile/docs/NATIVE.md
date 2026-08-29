@@ -50,7 +50,7 @@ Both platforms call the embedded FFmpeg CLI (`expo_ffmpeg_execute`), so full arg
 | Android | Package `binaryReleaseTag` `.so` (HLS + filters) + `libexpo_ffmpeg.a` from embed release | `ffmpeg_session.cpp` → `expo_ffmpeg_execute` |
 | iOS | Embed-release `FFmpeg.xcframework` (CLI baked into `libffmpeg.a`) | `FFmpegBridge.swift` → `expo_ffmpeg_execute` |
 
-`scripts/setup-ffmpeg-cli.mjs` runs on `postinstall` (after `ffmpeg-expo`’s own postinstall) and installs those CLI bits. Skip with `SKIP_FFMPEG_DOWNLOAD=1`.
+`scripts/setup-ffmpeg-cli.mjs` runs on `postinstall` (after `ffmpeg-expo`’s own postinstall) and installs those CLI bits. iOS embed download runs only on macOS; Android runs on all platforms. Skip with `SKIP_FFMPEG_DOWNLOAD=1`.
 
 Desktop export plans use `libx264`. Mobile rewrites that in `apps/mobile/src/lib/ffmpegArgs.ts`:
 

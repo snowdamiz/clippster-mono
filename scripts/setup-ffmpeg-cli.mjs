@@ -73,6 +73,13 @@ async function setupAndroid() {
 }
 
 async function setupIos() {
+  // xcframework is only useful for local iOS builds; GNU tar on Linux also
+  // cannot extract .zip (macOS tar can), which broke ubuntu CI postinstall.
+  if (process.platform !== 'darwin') {
+    console.log('[setup-ffmpeg-cli] Skipping iOS embed (non-macOS)');
+    return;
+  }
+
   if (fs.existsSync(iosCliMarker) && fs.existsSync(iosHeaderCopy)) {
     console.log('[setup-ffmpeg-cli] iOS embed FFmpeg.xcframework already present');
     return;
@@ -86,7 +93,7 @@ async function setupIos() {
     await download(url, archive);
     const extractDir = path.join(tmp, 'extract');
     fs.mkdirSync(extractDir, { recursive: true });
-    execSync(`tar -xf "${archive}" -C "${extractDir}"`, { stdio: 'pipe' });
+    execSync(`unzip -qo "${archive}" -d "${extractDir}"`, { stdio: 'pipe' });
 
     const src =
       findFile(extractDir, 'FFmpeg.xcframework') ??
