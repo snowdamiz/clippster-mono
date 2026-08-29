@@ -13,7 +13,6 @@
   import AnnouncementDialog from '@/components/AnnouncementDialog.vue';
   import SocialTokenExpiredDialog from '@/components/SocialTokenExpiredDialog.vue';
   import OrganizationInviteDialog from '@/components/OrganizationInviteDialog.vue';
-  import CloudConflictDialog from '@/components/sync/CloudConflictDialog.vue';
   import FloatingChat from '@/components/chat/FloatingChat.vue';
   import AudioPlayer from '@/components/AudioPlayer.vue';
   import { useAnnouncements } from '@/composables/useAnnouncements';
@@ -30,6 +29,7 @@
   import { initClipBuildEventHandler, cleanupClipBuildEventHandler } from '@/services/clipBuildEventHandler';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
+  import { subscriptionStillCoversAccess } from '@/composables/useSubscription';
   import { useLivestreamStore } from '@/stores/livestream';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useAppUpdater } from '@/composables/useAppUpdater';
@@ -175,7 +175,12 @@
 
   // Check if this is the full-screen editor page (no scroll, minimal chrome)
   const currentRoute = useRoute();
-  const isEditorPage = computed(() => currentRoute.path === '/editor');
+  const isEditorPage = computed(
+    () =>
+      currentRoute.path === '/editor' ||
+      currentRoute.path === '/design-studio/edit' ||
+      currentRoute.path.startsWith('/design-studio/edit'),
+  );
   const isStudioSessionPage = computed(() => currentRoute.path === '/studio/record/session');
 
   // Authentication Gate: Block all app interaction until user authenticates
@@ -192,18 +197,18 @@
     if (authStore.user?.created_by_organization_id) return false;
     if (currentRoute.path === '/billing') return false;
 
-    const subscriptionStatus = (authStore.user as any)?.subscription?.status;
+    const userSubscription = (authStore.user as any)?.subscription;
+    const subscriptionStatus = userSubscription?.status;
     const hasSelectedPlan = localStorage.getItem('has_selected_plan');
 
     console.log('[App] Subscription gate check:', {
       subscriptionStatus,
       hasSelectedPlan,
-      userSubscription: (authStore.user as any)?.subscription,
+      userSubscription,
     });
 
-    // Users with active or cancelled subscriptions always bypass the gate
-    if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled') {
-      // Also set the flag so future checks are faster
+    // Active, or cancelled with time left in the paid period, bypass the gate
+    if (subscriptionStillCoversAccess(userSubscription)) {
       if (!hasSelectedPlan) {
         localStorage.setItem('has_selected_plan', 'true');
       }
@@ -642,7 +647,7 @@
         @decline="handleDeclineInvitation"
       />
 
-      <CloudConflictDialog />
+      <!-- CloudConflictDialog disabled: desktop/mobile are independent until cloud sync ships. -->
 
       <!-- Floating Chat Widget (Messenger-style popout) -->
       <FloatingChat />
@@ -677,6 +682,7 @@
 
   .main-content {
     width: 100%;
+    max-width: 100%;
     height: calc(100vh - 32px);
     margin-top: 32px; /* Account for fixed titlebar height */
     overflow-y: auto;

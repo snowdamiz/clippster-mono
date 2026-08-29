@@ -462,6 +462,34 @@ pub fn create_directory(path: String) -> Result<(), String> {
     Ok(())
 }
 
+/// Delete the editor-media/{project_id} directory for a Design Studio / clip editor project.
+/// Uses the same base path as `save_editor_media_file` / `copy_file_to_project_media`.
+#[tauri::command]
+pub fn delete_editor_project_media(project_id: String) -> Result<(), String> {
+    use std::fs;
+
+    let project_id = project_id.trim();
+    if project_id.is_empty() || project_id.contains("..") || project_id.contains('/') || project_id.contains('\\') {
+        return Err("Invalid project_id".to_string());
+    }
+
+    let app_dir = get_app_storage_dir()?;
+    let media_dir = app_dir.join("editor-media").join(project_id);
+
+    if !media_dir.exists() {
+        return Ok(());
+    }
+
+    fs::remove_dir_all(&media_dir)
+        .map_err(|e| format!("Failed to delete editor-media directory: {}", e))?;
+
+    println!(
+        "[Storage] Deleted editor media directory: {}",
+        media_dir.display()
+    );
+    Ok(())
+}
+
 /// Response structure for storage paths
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct StoragePathsResponse {

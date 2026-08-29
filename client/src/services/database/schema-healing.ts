@@ -237,6 +237,20 @@ export async function healSchema(): Promise<void> {
       FOREIGN KEY (creator_profile_id) REFERENCES creator_profiles(id) ON DELETE SET NULL
     )`);
 
+    // --- Design Studio: image_assets new columns ---
+    await addColumnIfMissing(db, 'image_assets', 'image_type', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'source_type', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'source_clip_id', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'source_project_id', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'canvas_width', 'INTEGER');
+    await addColumnIfMissing(db, 'image_assets', 'canvas_height', 'INTEGER');
+    await addColumnIfMissing(db, 'image_assets', 'export_format', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'editor_project_json', 'TEXT');
+
+    // --- Design Studio: clips cover image columns ---
+    await addColumnIfMissing(db, 'clips', 'cover_image_id', 'TEXT');
+    await addColumnIfMissing(db, 'clips', 'cover_image_path', 'TEXT');
+
     // --- Migrations 095-097: audio download tables ---
     await db.execute(`CREATE TABLE IF NOT EXISTS downloaded_audio (
       id TEXT PRIMARY KEY,
@@ -297,6 +311,10 @@ export async function healSchema(): Promise<void> {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_audio_playlist_items_position ON audio_playlist_items(playlist_id, position)'
     );
+
+    // --- Cloud sync: raw_videos source metadata ---
+    await addColumnIfMissing(db, 'raw_videos', 'platform', 'TEXT');
+    await addColumnIfMissing(db, 'raw_videos', 'source_url', 'TEXT');
 
     await healProjectTimestamps(db);
     await healStaleProjectBranding(db);

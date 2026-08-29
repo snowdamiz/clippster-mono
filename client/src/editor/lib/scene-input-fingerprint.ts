@@ -207,7 +207,7 @@ export function computeSceneInputFingerprint(params: {
 	const { tracks, mediaAssets, transitions, canvasSize, background, duration, canvasSourceFraming } = params;
 
 	const mediaPart = mediaAssets
-		.map((m) => `${m.id}:${m.type}:${m.file?.size ?? 0}:${m.width ?? 0}:${m.height ?? 0}`)
+		.map((m) => `${m.id}:${m.type}:${m.file?.size ?? 0}:${m.file?.lastModified ?? 0}:${m.width ?? 0}:${m.height ?? 0}`)
 		.sort()
 		.join("|");
 

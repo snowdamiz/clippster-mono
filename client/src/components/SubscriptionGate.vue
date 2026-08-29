@@ -96,7 +96,7 @@
                   <div class="p-0.5 sm:p-1 rounded bg-green-500/10">
                     <Check class="h-3 w-3 sm:h-3.5 sm:w-3.5 text-green-400" />
                   </div>
-                  <span>Full app access</span>
+                  <span>Mobile App</span>
                 </div>
                 <div class="flex items-center gap-2 text-xs sm:text-sm text-zinc-400">
                   <div class="p-0.5 sm:p-1 rounded bg-green-500/10">

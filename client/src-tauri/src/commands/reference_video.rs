@@ -729,7 +729,6 @@ async fn wait_for_cancellation(cancelled: Arc<AtomicBool>) {
 fn hide_console(_command: &mut Command) {
     #[cfg(target_os = "windows")]
     {
-        use std::os::windows::process::CommandExt;
         _command.creation_flags(0x08000000);
     }
 }

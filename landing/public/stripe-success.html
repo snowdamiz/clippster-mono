@@ -180,15 +180,19 @@
       const statusEl = document.getElementById('status');
       const params = new URLSearchParams(window.location.search);
       const sessionId = params.get('session_id');
-      
-      // Update status
+      const returnTo = params.get('return_to');
+
       setTimeout(() => {
         statusEl.textContent = '✓ Payment confirmed. Redirecting...';
         statusEl.style.color = 'var(--success)';
       }, 500);
-      
-      // Redirect back to billing page with session_id
+
       setTimeout(() => {
+        if (returnTo === 'mobile') {
+          const qs = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
+          window.location.href = `clippster://stripe/success${qs}`;
+          return;
+        }
         if (sessionId) {
           window.location.href = `/organization/billing?session_id=${sessionId}`;
         } else {

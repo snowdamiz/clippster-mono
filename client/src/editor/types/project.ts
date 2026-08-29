@@ -1,5 +1,6 @@
 import type { ManualSourceFramingPayload } from "@/types";
 import type { TScene } from "./timeline";
+import type { ImageDocument } from "./image-document";
 
 export type AspectRatioId = "16:9" | "9:16" | "1:1" | "4:5";
 
@@ -76,8 +77,12 @@ export interface TProjectSettings {
 	sourceClipId?: string | null;
 	sourceClipStartTime?: number | null;
 	sourceClipEndTime?: number | null;
+	/** When Image Editor was opened as Design Cover for a built clip. */
+	coverForClipId?: string | null;
 	/** When canvas is not 16:9, how the first main-track full-frame layer is framed (matches Manual POI). */
 	canvasSourceFraming?: ManualSourceFramingPayload | null;
+	/** Pixel-engine document bag (Phase 5 architecture; compositor remains primary in v1). */
+	imageDocument?: ImageDocument | null;
 }
 
 export interface TTimelineViewState {

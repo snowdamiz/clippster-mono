@@ -3,6 +3,7 @@ import {
   createDefaultManualFramingConfig,
   type TargetAspectRatio,
 } from '@clippster/shared-types';
+import type { VideoPlayer } from 'expo-video';
 import { useCallback, useState } from 'react';
 import { Pressable, ScrollView, Text, View } from 'react-native';
 
@@ -16,6 +17,7 @@ interface FramingEditorProps {
   config: ActiveVodPresetConfig;
   clipDuration: number;
   currentTime: number;
+  player: VideoPlayer | null;
   onSave: (config: ActiveVodPresetConfig) => Promise<void>;
   onSeek: (time: number) => void;
 }
@@ -24,6 +26,7 @@ export function FramingEditor({
   config,
   clipDuration,
   currentTime,
+  player,
   onSave,
   onSeek,
 }: FramingEditorProps) {
@@ -62,7 +65,7 @@ export function FramingEditor({
   };
 
   return (
-    <ScrollView className="flex-1">
+    <View className="flex-1">
       <View className="flex-row items-center justify-center gap-2 px-4 py-3">
         {(['9:16', '16:9'] as const).map((ratio) => (
           <Pressable
@@ -99,6 +102,7 @@ export function FramingEditor({
           onChange={updateFraming}
           canvasWidth={340}
           canvasHeight={191}
+          player={player}
         />
       ) : (
         <TargetPanel
@@ -106,26 +110,31 @@ export function FramingEditor({
           targetRatio={targetRatio}
           onChange={updateFraming}
           previewWidth={targetRatio === '9:16' ? 200 : 320}
+          player={player}
         />
       )}
 
-      <POISegmentTimeline
-        config={framing}
-        clipDuration={clipDuration}
-        currentTime={currentTime}
-        onChange={updateFraming}
-        onSeek={onSeek}
-      />
+      <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
+        <POISegmentTimeline
+          config={framing}
+          clipDuration={clipDuration}
+          currentTime={currentTime}
+          onChange={updateFraming}
+          onSeek={onSeek}
+        />
 
-      <View className="px-4 py-4">
-        <Pressable
-          onPress={() => void handleSave()}
-          disabled={saving}
-          className="items-center rounded-lg bg-primary py-3"
-        >
-          <Text className="font-semibold text-primary-foreground">{saving ? 'Saving...' : 'Save framing'}</Text>
-        </Pressable>
-      </View>
-    </ScrollView>
+        <View className="px-4 py-4">
+          <Pressable
+            onPress={() => void handleSave()}
+            disabled={saving}
+            className="items-center rounded-lg bg-primary py-3"
+          >
+            <Text className="font-semibold text-primary-foreground">
+              {saving ? 'Saving...' : 'Save framing'}
+            </Text>
+          </Pressable>
+        </View>
+      </ScrollView>
+    </View>
   );
 }

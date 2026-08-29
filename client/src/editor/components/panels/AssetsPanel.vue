@@ -1,68 +1,65 @@
 <script setup lang="ts">
-  import { ref, computed } from 'vue';
-  import { useEditor } from '../../composables/useEditor';
-  import { useFileUpload } from '../../composables/useFileUpload';
-  import { TIMELINE_CONSTANTS } from '../../constants/timeline-constants';
-  import { buildVideoElement, buildImageElement, buildUploadAudioElement } from '../../lib/timeline/element-utils';
-  import { processMediaAssets } from '../../lib/media/processing';
-  import { usePointerDrag } from '../../composables/usePointerDrag';
-  import type { MediaAsset } from '../../types/assets';
-  import type { CreateTimelineElement } from '../../types/timeline';
-  import { Button } from '@/components/ui/button';
-  import { Dialog, DialogContent, DialogHeader, DialogTitle } from '@/components/ui/dialog';
-  import {
-    Upload,
-    Image,
-    Film,
-    Music,
-    Grid,
-    List,
-    Wand2,
-    ArrowRightLeft,
-    FolderOpen,
-    Clapperboard,
-    Loader2,
-    Plus,
-  } from 'lucide-vue-next';
-  import TextView from './assets/TextView.vue';
-  import CaptionsView from './assets/CaptionsView.vue';
-  import SettingsView from './assets/SettingsView.vue';
-  import StickersView from './assets/StickersView.vue';
-  import SoundsView from './assets/SoundsView.vue';
-  import BuiltClipsView from './assets/BuiltClipsView.vue';
-  import ProjectClipsView from './assets/ProjectClipsView.vue';
-  import EffectsView from './assets/EffectsView.vue';
-  import FiltersView from './assets/FiltersView.vue';
-  import TransitionsView from './assets/TransitionsView.vue';
-  import BrandingView from './assets/BrandingView.vue';
-  import UploadMediaView from './assets/UploadMediaView.vue';
-  import TranscriptView from './assets/TranscriptView.vue';
-  import AIBrollView from './assets/AIBrollView.vue';
-  import AudioLibraryView from './assets/AudioLibraryView.vue';
-  import FoldersView from './assets/FoldersView.vue';
+import { ref, computed } from "vue";
+import { useEditor } from "../../composables/useEditor";
+import { useFileUpload } from "../../composables/useFileUpload";
+import { TIMELINE_CONSTANTS } from "../../constants/timeline-constants";
+import {
+	buildVideoElement,
+	buildImageElement,
+	buildUploadAudioElement,
+} from "../../lib/timeline/element-utils";
+import { processMediaAssets } from "../../lib/media/processing";
+import { usePointerDrag } from "../../composables/usePointerDrag";
+import type { MediaAsset } from "../../types/assets";
+import type { CreateTimelineElement } from "../../types/timeline";
+import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import { Upload, Image, Film, Music, Grid, List, FolderOpen, Clapperboard, Loader2, Plus } from "lucide-vue-next";
+import { useImageMode } from "../../composables/useImageMode";
+import TextView from "./assets/TextView.vue";
+import CaptionsView from "./assets/CaptionsView.vue";
+import SettingsView from "./assets/SettingsView.vue";
+import StickersView from "./assets/StickersView.vue";
+import SoundsView from "./assets/SoundsView.vue";
+import BuiltClipsView from "./assets/BuiltClipsView.vue";
+import ProjectClipsView from "./assets/ProjectClipsView.vue";
+import EffectsView from "./assets/EffectsView.vue";
+import FiltersView from "./assets/FiltersView.vue";
+import TransitionsView from "./assets/TransitionsView.vue";
+import BrandingView from "./assets/BrandingView.vue";
+import UploadMediaView from "./assets/UploadMediaView.vue";
+import TranscriptView from "./assets/TranscriptView.vue";
+import ImageSourcesView from "./assets/ImageSourcesView.vue";
+import TemplatesView from "./assets/TemplatesView.vue";
+import BrandKitView from "./assets/BrandKitView.vue";
+import AIToolsView from "./assets/AIToolsView.vue";
+import AIBrollView from "./assets/AIBrollView.vue";
+import AudioLibraryView from "./assets/AudioLibraryView.vue";
+import ImageLibraryView from "./assets/ImageLibraryView.vue";
 
-  const props = defineProps<{
-    activeTab: string;
-  }>();
+const props = defineProps<{
+	activeTab: string | null;
+}>();
 
-  const { editor, version } = useEditor({
-    subscribe: {
-      project: true,
-      media: true,
-      playback: false,
-      timeline: false,
-      scenes: false,
-      selection: false,
-    },
-  });
-  const { startDrag } = usePointerDrag();
-  const showMediaDialog = ref(false);
-  const dialogTab = ref<'upload' | 'built' | 'projects' | 'audio'>('upload');
-  const viewMode = ref<'grid' | 'list'>('grid');
-  const isProcessing = ref(false);
-  const progress = ref(0);
-  const sortBy = ref<'name' | 'type' | 'duration'>('name');
-  const sortOrder = ref<'asc' | 'desc'>('asc');
+const { editor, version } = useEditor({
+	subscribe: {
+		project: true,
+		media: true,
+		playback: false,
+		timeline: false,
+		scenes: false,
+		selection: false,
+	},
+});
+const { isImageMode } = useImageMode();
+const { startDrag } = usePointerDrag();
+const showMediaDialog = ref(false);
+const dialogTab = ref<"upload" | "built" | "projects" | "audio" | "images">("upload");
+const viewMode = ref<"grid" | "list">("grid");
+const isProcessing = ref(false);
+const progress = ref(0);
+const sortBy = ref<"name" | "type" | "duration">("name");
+const sortOrder = ref<"asc" | "desc">("asc");
 
   const mediaFiles = computed(() => {
     void version.value;
@@ -201,21 +198,24 @@
 </script>
 
 <template>
-  <div class="flex h-full flex-col bg-transparent text-zinc-200">
-    <!-- Media view -->
-    <div v-if="activeTab === 'media'" class="flex flex-1 flex-col overflow-hidden">
-      <input
-        :ref="
-          (el) => {
-            inputRef = el as HTMLInputElement | null;
-          }
-        "
-        type="file"
-        class="hidden"
-        accept="image/*,video/*,audio/*"
-        multiple
-        @change="handleFileChange"
-      />
+	<div class="flex h-full flex-col bg-transparent text-zinc-200">
+		<!-- Image mode: show ImageSourcesView for media tab -->
+		<ImageSourcesView v-if="activeTab === 'media' && isImageMode" />
+
+		<!-- Video mode: standard media view -->
+		<div v-else-if="activeTab === 'media'" class="flex flex-1 flex-col overflow-hidden">
+			<input
+				:ref="
+					(el) => {
+						inputRef = el as HTMLInputElement | null;
+					}
+				"
+				type="file"
+				class="hidden"
+				accept="image/*,video/*,audio/*"
+				multiple
+				@change="handleFileChange"
+			/>
 
       <!-- Header -->
       <div class="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
@@ -416,6 +416,7 @@
                 { key: 'built', label: 'Built Clips', icon: Clapperboard },
                 { key: 'projects', label: 'Projects', icon: FolderOpen },
                 { key: 'audio', label: 'Audio', icon: Music },
+                { key: 'images', label: 'Images', icon: Image },
               ] as const"
               :key="tab.key"
               type="button"
@@ -437,13 +438,23 @@
             <BuiltClipsView v-else-if="dialogTab === 'built'" />
             <ProjectClipsView v-else-if="dialogTab === 'projects'" />
             <AudioLibraryView v-else-if="dialogTab === 'audio'" />
+            <ImageLibraryView v-else-if="dialogTab === 'images'" />
           </div>
         </DialogContent>
       </Dialog>
     </div>
 
-    <!-- Text view -->
-    <TextView v-else-if="activeTab === 'text'" />
+		<!-- Templates view (image mode only) -->
+		<TemplatesView v-else-if="activeTab === 'templates'" />
+
+		<!-- Brand Kit view (image mode only) -->
+		<BrandKitView v-else-if="activeTab === 'brandkit'" />
+
+		<!-- AI Tools view (image mode only) -->
+		<AIToolsView v-else-if="activeTab === 'aitools'" />
+
+		<!-- Text view -->
+		<TextView v-else-if="activeTab === 'text'" />
 
     <!-- Stickers view -->
     <StickersView v-else-if="activeTab === 'stickers'" />

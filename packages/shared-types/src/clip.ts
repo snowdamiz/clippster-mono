@@ -27,6 +27,8 @@ export interface ClipSegment {
 export interface Clip {
   id: string;
   project_id: string | null;
+  /** Preserved when the parent project is deleted (desktop/mobile retention). */
+  project_name?: string | null;
   name: string | null;
   file_path: string;
   duration: number | null;

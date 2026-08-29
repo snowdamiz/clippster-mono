@@ -181,6 +181,15 @@
     
     document.addEventListener('DOMContentLoaded', () => {
       const statusEl = document.getElementById('status');
+      const params = new URLSearchParams(window.location.search);
+      const sessionId = params.get('session_id');
+      const returnTo = params.get('return_to');
+
+      if (returnTo === 'mobile') {
+        const qs = sessionId ? `?session_id=${encodeURIComponent(sessionId)}` : '';
+        window.location.href = `clippster://stripe/success${qs}`;
+        return;
+      }
       
       // Update status after a short delay to show the app has been notified
       setTimeout(() => {

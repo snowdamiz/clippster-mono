@@ -2,7 +2,7 @@ import * as Linking from 'expo-linking';
 import * as WebBrowser from 'expo-web-browser';
 import { Platform } from 'react-native';
 import type { AuthResult, AuthUser } from '@clippster/shared-types';
-import { getApiBaseUrl } from '@/lib/config';
+import { getApiBaseUrl, getDevServerPort } from '@/lib/config';
 import { saveAuthSession } from './authStorage';
 
 WebBrowser.maybeCompleteAuthSession();
@@ -10,6 +10,18 @@ WebBrowser.maybeCompleteAuthSession();
 const GOOGLE_CALLBACK_PATH = 'auth/google/callback';
 /** Server only accepts clippster:// redirects for mobile=true mode. */
 const NATIVE_REDIRECT_URI = 'clippster://auth/google/callback';
+
+/** HTTP origin Google redirects to after sign-in (must be reachable from the device browser). */
+export function getOAuthCallbackBase(): string {
+  if (__DEV__ && Platform.OS === 'android') {
+    // Must match the redirect URI registered in Google Cloud Console (localhost, not
+    // 127.0.0.1 or 10.0.2.2 — Google treats those as different URIs). yarn dev runs
+    // `adb reverse` so emulator localhost reaches the host Phoenix server.
+    return `http://localhost:${getDevServerPort()}`;
+  }
+
+  return getApiBaseUrl().replace(/\/api\/?$/, '');
+}
 
 export function getGoogleRedirectUri(): string {
   if (Platform.OS === 'web') {
@@ -64,7 +76,8 @@ export async function startGoogleAuth(): Promise<AuthResult> {
   }
 
   const redirectUri = NATIVE_REDIRECT_URI;
-  const authUrl = `${getApiBaseUrl()}/auth/google?mobile=true&redirect_uri=${encodeURIComponent(redirectUri)}`;
+  const oauthCallbackBase = encodeURIComponent(getOAuthCallbackBase());
+  const authUrl = `${getApiBaseUrl()}/auth/google?mobile=true&redirect_uri=${encodeURIComponent(redirectUri)}&oauth_callback_base=${oauthCallbackBase}`;
 
   const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 

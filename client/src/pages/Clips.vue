@@ -577,6 +577,18 @@
                                 <span>Publish</span>
                               </button>
 
+                              <!-- Design Cover Image -->
+                              <button
+                                class="folder-dialog-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
+                                @click.stop="
+                                  router.push(`/design-studio/edit?coverForClip=${item.clip.id}`);
+                                  closeFolderDialogActionMenu();
+                                "
+                              >
+                                <Paintbrush class="h-4 w-4" style="color: var(--sidebar-text-muted)" />
+                                <span>Design Cover</span>
+                              </button>
+
                               <!-- Divider -->
                               <div class="folder-dialog-dropdown-divider h-px my-1 mx-2"></div>
 
@@ -905,6 +917,7 @@
     ExternalLink,
     Film,
     MoreVertical,
+    Paintbrush,
   } from 'lucide-vue-next';
   import {
     getAllClipsWithBuilds,

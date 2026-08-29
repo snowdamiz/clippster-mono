@@ -4,7 +4,6 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  Alert,
   Image,
   ScrollView,
   Text,
@@ -16,6 +15,7 @@ import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { analyticsApi, campaignApi } from '@/services/api';
 import { tokens } from '@/theme/tokens';
+import { appAlert } from '@/lib/appAlert';
 
 export default function CampaignDetailScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -63,10 +63,10 @@ export default function CampaignDetailScreen() {
           event_type: 'campaign_joined',
           metadata: { campaign_id: campaignId },
         });
-        Alert.alert('Success', response.message ?? 'You have joined this campaign.');
+        appAlert('Success', response.message ?? 'You have joined this campaign.');
         await load();
       } else {
-        Alert.alert('Error', response.error ?? 'Failed to join campaign');
+        appAlert('Error', response.error ?? 'Failed to join campaign');
       }
     } finally {
       setJoining(false);

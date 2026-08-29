@@ -25,6 +25,9 @@ const maskEditMode = ref(true);
 
 /** Preview viewport zoom: 1 = fit-to-panel, values > 1 zoom in, < 1 zoom out. Range: 0.1–4.0. */
 const viewportZoom = ref(1);
+/** Preview pan in CSS pixels (hand tool). */
+const viewportPanX = ref(0);
+const viewportPanY = ref(0);
 /** Preview quality: "auto" uses project resolution, numbers are target height in px. */
 const previewQuality = ref<"auto" | 360 | 540 | 720 | 1080>("auto");
 
@@ -99,6 +102,8 @@ export function useEditorUIState() {
 		pendingCrop,
 		activeSocialOverlay,
 		viewportZoom,
+		viewportPanX,
+		viewportPanY,
 		previewQuality,
 		fitMode,
 		maskEditMode,

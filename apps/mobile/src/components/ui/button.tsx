@@ -2,14 +2,14 @@ import { Pressable, Text, type PressableProps } from 'react-native';
 import { cva, type VariantProps } from 'class-variance-authority';
 import { cn } from '@/lib/utils';
 
-// Variants mirror the desktop client's dialog buttons (client BEM .btn styles):
-// primary = cyan with black text, secondary/outline = translucent fill + border.
+// default = near-white like desktop .dark; accent = cyan brand CTA; outline = translucent surface.
 const buttonVariants = cva(
   'flex-row items-center justify-center rounded-md px-4 py-3',
   {
     variants: {
       variant: {
         default: 'bg-primary',
+        accent: 'bg-accent',
         outline: 'border border-border bg-white/5',
         ghost: 'bg-transparent',
         google: 'border border-border bg-white/5',
@@ -31,6 +31,7 @@ const textVariants = cva('text-sm font-semibold', {
   variants: {
     variant: {
       default: 'text-primary-foreground',
+      accent: 'text-white',
       outline: 'text-foreground',
       ghost: 'text-foreground',
       google: 'text-foreground',

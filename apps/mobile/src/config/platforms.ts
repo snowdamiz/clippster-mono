@@ -1,7 +1,7 @@
 import type { MediaPlatform } from '@clippster/shared-types';
+import { detectPlatformFromInput } from '@/lib/platformDetection';
 
-export interface MobilePlatformConfig {
-  id: MediaPlatform;
+export interface MobilePlatformConfig {  id: MediaPlatform;
   name: string;
   provider: string;
   searchPlaceholder: string;
@@ -58,11 +58,5 @@ export function getPlatformConfig(id: string): MobilePlatformConfig | undefined 
 }
 
 export function detectPlatformFromUrl(url: string): MediaPlatform | null {
-  if (/tokend\.tv/i.test(url) || /localhost:4100/i.test(url)) return 'tokend';
-  if (/youtube\.com|youtu\.be/i.test(url)) return 'youtube';
-  if (/kick\.com/i.test(url)) return 'kick';
-  if (/twitch\.tv/i.test(url)) return 'twitch';
-  if (/rumble\.com/i.test(url)) return 'rumble';
-  if (/twitter\.com|x\.com/i.test(url)) return 'twitter';
-  return null;
+  return detectPlatformFromInput(url);
 }

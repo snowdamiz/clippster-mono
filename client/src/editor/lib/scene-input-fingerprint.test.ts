@@ -64,6 +64,29 @@ describe("computeSceneInputFingerprint", () => {
 		expect(fpA).not.toBe(fpB);
 	});
 
+	it("changes when a media file is rewritten in place", () => {
+		const fileA = new File(["abc"], "layer.png", { type: "image/png", lastModified: 1 });
+		const fileB = new File(["abc"], "layer.png", { type: "image/png", lastModified: 2 });
+		const assetA: MediaAsset = {
+			id: "img-1",
+			name: "layer.png",
+			type: "image",
+			file: fileA,
+		};
+		const assetB: MediaAsset = { ...assetA, file: fileB };
+		const fpA = computeSceneInputFingerprint({
+			...baseParams,
+			mediaAssets: [assetA],
+			tracks: [],
+		});
+		const fpB = computeSceneInputFingerprint({
+			...baseParams,
+			mediaAssets: [assetB],
+			tracks: [],
+		});
+		expect(fpA).not.toBe(fpB);
+	});
+
 	it("is stable for identical video payloads", () => {
 		const v: VideoElement = {
 			id: "el-1",

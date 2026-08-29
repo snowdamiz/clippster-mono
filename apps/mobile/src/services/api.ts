@@ -16,7 +16,13 @@ import {
   createOrganizationsApi,
   createCloudProjectsApi,
   createTokendApi,
+  createKickApi,
+  createSubscriptionApi,
+  createUserBrandingApi,
+  createUserPreferencesApi,
+  createAccountApi,
 } from '@clippster/api-client';
+import { fetch as expoFetch } from 'expo/fetch';
 import { getApiBaseUrl } from '@/lib/config';
 import { clearAuthSession, getStoredToken } from './authStorage';
 
@@ -33,12 +39,15 @@ const apiClient = createApiClient({
     unauthorizedHandler?.();
   },
   platform: 'mobile',
+  // Required for FormData + expo-file-system File uploads (Expo SDK 56+).
+  fetchImpl: expoFetch as typeof fetch,
 });
 
 export const authApi = createAuthApi(apiClient);
 export const mediaApi = createMediaApi(apiClient);
 export const clipsApi = createClipsApi(apiClient);
 export const creditsApi = createCreditsApi(apiClient);
+export const subscriptionApi = createSubscriptionApi(apiClient);
 export const schedulingApi = createSchedulingApi(apiClient);
 export const userSocialApi = createUserSocialApi(apiClient);
 export const userPostsApi = createUserPostsApi(apiClient);
@@ -51,4 +60,8 @@ export const organizationProfilesApi = createOrganizationProfilesApi(apiClient);
 export const organizationsApi = createOrganizationsApi(apiClient);
 export const cloudProjectsApi = createCloudProjectsApi(apiClient);
 export const tokendApi = createTokendApi(apiClient);
+export const kickApi = createKickApi(apiClient);
+export const userBrandingApi = createUserBrandingApi(apiClient);
+export const userPreferencesApi = createUserPreferencesApi(apiClient);
+export const accountApi = createAccountApi(apiClient);
 export { apiClient };

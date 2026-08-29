@@ -3,7 +3,8 @@ import { router } from 'expo-router';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import { useState } from 'react';
-import { Alert, Pressable, Text, View } from 'react-native';
+import { Pressable, Text, View } from 'react-native';
+import { appAlert } from '@/lib/appAlert';
 
 import type { ClipBuildProgress } from '@/services/clipBuildPipeline';
 import { cancelClipBuild } from '@/services/clipBuildPipeline';
@@ -13,9 +14,18 @@ interface ExportSheetProps {
   progress: ClipBuildProgress | null;
   onClose: () => void;
   onExport: (options: { ratios: TargetAspectRatio[]; remuxOnly: boolean }) => void;
+  title?: string;
+  showRemux?: boolean;
 }
 
-export function ExportSheet({ visible, progress, onClose, onExport }: ExportSheetProps) {
+export function ExportSheet({
+  visible,
+  progress,
+  onClose,
+  onExport,
+  title = 'Export clip',
+  showRemux = true,
+}: ExportSheetProps) {
   const [ratio916, setRatio916] = useState(true);
   const [ratio169, setRatio169] = useState(false);
   const [remuxOnly, setRemuxOnly] = useState(false);
@@ -32,15 +42,15 @@ export function ExportSheet({ visible, progress, onClose, onExport }: ExportShee
     try {
       const permission = await MediaLibrary.requestPermissionsAsync();
       if (!permission.granted) {
-        Alert.alert('Permission needed', 'Allow photo library access to save exports.');
+        appAlert('Permission needed', 'Allow photo library access to save exports.');
         return;
       }
       for (const path of completedPaths) {
         await MediaLibrary.saveToLibraryAsync(path);
       }
-      Alert.alert('Saved', 'Exported clip saved to your camera roll.');
+      appAlert('Saved', 'Exported clip saved to your camera roll.');
     } catch (error) {
-      Alert.alert('Save failed', error instanceof Error ? error.message : String(error));
+      appAlert('Save failed', error instanceof Error ? error.message : String(error));
     } finally {
       setSaving(false);
     }
@@ -50,12 +60,12 @@ export function ExportSheet({ visible, progress, onClose, onExport }: ExportShee
     if (!completedPaths[0]) return;
     try {
       if (!(await Sharing.isAvailableAsync())) {
-        Alert.alert('Unavailable', 'Sharing is not available on this device.');
+        appAlert('Unavailable', 'Sharing is not available on this device.');
         return;
       }
       await Sharing.shareAsync(completedPaths[0], { mimeType: 'video/mp4' });
     } catch (error) {
-      Alert.alert('Share failed', error instanceof Error ? error.message : String(error));
+      appAlert('Share failed', error instanceof Error ? error.message : String(error));
     }
   }
 
@@ -63,7 +73,7 @@ export function ExportSheet({ visible, progress, onClose, onExport }: ExportShee
     <View className="absolute inset-0 z-50 justify-end bg-black/70">
       <View className="rounded-t-2xl bg-background">
         <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
-          <Text className="text-lg font-semibold text-foreground">Export clip</Text>
+          <Text className="text-lg font-semibold text-foreground">{title}</Text>
           <Pressable onPress={onClose} disabled={building}>
             <Text className="text-primary">Close</Text>
           </Pressable>
@@ -84,6 +94,7 @@ export function ExportSheet({ visible, progress, onClose, onExport }: ExportShee
             <Text className="text-foreground">16:9 (landscape)</Text>
             <Text className="text-primary">{ratio169 ? '✓' : ''}</Text>
           </Pressable>
+          {showRemux ? (
           <Pressable
             onPress={() => setRemuxOnly((v) => !v)}
             className="mb-4 flex-row items-center justify-between rounded-lg bg-surface px-4 py-3"
@@ -91,6 +102,11 @@ export function ExportSheet({ visible, progress, onClose, onExport }: ExportShee
             <Text className="text-foreground">Remux only (no overlays)</Text>
             <Text className="text-primary">{remuxOnly ? '✓' : ''}</Text>
           </Pressable>
+          ) : (
+            <Text className="mb-4 text-sm text-muted">
+              Export matches the editor: clips, mute, images, music, and captions.
+            </Text>
+          )}
 
           {progress ? (
             <View className="mb-4 rounded-lg bg-surface px-4 py-3">

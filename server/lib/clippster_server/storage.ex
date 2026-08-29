@@ -110,6 +110,63 @@ defmodule ClippsterServer.Storage do
   end
 
   @doc """
+  Deletes all objects under a key prefix (e.g. "ai-thumbnails/1/42/").
+  Best-effort: logs failures and continues.
+  """
+  def delete_prefix(prefix) when is_binary(prefix) and prefix != "" do
+    if not configured?() do
+      :ok
+    else
+      do_delete_prefix(prefix, nil)
+    end
+  end
+
+  def delete_prefix(_), do: :ok
+
+  defp do_delete_prefix(prefix, continuation_token) do
+    opts =
+      [prefix: prefix]
+      |> then(fn o ->
+        if continuation_token, do: Keyword.put(o, :continuation_token, continuation_token), else: o
+      end)
+
+    request = ExAws.S3.list_objects_v2(bucket(), opts)
+
+    case ExAws.request(request, config()) do
+      {:ok, %{body: body}} ->
+        contents = List.wrap(Map.get(body, :contents) || Map.get(body, "contents") || [])
+
+        Enum.each(contents, fn obj ->
+          key = Map.get(obj, :key) || Map.get(obj, "key")
+
+          if is_binary(key) and key != "" do
+            case delete_file(key) do
+              :ok -> :ok
+              {:error, reason} ->
+                Logger.warning("[Storage] Failed to delete #{key}: #{inspect(reason)}")
+            end
+          end
+        end)
+
+        truncated? =
+          Map.get(body, :is_truncated) == true or Map.get(body, "is_truncated") == "true" or
+            Map.get(body, :is_truncated) == "true"
+
+        next_token = Map.get(body, :next_continuation_token) || Map.get(body, "next_continuation_token")
+
+        if truncated? and is_binary(next_token) and next_token != "" do
+          do_delete_prefix(prefix, next_token)
+        else
+          :ok
+        end
+
+      {:error, reason} ->
+        Logger.warning("[Storage] list_objects_v2 failed for #{prefix}: #{inspect(reason)}")
+        {:error, reason}
+    end
+  end
+
+  @doc """
   Generates a presigned URL for uploading a file directly to R2.
 
   Returns {:ok, %{upload_url: presigned_url, media_url: public_url}} on success.
@@ -154,6 +211,24 @@ defmodule ClippsterServer.Storage do
     timestamp = DateTime.utc_now() |> DateTime.to_unix()
     sanitized_filename = sanitize_filename(filename)
     "org-assets/#{organization_id}/#{asset_type}/thumbnails/#{timestamp}_#{sanitized_filename}"
+  end
+
+  @doc """
+  Generates a storage key for personal (user-owned) branding assets.
+  """
+  def generate_user_asset_key(user_id, asset_type, filename) do
+    timestamp = DateTime.utc_now() |> DateTime.to_unix()
+    sanitized_filename = sanitize_filename(filename)
+    "user-assets/#{user_id}/#{asset_type}/#{timestamp}_#{sanitized_filename}"
+  end
+
+  @doc """
+  Generates a storage key for personal branding asset thumbnails.
+  """
+  def generate_user_asset_thumbnail_key(user_id, asset_type, filename) do
+    timestamp = DateTime.utc_now() |> DateTime.to_unix()
+    sanitized_filename = sanitize_filename(filename)
+    "user-assets/#{user_id}/#{asset_type}/thumbnails/#{timestamp}_#{sanitized_filename}"
   end
 
   @doc """

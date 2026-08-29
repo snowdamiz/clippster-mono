@@ -30,6 +30,7 @@
   import AuthModal from '@/components/AuthModal.vue';
   import GlobalAudioPlayer from '@/components/GlobalAudioPlayer.vue';
   import { useAuthStore } from '@/stores/auth';
+  import { subscriptionStillCoversAccess } from '@/composables/useSubscription';
   import { useSidebarState } from '@/composables/useSidebarState';
 
   const authStore = useAuthStore();
@@ -50,11 +51,13 @@
 
     const hasSelectedPlan = localStorage.getItem('has_selected_plan');
     const u = authStore.user as any;
-    // /auth/me nests status under subscription; flat subscription_status is set by fetchSubscriptionStatus
-    const subscriptionStatus = u?.subscription_status ?? u?.subscription?.status;
+    const subscription = u?.subscription ?? {
+      status: u?.subscription_status,
+      end_date: u?.subscription_end_date,
+      days_remaining: u?.subscription?.days_remaining,
+    };
 
-    // Users with active or cancelled subscriptions bypass the gate
-    if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled') {
+    if (subscriptionStillCoversAccess(subscription)) {
       return false;
     }
 

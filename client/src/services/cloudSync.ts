@@ -1,7 +1,12 @@
 /**
  * Desktop cloud sync orchestrator — mirrors mobile hybrid sync flow.
+ *
+ * Cross-device cloud sync is disabled. Desktop and mobile are independent apps.
+ * Flip CLOUD_SYNC_ENABLED when implementing https://github.com/snowdamiz/clippster-mono/issues/667
  */
 import type { CloudProjectSnapshot } from '@clippster/cloud-sync-schema';
+
+export const CLOUD_SYNC_ENABLED = false;
 import { getAllProjects, deleteProject } from './database/projects';
 
 function normalizeApiOrigin(value: string): string {
@@ -48,10 +53,12 @@ export function getDeviceId(): string {
 }
 
 export function getProjectSyncStatus(projectId: string): SyncStatus {
+  if (!CLOUD_SYNC_ENABLED) return 'local-only';
   return statusMap.get(projectId) ?? 'local-only';
 }
 
 export async function registerDevice(): Promise<void> {
+  if (!CLOUD_SYNC_ENABLED) return;
   const deviceId = getDeviceId();
   await apiFetch('/cloud/devices/register', {
     method: 'POST',
@@ -67,6 +74,7 @@ export async function getStorageQuota() {
 }
 
 export async function pullProject(projectId: string): Promise<boolean> {
+  if (!CLOUD_SYNC_ENABLED) return false;
   const { data } = await apiFetch<{
     success: boolean;
     snapshot: CloudProjectSnapshot | null;
@@ -82,6 +90,7 @@ export async function pullProject(projectId: string): Promise<boolean> {
 }
 
 export async function pushProject(projectId: string, force = false): Promise<boolean> {
+  if (!CLOUD_SYNC_ENABLED) return false;
   const { buildProjectSnapshot } = await import('./database/cloudSnapshot');
   const snapshot = await buildProjectSnapshot(projectId);
   if (!snapshot) return false;
@@ -123,7 +132,118 @@ export async function pushProject(projectId: string, force = false): Promise<boo
   return true;
 }
 
+/** Queue a project for cloud push (clips, transcript, metadata). Fire-and-forget safe. */
+export async function queueProjectSync(projectId: string): Promise<void> {
+  if (!CLOUD_SYNC_ENABLED) return;
+  try {
+    const { updateProject } = await import('./database/projects');
+    await updateProject(projectId);
+    statusMap.set(projectId, 'pending');
+    const uploaded = await uploadRawVodIfPossible(projectId);
+    if (uploaded) {
+      console.log('[CloudSync] Uploaded raw VOD for', projectId);
+    }
+    await pushProject(projectId);
+  } catch (error) {
+    console.warn('[CloudSync] queueProjectSync failed', error);
+    statusMap.set(projectId, 'pending');
+  }
+}
+
+const CLOUD_MEDIA_KEY = 'clippster_cloud_media_assets';
+
+function getStoredCloudMediaId(projectId: string): string | null {
+  try {
+    const raw = localStorage.getItem(CLOUD_MEDIA_KEY);
+    if (!raw) return null;
+    const map = JSON.parse(raw) as Record<string, string>;
+    return map[projectId] ?? null;
+  } catch {
+    return null;
+  }
+}
+
+function setStoredCloudMediaId(projectId: string, assetId: string): void {
+  try {
+    const raw = localStorage.getItem(CLOUD_MEDIA_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, string>) : {};
+    map[projectId] = assetId;
+    localStorage.setItem(CLOUD_MEDIA_KEY, JSON.stringify(map));
+  } catch {
+    // ignore
+  }
+}
+
+export function getCloudMediaAssetId(projectId: string): string | null {
+  return getStoredCloudMediaId(projectId);
+}
+
+/** Upload raw VOD when the account has cloud storage quota. Returns true if uploaded/already stored. */
+async function uploadRawVodIfPossible(projectId: string): Promise<boolean> {
+  if (!CLOUD_SYNC_ENABLED) return false;
+  if (getStoredCloudMediaId(projectId)) return true;
+
+  const quota = await getStorageQuota();
+  if (!quota.success || !quota.bytes_limit || quota.bytes_limit <= 0) {
+    return false;
+  }
+
+  const { getRawVideosByProjectId } = await import('./database/raw-videos');
+  const raws = await getRawVideosByProjectId(projectId);
+  const raw = raws[0];
+  if (!raw?.file_path) return false;
+
+  const sizeBytes = raw.file_size ?? 0;
+  if (sizeBytes > 0 && quota.bytes_used + sizeBytes > quota.bytes_limit) {
+    console.warn('[CloudSync] Skipping VOD upload — quota exceeded');
+    return false;
+  }
+
+  const filename = raw.original_filename ?? 'raw-vod.mp4';
+  const { status, data: presign } = await apiFetch<{
+    success: boolean;
+    asset_id?: string;
+    upload_url?: string;
+    message?: string;
+    error?: string;
+  }>(`/cloud/projects/${projectId}/media/presigned-upload`, {
+    method: 'POST',
+    body: JSON.stringify({
+      asset_type: 'raw_vod',
+      filename,
+      size_bytes: sizeBytes || 1,
+      content_type: 'video/mp4',
+    }),
+  });
+
+  if (status === 402 || !presign.success || !presign.upload_url || !presign.asset_id) {
+    console.warn('[CloudSync] VOD presign failed', presign.error ?? presign.message);
+    return false;
+  }
+
+  try {
+    const { invoke } = await import('@tauri-apps/api/core');
+    await invoke('upload_file_to_url', {
+      filePath: raw.file_path,
+      uploadUrl: presign.upload_url,
+      contentType: 'video/mp4',
+    });
+  } catch (error) {
+    console.warn('[CloudSync] VOD upload failed', error);
+    return false;
+  }
+
+  await apiFetch(`/cloud/projects/${projectId}/media/${presign.asset_id}/complete`, {
+    method: 'POST',
+    body: JSON.stringify({ size_bytes: sizeBytes || 1 }),
+  });
+
+  setStoredCloudMediaId(projectId, presign.asset_id);
+  return true;
+}
+
 export async function syncAllProjects(): Promise<void> {
+  if (!CLOUD_SYNC_ENABLED) return;
   await registerDevice();
 
   const projects = await getAllProjects();

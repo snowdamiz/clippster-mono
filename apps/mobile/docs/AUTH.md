@@ -14,10 +14,13 @@ Tokens are stored in `expo-secure-store` under `auth_token`. On launch the app c
 
 Mobile uses **server-hosted Google OAuth** with a deep-link callback — not Expo Go.
 
-1. App opens `${API_URL}/auth/google?mobile=true&redirect_uri=clippster://auth/google/callback`
+1. App opens `${API_URL}/auth/google?mobile=true&redirect_uri=clippster://auth/google/callback&oauth_callback_base=<device-reachable-host>`
 2. User signs in with Google in the system browser (`expo-web-browser`)
-3. Phoenix completes OAuth and redirects to `clippster://auth/google/callback?token=...&user=...`
-4. App parses the URL and stores the JWT in SecureStore
+3. Google redirects to Phoenix at `http://localhost:4000/api/auth/google/callback` (same URI as desktop — `adb reverse` lets the emulator reach your host)
+4. Phoenix completes OAuth and redirects to `clippster://auth/google/callback?token=...&user=...`
+5. App parses the URL and stores the JWT in SecureStore
+
+See `docs/NETWORKING.md` for Google Cloud Console redirect URI setup.
 
 ### Redirect URI
 

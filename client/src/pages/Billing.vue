@@ -297,6 +297,10 @@
                     <ul class="billing-tier__features">
                       <li class="billing-tier__feature">
                         <Check class="billing-tier__feature-icon billing-tier__feature-icon--muted" />
+                        <span>Mobile App</span>
+                      </li>
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon billing-tier__feature-icon--muted" />
                         <span>Full app access</span>
                       </li>
                       <li class="billing-tier__feature">
@@ -347,6 +351,10 @@
                     <div class="billing-tier__divider"></div>
 
                     <ul class="billing-tier__features">
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon billing-tier__feature-icon--muted" />
+                        <span>Mobile App</span>
+                      </li>
                       <li class="billing-tier__feature">
                         <Check class="billing-tier__feature-icon billing-tier__feature-icon--muted" />
                         <span>5 clip builds/day</span>
@@ -428,6 +436,10 @@
                     <div class="billing-tier__divider"></div>
 
                     <ul class="billing-tier__features">
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
+                        <span>Mobile App</span>
+                      </li>
                       <li class="billing-tier__feature">
                         <Check class="billing-tier__feature-icon" />
                         <span>Unlimited clip builds</span>
@@ -523,6 +535,10 @@
                     <div class="billing-tier__divider"></div>
 
                     <ul class="billing-tier__features">
+                      <li class="billing-tier__feature">
+                        <Check class="billing-tier__feature-icon" />
+                        <span>Mobile App</span>
+                      </li>
                       <li class="billing-tier__feature">
                         <Check class="billing-tier__feature-icon" />
                         <span>Unlimited clip builds</span>

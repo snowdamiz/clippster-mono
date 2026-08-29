@@ -34,7 +34,7 @@ async function setUserContext(userId) {
     console.error('[Auth] Failed to set Rust user context:', error);
   }
 
-  void import('../services/cloudSync').then(({ syncAllProjects }) => syncAllProjects());
+  // Cloud project sync is disabled — desktop and mobile are independent apps.
 }
 
 /**

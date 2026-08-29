@@ -15,27 +15,27 @@ import type {
 import { EditorCore } from "../../../../core";
 
 export type UpdatableVideoProps = Partial<
-	Pick<VideoElement, "mediaId" | "opacity" | "transform" | "muted" | "hidden" | "volume" | "speed" | "reversed" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut" | "masks" | "keyframes">
+	Pick<VideoElement, "name" | "mediaId" | "opacity" | "blendMode" | "transform" | "muted" | "hidden" | "locked" | "groupId" | "volume" | "speed" | "reversed" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut" | "masks" | "keyframes">
 >;
 
 export type UpdatableImageProps = Partial<
-	Pick<ImageElement, "mediaId" | "opacity" | "transform" | "hidden" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut" | "masks" | "keyframes">
+	Pick<ImageElement, "name" | "mediaId" | "opacity" | "blendMode" | "transform" | "hidden" | "locked" | "groupId" | "flip" | "crop" | "colorAdjustments" | "effects" | "filterPreset" | "chromakey" | "fadeIn" | "fadeOut" | "masks" | "keyframes">
 >;
 
 export type UpdatableAudioProps = Partial<
-	Pick<AudioElement, "volume" | "muted" | "speed" | "reversed" | "fadeIn" | "fadeOut" | "audioEffects" | "keyframes">
+	Pick<AudioElement, "name" | "volume" | "muted" | "speed" | "reversed" | "fadeIn" | "fadeOut" | "audioEffects" | "keyframes">
 >;
 
 export type UpdatableStickerProps = Partial<
-	Pick<StickerElement, "opacity" | "transform" | "color" | "hidden" | "fadeIn" | "fadeOut" | "keyframes">
+	Pick<StickerElement, "name" | "opacity" | "blendMode" | "transform" | "color" | "hidden" | "locked" | "groupId" | "fadeIn" | "fadeOut" | "keyframes">
 >;
 
 export type UpdatableEffectProps = Partial<
-	Pick<EffectElement, "enabled" | "intensity" | "params">
+	Pick<EffectElement, "name" | "enabled" | "intensity" | "params">
 >;
 
 export type UpdatableCaptionProps = Partial<
-	Pick<CaptionElement, "opacity" | "transform" | "hidden">
+	Pick<CaptionElement, "name" | "opacity" | "blendMode" | "transform" | "hidden" | "locked" | "groupId">
 >;
 
 export type UpdatableElementProps =

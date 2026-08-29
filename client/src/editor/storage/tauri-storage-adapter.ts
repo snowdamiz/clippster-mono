@@ -26,7 +26,7 @@ import {
 // Serialization Helpers
 // ==========================================
 
-function serializeProject(project: TProject): SerializedProject {
+export function serializeProject(project: TProject): SerializedProject {
 	const duration =
 		project.metadata.duration ??
 		getProjectDurationFromScenes({ scenes: project.scenes });
@@ -60,7 +60,7 @@ function serializeProject(project: TProject): SerializedProject {
 	};
 }
 
-function deserializeProject(serialized: SerializedProject): TProject {
+export function deserializeProject(serialized: SerializedProject): TProject {
 	const scenes = (serialized.scenes ?? []).map((scene) => ({
 		id: scene.id,
 		name: scene.name,

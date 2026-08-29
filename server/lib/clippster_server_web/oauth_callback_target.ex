@@ -74,6 +74,23 @@ defmodule ClippsterServerWeb.OAuthCallbackTarget do
 
   def normalize_mobile_redirect_uri(_), do: {:error, :invalid_redirect_uri}
 
+  @dev_mobile_callback_hosts MapSet.new(["localhost", "127.0.0.1", "10.0.2.2"])
+
+  @doc """
+  Validates the HTTP origin Google should redirect to after sign-in on mobile.
+
+  Android emulators cannot reach `localhost` on the dev machine — they need
+  `10.0.2.2` or the host LAN IP instead.
+  """
+  def normalize_mobile_oauth_callback_base(base) when is_binary(base) do
+    with {:ok, %URI{} = uri} <- parse_http_uri(base),
+         :ok <- validate_mobile_oauth_callback_uri(uri) do
+      {:ok, uri |> origin_only_uri() |> URI.to_string()}
+    end
+  end
+
+  def normalize_mobile_oauth_callback_base(_), do: {:error, :invalid_callback_base}
+
   defp mobile_path_allowed?(path, host) do
     haystack = String.downcase(path <> "/" <> host)
 
@@ -110,6 +127,35 @@ defmodule ClippsterServerWeb.OAuthCallbackTarget do
       true ->
         {:ok, uri}
     end
+  end
+
+  defp validate_mobile_oauth_callback_uri(%URI{scheme: scheme, host: host}) do
+    downcased_host = String.downcase(host)
+
+    cond do
+      scheme != "http" ->
+        {:error, :invalid_scheme}
+
+      MapSet.member?(@dev_mobile_callback_hosts, downcased_host) and allow_localhost_web_redirects?() ->
+        :ok
+
+      allow_localhost_web_redirects?() and private_lan_host?(downcased_host) ->
+        :ok
+
+      true ->
+        {:error, :host_not_allowed}
+    end
+  end
+
+  defp private_lan_host?(host) when is_binary(host) do
+    case :inet.parse_address(to_charlist(host)) do
+      {:ok, {10, _, _, _}} -> true
+      {:ok, {192, 168, _, _}} -> true
+      {:ok, {172, b, _, _}} when b in 16..31 -> true
+      _ -> false
+    end
+  rescue
+    _ -> false
   end
 
   defp validate_web_uri(%URI{scheme: scheme, host: host}) do

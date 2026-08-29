@@ -7,7 +7,7 @@ import {
 } from '@clippster/shared-types';
 import { generateId, getDatabase, timestamp } from './index';
 
-const CLIP_COLUMNS = `id, project_id, name, file_path, duration, start_time, end_time,
+const CLIP_COLUMNS = `id, project_id, project_name, name, file_path, duration, start_time, end_time,
   current_version_id, detection_session_id,
   subtitle_enabled, subtitle_preset_id, subtitle_settings, clip_text_overlay,
   created_at, updated_at`;
@@ -211,4 +211,38 @@ export async function getCompletedClipBuilds(limit = 50): Promise<ClipBuildRow[]
     `SELECT * FROM clip_builds WHERE status = 'completed' ORDER BY completed_at DESC LIMIT ?`,
     [limit],
   );
+}
+
+export interface BuiltClipItem {
+  build: ClipBuildRow;
+  clipName: string;
+  projectId: string | null;
+  projectName: string | null;
+}
+
+export async function getCompletedClipBuildsWithDetails(limit = 50): Promise<BuiltClipItem[]> {
+  const db = getDatabase();
+  const builds = await getCompletedClipBuilds(limit);
+  const items: BuiltClipItem[] = [];
+
+  for (const build of builds) {
+    const clip = await getClipById(build.clip_id);
+    const projectId = clip?.project_id ?? null;
+    let projectName: string | null = clip?.project_name ?? null;
+    if (!projectName && projectId) {
+      const project = await db.getFirstAsync<{ name: string }>(
+        'SELECT name FROM projects WHERE id = ?',
+        [projectId],
+      );
+      projectName = project?.name ?? null;
+    }
+    items.push({
+      build,
+      clipName: clip?.name ?? 'Untitled clip',
+      projectId,
+      projectName,
+    });
+  }
+
+  return items;
 }

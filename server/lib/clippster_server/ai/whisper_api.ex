@@ -59,10 +59,7 @@ defmodule ClippsterServer.AI.WhisperAPI do
         ]
 
         IO.puts("[WhisperAPI] Making Finch binary request with retry logic...")
-        content_length = byte_size(multipart_body)
-        chunked_body = chunk_binary_for_streaming(multipart_body)
-        headers_with_length = headers ++ [{"Content-Length", Integer.to_string(content_length)}]
-        execute_request_with_retry(headers_with_length, {:stream, chunked_body}, 0)
+        execute_request_with_retry(headers, multipart_body, 0)
     end
   rescue
     error ->
@@ -87,52 +84,48 @@ defmodule ClippsterServer.AI.WhisperAPI do
         IO.puts("[WhisperAPI] API key configured")
         IO.puts("[WhisperAPI] API key (first 8 chars): #{String.slice(api_key, 0, 8)}...")
 
-        # Read the uploaded file
-        file_path = audio_upload.path
-        IO.puts("[WhisperAPI] File path: #{file_path}")
+        case prepare_whisper_media(audio_upload) do
+          {:error, reason} ->
+            {:error, reason}
 
-        # Check if file exists before reading
-        if not File.exists?(file_path) do
-          IO.puts("[WhisperAPI] File does not exist at path: #{file_path}")
-          {:error, "Uploaded file not found"}
-        else
-          IO.puts("[WhisperAPI] File exists, reading...")
-          file_content = File.read!(file_path)
-          actual_size = byte_size(file_content)
-          IO.puts("[WhisperAPI] File size: #{actual_size} bytes")
+          {:ok, %{path: file_path, filename: filename, content_type: content_type, cleanup: cleanup}} ->
+            try do
+              IO.puts("[WhisperAPI] File path: #{file_path}")
 
-          # Debug: Check if file size matches expected MP3 size
-          # 5MB threshold
-          if actual_size > 5_000_000 do
-            IO.puts("[WhisperAPI] WARNING: File seems too large for MP3 (#{actual_size} bytes)")
-          end
+              if not File.exists?(file_path) do
+                IO.puts("[WhisperAPI] File does not exist at path: #{file_path}")
+                {:error, "Uploaded file not found"}
+              else
+                IO.puts("[WhisperAPI] File exists, reading...")
+                file_content = File.read!(file_path)
+                actual_size = byte_size(file_content)
+                IO.puts("[WhisperAPI] File size: #{actual_size} bytes (#{filename})")
 
-          # Use Finch HTTP client with retry logic
-          IO.puts("[WhisperAPI] Sending request to Whisper API...")
+                IO.puts("[WhisperAPI] Sending request to Whisper API...")
 
-          # Create multipart boundary
-          boundary = "----WebKitFormBoundary#{:crypto.strong_rand_bytes(16) |> Base.encode16()}"
+                boundary =
+                  "----WebKitFormBoundary#{:crypto.strong_rand_bytes(16) |> Base.encode16()}"
 
-          # Build multipart body EXACTLY matching the prototype
-          multipart_body =
-            build_prototype_multipart_body(
-              file_content,
-              audio_upload.filename,
-              audio_upload.content_type,
-              boundary
-            )
+                multipart_body =
+                  build_prototype_multipart_body(
+                    file_content,
+                    filename,
+                    content_type,
+                    boundary
+                  )
 
-          headers = [
-            {"Authorization", "Bearer #{api_key}"},
-            {"User-Agent", "Clippster/1.0"},
-            {"Content-Type", "multipart/form-data; boundary=#{boundary}"}
-          ]
+                headers = [
+                  {"Authorization", "Bearer #{api_key}"},
+                  {"User-Agent", "Clippster/1.0"},
+                  {"Content-Type", "multipart/form-data; boundary=#{boundary}"}
+                ]
 
-          IO.puts("[WhisperAPI] Making Finch request with retry logic...")
-          content_length = byte_size(multipart_body)
-          chunked_body = chunk_binary_for_streaming(multipart_body)
-          headers_with_length = headers ++ [{"Content-Length", Integer.to_string(content_length)}]
-          execute_request_with_retry(headers_with_length, {:stream, chunked_body}, 0)
+                IO.puts("[WhisperAPI] Making Finch request with retry logic...")
+                execute_request_with_retry(headers, multipart_body, 0)
+              end
+            after
+              cleanup.()
+            end
         end
     end
   rescue
@@ -143,13 +136,222 @@ defmodule ClippsterServer.AI.WhisperAPI do
       {:error, "Unexpected error: #{inspect(error)}"}
   end
 
-  # Execute HTTP request with retry logic for transient network errors
-  defp execute_request_with_retry(headers, body, attempt) do
-    request = Finch.build(:post, @whisper_api_url, headers, body)
+  # Stream-copied AAC chunks are often 8–15MB. Re-encode speech to mono MP3
+  # (desktop uses -q:a 8) so Lemonfox uploads stay small and reliable.
+  @compress_above_bytes 1_000_000
 
-    # Use pool_timeout to fail fast if connection pool is exhausted
-    # and receive_timeout for the actual request
-    case Finch.request(request, ClippsterFinch, receive_timeout: 120_000, pool_timeout: 10_000) do
+  # Mobile HLS downloads may land as MPEG-TS (.ts). Convert / compress with system FFmpeg
+  # before calling Lemonfox.
+  defp prepare_whisper_media(audio_upload) do
+    path = audio_upload.path
+    filename = audio_upload.filename || Path.basename(path)
+    content_type = audio_upload.content_type || "application/octet-stream"
+    ext = filename |> to_string() |> Path.extname() |> String.downcase()
+
+    base =
+      if ext in [".ts", ".m2ts", ".mts"] or content_type in ["video/mp2t", "video/MP2T"] do
+        remux_mpegts_for_whisper(path)
+      else
+        {:ok,
+         %{
+           path: path,
+           filename: filename,
+           content_type: content_type,
+           cleanup: fn -> :ok end
+         }}
+      end
+
+    case base do
+      {:ok, media} -> maybe_compress_for_whisper(media)
+      error -> error
+    end
+  end
+
+  defp maybe_compress_for_whisper(%{path: path, cleanup: cleanup, filename: filename} = media) do
+    size =
+      case File.stat(path) do
+        {:ok, %{size: s}} -> s
+        _ -> 0
+      end
+
+    ext = filename |> to_string() |> Path.extname() |> String.downcase()
+
+    cond do
+      # Desktop already sends compact MP3 chunks — leave small ones alone.
+      ext == ".mp3" and size <= 5_000_000 ->
+        {:ok, media}
+
+      size > @compress_above_bytes or ext in [".m4a", ".aac", ".wav", ".mp4", ".m4v"] ->
+        compress_audio_for_whisper(path, size, cleanup)
+
+      true ->
+        {:ok, media}
+    end
+  end
+
+  defp compress_audio_for_whisper(path, size, cleanup) do
+    IO.puts("[WhisperAPI] Compressing #{size}-byte upload for Whisper (mono MP3)...")
+    output_path = Path.join(System.tmp_dir!(), "whisper_#{System.unique_integer([:positive])}.mp3")
+
+    args = [
+      "-hide_banner",
+      "-y",
+      "-i",
+      path,
+      "-vn",
+      "-ac",
+      "1",
+      "-ar",
+      "16000",
+      "-c:a",
+      "libmp3lame",
+      "-q:a",
+      "8",
+      output_path
+    ]
+
+    case System.cmd("ffmpeg", args, stderr_to_stdout: true) do
+      {_, 0} ->
+        new_size =
+          case File.stat(output_path) do
+            {:ok, %{size: s}} -> s
+            _ -> 0
+          end
+
+        IO.puts("[WhisperAPI] Compressed to #{new_size} bytes")
+
+        {:ok,
+         %{
+           path: output_path,
+           filename: "audio.mp3",
+           content_type: "audio/mpeg",
+           cleanup: fn ->
+             _ = File.rm(output_path)
+             cleanup.()
+           end
+         }}
+
+      {out, code} ->
+        IO.puts(
+          "[WhisperAPI] Compress failed (#{code}), uploading original: #{String.slice(out, -400, 400)}"
+        )
+
+        _ = File.rm(output_path)
+
+        {:ok,
+         %{
+           path: path,
+           filename: Path.basename(path),
+           content_type: "application/octet-stream",
+           cleanup: cleanup
+         }}
+    end
+  end
+  defp remux_mpegts_for_whisper(input_path) do
+    output_path = Path.join(System.tmp_dir!(), "whisper_#{System.unique_integer([:positive])}.mp4")
+
+    copy_args = [
+      "-hide_banner",
+      "-y",
+      "-fflags",
+      "+genpts+igndts",
+      "-i",
+      input_path,
+      "-c",
+      "copy",
+      "-bsf:a",
+      "aac_adtstoasc",
+      "-movflags",
+      "+faststart",
+      output_path
+    ]
+
+    IO.puts("[WhisperAPI] Remuxing MPEG-TS for Whisper: #{input_path}")
+
+    case System.cmd("ffmpeg", copy_args, stderr_to_stdout: true) do
+      {_, 0} ->
+        IO.puts("[WhisperAPI] Remux complete: #{output_path}")
+
+        {:ok,
+         %{
+           path: output_path,
+           filename: "video.mp4",
+           content_type: "video/mp4",
+           cleanup: fn -> File.rm(output_path) end
+         }}
+
+      {copy_out, copy_code} ->
+        IO.puts("[WhisperAPI] Stream-copy remux failed (#{copy_code}), trying audio extract…")
+        IO.puts("[WhisperAPI] FFmpeg output: #{String.slice(copy_out, -800, 800)}")
+
+        audio_path =
+          Path.join(System.tmp_dir!(), "whisper_#{System.unique_integer([:positive])}.m4a")
+
+        audio_args = [
+          "-hide_banner",
+          "-y",
+          "-fflags",
+          "+genpts+igndts",
+          "-i",
+          input_path,
+          "-vn",
+          "-c:a",
+          "aac",
+          "-b:a",
+          "128k",
+          audio_path
+        ]
+
+        case System.cmd("ffmpeg", audio_args, stderr_to_stdout: true) do
+          {_, 0} ->
+            File.rm(output_path)
+
+            {:ok,
+             %{
+               path: audio_path,
+               filename: "audio.m4a",
+               content_type: "audio/mp4",
+               cleanup: fn -> File.rm(audio_path) end
+             }}
+
+          {audio_out, audio_code} ->
+            File.rm(output_path)
+            File.rm(audio_path)
+
+            {:error,
+             "Failed to prepare MPEG-TS for transcription (ffmpeg #{audio_code}): #{String.slice(audio_out, -400, 400)}"}
+        end
+    end
+  rescue
+    error ->
+      {:error, "FFmpeg remux unavailable: #{inspect(error)}"}
+  end
+
+  # Pass the multipart binary so each retry can rebuild the request body.
+  defp execute_request_with_retry(headers, multipart_body, attempt) when is_binary(multipart_body) do
+    content_length = byte_size(multipart_body)
+
+    headers_with_length =
+      headers
+      |> Enum.reject(fn {k, _} -> String.downcase(to_string(k)) == "content-length" end)
+      |> Kernel.++([{"Content-Length", Integer.to_string(content_length)}])
+
+    # Prefer a plain binary body for speech-sized uploads (HTTP/1.1). Streaming was
+    # originally used to avoid oversized TLS records under HTTP/2; with http1 +
+    # compressed MP3 the binary path matches desktop FormData more closely.
+    body =
+      if content_length > 16_000_000 do
+        {:stream, chunk_binary_for_streaming(multipart_body)}
+      else
+        multipart_body
+      end
+
+    request = Finch.build(:post, @whisper_api_url, headers_with_length, body)
+
+    case Finch.request(request, ClippsterFinch,
+           receive_timeout: 300_000,
+           pool_timeout: 30_000
+         ) do
       {:ok, %Finch.Response{status: 200, body: response_body}} ->
         IO.puts("[WhisperAPI] Received response from API (attempt #{attempt + 1})")
         IO.puts("[WhisperAPI] Response body length: #{byte_size(response_body)} bytes")
@@ -167,9 +369,7 @@ defmodule ClippsterServer.AI.WhisperAPI do
         end
 
       {:ok, %Finch.Response{status: 429, body: response_body}} ->
-        # Rate limited - retry with longer delay
         if attempt < @max_retries do
-          # Use longer delay for rate limiting (at least 5 seconds)
           delay = max(calculate_backoff_delay(attempt), 5000)
 
           IO.puts(
@@ -177,7 +377,7 @@ defmodule ClippsterServer.AI.WhisperAPI do
           )
 
           Process.sleep(delay)
-          execute_request_with_retry(headers, body, attempt + 1)
+          execute_request_with_retry(headers, multipart_body, attempt + 1)
         else
           IO.puts("[WhisperAPI] Rate limited after #{@max_retries} retries")
           {:error, "Whisper API rate limited (429): #{response_body}"}
@@ -185,7 +385,6 @@ defmodule ClippsterServer.AI.WhisperAPI do
 
       {:ok, %Finch.Response{status: status_code, body: response_body}}
       when status_code in [500, 502, 503, 504] ->
-        # Server errors that are retryable
         if attempt < @max_retries do
           delay = calculate_backoff_delay(attempt)
 
@@ -194,7 +393,7 @@ defmodule ClippsterServer.AI.WhisperAPI do
           )
 
           Process.sleep(delay)
-          execute_request_with_retry(headers, body, attempt + 1)
+          execute_request_with_retry(headers, multipart_body, attempt + 1)
         else
           IO.puts(
             "[WhisperAPI] API returned error status after #{@max_retries} retries: #{status_code}"
@@ -218,7 +417,7 @@ defmodule ClippsterServer.AI.WhisperAPI do
           )
 
           Process.sleep(delay)
-          execute_request_with_retry(headers, body, attempt + 1)
+          execute_request_with_retry(headers, multipart_body, attempt + 1)
         else
           IO.puts(
             "[WhisperAPI] HTTP request failed after #{attempt + 1} attempts: #{format_error(reason)}"
@@ -297,11 +496,19 @@ defmodule ClippsterServer.AI.WhisperAPI do
       :timeout -> true
       {:closed, _} -> true
       {:timeout, _} -> true
-      _ -> false
+      other -> retryable_reason_text?(other)
     end
   end
 
-  defp retryable_error?(_), do: false
+  defp retryable_error?(error), do: retryable_reason_text?(error)
+
+  defp retryable_reason_text?(reason) do
+    text = reason |> inspect() |> String.downcase()
+    String.contains?(text, "socket closed") or
+      String.contains?(text, ":closed") or
+      String.contains?(text, "timeout") or
+      String.contains?(text, "econnreset")
+  end
 
   # Calculate exponential backoff delay with jitter
   defp calculate_backoff_delay(attempt) do
@@ -315,6 +522,7 @@ defmodule ClippsterServer.AI.WhisperAPI do
   # Chunk a binary into 64KB pieces for streaming over TLS.
   # Sending large binaries (>1MB) in a single TLS write causes Bad Record MAC errors
   # because the TLS record layer can't handle oversized writes reliably.
+  # IMPORTANT: rebuild this stream on every retry — Stream.unfold is single-consumption.
   @chunk_size 65_536
   defp chunk_binary_for_streaming(binary) do
     Stream.unfold(binary, fn

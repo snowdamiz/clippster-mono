@@ -247,10 +247,45 @@ export async function mergeSnapshotIntoDatabase(snapshot: CloudProjectSnapshot):
       }
     }
 
-    await db.runAsync('DELETE FROM clips WHERE project_id = ?', [projectId]);
+    const localClips = await getClipsByProjectId(projectId);
+    const keepLocalClips = snapshot.clips.length === 0 && localClips.length > 0;
 
-    for (const clip of snapshot.clips) {
+    if (!keepLocalClips) {
+      // SQLite foreign keys are off by default in expo-sqlite, so CASCADE does not
+      // run. Clear dependents explicitly or re-inserting the same version IDs fails.
+      const existingClipIds = localClips.map((clip) => clip.id);
+      for (const clipId of existingClipIds) {
+        const versions = await db.getAllAsync<{ id: string }>(
+          'SELECT id FROM clip_versions WHERE clip_id = ?',
+          [clipId],
+        );
+        for (const version of versions) {
+          await db.runAsync('DELETE FROM clip_segments WHERE clip_version_id = ?', [version.id]);
+        }
+        await db.runAsync('DELETE FROM clip_builds WHERE clip_id = ?', [clipId]);
+        await db.runAsync('DELETE FROM clip_versions WHERE clip_id = ?', [clipId]);
+      }
+      await db.runAsync('DELETE FROM clips WHERE project_id = ?', [projectId]);
+    }
+
+    for (const clip of keepLocalClips ? [] : snapshot.clips) {
       const videoPath = existingRaw?.file_path ?? `clip://${clip.id}`;
+
+      if (clip.detection_session_id) {
+        await db.runAsync(
+          `INSERT OR IGNORE INTO clip_detection_sessions (
+            id, project_id, prompt, detection_model, total_clips_detected, created_at
+          ) VALUES (?, ?, ?, ?, ?, ?)`,
+          [
+            clip.detection_session_id,
+            projectId,
+            'cloud-sync',
+            'cloud',
+            clip.versions.length || 1,
+            clip.created_at ?? now,
+          ],
+        );
+      }
 
       await db.runAsync(
         `INSERT INTO clips (
@@ -258,7 +293,21 @@ export async function mergeSnapshotIntoDatabase(snapshot: CloudProjectSnapshot):
           order_index, current_version_id, detection_session_id,
           subtitle_enabled, subtitle_preset_id, subtitle_settings, clip_text_overlay,
           created_at, updated_at
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT(id) DO UPDATE SET
+          name = excluded.name,
+          file_path = excluded.file_path,
+          duration = excluded.duration,
+          start_time = excluded.start_time,
+          end_time = excluded.end_time,
+          order_index = excluded.order_index,
+          current_version_id = excluded.current_version_id,
+          detection_session_id = excluded.detection_session_id,
+          subtitle_enabled = excluded.subtitle_enabled,
+          subtitle_preset_id = excluded.subtitle_preset_id,
+          subtitle_settings = excluded.subtitle_settings,
+          clip_text_overlay = excluded.clip_text_overlay,
+          updated_at = excluded.updated_at`,
         [
           clip.id,
           projectId,
@@ -280,12 +329,44 @@ export async function mergeSnapshotIntoDatabase(snapshot: CloudProjectSnapshot):
       );
 
       for (const version of clip.versions) {
+        if (version.session_id) {
+          await db.runAsync(
+            `INSERT OR IGNORE INTO clip_detection_sessions (
+              id, project_id, prompt, detection_model, total_clips_detected, created_at
+            ) VALUES (?, ?, ?, ?, ?, ?)`,
+            [
+              version.session_id,
+              projectId,
+              'cloud-sync',
+              'cloud',
+              1,
+              version.created_at ?? now,
+            ],
+          );
+        }
+
         await db.runAsync(
           `INSERT INTO clip_versions (
             id, clip_id, session_id, version_number, parent_version_id, name, description,
             start_time, end_time, confidence_score, virality_score, relevance_score,
             detection_reason, tags, change_type, change_description, created_at
-          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+          ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+          ON CONFLICT(id) DO UPDATE SET
+            clip_id = excluded.clip_id,
+            session_id = excluded.session_id,
+            version_number = excluded.version_number,
+            parent_version_id = excluded.parent_version_id,
+            name = excluded.name,
+            description = excluded.description,
+            start_time = excluded.start_time,
+            end_time = excluded.end_time,
+            confidence_score = excluded.confidence_score,
+            virality_score = excluded.virality_score,
+            relevance_score = excluded.relevance_score,
+            detection_reason = excluded.detection_reason,
+            tags = excluded.tags,
+            change_type = excluded.change_type,
+            change_description = excluded.change_description`,
           [
             version.id,
             version.clip_id,
@@ -307,11 +388,20 @@ export async function mergeSnapshotIntoDatabase(snapshot: CloudProjectSnapshot):
           ],
         );
 
+        await db.runAsync('DELETE FROM clip_segments WHERE clip_version_id = ?', [version.id]);
+
         for (const segment of version.segments) {
           await db.runAsync(
             `INSERT INTO clip_segments (
               id, clip_version_id, segment_index, start_time, end_time, duration, transcript, created_at
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(id) DO UPDATE SET
+              clip_version_id = excluded.clip_version_id,
+              segment_index = excluded.segment_index,
+              start_time = excluded.start_time,
+              end_time = excluded.end_time,
+              duration = excluded.duration,
+              transcript = excluded.transcript`,
             [
               segment.id,
               segment.clip_version_id,

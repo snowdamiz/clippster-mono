@@ -1,14 +1,15 @@
-// Mirrors the desktop client theme (client/src/style.css .dark tokens).
-// Keep in sync with tailwind.config.js.
+// Mirrors the desktop client dark theme (client/src/style.css .dark).
+// Primary = near-white buttons; accent = cyan highlights (sidebar-accent).
 export const tokens = {
   colors: {
     background: '#0a0a0b',
     surface: '#141416',
     surfaceMuted: '#18181b',
     border: '#1f1f23',
-    primary: '#0ea5e9',
-    primaryMuted: '#0891b2',
-    accent: '#06b6d4',
+    primary: '#fafafa',
+    primaryForeground: '#18181b',
+    accent: '#0ea5e9',
+    accentMuted: '#0891b2',
     foreground: '#fafafa',
     muted: '#71717a',
     destructive: '#ef4444',

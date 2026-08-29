@@ -43,4 +43,16 @@ defmodule ClippsterServer.MediaResolverTest do
                "Video unavailable"
     end
   end
+
+  describe "Kick.Client.extract_channel_slug/1" do
+    alias ClippsterServer.Kick.Client
+
+    test "extracts slug from channel URL" do
+      assert {:ok, "asmongold"} = Client.extract_channel_slug("https://kick.com/asmongold")
+    end
+
+    test "extracts slug from bare handle" do
+      assert {:ok, "asmongold"} = Client.extract_channel_slug("asmongold")
+    end
+  end
 end

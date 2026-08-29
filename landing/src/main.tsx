@@ -9,6 +9,7 @@ import App from './App'
 import { PricingPage } from './pages/PricingPage'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { TermsPage } from './pages/TermsPage'
+import { StripeReturnPage } from './pages/StripeReturnPage'
 import { ScrollToTop } from './components/ScrollToTop'
 import { LandingAnalyticsTracker } from './components/LandingAnalyticsTracker'
 import { AuthProvider } from './context/AuthContext'
@@ -25,6 +26,7 @@ const ResetPasswordPage = lazy(() => import('./pages/auth/ResetPasswordPage').th
 const AcceptInvitationPage = lazy(() => import('./pages/auth/AcceptInvitationPage').then(m => ({ default: m.AcceptInvitationPage })))
 const GoogleCallbackPage = lazy(() => import('./pages/auth/GoogleCallbackPage').then(m => ({ default: m.GoogleCallbackPage })))
 const OAuthCallbackPage = lazy(() => import('./pages/auth/OAuthCallbackPage').then(m => ({ default: m.OAuthCallbackPage })))
+const LiteEditorPage = lazy(() => import('./pages/LiteEditorPage').then(m => ({ default: m.LiteEditorPage })))
 
 // Public pages
 const ClipperPublicProfilePage = lazy(() => import('./pages/ClipperPublicProfilePage').then(m => ({ default: m.ClipperPublicProfilePage })))
@@ -117,8 +119,13 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="/pricing" element={<PricingPage />} />
                 <Route path="/privacy" element={<PrivacyPage />} />
                 <Route path="/terms" element={<TermsPage />} />
+                <Route path="/stripe-success" element={<StripeReturnPage kind="success" />} />
+                <Route path="/stripe-cancel" element={<StripeReturnPage kind="cancel" />} />
                 <Route path="/clippers/:slug" element={<ClipperPublicProfilePage />} />
                 <Route path="/orgs/:slug" element={<OrgPublicProfilePage />} />
+
+                {/* Lite editor (public) */}
+                <Route path="/editor" element={<LiteEditorPage />} />
 
                 {/* Auth pages */}
                 <Route path="/login" element={<LoginPage />} />

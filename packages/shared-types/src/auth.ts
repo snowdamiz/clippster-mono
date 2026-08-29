@@ -1,3 +1,5 @@
+import type { SubscriptionStatus } from './billing';
+
 export interface AuthUser {
   id: number;
   email?: string;
@@ -11,6 +13,11 @@ export interface AuthUser {
   created_by_organization_id?: number | null;
   ai_allowed?: boolean;
   beta_activated?: boolean;
+  subscription?: SubscriptionStatus;
+  credits?: {
+    hours_remaining?: number | string;
+    minutes_remaining?: number | string;
+  };
 }
 
 export interface AuthResult {

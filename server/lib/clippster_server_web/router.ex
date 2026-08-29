@@ -314,6 +314,19 @@ defmodule ClippsterServerWeb.Router do
     get("/user/preferences", UserPreferencesController, :get_preferences)
     patch("/user/preferences", UserPreferencesController, :update_preferences)
 
+    # Personal branding (creator profiles + assets — cross-device sync)
+    get("/user/branding", UserCreatorProfileController, :bundle)
+    get("/user/assets", UserAssetController, :index)
+    get("/user/assets/:id", UserAssetController, :show)
+    post("/user/assets", UserAssetController, :create)
+    put("/user/assets/:id", UserAssetController, :update)
+    delete("/user/assets/:id", UserAssetController, :delete)
+    get("/user/creator-profiles", UserCreatorProfileController, :index)
+    get("/user/creator-profiles/:id", UserCreatorProfileController, :show)
+    post("/user/creator-profiles", UserCreatorProfileController, :create)
+    put("/user/creator-profiles/:id", UserCreatorProfileController, :update)
+    delete("/user/creator-profiles/:id", UserCreatorProfileController, :delete)
+
     # User restrictions
     get("/user/restrictions", RestrictionController, :get_user_restrictions)
 
@@ -392,6 +405,27 @@ defmodule ClippsterServerWeb.Router do
     put("/ai/chat/sessions/:id/style", AIChatController, :update_style_pack)
     post("/ai/chat/sessions/:id/media-analysis", AIChatController, :upload_media_analysis)
     put("/ai/chat/sessions/:id/media", AIChatController, :update_media)
+
+    # AI thumbnail sessions
+    get("/ai/thumbnail/sessions", AIThumbnailController, :list_sessions)
+    post("/ai/thumbnail/sessions", AIThumbnailController, :create_session)
+    get("/ai/thumbnail/sessions/:id", AIThumbnailController, :get_session)
+    delete("/ai/thumbnail/sessions/:id", AIThumbnailController, :delete_session)
+    put("/ai/thumbnail/sessions/:id/name", AIThumbnailController, :rename_session)
+    put("/ai/thumbnail/sessions/:id/mode", AIThumbnailController, :update_mode)
+    put("/ai/thumbnail/sessions/:id/media", AIThumbnailController, :update_media)
+    post("/ai/thumbnail/sessions/:id/reference", AIThumbnailController, :set_reference)
+    post("/ai/thumbnail/sessions/:id/message", AIThumbnailController, :send_message)
+    post("/ai/thumbnail/sessions/:id/generate", AIThumbnailController, :trigger_generation)
+    post("/ai/thumbnail/sessions/:id/refine", AIThumbnailController, :send_refinement)
+    post("/ai/thumbnail/sessions/:id/accept", AIThumbnailController, :accept)
+
+    # Image editor projects
+    get("/image-editor/projects", ImageEditorController, :list_projects)
+    post("/image-editor/projects", ImageEditorController, :create_project)
+    get("/image-editor/projects/:id", ImageEditorController, :get_project)
+    put("/image-editor/projects/:id", ImageEditorController, :update_project)
+    delete("/image-editor/projects/:id", ImageEditorController, :delete_project)
 
     # Speaker detection and framing strategy
     post("/clips/:clip_id/analyze-speakers", SpeakerDetectionController, :analyze)

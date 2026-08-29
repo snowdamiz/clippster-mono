@@ -1,47 +1,49 @@
-import type { ManualFramingConfig, ManualRegion } from '@clippster/shared-types';
+import type { ManualFramingConfig } from '@clippster/shared-types';
 import { createDefaultManualRegion, MAX_POI_REGIONS } from '@clippster/shared-types';
-import { Canvas, Group, RoundedRect } from '@shopify/react-native-skia';
-import { useCallback } from 'react';
-import { Alert, PanResponder, Pressable, StyleSheet, Text, View } from 'react-native';
+import type { VideoPlayer } from 'expo-video';
+import { VideoView } from 'expo-video';
+import { Pressable, Text, View } from 'react-native';
+import { DraggableRegionFrame } from './DraggableRegionFrame';
+import { appAlert } from '@/lib/appAlert';
 
 interface SourcePanelProps {
   config: ManualFramingConfig;
   onChange: (config: ManualFramingConfig) => void;
   canvasWidth: number;
   canvasHeight: number;
+  player: VideoPlayer | null;
 }
 
-function clamp01(v: number): number {
-  return Math.max(0, Math.min(1, v));
-}
+export function SourcePanel({
+  config,
+  onChange,
+  canvasWidth,
+  canvasHeight,
+  player,
+}: SourcePanelProps) {
+  function updateRegion(regionId: string, patch: { x?: number; y?: number; width?: number; height?: number }) {
+    onChange({
+      ...config,
+      regions: config.regions.map((region) =>
+        region.id === regionId ? { ...region, source: { ...region.source, ...patch } } : region,
+      ),
+    });
+  }
 
-export function SourcePanel({ config, onChange, canvasWidth, canvasHeight }: SourcePanelProps) {
-  const updateRegion = useCallback(
-    (regionId: string, patch: Partial<ManualRegion['source']>) => {
-      onChange({
-        ...config,
-        regions: config.regions.map((r) =>
-          r.id === regionId ? { ...r, source: { ...r.source, ...patch } } : r,
-        ),
-      });
-    },
-    [config, onChange],
-  );
-
-  const addRegion = () => {
+  function addRegion() {
     if (config.regions.length >= MAX_POI_REGIONS) {
-      Alert.alert('Limit reached', `Maximum ${MAX_POI_REGIONS} regions.`);
+      appAlert('Limit reached', `Maximum ${MAX_POI_REGIONS} regions.`);
       return;
     }
     onChange({
       ...config,
       regions: [...config.regions, createDefaultManualRegion(config.regions.length)],
     });
-  };
+  }
 
-  const removeRegion = (id: string) => {
-    onChange({ ...config, regions: config.regions.filter((r) => r.id !== id) });
-  };
+  function removeRegion(id: string) {
+    onChange({ ...config, regions: config.regions.filter((region) => region.id !== id) });
+  }
 
   return (
     <View>
@@ -55,75 +57,36 @@ export function SourcePanel({ config, onChange, canvasWidth, canvasHeight }: Sou
       <View
         style={{ width: canvasWidth, height: canvasHeight, alignSelf: 'center' }}
         className="relative overflow-hidden rounded-lg bg-black"
+        collapsable={false}
       >
-        <Canvas style={{ width: canvasWidth, height: canvasHeight }}>
-          <Group>
-            {config.regions.map((region) => (
-              <RoundedRect
-                key={region.id}
-                x={region.source.x * canvasWidth}
-                y={region.source.y * canvasHeight}
-                width={region.source.width * canvasWidth}
-                height={region.source.height * canvasHeight}
-                r={4}
-                color={`${region.color}66`}
-              />
-            ))}
-          </Group>
-        </Canvas>
+        {player ? (
+          <VideoView
+            player={player}
+            style={{ width: canvasWidth, height: canvasHeight }}
+            nativeControls={false}
+            contentFit="contain"
+          />
+        ) : (
+          <View className="flex-1 items-center justify-center">
+            <Text className="text-xs text-muted">Video unavailable</Text>
+          </View>
+        )}
 
-        {config.regions.map((region) => {
-          const left = region.source.x * canvasWidth;
-          const top = region.source.y * canvasHeight;
-          const w = region.source.width * canvasWidth;
-          const h = region.source.height * canvasHeight;
-
-          const pan = PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onPanResponderMove: (_, gs) => {
-              updateRegion(region.id, {
-                x: clamp01(region.source.x + gs.dx / canvasWidth),
-                y: clamp01(region.source.y + gs.dy / canvasHeight),
-              });
-            },
-          });
-
-          const resizePan = PanResponder.create({
-            onStartShouldSetPanResponder: () => true,
-            onPanResponderMove: (_, gs) => {
-              updateRegion(region.id, {
-                width: clamp01(region.source.width + gs.dx / canvasWidth),
-                height: clamp01(region.source.height + gs.dy / canvasHeight),
-              });
-            },
-          });
-
-          return (
-            <View key={region.id} pointerEvents="box-none" style={StyleSheet.absoluteFill}>
-              <View
-                {...pan.panHandlers}
-                style={{ position: 'absolute', left, top, width: w, height: h }}
-              />
-              <View
-                {...resizePan.panHandlers}
-                style={{
-                  position: 'absolute',
-                  left: left + w - 22,
-                  top: top + h - 22,
-                  width: 44,
-                  height: 44,
-                }}
-              />
-              <Pressable
-                onPress={() => removeRegion(region.id)}
-                style={{ position: 'absolute', left: left + w - 20, top: top - 8 }}
-                className="h-5 w-5 items-center justify-center rounded-full bg-destructive"
-              >
-                <Text className="text-[10px] text-white">×</Text>
-              </Pressable>
-            </View>
-          );
-        })}
+        {config.regions.map((region) => (
+          <DraggableRegionFrame
+            key={region.id}
+            x={region.source.x}
+            y={region.source.y}
+            width={region.source.width}
+            height={region.source.height}
+            color={region.color}
+            canvasWidth={canvasWidth}
+            canvasHeight={canvasHeight}
+            onMove={(x, y) => updateRegion(region.id, { x, y })}
+            onResize={(width, height) => updateRegion(region.id, { width, height })}
+            onRemove={() => removeRegion(region.id)}
+          />
+        ))}
       </View>
     </View>
   );

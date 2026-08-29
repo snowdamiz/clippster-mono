@@ -1,4 +1,5 @@
 export function hexToSkiaColor(hex: string, alpha = 1): string {
+  if (hex.startsWith('rgb')) return hex;
   const clean = hex.replace('#', '');
   if (clean.length === 8) {
     const a = Number.parseInt(clean.slice(0, 2), 16) / 255;

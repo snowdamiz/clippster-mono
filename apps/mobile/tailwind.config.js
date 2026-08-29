@@ -1,5 +1,5 @@
 /** @type {import('tailwindcss').Config} */
-// Palette mirrors the desktop client theme (client/src/style.css .dark tokens).
+// Palette mirrors client/src/style.css .dark — white primary, cyan accent.
 module.exports = {
   content: ['./app/**/*.{js,jsx,ts,tsx}', './src/**/*.{js,jsx,ts,tsx}'],
   presets: [require('nativewind/preset')],
@@ -10,8 +10,10 @@ module.exports = {
         surface: '#141416',
         surfaceMuted: '#18181b',
         border: '#1f1f23',
-        primary: '#0ea5e9',
-        'primary-foreground': '#000000',
+        primary: '#fafafa',
+        'primary-foreground': '#18181b',
+        accent: '#0ea5e9',
+        'accent-muted': '#0891b2',
         foreground: '#fafafa',
         muted: '#71717a',
         destructive: '#ef4444',

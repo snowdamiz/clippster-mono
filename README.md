@@ -80,7 +80,7 @@ cd ../landing && yarn install
 ### Development
 
 ```bash
-# Start both server and Tauri desktop app (recommended)
+# Start server, Tauri desktop app, landing, and mobile (Metro + Android emulator when connected)
 yarn dev
 
 # Start individual services
@@ -90,9 +90,9 @@ yarn tauri       # Tauri desktop app only
 yarn landing     # Landing page development server
 
 # Mobile (Expo) — requires dev client for SQLite, FFmpeg, OAuth
-yarn mobile          # Metro bundler
+yarn mobile          # Metro + auto-launch Android emulator (same as yarn dev mobile step)
 yarn mobile:ios      # iOS simulator
-yarn mobile:android  # Android emulator
+yarn mobile:android  # Native build + Android emulator (first-time setup)
 yarn mobile:typecheck
 ```
 

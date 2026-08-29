@@ -7,7 +7,9 @@ export type { MediaApi } from './mediaApi';
 export { createClipsApi } from './clipsApi';
 export type { ClipsApi, DetectChunkedResponse, TranscribeResponse } from './clipsApi';
 export { createCreditsApi } from './creditsApi';
-export type { CreditsApi } from './creditsApi';
+export type { CreditsApi, CreditBalanceResponse } from './creditsApi';
+export { createSubscriptionApi } from './subscriptionApi';
+export type { SubscriptionApi } from './subscriptionApi';
 export { createSchedulingApi, formatScheduleDate, getMinScheduleTime, isValidScheduleTime, formatRelativeTime } from './schedulingApi';
 export type {
   SchedulingApi,
@@ -50,6 +52,18 @@ export { createOrganizationAssetsApi } from './organizationAssetsApi';
 export type { OrganizationAssetsApi, ServerOrganizationAsset } from './organizationAssetsApi';
 export { createOrganizationProfilesApi } from './organizationProfilesApi';
 export type { OrganizationProfilesApi, ServerOrganizationCreatorProfile } from './organizationProfilesApi';
+export { createUserBrandingApi } from './userBrandingApi';
+export type {
+  UserBrandingApi,
+  ServerUserAsset,
+  ServerUserCreatorProfile,
+  UserAssetType,
+  UserCreatorProfileScope,
+} from './userBrandingApi';
+export { createUserPreferencesApi } from './userPreferencesApi';
+export type { UserPreferencesApi, UserPreferences } from './userPreferencesApi';
+export { createAccountApi } from './accountApi';
+export type { AccountApi, AccountApiResponse } from './accountApi';
 export { createOrganizationsApi } from './organizationsApi';
 export type { OrganizationsApi, Organization, OrganizationInvitation } from './organizationsApi';
 export { createCloudProjectsApi } from './cloudProjectsApi';
@@ -74,3 +88,5 @@ export type {
   TokendMediaGrantResponse,
   TokendServerCapabilities,
 } from './tokendApi';
+export { createKickApi } from './kickApi';
+export type { KickApi, KickClip, KickClipsResponse } from './kickApi';

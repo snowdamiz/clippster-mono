@@ -1,5 +1,3 @@
-import * as DocumentPicker from 'expo-document-picker';
-import * as ImagePicker from 'expo-image-picker';
 import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
@@ -10,37 +8,52 @@ import {
   Text,
   View,
 } from 'react-native';
-import { AppHeader } from '@/components/AppHeader';
+import { ScreenHeader } from '@/components/ScreenHeader';
+import { VodResultCard } from '@/components/download/VodResultCard';
+import { DownloadOptionsSheet, type DownloadPlan } from '@/components/download/DownloadOptionsSheet';
 import { DownloadProgressCard } from '@/components/DownloadProgressCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
+import { useAccount } from '@/context/AccountContext';
 import type { MediaPlatform, VodListItem } from '@clippster/shared-types';
-import { MOBILE_PLATFORMS, detectPlatformFromUrl, getPlatformConfig } from '@/config/platforms';
-import { mediaApi } from '@/services/api';
+import {
+  detectPlatformFromInput,
+  isDirectVideoUrl,
+  PLATFORM_LABELS,
+} from '@/lib/platformDetection';
+import { mediaApi, kickApi } from '@/services/api';
 import { getTokendVods } from '@/services/tokend';
+import { extractKickChannelSlug, kickClipToVodItem } from '@/lib/kick';
+import { enrichVodList, enrichVodListItem } from '@/lib/vodList';
 import { tokens } from '@/theme/tokens';
 import {
   cancelDownload,
-  enqueueDownload,
+  enqueueDownloadPlan,
   getDownloadJobs,
-  importLocalVideo,
   initDownloadQueue,
+  removeDownload,
   retryDownload,
   subscribeDownloadQueue,
   type DownloadJob,
 } from '@/services/downloadQueue';
 
-export default function DownloadScreen() {
-  const [selectedPlatform, setSelectedPlatform] = useState<MediaPlatform>('youtube');
-  const [urlInput, setUrlInput] = useState('');
-  const [channelInput, setChannelInput] = useState('');
-  const [vods, setVods] = useState<VodListItem[]>([]);
-  const [loadingVods, setLoadingVods] = useState(false);
-  const [jobs, setJobs] = useState<DownloadJob[]>([]);
-  const [importing, setImporting] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+type CatalogTab = 'streams' | 'videos';
 
-  const platform = getPlatformConfig(selectedPlatform);
+export default function DownloadScreen() {
+  const { requireSubscription } = useAccount();
+  const [searchInput, setSearchInput] = useState('');
+  const [detectedPlatform, setDetectedPlatform] = useState<MediaPlatform | null>(null);
+  const [vods, setVods] = useState<VodListItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [jobs, setJobs] = useState<DownloadJob[]>([]);
+  const [error, setError] = useState<string | null>(null);
+  const [catalogTab, setCatalogTab] = useState<CatalogTab>('streams');
+  const [lastSearch, setLastSearch] = useState('');
+  const [downloadTarget, setDownloadTarget] = useState<{
+    item: VodListItem;
+    platform: MediaPlatform;
+  } | null>(null);
+  const [downloadStarting, setDownloadStarting] = useState(false);
 
   useEffect(() => {
     void initDownloadQueue();
@@ -53,203 +66,283 @@ export default function DownloadScreen() {
     }, []),
   );
 
-  async function handlePasteDownload() {
-    setError(null);
-    const url = urlInput.trim();
-    if (!url) return;
-
-    const detected = detectPlatformFromUrl(url) ?? selectedPlatform;
-    try {
-      await enqueueDownload({ sourceUrl: url, platform: detected });
-      setUrlInput('');
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+  async function handleSearch(tabOverride?: CatalogTab) {
+    const input = searchInput.trim();
+    if (!input) {
+      setError('Paste a stream link, channel URL, or @handle');
+      return;
     }
-  }
 
-  async function handleBrowseVods() {
+    const platform = detectPlatformFromInput(input);
+    if (!platform) {
+      setError(
+        'Could not detect the platform. Try a YouTube, Kick, Twitch, Rumble, Tokend, or X URL — or a channel @handle.',
+      );
+      return;
+    }
+
+    setDetectedPlatform(platform);
+    setLoading(true);
     setError(null);
-    const channel = channelInput.trim();
-    if (!channel || !platform?.supportsChannelBrowse) return;
+    setVods([]);
+    setLastSearch(input);
 
-    setLoadingVods(true);
+    const tab = tabOverride ?? catalogTab;
+
     try {
-      if (selectedPlatform === 'tokend') {
-        const items = await getTokendVods(channel, 20, 'streams');
+      if (platform === 'tokend') {
+        const items = await getTokendVods(input, 20, tab);
         setVods(
-          items.map((item) => ({
-            id: item.id,
-            title: item.title,
-            duration_seconds: item.duration_seconds,
-            thumbnail_url: item.thumbnail_url,
-            url: item.url || item.id,
-            upload_date: item.upload_date,
-          })),
+          enrichVodList(
+            items.map((item) => ({
+              id: item.id,
+              title: item.title,
+              duration_seconds: item.duration_seconds,
+              thumbnail_url: item.thumbnail_url,
+              url: item.url || item.id,
+              upload_date: item.upload_date,
+              download_url: item.url || item.id,
+            })),
+          ),
         );
-      } else {
-        const response = await mediaApi.listVods(selectedPlatform, channel, { limit: 20 });
-        if (!response.success) {
-          throw new Error(response.error ?? 'Failed to load VODs');
+        if (items.length === 0) {
+          setError(`No ${tab} found for this creator.`);
         }
-        setVods(response.vods);
+        return;
+      }
+
+      if (platform === 'kick' && !isDirectVideoUrl(platform, input)) {
+        const slug = extractKickChannelSlug(input);
+        if (!slug) {
+          throw new Error('Invalid Kick channel URL or username. Try https://kick.com/asmongold or asmongold');
+        }
+
+        const result = await kickApi.getClips(slug, 30);
+        if (!result.success) {
+          throw new Error(result.error ?? 'Failed to load Kick VODs');
+        }
+
+        const items = result.clips
+          .filter((clip) => !clip.isLive)
+          .map((clip) => kickClipToVodItem(clip, slug))
+          .filter((item) => item.download_url || item.url);
+
+        setVods(enrichVodList(items));
+        if (items.length === 0) {
+          setError('No VODs found for this channel.');
+        }
+        return;
+      }
+
+      if (isDirectVideoUrl(platform, input)) {
+        const resolved = await mediaApi.resolveUrl(input, { platform, quality: '720' });
+        if (!resolved.success) {
+          throw new Error(resolved.error ?? 'Could not resolve this video URL');
+        }
+        setVods([
+          enrichVodListItem({
+            id: resolved.source_id,
+            title: resolved.title,
+            duration_seconds: resolved.duration_seconds,
+            thumbnail_url: resolved.thumbnail_url,
+            url: input,
+            download_url: input,
+          }),
+        ]);
+        return;
+      }
+
+      const response = await mediaApi.listVods(platform, input, { limit: 20 });
+      if (!response.success) {
+        throw new Error(response.error ?? 'Failed to load VODs');
+      }
+      const channelLabel =
+        platform === 'kick'
+          ? extractKickChannelSlug(input)
+          : input.replace(/^https?:\/\//, '').split('/').pop() ?? null;
+      setVods(
+        enrichVodList(
+          response.vods.map((vod) => ({
+            ...vod,
+            uploader: vod.uploader ?? channelLabel,
+          })),
+        ),
+      );
+      if (response.vods.length === 0) {
+        setError('No VODs found for this channel.');
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setVods([]);
     } finally {
-      setLoadingVods(false);
+      setLoading(false);
     }
   }
 
-  async function handleImport() {
+  function openDownloadOptions(item: VodListItem, platform: MediaPlatform) {
+    if (!item.url && !item.download_url) return;
     setError(null);
-    setImporting(true);
+    setDownloadTarget({ item, platform });
+  }
+
+  async function confirmDownload(plan: DownloadPlan) {
+    if (!downloadTarget) return;
+    const { item, platform } = downloadTarget;
+
+    const allowed = await requireSubscription({
+      context: `Download "${item.title ?? 'VOD'}"`,
+      type: 'download',
+    });
+    if (!allowed) return;
+
+    setDownloadStarting(true);
+    setError(null);
     try {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (permission.granted) {
-        const picked = await ImagePicker.launchImageLibraryAsync({
-          mediaTypes: ['videos'],
-          quality: 1,
-        });
-        if (!picked.canceled && picked.assets[0]) {
-          const asset = picked.assets[0];
-          const filename = asset.fileName ?? `camera-roll-${Date.now()}.mp4`;
-          const projectId = await importLocalVideo({
-            sourceUri: asset.uri,
-            filename,
-            title: filename.replace(/\.[^.]+$/, ''),
-          });
-          router.push(`/project/${projectId}`);
-          return;
-        }
-      }
-
-      const result = await DocumentPicker.getDocumentAsync({
-        type: 'video/*',
-        copyToCacheDirectory: true,
+      await enqueueDownloadPlan({
+        sourceUrl: item.url ?? item.download_url!,
+        streamUrl: item.download_url ?? undefined,
+        channelSlug:
+          platform === 'kick'
+            ? extractKickChannelSlug(lastSearch) ?? item.uploader ?? undefined
+            : item.uploader ?? undefined,
+        thumbnailUrl: item.thumbnail_url ?? undefined,
+        platform,
+        title: item.title ?? undefined,
+        totalDurationSeconds: item.duration_seconds ?? undefined,
+        segmentRange: plan.segmentRange,
+        autoSegment: plan.autoSegment,
+        autoSegmentDurationMinutes: plan.autoSegmentDurationMinutes,
       });
-      if (result.canceled || !result.assets?.[0]) return;
-
-      const asset = result.assets[0];
-      const projectId = await importLocalVideo({
-        sourceUri: asset.uri,
-        filename: asset.name ?? 'imported.mp4',
-        title: asset.name?.replace(/\.[^.]+$/, '') ?? 'Imported video',
-      });
-      router.push(`/project/${projectId}`);
+      setDownloadTarget(null);
+      router.replace('/(tabs)/projects');
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setImporting(false);
+      setDownloadStarting(false);
     }
   }
 
+  async function switchCatalogTab(tab: CatalogTab) {
+    setCatalogTab(tab);
+    if (lastSearch && detectedPlatform === 'tokend') {
+      await handleSearch(tab);
+    }
+  }
+
+  const showCatalogTabs =
+    detectedPlatform === 'tokend' && (vods.length > 0 || loading || lastSearch.length > 0);
+
   return (
     <View className="flex-1 bg-background">
-      <AppHeader title="Download" subtitle="Resolve streams on the server, download on device" />
+      <ScreenHeader title="Create" subtitle="Search a channel to browse and download VODs" />
       <DownloadProgressCard
         jobs={jobs}
         onOpenProject={(projectId) => router.push(`/project/${projectId}`)}
         onRetry={(jobId) => void retryDownload(jobId)}
         onCancel={(jobId) => void cancelDownload(jobId)}
+        onRemove={(jobId) => void removeDownload(jobId)}
+      />
+
+      <DownloadOptionsSheet
+        visible={downloadTarget != null}
+        item={downloadTarget?.item ?? null}
+        platform={downloadTarget?.platform ?? null}
+        starting={downloadStarting}
+        onClose={() => {
+          if (!downloadStarting) setDownloadTarget(null);
+        }}
+        onConfirm={(plan) => void confirmDownload(plan)}
       />
 
       <ScrollView contentContainerClassName="px-4 py-4">
-        <Text className="mb-2 text-sm font-semibold text-muted">Platform</Text>
-        <View className="mb-4 flex-row flex-wrap gap-2">
-          {MOBILE_PLATFORMS.map((item) => (
-            <Pressable
-              key={item.id}
-              className={`rounded-full border px-3 py-2 ${
-                selectedPlatform === item.id ? 'border-primary bg-primary/20' : 'border-border bg-surface'
-              }`}
-              onPress={() => {
-                setSelectedPlatform(item.id);
-                setVods([]);
-              }}
-            >
-              <Text className="text-sm text-foreground">{item.name}</Text>
-            </Pressable>
-          ))}
-        </View>
-
-        <Text className="mb-2 text-sm font-semibold text-muted">Paste URL</Text>
-        <Input
-          value={urlInput}
-          onChangeText={setUrlInput}
-          placeholder={platform?.searchPlaceholder ?? 'Paste video URL'}
-          autoCapitalize="none"
-          autoCorrect={false}
-        />
-        <View className="mt-3">
-          <Button title="Download" onPress={() => void handlePasteDownload()} disabled={!urlInput.trim()} />
-        </View>
-
-        {platform?.supportsChannelBrowse ? (
-          <View className="mt-8">
-            <Text className="mb-2 text-sm font-semibold text-muted">Channel browse</Text>
+        <View className="flex-row items-center gap-2">
+          {detectedPlatform ? (
+            <View className="rounded-full border border-border bg-surface px-3 py-1">
+              <Text className="text-xs font-semibold text-accent">
+                {PLATFORM_LABELS[detectedPlatform]}
+              </Text>
+            </View>
+          ) : null}
+          <View className="flex-1">
             <Input
-              value={channelInput}
-              onChangeText={setChannelInput}
-              placeholder={platform.searchPlaceholder}
+              value={searchInput}
+              onChangeText={(text) => {
+                setSearchInput(text);
+                setDetectedPlatform(detectPlatformFromInput(text));
+              }}
+              onSubmitEditing={() => void handleSearch()}
+              placeholder="Channel URL or @handle (e.g. kick.com/asmongold)"
               autoCapitalize="none"
               autoCorrect={false}
+              returnKeyType="search"
             />
-            <View className="mt-3">
-              <Button
-                title={loadingVods ? 'Loading…' : 'Browse VODs'}
-                variant="outline"
-                onPress={() => void handleBrowseVods()}
-                disabled={loadingVods || !channelInput.trim()}
-              />
-            </View>
-            {loadingVods ? (
-              <ActivityIndicator className="mt-4" color={tokens.colors.primary} />
-            ) : (
-              <FlatList
-                className="mt-4"
-                data={vods}
-                scrollEnabled={false}
-                keyExtractor={(item, index) => item.id ?? item.url ?? String(index)}
-                ListEmptyComponent={
-                  channelInput ? (
-                    <Text className="text-sm text-muted">No VODs loaded yet.</Text>
-                  ) : null
-                }
-                renderItem={({ item }) => (
-                  <Pressable
-                    className="mb-2 rounded-lg border border-border bg-surface px-3 py-3"
-                    onPress={() => {
-                      if (!item.url) return;
-                      void enqueueDownload({
-                        sourceUrl: item.url,
-                        platform: selectedPlatform,
-                        title: item.title ?? undefined,
-                      });
-                    }}
-                  >
-                    <Text className="font-medium text-foreground" numberOfLines={2}>
-                      {item.title ?? 'Untitled'}
-                    </Text>
-                    {item.duration_seconds != null ? (
-                      <Text className="mt-1 text-xs text-muted">
-                        {Math.round(item.duration_seconds / 60)} min
-                      </Text>
-                    ) : null}
-                  </Pressable>
-                )}
-              />
-            )}
+          </View>
+        </View>
+
+        <View className="mt-3">
+          <Button
+            title={loading ? 'Searching…' : 'Search'}
+            onPress={() => void handleSearch()}
+            disabled={loading || !searchInput.trim()}
+          />
+        </View>
+
+        {showCatalogTabs ? (
+          <View className="mt-4 flex-row gap-2">
+            {(['streams', 'videos'] as const).map((tab) => (
+              <Pressable
+                key={tab}
+                className={`flex-1 rounded-lg border px-3 py-2 ${
+                  catalogTab === tab ? 'border-accent bg-accent/10' : 'border-border bg-surface'
+                }`}
+                onPress={() => void switchCatalogTab(tab)}
+              >
+                <Text
+                  className={`text-center text-sm font-medium ${
+                    catalogTab === tab ? 'text-accent' : 'text-muted'
+                  }`}
+                >
+                  {tab === 'streams' ? 'Streams' : 'Videos'}
+                </Text>
+              </Pressable>
+            ))}
           </View>
         ) : null}
 
-        <View className="mt-8 rounded-xl border border-dashed border-border px-4 py-5">
-          <Text className="text-base font-semibold text-foreground">Import from Files</Text>
-          <Text className="mt-1 text-sm text-muted">Pick a local MP4/MOV without a platform URL.</Text>
-          <View className="mt-4">
-            <Button title={importing ? 'Importing…' : 'Import video'} variant="outline" onPress={() => void handleImport()} disabled={importing} />
+        {loading ? (
+          <ActivityIndicator className="mt-8" color={tokens.colors.primary} />
+        ) : null}
+
+        {!loading && vods.length > 0 ? (
+          <View className="mt-6">
+            <View className="mb-4 gap-1">
+              <Text className="text-lg font-bold text-foreground">Stream VOD library</Text>
+              <Text className="text-sm text-muted">
+                {vods.length} {vods.length === 1 ? 'item' : 'items'}
+              </Text>
+            </View>
+            <FlatList
+              data={vods}
+              scrollEnabled={false}
+              keyExtractor={(item, index) => item.id ?? item.url ?? String(index)}
+              renderItem={({ item }) => (
+                <VodResultCard
+                  item={item}
+                  platform={detectedPlatform ?? undefined}
+                  onDownload={() => {
+                    const platform = detectedPlatform ?? detectPlatformFromInput(lastSearch);
+                    if (!platform || platform === 'manual') return;
+                    openDownloadOptions(item, platform);
+                  }}
+                />
+              )}
+            />
           </View>
-        </View>
+        ) : null}
+
+        {!loading && !error && vods.length === 0 && lastSearch ? (
+          <Text className="mt-6 text-center text-sm text-muted">No VODs to show.</Text>
+        ) : null}
 
         {error ? <Text className="mt-4 text-sm text-destructive">{error}</Text> : null}
       </ScrollView>
