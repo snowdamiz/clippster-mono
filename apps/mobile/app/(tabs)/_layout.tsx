@@ -10,9 +10,10 @@ import type { ColorValue } from 'react-native';
 type TabRouteName = 'projects' | 'download' | 'clips' | 'profile';
 
 function tabBarIcon(name: TabRouteName) {
-  return ({ color, size }: { focused: boolean; color: ColorValue; size: number }) => (
-    <TabBarIcon name={name} color={String(color)} size={size} />
-  );
+  function TabIcon({ color, size }: { focused: boolean; color: ColorValue; size: number }) {
+    return <TabBarIcon name={name} color={String(color)} size={size} />;
+  }
+  return TabIcon;
 }
 
 export default function TabsLayout() {

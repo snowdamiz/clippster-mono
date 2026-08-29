@@ -161,7 +161,7 @@ export function TagSelect({
       ) : null}
 
       {showSearch && filtered.length === 0 ? (
-        <Text className="text-sm text-muted">No matches for "{query}"</Text>
+        <Text className="text-sm text-muted">{`No matches for "${query}"`}</Text>
       ) : null}
     </View>
   );
