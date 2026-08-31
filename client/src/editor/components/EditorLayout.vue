@@ -174,9 +174,11 @@ onUnmounted(() => {
 			<ImageOptionsBar />
 
 			<div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-				<ImageToolRail />
+				<div data-tour-id="tour-image-tool-rail">
+					<ImageToolRail />
+				</div>
 
-				<div class="min-w-0 flex-1 overflow-hidden bg-[#2b2b2b]">
+				<div class="min-w-0 flex-1 overflow-hidden bg-[#2b2b2b]" data-tour-id="tour-image-canvas">
 					<PreviewPanel ref="previewPanelRef" />
 				</div>
 
@@ -186,6 +188,7 @@ onUnmounted(() => {
 							v-for="tabKey in IMAGE_DOCK_PRIMARY"
 							:key="tabKey"
 							type="button"
+							:data-tour-id="tabKey === 'media' ? 'tour-image-media' : undefined"
 							:class="[
 								'px-2.5 text-[11px] leading-none transition-colors',
 								imageDockTab === tabKey
@@ -236,7 +239,7 @@ onUnmounted(() => {
 						<AssetsPanel v-else :active-tab="imageDockTab" />
 					</div>
 
-					<div class="flex min-h-[220px] min-w-0 flex-[1.15] flex-col overflow-hidden">
+					<div class="flex min-h-[220px] min-w-0 flex-[1.15] flex-col overflow-hidden" data-tour-id="tour-image-layers">
 						<LayersPanel />
 					</div>
 				</aside>
@@ -247,12 +250,16 @@ onUnmounted(() => {
 		<template v-else>
 			<div class="flex flex-1 min-h-0 overflow-hidden">
 				<!-- Icon sidebar -->
-				<div class="flex w-12 shrink-0 flex-col items-center gap-4 border-r border-white/10 bg-[#0e0e10] py-3 overflow-y-auto scrollbar-hidden">
+				<div
+					class="flex w-12 shrink-0 flex-col items-center gap-4 border-r border-white/10 bg-[#0e0e10] py-3 overflow-y-auto scrollbar-hidden"
+					data-tour-id="tour-editor-left-rail"
+				>
 					<button
 						v-for="tabKey in visibleTabs"
 						:key="tabKey"
 						type="button"
 						:title="tabConfig[tabKey].label"
+						:data-tour-id="tabKey === 'media' ? 'tour-editor-media' : undefined"
 						:class="[
 							'flex flex-col items-center justify-center rounded-md p-1.5 transition-colors',
 							activeTab === tabKey
@@ -271,12 +278,13 @@ onUnmounted(() => {
 				</div>
 
 				<!-- Center: Preview -->
-				<div class="flex-1 min-w-0 overflow-hidden bg-[#0e0e10]">
+				<div class="flex-1 min-w-0 overflow-hidden bg-[#0e0e10]" data-tour-id="tour-editor-preview">
 					<PreviewPanel />
 				</div>
 
 				<!-- Right panel: pinned so selection changes never resize the preview -->
 				<div
+					data-tour-id="tour-editor-properties"
 					:class="[
 						'flex shrink-0 flex-col border-l border-white/10 bg-[#18181b] overflow-hidden transition-[width] duration-150',
 						propertiesCollapsed ? 'w-10' : 'w-80',
@@ -315,6 +323,7 @@ onUnmounted(() => {
 			<!-- Bottom: Timeline -->
 			<div
 				class="shrink-0 border-t border-white/10 overflow-hidden bg-[#18181b]"
+				data-tour-id="tour-editor-timeline"
 				:style="{ height: `${timelineHeight}px` }"
 			>
 				<Timeline />

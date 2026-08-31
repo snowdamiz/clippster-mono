@@ -3,7 +3,7 @@
     <PageLayout title="Live Clip" description="Real-time clip detection" :show-header="true" :icon="Radio">
       <template #actions>
         <div class="liveclip-actions">
-          <div class="liveclip-search">
+          <div class="liveclip-search" data-tour-id="tour-live-search">
             <transition name="scale" mode="out-in">
               <div
                 v-if="detectedPlatform === 'YouTube'"
@@ -67,11 +67,48 @@
         </div>
       </template>
 
-      <div class="liveclip__content" :class="{ 'liveclip__content--empty': streamers.length === 0 }">
+      <div class="liveclip__content" :class="{ 'liveclip__content--empty': streamers.length === 0 && !mockStreamerActive }">
         <!-- Page Heading (hidden in empty state) -->
-        <div v-if="streamers.length > 0" class="liveclip__heading">
+        <div v-if="streamers.length > 0 || mockStreamerActive" class="liveclip__heading">
           <h1 class="liveclip__title">Live Stream Monitor</h1>
           <p class="liveclip__subtitle">Watch and track Live streams and detect clips in real-time with AI-powered analysis</p>
+        </div>
+
+        <!-- Tour demo streamer -->
+        <div v-if="mockStreamerActive" class="liveclip__platform-sections" style="margin-bottom: 1rem">
+          <div class="liveclip__platform-section">
+            <div class="liveclip__platform-header">
+              <div class="liveclip__platform-title-wrapper">
+                <h2 class="liveclip__platform-title">Tour Demo</h2>
+              </div>
+            </div>
+            <div class="liveclip__list">
+              <div class="monitor-card monitor-card--live" data-tour-id="tour-mock-streamer">
+                <div class="monitor-card__header">
+                  <div class="monitor-card__avatar">
+                    <div class="monitor-card__avatar-fallback">
+                      <span style="font-size: 0.75rem; font-weight: 700">DEMO</span>
+                    </div>
+                  </div>
+                  <div class="monitor-card__info">
+                    <div class="monitor-card__name">Demo Streamer</div>
+                    <div class="monitor-card__meta">Sample channel for the tour</div>
+                  </div>
+                  <div class="monitor-card__actions">
+                    <button type="button" class="monitor-card__btn" data-tour-id="tour-mock-watch" @click.prevent>
+                      Watch
+                    </button>
+                    <button type="button" class="monitor-card__btn" data-tour-id="tour-mock-rec" @click.prevent>
+                      Rec
+                    </button>
+                    <button type="button" class="monitor-card__btn" data-tour-id="tour-mock-auto" @click.prevent>
+                      Auto
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Main Grid -->
@@ -514,6 +551,7 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
+  import { useAppTour, useTourFlags } from '@/composables/useAppTour';
   import {
     Radio,
     Plus,
@@ -722,6 +760,8 @@
   const autoDetectLimitDialogData = ref<{ activeStreamerName: string; requestedStreamerName: string }>({ activeStreamerName: '', requestedStreamerName: '' });
 
   const liveStatusInterval = ref<number | null>(null);
+  const { maybeStartPageTour } = useAppTour();
+  const { mockStreamerActive } = useTourFlags();
 
   onMounted(async () => {
     await loadStreamers();
@@ -740,6 +780,7 @@
     window.addEventListener('realtime-clip-detected', handleRealtimeClipDetected as EventListener);
     window.addEventListener('realtime-detection-stopped', handleRealtimeDetectionStopped as EventListener);
     window.addEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated as EventListener);
+    maybeStartPageTour('page_live_clip');
   });
 
   async function maybeRemoveEndedTwitterBroadcast(streamer: ExtendedStreamer, isLive: boolean) {

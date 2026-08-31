@@ -1390,6 +1390,8 @@ defmodule ClippsterServerWeb.Router do
     # AI editor access management
     post("/admin/users/:user_id/ai-editor", AdminController, :enable_ai_editor)
     delete("/admin/users/:user_id/ai-editor", AdminController, :disable_ai_editor)
+    post("/admin/users/:user_id/circles", AdminController, :enable_circles)
+    delete("/admin/users/:user_id/circles", AdminController, :disable_circles)
 
     # Campaigns access management
     post("/admin/users/:user_id/campaigns", AdminController, :enable_campaigns)

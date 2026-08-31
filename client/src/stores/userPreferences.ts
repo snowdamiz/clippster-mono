@@ -28,6 +28,8 @@ export const useUserPreferencesStore = defineStore('userPreferences', () => {
   // State
   const preferences = ref<UserPreferences>({ ...DEFAULT_PREFERENCES });
   const loaded = ref(false);
+  /** True after at least one server preferences sync this session */
+  const syncedFromServer = ref(false);
   const saving = ref(false);
 
   // Getters
@@ -90,10 +92,38 @@ export const useUserPreferencesStore = defineStore('userPreferences', () => {
       const merged = { ...DEFAULT_PREFERENCES, ...serverPrefs };
       preferences.value = merged;
       loaded.value = true;
+      syncedFromServer.value = true;
       await saveLocalPreferences(userId, merged);
     } catch (error) {
       console.error('[UserPreferences] Failed to sync from server:', error);
+      // Still mark synced so we don't block the tour forever offline
+      syncedFromServer.value = true;
     }
+  }
+
+  /**
+   * Fetch preferences from the API if we haven't synced yet this session.
+   * Falls back to local cache on network failure so tours can still run once.
+   */
+  async function ensureSyncedFromServer(userId: string, token: string): Promise<void> {
+    if (syncedFromServer.value) return;
+    try {
+      const response = await fetch(`${API_BASE}/api/user/preferences`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+      if (response.ok) {
+        const data = await response.json();
+        if (data.preferences) {
+          await syncFromServer(userId, data.preferences);
+          return;
+        }
+      }
+    } catch (error) {
+      console.warn('[UserPreferences] ensureSyncedFromServer failed, using local:', error);
+    }
+    // Offline / empty response — proceed with whatever local prefs we have
+    syncedFromServer.value = true;
+    loaded.value = true;
   }
 
   /**
@@ -215,12 +245,14 @@ export const useUserPreferencesStore = defineStore('userPreferences', () => {
   function clear(): void {
     preferences.value = { ...DEFAULT_PREFERENCES };
     loaded.value = false;
+    syncedFromServer.value = false;
   }
 
   return {
     // State
     preferences,
     loaded,
+    syncedFromServer,
     saving,
 
     // Getters
@@ -236,6 +268,7 @@ export const useUserPreferencesStore = defineStore('userPreferences', () => {
     isCategoryEnabled,
     loadFromLocal,
     syncFromServer,
+    ensureSyncedFromServer,
     updatePreference,
     updatePreferences,
     resetToDefaults,

@@ -9,7 +9,8 @@
     "skipLibCheck": true,
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@clippster/app-tour": ["../packages/app-tour/src/index.ts"]
     },
 
     /* Bundler mode */

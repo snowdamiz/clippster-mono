@@ -34,6 +34,7 @@ defmodule ClippsterServerWeb.UserPreferencesController do
       toast_sound_enabled toast_background_enabled
       notify_livestream notify_clips notify_downloads
       notify_projects notify_social notify_organization notify_system
+      completed_tours tour_version_seen
     )
 
     attrs =

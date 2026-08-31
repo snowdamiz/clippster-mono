@@ -1479,16 +1479,23 @@
   async function handleSubscribeSuccess() {
     showPaymentModal.value = false;
     selectedSubscription.value = null;
-    
+
     // Refresh subscription status (this updates both subscription state and auth store)
     await fetchSubscriptionStatus();
-    
+
     // Fetch updated balance and history
     await fetchBalance();
     await fetchPaymentHistory();
-    
+
     // Show success toast
     showSuccessToast('Subscription activated', 'Your plan is now active');
+
+    // First-time paid plan selection → same redirect as free; tour triggers via completed_tours check
+    if (isNewUserFlow.value || isSubscriptionGateMode.value) {
+      localStorage.setItem('has_selected_plan', 'true');
+      const targetRoute = getDefaultRoute(authStore.user);
+      router.push(targetRoute);
+    }
   }
 
   async function cancelSubscription() {

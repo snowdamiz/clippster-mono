@@ -740,6 +740,7 @@ function cancelRename() {
 				</div>
 				<button
 					type="button"
+					data-tour-id="tour-image-export"
 					:class="[
 						'flex items-center gap-1.5 rounded-md px-[0.12rem] py-[0.12rem] text-white',
 						isImageExporting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
@@ -777,7 +778,9 @@ function cancelRename() {
 					<div v-if="showExportMenu" class="fixed inset-0 z-40" @click="showExportMenu = false" />
 				</div>
 			</template>
-			<ExportButton v-else />
+			<span v-else data-tour-id="tour-editor-export">
+				<ExportButton />
+			</span>
 		</nav>
 	</header>
 

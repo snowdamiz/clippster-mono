@@ -370,6 +370,33 @@
                     </div>
                   </div>
                 </div>
+
+                <!-- App Tours -->
+                <div class="account-settings__section">
+                  <h3 class="account-settings__section-title">App Tours</h3>
+                  <p class="account-settings__section-desc">Restart a guided tour anytime. Skip or Finish marks it complete.</p>
+                  <div class="account-settings__section-items">
+                    <div
+                      v-for="tour in tourRestartOptions"
+                      :key="tour.id"
+                      class="account-settings__toggle-row"
+                    >
+                      <div class="account-settings__toggle-info">
+                        <span class="account-settings__toggle-label">{{ tour.label }}</span>
+                        <span class="account-settings__toggle-desc">{{ tour.desc }}</span>
+                      </div>
+                      <button
+                        type="button"
+                        class="account-settings__restart-btn"
+                        :disabled="restartingTour === tour.id"
+                        @click="onRestartTour(tour.id)"
+                      >
+                        <RefreshCw :size="14" />
+                        Restart
+                      </button>
+                    </div>
+                  </div>
+                </div>
               </template>
 
               <!-- ==================== NOTIFICATIONS TAB ==================== -->
@@ -508,6 +535,7 @@ import { X, Settings, Mail, Lock, CheckCircle, AlertCircle, Info, Clock, Bell, U
 import { useAuthStore } from '@/stores/auth';
 import { useUserPreferencesStore } from '@/stores/userPreferences';
 import DeleteDataTab from '@/components/settings/DeleteDataTab.vue';
+import { useAppTour } from '@/composables/useAppTour';
 
 const props = defineProps({
   show: {
@@ -520,6 +548,28 @@ const emit = defineEmits(['close']);
 
 const authStore = useAuthStore();
 const prefsStore = useUserPreferencesStore();
+const { restartTour } = useAppTour();
+const restartingTour = ref(null);
+
+const tourRestartOptions = [
+  { id: 'desktop_sidebar', label: 'Sidebar overview', desc: 'Browse, Library, Design Studio, Studio, Manage' },
+  { id: 'page_creators', label: 'My Creators', desc: 'Add creator and profile tabs' },
+  { id: 'page_live_clip', label: 'Live Streams', desc: 'Track, Watch, Rec, Auto' },
+  { id: 'page_vods', label: 'Download Video', desc: 'Platforms and VOD search' },
+  { id: 'page_projects', label: 'Video library', desc: 'Detect, Transcribe, Pre-Edit' },
+  { id: 'page_video_editor', label: 'Video Editor', desc: 'Timeline editor overview' },
+  { id: 'page_image_editor', label: 'Image Editor', desc: 'Canvas editor overview' },
+];
+
+async function onRestartTour(tourId) {
+  restartingTour.value = tourId;
+  try {
+    emit('close');
+    await restartTour(tourId);
+  } finally {
+    restartingTour.value = null;
+  }
+}
 
 // Tab navigation
 const tabs = [
@@ -1196,6 +1246,38 @@ const handleChangePassword = async () => {
   font-weight: 600;
   color: var(--sidebar-text);
   margin: 0 0 16px 0;
+}
+
+.account-settings__section-desc {
+  font-size: 13px;
+  color: var(--sidebar-text-muted);
+  margin: -8px 0 12px;
+  line-height: 1.4;
+}
+
+.account-settings__restart-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-radius: 8px;
+  border: 1px solid var(--sidebar-border, #27272a);
+  background: transparent;
+  color: var(--sidebar-text);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.account-settings__restart-btn:hover:not(:disabled) {
+  border-color: var(--sidebar-accent);
+  color: var(--sidebar-accent);
+}
+
+.account-settings__restart-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
 }
 
 .account-settings__section-items {

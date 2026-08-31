@@ -462,7 +462,9 @@ defmodule ClippsterServer.Accounts do
            notify_projects: user.notify_projects,
            notify_social: user.notify_social,
            notify_organization: user.notify_organization,
-           notify_system: user.notify_system
+           notify_system: user.notify_system,
+           completed_tours: user.completed_tours || %{},
+           tour_version_seen: user.tour_version_seen
          }}
     end
   end
@@ -1502,6 +1504,36 @@ defmodule ClippsterServer.Accounts do
     else
       user
       |> Ecto.Changeset.change(%{ai_editor_enabled: false})
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Enables Circles access for a user.
+  """
+  def enable_circles(user_id) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> Ecto.Changeset.change(%{circles_enabled: true})
+      |> Repo.update()
+    end
+  end
+
+  @doc """
+  Disables Circles access for a user.
+  """
+  def disable_circles(user_id) do
+    user = get_user(user_id)
+
+    if is_nil(user) do
+      {:error, :user_not_found}
+    else
+      user
+      |> Ecto.Changeset.change(%{circles_enabled: false})
       |> Repo.update()
     end
   end

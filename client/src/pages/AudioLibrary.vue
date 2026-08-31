@@ -75,15 +75,26 @@
             Audio
           </button>
           <button
+            v-if="canUseCircles"
             type="button"
             :class="['audio-tab', { 'audio-tab--active': activeTab === 'circles' }]"
             @click="activeTab = 'circles'"
           >
             Circles
           </button>
+          <button
+            v-else
+            type="button"
+            class="audio-tab audio-tab--disabled"
+            disabled
+            title="Coming Soon"
+          >
+            Circles
+            <span class="audio-tab__badge">Coming Soon</span>
+          </button>
         </div>
 
-        <CirclesLibraryView v-if="activeTab === 'circles'" />
+        <CirclesLibraryView v-if="activeTab === 'circles' && canUseCircles" />
 
         <template v-if="activeTab === 'audio'">
           <!-- Active Downloads Section -->
@@ -564,6 +575,8 @@
   import { useAudioDownloads } from '@/composables/useAudioDownloads';
   import { useAudioPlayer } from '@/composables/useAudioPlayer';
   import { useToast } from '@/composables/useToast';
+  import { useAuthStore } from '@/stores/auth';
+  import { canAccessCircles } from '@/utils/circlesAccess';
   import type { AudioDownloadResult } from '@/composables/useAudioDownloads';
   import {
     getAllDownloadedAudio,
@@ -610,6 +623,8 @@
   const playlists = ref<AudioPlaylist[]>([]);
   const searchQuery = ref('');
   const activeTab = ref<'audio' | 'circles'>('audio');
+  const authStore = useAuthStore();
+  const canUseCircles = computed(() => canAccessCircles(authStore.user));
   const showCreatePlaylistDialog = ref(false);
   const showAddToPlaylistDialog = ref(false);
   const showPlaylistDetailDialog = ref(false);
@@ -1254,6 +1269,25 @@
     background: var(--sidebar-accent);
     border-color: var(--sidebar-accent);
     color: white;
+  }
+
+  .audio-tab--disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+
+  .audio-tab__badge {
+    font-size: 0.5625rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    padding: 0.15rem 0.4rem;
+    border-radius: 4px;
+    background: var(--sidebar-hover);
+    color: var(--sidebar-text-muted);
   }
 
   .audio-tab--active:hover {

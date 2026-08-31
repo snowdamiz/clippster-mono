@@ -31,10 +31,12 @@ import { useImageEditorProjects } from "@/composables/useImageEditorProjects";
 import { useFormatters } from "@/composables/useFormatters";
 import { useAuthStore } from "@/stores/auth";
 import type { ProjectSummary } from "@/services/imageEditorApi";
+import { useAppTour } from "@/composables/useAppTour";
 
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
+const { setTourImageProjectId } = useAppTour();
 const { getRelativeTime: formatRelativeTimeFromUnix } = useFormatters();
 
 const isEditorLoading = ref(true);
@@ -209,6 +211,7 @@ watch(
 onMounted(async () => {
 	const projectId = route.query.projectId as string | undefined;
 	const coverForClip = route.query.coverForClip as string | undefined;
+	const isTourBootstrap = route.query.tour === "1";
 
 	// Legacy links used /design-studio?projectId=… — send them to the full-page editor route
 	if (!isEditRoute.value && (projectId || coverForClip)) {
@@ -230,6 +233,11 @@ onMounted(async () => {
 			return;
 		}
 
+		if (isTourBootstrap) {
+			await bootstrapTourImageProject();
+			return;
+		}
+
 		await router.replace({ path: "/design-studio" });
 		return;
 	}
@@ -237,6 +245,37 @@ onMounted(async () => {
 	isEditorLoading.value = false;
 	await loadProjects();
 });
+
+async function bootstrapTourImageProject() {
+	const preset = CANVAS_PRESETS.find((p) => p.id === "youtube-720") ?? CANVAS_PRESETS[0];
+	const canvasSize = { width: preset.width, height: preset.height };
+	const name = "Tour Demo";
+
+	try {
+		isEditorLoading.value = true;
+		await createImageProject({ name, canvasSize });
+		const doc = await flushAndSerializeActiveImageProject();
+		if (!doc) throw new Error("Failed to serialize project");
+
+		const backendProject = await projectManager.createProject({
+			name,
+			project_data: doc,
+			canvas_width: canvasSize.width,
+			canvas_height: canvasSize.height,
+		});
+
+		setTourImageProjectId(backendProject.id);
+		startCloudAutosave();
+		await router.replace({
+			path: "/design-studio/edit",
+			query: { projectId: backendProject.id.toString() },
+		});
+	} catch (e) {
+		console.error("[ImageEditor] Failed to bootstrap tour project:", e);
+		editorError.value = e instanceof Error ? e.message : "Failed to create tour project";
+		isEditorLoading.value = false;
+	}
+}
 
 onUnmounted(() => {
 	stopCloudAutosave();
