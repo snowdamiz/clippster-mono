@@ -3,6 +3,7 @@ import type { TimelineElement } from "../../types/timeline";
 /**
  * Shift clips that start at/after `removedStart` left by `removedDuration`
  * (close the hole left by a removed/moved clip).
+ * Main-track magnet only — overlay tracks keep gaps.
  */
 export function closeGapAfterRemove<T extends TimelineElement>(
 	elements: T[],
@@ -25,7 +26,7 @@ export function closeGapAfterRemove<T extends TimelineElement>(
 
 /**
  * Sort by startTime, then push any overlapping clip forward so it starts
- * at the previous clip's end (CapCut-style insert/drop packing).
+ * at the previous clip's end. Does nothing when clips do not overlap.
  */
 export function ripplePushOverlaps<T extends TimelineElement>(
 	elements: T[],
@@ -50,8 +51,11 @@ export function ripplePushOverlaps<T extends TimelineElement>(
 }
 
 /**
- * Same-track rearrange: close the gap at the old position, place the clip at
- * `newStartTime` (adjusted if the drop was after the old range), then push overlaps.
+ * Same-track rearrange.
+ * - `closeGaps: true` (main track magnet): close the hole at the old position,
+ *   then place and push overlaps.
+ * - `closeGaps: false` (overlay tracks): place at `newStartTime` and only push
+ *   clips that would actually overlap.
  */
 export function rearrangeOnTrack<T extends TimelineElement>(
 	elements: T[],
@@ -59,12 +63,16 @@ export function rearrangeOnTrack<T extends TimelineElement>(
 	oldStartTime: number,
 	oldDuration: number,
 	newStartTime: number,
+	options?: { closeGaps?: boolean },
 ): T[] {
+	const closeGaps = options?.closeGaps === true;
 	const without = elements.filter((el) => el.id !== movedId);
-	const closed = closeGapAfterRemove(without, oldStartTime, oldDuration);
+	const base = closeGaps
+		? closeGapAfterRemove(without, oldStartTime, oldDuration)
+		: without;
 
 	let adjustedStart = newStartTime;
-	if (newStartTime >= oldStartTime + oldDuration - 0.001) {
+	if (closeGaps && newStartTime >= oldStartTime + oldDuration - 0.001) {
 		adjustedStart = Math.max(0, newStartTime - oldDuration);
 	}
 
@@ -72,7 +80,7 @@ export function rearrangeOnTrack<T extends TimelineElement>(
 	if (!moved) return elements;
 
 	const placed: T[] = [
-		...closed,
+		...base,
 		{ ...moved, startTime: Math.max(0, adjustedStart) },
 	];
 	return ripplePushOverlaps(placed, movedId);
@@ -80,7 +88,8 @@ export function rearrangeOnTrack<T extends TimelineElement>(
 
 /**
  * Preview map of elementId → new startTime for live ripple while dragging.
- * Source track closes the gap; destination track pushes from the drop point.
+ * Gap-closing only when `closeSourceGaps` is set (main-track magnet).
+ * Destination always only pushes true overlaps.
  */
 export function computeDragRipplePreview(params: {
 	tracks: { id: string; elements: TimelineElement[] }[];
@@ -90,10 +99,19 @@ export function computeDragRipplePreview(params: {
 	oldStartTime: number;
 	duration: number;
 	newStartTime: number;
+	closeSourceGaps?: boolean;
 }): Map<string, number> {
 	const shifts = new Map<string, number>();
-	const { tracks, sourceTrackId, targetTrackId, elementId, oldStartTime, duration, newStartTime } =
-		params;
+	const {
+		tracks,
+		sourceTrackId,
+		targetTrackId,
+		elementId,
+		oldStartTime,
+		duration,
+		newStartTime,
+		closeSourceGaps = false,
+	} = params;
 
 	const source = tracks.find((t) => t.id === sourceTrackId);
 	if (!source) return shifts;
@@ -105,6 +123,7 @@ export function computeDragRipplePreview(params: {
 			oldStartTime,
 			duration,
 			newStartTime,
+			{ closeGaps: closeSourceGaps },
 		);
 		for (const el of next) {
 			const orig = source.elements.find((e) => e.id === el.id);
@@ -115,15 +134,15 @@ export function computeDragRipplePreview(params: {
 		return shifts;
 	}
 
-	// Source: close gap
-	for (const el of source.elements) {
-		if (el.id === elementId) continue;
-		if (el.startTime >= oldStartTime - 0.001) {
-			shifts.set(el.id, Math.max(0, el.startTime - duration));
+	if (closeSourceGaps) {
+		for (const el of source.elements) {
+			if (el.id === elementId) continue;
+			if (el.startTime >= oldStartTime - 0.001) {
+				shifts.set(el.id, Math.max(0, el.startTime - duration));
+			}
 		}
 	}
 
-	// Target: push overlaps as if moved clip is inserted
 	const target = tracks.find((t) => t.id === targetTrackId);
 	if (target) {
 		const phantom = {

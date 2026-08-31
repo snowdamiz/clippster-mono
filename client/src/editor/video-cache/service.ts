@@ -58,6 +58,13 @@ const MAX_SEQUENTIAL_CATCH_UP_SEC = 2.0;
 const CANVAS_POOL_SIZE = PREFETCH_QUEUE_SIZE + 2;
 /** One-frame grace at EOF avoids a black flash without masking decoder lag as frozen video. */
 const EOF_HOLD_SEC = 1 / 30;
+/**
+ * After a seek, the first decodable frame can land slightly *after* the target
+ * (open GOP / keyframe alignment). Using that nearby frame for at most two
+ * display frames avoids baking a black clear into exports without reviving the
+ * old unbounded "smear first frame backward" freeze.
+ */
+const NEAREST_FORWARD_FRAME_HOLD_SEC = 2 / 30;
 const MAX_ACTIVE_SINKS = 6;
 const MAX_PREVIEW_FRAMES_PER_SINK = 3;
 /**
@@ -97,6 +104,20 @@ export function canHoldExhaustedFrame({
 }): boolean {
 	if (targetTime < frameTimestamp) return false;
 	return targetTime <= frameTimestamp + frameDuration + EOF_HOLD_SEC;
+}
+
+/** True when a post-seek frame is close enough after `targetTime` to cover a keyframe gap. */
+export function canUseNearestForwardFrame({
+	frameTimestamp,
+	targetTime,
+	maxHoldSec = NEAREST_FORWARD_FRAME_HOLD_SEC,
+}: {
+	frameTimestamp: number;
+	targetTime: number;
+	maxHoldSec?: number;
+}): boolean {
+	const delta = frameTimestamp - targetTime;
+	return delta >= 0 && delta <= maxHoldSec;
 }
 
 /** True when the decoded media timestamp actually covers the timeline sample. */
@@ -594,6 +615,21 @@ export class VideoCache {
 					return frame;
 				}
 
+				// Seek landed on the first decodable frame slightly after the target
+				// (GOP/keyframe). Prefer that over returning null → black flash.
+				if (
+					canUseNearestForwardFrame({
+						frameTimestamp: frame.timestamp,
+						targetTime,
+					})
+				) {
+					sinkData.currentFrameStartTime = Math.min(
+						targetTime,
+						frame.timestamp,
+					);
+					return frame;
+				}
+
 				if (frame.timestamp > targetTime + 1.0) break;
 			}
 		} catch (error) {
@@ -662,9 +698,20 @@ export class VideoCache {
 				return previousFrame;
 			}
 
-			// Intentionally no "smear first frame backward to t=0" fallback.
-			// That made isFrameValid keep returning the same first frame for later
-			// clock times, freezing the start of every segment while audio ran.
+			// Bounded forward hold only: never smear an arbitrary far-future keyframe
+			// back to t (that froze segment starts). A 1–2 frame post-seek gap is
+			// common at cuts and must not become a black export flash.
+			const nearestForward = sinkData.currentFrame;
+			if (
+				nearestForward &&
+				canUseNearestForwardFrame({
+					frameTimestamp: nearestForward.timestamp,
+					targetTime: time,
+				})
+			) {
+				sinkData.currentFrameStartTime = Math.min(time, nearestForward.timestamp);
+				return nearestForward;
+			}
 		} catch (error) {
 			console.warn("Failed to seek video:", error);
 		}

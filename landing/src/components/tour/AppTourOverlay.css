@@ -48,6 +48,12 @@
   padding: 1rem 1rem 0.85rem;
   pointer-events: auto;
   box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
+  transition: opacity 0.12s ease;
+}
+
+.app-tour__tooltip--pending {
+  opacity: 0;
+  pointer-events: none;
 }
 
 .app-tour__tooltip--centered {
@@ -108,13 +114,18 @@
   border: 1px solid transparent;
 }
 
+.app-tour__btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .app-tour__btn--ghost {
   background: transparent;
   border-color: #3f3f46;
   color: #a1a1aa;
 }
 
-.app-tour__btn--ghost:hover {
+.app-tour__btn--ghost:hover:not(:disabled) {
   color: #fafafa;
   border-color: #52525b;
 }
@@ -125,6 +136,6 @@
   border-color: #06b6d4;
 }
 
-.app-tour__btn--primary:hover {
+.app-tour__btn--primary:hover:not(:disabled) {
   background: #22d3ee;
 }

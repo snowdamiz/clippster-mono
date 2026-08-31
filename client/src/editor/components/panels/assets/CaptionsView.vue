@@ -2,6 +2,7 @@
 import { utf8ToBase64Url } from "@/utils/encoding";
 import { ref, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
+import { useCaptionGeneration } from "../../../composables/useCaptionGeneration";
 import { CAPTION_PRESETS, getPresetById } from "../../../constants/caption-constants";
 import type { CaptionPreset } from "../../../constants/caption-constants";
 import type { CaptionPresetId } from "../../../types/timeline";
@@ -12,11 +13,9 @@ import { Loader2, Captions } from "lucide-vue-next";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor } = useEditor({ subscribe: false });
+const { isProcessing, processingStep, error } = useCaptionGeneration();
 
 const selectedPresetId = ref<CaptionPresetId>("karaoke");
-const isProcessing = ref(false);
-const processingStep = ref("");
-const error = ref<string | null>(null);
 const searchQuery = ref("");
 
 const selectedPreset = computed(() => getPresetById(selectedPresetId.value));
@@ -197,11 +196,15 @@ function generateCaptionElements(words: CaptionWord[]) {
 		if (track.type === "caption") editor.timeline.removeTrack({ trackId: track.id });
 	}
 
+	// Keep every generated caption on a single track. Auto-placement would
+	// otherwise open extra caption lanes whenever word timings slightly overlap.
+	const captionTrackId = editor.timeline.addTrack({ type: "caption" });
+
 	for (const elem of allElements) {
 		const captionEl = buildCaptionElement({
 			lines: elem.lines,
 			startTime: elem.start,
-			duration: elem.end - elem.start,
+			duration: Math.max(0.05, elem.end - elem.start),
 			raw: {
 				presetId: preset.id,
 				highlightStyle: preset.highlightStyle,
@@ -221,13 +224,18 @@ function generateCaptionElements(words: CaptionWord[]) {
 				maxWordsPerLine: preset.maxWordsPerLine,
 			},
 		});
-		editor.timeline.insertElement({ element: captionEl, placement: { mode: "auto" } });
+		editor.timeline.insertElement({
+			element: captionEl,
+			placement: { mode: "explicit", trackId: captionTrackId },
+		});
 	}
 
 	error.value = null;
 }
 
 async function handleGenerateSubtitles() {
+	if (isProcessing.value) return;
+
 	try {
 		isProcessing.value = true;
 		error.value = null;
@@ -411,8 +419,8 @@ function handleRemoveCaptions() {
 				</button>
 			</div>
 
-			<!-- Generate section (fresh transcription) -->
-			<div v-if="!hasTranscriptWords && !hasCaptionTrack" class="p-3">
+			<!-- Generate section (fresh transcription) — keep visible while generating across tab switches -->
+			<div v-if="isProcessing || (!hasTranscriptWords && !hasCaptionTrack)" class="p-3">
 				<button
 					class="flex w-full items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
 					:disabled="isProcessing"
@@ -420,9 +428,9 @@ function handleRemoveCaptions() {
 				>
 					<Loader2 v-if="isProcessing" class="size-4 shrink-0 animate-spin" />
 					<Captions v-else class="size-4 shrink-0" />
-					<span class="truncate">{{ isProcessing ? processingStep : "Generate Subtitles" }}</span>
+					<span class="truncate">{{ isProcessing ? (processingStep || "Generating…") : "Generate Subtitles" }}</span>
 				</button>
-				<p class="mt-1.5 text-[10px] leading-relaxed text-zinc-500">
+				<p v-if="!isProcessing" class="mt-1.5 text-[10px] leading-relaxed text-zinc-500">
 					Transcribes speech from video and audio tracks.
 				</p>
 			</div>

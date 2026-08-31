@@ -32,6 +32,11 @@ export interface TourStep {
   route?: string;
   /** When true, injects mock streamer/project for this step */
   injectMock?: 'streamer' | 'project';
+  /**
+   * Optional arrow preset index (0–3). See ARROW_STYLES in arrow.ts.
+   * When omitted, the step ordinal rotates through the style library.
+   */
+  arrowStyle?: number;
   visible?: (ctx: TourContext) => boolean;
 }
 

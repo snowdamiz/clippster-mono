@@ -338,13 +338,17 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		if (
 			!frame &&
 			this.lastGoodFrame &&
-			canReuseLastDecodedFrame({
-				frameTimestamp: this.lastGoodFrame.timestamp,
-				frameDuration: this.lastGoodFrame.duration,
-				requestedTime: videoTime,
-				fps: renderer.fps,
-			})
+			(renderer.framePolicy === "exact-export" ||
+				canReuseLastDecodedFrame({
+					frameTimestamp: this.lastGoodFrame.timestamp,
+					frameDuration: this.lastGoodFrame.duration,
+					requestedTime: videoTime,
+					fps: renderer.fps,
+				}))
 		) {
+			// Export must never clear-to-black when a clip is in range: a single
+			// missed decode at a cut becomes a visible flash in the baked file.
+			// Preview keeps the tight reuse window so lag still looks like lag.
 			frame = this.lastGoodFrame;
 		}
 		if (frame) {

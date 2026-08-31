@@ -355,16 +355,6 @@ function onContextAction(action: string) {
 	invokeAction(action as any);
 }
 
-function formatSec(s: number): string {
-	const m = Math.floor(s / 60);
-	const sec = (s % 60).toFixed(2);
-	return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
-}
-
-const elementTooltip = computed(() => {
-	const el = props.element;
-	return `${el.name}\nDuration: ${formatSec(el.duration)}\nStart: ${formatSec(el.startTime)}`;
-});
 </script>
 
 <template>
@@ -379,7 +369,6 @@ const elementTooltip = computed(() => {
 			left: `${elementLeft}px`,
 			width: `${elementWidth}px`,
 		}"
-		:title="elementTooltip"
 	>
 		<!-- Element inner -->
 		<div

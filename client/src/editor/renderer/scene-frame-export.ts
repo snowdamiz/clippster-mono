@@ -133,6 +133,9 @@ export async function writeSceneFrameSequenceToDisk(
 			height,
 			fps,
 			framePolicy: "exact-export",
+			// Warm the next segment's decoder before each cut so the first exported
+			// frame of a cold clip is not a black clear while the sink seeks.
+			prewarmUpcoming: true,
 			preferOffscreen: true,
 			previewEffectProcessing: false,
 			backingWidth: width,

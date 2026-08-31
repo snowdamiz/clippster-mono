@@ -72,7 +72,14 @@
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import { useRouter } from 'vue-router';
-  import { buildHandDrawnArrowPath, getArrowStyle, arrowStartFromTooltip, arrowEndAtHotspot, type TourStep } from '@clippster/app-tour';
+  import {
+    buildHandDrawnArrowPath,
+    getArrowStyle,
+    resolveStepArrowStyleIndex,
+    arrowStartFromTooltip,
+    arrowEndAtHotspot,
+    type TourStep,
+  } from '@clippster/app-tour';
   import { useAppTour } from '@/composables/useAppTour';
 
   const router = useRouter();
@@ -198,14 +205,14 @@
       height: hot.height,
     };
 
-    const styleIndex = progress.value.current - 1;
+    const styleIndex = resolveStepArrowStyleIndex(presentedStep.value, progress.value.current - 1);
     const style = getArrowStyle(styleIndex);
     const tip = tooltipRef.value?.getBoundingClientRect();
     const tipBox = tip
       ? { left: tip.left, top: tip.top, width: tip.width, height: tip.height }
       : { left: pos.left, top: pos.top, width: 320, height: 180 };
     const from = arrowStartFromTooltip(tipBox, style.origin);
-    const to = arrowEndAtHotspot(hot);
+    const to = arrowEndAtHotspot(hot, style.targetAnchor);
     arrowPath.value = buildHandDrawnArrowPath(from, to, stepId, styleIndex);
   }
 
@@ -272,13 +279,14 @@
     const placement = step.placement || 'right';
     const tipW = 320;
     const tipH = 180;
-    const style = getArrowStyle(progress.value.current - 1);
-    // Sit the card lower so bottom-left → up swoops have room to climb
+    const styleIndex = resolveStepArrowStyleIndex(step, progress.value.current - 1);
+    const style = getArrowStyle(styleIndex);
+    // Sit the card so the chosen swoop has room; gapX drives longer brand paths
     let tipTop = rect.top + style.tooltipNudgeY;
-    let tipLeft = rect.left + rect.width + 120;
+    let tipLeft = rect.left + rect.width + style.tooltipGapX;
 
     if (placement === 'left') {
-      tipLeft = rect.left - tipW - 120;
+      tipLeft = rect.left - tipW - style.tooltipGapX;
       tipTop = rect.top + style.tooltipNudgeY;
     } else if (placement === 'bottom') {
       tipTop = rect.top + rect.height + 72;

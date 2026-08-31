@@ -17,10 +17,12 @@ import {
 	buildEmptyTrack,
 	canElementGoOnTrack,
 	getDefaultInsertIndexForTrack,
+	isMainTrack,
 	validateElementTrackCompatibility,
 } from "../../../../lib/timeline/track-utils";
 import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
 import { ripplePushOverlaps } from "../../../../lib/timeline/ripple";
+import { getMainTrackMagnet } from "../../../../composables/timeline/useTimelineTools";
 import type { MediaAsset } from "../../../../types/assets";
 import { TIMELINE_CONSTANTS } from "../../../../constants/timeline-constants";
 
@@ -114,8 +116,14 @@ export class InsertElementCommand extends Command {
 		}
 
 		const fps = editor.project.getActive()?.settings?.fps ?? 30;
-		const packedTracks = collapseMainVideoTracksIfPresent(updatedTracks, fps);
-		editor.timeline.updateTracks(packedTracks);
+		const targetTrack = updatedTracks.find((t) => t.id === targetTrackId);
+		const shouldCollapse =
+			!!targetTrack && isMainTrack(targetTrack) && getMainTrackMagnet();
+		editor.timeline.updateTracks(
+			shouldCollapse
+				? collapseMainVideoTracksIfPresent(updatedTracks, fps)
+				: updatedTracks,
+		);
 	}
 
 	undo(): void {
@@ -246,6 +254,11 @@ export class InsertElementCommand extends Command {
 		}
 
 		const elementEndTime = element.startTime + element.duration;
+
+		// Captions always share one lane. Overlaps are resolved by ripple-push
+		// instead of opening a second caption track.
+		const preferSingleTrack = element.type === "caption";
+
 		const existingTrack = tracks.find((track) => {
 			if (
 				!canElementGoOnTrack({
@@ -255,6 +268,8 @@ export class InsertElementCommand extends Command {
 			) {
 				return false;
 			}
+
+			if (preferSingleTrack) return true;
 
 			return !wouldElementOverlap({
 				elements: track.elements,

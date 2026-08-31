@@ -1,5 +1,10 @@
 import type { TourDefinition, TourStep } from './types';
 
+/**
+ * Desktop sidebar tour.
+ * `arrowStyle` maps to ARROW_STYLES so consecutive steps vary:
+ * 0 bottom-middle, 1 top-right, 2 center-right, 3 top-middle.
+ */
 export const desktopSidebarSteps: TourStep[] = [
   {
     id: 'welcome',
@@ -15,6 +20,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Browse',
     placement: 'right',
     route: '/creators',
+    arrowStyle: 0, // bottom-left → bottom-middle
   },
   {
     id: 'live-clip',
@@ -24,6 +30,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Browse',
     placement: 'right',
     route: '/live-clip',
+    arrowStyle: 1, // top-left → top-right
     visible: (ctx) => ctx.isLiveClipEnabled !== false,
   },
   {
@@ -34,6 +41,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Browse',
     placement: 'right',
     route: '/vods',
+    arrowStyle: 2, // mid-left → center-right
   },
   {
     id: 'download-audio',
@@ -43,6 +51,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Browse',
     placement: 'right',
     route: '/download-audio',
+    arrowStyle: 3, // bottom-left → top-middle
   },
   {
     id: 'messages',
@@ -52,6 +61,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Browse',
     placement: 'right',
     route: '/messages',
+    arrowStyle: 0,
   },
   {
     id: 'projects',
@@ -61,6 +71,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Library',
     placement: 'right',
     route: '/projects',
+    arrowStyle: 1,
   },
   {
     id: 'audio-library',
@@ -70,6 +81,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Library',
     placement: 'right',
     route: '/audio-library',
+    arrowStyle: 2,
   },
   {
     id: 'image-library',
@@ -79,6 +91,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Library',
     placement: 'right',
     route: '/image-library',
+    arrowStyle: 3,
   },
   {
     id: 'clips',
@@ -88,6 +101,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Library',
     placement: 'right',
     route: '/clips',
+    arrowStyle: 0,
   },
   {
     id: 'video-editor',
@@ -97,6 +111,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Design Studio',
     placement: 'right',
     route: '/video-editor',
+    arrowStyle: 1,
   },
   {
     id: 'design-studio',
@@ -106,6 +121,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Design Studio',
     placement: 'right',
     route: '/design-studio',
+    arrowStyle: 2,
   },
   {
     id: 'studio-record',
@@ -115,6 +131,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Studio',
     placement: 'right',
     route: '/studio/record',
+    arrowStyle: 3,
   },
   {
     id: 'prompts',
@@ -124,6 +141,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Manage',
     placement: 'right',
     route: '/prompts',
+    arrowStyle: 0,
     visible: (ctx) => !ctx.isRestricted,
   },
   {
@@ -134,6 +152,7 @@ export const desktopSidebarSteps: TourStep[] = [
     group: 'Manage',
     placement: 'right',
     route: '/calendar',
+    arrowStyle: 1,
     visible: (ctx) => !ctx.isRestricted,
   },
   {
@@ -142,6 +161,7 @@ export const desktopSidebarSteps: TourStep[] = [
     title: 'Your Profile',
     body: 'Account settings, clipper profile, admin access, bug reports, and sign out.',
     placement: 'right',
+    arrowStyle: 2,
   },
   {
     id: 'done',
@@ -379,6 +399,7 @@ export const landingOrgSteps: TourStep[] = [
     body: 'Your org home. See member count, creator profiles, assets, credits, and unread messages — with shortcuts to every section.',
     group: 'Team',
     placement: 'right',
+    arrowStyle: 0,
   },
   {
     id: 'members',
@@ -387,6 +408,7 @@ export const landingOrgSteps: TourStep[] = [
     body: 'Invite team members (seat-limited by plan), manage roles, set credit allocations, and handle pending invitations.',
     group: 'Team',
     placement: 'right',
+    arrowStyle: 1,
   },
   {
     id: 'creators',
@@ -395,6 +417,7 @@ export const landingOrgSteps: TourStep[] = [
     body: 'Creator profile library — streamer and global branding profiles with platform links, intro/outro/watermark, and member assignments.',
     group: 'Team',
     placement: 'right',
+    arrowStyle: 2,
   },
   {
     id: 'messages',
@@ -403,6 +426,7 @@ export const landingOrgSteps: TourStep[] = [
     body: 'In-org messaging: direct messages, group chats, and org announcements. Real-time via WebSocket.',
     group: 'Team',
     placement: 'right',
+    arrowStyle: 3,
   },
   {
     id: 'clippers',
@@ -411,6 +435,7 @@ export const landingOrgSteps: TourStep[] = [
     body: 'Browse the clipper talent directory or view the leaderboard. Filter by skills, invite clippers to campaigns, or message them.',
     group: 'Content',
     placement: 'right',
+    arrowStyle: 0,
   },
   {
     id: 'shared',
@@ -419,6 +444,7 @@ export const landingOrgSteps: TourStep[] = [
     body: 'Clip distribution hub. Admins share clips with members; everyone can preview and download. Tracks views, downloads, and posts.',
     group: 'Content',
     placement: 'right',
+    arrowStyle: 1,
   },
   {
     id: 'social',
@@ -427,6 +453,7 @@ export const landingOrgSteps: TourStep[] = [
     body: 'Connect Instagram, TikTok, YouTube Shorts, and X for org publishing. Assign which members can post through each account.',
     group: 'Content',
     placement: 'right',
+    arrowStyle: 2,
   },
   {
     id: 'posts',
@@ -435,6 +462,7 @@ export const landingOrgSteps: TourStep[] = [
     body: 'Post analytics across the org — views, likes, comments, and reach for scheduled posts, external posts, and campaign submissions.',
     group: 'Content',
     placement: 'right',
+    arrowStyle: 3,
   },
   {
     id: 'assets',
@@ -443,6 +471,7 @@ export const landingOrgSteps: TourStep[] = [
     body: 'Org media library: intros, outros, watermarks, audio, and images for clipping workflows. Upload and preview assets.',
     group: 'Management',
     placement: 'right',
+    arrowStyle: 0,
   },
   {
     id: 'billing',
@@ -451,6 +480,7 @@ export const landingOrgSteps: TourStep[] = [
     body: 'Org credit pool, member allocations, payment history, and subscription management. Admins can buy credits and change plans.',
     group: 'Management',
     placement: 'right',
+    arrowStyle: 1,
   },
   {
     id: 'settings',
@@ -459,6 +489,7 @@ export const landingOrgSteps: TourStep[] = [
     body: 'Org profile, logo, bio, contact links, AI toggles, default restrictions for members, and org deletion (owner only).',
     group: 'Management',
     placement: 'right',
+    arrowStyle: 2,
   },
   {
     id: 'done',

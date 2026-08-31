@@ -269,6 +269,7 @@
       headerRef: timelineHeaderRef,
       scrollRef: tracksScrollRef,
       zoomLevel,
+      tracksVerticalOffset,
     });
 
   const {
@@ -303,15 +304,10 @@
   };
 
   const activeNewTrackDrop = computed(() => {
-    // Only show the insert gap at the main track boundary or below — not between overlay tracks at the top
-    const mainIdx = tracks.value.findIndex(t => 'isMain' in t && t.isMain);
-    function isValidInsertIndex(idx: number) {
-      return idx > 0 && (mainIdx < 0 || idx >= mainIdx);
-    }
-    if (isDragOver.value && dropTarget.value?.isNewTrack && isValidInsertIndex(dropTarget.value.trackIndex)) {
+    if (isDragOver.value && dropTarget.value?.isNewTrack) {
       return { index: dropTarget.value.trackIndex, elementType: dragElementType.value };
     }
-    if (dragState.value.isDragging && dragDropTarget.value?.isNewTrack && isValidInsertIndex(dragDropTarget.value.trackIndex)) {
+    if (dragState.value.isDragging && dragDropTarget.value?.isNewTrack) {
       return { index: dragDropTarget.value.trackIndex, elementType: dragElementTypeForReorder.value };
     }
     return null;
@@ -466,8 +462,6 @@
     trackLabelsScrollRef,
   });
 
-  const timelineHeaderHeight = computed(() => timelineHeaderRef.value?.getBoundingClientRect().height ?? 0);
-
   const tracksAreaHeight = computed(() => {
     const base = Math.max(tracksContainerHeight.min, totalTracksHeight.value);
     if (activeNewTrackDrop.value) return base + INSERT_GAP_SIZE;
@@ -478,8 +472,6 @@
     // Full scrollable track stack (not viewport) so the line reaches every track.
     return Math.max(0, tracksAreaHeight.value + tracksVerticalOffset.value + 24);
   });
-
-  const scrollTop = computed(() => tracksScrollRef.value?.scrollTop ?? 0);
 
   let tracksResizeObserver: ResizeObserver | null = null;
 
@@ -866,31 +858,6 @@
             :is-active="selectionBox?.isActive || false"
           />
 
-          <DragLine
-            :drop-target="dropTarget"
-            :tracks="tracks"
-            :is-visible="isDragOver"
-            :header-height="timelineHeaderHeight + tracksVerticalOffset"
-            :drag-element-type="dragElementType"
-            :zoom-level="zoomLevel"
-            :scroll-left="scrollLeft"
-            :scroll-top="scrollTop"
-            :insert-gap-index="activeNewTrackDrop?.index ?? null"
-            :insert-gap-size="INSERT_GAP_SIZE"
-          />
-          <DragLine
-            :drop-target="dragDropTarget"
-            :tracks="tracks"
-            :is-visible="dragState.isDragging"
-            :header-height="timelineHeaderHeight + tracksVerticalOffset"
-            :drag-element-type="dragElementTypeForReorder"
-            :zoom-level="zoomLevel"
-            :scroll-left="scrollLeft"
-            :scroll-top="scrollTop"
-            :insert-gap-index="activeNewTrackDrop?.index ?? null"
-            :insert-gap-size="INSERT_GAP_SIZE"
-          />
-
           <div
             ref="tracksScrollRef"
             class="absolute inset-0 overflow-x-auto overflow-y-auto hide-native-scrollbar"
@@ -928,7 +895,7 @@
                 @playhead-mouse-down="handlePlayheadRulerMouseDown"
               />
 
-              <!-- Tracks area -->
+              <!-- Tracks area — DragLine lives here so Y matches track rows (same padding/scroll) -->
               <div
                 class="relative"
                 :style="{
@@ -936,6 +903,26 @@
                   paddingTop: `${tracksVerticalOffset}px`,
                 }"
               >
+                <DragLine
+                  :drop-target="dropTarget"
+                  :tracks="tracks"
+                  :is-visible="isDragOver"
+                  :header-height="tracksVerticalOffset"
+                  :drag-element-type="dragElementType"
+                  :zoom-level="zoomLevel"
+                  :insert-gap-index="activeNewTrackDrop?.index ?? null"
+                  :insert-gap-size="INSERT_GAP_SIZE"
+                />
+                <DragLine
+                  :drop-target="dragDropTarget"
+                  :tracks="tracks"
+                  :is-visible="dragState.isDragging"
+                  :header-height="tracksVerticalOffset"
+                  :drag-element-type="dragElementTypeForReorder"
+                  :zoom-level="zoomLevel"
+                  :insert-gap-index="activeNewTrackDrop?.index ?? null"
+                  :insert-gap-size="INSERT_GAP_SIZE"
+                />
                 <div v-if="tracks.length === 0" />
                 <!-- New-track insert indicator line -->
                 <div
@@ -950,7 +937,8 @@
                 <div
                   v-for="(track, index) in tracks"
                   :key="track.id"
-                  class="timeline-track-row absolute right-0 left-0 overflow-hidden"
+                  class="timeline-track-row absolute right-0 left-0"
+                  :class="{ 'overflow-hidden': !dragState.isDragging && !isDragOver }"
                   :style="{
                     top: `${getTrackTopWithInsertGap(index)}px`,
                     height: `${getTrackHeight({ type: track.type })}px`,

@@ -13,10 +13,9 @@ export type CanvasRendererParams = {
 	willReadFrequently?: boolean;
 	framePolicy?: FrameRenderPolicy;
 	/**
-	 * Interactive preview renderers set this so paused/exact renders still warm
-	 * decoders for upcoming segment cuts (pressing play right before a cut must
-	 * not stall on a cold decoder). One-off renderers (thumbnails, covers,
-	 * export) leave it off.
+	 * Interactive preview and scene-frame export set this so exact renders still
+	 * warm decoders for upcoming segment cuts (play-before-cut and export cuts
+	 * must not start cold). Thumbnails/covers leave it off.
 	 */
 	prewarmUpcoming?: boolean;
 	/**

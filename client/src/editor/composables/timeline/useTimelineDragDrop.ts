@@ -22,18 +22,23 @@ import {
 } from "../../lib/timeline/element-utils";
 import { computeDropTarget, findCompatibleTrack } from "../../lib/timeline/drop-utils";
 import { isMainTrack } from "../../lib/timeline/track-utils";
-import { getMainTrackMagnet } from "./useTimelineTools";
+import { getAutoSnapping, getMainTrackMagnet } from "./useTimelineTools";
 import type { TrackType, DropTarget, ElementType } from "../../types/timeline";
 import type { TimelineDragData, MediaDragData, TextDragData, StickerDragData, EffectDragData, TransitionDragData } from "../../types/drag";
 import { generateUUID } from "../../utils/id";
 import { SetTransitionCommand } from "../../lib/commands/scene";
 import { isAdjacentMediaCuts } from "../../lib/timeline/transition-pairing";
 
+/** Snap threshold in screen pixels — match timeline element snapping. */
+const DROP_SNAP_THRESHOLD_PX = 10;
+
 interface UseTimelineDragDropProps {
 	containerRef: Ref<HTMLDivElement | null>;
 	headerRef?: Ref<HTMLElement | null>;
 	scrollRef?: Ref<HTMLDivElement | null>;
 	zoomLevel: Ref<number>;
+	/** Same padding used by track rows — required for correct Y hit-testing. */
+	tracksVerticalOffset?: Ref<number>;
 }
 
 export function useTimelineDragDrop({
@@ -41,6 +46,7 @@ export function useTimelineDragDrop({
 	headerRef,
 	scrollRef,
 	zoomLevel,
+	tracksVerticalOffset,
 }: UseTimelineDragDropProps) {
 	const editor = EditorCore.getInstance();
 	const isDragOver = ref(false);
@@ -72,6 +78,19 @@ export function useTimelineDragDrop({
 		return snapTimeToFrame({ time, fps: projectFps });
 	}
 
+	/** Snap drop start to playhead when the cursor is near it (start-align only). */
+	function snapDropStartToPlayhead(startTime: number): number {
+		if (!getAutoSnapping()) return startTime;
+		const playhead = getCurrentTime();
+		const thresholdSec =
+			DROP_SNAP_THRESHOLD_PX /
+			(TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value);
+		if (Math.abs(startTime - playhead) <= thresholdSec) {
+			return playhead;
+		}
+		return startTime;
+	}
+
 	function getElementTypeFromData(data: TimelineDragData): ElementType | "transition" | null {
 		if (data.type === "text") return "text";
 		if (data.type === "sticker") return "sticker";
@@ -92,15 +111,30 @@ export function useTimelineDragDrop({
 		return TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
 	}
 
+	function getTimelineMousePosition(clientX: number, clientY: number): { mouseX: number; mouseY: number } | null {
+		const scrollContainer = scrollRef?.value ?? containerRef.value;
+		if (!scrollContainer) return null;
+
+		const scrollRect = scrollContainer.getBoundingClientRect();
+		const headerHeight = headerRef?.value?.getBoundingClientRect().height ?? 0;
+		const vPad = tracksVerticalOffset?.value ?? 0;
+		const scrollLeft = scrollContainer.scrollLeft;
+		const scrollTop = scrollContainer.scrollTop;
+
+		return {
+			mouseX: clientX - scrollRect.left + scrollLeft,
+			mouseY: clientY - scrollRect.top + scrollTop - headerHeight - vPad,
+		};
+	}
+
 	// ── Pointer-based drag callbacks (registered as drop zone) ──
 
 	function onDragOver(cursor: { x: number; y: number }, data: TimelineDragData) {
 		isDragOver.value = true;
 
-		const rect = containerRef.value?.getBoundingClientRect();
-		if (!rect) return;
+		const pos = getTimelineMousePosition(cursor.x, cursor.y);
+		if (!pos) return;
 
-		const headerHeight = headerRef?.value?.getBoundingClientRect().height ?? 0;
 		const elType = getElementTypeFromData(data);
 		if (!elType) return;
 
@@ -108,9 +142,7 @@ export function useTimelineDragDrop({
 		if (elType === "transition") {
 			if (data.type !== "transition") return;
 			dragElementType.value = null;
-			const sl = scrollRef?.value?.scrollLeft ?? 0;
-			const mouseX = cursor.x - rect.left + sl;
-			const timeAtCursor = Math.max(0, mouseX / (TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value));
+			const timeAtCursor = Math.max(0, pos.mouseX / (TIMELINE_CONSTANTS.PIXELS_PER_SECOND * zoomLevel.value));
 			const junction = findNearestJunction(timeAtCursor);
 			if (junction) {
 				transitionDropPreview.value = {
@@ -144,14 +176,10 @@ export function useTimelineDragDrop({
 			data.type === "media" ? data.id : undefined,
 		);
 
-		const sl = scrollRef?.value?.scrollLeft ?? 0;
-		const mouseX = cursor.x - rect.left + sl;
-		const mouseY = Math.max(0, cursor.y - rect.top - headerHeight);
-
 		const target = computeDropTarget({
 			elementType: elType,
-			mouseX,
-			mouseY,
+			mouseX: pos.mouseX,
+			mouseY: pos.mouseY,
 			tracks: tracks.value,
 			playheadTime: getCurrentTime(),
 			isExternalDrop: false,
@@ -160,7 +188,7 @@ export function useTimelineDragDrop({
 			zoomLevel: zoomLevel.value,
 		});
 
-		target.xPosition = getSnappedTime(target.xPosition);
+		target.xPosition = getSnappedTime(snapDropStartToPlayhead(target.xPosition));
 		dropTarget.value = target;
 	}
 
@@ -557,14 +585,11 @@ export function useTimelineDragDrop({
 		const hasFiles = (e.dataTransfer.files?.length ?? 0) > 0;
 		if (!hasFiles) return;
 
-		const rect = containerRef.value?.getBoundingClientRect();
-		if (!rect) return;
-		const headerHeight = headerRef?.value?.getBoundingClientRect().height ?? 0;
-		const mouseX = e.clientX - rect.left;
-		const mouseY = Math.max(0, e.clientY - rect.top - headerHeight);
+		const pos = getTimelineMousePosition(e.clientX, e.clientY);
+		if (!pos) return;
 
 		try {
-			await executeFileDrop(Array.from(e.dataTransfer.files), mouseX, mouseY);
+			await executeFileDrop(Array.from(e.dataTransfer.files), pos.mouseX, pos.mouseY);
 		} catch (err) {
 			console.error("[TimelineDragDrop] Failed to process file drop:", err);
 		}

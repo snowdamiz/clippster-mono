@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	VideoCache,
 	canHoldExhaustedFrame,
+	canUseNearestForwardFrame,
 	shouldDecodeSequentially,
 	type StablePreviewFrame,
 } from "./service";
@@ -32,6 +33,25 @@ describe("video cache catch-up policy", () => {
 			frameTimestamp: 10,
 			frameDuration: 1 / 30,
 			targetTime: 10.1,
+		})).toBe(false);
+	});
+
+	it("allows a nearby post-seek frame but not a far keyframe smear", () => {
+		expect(canUseNearestForwardFrame({
+			frameTimestamp: 10 + 1 / 30,
+			targetTime: 10,
+		})).toBe(true);
+		expect(canUseNearestForwardFrame({
+			frameTimestamp: 10 + 2 / 30,
+			targetTime: 10,
+		})).toBe(true);
+		expect(canUseNearestForwardFrame({
+			frameTimestamp: 10.1,
+			targetTime: 10,
+		})).toBe(false);
+		expect(canUseNearestForwardFrame({
+			frameTimestamp: 9.99,
+			targetTime: 10,
 		})).toBe(false);
 	});
 });

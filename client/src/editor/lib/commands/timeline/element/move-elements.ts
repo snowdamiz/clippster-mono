@@ -12,6 +12,7 @@ import {
 } from "../../../../lib/timeline/track-utils";
 import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
 import { closeGapAfterRemove, rearrangeOnTrack, ripplePushOverlaps } from "../../../../lib/timeline/ripple";
+import { getMainTrackMagnet } from "../../../../composables/timeline/useTimelineTools";
 
 export class MoveElementCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
@@ -71,6 +72,8 @@ export class MoveElementCommand extends Command {
 		const oldStartTime = element.startTime;
 		const oldDuration = element.duration;
 		const isSameTrack = this.sourceTrackId === this.targetTrackId;
+		const magnet = getMainTrackMagnet();
+		const closeSourceGaps = isMainTrack(sourceTrack) && magnet;
 
 		let updatedTracks = tracksToUpdate.map((track) => {
 			if (isSameTrack && track.id === this.sourceTrackId) {
@@ -80,6 +83,7 @@ export class MoveElementCommand extends Command {
 					oldStartTime,
 					oldDuration,
 					this.newStartTime,
+					{ closeGaps: closeSourceGaps },
 				);
 				return { ...track, elements };
 			}
@@ -88,8 +92,10 @@ export class MoveElementCommand extends Command {
 				const without = (track.elements as TimelineElement[]).filter(
 					(el) => el.id !== this.elementId,
 				);
-				const closed = closeGapAfterRemove(without, oldStartTime, oldDuration);
-				return { ...track, elements: closed };
+				const next = closeSourceGaps
+					? closeGapAfterRemove(without, oldStartTime, oldDuration)
+					: without;
+				return { ...track, elements: next };
 			}
 
 			if (track.id === this.targetTrackId) {
@@ -123,7 +129,12 @@ export class MoveElementCommand extends Command {
 		}
 
 		const fps = editor.project.getActive()?.settings?.fps ?? 30;
-		editor.timeline.updateTracks(collapseMainVideoTracksIfPresent(updatedTracks, fps));
+		const touchedMain = isMainTrack(sourceTrack) || isMainTrack(targetTrack);
+		editor.timeline.updateTracks(
+			touchedMain && magnet
+				? collapseMainVideoTracksIfPresent(updatedTracks, fps)
+				: updatedTracks,
+		);
 	}
 
 	undo(): void {
