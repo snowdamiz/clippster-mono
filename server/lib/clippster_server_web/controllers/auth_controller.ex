@@ -903,6 +903,7 @@ defmodule ClippsterServerWeb.AuthController do
         is_admin: user.is_admin,
         is_moderator: user.is_moderator,
         ai_editor_enabled: user.ai_editor_enabled,
+        circles_enabled: user.circles_enabled,
         campaigns_enabled: user.campaigns_enabled,
         account_type: user.account_type,
         owned_organization_id: user.owned_organization_id,
@@ -928,7 +929,9 @@ defmodule ClippsterServerWeb.AuthController do
           notify_projects: user.notify_projects,
           notify_social: user.notify_social,
           notify_organization: user.notify_organization,
-          notify_system: user.notify_system
+          notify_system: user.notify_system,
+          completed_tours: user.completed_tours || %{},
+          tour_version_seen: user.tour_version_seen
         }
       }
     })

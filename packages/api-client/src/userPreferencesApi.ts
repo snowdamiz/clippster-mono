@@ -14,6 +14,8 @@ export interface UserPreferences {
   notify_social?: boolean;
   notify_organization?: boolean;
   notify_system?: boolean;
+  completed_tours?: Record<string, string>;
+  tour_version_seen?: string | null;
 }
 
 export interface UserPreferencesResponse {

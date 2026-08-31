@@ -16,6 +16,8 @@ export interface UserPreferences {
   notify_social: boolean;
   notify_organization: boolean;
   notify_system: boolean;
+  completed_tours: Record<string, string>;
+  tour_version_seen: string | null;
 }
 
 export const DEFAULT_PREFERENCES: UserPreferences = {
@@ -32,7 +34,23 @@ export const DEFAULT_PREFERENCES: UserPreferences = {
   notify_social: true,
   notify_organization: true,
   notify_system: true,
+  completed_tours: {},
+  tour_version_seen: null,
 };
+
+function parseCompletedTours(raw: unknown): Record<string, string> {
+  if (!raw) return {};
+  if (typeof raw === 'object' && !Array.isArray(raw)) return raw as Record<string, string>;
+  if (typeof raw === 'string') {
+    try {
+      const parsed = JSON.parse(raw);
+      return typeof parsed === 'object' && parsed && !Array.isArray(parsed) ? parsed : {};
+    } catch {
+      return {};
+    }
+  }
+  return {};
+}
 
 /**
  * Ensures the user_preferences table exists.
@@ -56,9 +74,23 @@ export async function ensureUserPreferencesTable(): Promise<void> {
       notify_social INTEGER NOT NULL DEFAULT 1,
       notify_organization INTEGER NOT NULL DEFAULT 1,
       notify_system INTEGER NOT NULL DEFAULT 1,
+      completed_tours TEXT NOT NULL DEFAULT '{}',
+      tour_version_seen TEXT,
       updated_at TEXT NOT NULL DEFAULT (datetime('now'))
     )
   `);
+
+  // Migrate older local caches that predate tour columns
+  try {
+    await db.execute(`ALTER TABLE ${TABLE_NAME} ADD COLUMN completed_tours TEXT NOT NULL DEFAULT '{}'`);
+  } catch {
+    /* column exists */
+  }
+  try {
+    await db.execute(`ALTER TABLE ${TABLE_NAME} ADD COLUMN tour_version_seen TEXT`);
+  } catch {
+    /* column exists */
+  }
 }
 
 /**
@@ -69,13 +101,10 @@ export async function getLocalPreferences(userId: string): Promise<UserPreferenc
   const db = await getDatabase();
   await ensureUserPreferencesTable();
 
-  const results = await db.select<any[]>(
-    `SELECT * FROM ${TABLE_NAME} WHERE user_id = ?`,
-    [userId]
-  );
+  const results = await db.select<any[]>(`SELECT * FROM ${TABLE_NAME} WHERE user_id = ?`, [userId]);
 
   if (results.length === 0) {
-    return { ...DEFAULT_PREFERENCES };
+    return { ...DEFAULT_PREFERENCES, completed_tours: {} };
   }
 
   const row = results[0];
@@ -93,6 +122,8 @@ export async function getLocalPreferences(userId: string): Promise<UserPreferenc
     notify_social: Boolean(row.notify_social),
     notify_organization: Boolean(row.notify_organization),
     notify_system: Boolean(row.notify_system),
+    completed_tours: parseCompletedTours(row.completed_tours),
+    tour_version_seen: row.tour_version_seen ?? null,
   };
 }
 
@@ -105,7 +136,12 @@ export async function saveLocalPreferences(userId: string, prefs: Partial<UserPr
   await ensureUserPreferencesTable();
 
   const current = await getLocalPreferences(userId);
-  const merged = { ...current, ...prefs };
+  const merged = {
+    ...current,
+    ...prefs,
+    // Replace entirely when provided so Restart tour can delete keys
+    completed_tours: prefs.completed_tours !== undefined ? prefs.completed_tours : current.completed_tours,
+  };
 
   await db.execute(
     `INSERT INTO ${TABLE_NAME} (
@@ -113,8 +149,9 @@ export async function saveLocalPreferences(userId: string, prefs: Partial<UserPr
       toast_sound_enabled, toast_background_enabled,
       notify_livestream, notify_clips, notify_downloads,
       notify_projects, notify_social, notify_organization, notify_system,
+      completed_tours, tour_version_seen,
       updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now'))
     ON CONFLICT(user_id) DO UPDATE SET
       time_format_preference = excluded.time_format_preference,
       toast_enabled = excluded.toast_enabled,
@@ -129,6 +166,8 @@ export async function saveLocalPreferences(userId: string, prefs: Partial<UserPr
       notify_social = excluded.notify_social,
       notify_organization = excluded.notify_organization,
       notify_system = excluded.notify_system,
+      completed_tours = excluded.completed_tours,
+      tour_version_seen = excluded.tour_version_seen,
       updated_at = datetime('now')`,
     [
       userId,
@@ -145,6 +184,8 @@ export async function saveLocalPreferences(userId: string, prefs: Partial<UserPr
       merged.notify_social ? 1 : 0,
       merged.notify_organization ? 1 : 0,
       merged.notify_system ? 1 : 0,
+      JSON.stringify(merged.completed_tours || {}),
+      merged.tour_version_seen,
     ]
   );
 }

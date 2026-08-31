@@ -23,10 +23,12 @@ import {
   Pencil,
   Shield,
   Users,
-  Megaphone
+  Megaphone,
+  RefreshCw
 } from 'lucide-react'
 import type { OrganizationRestrictionDefaults } from '@/types/organization'
 import { SPECIALTY_TAGS } from '@/services/clipperApi'
+import { useAppTour } from '@/hooks/useAppTour'
 
 interface EditData {
   name: string
@@ -61,6 +63,8 @@ export function OrgSettings() {
   const { loading, organization, isOwner, loadOrganization, updateOrganization, uploadLogo, deleteOrganization } =
     useOrganization()
   const navigate = useNavigate()
+  const { restartTour } = useAppTour()
+  const [restartingTour, setRestartingTour] = useState(false)
 
   const logoInputRef = useRef<HTMLInputElement>(null)
   const [uploadingLogo, setUploadingLogo] = useState(false)
@@ -386,6 +390,39 @@ export function OrgSettings() {
                         Edit Profile
                       </button>
                     </div>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {/* Basic Tab continued — Help */}
+            {activeTab === 'basic' && (
+              <section className="flex flex-col gap-3.5">
+                <h3 className="text-lg font-semibold text-foreground tracking-tight m-0">Help</h3>
+                <div className="bg-card border border-border/60 rounded-xl overflow-hidden">
+                  <div className="flex items-center justify-between gap-4 p-5 flex-wrap">
+                    <div className="min-w-0">
+                      <div className="text-[0.9375rem] font-semibold text-foreground">Organization sidebar tour</div>
+                      <p className="text-xs text-muted-foreground m-0 mt-1">
+                        Restart the guided walkthrough of Hub, Members, Creators, and more.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      disabled={restartingTour}
+                      onClick={async () => {
+                        setRestartingTour(true)
+                        try {
+                          await restartTour('landing_org')
+                        } finally {
+                          setRestartingTour(false)
+                        }
+                      }}
+                      className="inline-flex items-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-semibold border border-border bg-transparent text-foreground cursor-pointer hover:border-cyan-500/50 hover:text-cyan-400 transition-colors disabled:opacity-50"
+                    >
+                      <RefreshCw className={`w-3.5 h-3.5 ${restartingTour ? 'animate-spin' : ''}`} />
+                      Restart tour
+                    </button>
                   </div>
                 </div>
               </section>

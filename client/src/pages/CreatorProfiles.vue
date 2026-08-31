@@ -12,6 +12,7 @@
             <button
               class="creators-tab"
               :class="{ 'creators-tab--active': activeTab === 'streamer' }"
+              data-tour-id="tour-streamer-tab"
               @click="activeTab = 'streamer'"
             >
               <Users :size="14" />
@@ -34,14 +35,18 @@
             <Cloud :size="14" class="creators-add-btn__icon" />
             {{ syncingPersonal ? 'Syncing…' : 'Sync personal to cloud' }}
           </Button>
-          <Button size="sm" class="creators-add-btn" @click="openCreateDialog">
+          <Button size="sm" class="creators-add-btn" data-tour-id="tour-add-creator" @click="openCreateDialog">
             <Plus class="creators-add-btn__icon" />
             {{ activeTab === 'global' ? 'Add Global Profile' : 'Add Creator' }}
           </Button>
         </div>
       </template>
 
-      <div class="creators__wrapper" :class="{ 'creators__wrapper--empty': !loading && creators.length === 0 }">
+      <div
+        class="creators__wrapper"
+        data-tour-id="tour-creators-list"
+        :class="{ 'creators__wrapper--empty': !loading && creators.length === 0 }"
+      >
         <!-- Not Authenticated -->
         <div v-if="!authStore.isAuthenticated && creators.length === 0" class="creators__empty">
           <div class="creators__empty-icon-wrapper">
@@ -1082,6 +1087,7 @@
   import { useToast } from '@/composables/useToast';
   import { syncPersonalBranding } from '@/services/personalBrandingSync';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
+  import { useAppTour } from '@/composables/useAppTour';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import { useCreatorPageLiveMonitoring } from '@/composables/useCreatorPageLiveMonitoring';
   import { checkKickLivestream } from '@/services/kick';
@@ -1301,6 +1307,7 @@
 
   const router = useRouter();
   const authStore = useAuthStore();
+  const { maybeStartPageTour } = useAppTour();
   const { success, error: showError } = useToast();
   const { showGate, requireSubscription } = useSubscriptionGate();
   const { activeSessions, monitoredStreamers, stopMonitoring, hasDvrRecording } =
@@ -1435,6 +1442,7 @@
     liveStatusInterval.value = window.setInterval(() => {
       checkAllLiveStatuses(false); // Skip Kick on interval to save API requests
     }, 60_000);
+    maybeStartPageTour('page_creators');
   });
 
   onUnmounted(() => {

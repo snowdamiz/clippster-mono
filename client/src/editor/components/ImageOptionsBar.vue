@@ -1,8 +1,10 @@
 <script setup lang="ts">
 import { computed } from "vue";
-import { IMAGE_TOOL_RAIL, useImageEditorTools } from "../composables/useImageEditorTools";
+import { IMAGE_TOOL_BY_ID } from "../constants/image-tool-flyouts";
+import { useImageEditorTools } from "../composables/useImageEditorTools";
+import { useImageBackgroundEraser } from "../composables/useImageBackgroundEraser";
 import { useEditorUIState } from "../composables/useEditorUIState";
-import { ArrowLeftRight, Circle, Square } from "lucide-vue-next";
+import { ArrowLeftRight } from "lucide-vue-next";
 
 const {
 	activeTool,
@@ -14,13 +16,21 @@ const {
 	wandContiguous,
 	fillColor,
 	strokeColor,
-	shapeKind,
-	marqueeKind,
 } = useImageEditorTools();
+const { bgEraserSampling, bgEraserLimits, bgEraserTolerance } = useImageBackgroundEraser();
 const { isCropMode } = useEditorUIState();
 
-const toolMeta = computed(
-	() => IMAGE_TOOL_RAIL.find((t) => t.id === activeTool.value) ?? IMAGE_TOOL_RAIL[0],
+const toolMeta = computed(() => IMAGE_TOOL_BY_ID[activeTool.value]);
+
+const showBrushControls = computed(
+	() =>
+		activeTool.value === "brush" ||
+		activeTool.value === "pencil" ||
+		activeTool.value === "eraser" ||
+		activeTool.value === "background-eraser" ||
+		activeTool.value === "clone" ||
+		activeTool.value === "heal" ||
+		activeTool.value === "spot-heal",
 );
 
 function swapColors() {
@@ -28,21 +38,15 @@ function swapColors() {
 	strokeColor.value = fillColor.value;
 	fillColor.value = nextFill;
 }
-
-const showBrushControls = computed(
-	() =>
-		activeTool.value === "brush" ||
-		activeTool.value === "eraser" ||
-		activeTool.value === "clone" ||
-		activeTool.value === "heal",
-);
 </script>
 
 <template>
 	<div class="flex h-8 shrink-0 items-center gap-3 border-b border-white/[0.06] bg-[#1a1a1d] px-3">
-		<div class="flex min-w-[88px] items-center gap-2">
-			<span class="text-[11px] font-medium text-zinc-200">{{ toolMeta.label }}</span>
-			<span class="text-[10px] text-zinc-600">{{ toolMeta.shortcut }}</span>
+		<div class="flex min-w-[120px] items-center gap-2">
+			<span class="truncate text-[11px] font-medium text-zinc-200">
+				{{ toolMeta?.label?.replace(/ Tool$/, "") ?? "Tool" }}
+			</span>
+			<span class="text-[10px] text-zinc-600">{{ toolMeta?.shortcut }}</span>
 		</div>
 
 		<div class="h-4 w-px bg-white/10" />
@@ -60,7 +64,10 @@ const showBrushControls = computed(
 					/>
 					<span class="w-7 tabular-nums text-zinc-400">{{ brushSize }}</span>
 				</label>
-				<label class="flex items-center gap-1.5 text-[10px] text-zinc-500">
+				<label
+					v-if="activeTool !== 'pencil'"
+					class="flex items-center gap-1.5 text-[10px] text-zinc-500"
+				>
 					Hardness
 					<input
 						v-model.number="brushHardness"
@@ -84,50 +91,44 @@ const showBrushControls = computed(
 					/>
 					<span class="w-7 tabular-nums text-zinc-400">{{ Math.round(brushOpacity * 100) }}%</span>
 				</label>
-				<p
-					v-if="activeTool === 'clone' || activeTool === 'heal'"
-					class="truncate text-[11px] text-zinc-500"
-				>
-					Alt-click or first click sets the source · Drag to stamp
+				<template v-if="activeTool === 'background-eraser'">
+					<label class="flex items-center gap-1.5 text-[10px] text-zinc-500">
+						Tolerance
+						<input
+							v-model.number="bgEraserTolerance"
+							type="range"
+							min="0"
+							max="128"
+							class="w-20 accent-blue-500"
+						/>
+						<span class="w-7 tabular-nums text-zinc-400">{{ bgEraserTolerance }}</span>
+					</label>
+					<select
+						v-model="bgEraserSampling"
+						class="rounded border border-white/10 bg-transparent px-1 py-0.5 text-[10px] text-zinc-300"
+						title="Sampling"
+					>
+						<option value="continuous">Continuous</option>
+						<option value="once">Once</option>
+					</select>
+					<select
+						v-model="bgEraserLimits"
+						class="rounded border border-white/10 bg-transparent px-1 py-0.5 text-[10px] text-zinc-300"
+						title="Limits"
+					>
+						<option value="contiguous">Contiguous</option>
+						<option value="discontiguous">Discontiguous</option>
+					</select>
+				</template>
+				<p v-else class="truncate text-[11px] text-zinc-500">
+					{{ toolMeta?.hint }}
+					<span v-if="activeTool === 'eraser' || activeTool === 'background-eraser' || activeTool === 'magic-eraser'" class="text-zinc-600">
+						· Shift+E cycles
+					</span>
 				</p>
 			</template>
 
-			<p v-else-if="activeTool === 'move'" class="truncate text-[11px] text-zinc-500">
-				Drag to move · Open Media to upload images from your computer
-			</p>
-			<template v-else-if="activeTool === 'marquee-rect'">
-				<div class="flex items-center rounded border border-white/10 p-0.5">
-					<button
-						type="button"
-						:class="[
-							'flex size-6 items-center justify-center rounded-sm',
-							marqueeKind === 'rect' ? 'bg-white/10 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300',
-						]"
-						title="Rectangular marquee (M)"
-						@click="marqueeKind = 'rect'"
-					>
-						<Square class="size-3.5" />
-					</button>
-					<button
-						type="button"
-						:class="[
-							'flex size-6 items-center justify-center rounded-sm',
-							marqueeKind === 'ellipse' ? 'bg-white/10 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300',
-						]"
-						title="Elliptical marquee (Shift+M)"
-						@click="marqueeKind = 'ellipse'"
-					>
-						<Circle class="size-3.5" />
-					</button>
-				</div>
-				<p class="truncate text-[11px] text-zinc-500">
-					Drag to select · Shift constrains · Delete / Ctrl+C / Esc
-				</p>
-			</template>
-			<p v-else-if="activeTool === 'lasso'" class="truncate text-[11px] text-zinc-500">
-				Drag a freehand selection · Delete / Ctrl+C / Esc work like marquee
-			</p>
-			<template v-else-if="activeTool === 'magic-wand'">
+			<template v-else-if="activeTool === 'magic-wand' || activeTool === 'magic-eraser'">
 				<label class="flex items-center gap-1.5 text-[10px] text-zinc-500">
 					Tolerance
 					<input
@@ -143,13 +144,9 @@ const showBrushControls = computed(
 					<input v-model="wandContiguous" type="checkbox" class="accent-blue-500" />
 					Contiguous
 				</label>
-				<p class="truncate text-[11px] text-zinc-500">
-					Click a color to select it · Delete / Ctrl+C / Esc
-				</p>
+				<p class="truncate text-[11px] text-zinc-500">{{ toolMeta?.hint }}</p>
 			</template>
-			<p v-else-if="activeTool === 'crop'" class="truncate text-[11px] text-zinc-500">
-				{{ isCropMode ? "Drag handles to crop, then confirm" : "Drag on the canvas to crop" }}
-			</p>
+
 			<template v-else-if="activeTool === 'fill'">
 				<label class="flex items-center gap-1.5 text-[10px] text-zinc-500">
 					Tolerance
@@ -162,53 +159,19 @@ const showBrushControls = computed(
 					/>
 					<span class="w-7 tabular-nums text-zinc-400">{{ fillTolerance }}</span>
 				</label>
-				<p class="truncate text-[11px] text-zinc-500">
-					Click a layer to flood-fill · Empty canvas fills the background
-				</p>
+				<p class="truncate text-[11px] text-zinc-500">{{ toolMeta?.hint }} · Shift+G cycles</p>
 			</template>
-			<p v-else-if="activeTool === 'gradient'" class="truncate text-[11px] text-zinc-500">
-				Drag to paint a linear gradient from fill to stroke · Honors the current selection
-			</p>
-			<p v-else-if="activeTool === 'eyedropper'" class="truncate text-[11px] text-zinc-500">
-				Click the canvas to sample a color
-			</p>
-			<p v-else-if="activeTool === 'text'" class="truncate text-[11px] text-zinc-500">
-				Click the canvas to place a text layer
-			</p>
-			<p v-else-if="activeTool === 'hand'" class="truncate text-[11px] text-zinc-500">
-				Drag to pan the canvas
-			</p>
-			<p v-else-if="activeTool === 'zoom'" class="truncate text-[11px] text-zinc-500">
-				Click to zoom in · Alt-click to zoom out
+
+			<p v-else-if="activeTool === 'crop'" class="truncate text-[11px] text-zinc-500">
+				{{ isCropMode ? "Drag handles to crop, then confirm" : toolMeta?.hint }}
 			</p>
 
-			<template v-else-if="activeTool === 'shape'">
-				<div class="flex items-center rounded border border-white/10 p-0.5">
-					<button
-						type="button"
-						:class="[
-							'flex size-6 items-center justify-center rounded-sm',
-							shapeKind === 'rect' ? 'bg-white/10 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300',
-						]"
-						title="Rectangle"
-						@click="shapeKind = 'rect'"
-					>
-						<Square class="size-3.5" />
-					</button>
-					<button
-						type="button"
-						:class="[
-							'flex size-6 items-center justify-center rounded-sm',
-							shapeKind === 'ellipse' ? 'bg-white/10 text-zinc-100' : 'text-zinc-500 hover:text-zinc-300',
-						]"
-						title="Ellipse"
-						@click="shapeKind = 'ellipse'"
-					>
-						<Circle class="size-3.5" />
-					</button>
-				</div>
-				<span class="text-[11px] text-zinc-500">Click the canvas to place a shape</span>
-			</template>
+			<p v-else class="truncate text-[11px] text-zinc-500">
+				{{ toolMeta?.hint }}
+				<span v-if="toolMeta && ['M','L','B','E','G','J','U'].includes(toolMeta.shortcut)" class="text-zinc-600">
+					· Shift+{{ toolMeta.shortcut }} cycles related tools
+				</span>
+			</p>
 		</div>
 
 		<div class="ml-auto flex items-center gap-2">

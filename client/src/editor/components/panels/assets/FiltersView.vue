@@ -121,7 +121,7 @@ function getFilterPreviewStyle(preset: FilterPreset) {
 			<!-- No element selected hint -->
 			<div v-if="!selectedElement" class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
 				<Palette class="size-8 text-zinc-600" :stroke-width="1" />
-				<p class="text-xs text-zinc-500">Select a video or image element to apply a filter</p>
+				<p class="text-xs text-zinc-500">Select an image layer to apply a filter</p>
 			</div>
 
 			<template v-else>

@@ -69,7 +69,7 @@ class MessagingSocket {
    * Get the WebSocket URL based on the API URL.
    */
   private getSocketUrl(): string {
-    const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000/api' : 'https://api.clippster.app/api');
+    const apiUrl = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://127.0.0.1:4000/api' : 'https://api.clippster.app/api');
     // Convert http(s)://host:port/api to ws(s)://host:port/messaging
     const url = new URL(apiUrl);
     const protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';

@@ -1,6 +1,6 @@
 <template>
   <PageLayout
-    title="AI Thumbnail Generator"
+    title="AI Thumbnail Creator"
     description="Create AI thumbnails with Quick or Editable workflows"
     :show-header="true"
     :icon="ImagePlus"
@@ -17,7 +17,7 @@
       <ImagePlus :size="48" class="text-zinc-600" />
       <h3 class="text-lg font-medium text-zinc-200">Desktop app required</h3>
       <p class="max-w-md text-sm text-zinc-500">
-        AI Thumbnail Generator uses local video libraries and frame extraction. Open Clippster on desktop to use this feature.
+        AI Thumbnail Creator uses local video libraries and frame extraction. Open Clippster on desktop to use this feature.
       </p>
     </div>
 

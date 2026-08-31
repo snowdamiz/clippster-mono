@@ -1,6 +1,9 @@
 /**
  * Compositor-mode brush / eraser: paints on the selected image layer's bitmap,
  * or creates a new raster layer when nothing suitable is selected.
+ *
+ * Eraser paints an opaque mask on the scratch canvas (source-over), then merges
+ * onto the media with destination-out — matching Photoshop's destructive erase.
  */
 import { ref } from "vue";
 import { EditorCore } from "../core";
@@ -23,6 +26,7 @@ import {
 const scratchCanvas = ref<HTMLCanvasElement | null>(null);
 const isPainting = ref(false);
 const paintPreviewActive = ref(false);
+let scratchHasInkFlag = false;
 
 function ensureScratch(width: number, height: number): HTMLCanvasElement {
 	if (
@@ -36,18 +40,8 @@ function ensureScratch(width: number, height: number): HTMLCanvasElement {
 	canvas.width = width;
 	canvas.height = height;
 	scratchCanvas.value = canvas;
+	scratchHasInkFlag = false;
 	return canvas;
-}
-
-function scratchHasInk(canvas: HTMLCanvasElement): boolean {
-	const ctx = canvas.getContext("2d");
-	if (!ctx) return false;
-	const { width, height } = canvas;
-	const data = ctx.getImageData(0, 0, width, height).data;
-	for (let i = 3; i < data.length; i += 4) {
-		if (data[i] > 0) return true;
-	}
-	return false;
 }
 
 function applySelectionClip(ctx: CanvasRenderingContext2D, width: number, height: number) {
@@ -56,6 +50,10 @@ function applySelectionClip(ctx: CanvasRenderingContext2D, width: number, height
 	clipSelectionToContext(ctx, selection, width, height, selection.type);
 }
 
+/**
+ * Draw a brush dab. For eraser, always paint an opaque erase *mask* with
+ * source-over — never destination-out on an empty scratch (that writes nothing).
+ */
 function drawDab(
 	ctx: CanvasRenderingContext2D,
 	x: number,
@@ -67,10 +65,10 @@ function drawDab(
 	hardness: number,
 ) {
 	ctx.save();
+	ctx.globalCompositeOperation = "source-over";
 	const { r, g, b } = parseHexRgb(color);
 	const hard = Math.min(1, Math.max(0, hardness));
 	if (hard >= 0.99) {
-		ctx.globalCompositeOperation = eraser ? "destination-out" : "source-over";
 		ctx.fillStyle = eraser ? `rgba(0,0,0,${opacity})` : `rgba(${r},${g},${b},${opacity})`;
 		ctx.beginPath();
 		ctx.arc(x, y, radius, 0, Math.PI * 2);
@@ -84,24 +82,15 @@ function drawDab(
 	if (eraser) {
 		gradient.addColorStop(0, `rgba(0,0,0,${opacity})`);
 		gradient.addColorStop(1, "rgba(0,0,0,0)");
-		ctx.globalCompositeOperation = "destination-out";
 	} else {
 		gradient.addColorStop(0, `rgba(${r},${g},${b},${opacity})`);
 		gradient.addColorStop(1, `rgba(${r},${g},${b},0)`);
-		ctx.globalCompositeOperation = "source-over";
 	}
 	ctx.fillStyle = gradient;
 	ctx.beginPath();
 	ctx.arc(x, y, radius, 0, Math.PI * 2);
 	ctx.fill();
 	ctx.restore();
-}
-
-function findTargetImageLayer(
-	editor: EditorCore,
-	selected: Array<{ trackId: string; elementId: string }>,
-) {
-	return findSelectedImageLayer(editor, selected);
 }
 
 async function mergeScratchOntoMedia(
@@ -112,10 +101,10 @@ async function mergeScratchOntoMedia(
 ) {
 	const editor = EditorCore.getInstance();
 	const project = editor.project.getActiveOrNull();
-	if (!project) return;
+	if (!project) return false;
 
 	const asset = await editor.media.ensureAssetHydrated(mediaId);
-	if (!asset || asset.type !== "image") return;
+	if (!asset || asset.type !== "image") return false;
 
 	const { width: canvasW, height: canvasH } = project.settings.canvasSize;
 	const bitmap = await loadBitmapFromAsset(asset);
@@ -127,7 +116,7 @@ async function mergeScratchOntoMedia(
 	const ctx = work.getContext("2d");
 	if (!ctx) {
 		bitmap.close();
-		return;
+		return false;
 	}
 
 	try {
@@ -153,23 +142,46 @@ async function mergeScratchOntoMedia(
 	ctx.drawImage(scratch, 0, 0);
 	ctx.restore();
 
-	const filePath = asset.filePath;
-	if (!filePath) {
-		await commitCanvasAsNewLayer(scratch, mode === "erase" ? "Eraser" : "Brush");
-		return;
-	}
-
-	try {
-		await writeNativeCanvasToMedia(mediaId, work);
-	} catch (e) {
-		console.warn("[useImageRasterPaint] Failed to refresh media after paint:", e);
-	}
+	return writeNativeCanvasToMedia(mediaId, work);
 }
 
-export function blitScratchToOverlay(scratch: HTMLCanvasElement, overlay: HTMLCanvasElement) {
+/** Live overlay: paint shows ink; erase shows a checkerboard punch-out (not opaque white). */
+let checkerPattern: CanvasPattern | null = null;
+
+function getCheckerPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
+	if (checkerPattern) return checkerPattern;
+	const tile = document.createElement("canvas");
+	tile.width = 16;
+	tile.height = 16;
+	const t = tile.getContext("2d");
+	if (!t) return null;
+	t.fillStyle = "#c8c8c8";
+	t.fillRect(0, 0, 16, 16);
+	t.fillStyle = "#ffffff";
+	t.fillRect(0, 0, 8, 8);
+	t.fillRect(8, 8, 8, 8);
+	checkerPattern = ctx.createPattern(tile, "repeat");
+	return checkerPattern;
+}
+
+export function blitScratchToOverlay(
+	scratch: HTMLCanvasElement,
+	overlay: HTMLCanvasElement,
+	mode: "paint" | "erase" = "paint",
+) {
 	const ctx = overlay.getContext("2d");
 	if (!ctx) return;
+	ctx.setTransform(1, 0, 0, 1, 0, 0);
 	ctx.clearRect(0, 0, overlay.width, overlay.height);
+	if (mode === "erase") {
+		ctx.drawImage(scratch, 0, 0);
+		ctx.globalCompositeOperation = "source-in";
+		const pattern = getCheckerPattern(ctx);
+		ctx.fillStyle = pattern ?? "rgba(200,200,200,0.9)";
+		ctx.fillRect(0, 0, overlay.width, overlay.height);
+		ctx.globalCompositeOperation = "source-over";
+		return;
+	}
 	ctx.drawImage(scratch, 0, 0);
 }
 
@@ -195,6 +207,14 @@ export function useImageRasterPaint() {
 		};
 	}
 
+	function isEraserTool() {
+		return activeTool.value === "eraser";
+	}
+
+	function effectiveHardness() {
+		return activeTool.value === "pencil" ? 1 : brushHardness.value;
+	}
+
 	function startStroke(event: PointerEvent, canvasEl: HTMLCanvasElement) {
 		const editor = EditorCore.getInstance();
 		const project = editor.project.getActiveOrNull();
@@ -212,16 +232,18 @@ export function useImageRasterPaint() {
 
 		isPainting.value = true;
 		paintPreviewActive.value = true;
+		scratchHasInkFlag = false;
 		lastX = pt.x;
 		lastY = pt.y;
 
-		const eraser = activeTool.value === "eraser";
+		const eraser = isEraserTool();
 		const radius = brushSize.value / 2;
 		const opacity = brushOpacity.value;
 		ctx.save();
 		applySelectionClip(ctx, width, height);
-		drawDab(ctx, pt.x, pt.y, radius, fillColor.value, opacity, eraser, brushHardness.value);
+		drawDab(ctx, pt.x, pt.y, radius, fillColor.value, opacity, eraser, effectiveHardness());
 		ctx.restore();
+		scratchHasInkFlag = true;
 		return true;
 	}
 
@@ -237,11 +259,11 @@ export function useImageRasterPaint() {
 		const ctx = scratchCanvas.value.getContext("2d");
 		if (!ctx) return;
 
-		const eraser = activeTool.value === "eraser";
+		const eraser = isEraserTool();
 		const radius = brushSize.value / 2;
 		const opacity = brushOpacity.value;
 		const { r, g, b } = parseHexRgb(fillColor.value);
-		const hardness = brushHardness.value;
+		const hardness = effectiveHardness();
 
 		ctx.save();
 		applySelectionClip(ctx, width, height);
@@ -249,13 +271,8 @@ export function useImageRasterPaint() {
 			ctx.lineCap = "round";
 			ctx.lineJoin = "round";
 			ctx.lineWidth = brushSize.value;
-			if (eraser) {
-				ctx.globalCompositeOperation = "destination-out";
-				ctx.strokeStyle = `rgba(0,0,0,${opacity})`;
-			} else {
-				ctx.globalCompositeOperation = "source-over";
-				ctx.strokeStyle = `rgba(${r},${g},${b},${opacity})`;
-			}
+			ctx.globalCompositeOperation = "source-over";
+			ctx.strokeStyle = eraser ? `rgba(0,0,0,${opacity})` : `rgba(${r},${g},${b},${opacity})`;
 			ctx.beginPath();
 			ctx.moveTo(lastX, lastY);
 			ctx.lineTo(pt.x, pt.y);
@@ -281,6 +298,7 @@ export function useImageRasterPaint() {
 		}
 		drawDab(ctx, pt.x, pt.y, radius, fillColor.value, opacity, eraser, hardness);
 		ctx.restore();
+		scratchHasInkFlag = true;
 		lastX = pt.x;
 		lastY = pt.y;
 	}
@@ -288,28 +306,37 @@ export function useImageRasterPaint() {
 	async function endStroke(selectedElements: Array<{ trackId: string; elementId: string }>) {
 		isPainting.value = false;
 		const scratch = scratchCanvas.value;
-		if (!scratch || !scratchHasInk(scratch)) {
+		if (!scratch || !scratchHasInkFlag) {
 			paintPreviewActive.value = false;
 			scratchCanvas.value = null;
+			scratchHasInkFlag = false;
 			return;
 		}
 
 		const editor = EditorCore.getInstance();
-		const eraser = activeTool.value === "eraser";
-		const target = findTargetImageLayer(editor, selectedElements);
+		const eraser = isEraserTool();
+		let target = findSelectedImageLayer(editor, selectedElements);
+		if (!target && eraser) {
+			useImageEditorTools().selectFirstImageIfNeeded();
+			target = findSelectedImageLayer(editor, editor.selection.getSelectedElements());
+		}
 
 		try {
 			if (target) {
-				await mergeScratchOntoMedia(
+				const wrote = await mergeScratchOntoMedia(
 					target.mediaId,
 					scratch,
 					eraser ? "erase" : "paint",
 					target.element,
 				);
-				recordImageEditHistory(eraser ? "Eraser stroke" : "Brush stroke");
+				if (wrote) {
+					const label =
+						eraser ? "Eraser stroke" : activeTool.value === "pencil" ? "Pencil stroke" : "Brush stroke";
+					recordImageEditHistory(label);
+				}
 			} else if (!eraser) {
-				await commitCanvasAsNewLayer(scratch, "Brush");
-				recordImageEditHistory("Brush layer");
+				await commitCanvasAsNewLayer(scratch, activeTool.value === "pencil" ? "Pencil" : "Brush");
+				recordImageEditHistory(activeTool.value === "pencil" ? "Pencil layer" : "Brush layer");
 			}
 		} catch (e) {
 			console.error("[useImageRasterPaint] Commit failed:", e);
@@ -317,6 +344,7 @@ export function useImageRasterPaint() {
 
 		const ctx = scratch.getContext("2d");
 		if (ctx) ctx.clearRect(0, 0, scratch.width, scratch.height);
+		scratchHasInkFlag = false;
 		paintPreviewActive.value = false;
 	}
 
@@ -325,6 +353,7 @@ export function useImageRasterPaint() {
 			const ctx = scratchCanvas.value.getContext("2d");
 			if (ctx) ctx.clearRect(0, 0, scratchCanvas.value.width, scratchCanvas.value.height);
 		}
+		scratchHasInkFlag = false;
 		paintPreviewActive.value = false;
 	}
 

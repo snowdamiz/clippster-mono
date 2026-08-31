@@ -15,7 +15,7 @@ function normalizeApiOrigin(value: string): string {
 }
 
 const API_BASE = normalizeApiOrigin(
-  import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app'),
+  import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://127.0.0.1:4000' : 'https://api.clippster.app'),
 );
 
 const DEVICE_ID_KEY = 'clippster_cloud_device_id';

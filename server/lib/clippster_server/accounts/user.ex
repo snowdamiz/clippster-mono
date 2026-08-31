@@ -15,6 +15,7 @@ defmodule ClippsterServer.Accounts.User do
     field :is_moderator, :boolean, default: false
     field :ai_editor_enabled, :boolean, default: false
     field :campaigns_enabled, :boolean, default: false
+    field :circles_enabled, :boolean, default: false
 
     # Associations
     has_one :clipper_profile, ClipperProfile
@@ -106,6 +107,8 @@ defmodule ClippsterServer.Accounts.User do
     field :notify_social, :boolean, default: true
     field :notify_organization, :boolean, default: true
     field :notify_system, :boolean, default: true
+    field :completed_tours, :map, default: %{}
+    field :tour_version_seen, :string
 
     timestamps(type: :utc_datetime)
   end
@@ -492,7 +495,9 @@ defmodule ClippsterServer.Accounts.User do
     :notify_projects,
     :notify_social,
     :notify_organization,
-    :notify_system
+    :notify_system,
+    :completed_tours,
+    :tour_version_seen
   ]
 
   @doc """

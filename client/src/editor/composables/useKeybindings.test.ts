@@ -17,11 +17,17 @@ vi.mock("../core", () => ({
 }));
 
 vi.mock("./useImageEditorTools", () => ({
-	IMAGE_TOOL_RAIL: [],
 	useImageEditorTools: () => ({
 		activateTool: vi.fn(),
 		swapFillStroke: vi.fn(),
+		cycleToolsByShortcut: vi.fn(),
+		flyoutLastTool: { value: {} },
+		activeTool: { value: "move" },
 	}),
+}));
+
+vi.mock("../constants/image-tool-flyouts", () => ({
+	toolsSharingShortcut: () => [],
 }));
 
 import { handleEditorKeyDown } from "./useKeybindings";

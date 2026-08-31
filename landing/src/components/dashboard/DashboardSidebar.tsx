@@ -256,6 +256,7 @@ export function DashboardSidebar({ variant = 'organization', onNavigate }: Dashb
                       <Link
                         to={linkPath}
                         onClick={onNavigate}
+                        data-tour-id={isOrganizationSidebar ? `nav-${item.path === 'hub' ? 'hub' : item.path}` : undefined}
                         className={`flex items-center gap-3 w-full py-2 px-3 rounded-md text-sm no-underline transition-all duration-150 cursor-pointer ${
                           active
                             ? 'bg-cyan-500/[0.08] text-cyan-400'

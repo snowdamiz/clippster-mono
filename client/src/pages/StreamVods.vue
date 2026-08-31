@@ -73,8 +73,18 @@
             </div>
           </div>
 
+          <!-- Supported platforms (tour hotspot) -->
+          <div class="streamvods-platforms" data-tour-id="tour-vod-platforms" aria-hidden="true">
+            <img src="/capsule.svg" alt="" title="PumpFun" />
+            <img src="/kick.svg" alt="" title="Kick" />
+            <img src="/twitch.svg" alt="" title="Twitch" />
+            <img src="/youtube.svg" alt="" title="YouTube" />
+            <img src="/rumble.svg" alt="" title="Rumble" />
+            <img src="/x.svg" alt="" title="X" />
+          </div>
+
           <!-- Search Input with Auto-Detection -->
-          <div class="streamvods-search">
+          <div class="streamvods-search" data-tour-id="tour-vod-search">
             <transition name="scale" mode="out-in">
               <div
                 v-if="detectedPlatform === 'pumpfun'"
@@ -581,11 +591,13 @@
   } from '@/services/database';
   import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
+  import { useAppTour } from '@/composables/useAppTour';
   import { useAuthStore } from '@/stores/auth';
   import { fetchTokendCapabilities, TOKEND_UNAVAILABLE_MESSAGES } from '@/services/tokend';
 
   const router = useRouter();
   const { gates } = useSubscriptionGate();
+  const { maybeStartPageTour } = useAppTour();
   const route = useRoute();
   const { success, error: showError, warning } = useToast();
   const { startDownload } = useDownloads();
@@ -784,12 +796,14 @@
       void platformStore.refreshRecentSearchMetadata();
       void loadDownloadedVodIds();
       await handleSearch();
+      maybeStartPageTour('page_vods');
       return;
     }
 
     await platformStore.refreshRecentSearchMetadata();
     await loadDownloadedVodIds();
     detectPlatform();
+    maybeStartPageTour('page_vods');
 
     // Restore platform state if clips are already loaded (e.g., returning from another page)
     if (platformStore.clips.length > 0) {
@@ -1760,6 +1774,22 @@
   }
 
   /* ===== Search Input ===== */
+  .streamvods-platforms {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.25rem 0.4rem;
+    border-radius: 8px;
+    border: 1px solid transparent;
+  }
+
+  .streamvods-platforms img {
+    width: 16px;
+    height: 16px;
+    object-fit: contain;
+    opacity: 0.85;
+  }
+
   .streamvods-search {
     position: relative;
     width: 280px;

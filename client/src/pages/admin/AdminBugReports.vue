@@ -212,7 +212,7 @@
     { label: 'Critical', value: 'critical' }
   ];
 
-  const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
+  const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://127.0.0.1:4000' : 'https://api.clippster.app');
 
   const fetchBugReports = async () => {
     try {

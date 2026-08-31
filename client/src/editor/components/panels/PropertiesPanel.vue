@@ -72,7 +72,7 @@ const selectedTransition = computed((): Transition | null => {
 			isImageMode ? 'bg-[#1e1e1e]' : 'rounded-sm bg-[#18181b]',
 		]"
 	>
-		<template v-if="selectedElements.length > 0">
+		<template v-if="selectedElements.length > 0 && !(isImageMode && captionRepresentative)">
 			<!-- Multi-caption selection: render a single representative panel to avoid N-mount flicker -->
 			<div v-if="captionRepresentative" class="min-h-0 flex-1 overflow-hidden">
 				<CaptionMultiProperties v-if="multiCaptionElements.length > 1" :elements="multiCaptionElements" />
@@ -97,7 +97,7 @@ const selectedTransition = computed((): Transition | null => {
 					/>
 
 					<VideoProperties
-						v-else-if="element.type === 'video'"
+						v-else-if="!isImageMode && element.type === 'video'"
 						:element="(element as VideoElement)"
 						:track-id="track.id"
 					/>
@@ -109,7 +109,7 @@ const selectedTransition = computed((): Transition | null => {
 					/>
 
 					<AudioProperties
-						v-else-if="element.type === 'audio'"
+						v-else-if="!isImageMode && element.type === 'audio'"
 						:element="(element as AudioElement)"
 						:track-id="track.id"
 					/>
@@ -121,13 +121,13 @@ const selectedTransition = computed((): Transition | null => {
 					/>
 
 					<EffectProperties
-						v-else-if="element.type === 'effect'"
+						v-else-if="!isImageMode && element.type === 'effect'"
 						:element="(element as EffectElement)"
 						:track-id="track.id"
 					/>
 
 					<CaptionProperties
-						v-else-if="element.type === 'caption'"
+						v-else-if="!isImageMode && element.type === 'caption'"
 						:element="(element as CaptionElement)"
 						:track-id="track.id"
 					/>
@@ -136,7 +136,7 @@ const selectedTransition = computed((): Transition | null => {
 		</template>
 
 		<!-- Junction transition selected from timeline badge (not mixed with clip inspector) -->
-		<template v-else-if="selectedTransition">
+		<template v-else-if="!isImageMode && selectedTransition">
 			<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 				<div class="shrink-0 border-b border-white/10 px-3 py-2">
 					<p class="text-xs font-medium text-zinc-300">Transition</p>

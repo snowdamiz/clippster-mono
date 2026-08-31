@@ -16,6 +16,7 @@ export default defineConfig({
   resolve: {
     alias: {
       '@': path.resolve(__dirname, './src'),
+      '@clippster/app-tour': path.resolve(__dirname, '../packages/app-tour/src/index.ts'),
     },
   },
 })

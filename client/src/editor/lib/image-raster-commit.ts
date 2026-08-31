@@ -89,20 +89,36 @@ export async function writeNativeCanvasToMedia(
 	const project = editor.project.getActiveOrNull();
 	if (!project) return false;
 	const asset = await editor.media.ensureAssetHydrated(mediaId);
-	if (!asset || asset.type !== "image" || !asset.filePath) return false;
+	if (!asset || asset.type !== "image") return false;
 
-	await writeCanvasToAssetFile(work, asset.filePath);
-	const { readFile } = await import("@tauri-apps/plugin-fs");
-	const bytes = await readFile(asset.filePath);
-	const file = new File([bytes], asset.name, { type: "image/png", lastModified: Date.now() });
-	const url = URL.createObjectURL(file);
-	editor.media.replaceAssetRaster({ id: mediaId, file, url });
-	await storageService.saveMediaAsset({
-		projectId: project.metadata.id,
-		mediaAsset: { ...asset, file, url, isHydrated: true },
+	const blob = await new Promise<Blob>((resolve, reject) => {
+		// Prefer faster PNG encode; quality arg ignored for PNG but keeps API consistent.
+		work.toBlob((b) => (b ? resolve(b) : reject(new Error("encode failed"))), "image/png");
 	});
+	const baseName = (asset.name || "image").replace(/\.\w+$/, "");
+	const file = new File([blob], `${baseName}.png`, { type: "image/png", lastModified: Date.now() });
+	const url = URL.createObjectURL(file);
+
+	// Swap the live raster first so the preview updates immediately.
+	editor.media.replaceAssetRaster({ id: mediaId, file, url });
 	editor.renderer.invalidatePreviewSceneCache();
 	editor.save.markDirty();
+
+	// Persist off the critical path so the stroke feels instant.
+	if (asset.filePath) {
+		void writeCanvasToAssetFile(work, asset.filePath).catch((e) => {
+			console.warn("[writeNativeCanvasToMedia] Disk write failed:", e);
+		});
+	}
+	void storageService
+		.saveMediaAsset({
+			projectId: project.metadata.id,
+			mediaAsset: { ...asset, file, url, isHydrated: true },
+		})
+		.catch((e) => {
+			console.warn("[writeNativeCanvasToMedia] Storage save failed:", e);
+		});
+
 	return true;
 }
 

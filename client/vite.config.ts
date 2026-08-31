@@ -40,6 +40,7 @@ export default defineConfig(async () => ({
         __dirname,
         "../packages/cloud-sync-schema/src/index.ts",
       ),
+      "@clippster/app-tour": path.resolve(__dirname, "../packages/app-tour/src/index.ts"),
     },
   },
 

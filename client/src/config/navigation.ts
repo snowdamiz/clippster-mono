@@ -43,6 +43,8 @@ export interface NavigationItem {
   restrictedHidden?: boolean; // Hide for restricted accounts
   affiliateOnly?: boolean; // Only show for affiliate users
   navHidden?: boolean; // Temporarily hidden from navigation (code retained for later use)
+  /** Stable app-tour hotspot id (data-tour-id). Defaults to path-derived nav-* */
+  tourId?: string;
 }
 
 export const navigationGroups: Record<NavigationGroup, { label: string; order: number }> = {
@@ -62,30 +64,35 @@ export const navigationItems: NavigationItem[] = [
     icon: Users,
     group: 'browse',
     restrictedHidden: true,
+    tourId: 'nav-creators',
   },
   {
     name: 'Live Streams',
     path: '/live-clip',
     icon: Radio,
     group: 'browse',
+    tourId: 'nav-live-clip',
   },
   {
     name: 'Download Video',
     path: '/vods',
     icon: Video,
     group: 'browse',
+    tourId: 'nav-vods',
   },
   {
     name: 'Download Audio',
     path: '/download-audio',
     icon: Headphones,
     group: 'browse',
+    tourId: 'nav-download-audio',
   },
   {
     name: 'Messages',
     path: '/messages',
     icon: MessageCircle,
     group: 'browse',
+    tourId: 'nav-messages',
   },
   {
     name: 'Campaigns',
@@ -93,6 +100,7 @@ export const navigationItems: NavigationItem[] = [
     icon: Megaphone,
     group: 'browse',
     adminOnly: true,
+    tourId: 'nav-campaigns',
   },
 
   // Library group - media libraries
@@ -101,24 +109,28 @@ export const navigationItems: NavigationItem[] = [
     path: '/projects',
     icon: Folder,
     group: 'library',
+    tourId: 'nav-projects',
   },
   {
     name: 'Audio',
     path: '/audio-library',
     icon: Music,
     group: 'library',
+    tourId: 'nav-audio-library',
   },
   {
     name: 'Image',
     path: '/image-library',
     icon: Image,
     group: 'library',
+    tourId: 'nav-image-library',
   },
   {
     name: 'Built Clips',
     path: '/clips',
     icon: LayoutGrid,
     group: 'library',
+    tourId: 'nav-clips',
   },
 
   // Create group - editors and AI tools
@@ -127,21 +139,24 @@ export const navigationItems: NavigationItem[] = [
     path: '/video-editor',
     icon: Clapperboard,
     group: 'create',
+    tourId: 'nav-video-editor',
   },
   {
     name: 'Image Editor',
     path: '/design-studio',
     icon: Paintbrush,
     group: 'create',
+    badge: 'Beta',
+    tourId: 'nav-design-studio',
   },
   {
-    name: 'AI Video Creator',
+    name: 'AI Video Editor',
     path: '/ai-video',
     icon: Wand2,
     group: 'create',
   },
   {
-    name: 'AI Thumbnail',
+    name: 'AI Thumbnail Creator',
     path: '/ai-thumbnail',
     icon: Sparkles,
     group: 'create',
@@ -151,6 +166,7 @@ export const navigationItems: NavigationItem[] = [
     path: '/studio/record',
     icon: Disc,
     group: 'studio',
+    tourId: 'nav-studio-record',
   },
 
   // Manage group - organization/settings
@@ -174,6 +190,7 @@ export const navigationItems: NavigationItem[] = [
     icon: MessageSquare,
     group: 'manage',
     restrictedHidden: true, // Hidden if restricted and no custom prompts permission
+    tourId: 'nav-prompts',
   },
   {
     name: 'Calendar',
@@ -181,6 +198,7 @@ export const navigationItems: NavigationItem[] = [
     icon: CalendarDays,
     group: 'manage',
     restrictedHidden: true,
+    tourId: 'nav-calendar',
   },
   {
     name: 'Billing',

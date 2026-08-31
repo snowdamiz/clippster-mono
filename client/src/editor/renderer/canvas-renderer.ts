@@ -19,6 +19,12 @@ export type CanvasRendererParams = {
 	 * export) leave it off.
 	 */
 	prewarmUpcoming?: boolean;
+	/**
+	 * How to clear the backing store each frame.
+	 * Use `"transparent"` for image-mode / PNG alpha (checkerboard shows through in CSS).
+	 * Video preview stays `"black"`.
+	 */
+	clearStyle?: "black" | "transparent";
 };
 
 export class CanvasRenderer {
@@ -32,6 +38,7 @@ export class CanvasRenderer {
 	previewEffectProcessing: boolean;
 	framePolicy: FrameRenderPolicy;
 	prewarmUpcoming: boolean;
+	clearStyle: "black" | "transparent";
 
 	constructor({
 		width,
@@ -44,6 +51,7 @@ export class CanvasRenderer {
 		willReadFrequently = false,
 		framePolicy = "exact-preview",
 		prewarmUpcoming = false,
+		clearStyle = "black",
 	}: CanvasRendererParams) {
 		this.width = width;
 		this.height = height;
@@ -53,6 +61,7 @@ export class CanvasRenderer {
 		this.previewEffectProcessing = previewEffectProcessing;
 		this.framePolicy = framePolicy;
 		this.prewarmUpcoming = prewarmUpcoming;
+		this.clearStyle = clearStyle;
 
 		if (preferOffscreen) {
 			try {
@@ -68,7 +77,10 @@ export class CanvasRenderer {
 			this.canvas.height = this.backingHeight;
 		}
 
-		const context = this.canvas.getContext("2d", { willReadFrequently });
+		const context = this.canvas.getContext("2d", {
+			willReadFrequently,
+			alpha: true,
+		});
 		if (!context) {
 			throw new Error("Failed to get canvas context");
 		}
@@ -141,8 +153,12 @@ export class CanvasRenderer {
 		ctx.globalAlpha = 1;
 		ctx.globalCompositeOperation = "source-over";
 		ctx.filter = "none";
-		ctx.fillStyle = "black";
-		ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+		if (this.clearStyle === "transparent") {
+			ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+		} else {
+			ctx.fillStyle = "black";
+			ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+		}
 		this.applyLogicalScale();
 	}
 
@@ -205,6 +221,12 @@ export class CanvasRenderer {
 			throw new Error("Failed to get target canvas context");
 		}
 
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.globalAlpha = 1;
+		ctx.globalCompositeOperation = "source-over";
+		if (this.clearStyle === "transparent") {
+			ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+		}
 		ctx.drawImage(this.canvas, 0, 0, targetCanvas.width, targetCanvas.height);
 	}
 }

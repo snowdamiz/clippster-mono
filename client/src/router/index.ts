@@ -135,7 +135,7 @@ const router = createRouter({
       path: '/ai-thumbnail',
       name: 'ai-thumbnail',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true },
+      meta: { requiresAuth: true, requiresAIVideoAccess: true },
       children: [
         {
           path: '',
