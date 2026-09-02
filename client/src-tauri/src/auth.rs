@@ -345,7 +345,7 @@ pub async fn open_google_auth_url(app: tauri::AppHandle, auth_url: String) -> Re
 }
 
 #[tauri::command]
-pub async fn start_post_for_me_oauth(
+pub async fn start_social_oauth(
     _app: tauri::AppHandle,
     auth_url: String,
 ) -> Result<(), String> {

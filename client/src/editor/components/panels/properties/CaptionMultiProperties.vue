@@ -1,8 +1,10 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watchEffect } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useFontManager } from "../../../composables/useFontManager";
 import type { CaptionElement } from "../../../types/timeline";
+import type { Transform } from "../../../types/timeline";
+import type { CaptionElementUpdatable } from "../../../lib/commands/timeline/element/update-caption-element";
 import type { AnimationType, AnimationEasing, AnimationCategory, ElementAnimation } from "../../../types/animations";
 import {
 	ANIMATION_PRESETS,
@@ -12,6 +14,7 @@ import {
 import ColorPicker from "@/components/ColorPicker.vue";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { AlignLeft, AlignCenter, AlignRight, X } from "lucide-vue-next";
+import { cloneTransform } from "../../../lib/timeline/element-utils";
 
 const props = defineProps<{
 	elements: Array<{ trackId: string; element: CaptionElement }>;
@@ -22,6 +25,26 @@ const { allFonts } = useFontManager();
 
 const count = computed(() => props.elements.length);
 const first = computed(() => props.elements[0]?.element);
+
+const scaleInput = ref("100");
+const rotationInput = ref("0");
+const posXInput = ref("0");
+const posYInput = ref("0");
+const opacityInput = ref("100");
+
+watchEffect(() => {
+	const el = first.value;
+	if (!el) return;
+	scaleInput.value = Math.round((el.transform.scale ?? 1) * 100).toString();
+	rotationInput.value = (el.transform.rotate ?? 0).toFixed(1);
+	posXInput.value = Math.round(el.transform.position.x ?? 0).toString();
+	posYInput.value = Math.round(el.transform.position.y ?? 0).toString();
+	opacityInput.value = Math.round((el.opacity ?? 1) * 100).toString();
+});
+
+function clamp(value: number, min: number, max: number) {
+	return Math.min(max, Math.max(min, value));
+}
 
 const minElementDuration = computed(() => {
 	let m = 10;
@@ -89,35 +112,180 @@ const easingOptions: { id: AnimationEasing; label: string }[] = [
 	{ id: "spring", label: "Spring" },
 ];
 
-function updateAll(updates: Record<string, unknown>) {
-	for (const item of props.elements) {
-		editor.timeline.updateCaptionElement({
-			trackId: item.trackId,
-			elementId: item.element.id,
-			updates: updates as any,
-		});
-	}
+function getBatchTarget(): { trackId: string; elementIds: string[] } | null {
+	if (props.elements.length === 0) return null;
+	return {
+		trackId: props.elements[0].trackId,
+		elementIds: props.elements.map((item) => item.element.id),
+	};
+}
+
+function updateAll(updates: CaptionElementUpdatable) {
+	const target = getBatchTarget();
+	if (!target) return;
+	editor.timeline.updateCaptionsBatch({
+		trackId: target.trackId,
+		elementIds: target.elementIds,
+		updates,
+	});
 }
 
 function updateAllTransform(partial: { scale?: number; rotate?: number; x?: number; y?: number }) {
-	for (const item of props.elements) {
-		const t = item.element.transform;
-		editor.timeline.updateCaptionElement({
-			trackId: item.trackId,
-			elementId: item.element.id,
-			updates: {
-				transform: {
-					...t,
-					...(partial.scale !== undefined ? { scale: partial.scale } : {}),
-					...(partial.rotate !== undefined ? { rotate: partial.rotate } : {}),
-					position: {
-						x: partial.x ?? t.position.x,
-						y: partial.y ?? t.position.y,
-					},
-				},
-			} as any,
+	if (props.elements.length === 0) return;
+
+	const trackId = props.elements[0].trackId;
+	const track = editor.timeline.getTrackById({ trackId });
+	if (!track) return;
+
+	const targetIds = new Set(props.elements.map((item) => item.element.id));
+	const updates: { elementId: string; transform: Transform }[] = [];
+	const previousTransforms: { elementId: string; transform: Transform }[] = [];
+
+	for (const el of track.elements) {
+		if (!targetIds.has(el.id) || el.type !== "caption") continue;
+		const t = el.transform;
+		const nextTransform = cloneTransform({
+			scale: partial.scale ?? t.scale,
+			rotate: partial.rotate ?? t.rotate,
+			position: {
+				x: partial.x ?? t.position.x,
+				y: partial.y ?? t.position.y,
+			},
 		});
+		updates.push({ elementId: el.id, transform: nextTransform });
+		previousTransforms.push({ elementId: el.id, transform: cloneTransform(t) });
 	}
+
+	if (updates.length === 0) return;
+
+	editor.timeline.updateElementsTransformsBatch({
+		trackId,
+		updates,
+		previousTransforms,
+	});
+}
+
+function handleScaleSlider(value: string) {
+	const parsed = parseInt(value, 10);
+	if (Number.isNaN(parsed)) return;
+	scaleInput.value = parsed.toString();
+	updateAllTransform({ scale: parsed / 100 });
+}
+
+function handleScaleInput(value: string) {
+	scaleInput.value = value;
+	if (value.trim() === "") return;
+	const parsed = parseInt(value, 10);
+	if (!Number.isNaN(parsed)) {
+		updateAllTransform({ scale: clamp(parsed, 10, 500) / 100 });
+	}
+}
+
+function handleScaleBlur() {
+	const parsed = parseInt(scaleInput.value, 10);
+	const scale = Number.isNaN(parsed)
+		? Math.round((first.value?.transform.scale ?? 1) * 100)
+		: clamp(parsed, 10, 500);
+	scaleInput.value = scale.toString();
+	updateAllTransform({ scale: scale / 100 });
+}
+
+function handleRotationSlider(value: string) {
+	const parsed = parseFloat(value);
+	if (Number.isNaN(parsed)) return;
+	rotationInput.value = parsed.toFixed(1);
+	updateAllTransform({ rotate: parsed });
+}
+
+function handleRotationInput(value: string) {
+	rotationInput.value = value;
+	if (value.trim() === "" || value === "-") return;
+	const parsed = parseFloat(value);
+	if (!Number.isNaN(parsed)) {
+		updateAllTransform({ rotate: clamp(parsed, -180, 180) });
+	}
+}
+
+function handleRotationBlur() {
+	const parsed = parseFloat(rotationInput.value);
+	const rotate = Number.isNaN(parsed) ? (first.value?.transform.rotate ?? 0) : clamp(parsed, -180, 180);
+	rotationInput.value = rotate.toFixed(1);
+	updateAllTransform({ rotate });
+}
+
+function handlePosXSlider(value: string) {
+	const parsed = parseInt(value, 10);
+	if (Number.isNaN(parsed)) return;
+	posXInput.value = parsed.toString();
+	updateAllTransform({ x: parsed });
+}
+
+function handlePosXInput(value: string) {
+	posXInput.value = value;
+	if (value.trim() === "" || value === "-") return;
+	const parsed = parseInt(value, 10);
+	if (!Number.isNaN(parsed)) {
+		updateAllTransform({ x: clamp(parsed, -1000, 1000) });
+	}
+}
+
+function handlePosXBlur() {
+	const parsed = parseInt(posXInput.value, 10);
+	const x = Number.isNaN(parsed)
+		? Math.round(first.value?.transform.position.x ?? 0)
+		: clamp(parsed, -1000, 1000);
+	posXInput.value = x.toString();
+	updateAllTransform({ x });
+}
+
+function handlePosYSlider(value: string) {
+	const parsed = parseInt(value, 10);
+	if (Number.isNaN(parsed)) return;
+	posYInput.value = parsed.toString();
+	updateAllTransform({ y: parsed });
+}
+
+function handlePosYInput(value: string) {
+	posYInput.value = value;
+	if (value.trim() === "" || value === "-") return;
+	const parsed = parseInt(value, 10);
+	if (!Number.isNaN(parsed)) {
+		updateAllTransform({ y: clamp(parsed, -1000, 1000) });
+	}
+}
+
+function handlePosYBlur() {
+	const parsed = parseInt(posYInput.value, 10);
+	const y = Number.isNaN(parsed)
+		? Math.round(first.value?.transform.position.y ?? 0)
+		: clamp(parsed, -1000, 1000);
+	posYInput.value = y.toString();
+	updateAllTransform({ y });
+}
+
+function handleOpacitySlider(value: string) {
+	const parsed = parseInt(value, 10);
+	if (Number.isNaN(parsed)) return;
+	opacityInput.value = parsed.toString();
+	updateAll({ opacity: parsed / 100 });
+}
+
+function handleOpacityInput(value: string) {
+	opacityInput.value = value;
+	if (value.trim() === "") return;
+	const parsed = parseInt(value, 10);
+	if (!Number.isNaN(parsed)) {
+		updateAll({ opacity: clamp(parsed, 0, 100) / 100 });
+	}
+}
+
+function handleOpacityBlur() {
+	const parsed = parseInt(opacityInput.value, 10);
+	const opacity = Number.isNaN(parsed)
+		? (first.value?.opacity ?? 1)
+		: clamp(parsed, 0, 100) / 100;
+	opacityInput.value = Math.round(opacity * 100).toString();
+	updateAll({ opacity });
 }
 
 function selectFont(family: string) {
@@ -131,13 +299,7 @@ function setAnimationAll(direction: AnimTab, type: AnimationType | null) {
 	const value = preset
 		? { type: preset.type, duration: preset.defaultDuration, easing: preset.defaultEasing }
 		: undefined;
-	for (const item of props.elements) {
-		editor.timeline.updateCaptionElement({
-			trackId: item.trackId,
-			elementId: item.element.id,
-			updates: { [key]: value } as any,
-		});
-	}
+	updateAll({ [key]: value } as CaptionElementUpdatable);
 }
 
 function removeAnimationAll() {
@@ -156,13 +318,7 @@ function updateAnimDuration(val: number) {
 	const maxDur = activeAnimTab.value === "loop" ? 10 : Math.min(minElementDuration.value, 5);
 	const clamped = Math.max(0.1, Math.min(maxDur, val));
 	const next = { ...anim, duration: Math.round(clamped * 10) / 10 };
-	for (const item of props.elements) {
-		editor.timeline.updateCaptionElement({
-			trackId: item.trackId,
-			elementId: item.element.id,
-			updates: { [key]: next } as any,
-		});
-	}
+	updateAll({ [key]: next } as CaptionElementUpdatable);
 }
 
 function updateAnimEasing(easing: AnimationEasing) {
@@ -175,13 +331,7 @@ function updateAnimEasing(easing: AnimationEasing) {
 				? "animationOut"
 				: "animationLoop";
 	const next = { ...anim, easing };
-	for (const item of props.elements) {
-		editor.timeline.updateCaptionElement({
-			trackId: item.trackId,
-			elementId: item.element.id,
-			updates: { [key]: next } as any,
-		});
-	}
+	updateAll({ [key]: next } as CaptionElementUpdatable);
 }
 </script>
 
@@ -214,61 +364,110 @@ function updateAnimEasing(easing: AnimationEasing) {
 				<span class="text-[11px] font-medium text-zinc-300">Transform</span>
 				<div class="space-y-1">
 					<label class="text-[11px] text-zinc-500">Scale</label>
-					<input
-						type="range"
-						min="10"
-						max="500"
-						:value="Math.round((first.transform.scale ?? 1) * 100)"
-						class="w-full"
-						@input="updateAllTransform({ scale: Number(($event.target as HTMLInputElement).value) / 100 })"
-					/>
+					<div class="flex items-center gap-2">
+						<input
+							type="range"
+							min="10"
+							max="500"
+							:value="Math.round((first.transform.scale ?? 1) * 100)"
+							class="flex-1"
+							@input="handleScaleSlider(($event.target as HTMLInputElement).value)"
+						/>
+						<div class="flex items-center">
+							<input
+								type="text"
+								:value="scaleInput"
+								class="h-7 w-14 rounded-md border border-white/10 bg-white/5 px-2 text-right text-xs text-zinc-200"
+								@input="handleScaleInput(($event.target as HTMLInputElement).value)"
+								@blur="handleScaleBlur"
+							/>
+							<span class="ml-0.5 text-zinc-500">%</span>
+						</div>
+					</div>
 				</div>
 				<div class="space-y-1">
 					<label class="text-[11px] text-zinc-500">Rotation</label>
-					<input
-						type="range"
-						min="-180"
-						max="180"
-						step="0.1"
-						:value="first.transform.rotate ?? 0"
-						class="w-full"
-						@input="updateAllTransform({ rotate: Number(($event.target as HTMLInputElement).value) })"
-					/>
+					<div class="flex items-center gap-2">
+						<input
+							type="range"
+							min="-180"
+							max="180"
+							step="0.1"
+							:value="first.transform.rotate ?? 0"
+							class="flex-1"
+							@input="handleRotationSlider(($event.target as HTMLInputElement).value)"
+						/>
+						<input
+							type="text"
+							:value="rotationInput"
+							class="h-7 w-14 rounded-md border border-white/10 bg-white/5 px-2 text-right text-xs text-zinc-200"
+							@input="handleRotationInput(($event.target as HTMLInputElement).value)"
+							@blur="handleRotationBlur"
+						/>
+					</div>
 				</div>
-				<div class="grid grid-cols-2 gap-2">
-					<div class="space-y-1">
-						<label class="text-[11px] text-zinc-500">X</label>
+				<div class="space-y-1">
+					<label class="text-[11px] text-zinc-500">X</label>
+					<div class="flex items-center gap-2">
 						<input
 							type="range"
 							min="-1000"
 							max="1000"
 							:value="Math.round(first.transform.position.x ?? 0)"
-							class="w-full"
-							@input="updateAllTransform({ x: Number(($event.target as HTMLInputElement).value) })"
+							class="flex-1"
+							@input="handlePosXSlider(($event.target as HTMLInputElement).value)"
+						/>
+						<input
+							type="text"
+							:value="posXInput"
+							class="h-7 w-14 rounded-md border border-white/10 bg-white/5 px-2 text-right text-xs text-zinc-200"
+							@input="handlePosXInput(($event.target as HTMLInputElement).value)"
+							@blur="handlePosXBlur"
 						/>
 					</div>
-					<div class="space-y-1">
-						<label class="text-[11px] text-zinc-500">Y</label>
+				</div>
+				<div class="space-y-1">
+					<label class="text-[11px] text-zinc-500">Y</label>
+					<div class="flex items-center gap-2">
 						<input
 							type="range"
 							min="-1000"
 							max="1000"
 							:value="Math.round(first.transform.position.y ?? 0)"
-							class="w-full"
-							@input="updateAllTransform({ y: Number(($event.target as HTMLInputElement).value) })"
+							class="flex-1"
+							@input="handlePosYSlider(($event.target as HTMLInputElement).value)"
+						/>
+						<input
+							type="text"
+							:value="posYInput"
+							class="h-7 w-14 rounded-md border border-white/10 bg-white/5 px-2 text-right text-xs text-zinc-200"
+							@input="handlePosYInput(($event.target as HTMLInputElement).value)"
+							@blur="handlePosYBlur"
 						/>
 					</div>
 				</div>
 				<div class="space-y-1">
 					<label class="text-[11px] text-zinc-500">Opacity</label>
-					<input
-						type="range"
-						min="0"
-						max="100"
-						:value="Math.round((first.opacity ?? 1) * 100)"
-						class="w-full"
-						@input="updateAll({ opacity: Number(($event.target as HTMLInputElement).value) / 100 })"
-					/>
+					<div class="flex items-center gap-2">
+						<input
+							type="range"
+							min="0"
+							max="100"
+							:value="Math.round((first.opacity ?? 1) * 100)"
+							class="flex-1"
+							@input="handleOpacitySlider(($event.target as HTMLInputElement).value)"
+						/>
+						<div class="flex items-center">
+							<input
+								type="text"
+								:value="opacityInput"
+								class="h-7 w-14 rounded-md border border-white/10 bg-white/5 px-2 text-right text-xs text-zinc-200"
+								@input="handleOpacityInput(($event.target as HTMLInputElement).value)"
+								@blur="handleOpacityBlur"
+							/>
+							<span class="ml-0.5 text-zinc-500">%</span>
+						</div>
+					</div>
 				</div>
 			</div>
 

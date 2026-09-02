@@ -15,6 +15,7 @@
   import OrganizationInviteDialog from '@/components/OrganizationInviteDialog.vue';
   import FloatingChat from '@/components/chat/FloatingChat.vue';
   import AudioPlayer from '@/components/AudioPlayer.vue';
+  import AppTourOverlay from '@/components/tour/AppTourOverlay.vue';
   import { useAnnouncements } from '@/composables/useAnnouncements';
   import { listMyInvitations, acceptInvitationById, declineInvitation, type OrganizationInvitation } from '@/services/organizationsApi';
   import {
@@ -29,6 +30,7 @@
   import { initClipBuildEventHandler, cleanupClipBuildEventHandler } from '@/services/clipBuildEventHandler';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
+  import { subscriptionStillCoversAccess } from '@/composables/useSubscription';
   import { useLivestreamStore } from '@/stores/livestream';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useAppUpdater } from '@/composables/useAppUpdater';
@@ -44,6 +46,7 @@
   } from '@/composables/useLivestreamMonitoring';
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import { API_BASE, API_ORIGIN } from '@/lib/apiBase';
 
   // Platform detection for OS-specific styling (e.g., rounded corners on macOS)
   const detectedPlatform = ref<string>('unknown');
@@ -174,7 +177,12 @@
 
   // Check if this is the full-screen editor page (no scroll, minimal chrome)
   const currentRoute = useRoute();
-  const isEditorPage = computed(() => currentRoute.path === '/editor');
+  const isEditorPage = computed(
+    () =>
+      currentRoute.path === '/editor' ||
+      currentRoute.path === '/design-studio/edit' ||
+      currentRoute.path.startsWith('/design-studio/edit'),
+  );
   const isStudioSessionPage = computed(() => currentRoute.path === '/studio/record/session');
 
   // Authentication Gate: Block all app interaction until user authenticates
@@ -191,18 +199,18 @@
     if (authStore.user?.created_by_organization_id) return false;
     if (currentRoute.path === '/billing') return false;
 
-    const subscriptionStatus = (authStore.user as any)?.subscription?.status;
+    const userSubscription = (authStore.user as any)?.subscription;
+    const subscriptionStatus = userSubscription?.status;
     const hasSelectedPlan = localStorage.getItem('has_selected_plan');
 
     console.log('[App] Subscription gate check:', {
       subscriptionStatus,
       hasSelectedPlan,
-      userSubscription: (authStore.user as any)?.subscription,
+      userSubscription,
     });
 
-    // Users with active or cancelled subscriptions always bypass the gate
-    if (subscriptionStatus === 'active' || subscriptionStatus === 'cancelled') {
-      // Also set the flag so future checks are faster
+    // Active, or cancelled with time left in the paid period, bypass the gate
+    if (subscriptionStillCoversAccess(userSubscription)) {
       if (!hasSelectedPlan) {
         localStorage.setItem('has_selected_plan', 'true');
       }
@@ -450,6 +458,23 @@
     window.addEventListener('streamer-went-live', handleStreamerWentLive as EventListener);
     window.addEventListener('user-preferences-loaded', handlePreferencesLoaded as EventListener);
 
+    // Fail fast if VITE_API_URL points at the wrong process (common on Windows when
+    // localhost → ::1 hits Docker on :4000 while Phoenix only binds 127.0.0.1).
+    try {
+      const health = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
+      if (!health.ok) {
+        console.error(
+          `[App] API health check failed (${health.status}) at ${API_ORIGIN}. ` +
+            'If another service (e.g. Docker) owns localhost:4000, set VITE_API_URL=http://127.0.0.1:4000 and restart Vite/Tauri.'
+        );
+      }
+    } catch (err) {
+      console.error(
+        `[App] API unreachable at ${API_ORIGIN}. Is mix phx.server running?`,
+        err
+      );
+    }
+
     // Run independent startup tasks in parallel:
     // - Auth check + announcements (announcements depend on auth, but both are independent of DB)
     // - Feature flags (independent of everything)
@@ -641,11 +666,16 @@
         @decline="handleDeclineInvitation"
       />
 
+      <!-- CloudConflictDialog disabled: desktop/mobile are independent until cloud sync ships. -->
+
       <!-- Floating Chat Widget (Messenger-style popout) -->
       <FloatingChat />
 
       <!-- Global Audio Player -->
       <AudioPlayer />
+
+      <!-- App tour (global: editors use noLayout routes outside DashboardLayout) -->
+      <AppTourOverlay />
 
       <!-- Global Livestream Watch Dialog (persists across navigation for PIP mode) -->
       <LivestreamWatchDialog
@@ -674,6 +704,7 @@
 
   .main-content {
     width: 100%;
+    max-width: 100%;
     height: calc(100vh - 32px);
     margin-top: 32px; /* Account for fixed titlebar height */
     overflow-y: auto;

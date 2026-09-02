@@ -8,7 +8,7 @@ function normalizeApiOrigin(value) {
   return trimmed.toLowerCase().endsWith('/api') ? trimmed.slice(0, -4) : trimmed;
 }
 
-const API_BASE = normalizeApiOrigin(import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app'));
+const API_BASE = normalizeApiOrigin(import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://127.0.0.1:4000' : 'https://api.clippster.app'));
 
 // Lazy load api to avoid circular dependency (api.ts imports useAuthStore)
 let apiInstance = null;
@@ -33,6 +33,8 @@ async function setUserContext(userId) {
   } catch (error) {
     console.error('[Auth] Failed to set Rust user context:', error);
   }
+
+  // Cloud project sync is disabled — desktop and mobile are independent apps.
 }
 
 /**

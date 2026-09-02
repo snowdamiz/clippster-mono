@@ -1,13 +1,13 @@
 <template>
   <PageLayout
-    title="AI Video Creator"
+    title="AI Video Editor"
     description="Create and manage your AI video projects"
     :show-header="true"
     :icon="Wand2"
   >
     <template #actions>
       <button class="aiv-create-btn" @click="createNewProject">
-        <Plus :size="16" />
+        <Plus class="aiv-create-btn__icon" />
         New Project
       </button>
     </template>
@@ -32,50 +32,91 @@
       </div>
 
       <!-- Projects Grid -->
-      <div v-else-if="savedSessions.length > 0" class="aiv__grid">
-        <div
-          v-for="s in savedSessions"
-          :key="s.id"
-          class="aiv-card"
-          @click="openProject(s.id)"
-        >
-          <!-- Status Badge (top-left) -->
-          <div class="aiv-card__badge" :class="`aiv-card__badge--${s.status}`">
-            {{ formatStatus(s.status) }}
+      <div v-else-if="savedSessions.length > 0" class="aiv__main">
+        <Transition name="selection-bar">
+          <div v-if="selectedProjects.size > 0" class="aiv__selection-bar">
+            <div class="aiv__selection-info">
+              <Check class="aiv__selection-icon" />
+              <span>{{ selectedProjects.size }} selected</span>
+              <button
+                v-if="selectedProjects.size < savedSessions.length"
+                type="button"
+                class="aiv__selection-action"
+                @click="selectAllProjects"
+              >
+                Select all
+              </button>
+            </div>
+            <div class="aiv__selection-actions">
+              <button type="button" class="aiv__selection-clear" @click="clearSelection">Clear</button>
+              <button type="button" class="aiv__selection-delete" @click="confirmBulkDelete">
+                <Trash2 class="aiv__selection-delete-icon" />
+                Delete Selected
+              </button>
+            </div>
           </div>
+        </Transition>
 
-          <!-- Thumbnail with gradient and icon -->
-          <div class="aiv-card__thumbnail">
-            <img
+        <div class="aiv__grid">
+          <div
+            v-for="s in savedSessions"
+            :key="s.id"
+            class="aiv-card"
+            :class="{ 'aiv-card--selected': isProjectSelected(s.id) }"
+            @click="openProject(s.id)"
+          >
+            <div
+              class="aiv-card__checkbox"
+              :class="{ 'aiv-card__checkbox--visible': isProjectSelected(s.id) }"
+              @click.stop="toggleProjectSelection(s.id)"
+            >
+              <div
+                class="aiv-card__checkbox-inner"
+                :class="{ 'aiv-card__checkbox-inner--checked': isProjectSelected(s.id) }"
+              >
+                <Check v-if="isProjectSelected(s.id)" class="aiv-card__checkbox-icon" />
+              </div>
+            </div>
+
+            <!-- Status Badge (top-left) -->
+            <div class="aiv-card__badge" :class="`aiv-card__badge--${s.status}`">
+              {{ formatStatus(s.status) }}
+            </div>
+
+            <!-- Thumbnail background with vignette -->
+            <div
               v-if="s.thumbnail_url"
-              :src="s.thumbnail_url"
-              class="aiv-card__thumbnail-img"
-              :alt="s.name || 'Project thumbnail'"
-            />
-            <div class="aiv-card__thumbnail-gradient"></div>
-            <div v-if="!s.thumbnail_url" class="aiv-card__empty-icon">
-              <Wand2 class="aiv-card__folder-icon" />
+              class="aiv-card__thumbnail"
+              :style="{ backgroundImage: `url(${s.thumbnail_url})` }"
+            >
+              <div class="aiv-card__vignette"></div>
             </div>
-          </div>
-
-          <!-- Bottom overlay: title + date -->
-          <div class="aiv-card__bottom">
-            <h3 class="aiv-card__title" :title="s.name || 'Untitled Project'">
-              {{ s.name || 'Untitled Project' }}
-            </h3>
-            <div class="aiv-card__meta">
-              <span class="aiv-card__meta-text">{{ formatDate(s.updated_at) }}</span>
+            <div v-else class="aiv-card__thumbnail aiv-card__thumbnail--empty">
+              <div class="aiv-card__thumbnail-gradient"></div>
+              <div class="aiv-card__empty-icon">
+                <Wand2 class="aiv-card__folder-icon" />
+              </div>
             </div>
-          </div>
 
-          <!-- Hover overlay with actions -->
-          <div class="aiv-card__hover-actions">
-            <button class="aiv-card__action-btn" title="Open Project" @click.stop="openProject(s.id)">
-              <Play class="aiv-card__action-icon" />
-            </button>
-            <button class="aiv-card__action-btn aiv-card__action-btn--danger" title="Delete" @click.stop="deleteProject(s.id)">
-              <Trash2 class="aiv-card__action-icon" />
-            </button>
+            <!-- Bottom overlay: title + date -->
+            <div class="aiv-card__bottom">
+              <h3 class="aiv-card__title" :title="s.name || 'Untitled Project'">
+                {{ s.name || 'Untitled Project' }}
+              </h3>
+              <div class="aiv-card__meta">
+                <span class="aiv-card__meta-text">{{ formatDate(s.updated_at) }}</span>
+              </div>
+            </div>
+
+            <!-- Hover overlay with actions -->
+            <div class="aiv-card__hover-actions">
+              <button class="aiv-card__action-btn" title="Open Project" @click.stop="openProject(s.id)">
+                <Play class="aiv-card__action-icon" />
+              </button>
+              <button class="aiv-card__action-btn aiv-card__action-btn--danger" title="Delete" @click.stop="deleteProject(s.id)">
+                <Trash2 class="aiv-card__action-icon" />
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -85,8 +126,8 @@
         <div class="aiv__empty-icon-wrapper">
           <Wand2 class="aiv__empty-icon" />
         </div>
-        <h3 class="aiv__empty-title">No AI video projects yet</h3>
-        <p class="aiv__empty-description">Create your first AI video project to get started</p>
+        <h3 class="aiv__empty-title">No projects found</h3>
+        <p class="aiv__empty-description">Create a new project to get started</p>
       </div>
     </div>
 
@@ -136,7 +177,9 @@
                       :completed-scenes="chatSession.completedScenes.value"
                       :reference-analysis="chatSession.referenceAnalysis.value"
                       :is-analyzing-reference="isAnalyzingReference"
+                      :reference-progress="referenceProgress"
                       :reference-error="referenceError"
+                      :style-pack-id="selectedStylePackId"
                       :draft-message="chatDraftMessage"
                       :media-items="mediaItems"
                       :transcript-generation-status="transcriptGenerationStatus"
@@ -144,7 +187,11 @@
                       @update:draft-message="handleDraftMessageUpdate"
                       @clear-error="chatSession.clearError"
                       @analyze-reference="handleAnalyzeReference"
+                      @upload-reference="handleUploadReference"
                       @remove-reference="handleRemoveReference"
+                      @cancel-reference="cancelReferenceAnalysis"
+                      @retry-reference="retryReferenceAnalysis"
+                      @select-style-pack="handleSelectStylePack"
                       @upload-media="handleUpload"
                       @open-clip-picker="openClipPicker"
                       @open-asset-picker="openAssetPicker"
@@ -197,12 +244,15 @@
                           <span>Scene {{ scene.index + 1 }}</span>
                         </div>
                       </div>
+                      <button class="preview-generating__cancel" type="button" @click="chatSession.cancelGeneration">
+                        Cancel generation
+                      </button>
                     </div>
                   </div>
                   <div v-else class="preview-placeholder">
                     <div class="placeholder-visual">
                       <div class="visual-circle"><Wand2 :size="40" /></div>
-                      <h3>AI Video Creator</h3>
+                      <h3>AI Video Editor</h3>
                       <p v-if="mediaItems.length === 0">Start chatting with AI to plan and generate your video</p>
                       <p v-else>Then chat with AI to plan and generate your video</p>
                       <div class="placeholder-steps">
@@ -223,6 +273,12 @@
                       </div>
                     </div>
                   </div>
+                </div>
+
+                <div v-if="composition?.styleMatch" class="aiv-style-match">
+                  <Sparkles :size="13" />
+                  <span>{{ composition.styleMatch.summary }}</span>
+                  <strong>{{ Math.round(composition.styleMatch.confidence * 100) }}% match</strong>
                 </div>
 
                 <!-- Playback Controls -->
@@ -379,7 +435,13 @@
   import ExportDialog from '@/components/ai-video/ExportDialog.vue';
   import AIChatPanel from '@/components/ai-video/AIChatPanel.vue';
   import { useAIChatSession } from '@/composables/useAIChatSession';
-  import type { AIVideoMediaItem } from '@/types/ai-video';
+  import type {
+    AIVideoMediaItem,
+    ReferenceAnalysisProgress,
+    StylePackId,
+  } from '@/types/ai-video';
+  import { getAIStylePack } from '@/data/ai-video-style-packs';
+  import { analyzeReferenceVideo, type ReferenceInput } from '@/services/referenceVideo';
   import api from '@/services/api';
 
   const router = useRouter();
@@ -428,6 +490,46 @@
   const savedSessions = ref<Array<{ id: number; name: string | null; status: string; updated_at: string; inserted_at: string; thumbnail_url?: string | null }>>([]);
   const isLoadingSessions = ref(false);
   const showProjectPicker = computed(() => !chatSession.session.value);
+  const selectedProjects = ref<Set<number>>(new Set());
+
+  function isProjectSelected(id: number): boolean {
+    return selectedProjects.value.has(id);
+  }
+
+  function toggleProjectSelection(id: number) {
+    if (selectedProjects.value.has(id)) {
+      selectedProjects.value.delete(id);
+    } else {
+      selectedProjects.value.add(id);
+    }
+    selectedProjects.value = new Set(selectedProjects.value);
+  }
+
+  function clearSelection() {
+    selectedProjects.value = new Set();
+  }
+
+  function selectAllProjects() {
+    selectedProjects.value = new Set(savedSessions.value.map((s) => s.id));
+  }
+
+  async function confirmBulkDelete() {
+    const count = selectedProjects.value.size;
+    if (count === 0) return;
+    if (!confirm(`Are you sure you want to delete ${count} project${count > 1 ? 's' : ''}? This action cannot be undone.`)) {
+      return;
+    }
+    const ids = Array.from(selectedProjects.value);
+    for (const id of ids) {
+      try {
+        await chatSession.deleteSession(id);
+        savedSessions.value = savedSessions.value.filter((s) => s.id !== id);
+      } catch (e) {
+        console.error('[AIVideoCreator] Failed to delete project:', id, e);
+      }
+    }
+    clearSelection();
+  }
 
   function formatStatus(status: string): string {
     const map: Record<string, string> = {
@@ -464,6 +566,7 @@
       savedSessions.value = await chatSession.listSessions();
     } catch (e) {
       console.error('[AIVideoCreator] Failed to load sessions:', e);
+      savedSessions.value = [];
     } finally {
       isLoadingSessions.value = false;
     }
@@ -596,51 +699,67 @@
   // Reference analysis state
   const isAnalyzingReference = ref(false);
   const referenceError = ref<string | null>(null);
+  const referenceProgress = ref<ReferenceAnalysisProgress | null>(null);
+  const referenceController = ref<AbortController | null>(null);
+  const lastReferenceInput = ref<ReferenceInput | null>(null);
+  const selectedStylePackId = computed<StylePackId | null>(() => {
+    const id = chatSession.session.value?.style_context?.stylePack?.id;
+    return getAIStylePack(id as StylePackId)?.id ?? null;
+  });
 
   async function handleAnalyzeReference(url: string) {
+    await startReferenceAnalysis({ kind: 'url', value: url });
+  }
+
+  async function handleUploadReference() {
+    const path = await open({
+      multiple: false,
+      filters: [{ name: 'Reference Video', extensions: ['mp4', 'mov', 'webm', 'mkv', 'avi', 'm4v'] }],
+    });
+    if (typeof path === 'string') await startReferenceAnalysis({ kind: 'upload', value: path });
+  }
+
+  async function startReferenceAnalysis(input: ReferenceInput) {
     if (!chatSession.session.value) return;
+    referenceController.value?.abort();
+    referenceController.value = new AbortController();
+    lastReferenceInput.value = input;
     isAnalyzingReference.value = true;
     referenceError.value = null;
+    referenceProgress.value = { stage: 'validating', progress: 0, message: 'Starting reference analysis' };
     try {
-      // Fetch the image, convert to base64, send to backend for analysis
-      const response = await fetch(url);
-      if (!response.ok) throw new Error(`Failed to fetch image: ${response.status}`);
-      const blob = await response.blob();
-      const reader = new FileReader();
-      const base64 = await new Promise<string>((resolve, reject) => {
-        reader.onload = () => {
-          const result = reader.result as string;
-          const base64Data = result.split(',')[1];
-          resolve(base64Data);
-        };
-        reader.onerror = reject;
-        reader.readAsDataURL(blob);
-      });
-
-      // Send to backend reference analysis endpoint
-      const res = await api.post('/ai/reference/analyze', {
-        image_base64: base64,
-        mime_type: blob.type || 'image/jpeg',
-      });
-
-      if (res.data?.style_profile) {
-        await chatSession.uploadReference(res.data.style_profile, url);
-      }
+      const recipe = await analyzeReferenceVideo(input, (progress) => {
+        referenceProgress.value = progress;
+      }, referenceController.value.signal);
+      await chatSession.uploadReference(recipe, recipe.metadata.sourceUrl ?? null);
     } catch (e: any) {
-      referenceError.value = e.message || 'Failed to analyze reference';
-      console.error('[AIVideoCreator] Reference analysis failed:', e);
+      if (e?.name !== 'AbortError' && !String(e).toLowerCase().includes('cancel')) {
+        referenceError.value = e?.response?.data?.error || e.message || String(e) || 'Failed to analyze reference';
+        console.error('[AIVideoCreator] Reference analysis failed:', e);
+      }
     } finally {
       isAnalyzingReference.value = false;
+      referenceController.value = null;
     }
   }
 
-  function handleRemoveReference() {
-    // Clear reference from session by uploading null
-    if (chatSession.session.value) {
-      chatSession.session.value.reference_analysis = null;
-      chatSession.session.value.reference_url = null;
-    }
+  function cancelReferenceAnalysis() {
+    referenceController.value?.abort();
+  }
+
+  async function retryReferenceAnalysis() {
+    if (lastReferenceInput.value) await startReferenceAnalysis(lastReferenceInput.value);
+  }
+
+  async function handleRemoveReference() {
+    await chatSession.uploadReference(null, null);
     referenceError.value = null;
+    referenceProgress.value = null;
+  }
+
+  async function handleSelectStylePack(id: StylePackId) {
+    const pack = getAIStylePack(id);
+    if (pack) await chatSession.updateStylePack(pack);
   }
 
   function normalizeMediaPartLabel(value: string): string {
@@ -1564,6 +1683,11 @@
     opacity: 0.9;
   }
 
+  .aiv-create-btn__icon {
+    width: 14px;
+    height: 14px;
+  }
+
   /* ===== Content Container ===== */
   .aiv__content {
     display: flex;
@@ -1597,6 +1721,115 @@
     color: var(--sidebar-text-muted);
     margin: 0;
     line-height: 1.5;
+  }
+
+  /* ===== Projects Grid Container ===== */
+  .aiv__main {
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+    width: 100%;
+  }
+
+  /* ===== Selection Bar ===== */
+  .aiv__selection-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+  }
+
+  .aiv__selection-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+    font-weight: 500;
+  }
+
+  .aiv__selection-icon {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-accent);
+  }
+
+  .aiv__selection-action {
+    margin-left: 0.25rem;
+    padding: 0.25rem 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-accent);
+    background: transparent;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .aiv__selection-action:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .aiv__selection-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .aiv__selection-clear {
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .aiv__selection-clear:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .aiv__selection-delete {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.375rem 0.75rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #fca5a5;
+    background: rgba(239, 68, 68, 0.15);
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .aiv__selection-delete:hover {
+    background: rgba(239, 68, 68, 0.25);
+  }
+
+  .aiv__selection-delete-icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .selection-bar-enter-active {
+    transition: all 150ms ease;
+  }
+  .selection-bar-leave-active {
+    transition: all 100ms ease;
+  }
+  .selection-bar-enter-from,
+  .selection-bar-leave-to {
+    opacity: 0;
+    transform: translateY(-4px);
   }
 
   /* ===== Projects Grid ===== */
@@ -1640,6 +1873,59 @@
     border-color: rgba(255, 255, 255, 0.15);
     box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
     transform: scale(1.02);
+  }
+
+  .aiv-card--selected {
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
+  }
+
+  .aiv-card--selected:hover {
+    border-color: var(--sidebar-accent);
+  }
+
+  .aiv-card__checkbox {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    z-index: 30;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .aiv-card:hover .aiv-card__checkbox,
+  .aiv-card__checkbox--visible {
+    opacity: 1;
+  }
+
+  .aiv-card__checkbox-inner {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: all 150ms ease;
+  }
+
+  .aiv-card__checkbox-inner:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+  }
+
+  .aiv-card__checkbox-inner--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+  }
+
+  .aiv-card__checkbox-icon {
+    width: 16px;
+    height: 16px;
   }
 
   .aiv-card--skeleton {
@@ -1698,15 +1984,19 @@
     position: absolute;
     inset: 0;
     z-index: 0;
-    background-color: var(--sidebar-hover);
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
   }
 
-  .aiv-card__thumbnail-img {
+  .aiv-card__vignette {
     position: absolute;
     inset: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 40%, transparent 70%);
+  }
+
+  .aiv-card__thumbnail--empty {
+    background-color: var(--sidebar-hover);
   }
 
   .aiv-card__thumbnail-gradient {
@@ -1721,13 +2011,13 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    opacity: 0.2;
   }
 
   .aiv-card__folder-icon {
     width: 64px;
     height: 64px;
     color: var(--sidebar-text);
-    opacity: 0.2;
   }
 
   /* Bottom Info Overlay */
@@ -1797,7 +2087,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.75rem;
-    background: rgba(0, 0, 0, 0.3);
+    background-color: rgba(0, 0, 0, 0.4);
     opacity: 0;
     transition: opacity 200ms ease;
   }
@@ -1810,33 +2100,30 @@
     display: flex;
     align-items: center;
     justify-content: center;
-    width: 44px;
-    height: 44px;
-    background: rgba(0, 0, 0, 0.7);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 50%;
-    color: rgba(255, 255, 255, 0.9);
+    padding: 0.5rem;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 9999px;
+    color: #1f2937;
     cursor: pointer;
     transition: all 150ms ease;
-    backdrop-filter: blur(8px);
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
   }
 
   .aiv-card__action-btn:hover {
-    background: var(--sidebar-accent);
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.4);
-    transform: scale(1.08);
+    background-color: white;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
   }
 
   .aiv-card__action-btn--danger:hover {
-    background: #dc2626;
-    border-color: #dc2626;
-    box-shadow: 0 4px 12px rgba(220, 38, 38, 0.4);
+    background-color: #fecaca;
+    color: #dc2626;
   }
 
   .aiv-card__action-icon {
-    width: 18px;
-    height: 18px;
+    width: 20px;
+    height: 20px;
   }
 
   /* ===== Empty State ===== */
@@ -1876,8 +2163,7 @@
     font-size: 0.875rem;
     color: var(--sidebar-text-muted);
     margin: 0;
-    max-width: 320px;
-    line-height: 1.5;
+    max-width: 300px;
   }
 
   /* ═══ Content Layout ═══ */
@@ -1932,6 +2218,22 @@
     flex: 1;
     position: relative;
     min-height: 0;
+  }
+
+  .aiv-style-match {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 12px;
+    border-top: 1px solid rgba(99, 102, 241, 0.18);
+    background: rgba(99, 102, 241, 0.08);
+    color: #c7d2fe;
+    font-size: 11px;
+  }
+
+  .aiv-style-match strong {
+    margin-left: auto;
+    color: #a5b4fc;
   }
 
   .preview-placeholder {
@@ -3015,6 +3317,16 @@
     height: 6px;
     border-radius: 50%;
     background: rgba(255, 255, 255, 0.2);
+  }
+
+  .preview-generating__cancel {
+    padding: 6px 11px;
+    border: 1px solid rgba(248, 113, 113, 0.28);
+    border-radius: 7px;
+    background: rgba(248, 113, 113, 0.08);
+    color: #fca5a5;
+    cursor: pointer;
+    font-size: 11px;
   }
 
   /* ═══ Animations ═══ */

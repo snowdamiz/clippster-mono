@@ -24,7 +24,6 @@ mod kick;
 mod pumpfun;
 mod rumble;
 mod sidecar;
-mod space_hls_speaker_timeline;
 mod storage;
 mod stripe_callback;
 mod studio;
@@ -1092,6 +1091,8 @@ generate_proxy_file,
 commands::file_utils::get_file_info,
 commands::file_utils::get_media_metadata,
 commands::file_utils::generate_video_thumbnail,
+commands::reference_video::prepare_reference_video,
+commands::reference_video::cancel_reference_analysis,
 
 // Auth commands
             auth::open_wallet_auth_window,
@@ -1110,7 +1111,7 @@ commands::file_utils::generate_video_thumbnail,
             stripe_callback::open_stripe_payment_window,
             stripe_callback::poll_stripe_payment_result,
             stripe_callback::clear_stripe_payment_result,
-            auth::start_post_for_me_oauth,
+            auth::start_social_oauth,
 
             // PumpFun commands
             pumpfun::get_pumpfun_clips,
@@ -1218,11 +1219,9 @@ commands::file_utils::generate_video_thumbnail,
             
             // Audio download commands
             audio_download::download_youtube_audio,
-            audio_download::download_twitter_space_audio,
             audio_download::upload_audio_file,
             audio_download::generate_audio_thumbnail,
             audio_download::cancel_audio_download,
-            space_hls_speaker_timeline::extract_space_speaker_timeline_from_hls_manifest,
 
             // Waveform commands
             waveform::extract_audio_waveform,
@@ -1239,6 +1238,7 @@ commands::file_utils::generate_video_thumbnail,
             storage::get_storage_paths,
             storage::get_app_data_dir,
             storage::create_directory,
+            storage::delete_editor_project_media,
             storage::copy_video_to_storage,
             storage::copy_asset_to_storage,
             storage::copy_clip_to_destination,
@@ -1397,6 +1397,7 @@ studio::studio_save_recording,
 
 ])
 .manage(commands::remotion_export::SidecarState::new())
+.manage(commands::reference_video::ReferenceAnalysisState::default())
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
 }

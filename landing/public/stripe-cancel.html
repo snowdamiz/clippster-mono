@@ -179,8 +179,12 @@
 
   <script>
     document.addEventListener('DOMContentLoaded', () => {
-      // Redirect back to billing page
+      const params = new URLSearchParams(window.location.search);
       setTimeout(() => {
+        if (params.get('return_to') === 'mobile') {
+          window.location.href = 'clippster://stripe/cancel';
+          return;
+        }
         window.location.href = '/organization/billing';
       }, 2000);
     });

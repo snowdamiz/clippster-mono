@@ -214,7 +214,9 @@ export async function getClipsWithBuildStatus(projectId: string): Promise<ClipWi
           updated_at: row.updated_at,
           current_version_id: row.current_version_id,
           campaign_id: row.campaign_id,
-          detection_session_id: row.detection_session_id,
+          cover_image_id: row.cover_image_id ?? null,
+          cover_image_path: row.cover_image_path ?? null,
+          detection_session_id: row.detection_session_id || null,
           session_created_at: row.session_created_at,
           session_run_color: row.session_run_color,
           session_prompt: row.session_prompt,
@@ -346,7 +348,6 @@ export async function getClipWithBuildStatus(clipId: string): Promise<Clip | nul
       built_duration: row.built_duration,
       current_version_id: row.current_version_id,
       campaign_id: row.campaign_id,
-      detection_session_id: row.detection_session_id || null,
       created_at: row.created_at,
       updated_at: row.updated_at,
     };

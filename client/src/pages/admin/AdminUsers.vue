@@ -819,6 +819,7 @@
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import { useAuthStore } from '@/stores/auth';
+  import { useToast } from '@/composables/useToast';
   import api from '@/services/api';
 
   interface UserType {
@@ -851,6 +852,7 @@
   type UserSubscription = UserType['subscription'];
 
   const authStore = useAuthStore();
+  const { error: showErrorToast } = useToast();
 
   const tierOptions = [
     { label: 'Starter (600 credits)', value: 'starter' },
@@ -907,7 +909,7 @@
   const openUserActionMenuId = ref<number | null>(null);
   const userActionMenuRefs = ref<Map<number, HTMLElement>>(new Map());
 
-  const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app');
+  const API_BASE = import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://127.0.0.1:4000' : 'https://api.clippster.app');
 
   // Filtered and sorted users
   const filteredAndSortedUsers = computed(() => {
@@ -1045,13 +1047,18 @@
     }
   };
 
-  const exportUserEmailsCsv = () => {
+  const exportUserEmailsCsv = async () => {
     const emails = users.value.map((user) => user.email).filter(Boolean);
     if (!emails.length) {
-      error.value = 'No user emails to export';
+      showErrorToast('Export failed', 'No user emails to export');
       return;
     }
-    downloadEmailsCsv(emails, 'user-emails.csv');
+    try {
+      await downloadEmailsCsv(emails, 'user-emails.csv');
+    } catch (err) {
+      console.error('Failed to export user emails:', err);
+      showErrorToast('Export failed', err instanceof Error ? err.message : 'Failed to export emails CSV');
+    }
   };
 
   const getSubscriptionStatusClass = (status: string | undefined) => {

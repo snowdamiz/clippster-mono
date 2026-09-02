@@ -107,6 +107,33 @@ defmodule ClippsterServerWeb.Router do
     plug(ClippsterServerWeb.RateLimit, max_requests: 10, window_seconds: 3600)
   end
 
+  pipeline :api_media do
+    plug(:accepts, ["json"])
+
+    plug(CORSPlug,
+      origin: &__MODULE__.cors_origins/0,
+      methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+      headers: [
+        "Authorization",
+        "Content-Type",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "X-Client-Platform"
+      ],
+      max_age: 86400,
+      credentials: true
+    )
+
+    plug(ClippsterServerWeb.AuthPlug)
+    plug(ClippsterServerWeb.EnsureOrgSubscription)
+    plug(ClippsterServerWeb.RateLimit,
+      max_requests: 30,
+      window_seconds: 3600,
+      identifier: :user_id
+    )
+  end
+
   pipeline :public_html do
     plug(:accepts, ["html"])
   end
@@ -128,7 +155,9 @@ defmodule ClippsterServerWeb.Router do
       ~r/^http:\/\/localhost:\d+$/,
       # Match Tauri custom protocols
       ~r/^tauri:\/\//,
-      ~r/^https?:\/\/tauri\./
+      ~r/^https?:\/\/tauri\./,
+      # Expo dev server (WebView OAuth flows)
+      ~r/^exp:\/\//
     ]
   end
 
@@ -191,6 +220,9 @@ defmodule ClippsterServerWeb.Router do
     # Stripe payment routes (webhook is public, no auth needed)
     post("/stripe/webhook", StripeController, :webhook)
 
+    # Tokend partner webhooks (signature-verified; no user auth)
+    post("/tokend/webhook", TokendController, :webhook)
+
     # Subscription tiers (public - for pricing display)
     get("/subscription/tiers", SubscriptionController, :get_tiers)
 
@@ -209,6 +241,14 @@ defmodule ClippsterServerWeb.Router do
 
     # Rumble routes
     get("/rumble/channels/:channel_name", RumbleController, :get_channel)
+
+    # Tokend public creator reads. Mock mode is explicit and returns labeled fixtures.
+    get("/tokend/mode", TokendController, :mode)
+    get("/tokend/channels/:slug", TokendController, :get_channel)
+    get("/tokend/channels/:slug/live", TokendController, :get_live_status)
+
+    # Tokend partner OAuth callback (usable only with the opt-in Phoenix flag and complete config)
+    get("/auth/tokend/callback", TokendController, :oauth_callback)
 
     # Organization invitation (public - for viewing invitation details)
     get("/invitations/:token", OrganizationController, :get_invitation)
@@ -251,6 +291,15 @@ defmodule ClippsterServerWeb.Router do
     )
   end
 
+  # Media resolver routes (auth + per-user rate limit)
+  scope "/api", ClippsterServerWeb do
+    pipe_through(:api_media)
+
+    post("/media/resolve-url", MediaController, :resolve_url)
+    post("/media/probe", MediaController, :probe)
+    get("/media/vods", MediaController, :list_vods)
+  end
+
   # Protected routes (require authentication)
   scope "/api", ClippsterServerWeb do
     pipe_through(:api_auth)
@@ -264,6 +313,19 @@ defmodule ClippsterServerWeb.Router do
     # User preferences
     get("/user/preferences", UserPreferencesController, :get_preferences)
     patch("/user/preferences", UserPreferencesController, :update_preferences)
+
+    # Personal branding (creator profiles + assets — cross-device sync)
+    get("/user/branding", UserCreatorProfileController, :bundle)
+    get("/user/assets", UserAssetController, :index)
+    get("/user/assets/:id", UserAssetController, :show)
+    post("/user/assets", UserAssetController, :create)
+    put("/user/assets/:id", UserAssetController, :update)
+    delete("/user/assets/:id", UserAssetController, :delete)
+    get("/user/creator-profiles", UserCreatorProfileController, :index)
+    get("/user/creator-profiles/:id", UserCreatorProfileController, :show)
+    post("/user/creator-profiles", UserCreatorProfileController, :create)
+    put("/user/creator-profiles/:id", UserCreatorProfileController, :update)
+    delete("/user/creator-profiles/:id", UserCreatorProfileController, :delete)
 
     # User restrictions
     get("/user/restrictions", RestrictionController, :get_user_restrictions)
@@ -287,6 +349,27 @@ defmodule ClippsterServerWeb.Router do
     # Beta code activation (requires auth)
     post("/beta/activate", BetaController, :activate)
 
+    # Cloud project sync (hybrid sync — user-scoped, not org-scoped)
+    get("/cloud/projects", CloudProjectController, :index)
+    post("/cloud/projects", CloudProjectController, :create)
+    get("/cloud/projects/:id", CloudProjectController, :show)
+    put("/cloud/projects/:id", CloudProjectController, :update)
+    delete("/cloud/projects/:id", CloudProjectController, :delete)
+    post("/cloud/projects/sync", CloudProjectController, :bulk_sync)
+    post("/cloud/devices/register", CloudProjectController, :register_device)
+    get("/cloud/storage/quota", CloudProjectController, :storage_quota)
+    post("/cloud/subscription/checkout", CloudProjectController, :subscription_checkout)
+    post("/cloud/projects/:id/media/presigned-upload", CloudProjectController, :presigned_upload)
+    post("/cloud/projects/:id/media/:asset_id/complete", CloudProjectController, :complete_upload)
+
+    get(
+      "/cloud/projects/:id/media/:asset_id/presigned-download",
+      CloudProjectController,
+      :presigned_download
+    )
+
+    delete("/cloud/projects/:id/media/:asset_id", CloudProjectController, :delete_media)
+
     post("/clips/detect", ClipsController, :detect)
     post("/clips/detect-chunked", ClipsController, :detect_chunked)
     post("/clips/detect-realtime", ClipsController, :detect_realtime)
@@ -294,14 +377,6 @@ defmodule ClippsterServerWeb.Router do
 
     # Real-time detection credit deduction
     post("/credits/deduct", ClipsController, :deduct_realtime_credits)
-
-    # AI video generation routes
-    post("/ai/generate-video", AIController, :generate_video)
-    post("/ai/generate-video-streamed", AIController, :generate_video_streamed)
-    post("/ai/compositions", AIController, :save_composition)
-    get("/ai/compositions", AIController, :list_compositions)
-    get("/ai/compositions/:id", AIController, :get_composition)
-    delete("/ai/compositions/:id", AIController, :delete_composition)
 
     # AI reference analysis
     post("/ai/reference/analyze", AIChatController, :analyze_reference)
@@ -327,8 +402,30 @@ defmodule ClippsterServerWeb.Router do
     post("/ai/chat/sessions/:id/generate", AIChatController, :trigger_generation)
     post("/ai/chat/sessions/:id/refine", AIChatController, :send_refinement)
     post("/ai/chat/sessions/:id/reference", AIChatController, :upload_reference)
+    put("/ai/chat/sessions/:id/style", AIChatController, :update_style_pack)
     post("/ai/chat/sessions/:id/media-analysis", AIChatController, :upload_media_analysis)
     put("/ai/chat/sessions/:id/media", AIChatController, :update_media)
+
+    # AI thumbnail sessions
+    get("/ai/thumbnail/sessions", AIThumbnailController, :list_sessions)
+    post("/ai/thumbnail/sessions", AIThumbnailController, :create_session)
+    get("/ai/thumbnail/sessions/:id", AIThumbnailController, :get_session)
+    delete("/ai/thumbnail/sessions/:id", AIThumbnailController, :delete_session)
+    put("/ai/thumbnail/sessions/:id/name", AIThumbnailController, :rename_session)
+    put("/ai/thumbnail/sessions/:id/mode", AIThumbnailController, :update_mode)
+    put("/ai/thumbnail/sessions/:id/media", AIThumbnailController, :update_media)
+    post("/ai/thumbnail/sessions/:id/reference", AIThumbnailController, :set_reference)
+    post("/ai/thumbnail/sessions/:id/message", AIThumbnailController, :send_message)
+    post("/ai/thumbnail/sessions/:id/generate", AIThumbnailController, :trigger_generation)
+    post("/ai/thumbnail/sessions/:id/refine", AIThumbnailController, :send_refinement)
+    post("/ai/thumbnail/sessions/:id/accept", AIThumbnailController, :accept)
+
+    # Image editor projects
+    get("/image-editor/projects", ImageEditorController, :list_projects)
+    post("/image-editor/projects", ImageEditorController, :create_project)
+    get("/image-editor/projects/:id", ImageEditorController, :get_project)
+    put("/image-editor/projects/:id", ImageEditorController, :update_project)
+    delete("/image-editor/projects/:id", ImageEditorController, :delete_project)
 
     # Speaker detection and framing strategy
     post("/clips/:clip_id/analyze-speakers", SpeakerDetectionController, :analyze)
@@ -706,6 +803,8 @@ defmodule ClippsterServerWeb.Router do
     get("/organizations/:organization_id/social-accounts/:id", SocialAccountController, :show)
     post("/organizations/:organization_id/social-accounts", SocialAccountController, :create)
     put("/organizations/:organization_id/social-accounts/:id", SocialAccountController, :update)
+    post("/organizations/:org_id/tokend/connect", TokendController, :connect_org)
+    post("/organizations/:org_id/tokend/connect-url", TokendController, :connect_url_org)
 
     delete(
       "/organizations/:organization_id/social-accounts/:id",
@@ -888,6 +987,13 @@ defmodule ClippsterServerWeb.Router do
     post("/user/twitter/publish", UserPostsController, :publish_twitter)
     post("/user/tiktok/publish", UserPostsController, :publish_tiktok)
     post("/user/youtube/publish", UserPostsController, :publish_youtube)
+    post("/user/tokend/publish", UserPostsController, :publish_tokend)
+    post("/user/tokend/connect", TokendController, :connect_user)
+    post("/user/tokend/connect-url", TokendController, :connect_url_user)
+    get("/user/tokend/catalog/:slug", TokendController, :partner_catalog)
+    post("/user/tokend/media/:type/:id/grants", TokendController, :create_media_grant)
+    get("/user/tokend/media/grants/:token", TokendController, :redeem_media_grant)
+    post("/user/tokend/streams/:id/viewer-token", TokendController, :create_viewer_token)
     get("/user/posts", UserPostsController, :index)
     get("/user/posts/analytics", UserPostsController, :analytics_summary)
     post("/user/posts/sync-analytics", UserPostsController, :sync_user_analytics)
@@ -1272,6 +1378,7 @@ defmodule ClippsterServerWeb.Router do
     get("/admin/users/:user_id/profile", AdminController, :get_user_profile)
     post("/admin/users/:user_id/promote", AdminController, :promote_user)
     put("/admin/users/:user_id/credits", AdminController, :update_user_credits)
+    post("/admin/users/:user_id/cloud-quota", CloudProjectController, :admin_set_quota)
     post("/admin/users/:user_id/reset-password", AdminController, :reset_user_password)
 
     # Moderator management
@@ -1283,6 +1390,8 @@ defmodule ClippsterServerWeb.Router do
     # AI editor access management
     post("/admin/users/:user_id/ai-editor", AdminController, :enable_ai_editor)
     delete("/admin/users/:user_id/ai-editor", AdminController, :disable_ai_editor)
+    post("/admin/users/:user_id/circles", AdminController, :enable_circles)
+    delete("/admin/users/:user_id/circles", AdminController, :disable_circles)
 
     # Campaigns access management
     post("/admin/users/:user_id/campaigns", AdminController, :enable_campaigns)

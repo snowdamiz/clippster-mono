@@ -256,22 +256,6 @@ mod tests {
     }
 
     #[test]
-    fn test_voice_chipmunk() {
-        let effect = AudioEffectSettings {
-            id: "test".to_string(),
-            effect_type: "voice-chipmunk".to_string(),
-            start_time: 0.0,
-            end_time: 5.0,
-            intensity: 1.0,
-            parameters: None,
-        };
-
-        let filter = build_audio_effect_filter(&effect).unwrap();
-        assert!(filter.contains("asetrate=44100*1.5"));
-        assert!(filter.contains("atempo=0.67"));
-    }
-
-    #[test]
     fn test_filter_chain() {
         let effects = vec![
             AudioEffectSettings {

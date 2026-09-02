@@ -15,7 +15,7 @@ defmodule ClippsterServer.Social.PostForMeConnectionSession do
 
   @scopes ~w(org user)
   @statuses ~w(pending callback_received synced failed expired)
-  @return_modes ~w(dashboard tauri web)
+  @return_modes ~w(dashboard tauri web mobile)
 
   schema "post_for_me_connection_sessions" do
     field :scope, :string

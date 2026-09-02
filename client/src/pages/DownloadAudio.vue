@@ -1,11 +1,6 @@
 <template>
   <div class="streamvods">
-    <PageLayout
-      title="Download Audio"
-      description="Download audio from YouTube"
-      :show-header="true"
-      :icon="Headphones"
-    >
+    <PageLayout title="Download Audio" description="Download audio from YouTube" :show-header="true" :icon="Headphones">
       <template #actions>
         <div class="streamvods-actions">
           <!-- Recent Searches Dropdown -->
@@ -28,7 +23,10 @@
                 v-for="search in platformStore.getAudioRecentSearches.slice(0, 15)"
                 :key="`${search.platform}-${search.id}`"
                 class="streamvods-recent__item"
-                @click="handleRecentSearchClick(search); showRecentDropdown = false;"
+                @click="
+                  handleRecentSearchClick(search);
+                  showRecentDropdown = false;
+                "
               >
                 <div class="streamvods-recent__avatar">
                   <div class="streamvods-recent__avatar-img">
@@ -55,7 +53,10 @@
                 </div>
               </div>
               <button
-                @click="platformStore.clearAudioRecentSearches(); showRecentDropdown = false;"
+                @click="
+                  platformStore.clearAudioRecentSearches();
+                  showRecentDropdown = false;
+                "
                 class="streamvods-recent__clear"
               >
                 Clear All
@@ -73,15 +74,6 @@
               >
                 <img src="/youtube.svg" class="streamvods-search__platform-icon" />
               </div>
-              <!-- X Spaces download temporarily disabled
-              <div
-                v-else-if="detectedPlatform === 'twitter'"
-                class="streamvods-search__platform streamvods-search__platform--twitter"
-                key="twitter"
-              >
-                <img src="/x.svg" class="streamvods-search__platform-icon" />
-              </div>
-              -->
               <Search v-else class="streamvods-search__icon" key="search" />
             </transition>
             <input
@@ -94,20 +86,14 @@
             />
           </div>
           <button class="streamvods-search-btn" :disabled="!searchInput || isSearching" @click="handleSearch">
-            <Loader2
-              v-if="isSearching"
-              class="streamvods-search-btn__icon streamvods-search-btn__icon--spin"
-            />
+            <Loader2 v-if="isSearching" class="streamvods-search-btn__icon streamvods-search-btn__icon--spin" />
             <Search v-else class="streamvods-search-btn__icon" />
             Search
           </button>
         </div>
       </template>
 
-      <div
-        class="streamvods__content"
-        :class="{ 'streamvods__content--empty': clips.length === 0 && !isSearching }"
-      >
+      <div class="streamvods__content" :class="{ 'streamvods__content--empty': clips.length === 0 && !isSearching }">
         <!-- Page Heading -->
         <div v-if="clips.length > 0 || isSearching" class="streamvods__heading">
           <h1 class="streamvods__title">Download Audio</h1>
@@ -150,9 +136,7 @@
 
         <!-- Results Grid -->
         <div v-else-if="clips.length > 0" class="streamvods__results">
-          <div class="streamvods__results-count">
-            {{ clips.length }} {{ clips.length === 1 ? 'item' : 'items' }}
-          </div>
+          <div class="streamvods__results-count">{{ clips.length }} {{ clips.length === 1 ? 'item' : 'items' }}</div>
 
           <!-- Bulk Actions Bar -->
           <div v-if="selectedIds.size > 0" class="streamvods__bulk-actions">
@@ -336,25 +320,26 @@
 
   function detectPlatform() {
     const val = searchInput.value?.trim().toLowerCase();
-    if (!val) { detectedPlatform.value = null; return; }
+    if (!val) {
+      detectedPlatform.value = null;
+      return;
+    }
     if (val.includes('youtube.com') || val.includes('youtu.be')) {
       detectedPlatform.value = 'YouTube';
       return;
     }
-    // X Spaces (twitter/x.com) temporarily disabled — re-enable detection when shipping again
     detectedPlatform.value = null;
   }
 
   async function handleSearch() {
     const val = searchInput.value.trim();
-    if (!val) { showError('Invalid Input', 'Please enter a YouTube URL'); return; }
+    if (!val) {
+      showError('Invalid Input', 'Please enter a YouTube URL');
+      return;
+    }
     detectPlatform();
     if (!detectedPlatform.value) {
-      const hint =
-        /twitter\.com|x\.com/i.test(val)
-          ? 'X Spaces downloads are temporarily unavailable. Use a YouTube URL.'
-          : 'Please enter a valid YouTube URL';
-      showError('Unknown Platform', hint);
+      showError('Unknown Platform', 'Please enter a valid YouTube URL');
       return;
     }
     isSearching.value = true;
@@ -367,7 +352,7 @@
       if (result.success && platformStore.clips.length > 0) {
         clips.value = [...platformStore.clips];
         success('Found', `Found ${platformStore.clips.length} item${platformStore.clips.length !== 1 ? 's' : ''}`);
-        
+
         // Add to audio recent searches (not regular recent searches)
         platformStore.addToAudioRecentSearches(
           platformStore.currentSearchId || val,
@@ -407,7 +392,7 @@
       const downloadId = `audio-${Date.now()}`;
       const videoUrl = clip.mp4Url || clip.playlistUrl || clip.clipId;
       if (detectedPlatform.value !== 'YouTube') {
-        showError('Not Available', 'X Spaces downloads are temporarily unavailable.');
+        showError('Not Available', 'Only YouTube audio downloads are supported.');
         return;
       }
       await startYouTubeAudioDownload(downloadId, clip.title, videoUrl, platformStore.currentSearchId || 'unknown');
@@ -430,10 +415,12 @@
     selectedIds.value = new Set(selectedIds.value);
   }
 
-  function clearSelection() { selectedIds.value = new Set(); }
+  function clearSelection() {
+    selectedIds.value = new Set();
+  }
 
   async function downloadSelected() {
-    const selected = clips.value.filter(c => selectedIds.value.has(c.clipId));
+    const selected = clips.value.filter((c) => selectedIds.value.has(c.clipId));
     for (const clip of selected) {
       await handleDownloadClip(clip);
     }
@@ -441,9 +428,12 @@
 
   function getPlatformIcon(platform: string): string {
     const icons: Record<string, string> = {
-      YouTube: '/youtube.svg', twitter: '/x.svg',
-      pumpfun: '/capsule.svg', kick: '/kick.svg',
-      twitch: '/twitch.svg', rumble: '/rumble.svg',
+      YouTube: '/youtube.svg',
+      twitter: '/x.svg',
+      pumpfun: '/capsule.svg',
+      kick: '/kick.svg',
+      twitch: '/twitch.svg',
+      rumble: '/rumble.svg',
     };
     return icons[platform] || '/capsule.svg';
   }
@@ -886,10 +876,14 @@
   }
 
   @media (min-width: 640px) {
-    .streamvods__grid { grid-template-columns: repeat(2, 1fr); }
+    .streamvods__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
   }
   @media (min-width: 1024px) {
-    .streamvods__grid { grid-template-columns: repeat(3, 1fr); }
+    .streamvods__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
   }
 
   /* ===== VOD Card ===== */
@@ -1117,7 +1111,12 @@
   .vod-card__skeleton-title {
     height: 16px;
     width: 65%;
-    background: linear-gradient(90deg, rgba(255,255,255,0.05) 25%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.05) 75%);
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.05) 25%,
+      rgba(255, 255, 255, 0.1) 50%,
+      rgba(255, 255, 255, 0.05) 75%
+    );
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
     border-radius: 4px;
@@ -1127,7 +1126,12 @@
     height: 12px;
     width: 40%;
     margin-top: 0.25rem;
-    background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.08) 50%, rgba(255,255,255,0.03) 75%);
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.03) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      rgba(255, 255, 255, 0.03) 75%
+    );
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
     animation-delay: 0.15s;
@@ -1211,7 +1215,10 @@
     color: #f87171;
   }
 
-  .streamvods__error-icon svg { width: 32px; height: 32px; }
+  .streamvods__error-icon svg {
+    width: 32px;
+    height: 32px;
+  }
 
   .streamvods__error-title {
     font-size: 1.125rem;
@@ -1470,7 +1477,10 @@
     opacity: 0.5;
   }
 
-  .download-preview__info { flex: 1; min-width: 0; }
+  .download-preview__info {
+    flex: 1;
+    min-width: 0;
+  }
 
   .download-preview__title {
     font-size: 0.875rem;
@@ -1501,20 +1511,46 @@
 
   /* ===== Animations ===== */
   @keyframes spin {
-    from { transform: rotate(0deg); }
-    to { transform: rotate(360deg); }
+    from {
+      transform: rotate(0deg);
+    }
+    to {
+      transform: rotate(360deg);
+    }
   }
 
   @keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
   }
 
   /* ===== Transitions ===== */
-  .modal-enter-active, .modal-leave-active { transition: opacity 200ms ease; }
-  .modal-enter-from, .modal-leave-to { opacity: 0; }
-  .dialog-enter-active { transition: all 200ms ease; }
-  .dialog-enter-from { opacity: 0; transform: scale(0.95) translateY(-8px); }
-  .scale-enter-active, .scale-leave-active { transition: all 150ms ease; }
-  .scale-enter-from, .scale-leave-to { opacity: 0; transform: scale(0.8); }
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 200ms ease;
+  }
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+  .dialog-enter-active {
+    transition: all 200ms ease;
+  }
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.95) translateY(-8px);
+  }
+  .scale-enter-active,
+  .scale-leave-active {
+    transition: all 150ms ease;
+  }
+  .scale-enter-from,
+  .scale-leave-to {
+    opacity: 0;
+    transform: scale(0.8);
+  }
 </style>

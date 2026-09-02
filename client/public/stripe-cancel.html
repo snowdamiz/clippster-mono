@@ -151,9 +151,12 @@
 
   <script>
     // Try to close the window after a delay
-    setTimeout(() => {
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('return_to') === 'mobile') {
+      window.location.href = 'clippster://stripe/cancel';
+    } else {
       window.close();
-    }, 5000);
+    }
   </script>
 </body>
 </html>

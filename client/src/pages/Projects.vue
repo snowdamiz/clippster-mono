@@ -79,11 +79,41 @@
     >
       <!-- Page Heading -->
       <div
-        v-if="projects.length > 0 || loading || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0"
+        v-if="projects.length > 0 || loading || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0 || mockProjectActive"
         class="projects__heading"
       >
         <h1 class="projects__title">Video Library</h1>
         <p class="projects__subtitle">Manage and organize your downloaded videos and detect clips</p>
+      </div>
+
+      <!-- Tour demo project -->
+      <div v-if="mockProjectActive" class="projects__section" style="margin-bottom: 1rem">
+        <h3 class="projects__section-header">Tour Demo</h3>
+        <div class="projects__grid">
+          <div class="project-card" data-tour-id="tour-mock-project">
+            <div class="project-card__thumbnail project-card__thumbnail--empty">
+              <div class="project-card__thumbnail-gradient"></div>
+              <div class="project-card__empty-icon">
+                <Folder class="project-card__folder-icon" />
+              </div>
+            </div>
+            <div class="project-card__bottom">
+              <h3 class="project-card__title">Demo VOD Project</h3>
+              <div class="project-card__meta">Sample project for the tour</div>
+              <div class="project-card__actions" style="display: flex; gap: 0.35rem; margin-top: 0.5rem">
+                <button type="button" class="projects-section-btn" data-tour-id="tour-mock-detect" @click.prevent>
+                  Detect Clips
+                </button>
+                <button type="button" class="projects-section-btn" data-tour-id="tour-mock-transcribe" @click.prevent>
+                  Transcribe
+                </button>
+                <button type="button" class="projects-section-btn" data-tour-id="tour-mock-preedit" @click.prevent>
+                  Pre-Edit VOD
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
 
       <!-- Loading State -->
@@ -241,6 +271,7 @@
                   <!-- Title -->
                   <h3 class="project-card__title" :title="project.name">
                     {{ project.name }}
+                    <!-- Cloud sync badge disabled: desktop/mobile are independent apps. -->
                   </h3>
 
                   <!-- Metadata Row -->
@@ -1300,7 +1331,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted, computed, watch, nextTick, Transition } from 'vue';
+  import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { formatDateTime, formatDate, toDate } from '@/utils/dateTimeUtils';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -1417,10 +1448,13 @@
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
   import { useSubscription } from '@/composables/useSubscription';
   import { useAIPermission } from '@/composables/useAIPermission';
+  import { useAppTour, useTourFlags } from '@/composables/useAppTour';
   const router = useRouter();
   // AI Permission check
   const { isAIAllowed } = useAIPermission();
   const { gates } = useSubscriptionGate();
+  const { maybeStartPageTour } = useAppTour();
+  const { mockProjectActive } = useTourFlags();
   const { fetchSubscriptionStatus } = useSubscription();
   import { utf8ToBase64Url } from '@/utils/encoding';
   import { save } from '@tauri-apps/plugin-dialog';
@@ -1990,7 +2024,7 @@
 
   function getProjectPlatform(
     project: Project
-  ): 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual' | null {
+  ): 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Tokend' | 'Manual' | null {
     // 0. Check explicit platform field
     if (project.platform) {
       return project.platform;
@@ -6151,6 +6185,8 @@
     } catch (error) {
       console.error('[Projects] Failed to set up Tauri event listeners:', error);
     }
+
+    maybeStartPageTour('page_projects');
   });
 
   onUnmounted(() => {
@@ -6722,6 +6758,16 @@
     overflow: hidden;
     text-overflow: ellipsis;
     letter-spacing: -0.01em;
+  }
+
+  .project-card__cloud-badge {
+    margin-left: 0.5rem;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: rgba(139, 92, 246, 0.9);
+    vertical-align: middle;
   }
 
   .project-card--list .project-card__meta {

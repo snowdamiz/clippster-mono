@@ -125,10 +125,27 @@ function buildEmailPreviewHtml(body: string, preheader: string, audience: string
         ? 'This is a direct message from the Clippster team.'
         : "You're receiving this email because you have a Clippster account."
 
+  // Mirrors server admin_broadcast_html. color-scheme:dark prevents the parent
+  // admin UI from forcing black-on-black canvas text inside the preview iframe.
   return `<!DOCTYPE html>
-<html lang="en">
-  <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-  <body style="margin:0;padding:0;background-color:#0b0c0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<html lang="en" style="color-scheme:dark;">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark only">
+    <meta name="supported-color-schemes" content="dark">
+    <style>
+      :root { color-scheme: dark only; }
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background-color: #0b0c0f !important;
+        color: #d7dde8 !important;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background-color:#0b0c0f;color:#d7dde8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(preheader)}</div>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#0b0c0f;min-height:100vh;">
       <tr><td align="center" style="padding:36px 18px;">
@@ -174,7 +191,7 @@ function escapeHtml(value: string) {
 
 export function AdminMessagingPage() {
   const [form, setForm] = useState<FormState>(defaultForm())
-  const [editorMode, setEditorMode] = useState<EditorMode>('visual')
+  const [editorMode, setEditorMode] = useState<EditorMode>('html')
   const [sending, setSending] = useState(false)
   const [showConfirm, setShowConfirm] = useState(false)
   const [campaigns, setCampaigns] = useState<Campaign[]>([])
@@ -191,6 +208,8 @@ export function AdminMessagingPage() {
   })
   const textareaRef = useRef<HTMLTextAreaElement>(null)
 
+  const emailPreviewHtml = buildEmailPreviewHtml(form.body, form.preheader, form.audience)
+
   const canSend =
     form.subject.trim() &&
     form.body.trim() &&
@@ -205,8 +224,6 @@ export function AdminMessagingPage() {
       : form.audience === 'waitlist'
         ? `${recipientPreview.recipient_count} waitlist members`
         : form.targetEmail
-
-  const emailPreviewHtml = buildEmailPreviewHtml(form.body, form.preheader, form.audience)
 
   // ── API ──────────────────────────────────────────────────────────────────
 
@@ -542,7 +559,11 @@ export function AdminMessagingPage() {
               {editorMode === 'preview' && (
                 <div className="admin-msg__preview-wrapper">
                   {form.body ? (
-                    <iframe className="admin-msg__preview-frame" title="Email preview" srcDoc={emailPreviewHtml} />
+                    <iframe
+                      className="admin-msg__preview-frame"
+                      title="Email preview"
+                      srcDoc={emailPreviewHtml}
+                    />
                   ) : (
                     <div className="admin-msg__preview-empty">
                       <Eye className="admin-msg__preview-empty-icon" />

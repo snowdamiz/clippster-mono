@@ -31,6 +31,7 @@ import {
 	type SnapPoint,
 	type SnapIndex,
 } from "../useTimelineSnapping";
+import { getLinkage, getMainTrackMagnet } from "../useTimelineTools";
 import type {
 	DropTarget,
 	ElementDragState,
@@ -321,7 +322,9 @@ export function useElementInteraction({
 
 		// Standard cross-track edge snapping via the cached sorted index.
 		// Compare both the start-edge and end-edge of the dragged element and
-		// keep whichever is closer.
+		// keep whichever is closer — except playhead/bookmark snaps always
+		// align the clip START (never end-at-playhead, which made the snap
+		// indicator look like the drop start while the clip landed earlier).
 		const startSnap = snapToIndex({
 			targetTime: frameSnappedTime,
 			index: cache.snapIndex,
@@ -334,16 +337,23 @@ export function useElementInteraction({
 			zoomLevel: zoomLevel.value,
 		});
 
-		// Choose the better of the two; the end-edge candidate snaps the element
-		// such that its trailing edge meets the snap point.
-		const startBetter = startSnap.snapPoint && (!endSnap.snapPoint || startSnap.snapDistance <= endSnap.snapDistance);
+		const endSnapPoint = endSnap.snapPoint;
+		const endIsMarkerSnap =
+			endSnapPoint?.type === "playhead" || endSnapPoint?.type === "bookmark";
+		const usableEndSnap = endIsMarkerSnap
+			? { snappedTime: frameSnappedTime + elementDuration, snapPoint: null as SnapPoint | null, snapDistance: Infinity }
+			: endSnap;
+
+		const startBetter =
+			startSnap.snapPoint &&
+			(!usableEndSnap.snapPoint || startSnap.snapDistance <= usableEndSnap.snapDistance);
 		if (startBetter && startSnap.snapPoint) {
 			return { snappedTime: startSnap.snappedTime, snapPoint: startSnap.snapPoint };
 		}
-		if (endSnap.snapPoint) {
+		if (usableEndSnap.snapPoint) {
 			return {
-				snappedTime: endSnap.snappedTime - elementDuration,
-				snapPoint: endSnap.snapPoint,
+				snappedTime: usableEndSnap.snappedTime - elementDuration,
+				snapPoint: usableEndSnap.snapPoint,
 			};
 		}
 		return { snappedTime: frameSnappedTime, snapPoint: null };
@@ -495,8 +505,8 @@ export function useElementInteraction({
 
 	/**
 	 * Pushes the latest drag offsets into the DOM controller. X comes from
-	 * snapped time vs committed start. Y snaps to the target track top so the
-	 * clip never floats between rows.
+	 * snapped time vs committed start. Y snaps to the target track top (or the
+	 * new-track insert line) so the clip never floats between rows.
 	 */
 	function applyDragDomOffsets(
 		currentTime: number,
@@ -509,7 +519,7 @@ export function useElementInteraction({
 			TIMELINE_CONSTANTS.PIXELS_PER_SECOND *
 			zoomLevel.value;
 		let dy = 0;
-		if (dropTarget && !dropTarget.isNewTrack && sourceTrackId) {
+		if (dropTarget && sourceTrackId) {
 			const sourceIdx = tracks.value.findIndex((t) => t.id === sourceTrackId);
 			const targetIdx = dropTarget.trackIndex;
 			if (sourceIdx >= 0 && targetIdx >= 0) {
@@ -517,10 +527,14 @@ export function useElementInteraction({
 					tracks: tracks.value,
 					trackIndex: sourceIdx,
 				});
-				const targetTop = getCumulativeHeightBefore({
+				let targetTop = getCumulativeHeightBefore({
 					tracks: tracks.value,
-					trackIndex: targetIdx,
+					trackIndex: Math.min(targetIdx, tracks.value.length),
 				});
+				// New-track inserts open a gap at targetIdx; aim the clip at that gap.
+				if (dropTarget.isNewTrack) {
+					targetTop = Math.max(0, targetTop);
+				}
 				dy = targetTop - sourceTop;
 			}
 		}
@@ -535,14 +549,16 @@ export function useElementInteraction({
 		newStartTime: number,
 		dropTarget: DropTarget | null,
 	) {
+		const sourceTrack = tracks.value.find((t) => t.id === sourceTrackId);
 		const targetTrack =
 			dropTarget && !dropTarget.isNewTrack
 				? tracks.value[dropTarget.trackIndex]
-				: tracks.value.find((t) => t.id === sourceTrackId);
+				: sourceTrack;
 		if (!targetTrack) {
 			if (dragRippleShifts.value.size > 0) dragRippleShifts.value = EMPTY_RIPPLE;
 			return;
 		}
+		const closeSourceGaps = !!sourceTrack && isMainTrack(sourceTrack) && getMainTrackMagnet();
 		const next = computeDragRipplePreview({
 			tracks: tracks.value,
 			sourceTrackId,
@@ -551,6 +567,7 @@ export function useElementInteraction({
 			oldStartTime,
 			duration,
 			newStartTime,
+			closeSourceGaps,
 		});
 		dragRippleShifts.value = next.size > 0 ? next : EMPTY_RIPPLE;
 	}
@@ -679,7 +696,7 @@ export function useElementInteraction({
 	}
 
 	function syncLinkedElement(elementId: string, trackId: string, timeDelta: number) {
-		if (timeDelta === 0) return;
+		if (timeDelta === 0 || !getLinkage()) return;
 		const currentTracks = editor.timeline.getTracks();
 		const srcTrack = currentTracks.find((t) => t.id === trackId);
 		const srcEl = srcTrack?.elements.find((e) => e.id === elementId);

@@ -762,12 +762,24 @@ defmodule ClippsterServer.Emails do
 
     """
     <!DOCTYPE html>
-    <html lang="en">
+    <html lang="en" style="color-scheme: dark;">
     <head>
       <meta charset="UTF-8">
       <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      <meta name="color-scheme" content="dark only">
+      <meta name="supported-color-schemes" content="dark">
+      <style>
+        :root { color-scheme: dark only; }
+        html, body {
+          margin: 0 !important;
+          padding: 0 !important;
+          background-color: #0b0c0f !important;
+          color: #d7dde8 !important;
+          font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+        }
+      </style>
     </head>
-    <body style="margin: 0; padding: 0; background-color: #0b0c0f; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
+    <body style="margin: 0; padding: 0; background-color: #0b0c0f; color: #d7dde8; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;">
       <div style="display: none; max-height: 0; overflow: hidden; opacity: 0; color: transparent;">
         #{escaped_preheader}
       </div>

@@ -20,8 +20,17 @@ import type {
 	ImageElement,
 	StickerElement,
 	UploadAudioElement,
+	Transform,
 } from "../../types/timeline";
 import type { VideoEffectType } from "../../types/effects";
+
+export function cloneTransform(transform: Transform): Transform {
+	return {
+		scale: transform.scale,
+		rotate: transform.rotate,
+		position: { x: transform.position.x, y: transform.position.y },
+	};
+}
 
 export function canElementHaveAudio(
 	element: TimelineElement,
@@ -457,11 +466,23 @@ export function buildCaptionElement({
 		letterSpacing: c?.letterSpacing ?? DEFAULT_CAPTION_ELEMENT.letterSpacing,
 		lineHeight: c?.lineHeight ?? DEFAULT_CAPTION_ELEMENT.lineHeight,
 		textCase: c?.textCase ?? DEFAULT_CAPTION_ELEMENT.textCase,
-		stroke: c?.stroke ?? DEFAULT_CAPTION_ELEMENT.stroke,
-		shadow: c?.shadow,
-		glow: c?.glow,
-		gradient: c?.gradient,
-		transform: c?.transform ?? DEFAULT_CAPTION_ELEMENT.transform,
+		stroke: c?.stroke
+			? { ...c.stroke }
+			: DEFAULT_CAPTION_ELEMENT.stroke
+				? { ...DEFAULT_CAPTION_ELEMENT.stroke }
+				: undefined,
+		shadow: c?.shadow ? { ...c.shadow } : undefined,
+		glow: c?.glow ? { ...c.glow } : undefined,
+		gradient: c?.gradient ? { ...c.gradient, colors: [...c.gradient.colors] } : undefined,
+		transform: c?.transform
+			? {
+					...c.transform,
+					position: { ...c.transform.position },
+				}
+			: {
+					...DEFAULT_CAPTION_ELEMENT.transform,
+					position: { ...DEFAULT_CAPTION_ELEMENT.transform.position },
+				},
 		opacity: c?.opacity ?? DEFAULT_CAPTION_ELEMENT.opacity,
 		maxWordsPerLine: c?.maxWordsPerLine ?? DEFAULT_CAPTION_ELEMENT.maxWordsPerLine,
 	};

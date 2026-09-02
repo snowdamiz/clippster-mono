@@ -1326,6 +1326,7 @@
   import ClipperProfileOnboardingWizard from '@/components/ClipperProfileOnboardingWizard.vue';
   import AddPostDialog from '@/components/AddPostDialog.vue';
   import XLogo from '@/components/icons/XLogo.vue';
+  import TokendLogo from '@/components/icons/TokendLogo.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import { Button } from '@/components/ui/button';
   import { Input } from '@/components/ui/input';
@@ -1388,6 +1389,12 @@
     disconnectUserYoutubeAccount,
     type UserYoutubeAccount,
   } from '@/services/userYoutubeApi';
+  import {
+    startUserTokendConnection,
+    listUserTokendAccounts,
+    disconnectUserTokendAccount,
+    type UserTokendAccount,
+  } from '@/services/userTokendApi';
   import { getMyClipperProfile, getExperienceLevelLabel, getSpecialtyTagLabel, type ClipperProfile } from '@/services/clipperProfilesApi';
   import {
     listPublicHiringPosts, applyToHiringPost, listMyHiringApplications,
@@ -1865,7 +1872,15 @@
   const connectingTwitter = ref(false);
   const connectingTiktok = ref(false);
   const connectingYoutube = ref(false);
-  const connectingPlatform = computed(() => connectingInstagram.value || connectingTwitter.value || connectingTiktok.value || connectingYoutube.value);
+  const connectingTokend = ref(false);
+  const connectingPlatform = computed(
+    () =>
+      connectingInstagram.value ||
+      connectingTwitter.value ||
+      connectingTiktok.value ||
+      connectingYoutube.value ||
+      connectingTokend.value
+  );
   const selectedPlatform = ref<string | null>(null);
   const selectedAccountForPosts = ref<UserInstagramAccount | null>(null);
   const editingPaymentMethod = ref<ClipperPaymentMethod | null>(null);
@@ -1911,12 +1926,26 @@
       iconClass: 'platform-card__icon--youtube',
       available: true,
     },
+    {
+      id: 'tokend',
+      name: 'Tokend',
+      icon: markRaw(TokendLogo),
+      iconClass: 'platform-card__icon--tokend',
+      available: true,
+    },
   ];
 
   const paymentMethodForm = reactive({ method_type: '', is_default: false, details: {} as Record<string, string> });
 
   const getPlatformIcon = (platform: string) => {
-    const icons: Record<string, any> = { tiktok: Music2, instagram: Instagram, x: XLogo, twitter: XLogo, youtube: Youtube };
+    const icons: Record<string, any> = {
+      tiktok: Music2,
+      instagram: Instagram,
+      x: XLogo,
+      twitter: XLogo,
+      youtube: Youtube,
+      tokend: TokendLogo,
+    };
     return icons[platform] || Globe;
   };
 
@@ -1927,6 +1956,7 @@
       x: 'list-item__icon--x',
       twitter: 'list-item__icon--x',
       youtube: 'list-item__icon--youtube',
+      tokend: 'list-item__icon--tokend',
     };
     return classes[platform] || '';
   };
@@ -1949,6 +1979,7 @@
       x: 'X (Twitter)',
       twitter: 'X (Twitter)',
       youtube: 'YouTube Shorts',
+      tokend: 'Tokend',
     };
     return names[platform] || platform;
   };
@@ -1993,17 +2024,19 @@
   const loadSocialAccounts = async () => {
     loadingSocialAccounts.value = true;
     try {
-      const [igResponse, twResponse, tkResponse, ytResponse] = await Promise.all([
+      const [igResponse, twResponse, tkResponse, ytResponse, tokendResponse] = await Promise.all([
         listUserInstagramAccounts(),
         listUserTwitterAccounts(),
         listUserTiktokAccounts(),
         listUserYoutubeAccounts(),
+        listUserTokendAccounts(),
       ]);
       const accounts: any[] = [];
       if (igResponse.success) accounts.push(...igResponse.accounts);
       if (twResponse.success) accounts.push(...twResponse.accounts);
       if (tkResponse.success) accounts.push(...tkResponse.accounts);
       if (ytResponse.success) accounts.push(...ytResponse.accounts);
+      if (tokendResponse.success) accounts.push(...tokendResponse.accounts);
       socialAccounts.value = accounts;
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to load social accounts' });
@@ -2097,6 +2130,37 @@
         console.error('Failed to connect YouTube:', error);
         toast({ title: 'Error', description: 'Failed to connect YouTube' });
         connectingYoutube.value = false;
+        selectedPlatform.value = null;
+      }
+    } else if (platformId === 'tokend') {
+      connectingTokend.value = true;
+      try {
+        cleanupReconnectAuth = await startUserTokendConnection(async (result) => {
+          if (result.success) {
+            toast({
+              title: 'Tokend connected',
+              description: result.account
+                ? `@${result.account.username} linked`
+                : 'Tokend account linked',
+            });
+            await loadSocialAccounts();
+            showPlatformSelectionDialog.value = false;
+          } else {
+            toast({
+              title: 'Tokend connect failed',
+              description: result.message || result.error || 'Failed to connect Tokend',
+            });
+          }
+          connectingTokend.value = false;
+          selectedPlatform.value = null;
+        });
+      } catch (error) {
+        console.error('Failed to connect Tokend:', error);
+        toast({
+          title: 'Tokend connect failed',
+          description: error instanceof Error ? error.message : 'Failed to connect Tokend',
+        });
+        connectingTokend.value = false;
         selectedPlatform.value = null;
       }
     } else {
@@ -2271,6 +2335,8 @@
           response = await disconnectUserTiktokAccount(account.id);
         } else if (account.platform === 'youtube') {
           response = await disconnectUserYoutubeAccount(account.id);
+        } else if (account.platform === 'tokend') {
+          response = await disconnectUserTokendAccount(account.id);
         } else {
           response = await disconnectUserInstagramAccount(account.id);
         }
@@ -3984,6 +4050,18 @@
     color: white;
   }
 
+  .list-item__icon--tokend {
+    background: #000000;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .list-item__icon--tokend img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
   .platform--tiktok {
     background: rgba(255, 0, 80, 0.1);
   }
@@ -4197,6 +4275,18 @@
 
   .platform-card__icon--youtube svg {
     color: white;
+  }
+
+  .platform-card__icon--tokend {
+    background: #000000;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .platform-card__icon--tokend img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
   }
 
   .platform-option__content {

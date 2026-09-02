@@ -250,12 +250,18 @@ export class CaptionNode extends BaseNode<CaptionNodeParams> {
 	}
 
 	private getActiveLineAtTime(time: number): CaptionLine | null {
+		const elStart = this.params.startTime;
+		const elEnd = elStart + this.params.duration;
+		if (time < elStart || time >= elEnd) return null;
+
 		for (const line of this.params.lines) {
 			if (time >= line.startTime && time < line.endTime) {
 				return line;
 			}
 		}
-		return null;
+
+		// Fallback when line word-timing is narrower than the timeline segment.
+		return this.params.lines[0] ?? null;
 	}
 
 	private getDisplayWords(line: CaptionLine): CaptionWord[] {

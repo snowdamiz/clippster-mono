@@ -8,6 +8,11 @@ import { useElementSelection } from "../timeline/element/useElementSelection";
 import { SetTransitionCommand } from "../../lib/commands/scene";
 import { getElementsAtTime } from "../../lib/timeline";
 import type { ClipboardItem, CreateTimelineElement } from "../../types/timeline";
+import { useImageEditorTools } from "../useImageEditorTools";
+import {
+	copyMarqueeFromSelectedImage,
+	eraseMarqueeOnSelectedImage,
+} from "../../lib/image-pixel-edits";
 
 export function useEditorActions() {
 	const { editor } = useEditor({ subscribe: false });
@@ -136,6 +141,15 @@ export function useEditorActions() {
 	});
 
 	useActionHandler("delete-selected", () => {
+		if (editor.imageMode) {
+			const { getLiveSelection } = useImageEditorTools();
+			const selection = getLiveSelection();
+			if (selection) {
+				void eraseMarqueeOnSelectedImage(selection);
+				return;
+			}
+		}
+
 		const transitionId = editor.selection.getSelectedTransitionId();
 		if (transitionId) {
 			let scene;
@@ -293,6 +307,14 @@ export function useEditorActions() {
 	});
 
 	useActionHandler("copy-selected", () => {
+		if (editor.imageMode) {
+			const { getLiveSelection } = useImageEditorTools();
+			const selection = getLiveSelection();
+			if (selection) {
+				void copyMarqueeFromSelectedImage(selection);
+				return;
+			}
+		}
 		if (selectedElements.value.length === 0) return;
 		const items: ClipboardItem[] = [];
 		for (const sel of selectedElements.value) {
@@ -311,6 +333,17 @@ export function useEditorActions() {
 	});
 
 	useActionHandler("cut-selected", () => {
+		if (editor.imageMode) {
+			const { getLiveSelection } = useImageEditorTools();
+			const selection = getLiveSelection();
+			if (selection) {
+				void (async () => {
+					const copied = await copyMarqueeFromSelectedImage(selection);
+					if (copied) await eraseMarqueeOnSelectedImage(selection);
+				})();
+				return;
+			}
+		}
 		if (selectedElements.value.length === 0) return;
 		// Copy first
 		const items: ClipboardItem[] = [];

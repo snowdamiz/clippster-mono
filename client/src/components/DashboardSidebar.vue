@@ -47,6 +47,7 @@
                       'gap-3 px-3': !isCollapsed,
                     }"
                     :title="isCollapsed ? item.badge || item.name : undefined"
+                    :data-tour-id="tourIdForItem(item)"
                   >
                     <div class="relative flex items-center justify-center shrink-0">
                       <component :is="item.icon as Component" class="w-[18px] h-[18px]" />
@@ -56,7 +57,12 @@
                     </span>
                     <span
                       v-if="item.badge && !isCollapsed"
-                      class="ml-auto px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none rounded bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)] whitespace-nowrap"
+                      class="ml-auto px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none rounded whitespace-nowrap"
+                      :class="
+                        item.badge === 'Beta'
+                          ? 'bg-[var(--sidebar-accent)] text-black'
+                          : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)]'
+                      "
                     >
                       {{ item.badge }}
                     </span>
@@ -71,7 +77,9 @@
                       'justify-center px-0': isCollapsed,
                       'gap-3 px-3': !isCollapsed,
                     }"
-                    :title="isCollapsed ? item.name : undefined"
+                    :title="isCollapsed ? item.badge ? `${item.name} (${item.badge})` : item.name : undefined"
+                    :data-tour-id="tourIdForItem(item)"
+                    @click="(e) => onNavClick(e, item)"
                   >
                     <div class="relative flex items-center justify-center shrink-0">
                       <div
@@ -129,6 +137,17 @@
                     >
                       {{ liveCreatorsCount > 99 ? '99+' : liveCreatorsCount }}
                     </span>
+                    <span
+                      v-if="item.badge && !isCollapsed && item.name !== 'Messages' && item.name !== 'Live' && item.name !== 'My Creators'"
+                      class="ml-auto px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none rounded whitespace-nowrap"
+                      :class="
+                        item.badge === 'Beta'
+                          ? 'bg-[var(--sidebar-accent)] text-black'
+                          : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)]'
+                      "
+                    >
+                      {{ item.badge }}
+                    </span>
                   </router-link>
                 </li>
               </ul>
@@ -148,6 +167,7 @@
               class="sidebar-user__trigger flex items-center rounded-md bg-transparent border-[none] text-[var(--sidebar-text)] cursor-pointer transform-none hover:bg-[var(--sidebar-hover)]"
               :class="isCollapsed ? 'justify-center p-1.5 w-full' : 'gap-2 w-full py-2 px-2'"
               :title="isCollapsed ? formattedAddress : undefined"
+              data-tour-id="nav-profile-menu"
             >
               <div
                 class="shrink-0 flex items-center justify-center rounded-[20px] overflow-hidden"
@@ -272,6 +292,8 @@
     DropdownMenuTrigger,
   } from '@/components/ui/dropdown-menu';
   import api from '@/services/api';
+  import { canAccessAIVideo } from '@/utils/aiVideoAccess';
+  import { useAppTour, useTourFlags } from '@/composables/useAppTour';
   import {
     Zap,
     UserCircle,
@@ -307,7 +329,37 @@
   const { formatAddress } = useWallet();
   const { isAIAllowed } = useAIPermission();
   const { isLiveClipEnabled, initialize: initFeatureFlags } = useFeatureFlags();
-  const { isCollapsed } = useSidebarState();
+  const { isCollapsed: sidebarCollapsed } = useSidebarState();
+  const { handleEditorNavClick, shouldInterceptEditorNav } = useAppTour();
+  const { forceSidebarExpanded } = useTourFlags();
+
+  const isCollapsed = computed(() => {
+    if (forceSidebarExpanded.value) return false;
+    return sidebarCollapsed.value;
+  });
+
+  function tourIdForItem(item: NavigationItem): string {
+    if (item.tourId) return item.tourId;
+    const slug = item.path.replace(/^\//, '').replace(/\//g, '-');
+    return `nav-${slug}`;
+  }
+
+  async function onNavClick(e: MouseEvent, item: NavigationItem) {
+    if (item.path === '/video-editor') {
+      // Must preventDefault sync — awaiting first lets router-link win and skip the tour
+      if (!shouldInterceptEditorNav('video')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      await handleEditorNavClick('video', router);
+      return;
+    }
+    if (item.path === '/design-studio') {
+      if (!shouldInterceptEditorNav('image')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      await handleEditorNavClick('image', router);
+    }
+  }
 
   // ===== Emits =====
   const emit = defineEmits<{
@@ -525,10 +577,10 @@
       }
       return true;
     }).map((item) => {
-      // Dynamically disable AI Video Creator for non-authorized users
-      if (item.path === '/ai-video') {
-        const user = authStore.user as any;
-        const hasAccess = user?.is_admin || user?.ai_editor_enabled;
+      // Dynamically disable AI Video Editor / AI Thumbnail Creator for non-authorized users
+      // (same grant: admin, or ai_editor_enabled + Creator/Pro)
+      if (item.path === '/ai-video' || item.path === '/ai-thumbnail') {
+        const hasAccess = canAccessAIVideo(authStore.user);
         return {
           ...item,
           disabled: !hasAccess,

@@ -10,6 +10,26 @@ vi.mock("../lib/actions", () => ({
 	unbindAction: vi.fn(),
 }));
 
+vi.mock("../core", () => ({
+	EditorCore: {
+		getInstance: () => ({ imageMode: false }),
+	},
+}));
+
+vi.mock("./useImageEditorTools", () => ({
+	useImageEditorTools: () => ({
+		activateTool: vi.fn(),
+		swapFillStroke: vi.fn(),
+		cycleToolsByShortcut: vi.fn(),
+		flyoutLastTool: { value: {} },
+		activeTool: { value: "move" },
+	}),
+}));
+
+vi.mock("../constants/image-tool-flyouts", () => ({
+	toolsSharingShortcut: () => [],
+}));
+
 import { handleEditorKeyDown } from "./useKeybindings";
 
 function press(key: string, modifiers: Partial<KeyboardEvent> = {}) {

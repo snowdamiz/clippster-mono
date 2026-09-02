@@ -64,6 +64,10 @@
                   <Sparkles :size="12" />
                   AI Editor Enabled
                 </span>
+                <span v-if="user.circles_enabled" class="status-badge status-badge--ai-editor">
+                  <Disc :size="12" />
+                  Circles Enabled
+                </span>
                 <span v-if="user.campaigns_enabled" class="status-badge status-badge--campaigns">
                   <Target :size="12" />
                   Campaigns Enabled
@@ -152,6 +156,21 @@
                   <button @click="disableAiEditor" v-if="user.ai_editor_enabled" class="action-btn action-btn--outline">
                     <Sparkles :size="18" />
                     <span>Disable AI Editor</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- Circles Access Group -->
+              <div class="action-group">
+                <div class="action-group__label">Circles Access</div>
+                <div class="action-group__buttons">
+                  <button @click="enableCircles" v-if="!user.circles_enabled" class="action-btn action-btn--outline">
+                    <Disc :size="18" />
+                    <span>Enable Circles</span>
+                  </button>
+                  <button @click="disableCircles" v-if="user.circles_enabled" class="action-btn action-btn--outline">
+                    <Disc :size="18" />
+                    <span>Disable Circles</span>
                   </button>
                 </div>
               </div>
@@ -563,6 +582,7 @@ import {
   Key,
   Sparkles,
   Target,
+  Disc,
   CreditCard,
   Coins,
   Info,
@@ -762,6 +782,30 @@ const disableAiEditor = async () => {
     }
   } catch (err: any) {
     toastError(err.response?.data?.error || 'Failed to disable AI editor');
+  }
+};
+
+const enableCircles = async () => {
+  try {
+    const response = await api.post(`/admin/users/${userId.value}/circles`);
+    if (response.data.success) {
+      toast('Circles access enabled');
+      await loadUserProfile();
+    }
+  } catch (err: any) {
+    toastError(err.response?.data?.error || 'Failed to enable Circles');
+  }
+};
+
+const disableCircles = async () => {
+  try {
+    const response = await api.delete(`/admin/users/${userId.value}/circles`);
+    if (response.data.success) {
+      toast('Circles access disabled');
+      await loadUserProfile();
+    }
+  } catch (err: any) {
+    toastError(err.response?.data?.error || 'Failed to disable Circles');
   }
 };
 

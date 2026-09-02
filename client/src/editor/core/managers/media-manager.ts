@@ -29,7 +29,7 @@ export class MediaManager {
 		asset: Omit<MediaAsset, "id">;
 		/** When set, used as the media asset id (must match pre-copied editor-media filename prefix). */
 		mediaAssetId?: string;
-	}): Promise<void> {
+	}): Promise<string> {
 		const newAsset: MediaAsset = {
 			...asset,
 			id: mediaAssetId ?? generateUUID(),
@@ -61,6 +61,8 @@ export class MediaManager {
 			this.processingAssets.delete(newAsset.id);
 			this.notify();
 		}
+
+		return newAsset.id;
 	}
 
 	async removeMediaAsset({
@@ -220,6 +222,31 @@ export class MediaManager {
 
 	setAssets({ assets }: { assets: MediaAsset[] }): void {
 		this.assets = assets;
+		this.notify();
+	}
+
+	/** Replace an asset's raster after in-place paint/erase and notify subscribers. */
+	replaceAssetRaster({
+		id,
+		file,
+		url,
+	}: {
+		id: string;
+		file: File;
+		url: string;
+	}): void {
+		this.assets = this.assets.map((asset) => {
+			if (asset.id !== id) return asset;
+			if (asset.url?.startsWith("blob:")) {
+				URL.revokeObjectURL(asset.url);
+			}
+			return {
+				...asset,
+				file,
+				url,
+				isHydrated: true,
+			};
+		});
 		this.notify();
 	}
 

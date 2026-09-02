@@ -1,7 +1,8 @@
 import { Command } from "../../../../lib/commands/base-command";
-import type { TimelineTrack } from "../../../../types/timeline";
+import type { CaptionElement, TimelineTrack } from "../../../../types/timeline";
 import { EditorCore } from "../../../../core";
 import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
+import { syncCaptionElementTimelineBounds } from "../../../timeline/caption-sync";
 
 export class UpdateElementTrimCommand extends Command {
 	private savedState: TimelineTrack[] | null = null;
@@ -26,13 +27,19 @@ export class UpdateElementTrimCommand extends Command {
 					return element;
 				}
 
-				return {
+				const next = {
 					...element,
 					trimStart: this.trimStart,
 					trimEnd: this.trimEnd,
 					startTime: this.startTime ?? element.startTime,
 					duration: this.duration ?? element.duration,
 				};
+
+				if (next.type === "caption") {
+					return syncCaptionElementTimelineBounds(next as CaptionElement);
+				}
+
+				return next;
 			});
 			return { ...track, elements: newElements } as typeof track;
 		});

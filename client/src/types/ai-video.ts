@@ -10,6 +10,7 @@ export interface AIVideoComposition {
   aspectRatio: '16:9' | '9:16' | '1:1' | '4:5';
   backgroundColor?: string;
   tracks: AIVideoTrack[];
+  styleMatch?: StyleMatchSummary;
 }
 
 export interface AIVideoTrack {
@@ -202,30 +203,58 @@ export interface MediaRequest {
 }
 
 // AI generation
-export type StylePreset =
-  | 'hype'
-  | 'professional'
-  | 'gaming'
+export type StylePackId =
+  | 'sports-highlights'
+  | 'wedding-film'
   | 'cinematic'
-  | 'tutorial'
-  | 'vlog'
-  | 'music_video'
-  | 'product';
+  | 'gaming-stream'
+  | 'news-breakdown'
+  | 'viral-social';
 
-export type CaptionStylePreset =
-  | 'bold_tiktok'
-  | 'clean_subtitle'
-  | 'neon_glow'
-  | 'minimal'
-  | 'none';
+export interface StylePackRecipe {
+  schemaVersion: 1;
+  id: StylePackId;
+  name: string;
+  category: string;
+  description: string;
+  pacing: {
+    targetShotSeconds: [number, number];
+    cutsPerMinute: [number, number];
+    peakBehavior: string;
+  };
+  captions: {
+    style: string;
+    placement: string;
+    animation: string;
+    font: string;
+    weight: number;
+    colors: string[];
+    stroke?: string;
+    background?: string;
+  };
+  typography: { title: string; lowerThird: string };
+  colorGrade: {
+    palette: string[];
+    contrast: number;
+    saturation: number;
+    temperature: string;
+    treatment: string[];
+  };
+  transitions: { families: string[]; durationSeconds: [number, number]; frequency: string };
+  motion: { camera: string[]; intensity: number; imageBehavior: string };
+  effects: { families: string[]; frequency: string };
+  layout: { overlays: string[]; safeZones: string; titlePlacement: string };
+  aspectRatios: Record<'16:9' | '9:16', { layout: string; captionPlacement: string }>;
+  rendererFallbacks: Record<string, string>;
+}
 
 export interface AIGenerationRequest {
   prompt: string;
   media: AIVideoMediaItem[];
   style?: string;
-  stylePreset?: StylePreset;
+  stylePack?: StylePackRecipe;
   intensity?: number; // 0.0 - 1.0
-  captionStyle?: CaptionStylePreset;
+  captionStyle?: string;
   duration?: number;
   aspectRatio?: '16:9' | '9:16' | '1:1' | '4:5';
   existingComposition?: AIVideoComposition | null;
@@ -263,7 +292,7 @@ export interface AIChatSession {
   max_refinement_rounds: number;
   max_messages_per_round: number;
   style_context: Record<string, any>;
-  reference_analysis: ReferenceStyleProfile | null;
+  reference_analysis: ReferenceEditRecipe | null;
   media_analysis: MediaAnalysis[] | null;
   reference_url: string | null;
   messages: AIChatMessage[];
@@ -315,42 +344,114 @@ export interface GenerationSummary {
   }>;
 }
 
-export interface ReferenceStyleProfile {
-  colorPalette: {
-    primary: string;
-    secondary: string;
-    accent: string;
-    background: string;
-    text: string;
-    gradients: string[];
+export interface ReferenceVideoMetadata {
+  duration: number;
+  width: number;
+  height: number;
+  fps: number;
+  aspectRatio: string;
+  fileSizeBytes: number;
+  sourceType: 'url' | 'upload';
+  displayName: string;
+  sourceUrl?: string;
+}
+
+export interface ReferenceEvidence {
+  sampledFrames: Array<{ timestamp: number; kind: 'uniform' | 'cut-before' | 'cut-after' }>;
+  cutTimestamps: number[];
+  audioPeaks: Array<{ time: number; amplitude: number }>;
+}
+
+export interface ReferenceEditRecipe {
+  schemaVersion: 1;
+  analysisVersion: string;
+  metadata: ReferenceVideoMetadata;
+  confidence: {
+    overall: number;
+    pacing: number;
+    captions: number;
+    motion: number;
+    transitions: number;
+    color: number;
+    layout: number;
   };
-  typography: {
-    headingStyle: string;
-    bodyStyle: string;
-    captionStyle: string;
-    animationStyle: string;
+  evidence: ReferenceEvidence;
+  pacing: {
+    description: string;
+    cutsPerMinute: number;
+    shotLengthSeconds: { min: number; median: number; max: number };
+    quietSections: string;
+    peakSections: string;
   };
-  motionStyle: {
-    pacing: string;
-    cutFrequency: string;
-    cameraMotion: string[];
-    transitionTypes: string[];
-    energyLevel: number;
+  captions: {
+    detected: boolean;
+    placement: string;
+    size: string;
+    weight: string;
+    colors: string[];
+    treatment: string;
+    wordsPerScreen: number;
+    cadence: string;
   };
-  visualEffects: {
-    backgroundType: string;
-    overlayEffects: string[];
-    borderStyles: string[];
-    shadowStyles: string[];
+  typography: { heading: string; body: string; lowerThird: string; animation: string };
+  colorGrade: {
+    palette: string[];
+    contrast: string;
+    saturation: string;
+    temperature: string;
+    treatment: string[];
   };
-  layout: {
-    contentPlacement: string;
-    textPosition: string;
-    imagePresentation: string;
+  transitions: {
+    families: string[];
+    approximateDurationSeconds: number;
+    frequency: string;
+    evidence: string[];
   };
+  motion: {
+    cameraBehaviors: string[];
+    cropAndReframe: string;
+    intensity: string;
+    evidence: string[];
+  };
+  effects: { families: string[]; frequency: string; evidence: string[] };
+  layout: { patterns: string[]; overlays: string[]; textPlacement: string; evidence: string[] };
+  audioCues: {
+    available: boolean;
+    rhythm: string;
+    relationshipToCuts: string;
+    relationshipToCaptions: string;
+  };
+  aspectRatioAdaptation: Record<string, string>;
+  unsupported: Array<{ technique: string; fallback: string; reason: string }>;
   mood: string;
   genre: string;
   summary: string;
+}
+
+export interface StyleMatchSummary {
+  source: 'reference' | 'style-pack';
+  confidence: number;
+  summary: string;
+}
+
+export interface ReferenceAnalysisFrame {
+  timestamp: number;
+  kind: 'uniform' | 'cut-before' | 'cut-after';
+  mimeType: 'image/jpeg';
+  base64Data: string;
+}
+
+export interface ReferenceAnalysisPayload {
+  metadata: ReferenceVideoMetadata;
+  frames: ReferenceAnalysisFrame[];
+  cutTimestamps: number[];
+  audioPeaks: Array<{ time: number; amplitude: number }>;
+}
+
+export interface ReferenceAnalysisProgress {
+  stage: 'validating' | 'downloading' | 'probing' | 'sampling' | 'analyzing' | 'model' | 'complete';
+  progress: number;
+  message: string;
 }
 
 export interface MediaAnalysis {

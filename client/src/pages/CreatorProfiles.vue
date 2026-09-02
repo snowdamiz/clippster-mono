@@ -12,6 +12,7 @@
             <button
               class="creators-tab"
               :class="{ 'creators-tab--active': activeTab === 'streamer' }"
+              data-tour-id="tour-streamer-tab"
               @click="activeTab = 'streamer'"
             >
               <Users :size="14" />
@@ -30,14 +31,22 @@
             <Search class="creators-search__icon" />
             <Input v-model="searchQuery" class="creators-search__input" placeholder="Search creators..." />
           </div>
-          <Button size="sm" class="creators-add-btn" @click="openCreateDialog">
+          <Button size="sm" class="creators-add-btn" variant="outline" :disabled="syncingPersonal" @click="syncPersonalToCloud">
+            <Cloud :size="14" class="creators-add-btn__icon" />
+            {{ syncingPersonal ? 'Syncing…' : 'Sync personal to cloud' }}
+          </Button>
+          <Button size="sm" class="creators-add-btn" data-tour-id="tour-add-creator" @click="openCreateDialog">
             <Plus class="creators-add-btn__icon" />
             {{ activeTab === 'global' ? 'Add Global Profile' : 'Add Creator' }}
           </Button>
         </div>
       </template>
 
-      <div class="creators__wrapper" :class="{ 'creators__wrapper--empty': !loading && creators.length === 0 }">
+      <div
+        class="creators__wrapper"
+        data-tour-id="tour-creators-list"
+        :class="{ 'creators__wrapper--empty': !loading && creators.length === 0 }"
+      >
         <!-- Not Authenticated -->
         <div v-if="!authStore.isAuthenticated && creators.length === 0" class="creators__empty">
           <div class="creators__empty-icon-wrapper">
@@ -1076,7 +1085,9 @@
   import { useProfileContext } from '@/composables/useProfileContext';
   import { useAuthStore } from '@/stores/auth';
   import { useToast } from '@/composables/useToast';
+  import { syncPersonalBranding } from '@/services/personalBrandingSync';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
+  import { useAppTour } from '@/composables/useAppTour';
   import { useLivestreamMonitoring, fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
   import { useCreatorPageLiveMonitoring } from '@/composables/useCreatorPageLiveMonitoring';
   import { checkKickLivestream } from '@/services/kick';
@@ -1087,6 +1098,7 @@
   import {
     Users,
     Plus,
+    Cloud,
     Edit,
     Video,
     Download,
@@ -1295,6 +1307,7 @@
 
   const router = useRouter();
   const authStore = useAuthStore();
+  const { maybeStartPageTour } = useAppTour();
   const { success, error: showError } = useToast();
   const { showGate, requireSubscription } = useSubscriptionGate();
   const { activeSessions, monitoredStreamers, stopMonitoring, hasDvrRecording } =
@@ -1329,6 +1342,7 @@
   const campaigns = ref<DisplayCampaign[]>([]);
   const expandedCampaigns = ref<Set<number>>(new Set());
   const searchQuery = ref('');
+  const syncingPersonal = ref(false);
   const showProfileDialog = ref(false);
   const creatorToEdit = ref<DisplayCreatorProfile | null>(null);
   const showDeleteDialog = ref(false);
@@ -1405,6 +1419,22 @@
     return sortedCreators.value.filter(c => !c.isOrgProfile && !c.campaign_id);
   });
 
+  async function syncPersonalToCloud() {
+    if (syncingPersonal.value) return;
+    syncingPersonal.value = true;
+    try {
+      const result = await syncPersonalBranding();
+      success(
+        `Personal branding synced — ${result.upsertedProfiles} profiles, ${result.uploadedAssets} uploaded, ${result.downloadedAssets} downloaded`
+      );
+      await loadCreators();
+    } catch (err) {
+      showError(err instanceof Error ? err.message : 'Personal branding sync failed');
+    } finally {
+      syncingPersonal.value = false;
+    }
+  }
+
   // Load creators on mount
   onMounted(async () => {
     await loadCreators();
@@ -1412,6 +1442,7 @@
     liveStatusInterval.value = window.setInterval(() => {
       checkAllLiveStatuses(false); // Skip Kick on interval to save API requests
     }, 60_000);
+    maybeStartPageTour('page_creators');
   });
 
   onUnmounted(() => {
@@ -2014,6 +2045,7 @@
       YouTube: '/youtube.svg',
       rumble: '/rumble.svg',
       twitter: '/x.svg',
+      tokend: '/tokend.png',
     };
     return icons[platform] || '/capsule.svg';
   }
@@ -2026,6 +2058,7 @@
       YouTube: 'brightness(0) saturate(100%) invert(22%) sepia(99%) saturate(3013%) hue-rotate(352deg) brightness(95%) contrast(91%)',
       rumble: 'brightness(0) saturate(100%) invert(83%) sepia(47%) saturate(1113%) hue-rotate(57deg) brightness(106%) contrast(98%)',
       twitter: 'brightness(0) invert(100%)',
+      tokend: 'none',
     };
     return filters[platform] || 'none';
   }

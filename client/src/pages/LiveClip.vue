@@ -3,7 +3,7 @@
     <PageLayout title="Live Clip" description="Real-time clip detection" :show-header="true" :icon="Radio">
       <template #actions>
         <div class="liveclip-actions">
-          <div class="liveclip-search">
+          <div class="liveclip-search" data-tour-id="tour-live-search">
             <transition name="scale" mode="out-in">
               <div
                 v-if="detectedPlatform === 'YouTube'"
@@ -34,6 +34,16 @@
                 <img src="/rumble.svg" class="liveclip-search__platform-icon" />
               </div>
               <div
+                v-else-if="detectedPlatform === 'Tokend'"
+                class="liveclip-search__platform liveclip-search__platform--tokend"
+                key="tokend"
+              >
+                <img
+                  src="/tokend.png"
+                  class="liveclip-search__platform-icon liveclip-search__platform-icon--tokend"
+                />
+              </div>
+              <div
                 v-else-if="detectedPlatform === 'PumpFun'"
                 class="liveclip-search__platform liveclip-search__platform--pumpfun"
                 key="pf"
@@ -57,11 +67,48 @@
         </div>
       </template>
 
-      <div class="liveclip__content" :class="{ 'liveclip__content--empty': streamers.length === 0 }">
+      <div class="liveclip__content" :class="{ 'liveclip__content--empty': streamers.length === 0 && !mockStreamerActive }">
         <!-- Page Heading (hidden in empty state) -->
-        <div v-if="streamers.length > 0" class="liveclip__heading">
+        <div v-if="streamers.length > 0 || mockStreamerActive" class="liveclip__heading">
           <h1 class="liveclip__title">Live Stream Monitor</h1>
           <p class="liveclip__subtitle">Watch and track Live streams and detect clips in real-time with AI-powered analysis</p>
+        </div>
+
+        <!-- Tour demo streamer -->
+        <div v-if="mockStreamerActive" class="liveclip__platform-sections" style="margin-bottom: 1rem">
+          <div class="liveclip__platform-section">
+            <div class="liveclip__platform-header">
+              <div class="liveclip__platform-title-wrapper">
+                <h2 class="liveclip__platform-title">Tour Demo</h2>
+              </div>
+            </div>
+            <div class="liveclip__list">
+              <div class="monitor-card monitor-card--live" data-tour-id="tour-mock-streamer">
+                <div class="monitor-card__header">
+                  <div class="monitor-card__avatar">
+                    <div class="monitor-card__avatar-fallback">
+                      <span style="font-size: 0.75rem; font-weight: 700">DEMO</span>
+                    </div>
+                  </div>
+                  <div class="monitor-card__info">
+                    <div class="monitor-card__name">Demo Streamer</div>
+                    <div class="monitor-card__meta">Sample channel for the tour</div>
+                  </div>
+                  <div class="monitor-card__actions">
+                    <button type="button" class="monitor-card__btn" data-tour-id="tour-mock-watch" @click.prevent>
+                      Watch
+                    </button>
+                    <button type="button" class="monitor-card__btn" data-tour-id="tour-mock-rec" @click.prevent>
+                      Rec
+                    </button>
+                    <button type="button" class="monitor-card__btn" data-tour-id="tour-mock-auto" @click.prevent>
+                      Auto
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
 
         <!-- Main Grid -->
@@ -193,7 +240,14 @@
                   <div class="monitor-card__stats">
 
                     <!-- DVR Toggle -->
+                    <span
+                      v-if="streamer.platform === 'Tokend'"
+                      class="monitor-card__capability-unavailable"
+                    >
+                      Playback, Watch, Rec, and DVR unavailable
+                    </span>
                     <button
+                      v-else
                       @click="updateAutoDvr(streamer, !streamer.autoDvr)"
                       :disabled="streamer.isDetecting && streamer.status === 'STOPPING'"
                       class="monitor-setting__toggle"
@@ -207,7 +261,7 @@
                     <div class="monitor-card__divider"></div>
 
                     <!-- Action Buttons -->
-                    <div class="monitor-card__actions">
+                    <div v-if="streamer.platform !== 'Tokend'" class="monitor-card__actions">
                       <template v-if="!streamer.isDetecting">
                         <div v-if="streamer.status === 'STOPPING'" class="monitor-action monitor-action--stopping">
                           <Loader2 class="monitor-action__spinner" />
@@ -497,6 +551,7 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
+  import { useAppTour, useTourFlags } from '@/composables/useAppTour';
   import {
     Radio,
     Plus,
@@ -546,12 +601,18 @@
     normalizeTwitterUrl,
     validateTwitterUrl,
   } from '@/services/twitter';
+  import {
+    extractTokendChannel,
+    checkTokendLivestream,
+    fetchTokendCapabilities,
+    TOKEND_UNAVAILABLE_MESSAGES,
+  } from '@/services/tokend';
   import XBroadcastExplainerDialog from '@/components/XBroadcastExplainerDialog.vue';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
 
-  type Platform = 'YouTube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter' | 'PumpFun';
+  type Platform = 'YouTube' | 'Twitch' | 'Kick' | 'Rumble' | 'Twitter' | 'PumpFun' | 'Tokend';
 
   interface PendingMetadataFetch {
     streamerId: string;
@@ -560,7 +621,7 @@
   }
 
   const { gates, requireSubscription } = useSubscriptionGate();
-  const { success } = useToast();
+  const { success, error: showError } = useToast();
 
   type ExtendedStreamer = Omit<MonitoredStreamer, 'platform'> & {
     platform: Platform;
@@ -672,6 +733,7 @@
       YouTube: [],
       Rumble: [],
       Twitter: [],
+      Tokend: [],
     };
 
     sortedStreamers.value.forEach(streamer => {
@@ -698,6 +760,8 @@
   const autoDetectLimitDialogData = ref<{ activeStreamerName: string; requestedStreamerName: string }>({ activeStreamerName: '', requestedStreamerName: '' });
 
   const liveStatusInterval = ref<number | null>(null);
+  const { maybeStartPageTour } = useAppTour();
+  const { mockStreamerActive } = useTourFlags();
 
   onMounted(async () => {
     await loadStreamers();
@@ -716,6 +780,7 @@
     window.addEventListener('realtime-clip-detected', handleRealtimeClipDetected as EventListener);
     window.addEventListener('realtime-detection-stopped', handleRealtimeDetectionStopped as EventListener);
     window.addEventListener('monitored-streamers-updated', handleMonitoredStreamersUpdated as EventListener);
+    maybeStartPageTour('page_live_clip');
   });
 
   async function maybeRemoveEndedTwitterBroadcast(streamer: ExtendedStreamer, isLive: boolean) {
@@ -1060,6 +1125,13 @@
   }
 
   async function openWatchDialog(streamer: ExtendedStreamer) {
+    if (streamer.platform === 'Tokend') {
+      const capabilities = await fetchTokendCapabilities().catch(() => null);
+      if (!capabilities?.watch) {
+        showError('Tokend Playback Unavailable', TOKEND_UNAVAILABLE_MESSAGES.playback);
+        return;
+      }
+    }
     if (!streamer.isLive) return;
 
     livestreamStore.openWatchDialog(
@@ -1167,6 +1239,7 @@
           youtube: 'YouTube',
           rumble: 'Rumble',
           twitter: 'Twitter',
+          tokend: 'Tokend',
         };
         const platform = platformMap[record.platform?.toLowerCase() || 'pumpfun'] || 'PumpFun';
 
@@ -1223,6 +1296,12 @@
       detectedPlatform.value = 'Rumble';
     } else if (lowerVal.includes('twitter.com') || lowerVal.includes('x.com')) {
       detectedPlatform.value = 'Twitter';
+    } else if (
+      lowerVal.includes('tokend.tv') ||
+      lowerVal.includes('localhost:4100') ||
+      lowerVal.includes('127.0.0.1:4100')
+    ) {
+      detectedPlatform.value = 'Tokend';
     } else {
       detectedPlatform.value = null;
     }
@@ -1240,6 +1319,8 @@
         return '/rumble.svg';
       case 'Twitter':
         return '/x.svg';
+      case 'Tokend':
+        return '/tokend.png';
       case 'PumpFun':
         return '/capsule.svg';
       default:
@@ -1259,6 +1340,8 @@
         return 'monitor-card__avatar-fallback--rumble';
       case 'Twitter':
         return 'monitor-card__avatar-fallback--twitter';
+      case 'Tokend':
+        return 'monitor-card__avatar-fallback--tokend';
       case 'PumpFun':
         return 'monitor-card__avatar-fallback--pumpfun';
       default:
@@ -1276,6 +1359,8 @@
       case 'Kick':
       case 'Twitter':
         return 'brightness-0';
+      case 'Tokend':
+        return 'monitor-card__avatar-icon--tokend';
       default:
         return '';
     }
@@ -1293,6 +1378,8 @@
         return 'monitor-card__platform--rumble';
       case 'Twitter':
         return 'monitor-card__platform--twitter';
+      case 'Tokend':
+        return 'monitor-card__platform--tokend';
       case 'PumpFun':
         return 'monitor-card__platform--pumpfun';
       default:
@@ -1312,6 +1399,8 @@
         return 'activity-log__dot--rumble';
       case 'Twitter':
         return 'activity-log__dot--twitter';
+      case 'Tokend':
+        return 'activity-log__dot--tokend';
       case 'PumpFun':
         return 'activity-log__dot--pumpfun';
       default:
@@ -1496,6 +1585,42 @@
       return;
     }
 
+    // Handle Tokend creator URL
+    if (detectedPlatform.value === 'Tokend') {
+      const slug = extractTokendChannel(inputValue.value) || inputValue.value.trim().replace(/^@/, '');
+      if (!slug) {
+        addActivityLog({
+          streamerId: 'system',
+          streamerName: 'System',
+          platform: 'Tokend',
+          message: 'Invalid Tokend creator URL.',
+          status: 'info',
+        });
+        return;
+      }
+
+      addActivityLog({
+        streamerId: 'system',
+        streamerName: 'System',
+        platform: 'Tokend',
+        message: `Adding Tokend creator "${slug}"...`,
+        status: 'loading',
+      });
+
+      let displayName = slug;
+      let profileImageUrl: string | undefined;
+      try {
+        const status = await checkTokendLivestream(slug);
+        if (status.displayName) displayName = status.displayName;
+        if (status.profileImageUrl) profileImageUrl = status.profileImageUrl;
+      } catch {
+        // mock status optional at add time
+      }
+
+      await confirmAddStreamer(slug, displayName, profileImageUrl, 'tokend');
+      return;
+    }
+
     if (detectedPlatform.value === 'PumpFun' || !detectedPlatform.value) {
       isSearching.value = true;
       addActivityLog({
@@ -1588,6 +1713,7 @@
       platform === 'youtube' ? 'YouTube' : 
       platform === 'rumble' ? 'Rumble' :
       platform === 'twitter' ? 'Twitter' :
+      platform === 'tokend' ? 'Tokend' :
       platform === 'kick' ? 'Kick' : 
       platform === 'twitch' ? 'Twitch' : 
       'PumpFun';
@@ -1699,6 +1825,12 @@
   }
 
   async function startStreamer(streamer: ExtendedStreamer, detectClips: boolean) {
+    if (streamer.platform === 'Tokend') {
+      // Partner watch does not unlock Kick-style Rec/DVR sessions yet.
+      showError('Tokend Recording Unavailable', TOKEND_UNAVAILABLE_MESSAGES.playback);
+      return;
+    }
+
     // Open selection dialog instead of immediate start
     pendingMode.value = detectClips ? 'auto' : 'record';
     pendingStreamerSelection.value = streamer;
@@ -2193,6 +2325,11 @@
   .liveclip-search__platform--rumble {
     background-color: #85c742;
   }
+  .liveclip-search__platform--tokend {
+    background-color: #000000;
+    padding: 0;
+    overflow: hidden;
+  }
   .liveclip-search__platform--pumpfun {
     background-color: #10b981;
   }
@@ -2205,6 +2342,13 @@
 
   .liveclip-search__platform-icon--dark {
     filter: brightness(0);
+  }
+
+  .liveclip-search__platform-icon--tokend {
+    width: 100%;
+    height: 100%;
+    filter: none;
+    object-fit: cover;
   }
 
   .liveclip-search__input {
@@ -2527,6 +2671,11 @@
   .monitor-card__avatar-fallback--kick {
     background-color: #53fc18;
   }
+  .monitor-card__avatar-fallback--tokend {
+    background-color: #000000;
+    padding: 0;
+    overflow: hidden;
+  }
   .monitor-card__avatar-fallback--pumpfun {
     background-color: #10b981;
   }
@@ -2534,6 +2683,13 @@
   .monitor-card__avatar-icon {
     width: 22px;
     height: 22px;
+  }
+
+  .monitor-card__avatar-icon--tokend {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    filter: none;
   }
 
   .monitor-card__info {
@@ -2579,6 +2735,9 @@
   }
   .monitor-card__platform--kick {
     color: #53fc18;
+  }
+  .monitor-card__platform--tokend {
+    color: #00e5ff;
   }
   .monitor-card__platform--pumpfun {
     color: #34d399;
@@ -2988,6 +3147,9 @@
   .activity-log__dot--kick {
     background-color: #53fc18;
   }
+  .activity-log__dot--tokend {
+    background-color: #00e5ff;
+  }
   .activity-log__dot--pumpfun {
     background-color: #10b981;
   }
@@ -3375,6 +3537,13 @@
     gap: 0.625rem;
     padding: 1.25rem 1.5rem;
     border-top: 1px solid var(--sidebar-border);
+  }
+
+  .monitor-card__capability-unavailable {
+    color: #fbbf24;
+    font-size: 0.6875rem;
+    line-height: 1.35;
+    text-align: center;
   }
 
   /* ===== Buttons ===== */

@@ -34,6 +34,8 @@ import {
 	UpdateElementKeyframesCommand,
 	ExtractAudioCommand,
 	UpdateCaptionElementCommand,
+	UpdateCaptionsBatchCommand,
+	SplitCaptionLineCommand,
 	FreezeFrameCommand,
 	RippleDeleteTimeRangeCommand,
 	ReorderTrackCommand,
@@ -343,6 +345,46 @@ export class TimelineManager {
 	}): void {
 		const command = new UpdateCaptionElementCommand(trackId, elementId, updates);
 		this.editor.command.execute({ command });
+	}
+
+	/** One undo step for multi-caption style edits (font, color, opacity, etc.). */
+	updateCaptionsBatch({
+		trackId,
+		elementIds,
+		updates,
+	}: {
+		trackId: string;
+		elementIds: string[];
+		updates: import("../../lib/commands/timeline/element/update-caption-element").CaptionElementUpdatable;
+	}): void {
+		if (elementIds.length === 0) return;
+		const command = new UpdateCaptionsBatchCommand(trackId, elementIds, updates);
+		this.editor.command.execute({ command });
+	}
+
+	/** Split a caption line at the cursor into two timed segments. */
+	splitCaptionLine({
+		trackId,
+		elementId,
+		lineIndex,
+		cursor,
+		lineText,
+	}: {
+		trackId: string;
+		elementId: string;
+		lineIndex: number;
+		cursor: number;
+		lineText?: string;
+	}): string | null {
+		const command = new SplitCaptionLineCommand(
+			trackId,
+			elementId,
+			lineIndex,
+			cursor,
+			lineText,
+		);
+		this.editor.command.execute({ command });
+		return command.getInsertedElementId();
 	}
 
 	updateElementMasks({

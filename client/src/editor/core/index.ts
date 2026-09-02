@@ -12,6 +12,7 @@ import { TranscriptManager } from "./managers/transcript-manager";
 
 export class EditorCore {
 	private static instance: EditorCore | null = null;
+	private static _nextImageMode = false;
 
 	public readonly command: CommandManager;
 	public readonly playback: PlaybackManager;
@@ -26,11 +27,14 @@ export class EditorCore {
 	public readonly transcript: TranscriptManager;
 
 	private _previewCanvas: HTMLCanvasElement | null = null;
+	private _imageMode: boolean;
 	private _livePreviewCanvas: HTMLCanvasElement | null = null;
 	private _interactiveDrag = false;
 	private disposed = false;
 
 	private constructor() {
+		this._imageMode = EditorCore._nextImageMode;
+		EditorCore._nextImageMode = false;
 		this.command = new CommandManager();
 		this.playback = new PlaybackManager(this);
 		this.timeline = new TimelineManager(this);
@@ -43,6 +47,10 @@ export class EditorCore {
 		this.selection = new SelectionManager(this);
 		this.transcript = new TranscriptManager(this);
 		this.save.start();
+	}
+
+	get imageMode(): boolean {
+		return this._imageMode;
 	}
 
 	setPreviewCanvas(canvas: HTMLCanvasElement | null): void {
@@ -74,6 +82,11 @@ export class EditorCore {
 			EditorCore.instance = new EditorCore();
 		}
 		return EditorCore.instance;
+	}
+
+	/** Call before getInstance() to create an image-mode editor */
+	static setNextImageMode(enabled: boolean): void {
+		EditorCore._nextImageMode = enabled;
 	}
 
 	dispose(): void {

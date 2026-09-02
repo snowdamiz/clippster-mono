@@ -13,13 +13,25 @@ export type CanvasRendererParams = {
 	willReadFrequently?: boolean;
 	framePolicy?: FrameRenderPolicy;
 	/**
-	 * Interactive preview renderers set this so paused/exact renders still warm
-	 * decoders for upcoming segment cuts (pressing play right before a cut must
-	 * not stall on a cold decoder). One-off renderers (thumbnails, covers,
-	 * export) leave it off.
+	 * Interactive preview and scene-frame export set this so exact renders still
+	 * warm decoders for upcoming segment cuts (play-before-cut and export cuts
+	 * must not start cold). Thumbnails/covers leave it off.
 	 */
 	prewarmUpcoming?: boolean;
+	/**
+	 * How to clear the backing store each frame.
+	 * Use `"transparent"` for image-mode / PNG alpha (checkerboard shows through in CSS).
+	 * Video preview stays `"black"`.
+	 */
+	clearStyle?: "black" | "transparent";
+	/**
+	 * Scene export keeps the last good composed frame when a decode miss would
+	 * otherwise bake a black clear (mirrors preview keeping the last presented canvas).
+	 */
+	exportRetainLastFrame?: boolean;
 };
+
+type ExportTargetCanvas = HTMLCanvasElement | OffscreenCanvas;
 
 export class CanvasRenderer {
 	canvas: OffscreenCanvas | HTMLCanvasElement;
@@ -32,6 +44,10 @@ export class CanvasRenderer {
 	previewEffectProcessing: boolean;
 	framePolicy: FrameRenderPolicy;
 	prewarmUpcoming: boolean;
+	clearStyle: "black" | "transparent";
+	exportRetainLastFrame: boolean;
+	private lastExportFrame: ImageBitmap | null = null;
+	private drewVisualThisFrame = false;
 
 	constructor({
 		width,
@@ -44,6 +60,8 @@ export class CanvasRenderer {
 		willReadFrequently = false,
 		framePolicy = "exact-preview",
 		prewarmUpcoming = false,
+		clearStyle = "black",
+		exportRetainLastFrame = false,
 	}: CanvasRendererParams) {
 		this.width = width;
 		this.height = height;
@@ -53,6 +71,8 @@ export class CanvasRenderer {
 		this.previewEffectProcessing = previewEffectProcessing;
 		this.framePolicy = framePolicy;
 		this.prewarmUpcoming = prewarmUpcoming;
+		this.clearStyle = clearStyle;
+		this.exportRetainLastFrame = exportRetainLastFrame;
 
 		if (preferOffscreen) {
 			try {
@@ -68,7 +88,10 @@ export class CanvasRenderer {
 			this.canvas.height = this.backingHeight;
 		}
 
-		const context = this.canvas.getContext("2d", { willReadFrequently });
+		const context = this.canvas.getContext("2d", {
+			willReadFrequently,
+			alpha: true,
+		});
 		if (!context) {
 			throw new Error("Failed to get canvas context");
 		}
@@ -87,6 +110,44 @@ export class CanvasRenderer {
 
 	getBackingSize(): { width: number; height: number } {
 		return { width: this.backingWidth, height: this.backingHeight };
+	}
+
+	/** Nodes call after a successful drawImage during exact-export composition. */
+	markVisualDrawn(): void {
+		this.drewVisualThisFrame = true;
+	}
+
+	dispose(): void {
+		this.lastExportFrame?.close();
+		this.lastExportFrame = null;
+	}
+
+	private async captureExportFrame(): Promise<void> {
+		if (!this.exportRetainLastFrame && this.framePolicy !== "exact-export") return;
+		try {
+			const bitmap = await createImageBitmap(this.canvas);
+			this.lastExportFrame?.close();
+			this.lastExportFrame = bitmap;
+		} catch {
+			// Non-fatal — next frame may still decode cleanly.
+		}
+	}
+
+	private restoreLastExportFrame(): void {
+		if (!this.lastExportFrame) return;
+		const ctx = this.context;
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.globalAlpha = 1;
+		ctx.globalCompositeOperation = "source-over";
+		ctx.filter = "none";
+		ctx.drawImage(
+			this.lastExportFrame,
+			0,
+			0,
+			this.canvas.width,
+			this.canvas.height,
+		);
+		this.applyLogicalScale();
 	}
 
 	private applyLogicalScale() {
@@ -141,8 +202,12 @@ export class CanvasRenderer {
 		ctx.globalAlpha = 1;
 		ctx.globalCompositeOperation = "source-over";
 		ctx.filter = "none";
-		ctx.fillStyle = "black";
-		ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+		if (this.clearStyle === "transparent") {
+			ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+		} else {
+			ctx.fillStyle = "black";
+			ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+		}
 		this.applyLogicalScale();
 	}
 
@@ -169,8 +234,19 @@ export class CanvasRenderer {
 		signal?: AbortSignal;
 	}) {
 		if (signal?.aborted) return;
+		this.drewVisualThisFrame = false;
 		this.clear();
 		await node.render({ renderer: this, time, skipPrefetch: true });
+
+		if (this.exportRetainLastFrame || this.framePolicy === "exact-export") {
+			if (this.drewVisualThisFrame) {
+				await this.captureExportFrame();
+			} else if (this.lastExportFrame) {
+				// Decoder miss or segment-boundary hole — repeat the last good export
+				// frame instead of baking a black clear into the output file.
+				this.restoreLastExportFrame();
+			}
+		}
 	}
 
 	async render({
@@ -194,7 +270,7 @@ export class CanvasRenderer {
 	}: {
 		node: BaseNode;
 		time: number;
-		targetCanvas: HTMLCanvasElement;
+		targetCanvas: ExportTargetCanvas;
 		signal?: AbortSignal;
 	}) {
 		await this.render({ node, time, signal });
@@ -205,6 +281,12 @@ export class CanvasRenderer {
 			throw new Error("Failed to get target canvas context");
 		}
 
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.globalAlpha = 1;
+		ctx.globalCompositeOperation = "source-over";
+		if (this.clearStyle === "transparent") {
+			ctx.clearRect(0, 0, targetCanvas.width, targetCanvas.height);
+		}
 		ctx.drawImage(this.canvas, 0, 0, targetCanvas.width, targetCanvas.height);
 	}
 }

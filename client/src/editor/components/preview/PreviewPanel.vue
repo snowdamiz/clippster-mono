@@ -1,23 +1,35 @@
 <script setup lang="ts">
 import { ref, computed, watch, shallowRef, onUnmounted, onMounted } from "vue";
-import { ChevronDown } from "lucide-vue-next";
+import { ChevronDown, Link2, Maximize, Minimize, Smartphone } from "lucide-vue-next";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
 import { useEditorUIState } from "../../composables/useEditorUIState";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { useBrandingConfig } from "../../composables/useBrandingConfig";
+import { useImageMode } from "../../composables/useImageMode";
+import { useImageEditorTools } from "../../composables/useImageEditorTools";
+import { blitScratchToOverlay, useImageRasterPaint } from "../../composables/useImageRasterPaint";
+import { useImageCloneStamp } from "../../composables/useImageCloneStamp";
+import {
+	magicEraseAtCanvasPoint,
+	useImageBackgroundEraser,
+} from "../../composables/useImageBackgroundEraser";
+import { selectionBoundingBox } from "../../lib/image-layer-mapping";
+import { applyLinearGradient } from "../../lib/image-pixel-edits";
 import { CanvasRenderer } from "../../renderer/canvas-renderer";
 import type { RootNode } from "../../renderer/nodes/root-node";
 import { getRenderFrame } from "../../renderer/frame-policy";
 import { PreviewFrameScheduler } from "../../renderer/preview-frame-scheduler";
 import type { TimelineElement, TimelineTrack } from "../../types/timeline";
+import type { SocialOverlayPreset } from "../../types/social-overlays";
 import {
 	exposePreviewPerfGlobal,
 	previewPerfMarkCoalesced,
 	previewPerfMarkDropped,
 } from "../../lib/preview-performance";
 import { prepareSceneForRealtimePlayback } from "../../renderer/prepare-realtime-playback";
+import { SOCIAL_OVERLAY_PRESETS } from "../../constants/social-overlay-constants";
 import PreviewOverlay from "./PreviewOverlay.vue";
 import SocialOverlay from "./SocialOverlay.vue";
 import GuideOverlay from "./GuideOverlay.vue";
@@ -37,11 +49,77 @@ const { editor, version } = useEditor({
 		project: true,
 	},
 });
-const { isCropMode, activeSocialOverlay, viewportZoom, previewQuality, fitMode } = useEditorUIState();
+const { isCropMode, activeSocialOverlay, viewportZoom, viewportPanX, viewportPanY, previewQuality, fitMode } = useEditorUIState();
 const { selectedElements, clearElementSelection } = useElementSelection();
+const { isImageMode } = useImageMode();
+const {
+	activeTool,
+	setSelection,
+	marqueeDraft,
+	fillColor,
+	setTool,
+	shapeKind,
+	insertTextLayer,
+	insertShapeLayer,
+	applyFillAtCanvasPoint,
+	applyMagicWandAtCanvasPoint,
+	marqueeKind,
+	getLiveSelection,
+	strokeColor,
+	wandTolerance,
+	wandContiguous,
+	brushSize,
+} = useImageEditorTools();
+const {
+	cloneSource,
+	isStamping,
+	setSourceFromEvent,
+	startStamp,
+	continueStamp,
+	endStamp,
+} = useImageCloneStamp();
+const {
+	scratchCanvas,
+	paintPreviewActive,
+	startStroke,
+	continueStroke,
+	endStroke,
+} = useImageRasterPaint();
+const {
+	startBgErase,
+	continueBgErase,
+	endBgErase,
+	bgEraseScratch,
+	bgErasePreviewActive,
+} = useImageBackgroundEraser();
+const showSafeZones = ref(true);
+const marqueeDrag = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+const lassoPoints = ref<Array<{ x: number; y: number }>>([]);
+const gradientDrag = ref<{ x0: number; y0: number; x1: number; y1: number } | null>(null);
+const paintOverlayRef = ref<HTMLCanvasElement | null>(null);
+
+const containerRef = ref<HTMLDivElement | null>(null);
+
+const aspectPresets = [
+	{ width: 1920, height: 1080, label: "16:9" },
+	{ width: 1080, height: 1920, label: "9:16" },
+	{ width: 1080, height: 1080, label: "1:1" },
+	{ width: 1080, height: 1350, label: "4:5" },
+	{ width: 1280, height: 720, label: "YouTube HD" },
+	{ width: 3840, height: 2160, label: "YouTube 4K" },
+];
+
+const showAspectMenu = ref(false);
+const showSocialMenu = ref(false);
+const showSpeedMenu = ref(false);
+const showCustomSize = ref(false);
+const customWidth = ref(1920);
+const customHeight = ref(1080);
+const linkDimensions = ref(true);
+const isFullscreen = ref(false);
+const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
 
 const canvasRef = ref<HTMLCanvasElement | null>(null);
-const containerRef = ref<HTMLDivElement | null>(null);
 let lastFrame = -1;
 let lastScene: any = null;
 let lastRenderedTime = Number.NEGATIVE_INFINITY;
@@ -96,6 +174,85 @@ const canvasSourceFraming = computed(() => activeProject.value?.settings.canvasS
 
 const projectWidth = computed(() => activeProject.value?.settings?.canvasSize?.width ?? 1920);
 const projectHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
+const canvasWidth = projectWidth;
+const canvasHeight = projectHeight;
+
+const currentSpeed = computed(() => {
+	void version.value;
+	return editor.playback.getPlaybackRate();
+});
+
+function setSpeed(rate: number) {
+	editor.playback.setPlaybackRate({ rate });
+	showSpeedMenu.value = false;
+}
+
+const currentAspectLabel = computed(() => {
+	const w = canvasWidth.value;
+	const h = canvasHeight.value;
+	const match = aspectPresets.find((p) => p.width === w && p.height === h);
+	if (match) return match.label;
+	return `${w}×${h}`;
+});
+
+function setAspectRatio(preset: { width: number; height: number }) {
+	editor.project.updateSettings({ settings: { canvasSize: preset } });
+	showAspectMenu.value = false;
+	showCustomSize.value = false;
+}
+
+function onCustomWidthChange(value: number) {
+	if (linkDimensions.value && customWidth.value > 0) {
+		const aspect = customHeight.value / customWidth.value;
+		customWidth.value = value;
+		customHeight.value = Math.max(1, Math.round(value * aspect));
+	} else {
+		customWidth.value = value;
+	}
+}
+
+function onCustomHeightChange(value: number) {
+	if (linkDimensions.value && customHeight.value > 0) {
+		const aspect = customWidth.value / customHeight.value;
+		customHeight.value = value;
+		customWidth.value = Math.max(1, Math.round(value * aspect));
+	} else {
+		customHeight.value = value;
+	}
+}
+
+function applyCustomSize() {
+	editor.project.updateSettings({
+		settings: { canvasSize: { width: customWidth.value, height: customHeight.value } },
+	});
+	showAspectMenu.value = false;
+	showCustomSize.value = false;
+}
+
+function toggleSocialOverlay(preset: SocialOverlayPreset) {
+	if (activeSocialOverlay.value?.platform === preset.platform) {
+		activeSocialOverlay.value = null;
+	} else {
+		activeSocialOverlay.value = preset;
+	}
+	showSocialMenu.value = false;
+}
+
+async function toggleFullscreen() {
+	const el = containerRef.value;
+	if (!el) return;
+	try {
+		if (!document.fullscreenElement) {
+			await el.requestFullscreen();
+			isFullscreen.value = true;
+		} else {
+			await document.exitFullscreen();
+			isFullscreen.value = false;
+		}
+	} catch (err) {
+		console.warn("[PreviewPanel] Fullscreen failed:", err);
+	}
+}
 
 /**
  * Layout: buildScene + CanvasRenderer always use full project canvas size so text/overlays stay aligned.
@@ -156,12 +313,47 @@ watch(
 	{ immediate: true, flush: "post" },
 );
 
+const is916 = computed(() => {
+	return canvasWidth.value === 1080 && canvasHeight.value === 1920;
+});
+
+watch(isImageMode, (enabled) => {
+	if (!enabled) return;
+	const project = editor.project.getActiveOrNull();
+	if (!project) return;
+	const bg = project.settings.background;
+	const color = bg?.type === "color" ? (bg.color || "").toLowerCase() : "";
+	// Migrate the old image-mode default (solid black) to Photoshop-style transparency.
+	if (
+		!bg ||
+		color === "#000000" ||
+		color === "#000" ||
+		color === "black"
+	) {
+		void editor.project.updateSettings({
+			settings: { background: { type: "color", color: "transparent" } },
+		});
+	}
+}, { immediate: true });
+
+watch(is916, (val) => {
+	if (!val && !isImageMode.value) {
+		activeSocialOverlay.value = null;
+		showSocialMenu.value = false;
+	}
+});
 const fps = computed(() => activeProject.value?.settings?.fps ?? 30);
 const background = computed(() => activeProject.value?.settings?.background ?? { type: "color" as const, color: "#000000" });
+const isTransparentCanvas = computed(() => {
+	const bg = background.value;
+	if (!bg || bg.type !== "color") return isImageMode.value;
+	const c = (bg.color || "").toLowerCase();
+	return c === "transparent" || c === "rgba(0,0,0,0)" || c === "#00000000";
+});
 
 const renderer = shallowRef<CanvasRenderer | null>(null);
 
-watch([layoutWidth, layoutHeight, fps, previewBackingSize], ([w, h, f, backing]) => {
+watch([layoutWidth, layoutHeight, fps, previewBackingSize, isTransparentCanvas], ([w, h, f, backing, transparent]) => {
 	// Use a DOM canvas-backed renderer for preview. Several transition effects rely on
 	// alpha/clip compositing that is unreliable when the destination context is OffscreenCanvas
 	// in Chromium/Electron, which makes wipes/crossfades appear as no-ops in preview.
@@ -175,6 +367,7 @@ watch([layoutWidth, layoutHeight, fps, previewBackingSize], ([w, h, f, backing])
 		previewEffectProcessing: true,
 		backingWidth: backing.width,
 		backingHeight: backing.height,
+		clearStyle: transparent ? "transparent" : "black",
 	});
 	lastFrame = -1;
 	lastScene = null;
@@ -375,6 +568,7 @@ const previewLoop = useRafLoop(() => {
 requestPreviewFrame = previewLoop.requestFrame;
 
 const canvasBackground = computed(() => {
+	if (isTransparentCanvas.value) return "transparent";
 	const bg = background.value;
 	if (!bg) return "transparent";
 	return bg.type === "blur" ? "transparent" : bg.color;
@@ -504,7 +698,20 @@ function stepZoom(delta: number) {
 function fitZoom() {
 	fitMode.value = "fit";
 	viewportZoom.value = 1;
+	viewportPanX.value = 0;
+	viewportPanY.value = 0;
 }
+
+function canvasPositionFromNorm(pt: { x: number; y: number }) {
+	return {
+		x: (pt.x - 0.5) * projectWidth.value,
+		y: (pt.y - 0.5) * projectHeight.value,
+	};
+}
+
+const overlayInteractive = computed(
+	() => !isImageMode.value || activeTool.value === "move" || activeTool.value === "crop",
+);
 
 function onPreviewAreaMouseDown(event: MouseEvent) {
 	if (event.button !== 0) return;
@@ -512,6 +719,530 @@ function onPreviewAreaMouseDown(event: MouseEvent) {
 	if (target?.closest(".preview-canvas-wrapper")) return;
 	clearElementSelection();
 }
+
+function canvasNormFromEvent(event: MouseEvent): { x: number; y: number } | null {
+	const wrapper = (event.currentTarget as HTMLElement | null)?.closest?.(".preview-canvas-wrapper") as
+		| HTMLElement
+		| null;
+	const el = wrapper || (document.querySelector(".preview-canvas-wrapper") as HTMLElement | null);
+	if (!el) return null;
+	const rect = el.getBoundingClientRect();
+	if (rect.width <= 0 || rect.height <= 0) return null;
+	return {
+		x: Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width)),
+		y: Math.min(1, Math.max(0, (event.clientY - rect.top) / rect.height)),
+	};
+}
+
+function onCanvasPointerDown(event: PointerEvent) {
+	if (!isImageMode.value || event.button !== 0) return;
+
+	if (activeTool.value === "text") {
+		event.preventDefault();
+		event.stopPropagation();
+		const pt = canvasNormFromEvent(event);
+		insertTextLayer(pt ? canvasPositionFromNorm(pt) : undefined);
+		setTool("move");
+		return;
+	}
+
+	if (activeTool.value === "shape" || activeTool.value === "shape-rect" || activeTool.value === "shape-ellipse") {
+		event.preventDefault();
+		event.stopPropagation();
+		const pt = canvasNormFromEvent(event);
+		const kind =
+			activeTool.value === "shape-ellipse" || shapeKind.value === "ellipse" ? "ellipse" : "rect";
+		void insertShapeLayer(kind, pt ? canvasPositionFromNorm(pt) : undefined);
+		setTool("move");
+		return;
+	}
+
+	if (activeTool.value === "fill") {
+		event.preventDefault();
+		event.stopPropagation();
+		const canvas = canvasRef.value;
+		if (!canvas) return;
+		const rect = canvas.getBoundingClientRect();
+		if (rect.width <= 0 || rect.height <= 0) return;
+		const canvasX = ((event.clientX - rect.left) / rect.width) * projectWidth.value;
+		const canvasY = ((event.clientY - rect.top) / rect.height) * projectHeight.value;
+		void applyFillAtCanvasPoint(canvasX, canvasY);
+		return;
+	}
+
+	if (activeTool.value === "magic-wand") {
+		event.preventDefault();
+		event.stopPropagation();
+		const canvas = canvasRef.value;
+		if (!canvas) return;
+		const rect = canvas.getBoundingClientRect();
+		if (rect.width <= 0 || rect.height <= 0) return;
+		const canvasX = ((event.clientX - rect.left) / rect.width) * projectWidth.value;
+		const canvasY = ((event.clientY - rect.top) / rect.height) * projectHeight.value;
+		void applyMagicWandAtCanvasPoint(canvasX, canvasY);
+		return;
+	}
+
+	if (activeTool.value === "zoom") {
+		event.preventDefault();
+		stepZoom(event.altKey ? -ZOOM_STEP : ZOOM_STEP);
+		return;
+	}
+
+	if (activeTool.value === "eyedropper") {
+		event.preventDefault();
+		event.stopPropagation();
+		try {
+			const canvas = canvasRef.value;
+			if (!canvas) return;
+			const rect = canvas.getBoundingClientRect();
+			const x = Math.floor(((event.clientX - rect.left) / rect.width) * canvas.width);
+			const y = Math.floor(((event.clientY - rect.top) / rect.height) * canvas.height);
+			// Must match the preview canvas's existing context attributes (willReadFrequently:false)
+			// or getContext returns null.
+			const ctx = canvas.getContext("2d");
+			if (!ctx) return;
+			const pixel = ctx.getImageData(
+				Math.min(canvas.width - 1, Math.max(0, x)),
+				Math.min(canvas.height - 1, Math.max(0, y)),
+				1,
+				1,
+			).data;
+			fillColor.value = `#${[pixel[0], pixel[1], pixel[2]]
+				.map((c) => c.toString(16).padStart(2, "0"))
+				.join("")}`;
+			setTool("brush");
+		} catch (e) {
+			console.warn("[PreviewPanel] Eyedropper sample failed:", e);
+		}
+		return;
+	}
+
+	if (activeTool.value === "magic-eraser") {
+		event.preventDefault();
+		event.stopPropagation();
+		const canvas = canvasRef.value;
+		if (!canvas) return;
+		const rect = canvas.getBoundingClientRect();
+		if (rect.width <= 0 || rect.height <= 0) return;
+		const canvasX = ((event.clientX - rect.left) / rect.width) * projectWidth.value;
+		const canvasY = ((event.clientY - rect.top) / rect.height) * projectHeight.value;
+		void magicEraseAtCanvasPoint({
+			canvasX,
+			canvasY,
+			tolerance: wandTolerance.value,
+			contiguous: wandContiguous.value,
+		});
+		return;
+	}
+
+	if (activeTool.value === "hand") {
+		event.preventDefault();
+		event.stopPropagation();
+		clearElementSelection();
+		fitMode.value = "manual";
+		const startX = event.clientX;
+		const startY = event.clientY;
+		const originX = viewportPanX.value;
+		const originY = viewportPanY.value;
+		const wrapper = (event.currentTarget as HTMLElement) ?? null;
+		if (wrapper) wrapper.style.cursor = "grabbing";
+		const onMove = (e: PointerEvent) => {
+			viewportPanX.value = originX + (e.clientX - startX);
+			viewportPanY.value = originY + (e.clientY - startY);
+		};
+		const onUp = () => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			if (wrapper) wrapper.style.cursor = "grab";
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		return;
+	}
+
+	if (activeTool.value === "brush" || activeTool.value === "pencil" || activeTool.value === "eraser") {
+		event.preventDefault();
+		event.stopPropagation();
+		const canvas = canvasRef.value;
+		if (!canvas) return;
+		if (!startStroke(event, canvas)) return;
+		const eraseMode = activeTool.value === "eraser";
+
+		const blit = () => {
+			if (scratchCanvas.value && paintOverlayRef.value) {
+				blitScratchToOverlay(scratchCanvas.value, paintOverlayRef.value, eraseMode ? "erase" : "paint");
+			}
+		};
+		queueMicrotask(blit);
+
+		const onMove = (e: PointerEvent) => {
+			continueStroke(e, canvas);
+			blit();
+		};
+		const onUp = async () => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			await endStroke(selectedElements.value);
+			if (paintOverlayRef.value) {
+				const ctx = paintOverlayRef.value.getContext("2d");
+				if (ctx) ctx.clearRect(0, 0, paintOverlayRef.value.width, paintOverlayRef.value.height);
+			}
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		return;
+	}
+
+	if (activeTool.value === "background-eraser") {
+		event.preventDefault();
+		event.stopPropagation();
+		const canvas = canvasRef.value;
+		if (!canvas) return;
+
+		const blit = () => {
+			const scratch = bgEraseScratch.value;
+			if (scratch && paintOverlayRef.value) {
+				blitScratchToOverlay(scratch, paintOverlayRef.value, "paint");
+			}
+		};
+
+		const onMove = (e: PointerEvent) => {
+			continueBgErase(e, canvas);
+			blit();
+		};
+		const onUp = async () => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			// Keep checkerboard overlay until media commit finishes to avoid a blank flash.
+			await endBgErase();
+			if (paintOverlayRef.value) {
+				const ctx = paintOverlayRef.value.getContext("2d");
+				if (ctx) ctx.clearRect(0, 0, paintOverlayRef.value.width, paintOverlayRef.value.height);
+			}
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		void startBgErase(event, canvas).then((started) => {
+			if (!started) {
+				window.removeEventListener("pointermove", onMove);
+				window.removeEventListener("pointerup", onUp);
+				return;
+			}
+			blit();
+		});
+		return;
+	}
+
+	if (activeTool.value === "clone" || activeTool.value === "heal" || activeTool.value === "spot-heal") {
+		event.preventDefault();
+		event.stopPropagation();
+		const canvas = canvasRef.value;
+		if (!canvas) return;
+		if (activeTool.value === "spot-heal") {
+			// Spot Healing samples nearby texture automatically (no Alt-click).
+			const rect = canvas.getBoundingClientRect();
+			const project = editor.project.getActiveOrNull();
+			if (project && rect.width > 0) {
+				const offset = Math.max(8, brushSize.value);
+				const x =
+					((event.clientX - rect.left) / rect.width) * project.settings.canvasSize.width + offset;
+				const y = ((event.clientY - rect.top) / rect.height) * project.settings.canvasSize.height;
+				cloneSource.value = {
+					canvasX: Math.min(project.settings.canvasSize.width, Math.max(0, x)),
+					canvasY: Math.min(project.settings.canvasSize.height, Math.max(0, y)),
+				};
+			}
+		} else if (event.altKey || !cloneSource.value) {
+			setSourceFromEvent(event, canvas);
+			return;
+		}
+		const onMove = (e: PointerEvent) => {
+			if (isStamping.value) continueStamp(e, canvas);
+		};
+		const onUp = async () => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			await endStamp();
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		void startStamp(event, canvas).then((started) => {
+			if (!started) {
+				window.removeEventListener("pointermove", onMove);
+				window.removeEventListener("pointerup", onUp);
+			}
+		});
+		return;
+	}
+
+	if (activeTool.value === "gradient") {
+		event.preventDefault();
+		event.stopPropagation();
+		const pt = canvasNormFromEvent(event);
+		if (!pt) return;
+		gradientDrag.value = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
+		const onMove = (e: PointerEvent) => {
+			const next = canvasNormFromEvent(e);
+			if (!next || !gradientDrag.value) return;
+			gradientDrag.value = { ...gradientDrag.value, x1: next.x, y1: next.y };
+		};
+		const onUp = (e: PointerEvent) => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			const end = canvasNormFromEvent(e);
+			const drag = gradientDrag.value;
+			gradientDrag.value = null;
+			if (!drag) return;
+			const x0 = drag.x0 * projectWidth.value;
+			const y0 = drag.y0 * projectHeight.value;
+			const x1 = (end?.x ?? drag.x1) * projectWidth.value;
+			const y1 = (end?.y ?? drag.y1) * projectHeight.value;
+			if (Math.hypot(x1 - x0, y1 - y0) < 4) return;
+			void applyLinearGradient({
+				x0,
+				y0,
+				x1,
+				y1,
+				from: fillColor.value,
+				to: strokeColor.value,
+				selection: getLiveSelection(),
+			});
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		return;
+	}
+
+	if (activeTool.value === "lasso" || activeTool.value === "polygonal-lasso") {
+		event.preventDefault();
+		event.stopPropagation();
+		const pt = canvasNormFromEvent(event);
+		if (!pt) return;
+
+		if (activeTool.value === "polygonal-lasso") {
+			if (lassoPoints.value.length === 0) {
+				lassoPoints.value = [pt];
+				return;
+			}
+			const first = lassoPoints.value[0];
+			const close =
+				lassoPoints.value.length >= 3 && Math.hypot(pt.x - first.x, pt.y - first.y) < 0.02;
+			if (close || event.detail === 2) {
+				const points = close ? lassoPoints.value : [...lassoPoints.value, pt];
+				lassoPoints.value = [];
+				const box = selectionBoundingBox(points);
+				if (!box) {
+					setSelection(null);
+					return;
+				}
+				setSelection({ type: "path", points, ...box });
+				return;
+			}
+			lassoPoints.value = [...lassoPoints.value, pt];
+			return;
+		}
+
+		lassoPoints.value = [pt];
+		const onMove = (e: PointerEvent) => {
+			const next = canvasNormFromEvent(e);
+			if (!next) return;
+			const last = lassoPoints.value[lassoPoints.value.length - 1];
+			if (last && Math.hypot(next.x - last.x, next.y - last.y) < 0.004) return;
+			lassoPoints.value = [...lassoPoints.value, next];
+		};
+		const onUp = () => {
+			window.removeEventListener("pointermove", onMove);
+			window.removeEventListener("pointerup", onUp);
+			const points = lassoPoints.value;
+			lassoPoints.value = [];
+			const box = selectionBoundingBox(points);
+			if (!box) {
+				setSelection(null);
+				return;
+			}
+			setSelection({ type: "path", points, ...box });
+		};
+		window.addEventListener("pointermove", onMove);
+		window.addEventListener("pointerup", onUp);
+		return;
+	}
+
+	if (activeTool.value !== "marquee-rect" && activeTool.value !== "marquee-ellipse") return;
+	event.preventDefault();
+	event.stopPropagation();
+	const pt = canvasNormFromEvent(event);
+	if (!pt) return;
+	marqueeDrag.value = { x0: pt.x, y0: pt.y, x1: pt.x, y1: pt.y };
+
+	const onMove = (e: PointerEvent) => {
+		const next = canvasNormFromEvent(e);
+		if (!next || !marqueeDrag.value) return;
+		const constrained = constrainMarquee(marqueeDrag.value.x0, marqueeDrag.value.y0, next.x, next.y, e.shiftKey);
+		marqueeDrag.value = { ...marqueeDrag.value, ...constrained };
+	};
+	const onUp = (e: PointerEvent) => {
+		window.removeEventListener("pointermove", onMove);
+		window.removeEventListener("pointerup", onUp);
+		const end = canvasNormFromEvent(e);
+		const drag = marqueeDrag.value;
+		marqueeDrag.value = null;
+		if (!drag) return;
+		const constrained = constrainMarquee(drag.x0, drag.y0, end?.x ?? drag.x1, end?.y ?? drag.y1, e.shiftKey);
+		const x = Math.min(drag.x0, constrained.x1);
+		const y = Math.min(drag.y0, constrained.y1);
+		const width = Math.abs(constrained.x1 - drag.x0);
+		const height = Math.abs(constrained.y1 - drag.y0);
+		if (width < 0.005 || height < 0.005) {
+			setSelection(null);
+			return;
+		}
+		const ellipse =
+			activeTool.value === "marquee-ellipse" || marqueeKind.value === "ellipse";
+		setSelection({
+			type: ellipse ? "ellipse" : "rect",
+			x,
+			y,
+			width,
+			height,
+		});
+	};
+	window.addEventListener("pointermove", onMove);
+	window.addEventListener("pointerup", onUp);
+}
+
+function constrainMarquee(
+	x0: number,
+	y0: number,
+	x1: number,
+	y1: number,
+	shift: boolean,
+): { x1: number; y1: number } {
+	if (!shift) return { x1, y1 };
+	const dx = x1 - x0;
+	const dy = y1 - y0;
+	const side = Math.max(Math.abs(dx), Math.abs(dy));
+	return {
+		x1: Math.min(1, Math.max(0, x0 + (dx < 0 ? -side : side))),
+		y1: Math.min(1, Math.max(0, y0 + (dy < 0 ? -side : side))),
+	};
+}
+
+const liveMarqueeStyle = computed(() => {
+	if (lassoPoints.value.length > 0) return null;
+	const drag = marqueeDraft.value;
+	const live = marqueeDrag.value;
+	if (live) {
+		const x = Math.min(live.x0, live.x1);
+		const y = Math.min(live.y0, live.y1);
+		const w = Math.abs(live.x1 - live.x0);
+		const h = Math.abs(live.y1 - live.y0);
+		return {
+			left: `${x * 100}%`,
+			top: `${y * 100}%`,
+			width: `${w * 100}%`,
+			height: `${h * 100}%`,
+			borderRadius:
+				activeTool.value === "marquee-ellipse" || marqueeKind.value === "ellipse"
+					? "50%"
+					: undefined,
+		};
+	}
+	if (drag && (drag.type === "rect" || drag.type === "ellipse")) {
+		return {
+			left: `${drag.x * 100}%`,
+			top: `${drag.y * 100}%`,
+			width: `${drag.width * 100}%`,
+			height: `${drag.height * 100}%`,
+			borderRadius: drag.type === "ellipse" ? "50%" : undefined,
+		};
+	}
+	return null;
+});
+
+const liveLassoRings = computed(() => {
+	if (lassoPoints.value.length > 0) return [lassoPoints.value];
+	const sel = marqueeDraft.value;
+	if (sel?.type !== "path") return null;
+	if (sel.rings && sel.rings.length > 0) return sel.rings;
+	if (sel.points && sel.points.length >= 2) return [sel.points];
+	return null;
+});
+
+const liveLassoPath = computed(() => {
+	const rings = liveLassoRings.value;
+	if (!rings) return "";
+	return rings
+		.map((ring) => {
+			if (ring.length === 0) return "";
+			const head = `M${ring[0].x * 100} ${ring[0].y * 100}`;
+			const tail = ring
+				.slice(1)
+				.map((p) => `L${p.x * 100} ${p.y * 100}`)
+				.join("");
+			return `${head}${tail}Z`;
+		})
+		.join("");
+});
+
+const gradientPreview = computed(() => {
+	const drag = gradientDrag.value;
+	if (!drag) return null;
+	return {
+		x1: `${drag.x0 * 100}%`,
+		y1: `${drag.y0 * 100}%`,
+		x2: `${drag.x1 * 100}%`,
+		y2: `${drag.y1 * 100}%`,
+	};
+});
+
+const cloneSourceMarker = computed(() => {
+	const src = cloneSource.value;
+	if (!src || !isImageMode.value) return null;
+	if (activeTool.value !== "clone" && activeTool.value !== "heal" && activeTool.value !== "spot-heal")
+		return null;
+	return {
+		left: `${(src.canvasX / projectWidth.value) * 100}%`,
+		top: `${(src.canvasY / projectHeight.value) * 100}%`,
+	};
+});
+
+const canvasCursor = computed(() => {
+	if (!isImageMode.value) return undefined;
+	const tool = activeTool.value;
+	if (
+		tool === "brush" ||
+		tool === "pencil" ||
+		tool === "eraser" ||
+		tool === "background-eraser" ||
+		tool === "magic-eraser" ||
+		tool === "marquee-rect" ||
+		tool === "marquee-ellipse" ||
+		tool === "lasso" ||
+		tool === "polygonal-lasso" ||
+		tool === "gradient" ||
+		tool === "clone" ||
+		tool === "heal" ||
+		tool === "spot-heal" ||
+		tool === "fill" ||
+		tool === "magic-wand" ||
+		tool === "eyedropper"
+	) {
+		return "crosshair";
+	}
+	if (tool === "hand") return "grab";
+	if (tool === "zoom") return "zoom-in";
+	if (tool === "text" || tool === "shape" || tool === "shape-rect" || tool === "shape-ellipse") {
+		return "cell";
+	}
+	return undefined;
+});
+
+/** Practical YouTube safe area ≈ 1100×620 centered on 1280×720 (~7% / 7% insets). */
+const safeAreaInset = computed(() => ({
+	horizontal: "7%",
+	vertical: "7%",
+}));
 
 function onKeyZoom(e: KeyboardEvent) {
 	if (!e.ctrlKey && !e.metaKey) return;
@@ -688,16 +1419,229 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 </script>
 
 <template>
-	<div ref="containerRef" class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-[#0e0e10]">
-		<!-- Canvas + Interactive Overlay -->
-		<div class="flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto p-4" @mousedown="onPreviewAreaMouseDown">
+	<div
+		ref="containerRef"
+		:class="[
+			'relative flex h-full min-h-0 w-full min-w-0 flex-col',
+			isImageMode ? 'bg-[#2b2b2b]' : 'bg-[#0e0e10]',
+		]"
+	>
+		<div
+			:class="[
+				'relative flex items-center justify-center px-3 py-1',
+				isImageMode ? 'border-b border-black/30 bg-[#1e1e1e]' : 'border-b border-white/10',
+			]"
+		>
+			<div v-if="!isImageMode" class="absolute left-2 top-1/2 -translate-y-1/2">
+				<button
+					type="button"
+					:class="[
+						'flex items-center gap-0.5 rounded-md px-1.5 py-1 text-xs transition-colors',
+						currentSpeed !== 1
+							? 'bg-primary/15 text-primary'
+							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
+					]"
+					@click="showSpeedMenu = !showSpeedMenu"
+				>
+					{{ currentSpeed }}x
+					<ChevronDown class="size-3" />
+				</button>
+
+				<div
+					v-if="showSpeedMenu"
+					class="absolute left-0 top-full z-50 mt-0.5 rounded-md border border-white/10 bg-[#1e1e22] py-1 shadow-lg"
+				>
+					<button
+						v-for="rate in SPEED_OPTIONS"
+						:key="rate"
+						type="button"
+						:class="[
+							'flex w-full items-center px-4 py-1.5 text-xs transition-colors',
+							currentSpeed === rate
+								? 'text-primary bg-primary/10'
+								: 'text-zinc-300 hover:bg-white/5',
+						]"
+						@click="setSpeed(rate)"
+					>
+						{{ rate }}x
+					</button>
+				</div>
+
+				<div v-if="showSpeedMenu" class="fixed inset-0 z-40" @click="showSpeedMenu = false" />
+			</div>
+
+			<button
+				type="button"
+				class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+				@click="showAspectMenu = !showAspectMenu"
+			>
+				{{ currentAspectLabel }}
+				<ChevronDown class="size-3" />
+			</button>
+
+			<!-- Dropdown -->
 			<div
-				class="preview-canvas-wrapper relative rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]"
+				v-if="showAspectMenu"
+				class="absolute top-full z-50 mt-0.5 rounded-md border border-white/10 bg-[#1e1e22] py-1 shadow-lg"
+			>
+				<button
+					v-for="preset in aspectPresets"
+					:key="preset.label"
+					type="button"
+					:class="[
+						'flex w-full items-center gap-2 px-4 py-1.5 text-xs transition-colors',
+						canvasWidth === preset.width && canvasHeight === preset.height
+							? 'text-primary bg-primary/10'
+							: 'text-zinc-300 hover:bg-white/5',
+					]"
+					@click="setAspectRatio(preset)"
+				>
+					{{ preset.label }}
+					<span class="text-zinc-500">{{ preset.width }}×{{ preset.height }}</span>
+				</button>
+
+				<!-- Custom size toggle -->
+				<div class="border-t border-white/10 mt-1 pt-1">
+					<button
+						type="button"
+						class="flex w-full items-center gap-2 px-4 py-1.5 text-xs text-zinc-300 hover:bg-white/5 transition-colors"
+						@click="showCustomSize = !showCustomSize; customWidth = canvasWidth; customHeight = canvasHeight"
+					>
+						Custom Size
+					</button>
+				</div>
+
+				<!-- Custom size inputs -->
+				<div v-if="showCustomSize" class="border-t border-white/10 px-3 py-2.5 space-y-2">
+					<div class="flex items-center gap-2">
+						<div class="flex-1">
+							<label class="text-[9px] uppercase tracking-wider text-zinc-600 mb-0.5 block">Width</label>
+							<input
+								type="number"
+								:value="customWidth"
+								min="100"
+								max="7680"
+								class="w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-blue-500/50"
+								@input="onCustomWidthChange(Number(($event.target as HTMLInputElement).value))"
+							/>
+						</div>
+						<button
+							type="button"
+							class="mt-3.5 rounded p-1 transition-colors"
+							:class="linkDimensions ? 'text-blue-400 bg-blue-500/10' : 'text-zinc-600 hover:text-zinc-400'"
+							title="Link dimensions"
+							@click="linkDimensions = !linkDimensions"
+						>
+							<Link2 class="size-3" />
+						</button>
+						<div class="flex-1">
+							<label class="text-[9px] uppercase tracking-wider text-zinc-600 mb-0.5 block">Height</label>
+							<input
+								type="number"
+								:value="customHeight"
+								min="100"
+								max="7680"
+								class="w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-blue-500/50"
+								@input="onCustomHeightChange(Number(($event.target as HTMLInputElement).value))"
+							/>
+						</div>
+					</div>
+					<button
+						type="button"
+						class="w-full rounded bg-blue-600/80 py-1 text-[10px] font-medium text-white hover:bg-blue-600 transition-colors"
+						@click="applyCustomSize"
+					>
+						Apply
+					</button>
+				</div>
+			</div>
+
+			<!-- Click-away -->
+			<div v-if="showAspectMenu" class="fixed inset-0 z-40" @click="showAspectMenu = false; showCustomSize = false" />
+
+			<!-- Right controls: Fullscreen, Social overlay -->
+			<div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
+				<!-- Fullscreen toggle -->
+				<button
+					type="button"
+					class="flex items-center rounded-md p-1 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
+					@click="toggleFullscreen"
+				>
+					<Minimize v-if="isFullscreen" class="size-4" />
+					<Maximize v-else class="size-4" />
+				</button>
+
+				<button
+					v-if="is916 && !isImageMode"
+					type="button"
+					:class="[
+						'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
+						activeSocialOverlay
+							? 'bg-cyan-500/15 text-cyan-400'
+							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
+					]"
+					@click="showSocialMenu = !showSocialMenu"
+				>
+					<Smartphone class="size-3.5" />
+				</button>
+
+				<div
+					v-if="showSocialMenu"
+					class="absolute right-0 top-full z-50 mt-0.5 w-44 rounded-md border border-white/10 bg-[#1e1e22] py-1 shadow-lg"
+				>
+					<button
+						v-if="activeSocialOverlay"
+						type="button"
+						class="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-zinc-400 hover:bg-white/5"
+						@click="activeSocialOverlay = null; showSocialMenu = false"
+					>
+						Hide Overlay
+					</button>
+					<button
+						v-for="preset in SOCIAL_OVERLAY_PRESETS"
+						:key="preset.platform"
+						type="button"
+						:class="[
+							'flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors',
+							activeSocialOverlay?.platform === preset.platform
+								? 'text-cyan-400 bg-cyan-500/10'
+								: 'text-zinc-300 hover:bg-white/5',
+						]"
+						@click="toggleSocialOverlay(preset)"
+					>
+						<span>{{ preset.icon }}</span>
+						<span>{{ preset.label }}</span>
+						<span class="ml-auto text-[10px] text-zinc-500">{{ preset.aspectRatio }}</span>
+					</button>
+				</div>
+
+				<div v-if="showSocialMenu" class="fixed inset-0 z-40" @click="showSocialMenu = false" />
+			</div>
+		</div>
+
+		<!-- Canvas + Interactive Overlay -->
+		<div
+			:class="[
+				'flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto',
+				isImageMode ? 'p-8' : 'p-4',
+			]"
+			@mousedown="onPreviewAreaMouseDown"
+		>
+			<div
+				:class="[
+					'preview-canvas-wrapper relative',
+					isTransparentCanvas ? 'preview-canvas-wrapper--checkerboard' : '',
+					isImageMode
+						? 'shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
+						: 'rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]',
+				]"
 				:style="{
 					aspectRatio: `${projectWidth} / ${projectHeight}`,
-					transform: viewportZoom !== 1 ? `scale(${viewportZoom})` : undefined,
+					transform: `translate(${viewportPanX}px, ${viewportPanY}px)${viewportZoom !== 1 ? ` scale(${viewportZoom})` : ''}`,
 					transformOrigin: 'center center',
+					cursor: canvasCursor,
 				}"
+				@pointerdown="onCanvasPointerDown"
 			>
 				<canvas
 					ref="canvasRef"
@@ -710,6 +1654,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					}"
 				/>
 				<PreviewOverlay
+					:class="{ 'pointer-events-none': !overlayInteractive }"
 					:canvas-ref="canvasRef"
 					:canvas-width="projectWidth"
 					:canvas-height="projectHeight"
@@ -724,6 +1669,77 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					:preset="activeSocialOverlay"
 					:canvas-width="projectWidth"
 					:canvas-height="projectHeight"
+				/>
+				<!-- Title-safe guides in image mode -->
+				<div
+					v-if="isImageMode && showSafeZones && !activeSocialOverlay"
+					class="pointer-events-none absolute inset-0 z-10"
+					aria-hidden="true"
+				>
+					<div
+						class="absolute rounded border border-dashed border-cyan-400/35"
+						:style="{
+							left: safeAreaInset.horizontal,
+							right: safeAreaInset.horizontal,
+							top: safeAreaInset.vertical,
+							bottom: safeAreaInset.vertical,
+						}"
+						title="Title-safe area"
+					/>
+				</div>
+				<!-- Live brush/eraser stroke preview -->
+				<canvas
+					v-show="isImageMode && (paintPreviewActive || bgErasePreviewActive)"
+					ref="paintOverlayRef"
+					:width="projectWidth"
+					:height="projectHeight"
+					class="pointer-events-none absolute inset-0 z-[15] h-full w-full"
+				/>
+				<!-- Marquee selection overlay -->
+				<div
+					v-if="isImageMode && liveMarqueeStyle"
+					class="pointer-events-none absolute z-20 border border-white bg-blue-400/15"
+					:style="liveMarqueeStyle"
+				/>
+				<!-- Lasso path overlay -->
+				<svg
+					v-if="isImageMode && liveLassoPath"
+					class="pointer-events-none absolute inset-0 z-20 h-full w-full"
+					viewBox="0 0 100 100"
+					preserveAspectRatio="none"
+				>
+					<path
+						:d="liveLassoPath"
+						fill="rgba(96, 165, 250, 0.15)"
+						fill-rule="evenodd"
+						stroke="white"
+						stroke-width="0.4"
+						stroke-dasharray="1.2 0.8"
+						vector-effect="non-scaling-stroke"
+					/>
+				</svg>
+				<!-- Gradient drag preview -->
+				<svg
+					v-if="isImageMode && gradientPreview"
+					class="pointer-events-none absolute inset-0 z-20 h-full w-full"
+				>
+					<line
+						:x1="gradientPreview.x1"
+						:y1="gradientPreview.y1"
+						:x2="gradientPreview.x2"
+						:y2="gradientPreview.y2"
+						stroke="white"
+						stroke-width="2"
+					/>
+					<circle :cx="gradientPreview.x1" :cy="gradientPreview.y1" r="4" :fill="fillColor" />
+					<circle :cx="gradientPreview.x2" :cy="gradientPreview.y2" r="4" :fill="strokeColor" />
+				</svg>
+				<!-- Clone / heal source marker -->
+				<div
+					v-if="cloneSourceMarker"
+					class="pointer-events-none absolute z-20 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-cyan-400/80"
+					:style="cloneSourceMarker"
+					title="Clone source"
 				/>
 				<!-- Branding watermark overlay -->
 				<img
@@ -747,9 +1763,26 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 		</div>
 
 		<!-- Preview controls bar: zoom + quality -->
-		<div class="flex h-8 shrink-0 items-center justify-end gap-1 border-t border-white/10 bg-[#18181b] px-2">
-			<!-- Quality: lower = softer video/image decode (faster); layout stays full canvas size -->
-			<div class="relative">
+		<div
+			:class="[
+				'flex h-7 shrink-0 items-center justify-end gap-1 px-2',
+				isImageMode ? 'border-t border-black/30 bg-[#1e1e1e]' : 'h-8 border-t border-white/10 bg-[#18181b]',
+			]"
+		>
+			<span v-if="isImageMode" class="mr-auto pl-1 text-[10px] tabular-nums text-zinc-500">
+				{{ projectWidth }} × {{ projectHeight }}
+			</span>
+			<button
+				v-if="isImageMode"
+				type="button"
+				class="h-6 rounded px-2 text-[11px] transition-colors"
+				:class="showSafeZones ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'"
+				title="Toggle safe zones"
+				@click="showSafeZones = !showSafeZones"
+			>
+				Guides
+			</button>
+			<div v-if="!isImageMode" class="relative">
 				<button
 					class="preview-quality__input preview-quality__select h-6 px-2 text-[11px]"
 					title="Lowers decoded video and image resolution in the preview (blockier, faster). Timeline layout and overlay positions stay fixed."
@@ -770,7 +1803,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					</button>
 				</div>
 			</div>
-			<div class="h-4 w-px bg-white/10" />
+			<div v-if="!isImageMode" class="h-4 w-px bg-white/10" />
 			<!-- Zoom controls -->
 			<button class="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200" title="Zoom out (Ctrl+-)" @click="stepZoom(-ZOOM_STEP)">−</button>
 			<button class="h-6 min-w-[42px] rounded bg-white/5 px-1 text-[11px] text-zinc-300 hover:bg-white/10" title="Current zoom">{{ zoomPercent }}</button>
@@ -785,6 +1818,14 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 	max-width: 100%;
 	max-height: calc(100% - 2rem);
 	flex-shrink: 0;
+}
+
+/* Photoshop-style transparency grid (preview only — never baked into export). */
+.preview-canvas-wrapper--checkerboard {
+	background-color: #ffffff;
+	background-image: repeating-conic-gradient(#c8c8c8 0% 25%, #ffffff 0% 50%);
+	background-size: 16px 16px;
+	background-position: 0 0;
 }
 
 .preview-quality__input {

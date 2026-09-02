@@ -29,8 +29,9 @@ export interface SocialAccountAssignment {
 
 export interface SocialAccount {
   id: number;
-  platform: 'instagram' | 'tiktok' | 'twitter' | 'x' | 'youtube' | 'YouTube';
+  platform: 'instagram' | 'tiktok' | 'twitter' | 'x' | 'youtube' | 'YouTube' | 'tokend';
   platform_user_id: string;
+  provider?: string | null;
   provider_account_id?: string | null;
   username: string;
   display_name: string | null;
@@ -717,7 +718,7 @@ const POST_FOR_ME_STATUS_TIMEOUT_MS = 180000;
 function getApiBase(): string {
   return (
     import.meta.env.VITE_API_URL ||
-    (import.meta.env.DEV ? 'http://localhost:4000' : 'https://api.clippster.app')
+    (import.meta.env.DEV ? 'http://127.0.0.1:4000' : 'https://api.clippster.app')
   );
 }
 

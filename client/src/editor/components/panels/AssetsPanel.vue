@@ -14,7 +14,8 @@ import type { MediaAsset } from "../../types/assets";
 import type { CreateTimelineElement } from "../../types/timeline";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Upload, Image, Film, Music, Grid, List, Wand2, ArrowRightLeft, FolderOpen, Clapperboard, Loader2, Plus } from "lucide-vue-next";
+import { Upload, Image, Film, Music, Grid, List, FolderOpen, Clapperboard, Loader2, Plus } from "lucide-vue-next";
+import { useImageMode } from "../../composables/useImageMode";
 import TextView from "./assets/TextView.vue";
 import CaptionsView from "./assets/CaptionsView.vue";
 import SettingsView from "./assets/SettingsView.vue";
@@ -28,13 +29,16 @@ import TransitionsView from "./assets/TransitionsView.vue";
 import BrandingView from "./assets/BrandingView.vue";
 import UploadMediaView from "./assets/UploadMediaView.vue";
 import TranscriptView from "./assets/TranscriptView.vue";
+import ImageSourcesView from "./assets/ImageSourcesView.vue";
+import TemplatesView from "./assets/TemplatesView.vue";
+import BrandKitView from "./assets/BrandKitView.vue";
+import AIToolsView from "./assets/AIToolsView.vue";
 import AIBrollView from "./assets/AIBrollView.vue";
 import AudioLibraryView from "./assets/AudioLibraryView.vue";
-// import XSpacesView from "./assets/XSpacesView.vue"; // X Spaces import tab temporarily disabled
-import FoldersView from "./assets/FoldersView.vue";
+import ImageLibraryView from "./assets/ImageLibraryView.vue";
 
 const props = defineProps<{
-	activeTab: string;
+	activeTab: string | null;
 }>();
 
 const { editor, version } = useEditor({
@@ -47,386 +51,448 @@ const { editor, version } = useEditor({
 		selection: false,
 	},
 });
+const { isImageMode } = useImageMode();
 const { startDrag } = usePointerDrag();
 const showMediaDialog = ref(false);
-const dialogTab = ref<"upload" | "built" | "projects" | "audio">("upload");
+const dialogTab = ref<"upload" | "built" | "projects" | "audio" | "images">("upload");
 const viewMode = ref<"grid" | "list">("grid");
 const isProcessing = ref(false);
 const progress = ref(0);
 const sortBy = ref<"name" | "type" | "duration">("name");
 const sortOrder = ref<"asc" | "desc">("asc");
 
-const mediaFiles = computed(() => {
-	void version.value;
-	return editor.media.getAssets();
-});
+  const mediaFiles = computed(() => {
+    void version.value;
+    return editor.media.getAssets();
+  });
 
-const activeProject = computed(() => {
-	void version.value;
-	return editor.project.getActiveOrNull();
-});
+  const activeProject = computed(() => {
+    void version.value;
+    return editor.project.getActiveOrNull();
+  });
 
-const filteredMedia = computed(() => {
-	const items = mediaFiles.value.filter((item) => !item.ephemeral);
-	items.sort((a, b) => {
-		let va: string | number;
-		let vb: string | number;
-		switch (sortBy.value) {
-			case "name": va = a.name.toLowerCase(); vb = b.name.toLowerCase(); break;
-			case "type": va = a.type; vb = b.type; break;
-			case "duration": va = a.duration || 0; vb = b.duration || 0; break;
-			default: return 0;
-		}
-		if (va < vb) return sortOrder.value === "asc" ? -1 : 1;
-		if (va > vb) return sortOrder.value === "asc" ? 1 : -1;
-		return 0;
-	});
-	return items;
-});
+  const filteredMedia = computed(() => {
+    const items = mediaFiles.value.filter((item) => !item.ephemeral);
+    items.sort((a, b) => {
+      let va: string | number;
+      let vb: string | number;
+      switch (sortBy.value) {
+        case 'name':
+          va = a.name.toLowerCase();
+          vb = b.name.toLowerCase();
+          break;
+        case 'type':
+          va = a.type;
+          vb = b.type;
+          break;
+        case 'duration':
+          va = a.duration || 0;
+          vb = b.duration || 0;
+          break;
+        default:
+          return 0;
+      }
+      if (va < vb) return sortOrder.value === 'asc' ? -1 : 1;
+      if (va > vb) return sortOrder.value === 'asc' ? 1 : -1;
+      return 0;
+    });
+    return items;
+  });
 
-async function processFiles(files: FileList) {
-	if (!files || files.length === 0) return;
-	if (!activeProject.value) return;
+  async function processFiles(files: FileList) {
+    if (!files || files.length === 0) return;
+    if (!activeProject.value) return;
 
-	isProcessing.value = true;
-	progress.value = 0;
-	try {
-		const processedAssets = await processMediaAssets({
-			files,
-			onProgress: (p: { progress: number }) => { progress.value = p.progress; },
-		});
-		for (const asset of processedAssets) {
-			await editor.media.addMediaAsset({
-				projectId: activeProject.value.metadata.id,
-				asset,
-			});
-		}
-	} catch (error) {
-		console.error("Error processing files:", error);
-	} finally {
-		isProcessing.value = false;
-		progress.value = 0;
-	}
-}
+    isProcessing.value = true;
+    progress.value = 0;
+    try {
+      const processedAssets = await processMediaAssets({
+        files,
+        onProgress: (p: { progress: number }) => {
+          progress.value = p.progress;
+        },
+      });
+      for (const asset of processedAssets) {
+        const mediaId = await editor.media.addMediaAsset({
+          projectId: activeProject.value.metadata.id,
+          asset,
+        });
+        if (isImageMode.value && asset.type === 'image') {
+          const element = buildImageElement({
+            mediaId,
+            name: asset.name,
+            duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
+            startTime: editor.playback.getCurrentTime(),
+          });
+          editor.timeline.insertElement({ element, placement: { mode: 'auto' } });
+        }
+      }
+    } catch (error) {
+      console.error('Error processing files:', error);
+    } finally {
+      isProcessing.value = false;
+      progress.value = 0;
+    }
+  }
 
-const {
-	isDragOver,
-	inputRef,
-	openFilePicker,
-	handleFileChange,
-	handleDragEnter,
-	handleDragOver,
-	handleDragLeave,
-	handleDrop,
-} = useFileUpload({
-	accept: "image/*,video/*,audio/*",
-	multiple: true,
-	onFilesSelected: (files) => processFiles(files),
-});
+  const {
+    isDragOver,
+    inputRef,
+    openFilePicker,
+    handleFileChange,
+    handleDragEnter,
+    handleDragOver,
+    handleDragLeave,
+    handleDrop,
+  } = useFileUpload({
+    accept: 'image/*,video/*,audio/*',
+    multiple: true,
+    onFilesSelected: (files) => processFiles(files),
+  });
 
-function isItemProcessing(id: string): boolean {
-	void version.value;
-	return editor.media.isAssetProcessing(id);
-}
+  function isItemProcessing(id: string): boolean {
+    void version.value;
+    return editor.media.isAssetProcessing(id);
+  }
 
-async function addToTimeline(asset: MediaAsset) {
-	if (isItemProcessing(asset.id)) return;
-	const hydrated = await editor.media.ensureAssetHydrated(asset.id);
-	if (!hydrated) return;
-	asset = hydrated;
-	const duration = asset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
-	const startTime = editor.playback.getCurrentTime();
-	let element: CreateTimelineElement;
+  async function addToTimeline(asset: MediaAsset) {
+    if (isItemProcessing(asset.id)) return;
+    const hydrated = await editor.media.ensureAssetHydrated(asset.id);
+    if (!hydrated) return;
+    asset = hydrated;
+    const duration = asset.duration ?? TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION;
+    const startTime = editor.playback.getCurrentTime();
+    let element: CreateTimelineElement;
 
-	switch (asset.type) {
-		case "video":
-			element = buildVideoElement({ mediaId: asset.id, name: asset.name, duration, startTime });
-			break;
-		case "image":
-			element = buildImageElement({ mediaId: asset.id, name: asset.name, duration, startTime });
-			break;
-		case "audio":
-			element = buildUploadAudioElement({ mediaId: asset.id, name: asset.name, duration, startTime });
-			break;
-		default:
-			return;
-	}
+    switch (asset.type) {
+      case 'video':
+        element = buildVideoElement({ mediaId: asset.id, name: asset.name, duration, startTime });
+        break;
+      case 'image':
+        element = buildImageElement({ mediaId: asset.id, name: asset.name, duration, startTime });
+        break;
+      case 'audio':
+        element = buildUploadAudioElement({ mediaId: asset.id, name: asset.name, duration, startTime });
+        break;
+      default:
+        return;
+    }
 
-	editor.timeline.insertElement({ element, placement: { mode: "auto" } });
-}
+    editor.timeline.insertElement({ element, placement: { mode: 'auto' } });
+  }
 
-async function removeAsset(id: string) {
-	if (!activeProject.value) return;
-	await editor.media.removeMediaAsset({ projectId: activeProject.value.metadata.id, id });
-}
+  async function removeAsset(id: string) {
+    if (!activeProject.value) return;
+    await editor.media.removeMediaAsset({ projectId: activeProject.value.metadata.id, id });
+  }
 
-function formatDuration(d: number) {
-	const min = Math.floor(d / 60);
-	const sec = Math.floor(d % 60);
-	return `${min}:${sec.toString().padStart(2, "0")}`;
-}
+  function formatDuration(d: number) {
+    const min = Math.floor(d / 60);
+    const sec = Math.floor(d % 60);
+    return `${min}:${sec.toString().padStart(2, '0')}`;
+  }
 
-function getMediaIcon(type: string) {
-	switch (type) {
-		case "video": return Film;
-		case "audio": return Music;
-		case "image": return Image;
-		default: return Image;
-	}
-}
-
+  function getMediaIcon(type: string) {
+    switch (type) {
+      case 'video':
+        return Film;
+      case 'audio':
+        return Music;
+      case 'image':
+        return Image;
+      default:
+        return Image;
+    }
+  }
 </script>
 
 <template>
 	<div class="flex h-full flex-col bg-transparent text-zinc-200">
-		<!-- Media view -->
-		<div v-if="activeTab === 'media'" class="flex flex-1 flex-col overflow-hidden">
+		<!-- Image mode: show ImageSourcesView for media tab -->
+		<ImageSourcesView v-if="activeTab === 'media' && isImageMode" />
+
+		<!-- Video mode: standard media view -->
+		<div v-else-if="activeTab === 'media'" class="flex flex-1 flex-col overflow-hidden">
 			<input
-			:ref="(el) => { inputRef = el as HTMLInputElement | null }"
-			type="file"
-			class="hidden"
-			accept="image/*,video/*,audio/*"
-			multiple
-			@change="handleFileChange"
-		/>
+				:ref="
+					(el) => {
+						inputRef = el as HTMLInputElement | null;
+					}
+				"
+				type="file"
+				class="hidden"
+				accept="image/*,video/*,audio/*"
+				multiple
+				@change="handleFileChange"
+			/>
 
-			<!-- Header -->
-			<div class="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
-				<span class="text-zinc-400 text-sm">Media</span>
-				<div class="flex items-center gap-1">
-					<Button variant="ghost" size="icon" class="size-6" aria-label="Import media" @click="showMediaDialog = true">
-						<Plus class="size-3" />
-					</Button>
-					<Button
-						variant="ghost"
-						size="icon"
-						class="size-6"
-						:aria-label="viewMode === 'grid' ? 'Show media as a list' : 'Show media as a grid'"
-						:aria-pressed="viewMode === 'list'"
-						@click="viewMode = viewMode === 'grid' ? 'list' : 'grid'"
-					>
-						<component :is="viewMode === 'grid' ? List : Grid" class="size-3" />
-					</Button>
-				</div>
-			</div>
+      <!-- Header -->
+      <div class="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
+        <span class="text-zinc-400 text-sm">Media</span>
+        <div class="flex items-center gap-1">
+          <Button variant="ghost" size="icon" class="size-6" aria-label="Import media" @click="showMediaDialog = true">
+            <Plus class="size-3" />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon"
+            class="size-6"
+            :aria-label="viewMode === 'grid' ? 'Show media as a list' : 'Show media as a grid'"
+            :aria-pressed="viewMode === 'list'"
+            @click="viewMode = viewMode === 'grid' ? 'list' : 'grid'"
+          >
+            <component :is="viewMode === 'grid' ? List : Grid" class="size-3" />
+          </Button>
+        </div>
+      </div>
 
-			<!-- Content -->
-			<div
-				:class="['flex-1 overflow-y-auto p-3', isDragOver && 'bg-white/5']"
-				@dragenter="handleDragEnter"
-				@dragover="handleDragOver"
-				@dragleave="handleDragLeave"
-				@drop="handleDrop"
-			>
-				<p v-if="filteredMedia.length > 0 && !isDragOver" class="mb-2 text-[10px] text-zinc-500">
-					Drag to the timeline · Double-click to add at the playhead
-				</p>
-				<!-- Empty / drag overlay -->
-				<div
-					v-if="isDragOver || filteredMedia.length === 0"
-					class="flex h-full flex-col items-center justify-center gap-2 rounded-lg p-8 text-center cursor-pointer"
-					role="button"
-					tabindex="0"
-					aria-label="Upload media files"
-					@click="openFilePicker"
-					@keydown.enter="openFilePicker"
-					@keydown.space.prevent="openFilePicker"
-				>
-					<Upload class="text-zinc-500 size-8" />
-					<p class="text-zinc-500 text-sm">
-						{{ isProcessing ? `Processing... ${Math.round(progress * 100)}%` : 'Drop files here or click to upload' }}
-					</p>
-				</div>
+      <!-- Content -->
+      <div
+        :class="['flex-1 overflow-y-auto p-3', isDragOver && 'bg-white/5']"
+        @dragenter="handleDragEnter"
+        @dragover="handleDragOver"
+        @dragleave="handleDragLeave"
+        @drop="handleDrop"
+      >
+        <p v-if="filteredMedia.length > 0 && !isDragOver" class="mb-2 text-[10px] text-zinc-500">
+          Drag to the timeline · Double-click to add at the playhead
+        </p>
+        <!-- Empty / drag overlay -->
+        <div
+          v-if="isDragOver || filteredMedia.length === 0"
+          class="flex h-full flex-col items-center justify-center gap-2 rounded-lg p-8 text-center cursor-pointer"
+          role="button"
+          tabindex="0"
+          aria-label="Upload media files"
+          @click="openFilePicker"
+          @keydown.enter="openFilePicker"
+          @keydown.space.prevent="openFilePicker"
+        >
+          <Upload class="text-zinc-500 size-8" />
+          <p class="text-zinc-500 text-sm">
+            {{ isProcessing ? `Processing... ${Math.round(progress * 100)}%` : 'Drop files here or click to upload' }}
+          </p>
+        </div>
 
-				<!-- Grid view -->
-				<div
-					v-else-if="viewMode === 'grid'"
-					class="grid gap-2"
-					style="grid-template-columns: repeat(auto-fill, minmax(100px, 1fr))"
-				>
-					<div
-						v-for="item in filteredMedia"
-						:key="item.id"
-						:class="['group relative overflow-hidden rounded-lg border border-white/10', isItemProcessing(item.id) ? 'cursor-wait opacity-60' : 'cursor-pointer']"
-						:title="isItemProcessing(item.id) ? `${item.name} is processing` : `Drag ${item.name} to the timeline or double-click to add`"
-						role="button"
-						:tabindex="isItemProcessing(item.id) ? -1 : 0"
-						:aria-label="`${item.name}. Drag to the timeline or press Enter to add at the playhead.`"
-						@pointerdown="(e: PointerEvent) => {
-							if (isItemProcessing(item.id)) return;
-							startDrag(e, { id: item.id, type: 'media', mediaType: item.type, name: item.name });
-						}"
-						@dblclick="addToTimeline(item)"
-						@keydown.enter="addToTimeline(item)"
-						@dragstart.prevent
-					>
-						<!-- Processing overlay -->
-						<div v-if="isItemProcessing(item.id)" class="absolute inset-0 z-10 flex items-center justify-center bg-black/40">
-							<Loader2 class="size-5 animate-spin text-blue-400" />
-						</div>
-						<!-- Thumbnail -->
-						<div class="relative aspect-video bg-zinc-800">
-							<img
-								v-if="item.type === 'image' && item.url"
-								:src="item.url"
-								:alt="item.name"
-								class="size-full object-cover"
-								draggable="false"
-							/>
-							<img
-								v-else-if="item.type === 'video' && item.thumbnailUrl"
-								:src="item.thumbnailUrl"
-								:alt="item.name"
-								class="size-full object-cover"
-								draggable="false"
-							/>
-							<div v-else class="flex size-full items-center justify-center">
-								<component :is="getMediaIcon(item.type)" class="text-zinc-500 size-6" />
-							</div>
-							<div v-if="item.duration" class="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-xs text-white">
-								{{ formatDuration(item.duration) }}
-							</div>
-							<!-- Type badge -->
-							<div class="absolute left-1 top-1 rounded bg-black/60 p-0.5">
-								<component :is="getMediaIcon(item.type)" class="size-2.5 text-zinc-300" />
-							</div>
-						</div>
-						<!-- Name -->
-						<div class="truncate px-2 py-1 text-xs">{{ item.name }}</div>
-						<!-- Remove button -->
-						<button
-							type="button"
-							class="absolute top-1 right-1 hidden rounded bg-black/50 px-1 text-xs text-white group-hover:block"
-							:aria-label="`Remove ${item.name} from media`"
-							@click.stop="removeAsset(item.id)"
-						>
-							✕
-						</button>
-					</div>
-				</div>
+        <!-- Grid view -->
+        <div
+          v-else-if="viewMode === 'grid'"
+          class="grid gap-2"
+          style="grid-template-columns: repeat(auto-fill, minmax(100px, 1fr))"
+        >
+          <div
+            v-for="item in filteredMedia"
+            :key="item.id"
+            :class="[
+              'group relative overflow-hidden rounded-lg border border-white/10',
+              isItemProcessing(item.id) ? 'cursor-wait opacity-60' : 'cursor-pointer',
+            ]"
+            :title="
+              isItemProcessing(item.id)
+                ? `${item.name} is processing`
+                : `Drag ${item.name} to the timeline or double-click to add`
+            "
+            role="button"
+            :tabindex="isItemProcessing(item.id) ? -1 : 0"
+            :aria-label="`${item.name}. Drag to the timeline or press Enter to add at the playhead.`"
+            @pointerdown="
+              (e: PointerEvent) => {
+                if (isItemProcessing(item.id)) return;
+                startDrag(e, { id: item.id, type: 'media', mediaType: item.type, name: item.name });
+              }
+            "
+            @dblclick="addToTimeline(item)"
+            @keydown.enter="addToTimeline(item)"
+            @dragstart.prevent
+          >
+            <!-- Processing overlay -->
+            <div
+              v-if="isItemProcessing(item.id)"
+              class="absolute inset-0 z-10 flex items-center justify-center bg-black/40"
+            >
+              <Loader2 class="size-5 animate-spin text-blue-400" />
+            </div>
+            <!-- Thumbnail -->
+            <div class="relative aspect-video bg-zinc-800">
+              <img
+                v-if="item.type === 'image' && item.url"
+                :src="item.url"
+                :alt="item.name"
+                class="size-full object-cover"
+                draggable="false"
+              />
+              <img
+                v-else-if="item.type === 'video' && item.thumbnailUrl"
+                :src="item.thumbnailUrl"
+                :alt="item.name"
+                class="size-full object-cover"
+                draggable="false"
+              />
+              <div v-else class="flex size-full items-center justify-center">
+                <component :is="getMediaIcon(item.type)" class="text-zinc-500 size-6" />
+              </div>
+              <div v-if="item.duration" class="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-xs text-white">
+                {{ formatDuration(item.duration) }}
+              </div>
+              <!-- Type badge -->
+              <div class="absolute left-1 top-1 rounded bg-black/60 p-0.5">
+                <component :is="getMediaIcon(item.type)" class="size-2.5 text-zinc-300" />
+              </div>
+            </div>
+            <!-- Name -->
+            <div class="truncate px-2 py-1 text-xs">{{ item.name }}</div>
+            <!-- Remove button -->
+            <button
+              type="button"
+              class="absolute top-1 right-1 hidden rounded bg-black/50 px-1 text-xs text-white group-hover:block"
+              :aria-label="`Remove ${item.name} from media`"
+              @click.stop="removeAsset(item.id)"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
 
-				<!-- List view -->
-				<div v-else class="space-y-1">
-					<div
-						v-for="item in filteredMedia"
-						:key="item.id"
-						:class="['group flex items-center gap-2 rounded-md px-2 py-1', isItemProcessing(item.id) ? 'cursor-wait opacity-60' : 'cursor-pointer hover:bg-white/5']"
-						:title="isItemProcessing(item.id) ? `${item.name} is processing` : `Drag ${item.name} to the timeline or double-click to add`"
-						role="button"
-						:tabindex="isItemProcessing(item.id) ? -1 : 0"
-						:aria-label="`${item.name}. Drag to the timeline or press Enter to add at the playhead.`"
-						@pointerdown="(e: PointerEvent) => {
-							if (isItemProcessing(item.id)) return;
-							startDrag(e, { id: item.id, type: 'media', mediaType: item.type, name: item.name });
-						}"
-						@dblclick="addToTimeline(item)"
-						@keydown.enter="addToTimeline(item)"
-						@dragstart.prevent
-					>
-						<Loader2 v-if="isItemProcessing(item.id)" class="size-4 shrink-0 animate-spin text-blue-400" />
-						<div class="size-8 shrink-0 overflow-hidden rounded bg-zinc-800">
-							<img
-								v-if="(item.type === 'image' && item.url) || (item.type === 'video' && item.thumbnailUrl)"
-								:src="item.type === 'image' ? item.url : item.thumbnailUrl"
-								:alt="item.name"
-								class="size-full object-cover"
-								draggable="false"
-							/>
-							<div v-else class="flex size-full items-center justify-center">
-								<component :is="getMediaIcon(item.type)" class="text-zinc-500 size-4" />
-							</div>
-						</div>
-						<div class="min-w-0 flex-1">
-							<div class="truncate text-xs text-zinc-200">{{ item.name }}</div>
-							<div class="text-zinc-500 text-[10px]">
-								{{ item.type }}{{ item.duration ? ` · ${formatDuration(item.duration)}` : '' }}
-							</div>
-						</div>
-						<button
-							type="button"
-							class="hidden text-xs text-destructive group-hover:block"
-							:aria-label="`Remove ${item.name} from media`"
-							@click.stop="removeAsset(item.id)"
-						>
-							✕
-						</button>
-					</div>
-				</div>
-			</div>
+        <!-- List view -->
+        <div v-else class="space-y-1">
+          <div
+            v-for="item in filteredMedia"
+            :key="item.id"
+            :class="[
+              'group flex items-center gap-2 rounded-md px-2 py-1',
+              isItemProcessing(item.id) ? 'cursor-wait opacity-60' : 'cursor-pointer hover:bg-white/5',
+            ]"
+            :title="
+              isItemProcessing(item.id)
+                ? `${item.name} is processing`
+                : `Drag ${item.name} to the timeline or double-click to add`
+            "
+            role="button"
+            :tabindex="isItemProcessing(item.id) ? -1 : 0"
+            :aria-label="`${item.name}. Drag to the timeline or press Enter to add at the playhead.`"
+            @pointerdown="
+              (e: PointerEvent) => {
+                if (isItemProcessing(item.id)) return;
+                startDrag(e, { id: item.id, type: 'media', mediaType: item.type, name: item.name });
+              }
+            "
+            @dblclick="addToTimeline(item)"
+            @keydown.enter="addToTimeline(item)"
+            @dragstart.prevent
+          >
+            <Loader2 v-if="isItemProcessing(item.id)" class="size-4 shrink-0 animate-spin text-blue-400" />
+            <div class="size-8 shrink-0 overflow-hidden rounded bg-zinc-800">
+              <img
+                v-if="(item.type === 'image' && item.url) || (item.type === 'video' && item.thumbnailUrl)"
+                :src="item.type === 'image' ? item.url : item.thumbnailUrl"
+                :alt="item.name"
+                class="size-full object-cover"
+                draggable="false"
+              />
+              <div v-else class="flex size-full items-center justify-center">
+                <component :is="getMediaIcon(item.type)" class="text-zinc-500 size-4" />
+              </div>
+            </div>
+            <div class="min-w-0 flex-1">
+              <div class="truncate text-xs text-zinc-200">{{ item.name }}</div>
+              <div class="text-zinc-500 text-[10px]">
+                {{ item.type }}{{ item.duration ? ` · ${formatDuration(item.duration)}` : '' }}
+              </div>
+            </div>
+            <button
+              type="button"
+              class="hidden text-xs text-destructive group-hover:block"
+              :aria-label="`Remove ${item.name} from media`"
+              @click.stop="removeAsset(item.id)"
+            >
+              ✕
+            </button>
+          </div>
+        </div>
+      </div>
 
-			<!-- Import Media Dialog -->
-			<Dialog v-model:open="showMediaDialog">
-				<DialogContent class="max-w-2xl h-[600px] flex flex-col gap-0 p-0 bg-[#1e1e22] border-white/10">
-					<DialogHeader class="px-4 pt-4 pb-0 shrink-0">
-						<DialogTitle class="text-sm font-medium text-zinc-200">Import Media</DialogTitle>
-					</DialogHeader>
-					<!-- Tab bar -->
-					<div class="flex items-center border-b border-white/10 px-4 mt-3 shrink-0 overflow-x-auto">
-						<!-- X Spaces tab: see git history / XSpacesView.vue when re-enabling -->
-						<button
-							v-for="tab in ([
-								{ key: 'upload', label: 'Upload', icon: Upload },
-								{ key: 'built', label: 'Built Clips', icon: Clapperboard },
-								{ key: 'projects', label: 'Projects', icon: FolderOpen },
-								{ key: 'audio', label: 'Audio', icon: Music },
-							] as const)"
-							:key="tab.key"
-							type="button"
-							:class="[
-								'flex items-center gap-1 px-2 py-2 text-[11px] font-medium whitespace-nowrap transition-colors border-b-2',
-								dialogTab === tab.key
-									? 'border-blue-500 text-blue-400'
-									: 'border-transparent text-zinc-500 hover:text-zinc-300',
-							]"
-							@click="dialogTab = tab.key"
-						>
-							<component :is="tab.icon" class="size-3.5" />
-							{{ tab.label }}
-						</button>
-					</div>
-					<!-- Tab content -->
-					<div class="flex-1 overflow-hidden">
-						<UploadMediaView v-if="dialogTab === 'upload'" />
-						<BuiltClipsView v-else-if="dialogTab === 'built'" />
-						<ProjectClipsView v-else-if="dialogTab === 'projects'" />
-						<AudioLibraryView v-else-if="dialogTab === 'audio'" />
-						<!-- <XSpacesView v-else-if="dialogTab === 'spaces'" /> -->
-					</div>
-				</DialogContent>
-			</Dialog>
-		</div>
+      <!-- Import Media Dialog -->
+      <Dialog v-model:open="showMediaDialog">
+        <DialogContent class="max-w-2xl h-[600px] flex flex-col gap-0 p-0 bg-[#1e1e22] border-white/10">
+          <DialogHeader class="px-4 pt-4 pb-0 shrink-0">
+            <DialogTitle class="text-sm font-medium text-zinc-200">Import Media</DialogTitle>
+          </DialogHeader>
+          <!-- Tab bar -->
+          <div class="flex items-center border-b border-white/10 px-4 mt-3 shrink-0 overflow-x-auto">
+            <button
+              v-for="tab in [
+                { key: 'upload', label: 'Upload', icon: Upload },
+                { key: 'built', label: 'Built Clips', icon: Clapperboard },
+                { key: 'projects', label: 'Projects', icon: FolderOpen },
+                { key: 'audio', label: 'Audio', icon: Music },
+                { key: 'images', label: 'Images', icon: Image },
+              ] as const"
+              :key="tab.key"
+              type="button"
+              :class="[
+                'flex items-center gap-1 px-2 py-2 text-[11px] font-medium whitespace-nowrap transition-colors border-b-2',
+                dialogTab === tab.key
+                  ? 'border-blue-500 text-blue-400'
+                  : 'border-transparent text-zinc-500 hover:text-zinc-300',
+              ]"
+              @click="dialogTab = tab.key"
+            >
+              <component :is="tab.icon" class="size-3.5" />
+              {{ tab.label }}
+            </button>
+          </div>
+          <!-- Tab content -->
+          <div class="flex-1 overflow-hidden">
+            <UploadMediaView v-if="dialogTab === 'upload'" />
+            <BuiltClipsView v-else-if="dialogTab === 'built'" />
+            <ProjectClipsView v-else-if="dialogTab === 'projects'" />
+            <AudioLibraryView v-else-if="dialogTab === 'audio'" />
+            <ImageLibraryView v-else-if="dialogTab === 'images'" />
+          </div>
+        </DialogContent>
+      </Dialog>
+    </div>
+
+		<!-- Templates view (image mode only) -->
+		<TemplatesView v-else-if="activeTab === 'templates'" />
+
+		<!-- Brand Kit view (image mode only) -->
+		<BrandKitView v-else-if="activeTab === 'brandkit'" />
+
+		<!-- AI Tools view (image mode only) -->
+		<AIToolsView v-else-if="activeTab === 'aitools'" />
 
 		<!-- Text view -->
 		<TextView v-else-if="activeTab === 'text'" />
 
-		<!-- Stickers view -->
-		<StickersView v-else-if="activeTab === 'stickers'" />
+    <!-- Stickers view -->
+    <StickersView v-else-if="activeTab === 'stickers'" />
 
-		<!-- Effects view -->
-		<EffectsView v-else-if="activeTab === 'effects'" />
+    <!-- Effects view -->
+    <EffectsView v-else-if="activeTab === 'effects'" />
 
-		<!-- Transitions view -->
-		<TransitionsView v-else-if="activeTab === 'transitions'" />
+    <!-- Transitions view -->
+    <TransitionsView v-else-if="activeTab === 'transitions'" />
 
-		<!-- Sounds view -->
-		<SoundsView v-else-if="activeTab === 'sounds'" />
+    <!-- Sounds view -->
+    <SoundsView v-else-if="activeTab === 'sounds'" />
 
-		<!-- Captions view -->
-		<CaptionsView v-else-if="activeTab === 'captions'" />
+    <!-- Captions view -->
+    <CaptionsView v-else-if="activeTab === 'captions'" />
 
-		<!-- Filters view -->
-		<FiltersView v-else-if="activeTab === 'filters'" />
+    <!-- Filters view -->
+    <FiltersView v-else-if="activeTab === 'filters'" />
 
-		<!-- Transcript view -->
-		<TranscriptView v-else-if="activeTab === 'transcript'" />
+    <!-- Transcript view -->
+    <TranscriptView v-else-if="activeTab === 'transcript'" />
 
-		<!-- AI B-roll view -->
-		<AIBrollView v-else-if="activeTab === 'broll'" />
+    <!-- AI B-roll view -->
+    <AIBrollView v-else-if="activeTab === 'broll'" />
 
-		<!-- Branding view -->
-		<BrandingView v-else-if="activeTab === 'branding'" />
+    <!-- Branding view -->
+    <BrandingView v-else-if="activeTab === 'branding'" />
 
-		<!-- Settings view -->
-		<SettingsView v-else-if="activeTab === 'settings'" />
-	</div>
+    <!-- Settings view -->
+    <SettingsView v-else-if="activeTab === 'settings'" />
+  </div>
 </template>

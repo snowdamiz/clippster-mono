@@ -66,6 +66,12 @@ import {
   isDirectTwitterLiveUrl,
   type TwitterLiveStatus,
 } from '@/services/twitter';
+import {
+  checkTokendLivestream,
+  fetchTokendCapabilities,
+  TOKEND_UNAVAILABLE_MESSAGES,
+  type TokendLiveStatus,
+} from '@/services/tokend';
 import { useLivestreamSegmentProcessing } from './useLivestreamSegmentProcessing';
 import { useDvrRecording } from './useDvrRecording';
 import { useToast } from './useToast';
@@ -305,6 +311,23 @@ async function fetchTwitterLiveStatus(urlOrUsername: string): Promise<LiveStatus
   }
 }
 
+async function fetchTokendLiveStatus(channelOrUrl: string): Promise<LiveStatus> {
+  try {
+    const status: TokendLiveStatus = await checkTokendLivestream(channelOrUrl);
+    return {
+      isLive: status.isLive,
+      streamId: status.channelId || channelOrUrl,
+      streamStartTimestamp: status.startedAt ? new Date(status.startedAt).getTime() : undefined,
+      numParticipants: status.viewerCount,
+      profileImageUrl: status.profileImageUrl || undefined,
+      raw: status,
+    };
+  } catch (error) {
+    console.warn('[LiveMonitor] Failed to check Tokend live status', error);
+    return { isLive: false };
+  }
+}
+
 async function fetchLiveStatus(
   platformId: string,
   platform: SupportedLivestreamPlatform = 'PumpFun'
@@ -320,6 +343,8 @@ async function fetchLiveStatus(
       return fetchRumbleLiveStatus(platformId);
     case 'Twitter':
       return fetchTwitterLiveStatus(platformId);
+    case 'Tokend':
+      return fetchTokendLiveStatus(platformId);
     case 'PumpFun':
     default:
       return fetchPumpFunLiveStatus(platformId);
@@ -387,6 +412,7 @@ function recordToMonitoredStreamer(
     youtube: 'YouTube',
     rumble: 'Rumble',
     twitter: 'Twitter',
+    tokend: 'Tokend',
   };
   const platform =
     platformMap[record.platform?.toLowerCase() || 'pumpfun'] || 'PumpFun';
@@ -749,6 +775,11 @@ async function startDvrRecordingForStreamer(streamer: MonitoredStreamer): Promis
   if (dvrSessions.value.has(streamer.id)) {
     console.log('[LiveMonitor] Streamer already has DVR recording:', streamer.id);
     return true;
+  }
+
+  if (streamer.platform === 'Tokend') {
+    console.log('[LiveMonitor] Tokend DVR unavailable; status monitoring only:', streamer.id);
+    return false;
   }
 
   // For Kick streams, use yt-dlp based recording
@@ -1239,6 +1270,7 @@ async function tryRemoveEndedTwitterBroadcastById(streamerId: string, reason: st
         youtube: 'YouTube',
         rumble: 'Rumble',
         twitter: 'Twitter',
+        tokend: 'Tokend',
       };
       const streamer: MonitoredStreamer = {
         id: fromDb.id,
@@ -1989,7 +2021,7 @@ export function useLivestreamMonitoring() {
 
       // Auto-start DVR recording for live streamers that don't have persistent recording
       // This enables DVR for users who just want to watch (not record)
-      if (status.isLive && !sessionActive && !hasDvrRecording) {
+      if (status.isLive && !sessionActive && !hasDvrRecording && streamer.platform !== 'Tokend') {
         await startDvrRecordingForStreamer(streamer);
       }
 
@@ -2004,6 +2036,44 @@ export function useLivestreamMonitoring() {
 
   async function handleStreamStart(streamer: MonitoredStreamer, status: LiveStatus, options: StartOptions) {
     try {
+      if (streamer.platform === 'Tokend') {
+        const capabilities = await fetchTokendCapabilities().catch(() => null);
+        if (!capabilities?.watch) {
+          console.log(
+            '[LiveMonitor] Tokend playback/DVR unavailable — status monitoring only'
+          );
+          addActivityLog({
+            streamerId: streamer.id,
+            streamerName: streamer.displayName,
+            platform: streamer.platform,
+            mintId: streamer.mintId,
+            message: TOKEND_UNAVAILABLE_MESSAGES.playback,
+            status: 'info',
+            profileImageUrl: streamer.profileImageUrl,
+          });
+          if (!isOnLivePage()) {
+            showSuccess(
+              `${streamer.displayName} is live on Tokend`,
+              TOKEND_UNAVAILABLE_MESSAGES.playback,
+              undefined,
+              'livestream'
+            );
+          }
+          return;
+        }
+
+        addActivityLog({
+          streamerId: streamer.id,
+          streamerName: streamer.displayName,
+          platform: streamer.platform,
+          mintId: streamer.mintId,
+          message: 'Live on Tokend — Watch via partner viewer token when opened from Live Clip.',
+          status: 'info',
+          profileImageUrl: streamer.profileImageUrl,
+        });
+        return;
+      }
+
       // Note: "Streamer went live" toast is handled by global polling system
       // This function is called for both automatic detection and manual user actions
       

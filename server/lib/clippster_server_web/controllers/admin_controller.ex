@@ -1938,6 +1938,62 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   @doc """
+  Enables Circles access for a user.
+  """
+  def enable_circles(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.enable_circles(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "Circles access enabled",
+              user: %{id: user.id, circles_enabled: user.circles_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
+  Disables Circles access for a user.
+  """
+  def disable_circles(conn, %{"user_id" => user_id_string}) do
+    case parse_integer(user_id_string) do
+      {:ok, user_id} ->
+        case Accounts.disable_circles(user_id) do
+          {:ok, user} ->
+            json(conn, %{
+              success: true,
+              message: "Circles access disabled",
+              user: %{id: user.id, circles_enabled: user.circles_enabled}
+            })
+
+          {:error, :user_not_found} ->
+            conn |> put_status(404) |> json(%{success: false, error: "User not found"})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed: #{inspect(reason)}"})
+        end
+
+      {:error, _} ->
+        conn |> put_status(400) |> json(%{success: false, error: "Invalid user ID"})
+    end
+  end
+
+  @doc """
   Enables campaigns access for a user.
   """
   def enable_campaigns(conn, %{"user_id" => user_id_string}) do
@@ -2270,6 +2326,7 @@ defmodule ClippsterServerWeb.AdminController do
               owned_organization_id: user.owned_organization_id,
               ai_editor_enabled: user.ai_editor_enabled,
               campaigns_enabled: user.campaigns_enabled,
+              circles_enabled: user.circles_enabled,
               created_at: user.inserted_at,
               last_active_at: user.last_active_at,
               credits: %{

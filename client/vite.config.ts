@@ -7,9 +7,27 @@ import path from "path";
 const host = process.env.TAURI_DEV_HOST;
 
 // https://vite.dev/config/
+function stripeReturnHtml() {
+  return {
+    name: "stripe-return-html",
+    configureServer(server: { middlewares: { use: (fn: (req: { url?: string }, _res: unknown, next: () => void) => void) => void } }) {
+      server.middlewares.use((req, _res, next) => {
+        const pathOnly = req.url?.split("?")[0];
+        if (pathOnly === "/stripe-success") {
+          req.url = req.url?.replace("/stripe-success", "/stripe-success.html");
+        } else if (pathOnly === "/stripe-cancel") {
+          req.url = req.url?.replace("/stripe-cancel", "/stripe-cancel.html");
+        }
+        next();
+      });
+    },
+  };
+}
+
 export default defineConfig(async () => ({
   plugins: [
     vue(),
+    stripeReturnHtml(),
     // React plugin for Remotion - only processes .tsx files in /remotion folder
     react({
       include: /src\/remotion\/.*\.tsx$/,
@@ -18,6 +36,11 @@ export default defineConfig(async () => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@clippster/cloud-sync-schema": path.resolve(
+        __dirname,
+        "../packages/cloud-sync-schema/src/index.ts",
+      ),
+      "@clippster/app-tour": path.resolve(__dirname, "../packages/app-tour/src/index.ts"),
     },
   },
 

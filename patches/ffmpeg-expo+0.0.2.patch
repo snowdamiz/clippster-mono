@@ -1,0 +1,1022 @@
+diff --git a/node_modules/ffmpeg-expo/android/CMakeLists.txt b/node_modules/ffmpeg-expo/android/CMakeLists.txt
+index 49303e9..1922ce4 100644
+--- a/node_modules/ffmpeg-expo/android/CMakeLists.txt
++++ b/node_modules/ffmpeg-expo/android/CMakeLists.txt
+@@ -4,13 +4,12 @@ project(ffmpeg-jni)
+ set(CMAKE_CXX_STANDARD 17)
+ set(CMAKE_CXX_STANDARD_REQUIRED ON)
+ 
+-# Find required packages
+ find_library(log-lib log)
++find_library(android-lib android)
++find_library(mediandk-lib mediandk)
+ 
+-# FFmpeg library paths
+ set(FFMPEG_LIB_DIR ${CMAKE_SOURCE_DIR}/jniLibs/${ANDROID_ABI})
+ 
+-# Add FFmpeg shared libraries
+ add_library(avcodec SHARED IMPORTED)
+ set_target_properties(avcodec PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libavcodec.so)
+ 
+@@ -26,27 +25,44 @@ set_target_properties(swresample PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/
+ add_library(swscale SHARED IMPORTED)
+ set_target_properties(swscale PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libswscale.so)
+ 
+-# Include directories for FFmpeg headers
++add_library(avfilter SHARED IMPORTED)
++set_target_properties(avfilter PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libavfilter.so)
++
++add_library(avdevice SHARED IMPORTED)
++set_target_properties(avdevice PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libavdevice.so)
++
++add_library(expo-ffmpeg-cli STATIC IMPORTED)
++set_target_properties(expo-ffmpeg-cli PROPERTIES
++    IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libexpo_ffmpeg.a
++)
++
+ include_directories(${CMAKE_SOURCE_DIR}/include)
+ 
+-# Build our JNI wrapper
+ add_library(ffmpeg-jni SHARED
+     src/main/cpp/ffmpeg_jni.cpp
+     src/main/cpp/ffmpeg_session.cpp
+     src/main/cpp/ffmpeg_progress.cpp
+ )
+ 
+-# Link libraries
+-target_link_libraries(ffmpeg-jni
++set(FFMPEG_JNI_LIBS
+     ${log-lib}
+-    avcodec
++    ${android-lib}
++    expo-ffmpeg-cli
++    avfilter
+     avformat
+-    avutil
++    avcodec
++    avdevice
+     swresample
+     swscale
++    avutil
+ )
+ 
+-# Set library output name
++if(mediandk-lib)
++    list(APPEND FFMPEG_JNI_LIBS ${mediandk-lib})
++endif()
++
++target_link_libraries(ffmpeg-jni ${FFMPEG_JNI_LIBS})
++
+ set_target_properties(ffmpeg-jni PROPERTIES
+     LIBRARY_OUTPUT_NAME "ffmpeg-jni"
+ )
+diff --git a/node_modules/ffmpeg-expo/android/build.gradle b/node_modules/ffmpeg-expo/android/build.gradle
+new file mode 100644
+index 0000000..9b482eb
+--- /dev/null
++++ b/node_modules/ffmpeg-expo/android/build.gradle
+@@ -0,0 +1,60 @@
++plugins {
++  id 'com.android.library'
++  id 'expo-module-gradle-plugin'
++}
++
++group = 'expo.modules.ffmpeg'
++version = '1.0.0'
++
++android {
++  namespace 'expo.modules.ffmpeg'
++
++  defaultConfig {
++    versionCode 1
++    versionName '1.0.0'
++
++    ndk {
++      abiFilters 'arm64-v8a', 'armeabi-v7a', 'x86_64'
++    }
++
++    externalNativeBuild {
++      cmake {
++        cppFlags '-std=c++17'
++        arguments '-DANDROID_STL=c++_shared'
++      }
++    }
++  }
++
++  buildTypes {
++    release {
++      minifyEnabled false
++    }
++  }
++
++  externalNativeBuild {
++    cmake {
++      path 'CMakeLists.txt'
++      version '3.22.1'
++    }
++  }
++
++  compileOptions {
++    sourceCompatibility JavaVersion.VERSION_17
++    targetCompatibility JavaVersion.VERSION_17
++  }
++
++  kotlinOptions {
++    jvmTarget = '17'
++  }
++
++  sourceSets {
++    main {
++      jniLibs.srcDirs = ['jniLibs']
++    }
++  }
++}
++
++dependencies {
++  implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3'
++  implementation 'org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3'
++}
+diff --git a/node_modules/ffmpeg-expo/android/build.gradle.kts b/node_modules/ffmpeg-expo/android/build.gradle.kts
+deleted file mode 100644
+index 81a20da..0000000
+--- a/node_modules/ffmpeg-expo/android/build.gradle.kts
++++ /dev/null
+@@ -1,66 +0,0 @@
+-plugins {
+-    id("com.android.library")
+-    id("org.jetbrains.kotlin.android")
+-}
+-
+-group = "expo.modules.ffmpeg"
+-version = "1.0.0"
+-
+-android {
+-    namespace = "expo.modules.ffmpeg"
+-    compileSdk = 34
+-
+-    defaultConfig {
+-        minSdk = 21
+-
+-        ndk {
+-            abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64")
+-        }
+-
+-        externalNativeBuild {
+-            cmake {
+-                cppFlags += "-std=c++17"
+-                arguments += listOf(
+-                    "-DANDROID_STL=c++_shared"
+-                )
+-            }
+-        }
+-    }
+-
+-    buildTypes {
+-        release {
+-            isMinifyEnabled = false
+-        }
+-    }
+-
+-    externalNativeBuild {
+-        cmake {
+-            path = file("CMakeLists.txt")
+-            version = "3.22.1"
+-        }
+-    }
+-
+-    compileOptions {
+-        sourceCompatibility = JavaVersion.VERSION_17
+-        targetCompatibility = JavaVersion.VERSION_17
+-    }
+-
+-    kotlinOptions {
+-        jvmTarget = "17"
+-    }
+-
+-    sourceSets {
+-        getByName("main") {
+-            jniLibs.srcDirs("jniLibs")
+-        }
+-    }
+-}
+-
+-dependencies {
+-    implementation("org.jetbrains.kotlin:kotlin-stdlib:1.9.22")
+-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.7.3")
+-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.7.3")
+-    
+-    // Expo modules
+-    implementation("expo.modules:expo-modules-core:1.11.8")
+-}
+diff --git a/node_modules/ffmpeg-expo/android/src/main/cpp/expo_ffmpeg.h b/node_modules/ffmpeg-expo/android/src/main/cpp/expo_ffmpeg.h
+new file mode 100644
+index 0000000..0e98c52
+--- /dev/null
++++ b/node_modules/ffmpeg-expo/android/src/main/cpp/expo_ffmpeg.h
+@@ -0,0 +1,22 @@
++#ifndef EXPO_FFMPEG_H
++#define EXPO_FFMPEG_H
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++typedef int (*expo_ffmpeg_cancel_callback)(void *opaque);
++
++/**
++ * Embedded FFmpeg CLI entry (libexpo_ffmpeg.a).
++ * Parses full argv including -filter_complex, encoders, and multi-input maps.
++ */
++int expo_ffmpeg_execute(int argc, char **argv,
++                        expo_ffmpeg_cancel_callback cancel_callback,
++                        void *cancel_opaque);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif
+diff --git a/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_jni.cpp b/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_jni.cpp
+index 05cf8b1..21de612 100644
+--- a/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_jni.cpp
++++ b/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_jni.cpp
+@@ -2,6 +2,7 @@
+ #include <android/log.h>
+ #include <vector>
+ #include <cstring>
++#include <string>
+ 
+ #define LOG_TAG "FFmpegJNI"
+ #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+@@ -10,16 +11,16 @@
+ namespace ffmpeg {
+ 
+ // Thread-local session for log callback
+-static thread_local FFmpegSession* currentSession = nullptr;
++thread_local FFmpegSession* currentSession = nullptr;
+ 
+-// Custom FFmpeg log callback
++// Forward only warnings+ to JS — INFO/VERBOSE from demux of large TS floods JNI.
+ static void ffmpeg_log_callback(void* ptr, int level, const char* fmt, va_list vl) {
+     if (currentSession == nullptr) return;
++    if (level > AV_LOG_WARNING) return;
+     
+     char line[1024];
+     vsnprintf(line, sizeof(line), fmt, vl);
+     
+-    // Remove trailing newline
+     size_t len = strlen(line);
+     if (len > 0 && line[len - 1] == '\n') {
+         line[len - 1] = '\0';
+@@ -126,9 +127,22 @@ void FFmpegSession::notifyLog(int level, const char* message) {
+         attached = true;
+     }
+     
+-    jstring jmessage = env->NewStringUTF(message);
+-    env->CallVoidMethod(callbackRef_, onLogMethod_, (jint)level, jmessage);
+-    env->DeleteLocalRef(jmessage);
++    // NewStringUTF aborts on invalid Modified UTF-8; sanitize to ASCII-ish.
++    std::string safe;
++    safe.reserve(message ? strlen(message) : 0);
++    if (message) {
++        for (const unsigned char* p = reinterpret_cast<const unsigned char*>(message); *p; ++p) {
++            safe.push_back((*p < 0x20 && *p != '\t') || *p > 0x7E ? '?' : static_cast<char>(*p));
++        }
++    }
++    jstring jmessage = env->NewStringUTF(safe.c_str());
++    if (jmessage != nullptr) {
++        env->CallVoidMethod(callbackRef_, onLogMethod_, (jint)level, jmessage);
++        env->DeleteLocalRef(jmessage);
++    }
++    if (env->ExceptionCheck()) {
++        env->ExceptionClear();
++    }
+     
+     if (attached) {
+         jvm_->DetachCurrentThread();
+@@ -139,6 +153,10 @@ void FFmpegSession::cancel() {
+     cancelled_.store(true);
+ }
+ 
++void installFfmpegLogCallback() {
++    av_log_set_callback(ffmpeg_log_callback);
++}
++
+ } // namespace ffmpeg
+ 
+ // JNI exports
+diff --git a/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_jni.h b/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_jni.h
+index b91d64c..35c8e8c 100644
+--- a/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_jni.h
++++ b/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_jni.h
+@@ -69,6 +69,8 @@ private:
+     std::mutex callbackMutex_;
+ };
+ 
++void installFfmpegLogCallback();
++
+ } // namespace ffmpeg
+ 
+ #endif // FFMPEG_JNI_H
+diff --git a/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_session.cpp b/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_session.cpp
+index d8b774f..2005371 100644
+--- a/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_session.cpp
++++ b/node_modules/ffmpeg-expo/android/src/main/cpp/ffmpeg_session.cpp
+@@ -1,9 +1,10 @@
+ #include "ffmpeg_jni.h"
++#include "expo_ffmpeg.h"
++
+ #include <android/log.h>
++#include <mutex>
++#include <string>
+ #include <vector>
+-#include <cstring>
+-#include <regex>
+-#include <sstream>
+ 
+ #define LOG_TAG "FFmpegSession"
+ #define LOGI(...) __android_log_print(ANDROID_LOG_INFO, LOG_TAG, __VA_ARGS__)
+@@ -11,305 +12,59 @@
+ 
+ namespace ffmpeg {
+ 
+-// Thread-local session for callbacks
+ extern thread_local FFmpegSession* currentSession;
+ 
+-// Progress parsing from FFmpeg stderr output
+-class ProgressParser {
+-public:
+-    void parseLine(const std::string& line, FFmpegSession* session) {
+-        // FFmpeg progress lines look like:
+-        // frame=  123 fps= 24 q=28.0 size=    1234kB time=00:00:05.12 bitrate= 197.4kbits/s speed=1.23x
+-        
+-        if (line.find("frame=") == std::string::npos && 
+-            line.find("size=") == std::string::npos) {
+-            return;
+-        }
+-        
+-        int64_t time = 0;
+-        double bitrate = 0;
+-        double speed = 0;
+-        int frame = 0;
+-        double fps = 0;
+-        int64_t size = 0;
+-        
+-        // Parse time
+-        std::regex timeRegex("time=([0-9]+):([0-9]+):([0-9.]+)");
+-        std::smatch timeMatch;
+-        if (std::regex_search(line, timeMatch, timeRegex)) {
+-            int hours = std::stoi(timeMatch[1].str());
+-            int minutes = std::stoi(timeMatch[2].str());
+-            double seconds = std::stod(timeMatch[3].str());
+-            time = static_cast<int64_t>((hours * 3600 + minutes * 60 + seconds) * 1000);
+-        }
+-        
+-        // Parse bitrate
+-        std::regex bitrateRegex("bitrate=\\s*([0-9.]+)kbits/s");
+-        std::smatch bitrateMatch;
+-        if (std::regex_search(line, bitrateMatch, bitrateRegex)) {
+-            bitrate = std::stod(bitrateMatch[1].str());
+-        }
+-        
+-        // Parse speed
+-        std::regex speedRegex("speed=\\s*([0-9.]+)x");
+-        std::smatch speedMatch;
+-        if (std::regex_search(line, speedMatch, speedRegex)) {
+-            speed = std::stod(speedMatch[1].str());
+-        }
+-        
+-        // Parse frame
+-        std::regex frameRegex("frame=\\s*([0-9]+)");
+-        std::smatch frameMatch;
+-        if (std::regex_search(line, frameMatch, frameRegex)) {
+-            frame = std::stoi(frameMatch[1].str());
+-        }
++namespace {
+ 
+-        // Parse fps
+-        std::regex fpsRegex("fps=\\s*([0-9.]+)");
+-        std::smatch fpsMatch;
+-        if (std::regex_search(line, fpsMatch, fpsRegex)) {
+-            fps = std::stod(fpsMatch[1].str());
+-        }
++std::mutex executionMutex;
+ 
+-        // Parse size
+-        std::regex sizeRegex("size=\\s*([0-9]+)kB");
+-        std::smatch sizeMatch;
+-        if (std::regex_search(line, sizeMatch, sizeRegex)) {
+-            size = std::stoll(sizeMatch[1].str()) * 1024;
+-        }
+-        
+-        // Notify if we have meaningful data
+-        if (time > 0 || frame > 0 || size > 0) {
+-            session->notifyProgress(time, bitrate, speed, frame, fps, size);
+-        }
+-    }
+-};
++int shouldCancel(void* opaque) {
++    auto* session = static_cast<FFmpegSession*>(opaque);
++    return session && session->isCancelled() ? 1 : 0;
++}
+ 
+-// FFmpeg command execution using the library API
+-// Note: This is a simplified implementation. For full ffmpeg command-line compatibility,
+-// you would need to either:
+-// 1. Build ffmpeg with main() exposed as a library function
+-// 2. Implement command-line parsing and use avcodec/avformat APIs directly
+-// 3. Use a subprocess (not recommended for mobile)
++} // namespace
+ 
+ int FFmpegSession::execute(JNIEnv* env, jobjectArray args, int logLevel, jobject callback) {
++    std::lock_guard<std::mutex> executionLock(executionMutex);
+     setCallback(env, callback);
+     currentSession = this;
+-    
+-    // Set FFmpeg log level
++    installFfmpegLogCallback();
+     av_log_set_level(logLevel);
+ 
+-    // Convert Java String array to C++ vector
+-    int argc = env->GetArrayLength(args);
++    const int argCount = env->GetArrayLength(args);
+     std::vector<std::string> argStrings;
+-    std::vector<char*> argv;
+-    
+-    // First arg should be "ffmpeg"
+-    argStrings.push_back("ffmpeg");
+-    argv.push_back(const_cast<char*>(argStrings.back().c_str()));
+-    
+-    for (int i = 0; i < argc; i++) {
+-        jstring arg = (jstring)env->GetObjectArrayElement(args, i);
+-        const char* str = env->GetStringUTFChars(arg, nullptr);
+-        argStrings.push_back(str);
+-        argv.push_back(const_cast<char*>(argStrings.back().c_str()));
+-        env->ReleaseStringUTFChars(arg, str);
++    argStrings.reserve(static_cast<size_t>(argCount) + 1);
++    argStrings.emplace_back("ffmpeg");
++
++    for (int i = 0; i < argCount; i++) {
++        auto arg = static_cast<jstring>(env->GetObjectArrayElement(args, i));
++        const char* value = env->GetStringUTFChars(arg, nullptr);
++        argStrings.emplace_back(value ? value : "");
++        env->ReleaseStringUTFChars(arg, value);
++        env->DeleteLocalRef(arg);
+     }
+ 
+-    LOGI("Executing FFmpeg with %d arguments", (int)argv.size());
+-    for (size_t i = 0; i < argv.size(); i++) {
+-        LOGI("  arg[%zu]: %s", i, argv[i]);
++    std::vector<char*> argv;
++    argv.reserve(argStrings.size());
++    for (auto& arg : argStrings) {
++        argv.push_back(arg.data());
+     }
+ 
+-    // For this implementation, we use the FFmpeg libraries directly
+-    // The actual command execution requires either:
+-    // 1. Patching FFmpeg to expose ffmpeg_main()
+-    // 2. Implementing a command parser
+-    //
+-    // Below is a simplified transcoding implementation that handles common cases
++    LOGI("Executing embedded FFmpeg with %d arguments", static_cast<int>(argv.size()));
++    const int result = expo_ffmpeg_execute(
++        static_cast<int>(argv.size()),
++        argv.data(),
++        shouldCancel,
++        this);
+ 
+-    int result = executeCommand(argv);
++    if (result != 0) {
++        LOGE("FFmpeg command failed with code %d", result);
++    }
+ 
+     currentSession = nullptr;
+     clearCallback(env);
+-    
+     return result;
+ }
+ 
+-// Simplified FFmpeg command execution
+-// This handles basic transcode commands: -i input -c:v codec -c:a codec output
+-int executeCommand(const std::vector<char*>& argv) {
+-    // Parse command line arguments
+-    const char* inputFile = nullptr;
+-    const char* outputFile = nullptr;
+-    const char* videoCodec = nullptr;
+-    const char* audioCodec = nullptr;
+-    bool overwrite = false;
+-    
+-    for (size_t i = 1; i < argv.size(); i++) {
+-        if (strcmp(argv[i], "-i") == 0 && i + 1 < argv.size()) {
+-            inputFile = argv[++i];
+-        } else if (strcmp(argv[i], "-c:v") == 0 && i + 1 < argv.size()) {
+-            videoCodec = argv[++i];
+-        } else if (strcmp(argv[i], "-c:a") == 0 && i + 1 < argv.size()) {
+-            audioCodec = argv[++i];
+-        } else if (strcmp(argv[i], "-y") == 0) {
+-            overwrite = true;
+-        } else if (argv[i][0] != '-' && i == argv.size() - 1) {
+-            outputFile = argv[i];
+-        }
+-    }
+-    
+-    if (!inputFile) {
+-        LOGE("No input file specified");
+-        return 1;
+-    }
+-    
+-    if (!outputFile) {
+-        LOGE("No output file specified");
+-        return 1;
+-    }
+-    
+-    LOGI("Input: %s, Output: %s", inputFile, outputFile);
+-    LOGI("Video codec: %s, Audio codec: %s", 
+-         videoCodec ? videoCodec : "copy",
+-         audioCodec ? audioCodec : "copy");
+-    
+-    // Open input
+-    AVFormatContext* inputCtx = nullptr;
+-    int ret = avformat_open_input(&inputCtx, inputFile, nullptr, nullptr);
+-    if (ret < 0) {
+-        char errbuf[AV_ERROR_MAX_STRING_SIZE];
+-        av_strerror(ret, errbuf, sizeof(errbuf));
+-        LOGE("Failed to open input: %s", errbuf);
+-        return ret;
+-    }
+-    
+-    ret = avformat_find_stream_info(inputCtx, nullptr);
+-    if (ret < 0) {
+-        LOGE("Failed to find stream info");
+-        avformat_close_input(&inputCtx);
+-        return ret;
+-    }
+-    
+-    // Create output context
+-    AVFormatContext* outputCtx = nullptr;
+-    ret = avformat_alloc_output_context2(&outputCtx, nullptr, nullptr, outputFile);
+-    if (ret < 0 || !outputCtx) {
+-        LOGE("Failed to create output context");
+-        avformat_close_input(&inputCtx);
+-        return ret;
+-    }
+-    
+-    // Copy streams
+-    for (unsigned int i = 0; i < inputCtx->nb_streams; i++) {
+-        AVStream* inStream = inputCtx->streams[i];
+-        AVStream* outStream = avformat_new_stream(outputCtx, nullptr);
+-        
+-        if (!outStream) {
+-            LOGE("Failed to create output stream");
+-            avformat_close_input(&inputCtx);
+-            avformat_free_context(outputCtx);
+-            return AVERROR(ENOMEM);
+-        }
+-        
+-        ret = avcodec_parameters_copy(outStream->codecpar, inStream->codecpar);
+-        if (ret < 0) {
+-            LOGE("Failed to copy codec parameters");
+-            avformat_close_input(&inputCtx);
+-            avformat_free_context(outputCtx);
+-            return ret;
+-        }
+-        
+-        outStream->codecpar->codec_tag = 0;
+-    }
+-    
+-    // Open output file
+-    if (!(outputCtx->oformat->flags & AVFMT_NOFILE)) {
+-        ret = avio_open(&outputCtx->pb, outputFile, AVIO_FLAG_WRITE);
+-        if (ret < 0) {
+-            LOGE("Failed to open output file");
+-            avformat_close_input(&inputCtx);
+-            avformat_free_context(outputCtx);
+-            return ret;
+-        }
+-    }
+-    
+-    // Write header
+-    ret = avformat_write_header(outputCtx, nullptr);
+-    if (ret < 0) {
+-        LOGE("Failed to write header");
+-        avformat_close_input(&inputCtx);
+-        if (!(outputCtx->oformat->flags & AVFMT_NOFILE))
+-            avio_closep(&outputCtx->pb);
+-        avformat_free_context(outputCtx);
+-        return ret;
+-    }
+-    
+-    // Copy packets
+-    AVPacket* pkt = av_packet_alloc();
+-    int64_t lastProgress = 0;
+-    ProgressParser progressParser;
+-    
+-    while (av_read_frame(inputCtx, pkt) >= 0) {
+-        // Check for cancellation
+-        if (currentSession && currentSession->isCancelled()) {
+-            LOGI("Session cancelled");
+-            av_packet_free(&pkt);
+-            avformat_close_input(&inputCtx);
+-            if (!(outputCtx->oformat->flags & AVFMT_NOFILE))
+-                avio_closep(&outputCtx->pb);
+-            avformat_free_context(outputCtx);
+-            return 255;
+-        }
+-        
+-        AVStream* inStream = inputCtx->streams[pkt->stream_index];
+-        AVStream* outStream = outputCtx->streams[pkt->stream_index];
+-        
+-        // Rescale timestamps
+-        pkt->pts = av_rescale_q_rnd(pkt->pts, inStream->time_base, outStream->time_base,
+-                                    static_cast<AVRounding>(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+-        pkt->dts = av_rescale_q_rnd(pkt->dts, inStream->time_base, outStream->time_base,
+-                                    static_cast<AVRounding>(AV_ROUND_NEAR_INF | AV_ROUND_PASS_MINMAX));
+-        pkt->duration = av_rescale_q(pkt->duration, inStream->time_base, outStream->time_base);
+-        pkt->pos = -1;
+-        
+-        // Write packet
+-        ret = av_interleaved_write_frame(outputCtx, pkt);
+-        if (ret < 0) {
+-            LOGE("Error writing packet");
+-            break;
+-        }
+-        
+-        // Report progress periodically
+-        if (currentSession && pkt->pts != AV_NOPTS_VALUE) {
+-            int64_t pts_ms = av_rescale_q(pkt->pts, outStream->time_base, {1, 1000});
+-            if (pts_ms - lastProgress >= 100) { // Every 100ms
+-                int64_t duration_ms = 0;
+-                if (inputCtx->duration != AV_NOPTS_VALUE) {
+-                    duration_ms = inputCtx->duration / (AV_TIME_BASE / 1000);
+-                }
+-                double speed = 1.0; // Would need timing to calculate actual speed
+-                currentSession->notifyProgress(pts_ms, 0, speed, 0, 0, outputCtx->pb ? avio_tell(outputCtx->pb) : 0);
+-                lastProgress = pts_ms;
+-            }
+-        }
+-        
+-        av_packet_unref(pkt);
+-    }
+-    
+-    // Write trailer
+-    av_write_trailer(outputCtx);
+-    
+-    // Cleanup
+-    av_packet_free(&pkt);
+-    avformat_close_input(&inputCtx);
+-    if (!(outputCtx->oformat->flags & AVFMT_NOFILE))
+-        avio_closep(&outputCtx->pb);
+-    avformat_free_context(outputCtx);
+-    
+-    LOGI("Transcode complete");
+-    return 0;
+-}
+-
+ } // namespace ffmpeg
+diff --git a/node_modules/ffmpeg-expo/android/src/main/java/expo/modules/ffmpeg/FFmpegSession.kt b/node_modules/ffmpeg-expo/android/src/main/java/expo/modules/ffmpeg/FFmpegSession.kt
+index 9a9e31d..7ea56fe 100644
+--- a/node_modules/ffmpeg-expo/android/src/main/java/expo/modules/ffmpeg/FFmpegSession.kt
++++ b/node_modules/ffmpeg-expo/android/src/main/java/expo/modules/ffmpeg/FFmpegSession.kt
+@@ -38,14 +38,16 @@ class FFmpegSession(
+         val callback = object : FFmpegCallback {
+             override fun onProgress(time: Long, bitrate: Double, speed: Double, frame: Int, fps: Double, size: Long) {
+                 if (!cancelled.get()) {
+-                    onProgress(FFmpegProgress(time, bitrate, speed, frame, fps, size))
++                    // Must qualify: bare onProgress() resolves to this override (infinite recursion).
++                    this@FFmpegSession.onProgress(FFmpegProgress(time, bitrate, speed, frame, fps, size))
+                 }
+             }
+ 
+             override fun onLog(level: Int, message: String) {
+                 if (!cancelled.get()) {
+-                    outputBuffer.append(message)
+-                    onLog(level, message)
++                    outputBuffer.append(message).append('\n')
++                    // Must qualify: bare onLog() resolves to this override (infinite recursion / StackOverflowError).
++                    this@FFmpegSession.onLog(level, message)
+                 }
+             }
+         }
+diff --git a/node_modules/ffmpeg-expo/ios/FFmpeg.h b/node_modules/ffmpeg-expo/ios/FFmpeg.h
+index 3a55215..09c5913 100644
+--- a/node_modules/ffmpeg-expo/ios/FFmpeg.h
++++ b/node_modules/ffmpeg-expo/ios/FFmpeg.h
+@@ -1,6 +1,4 @@
+ // FFmpeg umbrella header for iOS
+-// This header imports all FFmpeg headers needed by the module
+-
+ #ifndef FFmpeg_h
+ #define FFmpeg_h
+ 
+@@ -14,4 +12,10 @@
+ #include <libswresample/swresample.h>
+ #include <libswscale/swscale.h>
+ 
++#if __has_include(<expo_ffmpeg.h>)
++#include <expo_ffmpeg.h>
++#elif __has_include("expo_ffmpeg.h")
++#include "expo_ffmpeg.h"
++#endif
++
+ #endif /* FFmpeg_h */
+diff --git a/node_modules/ffmpeg-expo/ios/FFmpegBridge.swift b/node_modules/ffmpeg-expo/ios/FFmpegBridge.swift
+index ee0dc00..a1886e8 100644
+--- a/node_modules/ffmpeg-expo/ios/FFmpegBridge.swift
++++ b/node_modules/ffmpeg-expo/ios/FFmpegBridge.swift
+@@ -2,20 +2,29 @@ import Foundation
+ 
+ typealias FFmpegLogCallback = @convention(c) (UnsafeMutableRawPointer?, Int32, UnsafePointer<CChar>?) -> Void
+ 
+-/// Bridge to FFmpeg C library
+-class FFmpegBridge {
++private final class CancellationContext {
++    let shouldCancel: () -> Bool
++
++    init(_ shouldCancel: @escaping () -> Bool) {
++        self.shouldCancel = shouldCancel
++    }
++}
+ 
++private let cancellationCallback: @convention(c) (UnsafeMutableRawPointer?) -> Int32 = { context in
++    guard let context else { return 1 }
++    let cancellation = Unmanaged<CancellationContext>.fromOpaque(context).takeUnretainedValue()
++    return cancellation.shouldCancel() ? 1 : 0
++}
++
++/// Bridge to FFmpeg C library — uses embedded CLI (`expo_ffmpeg_execute`) for full command support.
++class FFmpegBridge {
+     private static var logCallback: ((UnsafeMutableRawPointer?, Int32, UnsafePointer<CChar>?) -> Void)?
+     private static var logCallbackContext: UnsafeMutableRawPointer?
+ 
+-    /// Get FFmpeg version string
+     static func getVersion() -> String {
+-        // This would call av_version_info() from FFmpeg
+-        // For now, return a placeholder until FFmpeg is linked
+-        return String(cString: av_version_info())
++        String(cString: av_version_info())
+     }
+ 
+-    /// Set log callback for receiving FFmpeg log messages
+     static func setLogCallback(
+         _ context: UnsafeMutableRawPointer?,
+         callback: @escaping (UnsafeMutableRawPointer?, Int32, UnsafePointer<CChar>?) -> Void
+@@ -23,213 +32,42 @@ class FFmpegBridge {
+         logCallbackContext = context
+         logCallback = callback
+ 
+-        // Set FFmpeg's log callback
+-        av_log_set_callback { ptr, level, fmt, valist in
+-            guard let callback = FFmpegBridge.logCallback else { return }
+-            
+-            // Format the log message
++        av_log_set_callback { _, level, format, arguments in
++            guard let callback = FFmpegBridge.logCallback, let format else { return }
++            // Forward warnings+ only — verbose demux floods JS.
++            if level > AV_LOG_WARNING { return }
+             var message = [CChar](repeating: 0, count: 1024)
+-            vsnprintf(&message, 1024, fmt, valist)
+-            
++            vsnprintf(&message, message.count, format, arguments)
+             callback(FFmpegBridge.logCallbackContext, level, message)
+         }
+     }
+ 
+-    /// Clear the log callback
+     static func clearLogCallback() {
+         logCallback = nil
+         logCallbackContext = nil
+         av_log_set_callback(nil)
+     }
+ 
+-    /// Execute FFmpeg command
+-    /// - Parameters:
+-    ///   - args: Command arguments (without "ffmpeg" prefix)
+-    ///   - logLevel: FFmpeg log level
+-    ///   - shouldCancel: Closure called to check if execution should be cancelled
+-    /// - Returns: Exit code (0 = success)
++    /// Execute FFmpeg command via embedded CLI (filter_complex, encoders, multi-input).
+     static func execute(
+         args: [String],
+         logLevel: Int32,
+         shouldCancel: @escaping () -> Bool
+     ) -> Int32 {
+-        // Set log level
+         av_log_set_level(logLevel)
+-        
+-        // For actual implementation, this would:
+-        // 1. Parse command line arguments
+-        // 2. Use avformat/avcodec APIs to perform the operation
+-        // 3. Or call a patched ffmpeg_main() function
+-        
+-        // Simplified implementation using avformat for remuxing
+-        return executeTranscode(args: args, shouldCancel: shouldCancel)
+-    }
+-    
+-    /// Simplified transcode implementation using FFmpeg libraries
+-    private static func executeTranscode(
+-        args: [String],
+-        shouldCancel: @escaping () -> Bool
+-    ) -> Int32 {
+-        // Parse arguments
+-        var inputFile: String?
+-        var outputFile: String?
+-        var overwrite = false
+-        
+-        var i = 0
+-        while i < args.count {
+-            if args[i] == "-i" && i + 1 < args.count {
+-                i += 1
+-                inputFile = args[i]
+-            } else if args[i] == "-y" {
+-                overwrite = true
+-            } else if !args[i].hasPrefix("-") && i == args.count - 1 {
+-                outputFile = args[i]
+-            }
+-            i += 1
+-        }
+-        
+-        guard let input = inputFile, let output = outputFile else {
+-            av_log(nil, AV_LOG_ERROR, "Missing input or output file\n")
+-            return 1
+-        }
+-        
+-        // Open input file
+-        var inputCtx: UnsafeMutablePointer<AVFormatContext>?
+-        var ret = avformat_open_input(&inputCtx, input, nil, nil)
+-        if ret < 0 {
+-            av_log(nil, AV_LOG_ERROR, "Could not open input file\n")
+-            return ret
+-        }
+-        
+-        defer {
+-            avformat_close_input(&inputCtx)
+-        }
+-        
+-        ret = avformat_find_stream_info(inputCtx, nil)
+-        if ret < 0 {
+-            av_log(nil, AV_LOG_ERROR, "Could not find stream info\n")
+-            return ret
+-        }
+-        
+-        // Create output context
+-        var outputCtx: UnsafeMutablePointer<AVFormatContext>?
+-        ret = avformat_alloc_output_context2(&outputCtx, nil, nil, output)
+-        if ret < 0 || outputCtx == nil {
+-            av_log(nil, AV_LOG_ERROR, "Could not create output context\n")
+-            return ret
+-        }
+-        
+-        defer {
+-            if let ctx = outputCtx {
+-                if (ctx.pointee.oformat.pointee.flags & AVFMT_NOFILE) == 0 {
+-                    avio_closep(&ctx.pointee.pb)
+-                }
+-                avformat_free_context(ctx)
+-            }
+-        }
+-        
+-        // Copy streams
+-        guard let inCtx = inputCtx else { return -1 }
+-        
+-        for i in 0..<Int(inCtx.pointee.nb_streams) {
+-            let inStream = inCtx.pointee.streams[i]!
+-            let outStream = avformat_new_stream(outputCtx, nil)
+-            
+-            guard let outStream = outStream else {
+-                av_log(nil, AV_LOG_ERROR, "Could not create output stream\n")
+-                return AVERROR(ENOMEM)
+-            }
+-            
+-            ret = avcodec_parameters_copy(outStream.pointee.codecpar, inStream.pointee.codecpar)
+-            if ret < 0 {
+-                av_log(nil, AV_LOG_ERROR, "Could not copy codec parameters\n")
+-                return ret
+-            }
+-            
+-            outStream.pointee.codecpar.pointee.codec_tag = 0
+-        }
+-        
+-        // Open output file
+-        if let ctx = outputCtx, (ctx.pointee.oformat.pointee.flags & AVFMT_NOFILE) == 0 {
+-            ret = avio_open(&ctx.pointee.pb, output, AVIO_FLAG_WRITE)
+-            if ret < 0 {
+-                av_log(nil, AV_LOG_ERROR, "Could not open output file\n")
+-                return ret
+-            }
+-        }
+-        
+-        // Write header
+-        ret = avformat_write_header(outputCtx, nil)
+-        if ret < 0 {
+-            av_log(nil, AV_LOG_ERROR, "Could not write header\n")
+-            return ret
+-        }
+-        
+-        // Copy packets
+-        let packet = av_packet_alloc()
+-        defer { av_packet_free(UnsafeMutablePointer(&packet)) }
+-        
+-        while av_read_frame(inputCtx, packet) >= 0 {
+-            // Check cancellation
+-            if shouldCancel() {
+-                return 255
+-            }
+-            
+-            guard let pkt = packet, let outCtx = outputCtx else { break }
+-            
+-            let inStream = inCtx.pointee.streams[Int(pkt.pointee.stream_index)]!
+-            let outStream = outCtx.pointee.streams[Int(pkt.pointee.stream_index)]!
+-            
+-            // Rescale timestamps
+-            pkt.pointee.pts = av_rescale_q_rnd(
+-                pkt.pointee.pts,
+-                inStream.pointee.time_base,
+-                outStream.pointee.time_base,
+-                AVRounding(rawValue: AV_ROUND_NEAR_INF.rawValue | AV_ROUND_PASS_MINMAX.rawValue)
+-            )
+-            pkt.pointee.dts = av_rescale_q_rnd(
+-                pkt.pointee.dts,
+-                inStream.pointee.time_base,
+-                outStream.pointee.time_base,
+-                AVRounding(rawValue: AV_ROUND_NEAR_INF.rawValue | AV_ROUND_PASS_MINMAX.rawValue)
+-            )
+-            pkt.pointee.duration = av_rescale_q(
+-                pkt.pointee.duration,
+-                inStream.pointee.time_base,
+-                outStream.pointee.time_base
+-            )
+-            pkt.pointee.pos = -1
+-            
+-            ret = av_interleaved_write_frame(outputCtx, packet)
+-            if ret < 0 {
+-                av_log(nil, AV_LOG_ERROR, "Error writing packet\n")
+-                break
+-            }
+-            
+-            av_packet_unref(packet)
+-        }
+-        
+-        // Write trailer
+-        av_write_trailer(outputCtx)
+-        
+-        return 0
++        let cancellation = Unmanaged.passRetained(CancellationContext(shouldCancel))
++        defer { cancellation.release() }
++
++        let arguments = ["ffmpeg"] + args
++        let duplicatedArguments = arguments.map { strdup($0) }
++        defer { duplicatedArguments.forEach { free($0) } }
++        var argv = duplicatedArguments
++
++        return expo_ffmpeg_execute(
++            Int32(argv.count),
++            &argv,
++            cancellationCallback,
++            cancellation.toOpaque()
++        )
+     }
+ }
+-
+-// MARK: - FFmpeg C Function Declarations
+-// These would be imported from the FFmpeg headers via a bridging header
+-
+-// Note: In actual implementation, these declarations would come from
+-// importing the FFmpeg headers through a module.modulemap or bridging header.
+-// The declarations below are placeholders to show the expected interface.
+-
+-/*
+- Add to a bridging header or module.modulemap:
+- 
+- #include <libavcodec/avcodec.h>
+- #include <libavformat/avformat.h>
+- #include <libavutil/avutil.h>
+- #include <libavutil/log.h>
+- #include <libswresample/swresample.h>
+- #include <libswscale/swscale.h>
+- */
+diff --git a/node_modules/ffmpeg-expo/ios/expo_ffmpeg.h b/node_modules/ffmpeg-expo/ios/expo_ffmpeg.h
+new file mode 100644
+index 0000000..f697ac5
+--- /dev/null
++++ b/node_modules/ffmpeg-expo/ios/expo_ffmpeg.h
+@@ -0,0 +1,19 @@
++#ifndef EXPO_FFMPEG_H
++#define EXPO_FFMPEG_H
++
++#ifdef __cplusplus
++extern "C" {
++#endif
++
++typedef int (*expo_ffmpeg_cancel_callback)(void *opaque);
++
++/* argv follows main(3) conventions. The callback may be NULL. */
++int expo_ffmpeg_execute(int argc, char **argv,
++                        expo_ffmpeg_cancel_callback cancel_callback,
++                        void *cancel_opaque);
++
++#ifdef __cplusplus
++}
++#endif
++
++#endif

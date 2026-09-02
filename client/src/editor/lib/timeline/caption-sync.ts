@@ -127,3 +127,20 @@ function shiftPartialCaptionElement(
 		duration: Math.max(caption.duration, newDuration),
 	};
 }
+
+/** Align caption line visibility windows with the element's timeline span. */
+export function syncCaptionElementTimelineBounds(caption: CaptionElement): CaptionElement {
+	if (caption.lines.length === 0) return caption;
+
+	const elStart = caption.startTime;
+	const elEnd = caption.startTime + caption.duration;
+
+	return {
+		...caption,
+		lines: caption.lines.map((line) => ({
+			...line,
+			startTime: elStart,
+			endTime: elEnd,
+		})),
+	};
+}

@@ -5,7 +5,9 @@ defmodule ClippsterServer.Application do
 
   use Application
 
-  @lemonfox_transport_opts [versions: [:"tlsv1.2"], timeout: 30_000]
+  # Large Whisper uploads need a long TLS idle/send timeout. 30s closes mid-upload
+  # of ~10MB bodies and surfaces as "socket closed" from Lemonfox.
+  @lemonfox_transport_opts [versions: [:"tlsv1.2"], timeout: 300_000]
   @default_transport_opts [timeout: 30_000]
 
   @impl true
@@ -32,14 +34,12 @@ defmodule ClippsterServer.Application do
        name: ClippsterFinch,
        pools: %{
          "https://api.lemonfox.ai" => [
-           protocols: [:http2],
-           # Multiple pools for better isolation (if one pool has issues, others still work)
+           # HTTP/1.1 is more reliable than H2 for large multipart audio uploads.
+           protocols: [:http1],
            count: 4,
-           # Connections per pool
            size: 5,
-           # Close idle connections after 30 seconds to prevent server-side closure
-           # Most servers close idle connections after 60-120s, so 30s is safe
-           conn_max_idle_time: 30_000,
+           # Avoid stale keep-alives that Lemonfox closes mid-request.
+           conn_max_idle_time: 10_000,
            conn_opts: [
              transport_opts: @lemonfox_transport_opts
            ]

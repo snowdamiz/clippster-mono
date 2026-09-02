@@ -2,11 +2,14 @@
 import { toRef } from "vue";
 import type { TimelineElement } from "../../../types/timeline";
 import { useElementTimingInspector } from "../../../composables/panels/useElementTimingInspector";
+import { useImageMode } from "../../../composables/useImageMode";
 
 const props = defineProps<{
 	element: TimelineElement;
 	trackId: string;
 }>();
+
+const { isImageMode } = useImageMode();
 
 const {
 	startInput,
@@ -22,7 +25,7 @@ const {
 </script>
 
 <template>
-	<div class="flex gap-4">
+	<div v-if="!isImageMode" class="flex gap-4">
 		<div class="min-w-0 flex-1 space-y-1">
 			<label class="text-xs text-zinc-500">Start</label>
 			<input

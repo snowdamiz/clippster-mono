@@ -50,14 +50,17 @@ async function healProjectTimestamps(db: any): Promise<void> {
           ? Math.floor(project.updated_at / 1000)
           : project.updated_at;
 
-      await db.execute(
-        'UPDATE projects SET created_at = ?, updated_at = ? WHERE id = ?',
-        [createdAt, updatedAt, project.id]
-      );
+      await db.execute('UPDATE projects SET created_at = ?, updated_at = ? WHERE id = ?', [
+        createdAt,
+        updatedAt,
+        project.id,
+      ]);
     }
 
     if (corrupted.length > 0) {
-      console.log(`[schema-healing] Normalized ${corrupted.length} project timestamp(s) from ms to seconds`);
+      console.log(
+        `[schema-healing] Normalized ${corrupted.length} project timestamp(s) from ms to seconds`
+      );
     }
   } catch (e) {
     console.warn('[schema-healing] Project timestamp heal skipped:', e);
@@ -67,9 +70,8 @@ async function healProjectTimestamps(db: any): Promise<void> {
 /** Clear watermarks/branding selections left from incorrect auto-apply rules. */
 async function healStaleProjectBranding(db: any): Promise<void> {
   try {
-    const { resolveAutoBrandingProfile, isOrgSuppliedAccount } = await import(
-      '@/composables/useBrandingProfileSelection'
-    );
+    const { resolveAutoBrandingProfile, isOrgSuppliedAccount } =
+      await import('@/composables/useBrandingProfileSelection');
 
     if (isOrgSuppliedAccount()) {
       return;
@@ -78,7 +80,11 @@ async function healStaleProjectBranding(db: any): Promise<void> {
     const projects = (await db.select(
       `SELECT id, default_watermark_settings, selected_branding_profile_id FROM projects
        WHERE default_watermark_settings IS NOT NULL OR selected_branding_profile_id IS NOT NULL`
-    )) as { id: string; default_watermark_settings: string | null; selected_branding_profile_id: string | null }[];
+    )) as {
+      id: string;
+      default_watermark_settings: string | null;
+      selected_branding_profile_id: string | null;
+    }[];
 
     for (const project of projects) {
       const autoProfile = await resolveAutoBrandingProfile(project.id);
@@ -93,7 +99,10 @@ async function healStaleProjectBranding(db: any): Promise<void> {
               'UPDATE projects SET default_watermark_settings = NULL, updated_at = ? WHERE id = ?',
               [timestamp(), project.id]
             );
-            console.log('[schema-healing] Cleared stale default_watermark_settings for project', project.id);
+            console.log(
+              '[schema-healing] Cleared stale default_watermark_settings for project',
+              project.id
+            );
           }
         } catch {
           await db.execute(
@@ -110,7 +119,10 @@ async function healStaleProjectBranding(db: any): Promise<void> {
             'UPDATE projects SET selected_branding_profile_id = NULL, updated_at = ? WHERE id = ?',
             [timestamp(), project.id]
           );
-          console.log('[schema-healing] Cleared stale selected_branding_profile_id for project', project.id);
+          console.log(
+            '[schema-healing] Cleared stale selected_branding_profile_id for project',
+            project.id
+          );
         }
       }
     }
@@ -173,13 +185,28 @@ export async function healSchema(): Promise<void> {
     await addColumnIfMissing(db, 'creator_profiles', 'auto_dvr_enabled', 'INTEGER DEFAULT 0');
 
     // --- Migration 100: persistent live monitoring on monitored_streamers ---
-    await addColumnIfMissing(db, 'monitored_streamers', 'persistent_auto_detect', 'INTEGER DEFAULT 0');
+    await addColumnIfMissing(
+      db,
+      'monitored_streamers',
+      'persistent_auto_detect',
+      'INTEGER DEFAULT 0'
+    );
     await addColumnIfMissing(db, 'monitored_streamers', 'persistent_record', 'INTEGER DEFAULT 0');
     await addColumnIfMissing(db, 'monitored_streamers', 'auto_detect_prompt_id', 'TEXT');
     await addColumnIfMissing(db, 'monitored_streamers', 'auto_detect_prompt_content', 'TEXT');
-    await addColumnIfMissing(db, 'monitored_streamers', 'auto_detect_use_creator_layout', 'INTEGER DEFAULT 0');
+    await addColumnIfMissing(
+      db,
+      'monitored_streamers',
+      'auto_detect_use_creator_layout',
+      'INTEGER DEFAULT 0'
+    );
     await addColumnIfMissing(db, 'monitored_streamers', 'auto_detect_creator_profile_id', 'TEXT');
-    await addColumnIfMissing(db, 'monitored_streamers', 'record_use_creator_layout', 'INTEGER DEFAULT 0');
+    await addColumnIfMissing(
+      db,
+      'monitored_streamers',
+      'record_use_creator_layout',
+      'INTEGER DEFAULT 0'
+    );
     await addColumnIfMissing(db, 'monitored_streamers', 'record_creator_profile_id', 'TEXT');
 
     // --- Migration 099: clip_build_defaults on creator_profiles (opt-in clip-build defaults) ---
@@ -210,6 +237,20 @@ export async function healSchema(): Promise<void> {
       FOREIGN KEY (creator_profile_id) REFERENCES creator_profiles(id) ON DELETE SET NULL
     )`);
 
+    // --- Design Studio: image_assets new columns ---
+    await addColumnIfMissing(db, 'image_assets', 'image_type', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'source_type', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'source_clip_id', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'source_project_id', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'canvas_width', 'INTEGER');
+    await addColumnIfMissing(db, 'image_assets', 'canvas_height', 'INTEGER');
+    await addColumnIfMissing(db, 'image_assets', 'export_format', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'editor_project_json', 'TEXT');
+
+    // --- Design Studio: clips cover image columns ---
+    await addColumnIfMissing(db, 'clips', 'cover_image_id', 'TEXT');
+    await addColumnIfMissing(db, 'clips', 'cover_image_path', 'TEXT');
+
     // --- Migrations 095-097: audio download tables ---
     await db.execute(`CREATE TABLE IF NOT EXISTS downloaded_audio (
       id TEXT PRIMARY KEY,
@@ -236,29 +277,6 @@ export async function healSchema(): Promise<void> {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_downloaded_audio_source ON downloaded_audio(source)'
     );
-
-    await db.execute(`CREATE TABLE IF NOT EXISTS downloaded_space_metadata (
-      id TEXT PRIMARY KEY,
-      audio_id TEXT NOT NULL,
-      source_url TEXT,
-      title TEXT,
-      participants_json TEXT,
-      speaker_segments_json TEXT,
-      stage_snapshots_json TEXT,
-      timeline_events_json TEXT,
-      user_id TEXT,
-      created_at INTEGER NOT NULL,
-      updated_at INTEGER NOT NULL,
-      FOREIGN KEY (audio_id) REFERENCES downloaded_audio(id) ON DELETE CASCADE
-    )`);
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_downloaded_space_metadata_audio_id ON downloaded_space_metadata(audio_id)'
-    );
-    await db.execute(
-      'CREATE INDEX IF NOT EXISTS idx_downloaded_space_metadata_user_id ON downloaded_space_metadata(user_id)'
-    );
-    await addColumnIfMissing(db, 'downloaded_space_metadata', 'stage_snapshots_json', 'TEXT');
-    await addColumnIfMissing(db, 'downloaded_space_metadata', 'timeline_events_json', 'TEXT');
 
     await db.execute(`CREATE TABLE IF NOT EXISTS audio_playlists (
       id TEXT PRIMARY KEY,
@@ -293,6 +311,10 @@ export async function healSchema(): Promise<void> {
     await db.execute(
       'CREATE INDEX IF NOT EXISTS idx_audio_playlist_items_position ON audio_playlist_items(playlist_id, position)'
     );
+
+    // --- Cloud sync: raw_videos source metadata ---
+    await addColumnIfMissing(db, 'raw_videos', 'platform', 'TEXT');
+    await addColumnIfMissing(db, 'raw_videos', 'source_url', 'TEXT');
 
     await healProjectTimestamps(db);
     await healStaleProjectBranding(db);

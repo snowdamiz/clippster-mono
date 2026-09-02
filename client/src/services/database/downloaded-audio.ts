@@ -3,7 +3,7 @@ import type { DownloadedAudio } from './types';
 
 export async function createDownloadedAudio(
   title: string,
-  source: 'youtube' | 'twitter' | 'upload',
+  source: 'youtube' | 'upload',
   filePath: string,
   platform?: string,
   sourceUrl?: string,

@@ -41,6 +41,15 @@ export function useSubscriptionGate() {
   const { totalAvailable, fetchBalance } = useCreditBalance();
   const authStore = useAuthStore();
 
+  /** Soft-suppress free-tier product gates while an app tour is teaching those areas */
+  function isTourSuppressingGates(): boolean {
+    try {
+      return sessionStorage.getItem('app_tour_suppress_gates') === '1';
+    } catch {
+      return false;
+    }
+  }
+
   /**
    * Shows the subscription gate dialog with optional context
    */
@@ -61,6 +70,11 @@ export function useSubscriptionGate() {
     // Always allow if not authenticated (they'll hit auth wall first)
     if (!authStore.isAuthenticated) {
       return false;
+    }
+
+    // During app tour, allow free-tier product demos (not AI entitlements)
+    if (!aiOnly && isTourSuppressingGates()) {
+      return true;
     }
 
     // Fetch latest subscription status

@@ -2,6 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import {
 	VideoCache,
 	canHoldExhaustedFrame,
+	canUseNearestForwardFrame,
 	shouldDecodeSequentially,
 	type StablePreviewFrame,
 } from "./service";
@@ -32,6 +33,25 @@ describe("video cache catch-up policy", () => {
 			frameTimestamp: 10,
 			frameDuration: 1 / 30,
 			targetTime: 10.1,
+		})).toBe(false);
+	});
+
+	it("allows a nearby post-seek frame but not a far keyframe smear", () => {
+		expect(canUseNearestForwardFrame({
+			frameTimestamp: 10 + 1 / 30,
+			targetTime: 10,
+		})).toBe(true);
+		expect(canUseNearestForwardFrame({
+			frameTimestamp: 10 + 2 / 30,
+			targetTime: 10,
+		})).toBe(true);
+		expect(canUseNearestForwardFrame({
+			frameTimestamp: 10.1,
+			targetTime: 10,
+		})).toBe(false);
+		expect(canUseNearestForwardFrame({
+			frameTimestamp: 9.99,
+			targetTime: 10,
 		})).toBe(false);
 	});
 });
@@ -282,5 +302,27 @@ describe("bounded preview frames", () => {
 		expect(cache.getStats().totalSinks).toBe(6);
 		expect(internals.sinks.has("sink-0")).toBe(false);
 		expect(dispose).toHaveBeenCalledOnce();
+	});
+
+	it("does not evict sinks while an export session is active", () => {
+		const cache = new VideoCache();
+		const dispose = vi.fn();
+		const internals = cache as unknown as {
+			sinks: Map<string, unknown>;
+			touchSink(sinkKey: string): void;
+		};
+		cache.beginExportSession();
+		for (let i = 0; i < 7; i++) {
+			internals.sinks.set(`export-sink-${i}`, {
+				input: { dispose },
+				iterator: null,
+				currentFrame: null,
+			});
+			internals.touchSink(`export-sink-${i}`);
+		}
+
+		expect(cache.getStats().totalSinks).toBe(7);
+		expect(dispose).not.toHaveBeenCalled();
+		cache.endExportSession();
 	});
 });

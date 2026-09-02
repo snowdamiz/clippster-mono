@@ -5,7 +5,8 @@ import type {
   AIVideoMediaItem,
   AIVideoComposition,
   ChatResponse,
-  ReferenceStyleProfile,
+  ReferenceEditRecipe,
+  StylePackRecipe,
   MediaAnalysis,
 } from '@/types/ai-video';
 import * as chatApi from '@/services/aiChatApi';
@@ -13,6 +14,7 @@ import type { SessionSummary } from '@/services/aiChatApi';
 import type { StreamCallbacks } from '@/services/aiVideoApi';
 
 export function useAIChatSession() {
+  let generationController: AbortController | null = null;
   // ---------------------------------------------------------------------------
   // State
   // ---------------------------------------------------------------------------
@@ -137,6 +139,7 @@ export function useAIChatSession() {
   }
 
   function closeSession() {
+    generationController?.abort();
     session.value = null;
     messages.value = [];
     resetGenerationState();
@@ -181,6 +184,7 @@ export function useAIChatSession() {
     currentSceneIndex.value = -1;
     completedScenes.value = 0;
     error.value = null;
+    generationController = new AbortController();
 
     const callbacks: StreamCallbacks = {
       onPlan: (event) => {
@@ -215,7 +219,12 @@ export function useAIChatSession() {
     };
 
     try {
-      const composition = await chatApi.triggerGeneration(session.value.id, callbacks, overrides);
+      const composition = await chatApi.triggerGeneration(
+        session.value.id,
+        callbacks,
+        overrides,
+        generationController.signal
+      );
       // Reload session to get updated state
       if (session.value) {
         const updated = await chatApi.getChatSession(session.value.id);
@@ -224,8 +233,13 @@ export function useAIChatSession() {
       }
       return composition;
     } catch (e: any) {
-      generationPhase.value = 'error';
-      error.value = e.message || 'Generation failed';
+      if (e?.name === 'AbortError') {
+        generationPhase.value = 'idle';
+        error.value = null;
+      } else {
+        generationPhase.value = 'error';
+        error.value = e.message || 'Generation failed';
+      }
       // Reload session to get correct state after refund
       if (session.value) {
         try {
@@ -237,7 +251,12 @@ export function useAIChatSession() {
       throw e;
     } finally {
       isGenerating.value = false;
+      generationController = null;
     }
+  }
+
+  function cancelGeneration() {
+    generationController?.abort();
   }
 
   async function refine(message: string) {
@@ -274,7 +293,7 @@ export function useAIChatSession() {
     }
   }
 
-  async function uploadReference(analysis: ReferenceStyleProfile, url?: string) {
+  async function uploadReference(analysis: ReferenceEditRecipe | null, url: string | null = null) {
     if (!session.value) throw new Error('No active session');
     error.value = null;
     try {
@@ -285,6 +304,13 @@ export function useAIChatSession() {
       error.value = e.message || 'Failed to upload reference';
       throw e;
     }
+  }
+
+  async function updateStylePack(stylePack: StylePackRecipe) {
+    if (!session.value) throw new Error('No active session');
+    const updated = await chatApi.updateStylePack(session.value.id, stylePack);
+    session.value = updated;
+    messages.value = updated.messages || [];
   }
 
   async function uploadMediaAnalysis(analysis: MediaAnalysis[]) {
@@ -368,8 +394,10 @@ export function useAIChatSession() {
     closeSession,
     sendMessage,
     generate,
+    cancelGeneration,
     refine,
     uploadReference,
+    updateStylePack,
     uploadMediaAnalysis,
     syncMedia,
     resetGenerationState,

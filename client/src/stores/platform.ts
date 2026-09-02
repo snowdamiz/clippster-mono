@@ -17,6 +17,7 @@ import {
   validateTwitterUrl,
   getTwitterBroadcastInfo,
 } from '@/services/twitter';
+import { extractTokendChannel, fetchTokendCatalog, type TokendCatalog } from '@/services/tokend';
 import { cache } from '@/utils/persistentCache';
 import { isTauri } from '@/lib/instagram-auth';
 
@@ -60,6 +61,7 @@ interface PlatformState {
   recentSearches: RecentSearch[];
   audioRecentSearches: RecentSearch[];
   activePlatform: PlatformId;
+  tokendCatalogMetadata: Pick<TokendCatalog, 'mode' | 'slug' | 'displayName' | 'note'> | null;
 }
 
 const MAX_RECENT_SEARCHES = 20; // Increased since we're combining all platforms
@@ -95,7 +97,7 @@ function loadAudioRecentSearches(): RecentSearch[] {
 // Migrate old per-platform searches to unified format
 function migrateOldSearches(): RecentSearch[] {
   const allSearches: RecentSearch[] = [];
-  const platforms: PlatformId[] = ['pumpfun', 'kick', 'twitch', 'YouTube', 'rumble', 'twitter'];
+  const platforms: PlatformId[] = ['pumpfun', 'kick', 'twitch', 'YouTube', 'rumble', 'twitter', 'tokend'];
   const oldKeys: Record<PlatformId, string> = {
     pumpfun: 'pumpfun_recent_searches',
     kick: 'kick_recent_searches',
@@ -103,6 +105,7 @@ function migrateOldSearches(): RecentSearch[] {
     YouTube: 'youtube_recent_searches',
     rumble: 'rumble_recent_searches',
     twitter: 'twitter_recent_searches',
+    tokend: 'tokend_recent_searches',
   };
 
   for (const platform of platforms) {
@@ -191,6 +194,7 @@ export const usePlatformStore = defineStore('platform', {
       recentSearches,
       audioRecentSearches,
       activePlatform: 'pumpfun',
+      tokendCatalogMetadata: null,
     };
   },
 
@@ -579,6 +583,9 @@ export const usePlatformStore = defineStore('platform', {
 
       this.loading = true;
       this.error = '';
+      if (this.activePlatform !== 'tokend') {
+        this.tokendCatalogMetadata = null;
+      }
 
       try {
         let result: {
@@ -716,6 +723,19 @@ export const usePlatformStore = defineStore('platform', {
             break;
           }
 
+          case 'tokend': {
+            const slug = extractTokendChannel(trimmedInput) || trimmedInput.replace(/^@/, '').trim();
+            if (!slug) {
+              this.error =
+                'Invalid Tokend URL. Enter https://tokend.tv/seed-nova or http://localhost:4100/seed-nova.';
+              this.loading = false;
+              return { success: false, error: this.error };
+            }
+            this.currentSearchId = slug;
+            result = await this.getTokendClips(slug, limit, tab || 'streams');
+            break;
+          }
+
           default:
             this.error = 'Platform not supported yet';
             this.loading = false;
@@ -813,6 +833,74 @@ export const usePlatformStore = defineStore('platform', {
           hasMore: false,
           total: 0,
           error: error instanceof Error ? error.message : 'Failed to fetch Twitch VODs',
+        };
+      }
+    },
+
+    // Helper to convert Tokend catalog items to PlatformClip format
+    async getTokendClips(
+      slug: string,
+      limit: number = 20,
+      tab: 'streams' | 'videos' = 'streams'
+    ): Promise<{
+      success: boolean;
+      clips: PlatformClip[];
+      hasMore: boolean;
+      total: number;
+      error?: string;
+      fallbackUsed?: boolean;
+      actualTab?: 'streams' | 'videos';
+    }> {
+      try {
+        const catalog = await fetchTokendCatalog(slug);
+        this.tokendCatalogMetadata = {
+          mode: catalog.mode,
+          slug: catalog.slug,
+          displayName: catalog.displayName,
+          note: catalog.note,
+        };
+
+        let items = tab === 'videos' ? catalog.videos : catalog.streams;
+        let fallbackUsed = false;
+        let actualTab: 'streams' | 'videos' = tab;
+
+        if (items.length === 0) {
+          const other: 'streams' | 'videos' = tab === 'streams' ? 'videos' : 'streams';
+          const otherItems = other === 'videos' ? catalog.videos : catalog.streams;
+          if (otherItems.length > 0) {
+            items = otherItems;
+            fallbackUsed = true;
+            actualTab = other;
+          }
+        }
+
+        const clips: PlatformClip[] = items.slice(0, limit).map((item) => ({
+          clipId: item.id,
+          title: item.title || `Tokend ${item.id}`,
+          duration: item.duration || 0,
+          thumbnailUrl: item.thumbnailUrl || undefined,
+          playlistUrl: item.url,
+          mp4Url: item.url,
+          clipType: 'COMPLETE' as const,
+          createdAt: item.publishedAt || undefined,
+        }));
+
+        return {
+          success: true,
+          clips,
+          hasMore: false,
+          total: clips.length,
+          fallbackUsed,
+          actualTab,
+        };
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        return {
+          success: false,
+          clips: [],
+          hasMore: false,
+          total: 0,
+          error: message,
         };
       }
     },
@@ -1273,6 +1361,7 @@ export const usePlatformStore = defineStore('platform', {
       this.hasMore = false;
       this.total = 0;
       this.lastSearchTime = null;
+      this.tokendCatalogMetadata = null;
     },
 
     setLoading(loading: boolean) {

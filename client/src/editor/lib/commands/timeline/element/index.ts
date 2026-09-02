@@ -18,6 +18,8 @@ export { UpdateElementKeyframesCommand } from "./update-element-keyframes";
 export { ExtractAudioCommand } from "./extract-audio";
 export { UpdateCaptionElementCommand } from "./update-caption-element";
 export type { CaptionElementUpdatable } from "./update-caption-element";
+export { UpdateCaptionsBatchCommand } from "./update-captions-batch";
+export { SplitCaptionLineCommand } from "./split-caption-line";
 export { FreezeFrameCommand } from "./freeze-frame";
 export { RippleDeleteTimeRangeCommand } from "./ripple-delete-time-range";
 export { UpdateMaskCommand } from "./update-mask";

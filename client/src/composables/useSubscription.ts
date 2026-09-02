@@ -20,6 +20,21 @@ export interface SubscriptionStatus {
   days_remaining: number;
 }
 
+export function subscriptionStillCoversAccess(
+  subscription?: { status?: string; end_date?: string | null; days_remaining?: number } | null,
+): boolean {
+  if (!subscription?.status) return false;
+  if (subscription.status === 'active') {
+    if (subscription.end_date) return new Date(subscription.end_date).getTime() > Date.now();
+    return true;
+  }
+  if (subscription.status === 'cancelled') {
+    if (subscription.end_date) return new Date(subscription.end_date).getTime() > Date.now();
+    return (subscription.days_remaining ?? 0) > 0;
+  }
+  return false;
+}
+
 export function useSubscription() {
   const authStore = useAuthStore();
   const loading = ref(false);
@@ -32,10 +47,7 @@ export function useSubscription() {
   // Computed properties
   const isAuthenticated = computed(() => authStore.isAuthenticated);
 
-  const hasValidSubscription = computed(() => {
-    if (!subscriptionStatus.value) return false;
-    return ['active', 'cancelled'].includes(subscriptionStatus.value.status);
-  });
+  const hasValidSubscription = computed(() => subscriptionStillCoversAccess(subscriptionStatus.value));
 
   const hasActiveSubscription = computed(() => {
     return subscriptionStatus.value?.status === 'active';

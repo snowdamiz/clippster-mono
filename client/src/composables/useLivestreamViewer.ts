@@ -65,6 +65,7 @@ import {
   getRumbleSessionOutputDir,
   extractRumbleChannel,
 } from '@/services/rumble';
+import { TOKEND_UNAVAILABLE_MESSAGES } from '@/services/tokend';
 
 // PumpFun LiveKit API endpoints
 const PUMPFUN_LIVESTREAM_API = 'https://livestream-api.pump.fun';
@@ -1363,6 +1364,13 @@ export function useLivestreamViewer() {
     state.value.platform = platform;
 
     // Route to platform-specific connection
+    if (platform === 'Tokend') {
+      state.value.connectionState = 'failed';
+      state.value.isBuffering = false;
+      state.value.connectionError = TOKEND_UNAVAILABLE_MESSAGES.playback;
+      return;
+    }
+
     if (platform === 'Kick') {
       await connectToKick(mintId, streamerId, displayName, profileImageUrl);
       return;
@@ -2165,6 +2173,13 @@ export function useLivestreamViewer() {
     const mintId = state.value.mintId;
     const streamerId = state.value.streamerId;
     const platform = state.value.platform;
+
+    if (platform === 'Tokend') {
+      state.value.connectionState = 'failed';
+      state.value.isBuffering = false;
+      state.value.connectionError = TOKEND_UNAVAILABLE_MESSAGES.playback;
+      return;
+    }
 
     if (!mintId || !streamerId) {
       console.warn('[LiveViewer] Cannot restart recorder: missing mintId or streamerId');

@@ -372,6 +372,7 @@
     Type,
     Heading2,
   } from 'lucide-vue-next';
+  import { Extension } from '@tiptap/core';
   import { useEditor, EditorContent } from '@tiptap/vue-3';
   import StarterKit from '@tiptap/starter-kit';
   import Underline from '@tiptap/extension-underline';
@@ -384,6 +385,36 @@
   import { Underline as UnderlineIcon } from 'lucide-vue-next';
 
   const { success, error: showError } = useToast();
+
+  /** Keep inline style attrs so email HTML survives Visual-mode round-trips. */
+  const PreserveInlineStyles = Extension.create({
+    name: 'preserveInlineStyles',
+    addGlobalAttributes() {
+      return [
+        {
+          types: [
+            'paragraph',
+            'heading',
+            'bulletList',
+            'orderedList',
+            'listItem',
+            'blockquote',
+            'link',
+          ],
+          attributes: {
+            style: {
+              default: null,
+              parseHTML: (element) => element.getAttribute('style'),
+              renderHTML: (attributes) => {
+                if (!attributes.style) return {};
+                return { style: attributes.style };
+              },
+            },
+          },
+        },
+      ];
+    },
+  });
 
   const OPEN_BETA_TEMPLATE = {
     subject: 'Clippster is now in open beta',
@@ -425,7 +456,7 @@
   }
 
   const form = ref(defaultForm());
-  const editorMode = ref<'visual' | 'html' | 'preview'>('visual');
+  const editorMode = ref<'visual' | 'html' | 'preview'>('html');
   const sending = ref(false);
   const testing = ref(false);
   const showConfirm = ref(false);
@@ -437,7 +468,12 @@
   const recipientPreview = ref({ requested_count: 0, recipient_count: 0, suppressed_count: 0, sample: [] as string[] });
 
   const editor = useEditor({
-    extensions: [StarterKit, Underline, Link.configure({ openOnClick: false })],
+    extensions: [
+      StarterKit,
+      Underline,
+      Link.configure({ openOnClick: false }),
+      PreserveInlineStyles,
+    ],
     content: OPEN_BETA_TEMPLATE.body,
     onUpdate({ editor }) {
       form.value.body = editor.getHTML();
@@ -615,10 +651,27 @@
           ? 'This is a direct message from the Clippster team.'
           : "You're receiving this email because you have a Clippster account.";
 
+    // Mirrors server admin_broadcast_html. color-scheme:dark prevents the parent
+    // admin UI from forcing black-on-black canvas text inside the preview iframe.
     return `<!DOCTYPE html>
-<html lang="en">
-  <head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"></head>
-  <body style="margin:0;padding:0;background-color:#0b0c0f;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
+<html lang="en" style="color-scheme:dark;">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="color-scheme" content="dark only">
+    <meta name="supported-color-schemes" content="dark">
+    <style>
+      :root { color-scheme: dark only; }
+      html, body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background-color: #0b0c0f !important;
+        color: #d7dde8 !important;
+        font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
+      }
+    </style>
+  </head>
+  <body style="margin:0;padding:0;background-color:#0b0c0f;color:#d7dde8;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,Helvetica,Arial,sans-serif;">
     <div style="display:none;max-height:0;overflow:hidden;opacity:0;color:transparent;">${escapeHtml(preheader)}</div>
     <table role="presentation" width="100%" cellspacing="0" cellpadding="0" style="background-color:#0b0c0f;min-height:100vh;">
       <tr><td align="center" style="padding:36px 18px;">

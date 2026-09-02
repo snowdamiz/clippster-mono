@@ -4,24 +4,24 @@ defmodule ClippsterServerWeb.StripeReturn do
   import Plug.Conn, only: [get_req_header: 2]
 
   @desktop_contexts ["desktop", "tauri"]
+  @mobile_contexts ["mobile"]
   @tauri_origins ["tauri://localhost", "https://tauri.localhost", "http://tauri.localhost"]
 
   def desktop_return?(conn, params \\ %{}) do
-    return_context =
-      normalize_context(Map.get(params, "return_context") || Map.get(params, :return_context))
-
-    platform_header =
-      conn
-      |> get_req_header("x-client-platform")
-      |> List.first()
-      |> normalize_context()
-
+    {return_context, platform_header} = client_context(conn, params)
     origin = conn |> get_req_header("origin") |> List.first()
     user_agent = conn |> get_req_header("user-agent") |> List.first()
 
     return_context in @desktop_contexts or
       platform_header in @desktop_contexts or
       tauri_origin?(origin, user_agent)
+  end
+
+  def mobile_return?(conn, params \\ %{}) do
+    {return_context, platform_header} = client_context(conn, params)
+
+    not desktop_return?(conn, params) and
+      (return_context in @mobile_contexts or platform_header in @mobile_contexts)
   end
 
   def frontend_base_url do
@@ -49,12 +49,28 @@ defmodule ClippsterServerWeb.StripeReturn do
   def desktop_success_url, do: "#{desktop_base_url()}/stripe-success"
   def desktop_cancel_url, do: "#{desktop_base_url()}/stripe-cancel"
 
+  def mobile_success_url do
+    with_query(web_success_url(), return_to: "mobile")
+  end
+
+  def mobile_cancel_url do
+    with_query(web_cancel_url(), return_to: "mobile")
+  end
+
   def success_url(conn, params \\ %{}) do
-    if desktop_return?(conn, params), do: desktop_success_url(), else: web_success_url()
+    cond do
+      desktop_return?(conn, params) -> desktop_success_url()
+      mobile_return?(conn, params) -> mobile_success_url()
+      true -> web_success_url()
+    end
   end
 
   def cancel_url(conn, params \\ %{}) do
-    if desktop_return?(conn, params), do: desktop_cancel_url(), else: web_cancel_url()
+    cond do
+      desktop_return?(conn, params) -> desktop_cancel_url()
+      mobile_return?(conn, params) -> mobile_cancel_url()
+      true -> web_cancel_url()
+    end
   end
 
   def with_query(url, params) when is_binary(url) and is_list(params) do
@@ -88,6 +104,19 @@ defmodule ClippsterServerWeb.StripeReturn do
       |> String.replace("%7D", "}")
 
     %URI{uri | query: query} |> URI.to_string()
+  end
+
+  defp client_context(conn, params) do
+    return_context =
+      normalize_context(Map.get(params, "return_context") || Map.get(params, :return_context))
+
+    platform_header =
+      conn
+      |> get_req_header("x-client-platform")
+      |> List.first()
+      |> normalize_context()
+
+    {return_context, platform_header}
   end
 
   defp normalize_context(value) when is_binary(value) do

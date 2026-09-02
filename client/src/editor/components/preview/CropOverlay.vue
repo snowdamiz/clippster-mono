@@ -3,6 +3,9 @@ import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import { useEditor } from "../../composables/useEditor";
 import { useElementSelection } from "../../composables/timeline/element/useElementSelection";
 import { useEditorUIState } from "../../composables/useEditorUIState";
+import { useImageMode } from "../../composables/useImageMode";
+import { useImageEditorTools } from "../../composables/useImageEditorTools";
+import { applyCanvasCrop } from "../../lib/canvas-crop";
 import type { VideoElement, ImageElement, CropRect } from "../../types/timeline";
 import { Check, X, ChevronDown } from "lucide-vue-next";
 
@@ -24,6 +27,7 @@ const { editor, version } = useEditor({
 });
 const { selectedElements } = useElementSelection();
 const { isCropMode, confirmCrop, cancelCrop, pendingCrop, originalCrop } = useEditorUIState();
+const { isImageMode } = useImageMode();
 
 const BRACKET_LENGTH = 18;
 const BRACKET_THICKNESS = 3;
@@ -64,6 +68,8 @@ const cropPresets: CropPreset[] = [
 const showPresetDropdown = ref(false);
 const lockedAspectRatio = ref<number | null>(null);
 
+const MIN_VISIBLE = 0.05;
+
 function applyCropPreset(preset: CropPreset) {
 	showPresetDropdown.value = false;
 	if (preset.ratio[0] === 0) {
@@ -73,6 +79,33 @@ function applyCropPreset(preset: CropPreset) {
 
 	const targetAR = preset.ratio[0] / preset.ratio[1];
 	lockedAspectRatio.value = targetAR;
+
+	if (isImageMode.value) {
+		// Canvas-relative: fit target AR inside the current crop box (centered).
+		const c = localCrop.value;
+		const boxW = (1 - c.left - c.right) * props.canvasWidth;
+		const boxH = (1 - c.top - c.bottom) * props.canvasHeight;
+		const boxAR = boxW / Math.max(1, boxH);
+		let visW = boxW;
+		let visH = boxH;
+		if (boxAR > targetAR) {
+			visW = boxH * targetAR;
+		} else if (boxAR < targetAR) {
+			visH = boxW / targetAR;
+		}
+		const cx = (c.left + (1 - c.right)) / 2;
+		const cy = (c.top + (1 - c.bottom)) / 2;
+		const halfW = visW / props.canvasWidth / 2;
+		const halfH = visH / props.canvasHeight / 2;
+		localCrop.value = {
+			left: clamp(cx - halfW, 0, 1 - MIN_VISIBLE),
+			right: clamp(1 - (cx + halfW), 0, 1 - MIN_VISIBLE),
+			top: clamp(cy - halfH, 0, 1 - MIN_VISIBLE),
+			bottom: clamp(1 - (cy + halfH), 0, 1 - MIN_VISIBLE),
+		};
+		if (pendingCrop.value) pendingCrop.value = { ...localCrop.value };
+		return;
+	}
 
 	const asset = editor.media.getAssets().find((a) => a.id === selectedElement.value?.element.mediaId);
 	const srcW = asset?.width ?? 1920;
@@ -94,11 +127,18 @@ function applyCropPreset(preset: CropPreset) {
 const activeCropPresetLabel = computed(() => {
 	const c = localCrop.value;
 	if (c.top === 0 && c.right === 0 && c.bottom === 0 && c.left === 0) return "Free";
-	const asset = editor.media.getAssets().find((a) => a.id === selectedElement.value?.element.mediaId);
-	const srcW = asset?.width ?? 1920;
-	const srcH = asset?.height ?? 1080;
-	const visW = srcW * (1 - c.left - c.right);
-	const visH = srcH * (1 - c.top - c.bottom);
+	let visW: number;
+	let visH: number;
+	if (isImageMode.value) {
+		visW = props.canvasWidth * (1 - c.left - c.right);
+		visH = props.canvasHeight * (1 - c.top - c.bottom);
+	} else {
+		const asset = editor.media.getAssets().find((a) => a.id === selectedElement.value?.element.mediaId);
+		const srcW = asset?.width ?? 1920;
+		const srcH = asset?.height ?? 1080;
+		visW = srcW * (1 - c.left - c.right);
+		visH = srcH * (1 - c.top - c.bottom);
+	}
 	const visAR = visW / visH;
 	for (const p of cropPresets) {
 		if (p.ratio[0] === 0) continue;
@@ -120,9 +160,10 @@ const selectedElement = computed((): { element: VideoElement | ImageElement; tra
 	return { element: el as VideoElement | ImageElement, trackId: sel.trackId };
 });
 
-// Exit crop mode if selection changes to non-video/image
+// Exit crop mode if selection changes to non-video/image (video editor only).
+// Image mode crops the canvas and can run without a selected layer.
 watch(selectedElement, (el) => {
-	if (!el && isCropMode.value) handleCancel();
+	if (!el && isCropMode.value && !isImageMode.value) handleCancel();
 });
 
 // --- Crop values ---
@@ -133,11 +174,66 @@ const elementCrop = computed(() => selectedElement.value?.element.crop ?? cropDe
 const localCrop = ref<CropRect>({ ...cropDefaults });
 const isDragging = ref(false);
 
+/** Axis-aligned bounds of the selected media on the canvas (for image-mode init). */
+function getSelectedMediaCanvasRect(): { x: number; y: number; w: number; h: number } | null {
+	if (!selectedElement.value) return null;
+	const cf = containFitRect.value;
+	const t = elementTransform.value;
+	const cw = props.canvasWidth;
+	const ch = props.canvasHeight;
+
+	const corners = [
+		{ x: cf.x, y: cf.y },
+		{ x: cf.x + cf.w, y: cf.y },
+		{ x: cf.x, y: cf.y + cf.h },
+		{ x: cf.x + cf.w, y: cf.y + cf.h },
+	].map((p) => {
+		let lx = p.x - cw / 2;
+		let ly = p.y - ch / 2;
+		lx *= t.scale;
+		ly *= t.scale;
+		if (t.rotate !== 0) {
+			const rad = (t.rotate * Math.PI) / 180;
+			const cos = Math.cos(rad);
+			const sin = Math.sin(rad);
+			const rx = lx * cos - ly * sin;
+			const ry = lx * sin + ly * cos;
+			lx = rx;
+			ly = ry;
+		}
+		return { x: lx + cw / 2 + t.position.x, y: ly + ch / 2 + t.position.y };
+	});
+
+	const xs = corners.map((c) => c.x);
+	const ys = corners.map((c) => c.y);
+	const minX = Math.max(0, Math.min(...xs));
+	const minY = Math.max(0, Math.min(...ys));
+	const maxX = Math.min(cw, Math.max(...xs));
+	const maxY = Math.min(ch, Math.max(...ys));
+	return { x: minX, y: minY, w: Math.max(1, maxX - minX), h: Math.max(1, maxY - minY) };
+}
+
+function initImageModeCanvasCrop(): CropRect {
+	const rect = getSelectedMediaCanvasRect();
+	if (!rect) return { ...cropDefaults };
+	const cw = props.canvasWidth;
+	const ch = props.canvasHeight;
+	return {
+		top: rect.y / ch,
+		left: rect.x / cw,
+		right: 1 - (rect.x + rect.w) / cw,
+		bottom: 1 - (rect.y + rect.h) / ch,
+	};
+}
+
 // Sync local crop when entering crop mode
 watch(isCropMode, (active) => {
 	if (active) {
-		localCrop.value = { ...elementCrop.value };
+		localCrop.value = isImageMode.value
+			? initImageModeCanvasCrop()
+			: { ...elementCrop.value };
 		lockedAspectRatio.value = null;
+		if (pendingCrop.value) pendingCrop.value = { ...localCrop.value };
 	}
 });
 
@@ -146,6 +242,19 @@ const cropVal = computed(() => localCrop.value);
 
 // --- Confirm / Cancel ---
 function handleConfirm() {
+	if (isImageMode.value) {
+		const c = localCrop.value;
+		const x = c.left * props.canvasWidth;
+		const y = c.top * props.canvasHeight;
+		const width = (1 - c.left - c.right) * props.canvasWidth;
+		const height = (1 - c.top - c.bottom) * props.canvasHeight;
+		confirmCrop();
+		applyCanvasCrop({ x, y, width, height });
+		const { activateTool } = useImageEditorTools();
+		activateTool("move");
+		return;
+	}
+
 	const el = selectedElement.value;
 	const finalCrop = confirmCrop();
 	if (el && finalCrop) {
@@ -158,6 +267,10 @@ function handleConfirm() {
 }
 
 function handleCancel() {
+	if (isImageMode.value) {
+		cancelCrop();
+		return;
+	}
 	const el = selectedElement.value;
 	const origCrop = cancelCrop();
 	if (el && origCrop) {
@@ -237,9 +350,23 @@ function canvasPointToOverlay(px: number, py: number) {
 
 // --- Crop region in overlay display coordinates ---
 const cropScreenRect = computed(() => {
-	const cf = containFitRect.value;
 	const c = cropVal.value;
+	const ds = displayScale.value;
 
+	if (isImageMode.value) {
+		const left = c.left * props.canvasWidth;
+		const top = c.top * props.canvasHeight;
+		const right = (1 - c.right) * props.canvasWidth;
+		const bottom = (1 - c.bottom) * props.canvasHeight;
+		return {
+			x: left * ds.x,
+			y: top * ds.y,
+			w: (right - left) * ds.x,
+			h: (bottom - top) * ds.y,
+		};
+	}
+
+	const cf = containFitRect.value;
 	const left = cf.x + c.left * cf.w;
 	const top = cf.y + c.top * cf.h;
 	const right = cf.x + cf.w - c.right * cf.w;
@@ -316,96 +443,92 @@ function onDragMove(event: MouseEvent) {
 	if (!canvas) return;
 
 	const rect = canvas.getBoundingClientRect();
-	const cf = containFitRect.value;
-	const t = elementTransform.value;
+	const sc = dragStartCrop.value;
 
 	const deltaScreenX = event.clientX - dragStartMouse.value.x;
 	const deltaScreenY = event.clientY - dragStartMouse.value.y;
-	const deltaCanvasX = deltaScreenX * (props.canvasWidth / rect.width) / t.scale;
-	const deltaCanvasY = deltaScreenY * (props.canvasHeight / rect.height) / t.scale;
 
-	const dFracX = deltaCanvasX / cf.w;
-	const dFracY = deltaCanvasY / cf.h;
+	let dFracX: number;
+	let dFracY: number;
+	if (isImageMode.value) {
+		dFracX = (deltaScreenX * (props.canvasWidth / rect.width)) / props.canvasWidth;
+		dFracY = (deltaScreenY * (props.canvasHeight / rect.height)) / props.canvasHeight;
+	} else {
+		const cf = containFitRect.value;
+		const t = elementTransform.value;
+		const deltaCanvasX = (deltaScreenX * (props.canvasWidth / rect.width)) / t.scale;
+		const deltaCanvasY = (deltaScreenY * (props.canvasHeight / rect.height)) / t.scale;
+		dFracX = deltaCanvasX / cf.w;
+		dFracY = deltaCanvasY / cf.h;
+	}
 
-	const sc = dragStartCrop.value;
-	const MIN_VISIBLE = 0.05;
-	const handle = dragHandle.value;
-
-	// --- Move: shift all four edges equally ---
-	if (handle === "move") {
+	if (dragHandle.value === "move") {
 		const visW = 1 - sc.left - sc.right;
 		const visH = 1 - sc.top - sc.bottom;
-		let newLeft = sc.left + dFracX;
-		let newTop = sc.top + dFracY;
-		// Clamp so crop box stays within media bounds
-		newLeft = clamp(newLeft, 0, 1 - visW);
-		newTop = clamp(newTop, 0, 1 - visH);
+		let left = sc.left + dFracX;
+		let top = sc.top + dFracY;
+		left = clamp(left, 0, 1 - visW);
+		top = clamp(top, 0, 1 - visH);
 		localCrop.value = {
-			top: newTop,
-			right: 1 - visW - newLeft,
-			bottom: 1 - visH - newTop,
-			left: newLeft,
+			left,
+			top,
+			right: 1 - left - visW,
+			bottom: 1 - top - visH,
 		};
+		if (pendingCrop.value) pendingCrop.value = { ...localCrop.value };
 		return;
 	}
 
-	// --- Resize handles ---
-	shiftHeld.value = event.shiftKey;
-	const useAspectLock = shiftHeld.value || lockedAspectRatio.value !== null;
-	const lockAR = lockedAspectRatio.value ?? dragStartAspectRatio.value ?? 1;
-
 	let newCrop = { ...sc };
 
-	// Compute raw new crop values
-	if (handle === "top" || handle === "top-left" || handle === "top-right") {
+	if (dragHandle.value.includes("top")) {
 		newCrop.top = clamp(sc.top + dFracY, 0, 1 - sc.bottom - MIN_VISIBLE);
 	}
-	if (handle === "bottom" || handle === "bottom-left" || handle === "bottom-right") {
+	if (dragHandle.value.includes("bottom")) {
 		newCrop.bottom = clamp(sc.bottom - dFracY, 0, 1 - sc.top - MIN_VISIBLE);
 	}
-	if (handle === "left" || handle === "top-left" || handle === "bottom-left") {
+	if (dragHandle.value.includes("left")) {
 		newCrop.left = clamp(sc.left + dFracX, 0, 1 - sc.right - MIN_VISIBLE);
 	}
-	if (handle === "right" || handle === "top-right" || handle === "bottom-right") {
+	if (dragHandle.value.includes("right")) {
 		newCrop.right = clamp(sc.right - dFracX, 0, 1 - sc.left - MIN_VISIBLE);
 	}
 
-	// Apply aspect ratio lock for corner handles
-	if (useAspectLock && handle.includes("-")) {
+	const aspectLock = lockedAspectRatio.value ?? (shiftHeld.value ? dragStartAspectRatio.value : null);
+	if (aspectLock && aspectLock > 0) {
 		const visW = 1 - newCrop.left - newCrop.right;
 		const visH = 1 - newCrop.top - newCrop.bottom;
-		const currentAR = visW / visH;
+		const refW = isImageMode.value ? props.canvasWidth : containFitRect.value.w;
+		const refH = isImageMode.value ? props.canvasHeight : containFitRect.value.h;
+		const pixelW = visW * refW;
+		const pixelH = visH * refH;
+		const currentAR = pixelW / Math.max(1, pixelH);
 
-		// Adjust the secondary axis to match the locked AR
-		// Use the media's pixel aspect to convert between fractional W and H
-		const mw = mediaDims.value.w;
-		const mh = mediaDims.value.h;
-		const pixelAR = (visW * mw) / (visH * mh);
-
-		if (pixelAR > lockAR) {
-			// Too wide — narrow horizontally
-			const targetVisW = visH * lockAR * (mh / mw);
-			const excessW = visW - targetVisW;
-			if (handle === "top-left" || handle === "bottom-left") {
-				newCrop.left = clamp(newCrop.left + excessW, 0, 1 - newCrop.right - MIN_VISIBLE);
-			} else {
-				newCrop.right = clamp(newCrop.right + excessW, 0, 1 - newCrop.left - MIN_VISIBLE);
-			}
-		} else if (pixelAR < lockAR) {
-			// Too tall — shorten vertically
-			const targetVisH = visW * mw / (lockAR * mh);
-			const excessH = visH - targetVisH;
-			if (handle === "top-left" || handle === "top-right") {
+		if (Math.abs(currentAR - aspectLock) > 0.001) {
+			if (dragHandle.value === "left" || dragHandle.value === "right") {
+				const targetH = pixelW / aspectLock;
+				const excessH = (pixelH - targetH) / refH / 2;
 				newCrop.top = clamp(newCrop.top + excessH, 0, 1 - newCrop.bottom - MIN_VISIBLE);
-			} else {
 				newCrop.bottom = clamp(newCrop.bottom + excessH, 0, 1 - newCrop.top - MIN_VISIBLE);
+			} else if (dragHandle.value === "top" || dragHandle.value === "bottom") {
+				const targetW = pixelH * aspectLock;
+				const excessW = (pixelW - targetW) / refW / 2;
+				newCrop.left = clamp(newCrop.left + excessW, 0, 1 - newCrop.right - MIN_VISIBLE);
+				newCrop.right = clamp(newCrop.right + excessW, 0, 1 - newCrop.left - MIN_VISIBLE);
+			} else {
+				const targetW = pixelH * aspectLock;
+				const excessW = (pixelW - targetW) / refW;
+				if (dragHandle.value.includes("left")) {
+					newCrop.left = clamp(newCrop.left + excessW, 0, 1 - newCrop.right - MIN_VISIBLE);
+				} else {
+					newCrop.right = clamp(newCrop.right + excessW, 0, 1 - newCrop.left - MIN_VISIBLE);
+				}
 			}
 		}
 	}
 
 	localCrop.value = newCrop;
 
-	// Sync to pendingCrop for external consumers
 	if (pendingCrop.value) {
 		pendingCrop.value = { ...newCrop };
 	}
@@ -519,6 +642,11 @@ const gridLines = computed(() => {
 // --- Crop dimensions display ---
 const cropDimsDisplay = computed(() => {
 	const c = localCrop.value;
+	if (isImageMode.value) {
+		const visW = Math.round(props.canvasWidth * (1 - c.left - c.right));
+		const visH = Math.round(props.canvasHeight * (1 - c.top - c.bottom));
+		return `${visW}×${visH}`;
+	}
 	const asset = editor.media.getAssets().find((a) => a.id === selectedElement.value?.element.mediaId);
 	const srcW = asset?.width ?? 1920;
 	const srcH = asset?.height ?? 1080;
@@ -557,7 +685,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-	<div v-if="isCropMode && selectedElement" class="absolute inset-0 z-10">
+	<div v-if="isCropMode && (selectedElement || isImageMode)" class="absolute inset-0 z-10">
 		<!-- Dim overlay outside crop region -->
 		<svg class="pointer-events-none absolute inset-0 size-full">
 			<path :d="dimClipPath" fill="rgba(0,0,0,0.55)" fill-rule="evenodd" />

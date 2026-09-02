@@ -265,7 +265,7 @@
     mintId?: string;
     isTempRecording?: boolean;
     streamerId?: string;
-    platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual';
+    platform?: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Tokend' | 'Manual';
     hlsOutputDir?: string | null;
   }
 

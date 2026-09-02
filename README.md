@@ -8,11 +8,12 @@ A desktop application for automated long-form to short-form video clip generatio
 
 ## Architecture
 
-This monorepo contains three main applications:
+This monorepo contains four main applications:
 
 - **`client/`** - Tauri + Vue 3 desktop application (frontend)
 - **`server/`** - Phoenix API backend (Elixir/Erlang)
 - **`landing/`** - Vue 3 marketing landing page
+- **`apps/mobile/`** - Expo (React Native) mobile client (Phase 0 foundation)
 
 ### Technology Stack
 
@@ -79,7 +80,7 @@ cd ../landing && yarn install
 ### Development
 
 ```bash
-# Start both server and Tauri desktop app (recommended)
+# Start server, Tauri desktop app, landing, and mobile (Metro + Android emulator when connected)
 yarn dev
 
 # Start individual services
@@ -87,7 +88,15 @@ yarn server      # Phoenix API server only (localhost:4000)
 yarn client      # Vue development server only (localhost:1420)
 yarn tauri       # Tauri desktop app only
 yarn landing     # Landing page development server
+
+# Mobile (Expo) — requires dev client for SQLite, FFmpeg, OAuth
+yarn mobile          # Metro + auto-launch Android emulator (same as yarn dev mobile step)
+yarn mobile:ios      # iOS simulator
+yarn mobile:android  # Native build + Android emulator (first-time setup)
+yarn mobile:typecheck
 ```
+
+**Mobile prerequisites:** Xcode (iOS), Android Studio (Android), [EAS CLI](https://docs.expo.dev/build/setup/) for dev builds. See `apps/mobile/docs/` for auth, networking, and Phase 0 checklist. Native modules (FFmpeg, SecureStore) do **not** work in Expo Go — build once with `eas build --profile development`.
 
 ### Build Commands
 

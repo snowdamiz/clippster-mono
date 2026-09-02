@@ -42,6 +42,7 @@ pub async fn run_ffmpeg(
     
     let mut cmd = tokio::process::Command::new(&ffmpeg_path);
     cmd.args(args);
+    cmd.kill_on_drop(true);
     
     #[cfg(target_os = "windows")]
     {
@@ -63,6 +64,7 @@ pub async fn run_ffprobe(
     
     let mut cmd = tokio::process::Command::new(&ffprobe_path);
     cmd.args(args);
+    cmd.kill_on_drop(true);
     
     #[cfg(target_os = "windows")]
     {

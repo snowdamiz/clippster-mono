@@ -158,7 +158,9 @@ export class ProjectManager {
 				await this.saveCurrentProject();
 			}
 
-			if (!project.metadata.thumbnail) {
+			// Image mode: always refresh so Design Projects cards match the canvas.
+			// Video mode: only generate when missing (expensive for long timelines).
+			if (this.editor.imageMode || !project.metadata.thumbnail) {
 				const didUpdateThumbnail = await this.updateThumbnailFromTimeline();
 				if (didUpdateThumbnail) {
 					await this.saveCurrentProject();
@@ -466,13 +468,18 @@ export class ProjectManager {
 		if (!this.active) return;
 
 		try {
-			const didUpdateThumbnail = await this.updateThumbnailFromTimeline();
+			const didUpdateThumbnail = await this.refreshThumbnail();
 			if (didUpdateThumbnail) {
 				await this.editor.save.flush();
 			}
 		} catch (error) {
 			console.error("Failed to generate project thumbnail on exit:", error);
 		}
+	}
+
+	/** Re-render the composition into metadata.thumbnail (scaled JPEG). */
+	async refreshThumbnail(): Promise<boolean> {
+		return this.updateThumbnailFromTimeline();
 	}
 
 	getFilteredAndSortedProjects({
@@ -597,9 +604,8 @@ export class ProjectManager {
 
 		const tracks = this.editor.timeline.getTracks();
 		const mediaAssets = this.editor.media.getAssets();
-		const duration = this.editor.timeline.getTotalDuration();
-
-		if (duration === 0) return false;
+		const fps = Math.max(1, this.active.settings.fps ?? 30);
+		const duration = Math.max(this.editor.timeline.getTotalDuration(), 1 / fps);
 
 		const { canvasSize, background } = this.active.settings;
 
@@ -616,7 +622,12 @@ export class ProjectManager {
 		const renderer = new CanvasRenderer({
 			width: canvasSize.width,
 			height: canvasSize.height,
-			fps: this.active.settings.fps,
+			fps,
+			clearStyle:
+				this.editor.imageMode ||
+				(background.type === "color" && background.color === "transparent")
+					? "transparent"
+					: "black",
 		});
 
 		const tempCanvas = document.createElement("canvas");
@@ -629,7 +640,34 @@ export class ProjectManager {
 			targetCanvas: tempCanvas,
 		});
 
-		const thumbnailDataUrl = tempCanvas.toDataURL("image/png");
+		// Scale down for list cards — full-res PNG data URLs bloat project_data / DB.
+		const maxWidth = 480;
+		const scale = Math.min(1, maxWidth / Math.max(1, canvasSize.width));
+		let thumbnailDataUrl: string;
+		if (scale < 1 || this.editor.imageMode) {
+			const thumb = document.createElement("canvas");
+			thumb.width = Math.max(1, Math.round(canvasSize.width * scale));
+			thumb.height = Math.max(1, Math.round(canvasSize.height * scale));
+			const ctx = thumb.getContext("2d");
+			if (ctx) {
+				if (this.editor.imageMode) {
+					// Composite on a small checkerboard so transparent designs aren't black cards.
+					const tile = 8;
+					for (let y = 0; y < thumb.height; y += tile) {
+						for (let x = 0; x < thumb.width; x += tile) {
+							ctx.fillStyle = ((x / tile + y / tile) & 1) === 0 ? "#ffffff" : "#c8c8c8";
+							ctx.fillRect(x, y, tile, tile);
+						}
+					}
+				}
+				ctx.drawImage(tempCanvas, 0, 0, thumb.width, thumb.height);
+				thumbnailDataUrl = thumb.toDataURL("image/jpeg", 0.82);
+			} else {
+				thumbnailDataUrl = tempCanvas.toDataURL("image/jpeg", 0.82);
+			}
+		} else {
+			thumbnailDataUrl = tempCanvas.toDataURL("image/jpeg", 0.82);
+		}
 
 		await this.updateThumbnail({ thumbnail: thumbnailDataUrl });
 		return true;

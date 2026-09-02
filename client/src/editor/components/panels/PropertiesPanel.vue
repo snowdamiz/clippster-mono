@@ -13,6 +13,7 @@ import CaptionProperties from "./properties/CaptionProperties.vue";
 import CaptionMultiProperties from "./properties/CaptionMultiProperties.vue";
 import TransitionProperties from "./properties/TransitionProperties.vue";
 import { Settings } from "lucide-vue-next";
+import { useImageMode } from "../../composables/useImageMode";
 import type { Transition } from "../../types/transitions";
 
 const { editor, version } = useEditor({
@@ -26,6 +27,7 @@ const { editor, version } = useEditor({
 	},
 });
 const { selectedElements } = useElementSelection();
+const { isImageMode } = useImageMode();
 
 const elementsWithTracks = computed(() => {
 	void version.value;
@@ -64,8 +66,13 @@ const selectedTransition = computed((): Transition | null => {
 </script>
 
 <template>
-	<div class="flex h-full flex-col overflow-hidden rounded-sm bg-[#18181b] text-zinc-200">
-		<template v-if="selectedElements.length > 0">
+	<div
+		:class="[
+			'flex h-full flex-col overflow-hidden text-zinc-200',
+			isImageMode ? 'bg-[#1e1e1e]' : 'rounded-sm bg-[#18181b]',
+		]"
+	>
+		<template v-if="selectedElements.length > 0 && !(isImageMode && captionRepresentative)">
 			<!-- Multi-caption selection: render a single representative panel to avoid N-mount flicker -->
 			<div v-if="captionRepresentative" class="min-h-0 flex-1 overflow-hidden">
 				<CaptionMultiProperties v-if="multiCaptionElements.length > 1" :elements="multiCaptionElements" />
@@ -90,7 +97,7 @@ const selectedTransition = computed((): Transition | null => {
 					/>
 
 					<VideoProperties
-						v-else-if="element.type === 'video'"
+						v-else-if="!isImageMode && element.type === 'video'"
 						:element="(element as VideoElement)"
 						:track-id="track.id"
 					/>
@@ -102,7 +109,7 @@ const selectedTransition = computed((): Transition | null => {
 					/>
 
 					<AudioProperties
-						v-else-if="element.type === 'audio'"
+						v-else-if="!isImageMode && element.type === 'audio'"
 						:element="(element as AudioElement)"
 						:track-id="track.id"
 					/>
@@ -114,13 +121,13 @@ const selectedTransition = computed((): Transition | null => {
 					/>
 
 					<EffectProperties
-						v-else-if="element.type === 'effect'"
+						v-else-if="!isImageMode && element.type === 'effect'"
 						:element="(element as EffectElement)"
 						:track-id="track.id"
 					/>
 
 					<CaptionProperties
-						v-else-if="element.type === 'caption'"
+						v-else-if="!isImageMode && element.type === 'caption'"
 						:element="(element as CaptionElement)"
 						:track-id="track.id"
 					/>
@@ -129,7 +136,7 @@ const selectedTransition = computed((): Transition | null => {
 		</template>
 
 		<!-- Junction transition selected from timeline badge (not mixed with clip inspector) -->
-		<template v-else-if="selectedTransition">
+		<template v-else-if="!isImageMode && selectedTransition">
 			<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
 				<div class="shrink-0 border-b border-white/10 px-3 py-2">
 					<p class="text-xs font-medium text-zinc-300">Transition</p>
@@ -142,12 +149,11 @@ const selectedTransition = computed((): Transition | null => {
 		</template>
 
 		<!-- Empty state -->
-		<div v-else class="flex h-full flex-col items-center justify-center gap-3 p-4">
-			<Settings class="text-zinc-500/75 size-10" :stroke-width="1" />
-			<div class="flex flex-col gap-2 text-center">
-				<p class="text-sm font-medium text-zinc-300">It's empty here</p>
-				<p class="text-zinc-500 text-xs text-balance">
-					Click an element on the timeline to edit its properties
+		<div v-else class="flex h-full flex-col">
+			<div class="flex flex-1 flex-col items-center justify-center gap-2 p-4">
+				<Settings class="size-6 text-zinc-700" :stroke-width="1" />
+				<p class="text-center text-[11px] text-zinc-500">
+					{{ isImageMode ? "Select a layer" : "Select a layer to edit" }}
 				</p>
 			</div>
 		</div>

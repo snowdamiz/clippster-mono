@@ -192,6 +192,10 @@ interface BaseTimelineElement {
 	animationOut?: import("./animations").ElementAnimation;
 	animationLoop?: import("./animations").ElementAnimation;
 	orderIndex?: number; // Layer order within track (higher = renders on top), CapCut-style
+	/** Per-element lock (image editor layers); track.locked remains supported */
+	locked?: boolean;
+	/** Optional nested group id for Photoshop-style layer groups */
+	groupId?: string | null;
 }
 
 // ── Shape masks ───────────────────────────────────────────────────────────

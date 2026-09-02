@@ -1,10 +1,15 @@
 <script setup lang="ts">
-import { ref, computed, watch, onMounted, onUnmounted, nextTick } from "vue";
+import { ref, computed, watch, onMounted, onUnmounted, nextTick, inject } from "vue";
 import { useEditor } from "../composables/useEditor";
-import { useEditorUIState } from "../composables/useEditorUIState";
 import { useRouter } from "vue-router";
 import ExportButton from "./ExportButton.vue";
-import { ArrowLeft, ChevronDown, Keyboard, Loader2, Maximize, Minimize, Smartphone } from "lucide-vue-next";
+import ImageExportDialog from "./ImageExportDialog.vue";
+import { Button } from "@/components/ui/button";
+import { ArrowLeft, ChevronDown, Keyboard, Loader2, Maximize, Minimize, Smartphone, X, Download, Image, Check, Stamp, Megaphone } from "lucide-vue-next";
+import { useImageMode } from "../composables/useImageMode";
+import { useEditorUIState } from "../composables/useEditorUIState";
+import { useWatermarkExport } from "@/composables/useWatermarkExport";
+import { useCampaignImageSubmit } from "@/composables/useCampaignImageSubmit";
 import ChatFab from "@/components/chat/ChatFab.vue";
 import {
 	getVideoEditorSourcesByProjectId,
@@ -34,10 +39,113 @@ const { editor, version } = useEditor({
 		selection: false,
 	},
 });
+const { isImageMode, isCoverMode, exportAsImage, exportAndSaveAsCover } = useImageMode();
 const { activeSocialOverlay } = useEditorUIState();
+const { saveAsWatermark } = useWatermarkExport();
+const { availableCampaigns, isSubmitting, isLoadingCampaigns, loadMyCampaigns, submitImageToCampaign } = useCampaignImageSubmit();
 const router = useRouter();
+const imageEditorExitToProjects = inject<(() => Promise<void>) | null>(
+	"imageEditorExitToProjects",
+	null,
+);
+
+// Image export state
+const isImageExporting = ref(false);
+const imageExportSuccess = ref(false);
+const showImageExportDialog = ref(false);
+const showExportMenu = ref(false);
+const showCampaignPicker = ref(false);
+
+function openImageExportDialog() {
+	if (isCoverMode.value) {
+		void handleImageExport();
+		return;
+	}
+	showImageExportDialog.value = true;
+}
+
+async function handleImageExport() {
+	if (isImageExporting.value) return;
+	isImageExporting.value = true;
+	imageExportSuccess.value = false;
+	try {
+		const result = await exportAndSaveAsCover("png");
+		if (result) {
+			imageExportSuccess.value = true;
+			setTimeout(() => { router.push("/clips"); }, 1200);
+		}
+	} catch (err) {
+		console.error("[EditorHeader] Cover export failed:", err);
+	} finally {
+		isImageExporting.value = false;
+	}
+}
+
+function onImageExported() {
+	imageExportSuccess.value = true;
+	setTimeout(() => { imageExportSuccess.value = false; }, 2000);
+}
+
+async function handleSubmitToCampaign(campaignId: number) {
+	if (isImageExporting.value) return;
+	isImageExporting.value = true;
+	showCampaignPicker.value = false;
+	try {
+		const blob = await exportAsImage("png");
+		if (!blob) return;
+
+		const project = activeProject.value;
+		const name = project?.metadata.name || "design";
+
+		const result = await submitImageToCampaign(campaignId, blob, `${name}.png`);
+		if (result?.success) {
+			imageExportSuccess.value = true;
+			setTimeout(() => { imageExportSuccess.value = false; }, 2000);
+		}
+	} catch (err) {
+		console.error("[EditorHeader] Campaign submission failed:", err);
+	} finally {
+		isImageExporting.value = false;
+	}
+}
+
+async function openCampaignPicker() {
+	showExportMenu.value = false;
+	await loadMyCampaigns();
+	showCampaignPicker.value = true;
+}
+
+async function handleSaveAsWatermark() {
+	if (isImageExporting.value) return;
+	isImageExporting.value = true;
+	showExportMenu.value = false;
+	try {
+		const blob = await exportAsImage("png");
+		if (!blob) return;
+
+		const project = activeProject.value;
+		const name = project?.metadata.name || "Watermark";
+
+		const wmId = await saveAsWatermark({
+			blob,
+			name,
+			width: project?.settings.canvasSize.width,
+			height: project?.settings.canvasSize.height,
+		});
+
+		if (wmId) {
+			imageExportSuccess.value = true;
+			setTimeout(() => { imageExportSuccess.value = false; }, 2000);
+		}
+	} catch (err) {
+		console.error("[EditorHeader] Save as watermark failed:", err);
+	} finally {
+		isImageExporting.value = false;
+	}
+}
 
 const isExiting = ref(false);
+const showRenameDialog = ref(false);
 const showAspectMenu = ref(false);
 const showSocialMenu = ref(false);
 const showDropdown = ref(false);
@@ -71,12 +179,27 @@ const isRenamingTitle = ref(false);
 const renameInput = ref("");
 const vodInfo = ref<{ platform: string; streamerName: string | null } | null>(null);
 
-const aspectPresets = [
+const videoAspectPresets = [
 	{ width: 1920, height: 1080, label: "16:9" },
 	{ width: 1080, height: 1920, label: "9:16" },
 	{ width: 1080, height: 1080, label: "1:1" },
 	{ width: 1080, height: 1350, label: "4:5" },
+	{ width: 1280, height: 720, label: "YouTube HD" },
+	{ width: 3840, height: 2160, label: "YouTube 4K" },
 ];
+
+const imageAspectPresets = [
+	{ width: 1280, height: 720, label: "YT Thumbnail" },
+	{ width: 1920, height: 1080, label: "16:9" },
+	{ width: 1080, height: 1080, label: "Square" },
+	{ width: 1080, height: 1350, label: "IG Portrait" },
+	{ width: 1080, height: 1920, label: "Story / Short" },
+	{ width: 1500, height: 500, label: "X Banner" },
+];
+
+const aspectPresets = computed(() =>
+	isImageMode.value ? imageAspectPresets : videoAspectPresets,
+);
 
 const activeProject = computed(() => {
 	void version.value;
@@ -88,7 +211,7 @@ const canvasWidth = computed(() => activeProject.value?.settings?.canvasSize?.wi
 const canvasHeight = computed(() => activeProject.value?.settings?.canvasSize?.height ?? 1080);
 
 const currentAspectLabel = computed(() => {
-	const match = aspectPresets.find((p) => p.width === canvasWidth.value && p.height === canvasHeight.value);
+	const match = aspectPresets.value.find((p) => p.width === canvasWidth.value && p.height === canvasHeight.value);
 	return match ? match.label : `${canvasWidth.value}×${canvasHeight.value}`;
 });
 
@@ -274,6 +397,17 @@ async function handleExit() {
 		console.error("Failed to prepare project exit:", error);
 	}
 
+	// Image mode: sync thumbnail + project_data before navigating so Design Projects matches canvas.
+	if (isImageMode.value && imageEditorExitToProjects) {
+		try {
+			await imageEditorExitToProjects();
+		} catch (error) {
+			console.error("Failed to exit image editor:", error);
+			await router.push("/design-studio");
+		}
+		return;
+	}
+
 	try {
 		editor.project.closeProject();
 	} catch (error) {
@@ -309,7 +443,7 @@ async function handleDelete() {
 	if (!confirm(`Delete "${project.metadata.name}"? This cannot be undone.`)) return;
 	try {
 		await editor.project.deleteProjects({ ids: [project.metadata.id] });
-		router.push("/video-editor");
+		router.push(isImageMode.value ? "/design-studio" : "/video-editor");
 	} catch (error) {
 		console.error("Failed to delete project:", error);
 	}
@@ -331,8 +465,8 @@ function cancelRename() {
 </script>
 
 <template>
-	<header class="relative z-10 flex h-[3.2rem] items-center justify-between border-b border-white/10 bg-[#0e0e10] px-3 pt-0.5">
-		<div class="flex items-center gap-2">
+	<header class="relative z-10 flex h-[3.2rem] shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-[#0e0e10] px-3 pr-4">
+		<div class="flex min-w-0 items-center gap-2">
 			<!-- Back arrow -->
 			<button
 				type="button"
@@ -420,8 +554,8 @@ function cancelRename() {
 			<div v-if="showAspectMenu" class="fixed inset-0 z-[199]" @click="showAspectMenu = false" />
 		</div>
 
-		<!-- Use 16:9 (non-16:9 canvas; same as Manual POI target panel) -->
-		<template v-if="!is169Canvas">
+		<!-- Use 16:9 (non-16:9 canvas; video POI framing — not for image editor) -->
+		<template v-if="!isImageMode && !is169Canvas">
 			<div class="h-3 w-px bg-white/20" />
 			<label
 				class="flex cursor-pointer items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium transition-colors"
@@ -546,7 +680,7 @@ function cancelRename() {
 		</button>
 	</div>
 
-		<nav class="flex items-center gap-2">
+		<nav class="flex shrink-0 items-center gap-1.5 sm:gap-2">
 			<span
 				class="hidden items-center gap-1 text-[10px] text-zinc-500 xl:flex"
 				:title="lastSavedAt ? `Last saved at ${lastSavedAt.toLocaleTimeString()}` : 'Autosave is enabled'"
@@ -566,7 +700,115 @@ function cancelRename() {
 				<span class="hidden 2xl:inline">Shortcuts</span>
 			</button>
 			<ChatFab compact />
-			<ExportButton />
+			<template v-if="isImageMode">
+				<button
+					type="button"
+					data-tour-id="tour-image-export"
+					:class="[
+						'flex items-center gap-1.5 rounded-md px-[0.12rem] py-[0.12rem] text-white',
+						isImageExporting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
+					]"
+					:disabled="isImageExporting"
+					@click="openImageExportDialog"
+				>
+					<div class="relative flex items-center gap-1.5 rounded-md bg-[var(--sidebar-accent,#0ea5e9)] px-3 py-1.5 shadow-[0_1px_3px_0px_rgba(0,0,0,0.45)] hover:bg-[#0284c7] transition-colors">
+						<component :is="imageExportSuccess ? Check : (isImageExporting ? Image : Download)" class="z-50 size-4" :class="{ 'animate-pulse': isImageExporting }" />
+						<span class="z-50 text-[0.875rem] font-medium">{{ imageExportSuccess ? 'Saved!' : (isImageExporting ? 'Exporting...' : (isCoverMode ? 'Save Cover' : 'Export Image')) }}</span>
+					</div>
+				</button>
+				<div v-if="!isCoverMode" class="relative">
+					<button
+						type="button"
+						class="flex items-center justify-center rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+						title="More export options"
+						@click="showExportMenu = !showExportMenu"
+					>
+						<ChevronDown class="size-3.5" />
+					</button>
+					<div
+						v-if="showExportMenu"
+						class="absolute top-full right-0 z-50 mt-1 w-48 rounded-md border border-white/10 bg-[#1e1e22] shadow-md py-1"
+					>
+						<button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-white/5" @click="handleSaveAsWatermark">
+							<Stamp class="size-3.5" />
+							Save as Watermark
+						</button>
+						<button type="button" class="flex w-full items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-white/5" @click="openCampaignPicker">
+							<Megaphone class="size-3.5" />
+							Submit to Campaign
+						</button>
+					</div>
+					<div v-if="showExportMenu" class="fixed inset-0 z-40" @click="showExportMenu = false" />
+				</div>
+			</template>
+			<span v-else data-tour-id="tour-editor-export">
+				<ExportButton />
+			</span>
 		</nav>
 	</header>
+
+	<Teleport to="body">
+		<div v-if="showRenameDialog" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+			<div class="w-80 rounded-lg border border-white/10 bg-[#1e1e22] p-6 shadow-lg">
+				<h3 class="mb-4 font-medium">Rename project</h3>
+				<input
+					v-model="renameInput"
+					type="text"
+					class="mb-4 w-full rounded-md border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200"
+					@keydown.enter="handleRename"
+				/>
+				<div class="flex justify-end gap-2">
+					<Button variant="outline" size="sm" @click="showRenameDialog = false">Cancel</Button>
+					<Button size="sm" @click="handleRename">Save</Button>
+				</div>
+			</div>
+		</div>
+	</Teleport>
+
+	<Teleport to="body">
+		<div v-if="showCampaignPicker" class="fixed inset-0 z-50 flex items-center justify-center bg-black/50">
+			<div class="w-96 max-h-[60vh] rounded-lg border border-white/10 bg-[#1e1e22] shadow-lg flex flex-col">
+				<div class="flex items-center justify-between border-b border-white/10 px-4 py-3">
+					<h3 class="text-sm font-medium text-zinc-200">Submit to Campaign</h3>
+					<button type="button" class="text-zinc-500 hover:text-zinc-300" @click="showCampaignPicker = false">
+						<X class="size-4" />
+					</button>
+				</div>
+				<div class="flex-1 overflow-y-auto p-4">
+					<div v-if="isLoadingCampaigns" class="flex items-center justify-center py-8">
+						<div class="size-5 animate-spin rounded-full border-2 border-zinc-600 border-t-purple-500" />
+					</div>
+					<div v-else-if="availableCampaigns.length === 0" class="text-center py-8 text-xs text-zinc-500">
+						<Megaphone class="mx-auto mb-2 size-6 text-zinc-700" />
+						<p>No active campaigns found</p>
+						<p class="mt-1 text-[10px]">Join a campaign first to submit images</p>
+					</div>
+					<div v-else class="space-y-2">
+						<button
+							v-for="campaign in availableCampaigns"
+							:key="campaign.id"
+							type="button"
+							class="flex w-full items-center gap-3 rounded-lg border border-white/5 p-3 text-left transition-colors hover:bg-white/5 hover:border-purple-500/30"
+							@click="handleSubmitToCampaign(campaign.id)"
+						>
+							<div class="size-10 shrink-0 rounded-md bg-purple-600/20 flex items-center justify-center">
+								<Megaphone class="size-4 text-purple-400" />
+							</div>
+							<div class="min-w-0 flex-1">
+								<div class="truncate text-xs font-medium text-zinc-200">{{ campaign.title }}</div>
+								<div class="truncate text-[10px] text-zinc-500">{{ campaign.organization?.name }}</div>
+							</div>
+						</button>
+					</div>
+				</div>
+			</div>
+		</div>
+	</Teleport>
+
+	<ImageExportDialog
+		:open="showImageExportDialog"
+		@close="showImageExportDialog = false"
+		@exported="onImageExported"
+	/>
+
 </template>

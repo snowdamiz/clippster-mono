@@ -33,6 +33,8 @@ export function getSocialPlatformLabel(platform: string): string {
       return 'TikTok';
     case 'youtube':
       return 'YouTube';
+    case 'tokend':
+      return 'Tokend';
     default:
       return platform.charAt(0).toUpperCase() + platform.slice(1);
   }

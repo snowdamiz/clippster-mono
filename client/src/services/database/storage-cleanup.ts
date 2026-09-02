@@ -120,6 +120,12 @@ export async function clearLocalStorageData(): Promise<void> {
     
     // Clear audio assets
     await db.execute('DELETE FROM audio_assets');
+
+    // Clear downloaded library audio + playlists (UI reads these tables)
+    console.log('[Storage Cleanup] Deleting downloaded_audio and playlists...');
+    await db.execute('DELETE FROM audio_playlist_items');
+    await db.execute('DELETE FROM audio_playlists');
+    await db.execute('DELETE FROM downloaded_audio');
     
     // Clear image assets
     await db.execute('DELETE FROM image_assets');

@@ -5,6 +5,10 @@
 import { onMounted, onUnmounted } from "vue";
 import { bindAction, invokeAction, unbindAction } from "../lib/actions";
 import { useTimelineTools } from "./timeline/useTimelineTools";
+import { EditorCore } from "../core";
+import { toolsSharingShortcut } from "../constants/image-tool-flyouts";
+import { useImageEditorTools } from "./useImageEditorTools";
+import type { PixelToolId } from "../types/image-document";
 
 function isEditableTarget(target: EventTarget | null): boolean {
 	if (typeof HTMLElement === "undefined" || !(target instanceof HTMLElement)) return false;
@@ -24,6 +28,36 @@ export function handleEditorKeyDown(ev: KeyboardEvent) {
 	const ctrl = ev.ctrlKey || ev.metaKey;
 	const shift = ev.shiftKey;
 	const alt = ev.altKey;
+
+	if (EditorCore.getInstance().imageMode && !ctrl && !alt) {
+		if (key === "escape") {
+			useImageEditorTools().setSelection(null);
+			ev.preventDefault();
+			return;
+		}
+		if (key === "x" && !shift) {
+			useImageEditorTools().swapFillStroke();
+			ev.preventDefault();
+			return;
+		}
+		// Photoshop: letter activates last tool in that shortcut family; Shift+letter cycles.
+		const family = toolsSharingShortcut(key);
+		if (family.length > 0) {
+			const tools = useImageEditorTools();
+			if (shift) {
+				tools.cycleToolsByShortcut(key);
+			} else {
+				const lastUsed = family.find((t) =>
+					Object.values(tools.flyoutLastTool.value).includes(t.id),
+				);
+				const preferred =
+					family.find((t) => t.id === tools.activeTool.value) ?? lastUsed ?? family[0];
+				tools.activateTool(preferred.id as PixelToolId);
+			}
+			ev.preventDefault();
+			return;
+		}
+	}
 
 	let handled = false;
 

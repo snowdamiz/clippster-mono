@@ -6,7 +6,7 @@ export interface Project {
   description: string | null;
   thumbnail_path: string | null;
   parent_id: string | null;
-  platform: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Manual' | null;
+  platform: 'PumpFun' | 'Kick' | 'YouTube' | 'Twitch' | 'Rumble' | 'Twitter' | 'Tokend' | 'Manual' | null;
   audio_settings: string | null; // JSON string of AudioSettings
   default_watermark_settings: string | null; // JSON string with watermark_id and watermark_settings from creator profile
   creator_profile_id: string | null; // Direct link to creator profile (for local video imports)
@@ -119,6 +119,9 @@ export interface Clip {
   detection_session_id: string | null;
   // Campaign integration
   campaign_id: number | null;
+  // Cover image (from image editor)
+  cover_image_id: string | null;
+  cover_image_path: string | null;
   // Subtitle settings
   subtitle_enabled?: number;
   subtitle_preset_id?: string | null;
@@ -154,6 +157,8 @@ export interface RawVideo {
   codec: string | null;
   file_size: number | null;
   original_project_id: string | null;
+  platform: string | null;
+  source_url: string | null;
   created_at: number;
   updated_at: number;
   // Segment tracking fields
@@ -463,6 +468,10 @@ export interface AudioAsset {
   sync_status?: 'synced' | 'downloading' | 'error' | null;
 }
 
+export type ImageAssetType = 'thumbnail' | 'cover' | 'watermark' | 'overlay' | 'banner' | 'poster' | 'logo' | 'social' | 'custom';
+export type ImageSourceType = 'upload' | 'clip_thumbnail' | 'frame_extract' | 'ai_generated' | 'template' | 'editor';
+export type ImageExportFormat = 'png' | 'jpg' | 'jpeg' | 'webp';
+
 export interface ImageAsset {
   id: string;
   name: string;
@@ -471,6 +480,14 @@ export interface ImageAsset {
   height: number | null;
   file_size: number | null;
   mime_type: string | null;
+  image_type: ImageAssetType | null;
+  source_type: ImageSourceType | null;
+  source_clip_id: string | null;
+  source_project_id: string | null;
+  canvas_width: number | null;
+  canvas_height: number | null;
+  export_format: ImageExportFormat | null;
+  editor_project_json: string | null;
   created_at: number;
   updated_at: number;
   // Organization asset fields (null for local assets)
@@ -588,7 +605,7 @@ export interface CreatorProfile {
 export interface CreatorPlatformLink {
   id: string;
   creator_profile_id: string;
-  platform: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter';
+  platform: 'pumpfun' | 'kick' | 'twitch' | 'YouTube' | 'rumble' | 'twitter' | 'tokend';
   platform_id: string;
   display_name: string | null;
   profile_image_url: string | null;
@@ -618,80 +635,6 @@ export interface DownloadedAudio {
   sample_rate: number | null;
   channels: number | null;
   thumbnail_url: string | null;
-  user_id: string | null;
-  created_at: number;
-  updated_at: number;
-}
-
-export interface SpaceParticipant {
-  id: string;
-  name: string;
-  avatar_url: string | null;
-  role: 'host' | 'cohost' | 'speaker' | 'admin' | 'listener' | 'guest' | 'unknown';
-  /** X handle (without @) when known — used for secondary avatar fetching. */
-  twitter_username?: string;
-  /** Periscope user id from AudioSpaceById; Chatman replay events use this as guestRemoteID. */
-  periscope_user_id?: string;
-  /** Numeric X/Twitter rest_id from user_results. */
-  x_rest_id?: string;
-  /** Display name from AudioSpaceById when distinct from handle. */
-  display_name?: string;
-}
-
-/** Origin of a speaker segment; synthetic_* must not drive active-speaker highlights. */
-export type SpaceSpeakerSegmentSource =
-  | 'chatman_replay'
-  | 'periscope'
-  | 'hls_id3'
-  | 'manual'
-  | 'stage_join'
-  | 'synthetic_equal'
-  | 'synthetic_seed'
-  | 'unknown';
-
-export interface SpaceSpeakerSegment {
-  id: string;
-  speaker_id: string;
-  start: number;
-  end: number;
-  /** When omitted, UI derives from segment id prefix for backward compatibility. */
-  source?: SpaceSpeakerSegmentSource;
-  periscope_user_id?: string;
-  x_rest_id?: string;
-  username?: string;
-  display_name?: string;
-  avatar_url?: string | null;
-  role?: SpaceParticipant['role'];
-}
-
-/** Replay timeline feed: stage roster changes and speaker highlights (from snapshots / API cues). */
-export type SpaceTimelineEventType = 'joined_stage' | 'left_stage' | 'speaker_changed';
-
-export interface SpaceTimelineEvent {
-  id: string;
-  t: number;
-  type: SpaceTimelineEventType;
-  user_ids: string[];
-  detail?: string;
-}
-
-/** On-stage roster at playlist time `t` (seconds), from HLS ID3 when available. */
-export interface SpaceStageSnapshot {
-  id: string;
-  t: number;
-  on_stage_user_ids: string[];
-}
-
-export interface DownloadedSpaceMetadata {
-  id: string;
-  audio_id: string;
-  source_url: string | null;
-  title: string | null;
-  participants_json: string | null;
-  speaker_segments_json: string | null;
-  stage_snapshots_json: string | null;
-  /** Join/leave stage cues and related replay events (JSON array). */
-  timeline_events_json: string | null;
   user_id: string | null;
   created_at: number;
   updated_at: number;

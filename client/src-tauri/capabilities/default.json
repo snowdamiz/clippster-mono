@@ -67,6 +67,15 @@
           "path": "$APPLOCALDATA/**"
         },
         {
+          "path": "$LOCALDATA/Clippster/**"
+        },
+        {
+          "path": "$HOME/Library/Application Support/Clippster/**"
+        },
+        {
+          "path": "$HOME/.local/share/clippster/**"
+        },
+        {
           "path": "$HOME/**"
         },
         {
@@ -94,6 +103,135 @@
         },
         {
           "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "$LOCALDATA/Clippster/**"
+        },
+        {
+          "path": "$HOME/Library/Application Support/Clippster/**"
+        },
+        {
+          "path": "$HOME/.local/share/clippster/**"
+        },
+        {
+          "path": "$DOCUMENT/**"
+        },
+        {
+          "path": "$DESKTOP/**"
+        },
+        {
+          "path": "$DOWNLOAD/**"
+        },
+        {
+          "path": "$PICTURE/**"
+        },
+        {
+          "path": "$HOME/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-exists",
+      "allow": [
+        {
+          "path": "$TEMP/**"
+        },
+        {
+          "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "$LOCALDATA/Clippster/**"
+        },
+        {
+          "path": "$HOME/Library/Application Support/Clippster/**"
+        },
+        {
+          "path": "$HOME/.local/share/clippster/**"
+        },
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "$DOCUMENT/**"
+        },
+        {
+          "path": "$DESKTOP/**"
+        },
+        {
+          "path": "$DOWNLOAD/**"
+        },
+        {
+          "path": "$PICTURE/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-mkdir",
+      "allow": [
+        {
+          "path": "$TEMP/**"
+        },
+        {
+          "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "$LOCALDATA/Clippster/**"
+        },
+        {
+          "path": "$HOME/Library/Application Support/Clippster/**"
+        },
+        {
+          "path": "$HOME/.local/share/clippster/**"
+        },
+        {
+          "path": "$DOCUMENT/**"
+        },
+        {
+          "path": "$DESKTOP/**"
+        },
+        {
+          "path": "$DOWNLOAD/**"
+        },
+        {
+          "path": "$PICTURE/**"
+        },
+        {
+          "path": "$HOME/**"
+        }
+      ]
+    },
+    {
+      "identifier": "fs:allow-copy-file",
+      "allow": [
+        {
+          "path": "$TEMP/**"
+        },
+        {
+          "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "$LOCALDATA/Clippster/**"
+        },
+        {
+          "path": "$HOME/Library/Application Support/Clippster/**"
+        },
+        {
+          "path": "$HOME/.local/share/clippster/**"
+        },
+        {
+          "path": "$HOME/**"
+        },
+        {
+          "path": "$DOCUMENT/**"
+        },
+        {
+          "path": "$DESKTOP/**"
+        },
+        {
+          "path": "$DOWNLOAD/**"
+        },
+        {
+          "path": "$PICTURE/**"
         }
       ]
     },
@@ -102,6 +240,15 @@
       "allow": [
         {
           "path": "$APPLOCALDATA/**"
+        },
+        {
+          "path": "$LOCALDATA/Clippster/**"
+        },
+        {
+          "path": "$HOME/Library/Application Support/Clippster/**"
+        },
+        {
+          "path": "$HOME/.local/share/clippster/**"
         }
       ]
     }
