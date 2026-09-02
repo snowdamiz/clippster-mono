@@ -6,10 +6,10 @@
 app = 'clippster-landing'
 primary_region = 'iad'
 
+# Build context, dockerfile, and ignorefile are set on the flyctl CLI so the
+# monorepo root is the context while Dockerfile stays under landing/.
+# See: fly deploy . --config landing/fly.toml --dockerfile landing/Dockerfile
 [build]
-  # Context is the monorepo root so packages/app-tour is included
-  dockerfile = "landing/Dockerfile"
-  ignorefile = "landing/.dockerignore"
 
 [http_service]
   internal_port = 8080
