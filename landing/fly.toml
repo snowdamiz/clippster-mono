@@ -7,6 +7,9 @@ app = 'clippster-landing'
 primary_region = 'iad'
 
 [build]
+  # Context is the monorepo root so packages/app-tour is included
+  dockerfile = "landing/Dockerfile"
+  ignorefile = "landing/.dockerignore"
 
 [http_service]
   internal_port = 8080

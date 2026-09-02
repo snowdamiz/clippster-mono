@@ -11,7 +11,9 @@ const TARGETS = {
     appName: 'clippster-server'
   },
   landing: {
-    cwd: 'landing',
+    // Monorepo root so packages/app-tour is in the Docker build context
+    cwd: '.',
+    config: 'landing/fly.toml',
     tokenKey: 'FLY_LANDING_TOKEN',
     label: 'landing page',
     appName: 'clippster-landing'
@@ -51,7 +53,7 @@ function parseEnvFile(fileContent) {
   return values;
 }
 
-function runDeploy({ cwd, tokenKey, label, appName }) {
+function runDeploy({ cwd, tokenKey, label, appName, config }) {
   if (!fs.existsSync(ENV_FILE)) {
     console.error(`Error: ${ENV_FILE} not found`);
     process.exit(1);
@@ -68,7 +70,12 @@ function runDeploy({ cwd, tokenKey, label, appName }) {
   const targetCwd = path.join(REPO_ROOT, cwd);
   console.log(`Deploying ${label} to fly.io (${appName})...`);
 
-  const child = spawn('flyctl', ['deploy', '--remote-only'], {
+  const args = ['deploy', '--remote-only'];
+  if (config) {
+    args.push('--config', config);
+  }
+
+  const child = spawn('flyctl', args, {
     cwd: targetCwd,
     env: {
       ...process.env,
