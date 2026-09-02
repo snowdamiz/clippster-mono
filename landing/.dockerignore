@@ -1,9 +1,21 @@
-node_modules
-dist
+# Used with monorepo-root build context (see fly.toml [build])
+**/node_modules
+**/dist
 .git
+**/.git
 .gitignore
-*.md
+**/*.md
 .env*
+**/.env*
 .vscode
 .idea
+**/.vscode
+**/.idea
 
+# Exclude other apps from the landing image context
+client
+server
+scripts
+.github
+.claude
+docs
