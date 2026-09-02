@@ -113,7 +113,7 @@ async function uploadImages() {
 	try {
 		const { open } = await import("@tauri-apps/plugin-dialog");
 		const { copyFile, mkdir, exists, stat } = await import("@tauri-apps/plugin-fs");
-		const { appDataDir } = await import("@tauri-apps/api/path");
+		const { invoke } = await import("@tauri-apps/api/core");
 		const { createImageAsset } = await import("@/services/database/image-assets");
 
 		const selected = await open({
@@ -123,7 +123,7 @@ async function uploadImages() {
 		if (!selected) return;
 
 		const paths = Array.isArray(selected) ? selected : [selected];
-		const appData = await appDataDir();
+		const appData = await invoke<string>("get_app_data_dir");
 		const destDir = `${appData}/image-library`;
 		if (!(await exists(destDir))) {
 			await mkdir(destDir, { recursive: true });

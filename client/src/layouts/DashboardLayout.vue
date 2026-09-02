@@ -30,7 +30,6 @@
       @take="acceptWelcome"
       @skip="skipWelcome"
     />
-    <AppTourOverlay />
   </div>
 </template>
 
@@ -41,7 +40,6 @@
   import AuthModal from '@/components/AuthModal.vue';
   import GlobalAudioPlayer from '@/components/GlobalAudioPlayer.vue';
   import AppTourWelcomeDialog from '@/components/tour/AppTourWelcomeDialog.vue';
-  import AppTourOverlay from '@/components/tour/AppTourOverlay.vue';
   import { useAuthStore } from '@/stores/auth';
   import { useUserPreferencesStore } from '@/stores/userPreferences';
   import { subscriptionStillCoversAccess } from '@/composables/useSubscription';

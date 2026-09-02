@@ -1380,8 +1380,8 @@ export class RendererManager {
 							});
 							overlays.push({
 								image_path: pattern,
-								start_time: line.startTime,
-								end_time: line.endTime,
+								start_time: captionEl.startTime,
+								end_time: captionEl.startTime + captionEl.duration,
 								animation_in: serializeAnimation(captionEl.animationIn),
 								animation_out: serializeAnimation(captionEl.animationOut),
 								animation_loop: serializeAnimation(captionEl.animationLoop),
@@ -1407,8 +1407,8 @@ export class RendererManager {
 
 							overlays.push({
 								image_path: imagePath,
-								start_time: line.startTime,
-								end_time: line.endTime,
+								start_time: captionEl.startTime,
+								end_time: captionEl.startTime + captionEl.duration,
 								animation_in: serializeAnimation(captionEl.animationIn),
 								animation_out: serializeAnimation(captionEl.animationOut),
 								animation_loop: serializeAnimation(captionEl.animationLoop),

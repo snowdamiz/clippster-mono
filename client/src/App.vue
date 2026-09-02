@@ -15,6 +15,7 @@
   import OrganizationInviteDialog from '@/components/OrganizationInviteDialog.vue';
   import FloatingChat from '@/components/chat/FloatingChat.vue';
   import AudioPlayer from '@/components/AudioPlayer.vue';
+  import AppTourOverlay from '@/components/tour/AppTourOverlay.vue';
   import { useAnnouncements } from '@/composables/useAnnouncements';
   import { listMyInvitations, acceptInvitationById, declineInvitation, type OrganizationInvitation } from '@/services/organizationsApi';
   import {
@@ -672,6 +673,9 @@
 
       <!-- Global Audio Player -->
       <AudioPlayer />
+
+      <!-- App tour (global: editors use noLayout routes outside DashboardLayout) -->
+      <AppTourOverlay />
 
       <!-- Global Livestream Watch Dialog (persists across navigation for PIP mode) -->
       <LivestreamWatchDialog

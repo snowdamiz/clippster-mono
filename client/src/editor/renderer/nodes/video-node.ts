@@ -1,6 +1,6 @@
 import type { CanvasRenderer } from "../canvas-renderer";
 import { BaseNode } from "./base-node";
-import { videoCache, type StablePreviewFrame } from "../../video-cache/service";
+import { videoCache, type StablePreviewFrame, frameCoversPreviewTime, canUseNearestForwardFrame } from "../../video-cache/service";
 import type { Transform, FlipState, ColorAdjustments, CropRect, ColorCurves, ColorWheels, BlendMode, MaskShape, MediaFitMode } from "../../types/timeline";
 import type { VideoEffect } from "../../types/effects";
 import type { ElementKeyframes } from "../../types/keyframes";
@@ -14,6 +14,7 @@ import { computeAnimationTransforms, applyAnimationToContext } from "../effects/
 import { hasMasks, setupMaskClip } from "./mask-compositor";
 import { drawCanvas169SourceFraming } from "../canvas-169-framing-draw";
 import { getElementSourceOutPoint } from "../../lib/timeline/trim-source-utils";
+import { getExportBoundarySlackSec } from "../../lib/export-boundary";
 
 const VIDEO_EPSILON = 1 / 1000;
 /**
@@ -42,6 +43,39 @@ export function canReuseLastDecodedFrame({
 		2 * frameSec,
 	);
 	return requestedTime <= frameTimestamp + hold;
+}
+
+function frameIsUsableForExport({
+	frame,
+	videoTime,
+	fps,
+	clipElapsed,
+}: {
+	frame: { timestamp: number; duration: number };
+	videoTime: number;
+	fps: number;
+	clipElapsed: number;
+}): boolean {
+	if (
+		frameCoversPreviewTime({
+			frameTimestamp: frame.timestamp,
+			frameDuration: frame.duration,
+			time: videoTime,
+			fps,
+		})
+	) {
+		return true;
+	}
+	// At a cold clip start, only accept a frame up to one display step ahead —
+	// never paint a far keyframe that reads as a black flash over a still image.
+	if (clipElapsed <= 2 / Math.max(1, fps)) {
+		return canUseNearestForwardFrame({
+			frameTimestamp: frame.timestamp,
+			targetTime: videoTime,
+			maxHoldSec: 1 / Math.max(1, fps),
+		});
+	}
+	return false;
 }
 
 export interface VideoNodeParams {
@@ -107,11 +141,25 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		};
 	}
 
-	private isInRange(time: number) {
+	private isInRange(time: number, renderer?: CanvasRenderer) {
 		const elapsed = time - this.params.timeOffset;
+		const exportSlack = renderer
+			? getExportBoundarySlackSec(renderer.fps, renderer.framePolicy)
+			: 0;
 		return (
-			elapsed >= -(this.transitionExtension.before + VIDEO_EPSILON) &&
-			elapsed < this.params.duration + this.transitionExtension.after
+			elapsed >= -(this.transitionExtension.before + VIDEO_EPSILON + exportSlack) &&
+			elapsed < this.params.duration + this.transitionExtension.after + exportSlack
+		);
+	}
+
+	/** Export-only: hold the last decoded frame through the cut instead of clearing. */
+	private isInExportTailHold(time: number, renderer: CanvasRenderer) {
+		if (renderer.framePolicy !== "exact-export" || !this.lastGoodFrame) return false;
+		const elapsed = time - this.params.timeOffset;
+		const slack = getExportBoundarySlackSec(renderer.fps, renderer.framePolicy);
+		return (
+			elapsed >= this.params.duration &&
+			elapsed < this.params.duration + slack + this.transitionExtension.after
 		);
 	}
 
@@ -213,10 +261,10 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 		const sinkKey = this.getDecodeKey();
 		const targets: number[] = [];
 
-		if (this.isInRange(time)) {
+		if (this.isInRange(time, renderer)) {
 			targets.push(this.getSourceTime(time));
 			const next = time + 1 / fps;
-			if (this.isInRange(next)) targets.push(this.getSourceTime(next));
+			if (this.isInRange(next, renderer)) targets.push(this.getSourceTime(next));
 		} else if (
 			this.params.prewarmBeforeStart &&
 			time < this.params.timeOffset &&
@@ -271,11 +319,10 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 				}
 				return;
 			}
-			// While paused/scrubbing, fully prepare the stable cache so pressing
-			// play at a cut does not start cold.
-			void this.prepareRealtimeEntry({ renderer, time });
+			await this.prepareRealtimeEntry({ renderer, time });
+			return;
 		}
-		if (!this.isInRange(time)) return;
+		if (!this.isInRange(time, renderer)) return;
 
 		const videoTime = this.getSourceTime(time);
 		if (isRealtime) {
@@ -300,7 +347,26 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 	}
 
 	async prewarm({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
-		if (!this.isInRange(time)) return;
+		if (renderer.framePolicy === "exact-export") {
+			const fps = Math.max(1, renderer.fps);
+			const sampleTimes = [
+				this.params.timeOffset,
+				this.params.timeOffset + 1 / fps,
+			];
+			for (const sampleTime of sampleTimes) {
+				await this.prepareRealtimeEntry({ renderer, time: sampleTime });
+				if (!this.isInRange(sampleTime, renderer)) continue;
+				const videoTime = this.getSourceTime(sampleTime);
+				await videoCache.getFrameAtReliableForExport({
+					sinkKey: this.getDecodeKey(),
+					file: this.params.file,
+					time: videoTime,
+					fps,
+				});
+			}
+			return;
+		}
+		if (!this.isInRange(time, renderer)) return;
 		if (renderer.framePolicy !== "realtime") {
 			await this.prefetch({ renderer, time });
 			return;
@@ -316,25 +382,35 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 	async render({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
 		await super.render({ renderer, time });
 
-		if (!this.isInRange(time)) {
+		if (!this.isInRange(time, renderer)) {
 			return;
 		}
 
+		const exportTailHold = this.isInExportTailHold(time, renderer);
 		const videoTime = this.getSourceTime(time);
 		const prefetched =
+			!exportTailHold &&
 			this.prefetchedFrameTime !== null &&
 			Math.abs(this.prefetchedFrameTime - videoTime) < 0.05
 				? this.prefetchedFrame
 				: null;
 		this.prefetchedFrame = null;
 		this.prefetchedFrameTime = null;
-		let frame: RenderableVideoFrame | null =
-			prefetched ??
-			(await videoCache.getFrameAt({
-				sinkKey: this.getDecodeKey(),
-				file: this.params.file,
-				time: videoTime,
-			}));
+		let frame: RenderableVideoFrame | null = exportTailHold
+			? this.lastGoodFrame
+			: prefetched ??
+				(renderer.framePolicy === "exact-export"
+					? await videoCache.getFrameAtReliableForExport({
+							sinkKey: this.getDecodeKey(),
+							file: this.params.file,
+							time: videoTime,
+							fps: renderer.fps,
+						})
+					: await videoCache.getFrameAt({
+							sinkKey: this.getDecodeKey(),
+							file: this.params.file,
+							time: videoTime,
+						}));
 		if (
 			!frame &&
 			this.lastGoodFrame &&
@@ -351,6 +427,23 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			// Preview keeps the tight reuse window so lag still looks like lag.
 			frame = this.lastGoodFrame;
 		}
+
+		const clipElapsed = time - this.params.timeOffset;
+		if (
+			frame &&
+			renderer.framePolicy === "exact-export" &&
+			!frameIsUsableForExport({
+				frame,
+				videoTime,
+				fps: renderer.fps,
+				clipElapsed,
+			})
+		) {
+			// Skip misaligned pre-keyframe samples — e.g. image→video where a black
+			// seek result would flash over the still image the preview keeps showing.
+			frame = null;
+		}
+
 		if (frame) {
 			this.lastGoodFrame = frame;
 		}
@@ -553,6 +646,8 @@ export class VideoNode extends BaseNode<VideoNodeParams> {
 			if (this.params.colorWheels) {
 				applyColorWheels(renderer.context, backingSize.width, backingSize.height, this.params.colorWheels, { processingSize });
 			}
+
+			renderer.markVisualDrawn();
 		}
 	}
 

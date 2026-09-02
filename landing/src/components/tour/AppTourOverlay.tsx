@@ -1,12 +1,12 @@
-import { useEffect, useLayoutEffect, useState, useRef, useMemo, type CSSProperties } from 'react'
+import { useEffect, useLayoutEffect, useState, useRef, type CSSProperties } from 'react'
 import { createPortal } from 'react-dom'
 import {
-  buildHandDrawnArrowPath,
-  getArrowStyle,
-  resolveStepArrowStyleIndex,
-  arrowStartFromTooltip,
-  arrowEndAtHotspot,
+  computeTooltipLayout,
+  scrollTourTargetIntoView,
+  TOOLTIP_WIDTH,
+  TOOLTIP_HEIGHT,
   type TourStep,
+  type TooltipLayout,
 } from '@clippster/app-tour'
 import { useAppTour } from '@/hooks/useAppTour'
 import './AppTourOverlay.css'
@@ -15,7 +15,7 @@ export function AppTourOverlay() {
   const { isTourActive, currentStep, progress, nextStep, skipTour } = useAppTour()
   const tooltipRef = useRef<HTMLDivElement | null>(null)
   const [spotlightRect, setSpotlightRect] = useState<DOMRect | null>(null)
-  const [tooltipPos, setTooltipPos] = useState<{ top: number; left: number } | null>(null)
+  const [tooltipLayout, setTooltipLayout] = useState<TooltipLayout | null>(null)
   /** Step shown in the tooltip — only advances after highlight is ready */
   const [presentedStep, setPresentedStep] = useState<TourStep | null>(null)
   const [isLayoutPending, setIsLayoutPending] = useState(false)
@@ -23,7 +23,7 @@ export function AppTourOverlay() {
   const measure = () => {
     if (!isTourActive || !currentStep) {
       setSpotlightRect(null)
-      setTooltipPos(null)
+      setTooltipLayout(null)
       setPresentedStep(null)
       setIsLayoutPending(false)
       return
@@ -32,7 +32,7 @@ export function AppTourOverlay() {
     // Drop previous highlight immediately so we never show new copy on the old tab
     setIsLayoutPending(true)
     setSpotlightRect(null)
-    setTooltipPos(null)
+    setTooltipLayout(null)
 
     if (!currentStep.target) {
       setPresentedStep(currentStep)
@@ -47,30 +47,17 @@ export function AppTourOverlay() {
       return
     }
 
-    el.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+    scrollTourTargetIntoView(el)
     const rect = el.getBoundingClientRect()
     setSpotlightRect(rect)
 
-    const placement = currentStep.placement || 'right'
-    const tipW = 320
-    const tipH = 180
-    const styleIndex = resolveStepArrowStyleIndex(currentStep, progress.current - 1)
-    const style = getArrowStyle(styleIndex)
-    let top = rect.top + style.tooltipNudgeY
-    let left = rect.right + style.tooltipGapX
-    if (placement === 'left') {
-      left = rect.left - tipW - style.tooltipGapX
-      top = rect.top + style.tooltipNudgeY
-    } else if (placement === 'bottom') {
-      top = rect.bottom + 72
-      left = rect.left + Math.max(0, (rect.width - tipW) / 2)
-    } else if (placement === 'top') {
-      top = rect.top - tipH - 72
-      left = rect.left + Math.max(0, (rect.width - tipW) / 2)
-    }
-    left = Math.max(12, Math.min(left, window.innerWidth - tipW - 12))
-    top = Math.max(40, Math.min(top, window.innerHeight - tipH - 12))
-    setTooltipPos({ top, left })
+    const layout = computeTooltipLayout(
+      { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      currentStep.placement || 'right',
+      TOOLTIP_WIDTH,
+      TOOLTIP_HEIGHT
+    )
+    setTooltipLayout(layout)
     setPresentedStep(currentStep)
     setIsLayoutPending(false)
   }
@@ -104,31 +91,6 @@ export function AppTourOverlay() {
     }
   }, [isTourActive, nextStep, skipTour, currentStep?.id, isLayoutPending])
 
-  const arrowPath = useMemo(() => {
-    if (!spotlightRect || !tooltipPos || !presentedStep?.target) return null
-    const styleIndex = resolveStepArrowStyleIndex(presentedStep, progress.current - 1)
-    const style = getArrowStyle(styleIndex)
-    const tip = tooltipRef.current?.getBoundingClientRect()
-    const tipBox = tip
-      ? { left: tip.left, top: tip.top, width: tip.width, height: tip.height }
-      : { left: tooltipPos.left, top: tooltipPos.top, width: 320, height: 180 }
-    const el = document.querySelector(
-      `[data-tour-id="${presentedStep.target}"]`
-    ) as HTMLElement | null
-    const live = el?.getBoundingClientRect()
-    const hot = live
-      ? { left: live.left, top: live.top, width: live.width, height: live.height }
-      : {
-          left: spotlightRect.left,
-          top: spotlightRect.top,
-          width: spotlightRect.width,
-          height: spotlightRect.height,
-        }
-    const from = arrowStartFromTooltip(tipBox, style.origin)
-    const to = arrowEndAtHotspot(hot, style.targetAnchor)
-    return buildHandDrawnArrowPath(from, to, presentedStep.id, styleIndex)
-  }, [spotlightRect, tooltipPos, presentedStep, progress.current])
-
   if (!isTourActive || !presentedStep) return null
 
   const pad = 8
@@ -143,42 +105,31 @@ export function AppTourOverlay() {
 
   const tooltipStyle: CSSProperties = !presentedStep.target
     ? { top: '50%', left: '50%', transform: 'translate(-50%, -50%)' }
-    : tooltipPos
-      ? { top: tooltipPos.top, left: tooltipPos.left }
+    : tooltipLayout
+      ? { top: tooltipLayout.top, left: tooltipLayout.left }
       : { visibility: 'hidden' }
+
+  const caretStyle: CSSProperties | undefined = tooltipLayout
+    ? tooltipLayout.placement === 'left' || tooltipLayout.placement === 'right'
+      ? { top: tooltipLayout.caretOffset }
+      : { left: tooltipLayout.caretOffset }
+    : undefined
 
   return createPortal(
     <div className="app-tour">
       <div className="app-tour__backdrop" />
       {spotlightStyle && <div className="app-tour__spotlight" style={spotlightStyle} />}
-      {arrowPath && (
-        <svg className="app-tour__arrow" width="100%" height="100%">
-          <path
-            d={arrowPath.path}
-            fill="none"
-            stroke="#06b6d4"
-            strokeWidth="2.75"
-            strokeLinecap="round"
-            className="app-tour__arrow-stroke"
-          />
-          <path
-            d={arrowPath.arrowHead}
-            fill="#06b6d4"
-            stroke="#06b6d4"
-            strokeWidth="1"
-            strokeLinejoin="round"
-            className="app-tour__arrow-head"
-          />
-        </svg>
-      )}
       <div
         ref={tooltipRef}
-        className={`app-tour__tooltip${!presentedStep.target ? ' app-tour__tooltip--centered' : ''}${isLayoutPending ? ' app-tour__tooltip--pending' : ''}`}
+        className={`app-tour__tooltip${!presentedStep.target ? ' app-tour__tooltip--centered' : ''}${isLayoutPending ? ' app-tour__tooltip--pending' : ''}${tooltipLayout ? ` app-tour__tooltip--${tooltipLayout.placement}` : ''}`}
         style={tooltipStyle}
         role="dialog"
         aria-label={presentedStep.title}
         aria-busy={isLayoutPending}
       >
+        {presentedStep.target && tooltipLayout && (
+          <span className="app-tour__caret" style={caretStyle} aria-hidden="true" />
+        )}
         <div className="app-tour__tooltip-accent" />
         <h3 className="app-tour__tooltip-title">{presentedStep.title}</h3>
         <p className="app-tour__tooltip-body">{presentedStep.body}</p>

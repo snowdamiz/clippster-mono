@@ -303,4 +303,26 @@ describe("bounded preview frames", () => {
 		expect(internals.sinks.has("sink-0")).toBe(false);
 		expect(dispose).toHaveBeenCalledOnce();
 	});
+
+	it("does not evict sinks while an export session is active", () => {
+		const cache = new VideoCache();
+		const dispose = vi.fn();
+		const internals = cache as unknown as {
+			sinks: Map<string, unknown>;
+			touchSink(sinkKey: string): void;
+		};
+		cache.beginExportSession();
+		for (let i = 0; i < 7; i++) {
+			internals.sinks.set(`export-sink-${i}`, {
+				input: { dispose },
+				iterator: null,
+				currentFrame: null,
+			});
+			internals.touchSink(`export-sink-${i}`);
+		}
+
+		expect(cache.getStats().totalSinks).toBe(7);
+		expect(dispose).not.toHaveBeenCalled();
+		cache.endExportSession();
+	});
 });

@@ -25,6 +25,10 @@ const forceSidebarExpanded = ref(false);
 /** Ephemeral editor project IDs created for tours */
 const tourVideoEditorProjectId = ref<string | null>(null);
 const tourImageEditorProjectId = ref<string | null>(null);
+/** Set while navigating to an editor; started once the editor UI is mounted */
+const pendingEditorTour = ref<TourId | null>(null);
+/** Skip cloud autosave when the tour exits the editor (demo project is ephemeral). */
+const skipEditorPersistOnExit = ref(false);
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -89,12 +93,28 @@ export function useAppTour() {
   async function markTourComplete(tourId: TourId): Promise<void> {
     const userId = authStore.user?.id;
     const token = getAuthToken();
-    if (!userId || !token) return;
     const next = {
       ...completedTours.value,
       [tourId]: todayIso(),
     };
-    await preferencesStore.updatePreferences(
+
+    if (userId) {
+      const { saveLocalPreferences } = await import('@/services/database/user-preferences');
+      try {
+        await saveLocalPreferences(String(userId), {
+          completed_tours: next,
+          tour_version_seen: TOUR_VERSION,
+        });
+        preferencesStore.preferences.completed_tours = next;
+        preferencesStore.preferences.tour_version_seen = TOUR_VERSION;
+      } catch (e) {
+        console.warn('[AppTour] Failed to persist tour completion locally', e);
+      }
+    }
+
+    if (!userId || !token) return;
+
+    const ok = await preferencesStore.updatePreferences(
       {
         completed_tours: next,
         tour_version_seen: TOUR_VERSION,
@@ -102,6 +122,11 @@ export function useAppTour() {
       String(userId),
       token
     );
+    if (!ok) {
+      // Keep local completion so editor nav isn't re-intercepted after a failed sync
+      preferencesStore.preferences.completed_tours = next;
+      preferencesStore.preferences.tour_version_seen = TOUR_VERSION;
+    }
   }
 
   async function restartTour(tourId: TourId): Promise<void> {
@@ -119,7 +144,18 @@ export function useAppTour() {
     if (tourId === 'page_video_editor' || tourId === 'page_image_editor') {
       const routerMod = await import('@/router');
       const router = routerMod.default;
-      await handleEditorNavClick(tourId === 'page_video_editor' ? 'video' : 'image', router);
+      const kind = tourId === 'page_video_editor' ? 'video' : 'image';
+      // Completion key already cleared above — force the editor tour path
+      if (kind === 'video') {
+        const { createVideoEditorProject } = await import('@/services/database/video-editor-projects');
+        const projectId = await createVideoEditorProject('Tour Demo');
+        tourVideoEditorProjectId.value = projectId;
+        pendingEditorTour.value = 'page_video_editor';
+        await router.push({ path: '/editor', query: { projectId, tour: '1' } });
+      } else {
+        pendingEditorTour.value = 'page_image_editor';
+        await router.push({ path: '/design-studio/edit', query: { tour: '1' } });
+      }
       return;
     }
 
@@ -201,9 +237,12 @@ export function useAppTour() {
     syncMockFlags();
   }
 
-  async function cleanupEphemeralProjects(): Promise<void> {
-    const videoId = tourVideoEditorProjectId.value;
-    const imageId = tourImageEditorProjectId.value;
+  async function cleanupEphemeralProjects(
+    videoIdOverride?: string | null,
+    imageIdOverride?: string | null
+  ): Promise<void> {
+    const videoId = videoIdOverride ?? tourVideoEditorProjectId.value;
+    const imageId = imageIdOverride ?? tourImageEditorProjectId.value;
     tourVideoEditorProjectId.value = null;
     tourImageEditorProjectId.value = null;
 
@@ -225,20 +264,47 @@ export function useAppTour() {
     }
   }
 
+  async function exitEditorAfterTour(tourId: 'page_video_editor' | 'page_image_editor'): Promise<void> {
+    skipEditorPersistOnExit.value = true;
+
+    const videoId = tourVideoEditorProjectId.value;
+    let imageId = tourImageEditorProjectId.value;
+    if (!imageId && tourId === 'page_image_editor') {
+      try {
+        const { default: router } = await import('@/router');
+        const projectId = router.currentRoute.value.query.projectId;
+        if (projectId) imageId = String(projectId);
+      } catch {
+        /* ignore */
+      }
+    }
+
+    try {
+      const { EditorCore } = await import('@/editor/core');
+      EditorCore.reset();
+    } catch (e) {
+      console.warn('[AppTour] Failed to reset editor after tour', e);
+    }
+
+    try {
+      const { default: router } = await import('@/router');
+      const dest = tourId === 'page_video_editor' ? '/video-editor' : '/design-studio';
+      await router.replace(dest);
+    } catch (e) {
+      console.warn('[AppTour] Failed to navigate after editor tour', e);
+    }
+
+    // Delete the demo project in the background — never block exit on API latency
+    void cleanupEphemeralProjects(videoId, imageId);
+  }
+
   async function finishTour(): Promise<void> {
     const id = activeTourId.value;
     const wasEditorTour = id === 'page_video_editor' || id === 'page_image_editor';
     clearTourState();
     if (id) await markTourComplete(id);
-    if (wasEditorTour) {
-      await cleanupEphemeralProjects();
-      try {
-        const { default: router } = await import('@/router');
-        if (id === 'page_video_editor') await router.push('/video-editor');
-        else await router.push('/design-studio');
-      } catch {
-        /* ignore */
-      }
+    if (wasEditorTour && id) {
+      await exitEditorAfterTour(id);
     }
   }
 
@@ -252,6 +318,7 @@ export function useAppTour() {
     forceSidebarExpanded.value = false;
     mockStreamerActive.value = false;
     mockProjectActive.value = false;
+    pendingEditorTour.value = null;
     setGateSuppress(false);
   }
 
@@ -278,33 +345,53 @@ export function useAppTour() {
     startTour(tourId);
   }
 
+  /** Sync gate — callers must preventDefault before awaiting the async handler. */
+  function shouldInterceptEditorNav(kind: 'video' | 'image'): boolean {
+    if (!hasCompleted('desktop_sidebar')) return false;
+    const tourId: TourId = kind === 'video' ? 'page_video_editor' : 'page_image_editor';
+    if (hasCompleted(tourId)) return false;
+    if (isTourActive.value) return false;
+    return true;
+  }
+
   /**
    * First-click interceptor for Video Editor / Image Editor tabs.
-   * Returns true if navigation was handled (caller should prevent default).
+   * Caller must call shouldInterceptEditorNav + preventDefault synchronously first.
    */
   async function handleEditorNavClick(
     kind: 'video' | 'image',
     router: { push: (loc: any) => Promise<any> | any }
   ): Promise<boolean> {
-    if (!hasCompleted('desktop_sidebar')) return false;
-    const tourId: TourId = kind === 'video' ? 'page_video_editor' : 'page_image_editor';
-    if (hasCompleted(tourId)) return false;
-    if (isTourActive.value) return false;
+    if (!shouldInterceptEditorNav(kind)) return false;
 
     if (kind === 'video') {
       const { createVideoEditorProject } = await import('@/services/database/video-editor-projects');
       const projectId = await createVideoEditorProject('Tour Demo');
       tourVideoEditorProjectId.value = projectId;
-      await router.push({ path: '/editor', query: { projectId } });
-      // Delay slightly for editor mount
-      setTimeout(() => startTour('page_video_editor'), 400);
+      pendingEditorTour.value = 'page_video_editor';
+      // tour=1 survives remounts / races so OpenCutEditor can start the walkthrough
+      await router.push({ path: '/editor', query: { projectId, tour: '1' } });
     } else {
-      // Image editor: create via ImageEditor patterns — navigate with a tour flag;
-      // ImageEditor page will bootstrap the project when ?tour=1
+      pendingEditorTour.value = 'page_image_editor';
       await router.push({ path: '/design-studio/edit', query: { tour: '1' } });
-      setTimeout(() => startTour('page_image_editor'), 600);
     }
     return true;
+  }
+
+  /**
+   * Call from OpenCutEditor / ImageEditor after the editor chrome is on screen.
+   * Pass tourId when the route has ?tour=1 so we don't rely only on in-memory pending.
+   */
+  function notifyEditorReadyForTour(tourId?: TourId): void {
+    const id = tourId ?? pendingEditorTour.value;
+    if (!id) return;
+    if (id !== 'page_video_editor' && id !== 'page_image_editor') return;
+    if (hasCompleted(id) || isTourActive.value) {
+      pendingEditorTour.value = null;
+      return;
+    }
+    pendingEditorTour.value = null;
+    startTour(id);
   }
 
   function setTourImageProjectId(id: string | number): void {
@@ -341,7 +428,9 @@ export function useAppTour() {
     consumePendingSidebarTour,
     maybeStartPageTour,
     markTourComplete,
+    shouldInterceptEditorNav,
     handleEditorNavClick,
+    notifyEditorReadyForTour,
     setTourImageProjectId,
   };
 }
@@ -354,5 +443,6 @@ export function useTourFlags() {
     mockProjectActive,
     forceSidebarExpanded,
     activeTourId,
+    skipEditorPersistOnExit,
   };
 }

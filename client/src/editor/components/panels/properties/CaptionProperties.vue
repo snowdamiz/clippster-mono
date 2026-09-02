@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, watchEffect, computed } from "vue";
+import { ref, watchEffect, computed, nextTick } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useFontManager } from "../../../composables/useFontManager";
 import type {
@@ -7,7 +7,10 @@ import type {
 	CaptionPresetId,
 	CaptionLine,
 	CaptionTrack,
+	Transform,
 } from "../../../types/timeline";
+import { cloneTransform } from "../../../lib/timeline/element-utils";
+import type { CaptionElementUpdatable } from "../../../lib/commands/timeline/element/update-caption-element";
 import { CAPTION_PRESETS, getPresetById } from "../../../constants/caption-constants";
 import type { CaptionPresetCategory } from "../../../constants/caption-constants";
 import { ANIMATION_PRESETS, getExportableAnimationPresetsForDirection } from "../../../constants/animation-constants";
@@ -38,8 +41,8 @@ const props = defineProps<{
 const { editor, version } = useEditor({
 	subscribe: {
 		timeline: true,
+		scenes: true,
 		playback: false,
-		scenes: false,
 		project: false,
 		media: false,
 		selection: false,
@@ -132,14 +135,61 @@ const allCaptionLines = computed(() => {
 const paragraphCount = computed(() => allCaptionLines.value.length);
 
 function update(updates: Record<string, unknown>) {
+	if (applyToAll.value && updates.transform) {
+		const nextTransform = cloneTransform(updates.transform as Transform);
+		const targets = allCaptionElements.value;
+		if (targets.length === 0) return;
+
+		const byTrack = new Map<string, string[]>();
+		for (const { trackId, element } of targets) {
+			const ids = byTrack.get(trackId) ?? [];
+			ids.push(element.id);
+			byTrack.set(trackId, ids);
+		}
+
+		for (const [trackId, elementIds] of byTrack) {
+			const track = editor.timeline.getTrackById({ trackId });
+			if (!track) continue;
+			const idSet = new Set(elementIds);
+			const batchUpdates: { elementId: string; transform: Transform }[] = [];
+			const previousTransforms: { elementId: string; transform: Transform }[] = [];
+
+			for (const el of track.elements) {
+				if (!idSet.has(el.id) || el.type !== "caption") continue;
+				batchUpdates.push({ elementId: el.id, transform: cloneTransform(nextTransform) });
+				previousTransforms.push({ elementId: el.id, transform: cloneTransform(el.transform) });
+			}
+
+			if (batchUpdates.length > 0) {
+				editor.timeline.updateElementsTransformsBatch({
+					trackId,
+					updates: batchUpdates,
+					previousTransforms,
+				});
+			}
+		}
+		return;
+	}
+
 	if (applyToAll.value) {
-		for (const { trackId, element } of allCaptionElements.value) {
-			editor.timeline.updateCaptionElement({
+		const targets = allCaptionElements.value;
+		if (targets.length === 0) return;
+
+		const byTrack = new Map<string, string[]>();
+		for (const { trackId, element } of targets) {
+			const ids = byTrack.get(trackId) ?? [];
+			ids.push(element.id);
+			byTrack.set(trackId, ids);
+		}
+
+		for (const [trackId, elementIds] of byTrack) {
+			editor.timeline.updateCaptionsBatch({
 				trackId,
-				elementId: element.id,
-				updates: updates as any,
+				elementIds,
+				updates: updates as CaptionElementUpdatable,
 			});
 		}
+		return;
 	} else {
 		editor.timeline.updateCaptionElement({
 			trackId: props.trackId,
@@ -345,6 +395,23 @@ const highlightStyles: { value: CaptionElement["highlightStyle"]; label: string 
 ];
 
 // ── Caption line editing ──
+const pendingCaptionLineFocus = ref<string | null>(null);
+
+function captionLineInputKey(item: { elementId: string; elementLocalIndex: number }) {
+	return `${item.elementId}-${item.elementLocalIndex}`;
+}
+
+async function focusPendingCaptionLineInput() {
+	const key = pendingCaptionLineFocus.value;
+	if (!key) return;
+	pendingCaptionLineFocus.value = null;
+	await nextTick();
+	const input = document.querySelector<HTMLInputElement>(`[data-caption-line-key="${key}"]`);
+	input?.focus();
+	const len = input?.value.length ?? 0;
+	input?.setSelectionRange(len, len);
+}
+
 function seekToLine(line: CaptionLine) {
 	editor.playback.seek({ time: line.startTime });
 }
@@ -383,6 +450,42 @@ function updateCaptionLineText(trackId: string, elementId: string, lineIndex: nu
 		elementId,
 		updates: { lines: newLines } as any,
 	});
+}
+
+function splitCaptionLineAtCursor(
+	trackId: string,
+	elementId: string,
+	lineIndex: number,
+	cursor: number,
+	lineText?: string,
+) {
+	const insertedElementId = editor.timeline.splitCaptionLine({
+		trackId,
+		elementId,
+		lineIndex,
+		cursor,
+		lineText,
+	});
+	if (insertedElementId) {
+		pendingCaptionLineFocus.value = `${insertedElementId}-0`;
+		void focusPendingCaptionLineInput();
+	}
+}
+
+function handleCaptionLineKeydown(
+	event: KeyboardEvent,
+	item: { trackId: string; elementId: string; elementLocalIndex: number },
+) {
+	if (event.key !== "Enter" || !event.shiftKey) return;
+	event.preventDefault();
+	const input = event.target as HTMLInputElement;
+	splitCaptionLineAtCursor(
+		item.trackId,
+		item.elementId,
+		item.elementLocalIndex,
+		input.selectionStart ?? input.value.length,
+		input.value,
+	);
 }
 
 function deleteCaptionLine(trackId: string, elementId: string, lineIndex: number) {
@@ -509,8 +612,10 @@ async function handleUploadFont() {
 					<input
 						type="text"
 						:value="item.line.text"
+						:data-caption-line-key="captionLineInputKey(item)"
 						class="flex-1 bg-transparent border-none outline-none text-zinc-300 text-[11px] leading-relaxed px-0 py-0 focus:text-white focus:ring-0"
 						@change="updateCaptionLineText(item.trackId, item.elementId, item.elementLocalIndex, ($event.target as HTMLInputElement).value)"
+						@keydown="handleCaptionLineKeydown($event, item)"
 						@click.stop
 					/>
 

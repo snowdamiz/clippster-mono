@@ -4,7 +4,10 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { useEditor } from "../../../composables/useEditor";
 import { useFileUpload } from "../../../composables/useFileUpload";
+import { useImageMode } from "../../../composables/useImageMode";
 import { processMediaAssets } from "../../../lib/media/processing";
+import { buildImageElement } from "../../../lib/timeline/element-utils";
+import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { fileNameFromPathOrName } from "@/utils/fsNames";
 import { Upload, Loader2, Check, AlertCircle, FolderOpen } from "lucide-vue-next";
 
@@ -33,6 +36,18 @@ const activeProject = computed(() => {
 	void version.value;
 	return editor.project.getActiveOrNull();
 });
+
+const { isImageMode } = useImageMode();
+
+async function addImageToCanvas(mediaId: string, name: string) {
+	const element = buildImageElement({
+		mediaId,
+		name,
+		duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
+		startTime: editor.playback.getCurrentTime(),
+	});
+	editor.timeline.insertElement({ element, placement: { mode: "auto" } });
+}
 
 function getMimeType(ext: string): string {
 	const map: Record<string, string> = {
@@ -67,10 +82,14 @@ async function processFiles(files: FileList | File[]) {
 		});
 
 		for (const asset of processedAssets) {
-			await editor.media.addMediaAsset({
+			const mediaId = await editor.media.addMediaAsset({
 				projectId: activeProject.value.metadata.id,
 				asset,
 			});
+
+			if (isImageMode.value && asset.type === "image") {
+				await addImageToCanvas(mediaId, asset.name);
+			}
 
 			const idx = sessionItems.value.findIndex(
 				(s) => s.name === asset.name && s.status === "processing"
@@ -98,46 +117,61 @@ async function processFiles(files: FileList | File[]) {
 }
 
 async function browseFiles() {
-	const selected = await open({
-		multiple: true,
-		filters: [
-			{
-				name: "Media",
-				extensions: [
-					"mp4", "mov", "avi", "mkv", "webm", "flv", "wmv", "m4v",
-					"mp3", "wav", "ogg", "aac", "m4a", "flac",
-					"jpg", "jpeg", "png", "gif", "webp", "bmp", "svg",
-				],
-			},
-		],
-	});
+	const isTauri =
+		typeof window !== "undefined" &&
+		("__TAURI__" in window || "__TAURI_INTERNALS__" in window);
 
-	if (!selected) return;
-	const paths = Array.isArray(selected) ? selected : [selected];
-
-	const files: File[] = [];
-	for (const filePath of paths) {
-		try {
-			const bytes = await readFile(filePath);
-			const name = fileNameFromPathOrName(filePath);
-			const ext = name.split(".").pop()?.toLowerCase() || "";
-			const mime = getMimeType(ext);
-			const file = new File([bytes], name, { type: mime });
-			(file as File & { path?: string }).path = filePath;
-			files.push(file);
-		} catch (err) {
-			console.error(`[UploadMediaView] Failed to read file: ${filePath}`, err);
-		}
+	if (!isTauri) {
+		openFilePicker();
+		return;
 	}
 
-	if (files.length > 0) {
-		await processFiles(files);
+	try {
+		const selected = await open({
+			multiple: true,
+			filters: [
+				{
+					name: "Media",
+					extensions: [
+						"mp4", "mov", "avi", "mkv", "webm", "flv", "wmv", "m4v",
+						"mp3", "wav", "ogg", "aac", "m4a", "flac",
+						"jpg", "jpeg", "png", "gif", "webp", "bmp", "svg",
+					],
+				},
+			],
+		});
+
+		if (!selected) return;
+		const paths = Array.isArray(selected) ? selected : [selected];
+
+		const files: File[] = [];
+		for (const filePath of paths) {
+			try {
+				const bytes = await readFile(filePath);
+				const name = fileNameFromPathOrName(filePath);
+				const ext = name.split(".").pop()?.toLowerCase() || "";
+				const mime = getMimeType(ext);
+				const file = new File([bytes], name, { type: mime });
+				(file as File & { path?: string }).path = filePath;
+				files.push(file);
+			} catch (err) {
+				console.error(`[UploadMediaView] Failed to read file: ${filePath}`, err);
+			}
+		}
+
+		if (files.length > 0) {
+			await processFiles(files);
+		}
+	} catch (err) {
+		console.warn("[UploadMediaView] Native dialog failed, using file input:", err);
+		openFilePicker();
 	}
 }
 
 const {
 	isDragOver,
 	inputRef,
+	openFilePicker,
 	handleFileChange,
 	handleDragEnter,
 	handleDragOver,

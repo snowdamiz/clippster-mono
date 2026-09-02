@@ -2,9 +2,11 @@ import { invoke } from "@tauri-apps/api/core";
 import { buildPreviewSceneTree } from "./preview-scene-sync";
 import { CanvasRenderer } from "./canvas-renderer";
 import type { PreviewSceneInputs } from "./preview-scene-sync";
-import { setPreviewDecodeSinkSizeOverride } from "../lib/preview-decode-settings";
+import type { TBackground } from "../types/project";
+import { getPreviewDecodeSinkSize } from "../lib/preview-decode-settings";
 import { videoCache } from "../video-cache/service";
 import { getRenderFrame } from "./frame-policy";
+import { prewarmSceneSegmentsForExport } from "./scene-export-prewarm";
 
 export { getSceneTracksForExport } from "./scene-export-tracks";
 
@@ -23,6 +25,43 @@ function getFrameExtension(format: SceneFrameImageFormat): string {
 	return format === "png" ? "png" : "jpg";
 }
 
+function isTransparentBackground(background: TBackground): boolean {
+	if (background.type !== "color") return false;
+	const color = (background.color || "").toLowerCase();
+	return color === "transparent" || color === "rgba(0,0,0,0)" || color === "#00000000";
+}
+
+/**
+ * Match PreviewPanel.vue CanvasRenderer settings so export pixels follow the
+ * same decode + compositing path as playback (WYSIWYG).
+ */
+export function createPreviewParityExportRenderer({
+	width,
+	height,
+	fps,
+	background,
+}: {
+	width: number;
+	height: number;
+	fps: number;
+	background: TBackground;
+}): CanvasRenderer {
+	const backing = getPreviewDecodeSinkSize();
+	return new CanvasRenderer({
+		width,
+		height,
+		fps,
+		framePolicy: "realtime",
+		prewarmUpcoming: true,
+		preferOffscreen: false,
+		previewEffectProcessing: true,
+		backingWidth: backing.width,
+		backingHeight: backing.height,
+		exportRetainLastFrame: true,
+		clearStyle: isTransparentBackground(background) ? "transparent" : "black",
+	});
+}
+
 async function canvasToEncodedBytes(
 	canvas: OffscreenCanvas | HTMLCanvasElement,
 	format: SceneFrameImageFormat,
@@ -39,7 +78,9 @@ async function canvasToEncodedBytes(
 		});
 		return new Uint8Array(await blob.arrayBuffer());
 	}
-	const oc = canvas as OffscreenCanvas & { convertToBlob?: (opts?: ImageEncodeOptions) => Promise<Blob> };
+	const oc = canvas as OffscreenCanvas & {
+		convertToBlob?: (opts?: ImageEncodeOptions) => Promise<Blob>;
+	};
 	if (typeof oc.convertToBlob !== "function") {
 		throw new Error("OffscreenCanvas.convertToBlob is not available in this environment");
 	}
@@ -103,10 +144,9 @@ export function getSceneFrameTime({
 }
 
 /**
- * Renders the same scene tree as preview at full layout resolution and writes image frames for FFmpeg.
- * JPEG is the default staging format because these are already opaque final video frames; avoiding
- * per-frame PNG compression dramatically reduces export setup time while keeping one visual renderer.
- * @returns pattern path and frame count for `ExportConfig.scene_frame_pattern`.
+ * Renders through the same scene tree + CanvasRenderer path as preview playback,
+ * then writes JPEG/PNG frames for FFmpeg. Do not reset decoders or override decode
+ * size — export must match what the user already saw in the preview canvas.
  */
 export async function writeSceneFrameSequenceToDisk(
 	params: SceneFrameExportParams,
@@ -122,25 +162,23 @@ export async function writeSceneFrameSequenceToDisk(
 		onProgress,
 		isCancelled,
 	} = params;
-	const { width, height } = sceneInputs.canvasSize;
+	const { canvasSize, background } = sceneInputs;
+	const { width, height } = canvasSize;
 
-	setPreviewDecodeSinkSizeOverride({ width, height });
-	videoCache.clearAll();
+	videoCache.beginExportSession();
+	let renderer: CanvasRenderer | null = null;
+	const encodeCanvas = new OffscreenCanvas(width, height);
+
 	try {
 		const tree = buildPreviewSceneTree(sceneInputs);
-		const renderer = new CanvasRenderer({
+		renderer = createPreviewParityExportRenderer({
 			width,
 			height,
 			fps,
-			framePolicy: "exact-export",
-			// Warm the next segment's decoder before each cut so the first exported
-			// frame of a cold clip is not a black clear while the sink seeks.
-			prewarmUpcoming: true,
-			preferOffscreen: true,
-			previewEffectProcessing: false,
-			backingWidth: width,
-			backingHeight: height,
+			background,
 		});
+
+		await prewarmSceneSegmentsForExport(tree, renderer);
 
 		const n = Math.max(1, frameCount);
 		const pendingWrites: Promise<unknown>[] = [];
@@ -163,6 +201,7 @@ export async function writeSceneFrameSequenceToDisk(
 				await pendingWrites.shift();
 			}
 		};
+
 		for (let i = 0; i < n; i++) {
 			if (isCancelled?.()) {
 				throw new Error("Export cancelled");
@@ -174,8 +213,12 @@ export async function writeSceneFrameSequenceToDisk(
 				timeOffset,
 				sceneDuration: sceneInputs.duration,
 			});
-			await renderer.render({ node: tree, time: sceneTime });
-			const bytes = await canvasToEncodedBytes(renderer.canvas, imageFormat);
+			await renderer.renderToCanvas({
+				node: tree,
+				time: sceneTime,
+				targetCanvas: encodeCanvas,
+			});
+			const bytes = await canvasToEncodedBytes(encodeCanvas, imageFormat);
 			if (writeBatch.length === 0) {
 				writeBatchFirstFrame = i + 1;
 			}
@@ -194,7 +237,7 @@ export async function writeSceneFrameSequenceToDisk(
 		});
 		return { pattern, frameCount: count };
 	} finally {
-		setPreviewDecodeSinkSizeOverride(null);
-		videoCache.clearAll();
+		renderer?.dispose();
+		videoCache.endExportSession();
 	}
 }

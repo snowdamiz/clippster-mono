@@ -20,8 +20,10 @@
       "assetProtocol": {
         "enable": true,
         "scope": [
-          "$APPLOCALDATA/Clippster/**/*",
+          "$LOCALDATA/Clippster/**/*",
           "$APPLOCALDATA/**/*",
+          "$HOME/Library/Application Support/Clippster/**/*",
+          "$HOME/.local/share/clippster/**/*",
           "$HOME/**/*",
           "$DOWNLOAD/**/*",
           "$DESKTOP/**/*",

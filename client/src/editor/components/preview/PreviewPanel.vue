@@ -903,7 +903,7 @@ function onCanvasPointerDown(event: PointerEvent) {
 		const blit = () => {
 			const scratch = bgEraseScratch.value;
 			if (scratch && paintOverlayRef.value) {
-				blitScratchToOverlay(scratch, paintOverlayRef.value, "erase");
+				blitScratchToOverlay(scratch, paintOverlayRef.value, "paint");
 			}
 		};
 

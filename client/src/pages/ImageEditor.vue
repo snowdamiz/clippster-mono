@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, provide, onMounted, onUnmounted, computed, watch, Transition } from "vue";
+import { ref, provide, onMounted, onUnmounted, computed, watch, Transition, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
 	Loader2,
@@ -31,25 +31,21 @@ import { useImageEditorProjects } from "@/composables/useImageEditorProjects";
 import { useFormatters } from "@/composables/useFormatters";
 import { useAuthStore } from "@/stores/auth";
 import type { ProjectSummary } from "@/services/imageEditorApi";
-import { useAppTour } from "@/composables/useAppTour";
+import { useAppTour, useTourFlags } from "@/composables/useAppTour";
 
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
-const { setTourImageProjectId } = useAppTour();
+const { setTourImageProjectId, notifyEditorReadyForTour } = useAppTour();
 const { getRelativeTime: formatRelativeTimeFromUnix } = useFormatters();
 
 const isEditorLoading = ref(true);
 const editorError = ref<string | null>(null);
 const projectManager = useImageEditorProjects();
 const isLoadingProjects = ref(false);
-const showProjectNameDialog = ref(false);
-const projectNameInput = ref("");
-const projectNameError = ref("");
-const selectedCanvasPreset = ref("youtube-720");
-const isSyncing = ref(false);
 const isCreatingProject = ref(false);
 const isCoverBootstrapping = ref(false);
+const isSyncing = ref(false);
 
 const searchQuery = ref("");
 const sortBy = ref("updated");
@@ -197,6 +193,12 @@ watch(
 		}
 
 		if (projectManager.project.value?.id === parseInt(projectId as string, 10)) {
+			const core = EditorCore.getInstance();
+			if (core.imageMode && core.project.getActiveOrNull()) {
+				isEditorLoading.value = false;
+				return;
+			}
+			await loadEditorProject(parseInt(projectId as string, 10));
 			return;
 		}
 
@@ -207,6 +209,15 @@ watch(
 		await loadEditorProject(parseInt(projectId as string, 10));
 	},
 );
+
+watch(isEditorLoading, async (loading, wasLoading) => {
+	if (!isEditRoute.value) return;
+	if (wasLoading && !loading && !editorError.value) {
+		await nextTick();
+		const wantsTour = route.query.tour === '1';
+		notifyEditorReadyForTour(wantsTour ? 'page_image_editor' : undefined);
+	}
+});
 
 onMounted(async () => {
 	const projectId = route.query.projectId as string | undefined;
@@ -268,7 +279,7 @@ async function bootstrapTourImageProject() {
 		startCloudAutosave();
 		await router.replace({
 			path: "/design-studio/edit",
-			query: { projectId: backendProject.id.toString() },
+			query: { projectId: backendProject.id.toString(), tour: "1" },
 		});
 	} catch (e) {
 		console.error("[ImageEditor] Failed to bootstrap tour project:", e);
@@ -279,6 +290,12 @@ async function bootstrapTourImageProject() {
 
 onUnmounted(() => {
 	stopCloudAutosave();
+	const { skipEditorPersistOnExit } = useTourFlags();
+	if (skipEditorPersistOnExit.value) {
+		skipEditorPersistOnExit.value = false;
+		EditorCore.reset();
+		return;
+	}
 	void syncToCloud({ flush: true }).finally(() => {
 		EditorCore.reset();
 	});
@@ -592,45 +609,41 @@ async function loadProjects() {
 	}
 }
 
+function defaultProjectName(): string {
+	const base = "Untitled Design";
+	const names = new Set(projectManager.projects.value.map((p) => p.name));
+	if (!names.has(base)) return base;
+	let i = 2;
+	while (names.has(`${base} ${i}`)) i += 1;
+	return `${base} ${i}`;
+}
+
 function createNewProject() {
 	if (!authStore.isAuthenticated) {
 		showAuthModal.value = true;
 		return;
 	}
-	projectNameInput.value = "";
-	projectNameError.value = "";
-	selectedCanvasPreset.value = "youtube-720";
-	showProjectNameDialog.value = true;
+	void createAndOpenProject();
 }
 
-async function confirmCreateProject() {
-	const name = projectNameInput.value.trim();
-	if (!name) {
-		projectNameError.value = "Project name is required";
-		return;
-	}
-	if (name.length > 100) {
-		projectNameError.value = "Project name must be 100 characters or less";
-		return;
-	}
+async function createAndOpenProject(name?: string) {
+	if (isCreatingProject.value) return;
 
-	const preset = CANVAS_PRESETS.find((p) => p.id === selectedCanvasPreset.value) ?? CANVAS_PRESETS[0];
-	const canvasSize = { width: preset.width, height: preset.height };
+	const projectName = name ?? defaultProjectName();
 
 	try {
 		isCreatingProject.value = true;
-		showProjectNameDialog.value = false;
-
-		await createImageProject({ name, canvasSize });
+		await createImageProject({ name: projectName });
 
 		const doc = await flushAndSerializeActiveImageProject();
 		if (!doc) throw new Error("Failed to serialize project");
 
+		const canvas = doc.settings?.canvasSize;
 		const backendProject = await projectManager.createProject({
-			name,
+			name: projectName,
 			project_data: doc,
-			canvas_width: canvasSize.width,
-			canvas_height: canvasSize.height,
+			canvas_width: canvas?.width,
+			canvas_height: canvas?.height,
 		});
 
 		startCloudAutosave();
@@ -642,8 +655,6 @@ async function confirmCreateProject() {
 		});
 	} catch (e) {
 		console.error("[ImageEditor] Failed to create project:", e);
-		projectNameError.value = "Failed to create project. Please try again.";
-		showProjectNameDialog.value = true;
 	} finally {
 		isCreatingProject.value = false;
 	}
@@ -728,7 +739,7 @@ function getRelativeTime(dateStr: string): string {
 
 <template>
 	<!-- Editor view -->
-	<div v-if="isEditorView" class="h-full w-full overflow-hidden bg-[#0e0e10]">
+	<div v-if="isEditorView" class="h-screen w-screen overflow-hidden bg-[#0e0e10]">
 		<div v-if="isEditorLoading" class="flex h-full w-full items-center justify-center">
 			<div class="flex flex-col items-center gap-3">
 				<Loader2 class="text-primary size-8 animate-spin" />
@@ -780,8 +791,14 @@ function getRelativeTime(dateStr: string): string {
 					trigger-class="imageeditor-header__dropdown-trigger"
 				/>
 
-				<button type="button" class="imageeditor-create-btn" @click="createNewProject">
-					<Plus class="imageeditor-create-btn__icon" />
+				<button
+					type="button"
+					class="imageeditor-create-btn"
+					:disabled="isCreatingProject"
+					@click="createNewProject"
+				>
+					<Loader2 v-if="isCreatingProject" class="imageeditor-create-btn__icon animate-spin" />
+					<Plus v-else class="imageeditor-create-btn__icon" />
 					New Project
 				</button>
 			</div>
@@ -942,63 +959,6 @@ function getRelativeTime(dateStr: string): string {
 		/>
 
 		<AuthModal v-model="showAuthModal" />
-
-		<Teleport to="body">
-			<Transition name="modal">
-				<div
-					v-if="showProjectNameDialog"
-					class="fixed inset-0 z-50 flex items-center justify-center bg-black/60"
-					@click.self="showProjectNameDialog = false"
-				>
-					<div class="w-full max-w-md rounded-lg border border-white/10 bg-zinc-900 p-6 shadow-xl">
-						<div class="mb-4 flex size-12 items-center justify-center rounded-full bg-[var(--sidebar-accent)]/20">
-							<ImageIcon :size="24" class="text-[var(--sidebar-accent)]" />
-						</div>
-						<h3 class="text-lg font-semibold text-zinc-100">Name Your Project</h3>
-						<p class="mt-1 text-sm text-zinc-500">Give your image project a memorable name</p>
-						<div class="mt-4 space-y-3">
-							<input
-								v-model="projectNameInput"
-								type="text"
-								placeholder="e.g., Social Media Banner"
-								maxlength="100"
-								class="w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none transition-colors placeholder:text-zinc-600 focus:border-[var(--sidebar-accent)]"
-								autofocus
-								@keyup.enter="confirmCreateProject"
-							/>
-							<select
-								v-model="selectedCanvasPreset"
-								class="w-full rounded-lg border border-white/10 bg-zinc-800 px-3 py-2 text-sm text-zinc-100 outline-none focus:border-[var(--sidebar-accent)]"
-							>
-								<option v-for="preset in CANVAS_PRESETS" :key="preset.id" :value="preset.id">
-									{{ preset.label }}
-								</option>
-							</select>
-							<p v-if="projectNameError" class="text-xs text-red-400">{{ projectNameError }}</p>
-						</div>
-						<div class="mt-6 flex gap-2">
-							<button
-								type="button"
-								class="flex-1 rounded-lg border border-white/10 px-4 py-2 text-sm font-medium text-zinc-300 transition-colors hover:bg-white/5"
-								@click="showProjectNameDialog = false"
-							>
-								Cancel
-							</button>
-							<button
-								type="button"
-								class="flex flex-1 items-center justify-center gap-2 rounded-lg bg-[var(--sidebar-accent)] px-4 py-2 text-sm font-medium text-[var(--sidebar-bg)] transition-opacity hover:opacity-90 disabled:opacity-50"
-								:disabled="isCreatingProject"
-								@click="confirmCreateProject"
-							>
-								<Loader2 v-if="isCreatingProject" :size="14" class="animate-spin" />
-								<Plus v-else :size="14" />
-								<span>Create Project</span>
-							</button>
-						</div>
-					</div>
-				</div>
-			</Transition>
-		</Teleport>
 	</PageLayout>
 </template>
 

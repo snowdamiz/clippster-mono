@@ -42,9 +42,9 @@ async function fetchNormalizedFile(
 }
 
 async function writeBlobToLibrary(blob: Blob, filename: string): Promise<{ filePath: string; fileSize: number }> {
-	const { appDataDir } = await import("@tauri-apps/api/path");
+	const { invoke } = await import("@tauri-apps/api/core");
 	const { writeFile, mkdir, exists } = await import("@tauri-apps/plugin-fs");
-	const appData = await appDataDir();
+	const appData = await invoke<string>("get_app_data_dir");
 	const dir = `${appData}/image-library`;
 	if (!(await exists(dir))) {
 		await mkdir(dir, { recursive: true });

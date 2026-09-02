@@ -113,10 +113,19 @@ const sortOrder = ref<"asc" | "desc">("asc");
         },
       });
       for (const asset of processedAssets) {
-        await editor.media.addMediaAsset({
+        const mediaId = await editor.media.addMediaAsset({
           projectId: activeProject.value.metadata.id,
           asset,
         });
+        if (isImageMode.value && asset.type === 'image') {
+          const element = buildImageElement({
+            mediaId,
+            name: asset.name,
+            duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
+            startTime: editor.playback.getCurrentTime(),
+          });
+          editor.timeline.insertElement({ element, placement: { mode: 'auto' } });
+        }
       }
     } catch (error) {
       console.error('Error processing files:', error);

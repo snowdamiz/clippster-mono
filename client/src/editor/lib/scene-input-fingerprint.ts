@@ -167,7 +167,11 @@ export function fingerprintTimelineElement(el: TimelineElement): unknown {
 				shadow: c.shadow,
 				glow: c.glow,
 				gradient: c.gradient,
-				transform: c.transform,
+				transform: {
+					scale: c.transform.scale,
+					rotate: c.transform.rotate,
+					position: { x: c.transform.position.x, y: c.transform.position.y },
+				},
 				opacity: c.opacity,
 				maxWordsPerLine: c.maxWordsPerLine,
 			};

@@ -1,7 +1,7 @@
 import { Command } from "../../../../lib/commands/base-command";
-import type { TimelineTrack } from "../../../../types/timeline";
+import type { CaptionElement, TimelineTrack } from "../../../../types/timeline";
 import { EditorCore } from "../../../../core";
-import { shiftCaptionTimesAfter } from "../../../timeline/caption-sync";
+import { shiftCaptionTimesAfter, syncCaptionElementTimelineBounds } from "../../../timeline/caption-sync";
 import { collapseMainVideoTracksIfPresent } from "../../../../lib/timeline/main-track-layout";
 import { recomputeTrimEndAfterTimingChange } from "../../../../lib/timeline/trim-source-utils";
 
@@ -45,7 +45,10 @@ export class UpdateElementDurationCommand extends Command {
 
 			const newElements = t.elements.map((el) => {
 				if (el.id === this.elementId) {
-					return { ...el, duration: this.duration, trimEnd: newTrimEnd };
+					const next = { ...el, duration: this.duration, trimEnd: newTrimEnd };
+					return el.type === "caption"
+						? syncCaptionElementTimelineBounds(next as CaptionElement)
+						: next;
 				}
 				// Ripple-push: shift elements that start at or after the old end
 				if (durationDelta > 0 && el.startTime >= oldEndTime - 0.001) {

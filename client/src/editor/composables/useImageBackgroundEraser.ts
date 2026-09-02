@@ -12,7 +12,6 @@ import {
 	canvasPointToImagePixel,
 	clipSelectionToContext,
 	getImageDrawLayout,
-	imagePixelToCanvasPoint,
 } from "../lib/image-layer-mapping";
 import { colorDistanceSq, visitMatchingPixels } from "../lib/image-flood-fill";
 import {
@@ -21,6 +20,7 @@ import {
 	recordImageEditHistory,
 	writeNativeCanvasToMedia,
 } from "../lib/image-raster-commit";
+import { getCheckerPattern } from "./useImageRasterPaint";
 import { useImageEditorTools } from "./useImageEditorTools";
 
 export type BgEraserSampling = "continuous" | "once";
@@ -98,36 +98,19 @@ export function useImageBackgroundEraser() {
 	let pendingCanvasPts: Array<{ x: number; y: number }> = [];
 	let starting = false;
 
-	function paintScratchDab(nativeX: number, nativeY: number, nativeRadius: number, opacity: number) {
-		if (!layout || !scratchCtx) return;
-		const center = imagePixelToCanvasPoint(layout, nativeX, nativeY);
-		const edge = imagePixelToCanvasPoint(layout, nativeX + nativeRadius, nativeY);
-		const canvasRadius = Math.max(1, Math.hypot(edge.x - center.x, edge.y - center.y));
-		scratchCtx.save();
-		scratchCtx.globalCompositeOperation = "source-over";
-		const hard = brushHardness.value;
-		if (hard >= 0.99) {
-			scratchCtx.fillStyle = `rgba(0,0,0,${opacity})`;
-			scratchCtx.beginPath();
-			scratchCtx.arc(center.x, center.y, canvasRadius, 0, Math.PI * 2);
-			scratchCtx.fill();
-		} else {
-			const inner = canvasRadius * hard;
-			const g = scratchCtx.createRadialGradient(
-				center.x,
-				center.y,
-				inner,
-				center.x,
-				center.y,
-				canvasRadius,
-			);
-			g.addColorStop(0, `rgba(0,0,0,${opacity})`);
-			g.addColorStop(1, "rgba(0,0,0,0)");
-			scratchCtx.fillStyle = g;
-			scratchCtx.beginPath();
-			scratchCtx.arc(center.x, center.y, canvasRadius, 0, Math.PI * 2);
-			scratchCtx.fill();
+	function renderBgErasePreview() {
+		if (!work || !layout || !scratchCtx) return;
+		const { canvasW, canvasH } = layout;
+		scratchCtx.setTransform(1, 0, 0, 1, 0, 0);
+		scratchCtx.clearRect(0, 0, canvasW, canvasH);
+		const pattern = getCheckerPattern(scratchCtx);
+		if (pattern) {
+			scratchCtx.fillStyle = pattern;
+			scratchCtx.fillRect(0, 0, canvasW, canvasH);
 		}
+		scratchCtx.save();
+		applyCanvasToImageTransform(scratchCtx, layout);
+		scratchCtx.drawImage(work, 0, 0);
 		scratchCtx.restore();
 	}
 
@@ -235,7 +218,7 @@ export function useImageBackgroundEraser() {
 		if (erasedAny) {
 			// Region put only — avoids full-frame uploads every dab.
 			workCtx.putImageData(pixels, 0, 0, minX, minY, bw, bh);
-			paintScratchDab(cx, cy, radius, opacity);
+			renderBgErasePreview();
 		}
 	}
 
@@ -330,6 +313,7 @@ export function useImageBackgroundEraser() {
 			lastY = dest.y;
 			isBgErasing.value = true;
 			eraseDab(dest.x, dest.y);
+			renderBgErasePreview();
 			flushPending();
 			return true;
 		} finally {

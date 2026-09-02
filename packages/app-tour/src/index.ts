@@ -1,3 +1,3 @@
 export * from './types';
-export * from './arrow';
+export * from './placement';
 export * from './steps';

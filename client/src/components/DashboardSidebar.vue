@@ -330,7 +330,7 @@
   const { isAIAllowed } = useAIPermission();
   const { isLiveClipEnabled, initialize: initFeatureFlags } = useFeatureFlags();
   const { isCollapsed: sidebarCollapsed } = useSidebarState();
-  const { handleEditorNavClick } = useAppTour();
+  const { handleEditorNavClick, shouldInterceptEditorNav } = useAppTour();
   const { forceSidebarExpanded } = useTourFlags();
 
   const isCollapsed = computed(() => {
@@ -346,19 +346,18 @@
 
   async function onNavClick(e: MouseEvent, item: NavigationItem) {
     if (item.path === '/video-editor') {
-      const handled = await handleEditorNavClick('video', router);
-      if (handled) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      // Must preventDefault sync — awaiting first lets router-link win and skip the tour
+      if (!shouldInterceptEditorNav('video')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      await handleEditorNavClick('video', router);
       return;
     }
     if (item.path === '/design-studio') {
-      const handled = await handleEditorNavClick('image', router);
-      if (handled) {
-        e.preventDefault();
-        e.stopPropagation();
-      }
+      if (!shouldInterceptEditorNav('image')) return;
+      e.preventDefault();
+      e.stopPropagation();
+      await handleEditorNavClick('image', router);
     }
   }
 

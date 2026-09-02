@@ -174,7 +174,7 @@ onUnmounted(() => {
 			<ImageOptionsBar />
 
 			<div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
-				<div data-tour-id="tour-image-tool-rail">
+				<div class="shrink-0" data-tour-id="tour-image-tool-rail">
 					<ImageToolRail />
 				</div>
 

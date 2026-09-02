@@ -16,8 +16,10 @@ import {
 	createPreviewScaledImageBitmap,
 	getPreviewDecodeGeneration,
 } from "../../lib/preview-decode-settings";
+import { getExportBoundarySlackSec } from "../../lib/export-boundary";
 
 const IMAGE_EPSILON = 1 / 1000;
+const SEGMENT_PREWARM_LEAD_SEC = 2.5;
 
 function intrinsicCanvasImageSize(
 	source: CanvasImageSource,
@@ -121,26 +123,20 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		return Math.max(0, Math.min(this.params.duration, elapsed));
 	}
 
-	private isInRange(time: number) {
+	private isInRange(time: number, renderer?: CanvasRenderer) {
 		const elapsed = time - this.params.timeOffset;
+		const exportSlack = renderer
+			? getExportBoundarySlackSec(renderer.fps, renderer.framePolicy)
+			: 0;
 		return (
-			elapsed >= -(this.transitionExtension.before + IMAGE_EPSILON) &&
-			elapsed < this.params.duration + this.transitionExtension.after
+			elapsed >= -(this.transitionExtension.before + IMAGE_EPSILON + exportSlack) &&
+			elapsed < this.params.duration + this.transitionExtension.after + exportSlack
 		);
 	}
 
-	async render({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
-		await super.render({ renderer, time });
-
-		if (!this.isInRange(time)) {
-			return;
-		}
-
+	private async ensureRasterReady() {
 		await this.readyPromise;
-
-		if (!this.image) {
-			return;
-		}
+		if (!this.image) return null;
 
 		const decodeGen = getPreviewDecodeGeneration();
 		if (decodeGen !== this.rasterCacheGen) {
@@ -153,7 +149,52 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		if (!this.cachedRaster) {
 			this.cachedRaster = await createPreviewScaledImageBitmap(this.image);
 		}
-		const raster = this.cachedRaster;
+		return this.cachedRaster;
+	}
+
+	async prefetch({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
+		if (
+			renderer.prewarmUpcoming &&
+			time < this.params.timeOffset &&
+			time >= this.params.timeOffset - SEGMENT_PREWARM_LEAD_SEC
+		) {
+			await this.ensureRasterReady();
+			return;
+		}
+		if (this.isInRange(time, renderer)) {
+			await this.ensureRasterReady();
+		}
+	}
+
+	async prewarm({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
+		if (!this.isInRange(time, renderer) && renderer.framePolicy !== "exact-export") {
+			return;
+		}
+		await this.ensureRasterReady();
+	}
+
+	private isInExportTailHold(time: number, renderer: CanvasRenderer) {
+		if (renderer.framePolicy !== "exact-export") return false;
+		const elapsed = time - this.params.timeOffset;
+		const slack = getExportBoundarySlackSec(renderer.fps, renderer.framePolicy);
+		return (
+			elapsed >= this.params.duration &&
+			elapsed < this.params.duration + slack + this.transitionExtension.after
+		);
+	}
+
+	async render({ renderer, time }: { renderer: CanvasRenderer; time: number }) {
+		await super.render({ renderer, time });
+
+		const exportTailHold = this.isInExportTailHold(time, renderer);
+		if (!this.isInRange(time, renderer) && !exportTailHold) {
+			return;
+		}
+
+		const raster = await this.ensureRasterReady();
+		if (!raster) {
+			return;
+		}
 
 		renderer.context.save();
 
@@ -162,8 +203,11 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 			renderer.context.globalCompositeOperation = this.params.blendMode as GlobalCompositeOperation;
 		}
 
-		// Resolve keyframed values
-		const elapsed = this.getClampedElapsed(time);
+		// Resolve keyframed values — during export tail hold, keep the last fully
+		// visible frame (skip fade-out ramp that would expose the black clear).
+		const elapsed = exportTailHold
+			? Math.max(0, this.params.duration - Math.max(0, (this.params.fadeOut ?? 0) - 1e-6))
+			: this.getClampedElapsed(time);
 		const effectiveTime = this.params.timeOffset + elapsed;
 		const normalizedTime = this.params.duration > 0 ? elapsed / this.params.duration : 0;
 		const kf = this.params.keyframes;
@@ -176,7 +220,7 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		if (fadeIn > 0 && elapsed < fadeIn) {
 			resolvedOpacity *= elapsed / fadeIn;
 		}
-		if (fadeOut > 0 && elapsed > this.params.duration - fadeOut) {
+		if (fadeOut > 0 && !exportTailHold && elapsed > this.params.duration - fadeOut) {
 			resolvedOpacity *= (this.params.duration - elapsed) / fadeOut;
 		}
 
@@ -346,6 +390,8 @@ export class ImageNode extends BaseNode<ImageNodeParams> {
 		if (this.params.colorWheels) {
 			applyColorWheels(renderer.context, backingSize.width, backingSize.height, this.params.colorWheels, { processingSize });
 		}
+
+		renderer.markVisualDrawn();
 	}
 
 	private getChromakeySourceCanvas(

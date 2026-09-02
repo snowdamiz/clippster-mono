@@ -3,10 +3,10 @@ import { ref, computed, watch, onMounted, onUnmounted, nextTick, inject } from "
 import { useEditor } from "../composables/useEditor";
 import { useRouter } from "vue-router";
 import ExportButton from "./ExportButton.vue";
+import ImageExportDialog from "./ImageExportDialog.vue";
 import { Button } from "@/components/ui/button";
 import { ArrowLeft, ChevronDown, Keyboard, Loader2, Maximize, Minimize, Smartphone, X, Download, Image, Check, Stamp, Megaphone } from "lucide-vue-next";
 import { useImageMode } from "../composables/useImageMode";
-import type { ImageExportFormat } from "../composables/useImageMode";
 import { useEditorUIState } from "../composables/useEditorUIState";
 import { useWatermarkExport } from "@/composables/useWatermarkExport";
 import { useCampaignImageSubmit } from "@/composables/useCampaignImageSubmit";
@@ -39,7 +39,7 @@ const { editor, version } = useEditor({
 		selection: false,
 	},
 });
-const { isImageMode, isCoverMode, exportAsImage, exportAndSave, exportAndSaveAsCover } = useImageMode();
+const { isImageMode, isCoverMode, exportAsImage, exportAndSaveAsCover } = useImageMode();
 const { activeSocialOverlay } = useEditorUIState();
 const { saveAsWatermark } = useWatermarkExport();
 const { availableCampaigns, isSubmitting, isLoadingCampaigns, loadMyCampaigns, submitImageToCampaign } = useCampaignImageSubmit();
@@ -50,46 +50,40 @@ const imageEditorExitToProjects = inject<(() => Promise<void>) | null>(
 );
 
 // Image export state
-const imageExportFormat = ref<ImageExportFormat>("png");
 const isImageExporting = ref(false);
 const imageExportSuccess = ref(false);
-const showFormatDropdown = ref(false);
+const showImageExportDialog = ref(false);
 const showExportMenu = ref(false);
 const showCampaignPicker = ref(false);
 
-const imageFormatOptions: { value: ImageExportFormat; label: string }[] = [
-	{ value: "png", label: "PNG" },
-	{ value: "jpg", label: "JPG" },
-	{ value: "webp", label: "WebP" },
-];
+function openImageExportDialog() {
+	if (isCoverMode.value) {
+		void handleImageExport();
+		return;
+	}
+	showImageExportDialog.value = true;
+}
 
 async function handleImageExport() {
 	if (isImageExporting.value) return;
 	isImageExporting.value = true;
 	imageExportSuccess.value = false;
 	try {
-		let result: string | null = null;
-
-		if (isCoverMode.value) {
-			result = await exportAndSaveAsCover(imageExportFormat.value);
-			if (result) {
-				imageExportSuccess.value = true;
-				setTimeout(() => { router.push("/clips"); }, 1200);
-			}
-		} else {
-			const project = activeProject.value;
-			const name = project?.metadata.name || "design";
-			result = await exportAndSave(imageExportFormat.value, `${name}.${imageExportFormat.value}`);
-			if (result) {
-				imageExportSuccess.value = true;
-				setTimeout(() => { imageExportSuccess.value = false; }, 2000);
-			}
+		const result = await exportAndSaveAsCover("png");
+		if (result) {
+			imageExportSuccess.value = true;
+			setTimeout(() => { router.push("/clips"); }, 1200);
 		}
 	} catch (err) {
-		console.error("[EditorHeader] Image export failed:", err);
+		console.error("[EditorHeader] Cover export failed:", err);
 	} finally {
 		isImageExporting.value = false;
 	}
+}
+
+function onImageExported() {
+	imageExportSuccess.value = true;
+	setTimeout(() => { imageExportSuccess.value = false; }, 2000);
 }
 
 async function handleSubmitToCampaign(campaignId: number) {
@@ -707,37 +701,6 @@ function cancelRename() {
 			</button>
 			<ChatFab compact />
 			<template v-if="isImageMode">
-				<div class="relative">
-					<button
-						type="button"
-						class="flex items-center gap-1 rounded-md border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-300 hover:bg-white/10 transition-colors"
-						@click="showFormatDropdown = !showFormatDropdown"
-					>
-						{{ imageExportFormat.toUpperCase() }}
-						<ChevronDown class="size-3" />
-					</button>
-					<div
-						v-if="showFormatDropdown"
-						class="absolute top-full right-0 z-50 mt-1 w-28 rounded-md border border-white/10 bg-[#1e1e22] shadow-md"
-					>
-						<button
-							v-for="opt in imageFormatOptions"
-							:key="opt.value"
-							type="button"
-							class="flex w-full items-center gap-1.5 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/5"
-							@click="imageExportFormat = opt.value; showFormatDropdown = false"
-						>
-							<Check v-if="imageExportFormat === opt.value" class="size-3 text-blue-400" />
-							<span v-else class="size-3" />
-							{{ opt.label }}
-						</button>
-					</div>
-					<div
-						v-if="showFormatDropdown"
-						class="fixed inset-0 z-40"
-						@click="showFormatDropdown = false"
-					/>
-				</div>
 				<button
 					type="button"
 					data-tour-id="tour-image-export"
@@ -746,7 +709,7 @@ function cancelRename() {
 						isImageExporting ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer',
 					]"
 					:disabled="isImageExporting"
-					@click="handleImageExport"
+					@click="openImageExportDialog"
 				>
 					<div class="relative flex items-center gap-1.5 rounded-md bg-[var(--sidebar-accent,#0ea5e9)] px-3 py-1.5 shadow-[0_1px_3px_0px_rgba(0,0,0,0.45)] hover:bg-[#0284c7] transition-colors">
 						<component :is="imageExportSuccess ? Check : (isImageExporting ? Image : Download)" class="z-50 size-4" :class="{ 'animate-pulse': isImageExporting }" />
@@ -841,5 +804,11 @@ function cancelRename() {
 			</div>
 		</div>
 	</Teleport>
+
+	<ImageExportDialog
+		:open="showImageExportDialog"
+		@close="showImageExportDialog = false"
+		@exported="onImageExported"
+	/>
 
 </template>

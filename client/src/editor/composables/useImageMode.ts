@@ -42,10 +42,11 @@ export function useImageMode() {
 		blob: Blob,
 		filename: string,
 	): Promise<{ filePath: string; fileSize: number }> {
-		const { appDataDir } = await import("@tauri-apps/api/path");
+		const { invoke } = await import("@tauri-apps/api/core");
 		const { writeFile, mkdir, exists } = await import("@tauri-apps/plugin-fs");
 
-		const appData = await appDataDir();
+		// Use Clippster storage root (%LOCALAPPDATA%\Clippster), not Tauri's Roaming appDataDir.
+		const appData = await invoke<string>("get_app_data_dir");
 		const imagesDir = `${appData}/image-library`;
 		if (!(await exists(imagesDir))) {
 			await mkdir(imagesDir, { recursive: true });
@@ -59,15 +60,23 @@ export function useImageMode() {
 	}
 
 	/**
-	 * Export to Image Library (primary path) and optionally also Save As to disk.
+	 * Export still image to disk and/or Image library based on destination.
+	 * - library: Image gallery only
+	 * - library_and_disk: gallery + local Save dialog
+	 * - disk: local Save dialog only
 	 */
 	async function exportAndSave(
 		format: ImageExportFormat = "png",
 		filename?: string,
-		opts: { alsoSaveToDisk?: boolean; imageType?: string } = {},
+		opts: {
+			destination?: "library" | "library_and_disk" | "disk";
+			alsoSaveToDisk?: boolean;
+			preferDiskDialog?: boolean;
+			imageType?: string;
+		} = {},
 	): Promise<string | null> {
 		const blob = await exportAsImage(format);
-		if (!blob) return null;
+		if (!blob) throw new Error("Failed to render image");
 
 		const ext = format === "jpg" ? "jpg" : format;
 		const project = editor.project.getActiveOrNull();
@@ -75,8 +84,30 @@ export function useImageMode() {
 			/\.(png|jpg|jpeg|webp)$/i,
 			"",
 		);
-		const libraryFilename = `${baseName.replace(/[^\w\-]+/g, "_")}_${Date.now()}.${ext}`;
+		const safeBase = baseName.replace(/[^\w\-]+/g, "_") || "design";
+		const downloadName = `${safeBase}.${ext}`;
 
+		const destination =
+			opts.destination ??
+			(opts.alsoSaveToDisk === false ? "library" : "library_and_disk");
+		const saveToLibrary = destination === "library" || destination === "library_and_disk";
+		const saveToDisk = destination === "disk" || destination === "library_and_disk";
+
+		let savedPath: string | null = null;
+
+		if (saveToDisk) {
+			savedPath = await saveBlobLocally(blob, downloadName, format);
+			// null means user cancelled the dialog — don't treat as failure
+			if (savedPath === null && (opts.preferDiskDialog || destination !== "library")) {
+				return null;
+			}
+		}
+
+		if (!saveToLibrary) {
+			return savedPath;
+		}
+
+		const libraryFilename = `${safeBase}_${Date.now()}.${ext}`;
 		try {
 			const { filePath, fileSize } = await writeBlobToAppImages(blob, libraryFilename);
 			const serialized = await flushAndSerializeActiveImageProject();
@@ -105,27 +136,51 @@ export function useImageMode() {
 					: undefined,
 			});
 
-			if (opts.alsoSaveToDisk !== false) {
-				try {
-					const { save } = await import("@tauri-apps/plugin-dialog");
-					const { writeFile } = await import("@tauri-apps/plugin-fs");
-					const diskPath = await save({
-						defaultPath: `${baseName}.${ext}`,
-						filters: [{ name: `${ext.toUpperCase()} Image`, extensions: [ext] }],
-					});
-					if (diskPath) {
-						const arrayBuffer = await blob.arrayBuffer();
-						await writeFile(diskPath, new Uint8Array(arrayBuffer));
-					}
-				} catch (diskErr) {
-					console.warn("[useImageMode] Disk save skipped/failed:", diskErr);
-				}
-			}
-
-			return filePath;
+			return savedPath ?? filePath;
 		} catch (error) {
-			console.error("[useImageMode] Failed to save image to library:", error);
-			return null;
+			console.warn("[useImageMode] Image library save failed:", error);
+			if (savedPath) return savedPath;
+			throw error instanceof Error ? error : new Error("Failed to save image");
+		}
+	}
+
+	async function saveBlobLocally(
+		blob: Blob,
+		downloadName: string,
+		format: ImageExportFormat,
+	): Promise<string | null> {
+		const ext = format === "jpg" ? "jpg" : format;
+		const isTauri =
+			typeof window !== "undefined" &&
+			("__TAURI__" in window || "__TAURI_INTERNALS__" in window);
+
+		if (isTauri) {
+			const { save } = await import("@tauri-apps/plugin-dialog");
+			const { writeFile } = await import("@tauri-apps/plugin-fs");
+			const diskPath = await save({
+				defaultPath: downloadName,
+				filters: [
+					{ name: `${ext.toUpperCase()} Image`, extensions: [ext] },
+					{ name: "All Images", extensions: ["png", "jpg", "jpeg", "webp"] },
+				],
+			});
+			if (!diskPath) return null;
+			await writeFile(diskPath, new Uint8Array(await blob.arrayBuffer()));
+			return diskPath;
+		}
+
+		const url = URL.createObjectURL(blob);
+		try {
+			const a = document.createElement("a");
+			a.href = url;
+			a.download = downloadName;
+			a.rel = "noopener";
+			document.body.appendChild(a);
+			a.click();
+			a.remove();
+			return downloadName;
+		} finally {
+			URL.revokeObjectURL(url);
 		}
 	}
 
@@ -143,10 +198,10 @@ export function useImageMode() {
 		if (!blob) return null;
 
 		try {
-			const { appDataDir } = await import("@tauri-apps/api/path");
+			const { invoke } = await import("@tauri-apps/api/core");
 			const { writeFile, mkdir, exists } = await import("@tauri-apps/plugin-fs");
 
-			const appData = await appDataDir();
+			const appData = await invoke<string>("get_app_data_dir");
 			const coverDir = `${appData}/covers`;
 			if (!(await exists(coverDir))) {
 				await mkdir(coverDir, { recursive: true });

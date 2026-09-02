@@ -220,8 +220,7 @@ function resetColors() {
 			>
 				<button
 					type="button"
-					:title="`${IMAGE_TOOL_FLYouts.find((s) => s.id === slot.id)?.tools.find((t) => t.id === visibleToolId(slot))?.label ?? slot.id} (${slot.tools[0].shortcut})${slot.tools.length > 1 ? ' · hold / right-click for more' : ''}`"
-					:aria-label="visibleToolId(slot)"
+					:aria-label="`${IMAGE_TOOL_FLYouts.find((s) => s.id === slot.id)?.tools.find((t) => t.id === visibleToolId(slot))?.label ?? slot.id} (${slot.tools[0].shortcut})`"
 					:aria-pressed="slotIsActive(slot)"
 					:aria-haspopup="slot.tools.length > 1 ? 'menu' : undefined"
 					:aria-expanded="openFlyoutId === slot.id"

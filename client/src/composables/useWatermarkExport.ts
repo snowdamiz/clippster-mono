@@ -26,10 +26,10 @@ export function useWatermarkExport() {
     const { blob, name, width, height } = options;
 
     try {
-      const { appDataDir } = await import('@tauri-apps/api/path');
+      const { invoke } = await import('@tauri-apps/api/core');
       const { writeFile, mkdir, exists } = await import('@tauri-apps/plugin-fs');
 
-      const appData = await appDataDir();
+      const appData = await invoke<string>('get_app_data_dir');
       const watermarkDir = `${appData}/watermarks`;
       if (!(await exists(watermarkDir))) {
         await mkdir(watermarkDir, { recursive: true });

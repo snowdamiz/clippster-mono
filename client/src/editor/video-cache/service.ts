@@ -153,6 +153,37 @@ export class VideoCache {
 	private previewGeneration = 0;
 	private activePreviewDecodes = 0;
 	private previewDecodeQueue: Array<() => void> = [];
+	/** Scene export keeps every decoder warm — eviction mid-export causes random black frames. */
+	private retainAllSinks = false;
+
+	beginExportSession(): void {
+		this.retainAllSinks = true;
+	}
+
+	endExportSession(): void {
+		this.retainAllSinks = false;
+	}
+
+	async getFrameAtReliableForExport({
+		sinkKey,
+		file,
+		time,
+		fps,
+	}: {
+		sinkKey: string;
+		file: File;
+		time: number;
+		fps: number;
+	}): Promise<WrappedCanvas | null> {
+		const frameSec = 1 / Math.max(1, fps);
+		const offsets = [0, -frameSec, frameSec, -0.5 * frameSec, 0.5 * frameSec];
+		for (const offset of offsets) {
+			const sampleTime = Math.max(0, time + offset);
+			const frame = await this.getFrameAt({ sinkKey, file, time: sampleTime });
+			if (frame) return frame;
+		}
+		return null;
+	}
 
 	async getFrameAt({
 		sinkKey,
@@ -436,7 +467,7 @@ export class VideoCache {
 	}
 
 	private evictInactiveSinks(excludeSinkKey: string): void {
-		if (this.sinks.size <= MAX_ACTIVE_SINKS) return;
+		if (this.retainAllSinks || this.sinks.size <= MAX_ACTIVE_SINKS) return;
 		const candidate = [...this.sinks.keys()]
 			.filter(
 				(key) =>
@@ -893,6 +924,7 @@ export class VideoCache {
 	}
 
 	clearAll(): void {
+		this.endExportSession();
 		if (this.sinks.size > 0 || this.initPromises.size > 0) {
 			previewDiag("clearAll (all decoders destroyed)", {
 				sinks: this.sinks.size,

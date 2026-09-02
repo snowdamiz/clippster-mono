@@ -8,27 +8,7 @@
         @click.prevent
       />
 
-      <!-- Cutout ring — z below arrow so its 9999px shadow never covers the path -->
       <div v-if="spotlightStyle" class="app-tour__spotlight" :style="spotlightStyle" />
-
-      <svg v-if="arrowPath" class="app-tour__arrow" width="100%" height="100%">
-        <path
-          :d="arrowPath.path"
-          fill="none"
-          stroke="#0ea5e9"
-          stroke-width="2.75"
-          stroke-linecap="round"
-          class="app-tour__arrow-stroke"
-        />
-        <path
-          :d="arrowPath.arrowHead"
-          fill="#0ea5e9"
-          stroke="#0ea5e9"
-          stroke-width="1"
-          stroke-linejoin="round"
-          class="app-tour__arrow-head"
-        />
-      </svg>
 
       <div
         v-if="presentedStep"
@@ -37,12 +17,19 @@
         :class="{
           'app-tour__tooltip--centered': !presentedStep.target,
           'app-tour__tooltip--pending': isLayoutPending,
+          [`app-tour__tooltip--${tooltipLayout?.placement}`]: !!tooltipLayout,
         }"
         :style="tooltipStyle"
         role="dialog"
         :aria-label="presentedStep.title"
         :aria-busy="isLayoutPending"
       >
+        <span
+          v-if="presentedStep.target && tooltipLayout"
+          class="app-tour__caret"
+          :style="caretStyle"
+          aria-hidden="true"
+        />
         <div class="app-tour__tooltip-accent" />
         <h3 class="app-tour__tooltip-title">{{ presentedStep.title }}</h3>
         <p class="app-tour__tooltip-body">{{ presentedStep.body }}</p>
@@ -73,12 +60,12 @@
   import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import { useRouter } from 'vue-router';
   import {
-    buildHandDrawnArrowPath,
-    getArrowStyle,
-    resolveStepArrowStyleIndex,
-    arrowStartFromTooltip,
-    arrowEndAtHotspot,
+    computeTooltipLayout,
+    scrollTourTargetIntoView,
+    TOOLTIP_WIDTH,
+    TOOLTIP_HEIGHT,
     type TourStep,
+    type TooltipLayout,
   } from '@clippster/app-tour';
   import { useAppTour } from '@/composables/useAppTour';
 
@@ -91,8 +78,7 @@
 
   const tooltipRef = ref<HTMLElement | null>(null);
   const highlight = ref<{ top: number; left: number; width: number; height: number } | null>(null);
-  const tooltipPos = ref<{ top: number; left: number } | null>(null);
-  const arrowPath = ref<ReturnType<typeof buildHandDrawnArrowPath> | null>(null);
+  const tooltipLayout = ref<TooltipLayout | null>(null);
   let measureGen = 0;
   let activeTargetEl: HTMLElement | null = null;
 
@@ -116,11 +102,20 @@
         transform: 'translate(-50%, -50%)',
       };
     }
-    if (!tooltipPos.value) return { visibility: 'hidden' as const };
+    if (!tooltipLayout.value) return { visibility: 'hidden' as const };
     return {
-      top: `${tooltipPos.value.top}px`,
-      left: `${tooltipPos.value.left}px`,
+      top: `${tooltipLayout.value.top}px`,
+      left: `${tooltipLayout.value.left}px`,
     };
+  });
+
+  const caretStyle = computed(() => {
+    const layout = tooltipLayout.value;
+    if (!layout) return undefined;
+    if (layout.placement === 'left' || layout.placement === 'right') {
+      return { top: `${layout.caretOffset}px` };
+    }
+    return { left: `${layout.caretOffset}px` };
   });
 
   function clearTargetClass() {
@@ -133,8 +128,7 @@
   function clearChrome() {
     clearTargetClass();
     highlight.value = null;
-    arrowPath.value = null;
-    tooltipPos.value = null;
+    tooltipLayout.value = null;
   }
 
   function waitFrames(n: number): Promise<void> {
@@ -180,42 +174,6 @@
     return document.querySelector(`[data-tour-id="${targetId}"]`) as HTMLElement | null;
   }
 
-  function updateArrow(stepId: string) {
-    const pos = tooltipPos.value;
-    if (!pos || !presentedStep.value?.target) {
-      arrowPath.value = null;
-      return;
-    }
-
-    // Always re-measure the live target so the tip stays locked to the highlighted tab
-    const live = activeTargetEl?.getBoundingClientRect();
-    const hot = live
-      ? { left: live.left, top: live.top, width: live.width, height: live.height }
-      : highlight.value;
-    if (!hot) {
-      arrowPath.value = null;
-      return;
-    }
-
-    // Keep spotlight/outline box in sync with the live rect
-    highlight.value = {
-      top: hot.top,
-      left: hot.left,
-      width: hot.width,
-      height: hot.height,
-    };
-
-    const styleIndex = resolveStepArrowStyleIndex(presentedStep.value, progress.value.current - 1);
-    const style = getArrowStyle(styleIndex);
-    const tip = tooltipRef.value?.getBoundingClientRect();
-    const tipBox = tip
-      ? { left: tip.left, top: tip.top, width: tip.width, height: tip.height }
-      : { left: pos.left, top: pos.top, width: 320, height: 180 };
-    const from = arrowStartFromTooltip(tipBox, style.origin);
-    const to = arrowEndAtHotspot(hot, style.targetAnchor);
-    arrowPath.value = buildHandDrawnArrowPath(from, to, stepId, styleIndex);
-  }
-
   async function measure() {
     const gen = ++measureGen;
     const step = currentStep.value;
@@ -246,8 +204,7 @@
     if (!step.target) {
       presentedStep.value = step;
       highlight.value = null;
-      tooltipPos.value = null;
-      arrowPath.value = null;
+      tooltipLayout.value = null;
       isLayoutPending.value = false;
       return;
     }
@@ -256,12 +213,16 @@
     if (gen !== measureGen) return;
 
     if (!el) {
+      // Keep trying — editor chrome can mount after the tour starts
       presentedStep.value = step;
-      isLayoutPending.value = false;
+      isLayoutPending.value = true;
+      window.setTimeout(() => {
+        if (gen === measureGen && isTourActive.value) measure();
+      }, 250);
       return;
     }
 
-    el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    scrollTourTargetIntoView(el);
     await waitFrames(2);
     if (gen !== measureGen) return;
 
@@ -276,38 +237,16 @@
       height: rect.height,
     };
 
-    const placement = step.placement || 'right';
-    const tipW = 320;
-    const tipH = 180;
-    const styleIndex = resolveStepArrowStyleIndex(step, progress.value.current - 1);
-    const style = getArrowStyle(styleIndex);
-    // Sit the card so the chosen swoop has room; gapX drives longer brand paths
-    let tipTop = rect.top + style.tooltipNudgeY;
-    let tipLeft = rect.left + rect.width + style.tooltipGapX;
-
-    if (placement === 'left') {
-      tipLeft = rect.left - tipW - style.tooltipGapX;
-      tipTop = rect.top + style.tooltipNudgeY;
-    } else if (placement === 'bottom') {
-      tipTop = rect.top + rect.height + 72;
-      tipLeft = rect.left + Math.max(0, (rect.width - tipW) / 2);
-    } else if (placement === 'top') {
-      tipTop = rect.top - tipH - 72;
-      tipLeft = rect.left + Math.max(0, (rect.width - tipW) / 2);
-    }
-
-    tipLeft = Math.max(12, Math.min(tipLeft, window.innerWidth - tipW - 12));
-    tipTop = Math.max(12, Math.min(tipTop, window.innerHeight - tipH - 12));
-    tooltipPos.value = { top: tipTop, left: tipLeft };
+    tooltipLayout.value = computeTooltipLayout(
+      { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      step.placement || 'right',
+      TOOLTIP_WIDTH,
+      TOOLTIP_HEIGHT
+    );
 
     // Swap tooltip copy only once highlight + position match this step
     presentedStep.value = step;
     isLayoutPending.value = false;
-
-    await nextTick();
-    await waitFrames(2);
-    if (gen !== measureGen) return;
-    updateArrow(step.id);
   }
 
   function onKeydown(e: KeyboardEvent) {
@@ -378,26 +317,25 @@
     position: fixed;
     border-radius: 10px;
     box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.72);
-    border: 1.5px solid rgba(14, 165, 233, 0.85);
+    border: 2px solid rgba(14, 165, 233, 0.9);
     background: transparent;
     pointer-events: none;
     z-index: 1;
+    animation: app-tour-pulse 1.8s ease-in-out infinite;
   }
 
-  .app-tour__arrow {
-    position: fixed;
-    inset: 0;
-    z-index: 2;
-    pointer-events: none;
-    overflow: visible;
-  }
-
-  .app-tour__arrow-stroke {
-    filter: drop-shadow(0 0 4px rgba(14, 165, 233, 0.55));
-  }
-
-  .app-tour__arrow-head {
-    filter: drop-shadow(0 0 3px rgba(14, 165, 233, 0.45));
+  @keyframes app-tour-pulse {
+    0%,
+    100% {
+      box-shadow:
+        0 0 0 9999px rgba(0, 0, 0, 0.72),
+        0 0 0 0 rgba(14, 165, 233, 0);
+    }
+    50% {
+      box-shadow:
+        0 0 0 9999px rgba(0, 0, 0, 0.72),
+        0 0 0 6px rgba(14, 165, 233, 0.28);
+    }
   }
 
   .app-tour__tooltip {
@@ -420,6 +358,41 @@
 
   .app-tour__tooltip--centered {
     width: min(400px, calc(100vw - 24px));
+  }
+
+  .app-tour__caret {
+    position: absolute;
+    width: 10px;
+    height: 10px;
+    background: #141416;
+    border: 1px solid #1f1f23;
+    transform: translate(-50%, -50%) rotate(45deg);
+    pointer-events: none;
+    z-index: 1;
+  }
+
+  .app-tour__tooltip--right .app-tour__caret {
+    left: 0;
+    border-right: none;
+    border-top: none;
+  }
+
+  .app-tour__tooltip--left .app-tour__caret {
+    left: 100%;
+    border-left: none;
+    border-bottom: none;
+  }
+
+  .app-tour__tooltip--bottom .app-tour__caret {
+    top: 0;
+    border-right: none;
+    border-bottom: none;
+  }
+
+  .app-tour__tooltip--top .app-tour__caret {
+    top: 100%;
+    border-left: none;
+    border-top: none;
   }
 
   .app-tour__tooltip-accent {
@@ -504,7 +477,6 @@
 </style>
 
 <style>
-  /* Real-node outline only — no full-screen shadow (that hid the arrow) */
   .app-tour-target {
     border-radius: 8px !important;
     outline: 2px solid rgba(14, 165, 233, 0.95) !important;

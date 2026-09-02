@@ -10,15 +10,16 @@ export async function loadBitmapFromAsset(asset: {
 	filePath?: string;
 	file: File;
 }): Promise<ImageBitmap> {
+	// Prefer in-memory raster (updated by replaceAssetRaster after paint/erase commits).
+	if (asset.file.size > 0) {
+		return createImageBitmap(asset.file);
+	}
 	if (asset.filePath) {
 		const { invoke } = await import("@tauri-apps/api/core");
 		const dataUrl = await invoke<string>("read_file_as_data_url", { filePath: asset.filePath });
 		const res = await fetch(dataUrl);
 		const blob = await res.blob();
 		return createImageBitmap(blob);
-	}
-	if (asset.file.size > 0) {
-		return createImageBitmap(asset.file);
 	}
 	throw new Error("Media asset has no readable file");
 }
@@ -104,11 +105,13 @@ export async function writeNativeCanvasToMedia(
 	editor.renderer.invalidatePreviewSceneCache();
 	editor.save.markDirty();
 
-	// Persist off the critical path so the stroke feels instant.
+	// Persist to disk before returning so the next stroke doesn't reload a stale filePath.
 	if (asset.filePath) {
-		void writeCanvasToAssetFile(work, asset.filePath).catch((e) => {
+		try {
+			await writeCanvasToAssetFile(work, asset.filePath);
+		} catch (e) {
 			console.warn("[writeNativeCanvasToMedia] Disk write failed:", e);
-		});
+		}
 	}
 	void storageService
 		.saveMediaAsset({

@@ -148,7 +148,7 @@ async function mergeScratchOntoMedia(
 /** Live overlay: paint shows ink; erase shows a checkerboard punch-out (not opaque white). */
 let checkerPattern: CanvasPattern | null = null;
 
-function getCheckerPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
+export function getCheckerPattern(ctx: CanvasRenderingContext2D): CanvasPattern | null {
 	if (checkerPattern) return checkerPattern;
 	const tile = document.createElement("canvas");
 	tile.width = 16;

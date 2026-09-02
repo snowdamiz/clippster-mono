@@ -24,7 +24,14 @@ export type CanvasRendererParams = {
 	 * Video preview stays `"black"`.
 	 */
 	clearStyle?: "black" | "transparent";
+	/**
+	 * Scene export keeps the last good composed frame when a decode miss would
+	 * otherwise bake a black clear (mirrors preview keeping the last presented canvas).
+	 */
+	exportRetainLastFrame?: boolean;
 };
+
+type ExportTargetCanvas = HTMLCanvasElement | OffscreenCanvas;
 
 export class CanvasRenderer {
 	canvas: OffscreenCanvas | HTMLCanvasElement;
@@ -38,6 +45,9 @@ export class CanvasRenderer {
 	framePolicy: FrameRenderPolicy;
 	prewarmUpcoming: boolean;
 	clearStyle: "black" | "transparent";
+	exportRetainLastFrame: boolean;
+	private lastExportFrame: ImageBitmap | null = null;
+	private drewVisualThisFrame = false;
 
 	constructor({
 		width,
@@ -51,6 +61,7 @@ export class CanvasRenderer {
 		framePolicy = "exact-preview",
 		prewarmUpcoming = false,
 		clearStyle = "black",
+		exportRetainLastFrame = false,
 	}: CanvasRendererParams) {
 		this.width = width;
 		this.height = height;
@@ -61,6 +72,7 @@ export class CanvasRenderer {
 		this.framePolicy = framePolicy;
 		this.prewarmUpcoming = prewarmUpcoming;
 		this.clearStyle = clearStyle;
+		this.exportRetainLastFrame = exportRetainLastFrame;
 
 		if (preferOffscreen) {
 			try {
@@ -98,6 +110,44 @@ export class CanvasRenderer {
 
 	getBackingSize(): { width: number; height: number } {
 		return { width: this.backingWidth, height: this.backingHeight };
+	}
+
+	/** Nodes call after a successful drawImage during exact-export composition. */
+	markVisualDrawn(): void {
+		this.drewVisualThisFrame = true;
+	}
+
+	dispose(): void {
+		this.lastExportFrame?.close();
+		this.lastExportFrame = null;
+	}
+
+	private async captureExportFrame(): Promise<void> {
+		if (!this.exportRetainLastFrame && this.framePolicy !== "exact-export") return;
+		try {
+			const bitmap = await createImageBitmap(this.canvas);
+			this.lastExportFrame?.close();
+			this.lastExportFrame = bitmap;
+		} catch {
+			// Non-fatal — next frame may still decode cleanly.
+		}
+	}
+
+	private restoreLastExportFrame(): void {
+		if (!this.lastExportFrame) return;
+		const ctx = this.context;
+		ctx.setTransform(1, 0, 0, 1, 0, 0);
+		ctx.globalAlpha = 1;
+		ctx.globalCompositeOperation = "source-over";
+		ctx.filter = "none";
+		ctx.drawImage(
+			this.lastExportFrame,
+			0,
+			0,
+			this.canvas.width,
+			this.canvas.height,
+		);
+		this.applyLogicalScale();
 	}
 
 	private applyLogicalScale() {
@@ -184,8 +234,19 @@ export class CanvasRenderer {
 		signal?: AbortSignal;
 	}) {
 		if (signal?.aborted) return;
+		this.drewVisualThisFrame = false;
 		this.clear();
 		await node.render({ renderer: this, time, skipPrefetch: true });
+
+		if (this.exportRetainLastFrame || this.framePolicy === "exact-export") {
+			if (this.drewVisualThisFrame) {
+				await this.captureExportFrame();
+			} else if (this.lastExportFrame) {
+				// Decoder miss or segment-boundary hole — repeat the last good export
+				// frame instead of baking a black clear into the output file.
+				this.restoreLastExportFrame();
+			}
+		}
 	}
 
 	async render({
@@ -209,7 +270,7 @@ export class CanvasRenderer {
 	}: {
 		node: BaseNode;
 		time: number;
-		targetCanvas: HTMLCanvasElement;
+		targetCanvas: ExportTargetCanvas;
 		signal?: AbortSignal;
 	}) {
 		await this.render({ node, time, signal });

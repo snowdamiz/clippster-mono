@@ -21,7 +21,10 @@ import {
 	RefreshCw,
 } from "lucide-vue-next";
 import PanelSearchBar from "./PanelSearchBar.vue";
-import { utf8ToBase64Url } from "@/utils/encoding";
+import {
+	collectTimelineSpeechElements,
+	transcribeTimelineSpeechElements,
+} from "../../../lib/transcribe-timeline-audio";
 
 // ── Types ──
 interface TranscriptWord {
@@ -642,12 +645,12 @@ async function saveTranscriptToDatabase(transcriptWords: TranscriptWord[]) {
 	}
 }
 
-// Generate transcript from video audio (same as CaptionsView but stores words only)
+// Generate transcript from video audio
 async function handleGenerateTranscript() {
 	try {
 		isGenerating.value = true;
 		error.value = null;
-		generatingStep.value = "Collecting audio from timeline...";
+		generatingStep.value = "Collecting audio from timeline…";
 
 		const activeProject = editor.project.getActive();
 		if (!activeProject) {
@@ -656,125 +659,31 @@ async function handleGenerateTranscript() {
 		}
 		const projectId = activeProject.metadata.id;
 
-		const tracks = editor.timeline.getTracks();
-		const mediaAssets = editor.media.getAssets();
-
-		// Collect video elements that contain speech
-		const speechElements: Array<{
-			filePath: string;
-			timelineStart: number;
-			trimStart: number;
-			duration: number;
-		}> = [];
-
-		for (const track of tracks) {
-			if (track.type === "video") {
-				for (const el of track.elements) {
-					const videoEl = el as any;
-					const asset = mediaAssets.find((a) => a.id === videoEl.mediaId);
-					if (asset?.filePath) {
-						speechElements.push({
-							filePath: asset.filePath,
-							timelineStart: videoEl.startTime,
-							trimStart: videoEl.trimStart,
-							duration: videoEl.duration,
-						});
-					} else if (asset?.url) {
-						speechElements.push({
-							filePath: asset.url,
-							timelineStart: videoEl.startTime,
-							trimStart: videoEl.trimStart,
-							duration: videoEl.duration,
-						});
-					}
-				}
-			}
-		}
-
+		const speechElements = collectTimelineSpeechElements(editor);
 		if (speechElements.length === 0) {
 			error.value = "No video tracks found on the timeline.";
 			return;
 		}
 
-		const { parseTranscriptToWords } = await import("@/utils/timelineUtils");
-		const api = (await import("@/services/api")).default;
-
-		let allWords: TranscriptWord[] = [];
-
-		for (let i = 0; i < speechElements.length; i++) {
-			const elem = speechElements[i];
-			generatingStep.value = `Transcribing ${i + 1}/${speechElements.length}...`;
-
-			try {
-				let file: File;
-				if (elem.filePath.startsWith("blob:") || elem.filePath.startsWith("http")) {
-					const resp = await fetch(elem.filePath);
-					const blob = await resp.blob();
-					file = new File([blob], "audio.mp4", { type: blob.type || "video/mp4" });
-				} else {
-					const { invoke } = await import("@tauri-apps/api/core");
-					let port: number;
-					try { port = await invoke<number>("get_video_server_port"); } catch { port = 8642; }
-					const serverUrl = `http://localhost:${port}/video/${utf8ToBase64Url(elem.filePath)}`;
-					const resp = await fetch(serverUrl);
-					if (!resp.ok) throw new Error(`Video server returned ${resp.status}`);
-					const blob = await resp.blob();
-					file = new File([blob], "audio.mp4", { type: blob.type || "video/mp4" });
-				}
-
-				const formData = new FormData();
-				formData.append("audio", file);
-				formData.append("project_id", projectId);
-				formData.append("duration", (elem.trimStart + elem.duration).toString());
-
-				const response = await api.post("/clips/transcribe", formData, {
-					headers: { "Content-Type": undefined },
-					timeout: 120000,
-				});
-
-				if (response.data.success && response.data.transcript) {
-					const rawJson = JSON.stringify(response.data.transcript);
-					const words = parseTranscriptToWords(rawJson);
-
-					const trimEnd = elem.trimStart + elem.duration;
-					for (const w of words) {
-						if (w.start >= elem.trimStart && w.start < trimEnd) {
-							allWords.push({
-								word: w.word,
-								start: w.start - elem.trimStart + elem.timelineStart,
-								end: w.end - elem.trimStart + elem.timelineStart,
-								confidence: w.confidence,
-							});
-						}
-					}
-				}
-			} catch (err: any) {
-				console.warn("[TranscriptView] Failed to transcribe element:", err?.message || err);
-			}
-		}
+		const allWords = await transcribeTimelineSpeechElements(
+			speechElements,
+			projectId,
+			(step) => {
+				generatingStep.value = step;
+			},
+		);
 
 		if (allWords.length === 0) {
 			error.value = "Transcription returned no words. Check that the video has speech audio.";
 			return;
 		}
 
-		// Sort by timeline time and deduplicate
-		allWords.sort((a, b) => a.start - b.start);
-		allWords = allWords.filter((w, i, arr) => {
-			if (i === 0) return true;
-			return !(Math.abs(w.start - arr[i - 1].start) < 0.01 && w.word === arr[i - 1].word);
-		});
-
 		// Set words in transcript manager
 		editor.transcript.setWords(allWords);
 		words.value = allWords;
 
-		// Save transcript to database for persistence
-		generatingStep.value = "Saving transcript...";
+		// Persist to database when possible
 		await saveTranscriptToDatabase(allWords);
-
-		generatingStep.value = "";
-		error.value = null;
 	} catch (err) {
 		console.error("[TranscriptView] Failed to generate transcript:", err);
 		error.value = err instanceof Error ? err.message : "An unexpected error occurred";

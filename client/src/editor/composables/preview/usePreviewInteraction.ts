@@ -220,7 +220,7 @@ export function usePreviewInteraction({
 	const { editor, version } = useEditor({
 		subscribe: {
 			playback: false,
-			selection: false,
+			selection: true,
 			timeline: true,
 			media: true,
 			// Live preview transforms update tracks through ScenesManager, so the
@@ -233,7 +233,7 @@ export function usePreviewInteraction({
 	type ClientPoint = Pick<MouseEvent, "clientX" | "clientY">;
 	let pendingPointerEvent: ClientPoint | null = null;
 	let playbackRafId: number | null = null;
-	const { selectedElements, selectElement, clearElementSelection, isElementSelected } = useElementSelection();
+	const { selectedElements, selectElement, clearElementSelection } = useElementSelection();
 	const { previewFocused, setPreviewFocused } = usePreviewFocus();
 
 	const dragState = ref<DragState | null>(null);
@@ -593,6 +593,34 @@ export function usePreviewInteraction({
 		return editor.timeline.getTracks().find((t) => t.id === trackId)?.locked === true;
 	}
 
+	function cloneTransform(transform: Transform): Transform {
+		return {
+			scale: transform.scale,
+			rotate: transform.rotate,
+			position: { x: transform.position.x, y: transform.position.y },
+		};
+	}
+
+	/** Resolve which element transforms a canvas drag/resize should affect. */
+	function getTransformTargetIds(trackId: string, primaryElementId: string): string[] {
+		const track = editor.timeline.getTrackById({ trackId });
+		const selectedIds = editor.selection
+			.getSelectedElements()
+			.filter((s) => s.trackId === trackId)
+			.map((s) => s.elementId);
+		const ids = new Set(selectedIds);
+		ids.add(primaryElementId);
+
+		if (track?.type === "caption" && track.elements.length > 1) {
+			const allTrackIds = track.elements.map((e) => e.id);
+			if (allTrackIds.every((id) => ids.has(id))) {
+				return allTrackIds;
+			}
+		}
+
+		return [...ids];
+	}
+
 	async function handleCanvasMouseDown(event: MouseEvent) {
 		if (event.button !== 0) return;
 
@@ -604,8 +632,11 @@ export function usePreviewInteraction({
 			let releasedBeforeDrag = false;
 			// If the clicked element is already part of a multi-selection (e.g. caption track),
 			// preserve the selection so the entire group moves together.
-			const alreadySelected = isElementSelected({ trackId: hit.trackId, elementId: hit.elementId });
-			if (!alreadySelected) {
+			const selectedOnTrack = editor.selection
+				.getSelectedElements()
+				.filter((s) => s.trackId === hit.trackId);
+			const hitInSelection = selectedOnTrack.some((s) => s.elementId === hit.elementId);
+			if (!hitInSelection) {
 				const markOpts: AddEventListenerOptions = { capture: true };
 				const markReleased = (upEvent: MouseEvent | PointerEvent) => {
 					if (upEvent.button === event.button) {
@@ -653,21 +684,14 @@ export function usePreviewInteraction({
 		const pos = screenToCanvas(event.clientX, event.clientY);
 		if (!pos) return;
 
-		const selectedOnTrack = selectedElements.value
-			.filter((s) => s.trackId === bounds.trackId)
-			.map((s) => s.elementId);
-		if (!selectedOnTrack.includes(bounds.elementId)) selectedOnTrack.push(bounds.elementId);
+		const selectedOnTrack = getTransformTargetIds(bounds.trackId, bounds.elementId);
 		const track = editor.timeline.getTrackById({ trackId: bounds.trackId });
 		const selectedOriginalTransforms: Record<string, Transform> = {};
 		for (const elementId of selectedOnTrack) {
 			const element = track?.elements.find((e) => e.id === elementId);
 			if (element && "transform" in element) {
-				const t = (element as any).transform as Transform;
-				selectedOriginalTransforms[elementId] = {
-					scale: t.scale,
-					rotate: t.rotate,
-					position: { x: t.position.x, y: t.position.y },
-				};
+				const t = (element as { transform: Transform }).transform;
+				selectedOriginalTransforms[elementId] = cloneTransform(t);
 			}
 		}
 
@@ -823,30 +847,21 @@ export function usePreviewInteraction({
 
 		const ds = dragState.value;
 		if (ds) {
-			// Collect all selected element IDs on this track (for batch commit, e.g. caption track)
-			const selectedOnTrack = new Set(
-				selectedElements.value
-					.filter((s) => s.trackId === ds.trackId)
-					.map((s) => s.elementId),
-			);
-			selectedOnTrack.add(ds.elementId);
+			const selectedOriginal = ds.selectedOriginalTransforms ?? {};
+			const latestTransforms = ds.latestTransforms ?? {};
+			const targetIds = new Set([...Object.keys(selectedOriginal), ...Object.keys(latestTransforms)]);
 
 			// Commit the final transform via command for undo/redo. Use the values
 			// computed by the drag itself; reading back from live scene state is fragile
 			// because the live preview path mutates scenes outside TimelineManager.
 			const track = editor.timeline.getTrackById({ trackId: ds.trackId });
-			if (track) {
-				const selectedOriginal = ds.selectedOriginalTransforms ?? {};
+			if (track && targetIds.size > 0) {
 				const finalTransforms = new Map<string, Transform>();
 
-				for (const elId of selectedOnTrack) {
-					const t = ds.latestTransforms?.[elId];
+				for (const elId of targetIds) {
+					const t = latestTransforms[elId];
 					if (!t) continue;
-					finalTransforms.set(elId, {
-						scale: t.scale,
-						rotate: t.rotate,
-						position: { x: t.position.x, y: t.position.y },
-					});
+					finalTransforms.set(elId, cloneTransform(t));
 				}
 
 				let changed = false;
@@ -875,7 +890,7 @@ export function usePreviewInteraction({
 							updates: batchUpdates,
 							previousTransforms: batchUpdates.map(({ elementId }) => ({
 								elementId,
-								transform: selectedOriginal[elementId],
+								transform: cloneTransform(selectedOriginal[elementId]),
 							})),
 						});
 					}
@@ -997,14 +1012,8 @@ export function usePreviewInteraction({
 	}
 
 	function applyTransformDirect(trackId: string, elementId: string, transform: Transform) {
-		// Collect all selected element IDs on this track so they all move together
-		const selectedOnTrack = new Set(
-			selectedElements.value
-				.filter((s) => s.trackId === trackId)
-				.map((s) => s.elementId),
-		);
-		// Always include the primary dragged element
-		selectedOnTrack.add(elementId);
+		const selectedOnTrack = new Set(getTransformTargetIds(trackId, elementId));
+		const nextTransform = cloneTransform(transform);
 
 		const currentTracks = editor.timeline.getTracks();
 		const updatedTracks = currentTracks.map((t) => {
@@ -1012,7 +1021,7 @@ export function usePreviewInteraction({
 			return {
 				...t,
 				elements: t.elements.map((el) =>
-					selectedOnTrack.has(el.id) ? { ...el, transform } : el,
+					selectedOnTrack.has(el.id) ? { ...el, transform: nextTransform } : el,
 				),
 			} as typeof t;
 		});
