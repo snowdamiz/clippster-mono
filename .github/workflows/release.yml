@@ -93,8 +93,8 @@ jobs:
       - name: Deploy Landing to Fly.io
         env:
           FLY_API_TOKEN: ${{ secrets.FLY_LANDING_TOKEN }}
-        # Deploy from repo root so packages/app-tour is in the Docker context
-        run: flyctl deploy --remote-only --config landing/fly.toml
+        # Context = monorepo root (for packages/app-tour); dockerfile stays under landing/
+        run: flyctl deploy . --remote-only --config landing/fly.toml --dockerfile landing/Dockerfile
 
   # Build for each platform
   build-tauri:

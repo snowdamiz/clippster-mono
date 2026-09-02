@@ -1,0 +1,23 @@
+# BuildKit looks for <Dockerfile>.dockerignore when the Dockerfile is not at
+# the build-context root (context = monorepo root, dockerfile = landing/Dockerfile).
+**/node_modules
+**/dist
+.git
+**/.git
+.gitignore
+**/*.md
+.env*
+**/.env*
+.vscode
+.idea
+**/.vscode
+**/.idea
+
+# Exclude other apps / tooling from the landing image context
+apps
+client
+server
+scripts
+.github
+.claude
+docs
