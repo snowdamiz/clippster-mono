@@ -614,7 +614,19 @@
   async function loadProjects() {
     loading.value = true;
     try {
-      projects.value = await getAllVideoEditorProjects();
+      const allProjects = await getAllVideoEditorProjects();
+      // Purge leftover ephemeral tour projects from the old delete-on-exit flow
+      const leftovers = allProjects.filter((p) => p.name === 'Tour Demo');
+      for (const project of leftovers) {
+        try {
+          await deleteVideoEditorProject(project.id);
+        } catch (err) {
+          console.warn('[VideoEditor] Failed to delete leftover Tour Demo project', project.id, err);
+        }
+      }
+      projects.value = leftovers.length
+        ? allProjects.filter((p) => p.name !== 'Tour Demo')
+        : allProjects;
 
       // Load source counts, sources, thumbnails, and edit info for each project
       const counts = new Map<string, number>();

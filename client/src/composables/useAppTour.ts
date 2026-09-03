@@ -22,13 +22,10 @@ const mockStreamerActive = ref(false);
 const mockProjectActive = ref(false);
 const forceSidebarExpanded = ref(false);
 
-/** Ephemeral editor project IDs created for tours */
-const tourVideoEditorProjectId = ref<string | null>(null);
-const tourImageEditorProjectId = ref<string | null>(null);
+/** Default name for the real project opened during the video-editor tour */
+const TOUR_VIDEO_PROJECT_NAME = 'Untitled Project';
 /** Set while navigating to an editor; started once the editor UI is mounted */
 const pendingEditorTour = ref<TourId | null>(null);
-/** Skip cloud autosave when the tour exits the editor (demo project is ephemeral). */
-const skipEditorPersistOnExit = ref(false);
 
 function todayIso(): string {
   return new Date().toISOString().slice(0, 10);
@@ -148,8 +145,7 @@ export function useAppTour() {
       // Completion key already cleared above — force the editor tour path
       if (kind === 'video') {
         const { createVideoEditorProject } = await import('@/services/database/video-editor-projects');
-        const projectId = await createVideoEditorProject('Tour Demo');
-        tourVideoEditorProjectId.value = projectId;
+        const projectId = await createVideoEditorProject(TOUR_VIDEO_PROJECT_NAME);
         pendingEditorTour.value = 'page_video_editor';
         await router.push({ path: '/editor', query: { projectId, tour: '1' } });
       } else {
@@ -237,65 +233,21 @@ export function useAppTour() {
     syncMockFlags();
   }
 
-  async function cleanupEphemeralProjects(
-    videoIdOverride?: string | null,
-    imageIdOverride?: string | null
-  ): Promise<void> {
-    const videoId = videoIdOverride ?? tourVideoEditorProjectId.value;
-    const imageId = imageIdOverride ?? tourImageEditorProjectId.value;
-    tourVideoEditorProjectId.value = null;
-    tourImageEditorProjectId.value = null;
-
-    if (videoId) {
-      try {
-        const { deleteVideoEditorProject } = await import('@/services/database/video-editor-projects');
-        await deleteVideoEditorProject(videoId);
-      } catch (e) {
-        console.warn('[AppTour] Failed to delete tour video project', e);
-      }
-    }
-    if (imageId) {
-      try {
-        const { deleteProject } = await import('@/services/imageEditorApi');
-        await deleteProject(Number(imageId));
-      } catch (e) {
-        console.warn('[AppTour] Failed to delete tour image project', e);
-      }
-    }
-  }
-
-  async function exitEditorAfterTour(tourId: 'page_video_editor' | 'page_image_editor'): Promise<void> {
-    skipEditorPersistOnExit.value = true;
-
-    const videoId = tourVideoEditorProjectId.value;
-    let imageId = tourImageEditorProjectId.value;
-    if (!imageId && tourId === 'page_image_editor') {
-      try {
-        const { default: router } = await import('@/router');
-        const projectId = router.currentRoute.value.query.projectId;
-        if (projectId) imageId = String(projectId);
-      } catch {
-        /* ignore */
-      }
-    }
-
-    try {
-      const { EditorCore } = await import('@/editor/core');
-      EditorCore.reset();
-    } catch (e) {
-      console.warn('[AppTour] Failed to reset editor after tour', e);
-    }
-
+  /**
+   * After skip/complete of an editor tour: keep the editor open on the same
+   * project (it is the user's real starting project) and drop ?tour=1.
+   */
+  async function finalizeEditorTour(): Promise<void> {
     try {
       const { default: router } = await import('@/router');
-      const dest = tourId === 'page_video_editor' ? '/video-editor' : '/design-studio';
-      await router.replace(dest);
+      const route = router.currentRoute.value;
+      if (route.query.tour == null) return;
+      const nextQuery = { ...route.query };
+      delete nextQuery.tour;
+      await router.replace({ path: route.path, query: nextQuery });
     } catch (e) {
-      console.warn('[AppTour] Failed to navigate after editor tour', e);
+      console.warn('[AppTour] Failed to clear tour query after editor tour', e);
     }
-
-    // Delete the demo project in the background — never block exit on API latency
-    void cleanupEphemeralProjects(videoId, imageId);
   }
 
   async function finishTour(): Promise<void> {
@@ -303,8 +255,8 @@ export function useAppTour() {
     const wasEditorTour = id === 'page_video_editor' || id === 'page_image_editor';
     clearTourState();
     if (id) await markTourComplete(id);
-    if (wasEditorTour && id) {
-      await exitEditorAfterTour(id);
+    if (wasEditorTour) {
+      await finalizeEditorTour();
     }
   }
 
@@ -366,8 +318,7 @@ export function useAppTour() {
 
     if (kind === 'video') {
       const { createVideoEditorProject } = await import('@/services/database/video-editor-projects');
-      const projectId = await createVideoEditorProject('Tour Demo');
-      tourVideoEditorProjectId.value = projectId;
+      const projectId = await createVideoEditorProject(TOUR_VIDEO_PROJECT_NAME);
       pendingEditorTour.value = 'page_video_editor';
       // tour=1 survives remounts / races so OpenCutEditor can start the walkthrough
       await router.push({ path: '/editor', query: { projectId, tour: '1' } });
@@ -394,10 +345,6 @@ export function useAppTour() {
     startTour(id);
   }
 
-  function setTourImageProjectId(id: string | number): void {
-    tourImageEditorProjectId.value = String(id);
-  }
-
   watch(currentStep, syncMockFlags);
 
   return {
@@ -411,8 +358,6 @@ export function useAppTour() {
     mockStreamerActive,
     mockProjectActive,
     forceSidebarExpanded,
-    tourVideoEditorProjectId,
-    tourImageEditorProjectId,
     completedTours,
     hasCompleted,
     startTour,
@@ -431,7 +376,6 @@ export function useAppTour() {
     shouldInterceptEditorNav,
     handleEditorNavClick,
     notifyEditorReadyForTour,
-    setTourImageProjectId,
   };
 }
 
@@ -443,6 +387,5 @@ export function useTourFlags() {
     mockProjectActive,
     forceSidebarExpanded,
     activeTourId,
-    skipEditorPersistOnExit,
   };
 }

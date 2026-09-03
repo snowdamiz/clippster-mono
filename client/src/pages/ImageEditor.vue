@@ -31,12 +31,12 @@ import { useImageEditorProjects } from "@/composables/useImageEditorProjects";
 import { useFormatters } from "@/composables/useFormatters";
 import { useAuthStore } from "@/stores/auth";
 import type { ProjectSummary } from "@/services/imageEditorApi";
-import { useAppTour, useTourFlags } from "@/composables/useAppTour";
+import { useAppTour } from "@/composables/useAppTour";
 
 const route = useRoute();
 const router = useRouter();
 const authStore = useAuthStore();
-const { setTourImageProjectId, notifyEditorReadyForTour } = useAppTour();
+const { notifyEditorReadyForTour } = useAppTour();
 const { getRelativeTime: formatRelativeTimeFromUnix } = useFormatters();
 
 const isEditorLoading = ref(true);
@@ -260,7 +260,7 @@ onMounted(async () => {
 async function bootstrapTourImageProject() {
 	const preset = CANVAS_PRESETS.find((p) => p.id === "youtube-720") ?? CANVAS_PRESETS[0];
 	const canvasSize = { width: preset.width, height: preset.height };
-	const name = "Tour Demo";
+	const name = "Untitled Design";
 
 	try {
 		isEditorLoading.value = true;
@@ -275,7 +275,6 @@ async function bootstrapTourImageProject() {
 			canvas_height: canvasSize.height,
 		});
 
-		setTourImageProjectId(backendProject.id);
 		startCloudAutosave();
 		await router.replace({
 			path: "/design-studio/edit",
@@ -290,12 +289,6 @@ async function bootstrapTourImageProject() {
 
 onUnmounted(() => {
 	stopCloudAutosave();
-	const { skipEditorPersistOnExit } = useTourFlags();
-	if (skipEditorPersistOnExit.value) {
-		skipEditorPersistOnExit.value = false;
-		EditorCore.reset();
-		return;
-	}
 	void syncToCloud({ flush: true }).finally(() => {
 		EditorCore.reset();
 	});
@@ -602,6 +595,18 @@ async function loadProjects() {
 	isLoadingProjects.value = true;
 	try {
 		await projectManager.listProjects();
+		// Purge leftover ephemeral tour projects from the old delete-on-exit flow
+		const leftovers = projectManager.projects.value.filter((p) => p.name === "Tour Demo");
+		for (const project of leftovers) {
+			try {
+				await projectManager.deleteProject(project.id);
+			} catch (e) {
+				console.warn("[ImageEditor] Failed to delete leftover Tour Demo project", project.id, e);
+			}
+		}
+		if (leftovers.length > 0) {
+			await projectManager.listProjects();
+		}
 	} catch (e) {
 		console.error("[ImageEditor] Failed to load projects:", e);
 	} finally {
