@@ -2,6 +2,7 @@ import {
   ClippsterEditorPreview,
   isNativePreviewAvailable,
 } from '@clippster/editor-native';
+import { useMemo } from 'react';
 import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
@@ -58,7 +59,8 @@ export function EditorCanvas({
     (asset) => asset.kind === 'video' || asset.kind === 'image',
   );
   const nativeReady = isNativePreviewAvailable();
-  const documentJson = JSON.stringify(document);
+  // Only re-serialize when the edit document changes — not every playhead tick.
+  const documentJson = useMemo(() => JSON.stringify(document), [document]);
 
   return (
     <View className="min-h-[240px] flex-1 items-center justify-center bg-black">

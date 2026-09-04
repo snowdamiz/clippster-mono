@@ -85,17 +85,24 @@ export function MobileEditorShell({
   }, [document, engine]);
 
   useEffect(() => {
+    let lastUiMs = 0;
     const remove = engine.onTimeUpdate((timeSeconds) => {
       const tick = Math.min(
         durationTick,
         Math.round(timeSeconds * EDITOR_TICKS_PER_SECOND),
       );
-      setPlayheadTick(tick);
       if (tick >= durationTick) {
+        setPlayheadTick(durationTick);
         setPlaying(false);
         engine.pause();
         controller.updateSession({ playheadTick: durationTick });
+        return;
       }
+      // Cap React playhead updates ~30fps so canvas/timeline do not thrash every vsync.
+      const now = Date.now();
+      if (now - lastUiMs < 33) return;
+      lastUiMs = now;
+      setPlayheadTick(tick);
     });
     return remove;
   }, [controller, durationTick, engine]);
