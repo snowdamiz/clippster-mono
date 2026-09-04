@@ -7,7 +7,7 @@ import { tokens } from '@/theme/tokens';
 
 import type { ColorValue } from 'react-native';
 
-type TabRouteName = 'projects' | 'download' | 'clips' | 'profile';
+type TabRouteName = 'projects' | 'editor' | 'clips' | 'profile';
 
 function tabBarIcon(name: TabRouteName) {
   function TabIcon({ color, size }: { focused: boolean; color: ColorValue; size: number }) {
@@ -54,7 +54,11 @@ export default function TabsLayout() {
       />
       <Tabs.Screen
         name="download"
-        options={{ title: 'Create', tabBarIcon: tabBarIcon('download') }}
+        options={{ href: null }}
+      />
+      <Tabs.Screen
+        name="editor"
+        options={{ title: 'Editor', tabBarIcon: tabBarIcon('editor') }}
       />
       <Tabs.Screen
         name="clips"

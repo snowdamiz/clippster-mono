@@ -1,0 +1,19 @@
+{
+  "name": "@clippster/editor-native",
+  "version": "0.1.0",
+  "private": true,
+  "main": "./src/index.ts",
+  "types": "./src/index.ts",
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:cpp": "cmake -S cpp -B cpp/build && cmake --build cpp/build --config Release && ctest --test-dir cpp/build -C Release --output-on-failure"
+  },
+  "peerDependencies": {
+    "expo": "*",
+    "react": "*",
+    "react-native": "*"
+  },
+  "devDependencies": {
+    "typescript": "~5.8.3"
+  }
+}

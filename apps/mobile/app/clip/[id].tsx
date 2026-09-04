@@ -14,28 +14,24 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import type { EditorToolId } from '@/components/editor/ClipMoreSheet';
 import { ClipMoreSheet } from '@/components/editor/ClipMoreSheet';
 import { VideoPlayerControls } from '@/components/editor/VideoPlayerControls';
-import { ExportSheet } from '@/components/export/ExportSheet';
 import { SubtitleOverlay } from '@/components/subtitles/SubtitleOverlay';
 import { SubtitleSheet } from '@/components/subtitles/SubtitleSheet';
 import { TextBoxOverlay } from '@/components/textbox/TextBoxOverlay';
 import { TextBoxSheet } from '@/components/textbox/TextBoxSheet';
-import { VideoThumbnailProvider } from '@/components/media/HiddenThumbnailPlayer';
 import { SegmentTimeline } from '@/components/workspace/SegmentTimeline';
 import { useSmoothPlayerTime } from '@/hooks/useSmoothPlayerTime';
 import { configurePreviewPlayer } from '@/lib/configurePreviewPlayer';
 import { toVideoSource } from '@/lib/playbackVideo';
-import type { Clip, ClipSegment, Project } from '@clippster/shared-types';
-import type { ClipTextBoxState, SubtitleSettings } from '@clippster/shared-types';
-import { upsertClipTextPerRatioGeometry } from '@clippster/shared-types';
-import { AiPipeline, type AiPipelineProgress } from '@/services/aiPipeline';
 import {
-  buildClipExport,
-  cancelClipBuild,
-  type ClipBuildProgress,
-} from '@/services/clipBuildPipeline';
-import { loadEditDocument } from '@/lib/timeline/editStorage';
-import { buildTimelineExport } from '@/services/timelineExport';
-import { transcriptWordsFromRaw, transcriptWordsForClip } from '@/lib/subtitleVisibleWords';
+  upsertClipTextPerRatioGeometry,
+  type Clip,
+  type ClipSegment,
+  type ClipTextBoxState,
+  type Project,
+  type SubtitleSettings,
+} from '@clippster/shared-types';
+import { AiPipeline, type AiPipelineProgress } from '@/services/aiPipeline';
+import { transcriptWordsForClip } from '@/lib/subtitleVisibleWords';
 import {
   getClipById,
   getClipSegmentsByClipId,
@@ -51,7 +47,6 @@ import {
 import { ensurePlayableVideo } from '@/services/ensurePlayableVideo';
 import { useAccount } from '@/context/AccountContext';
 import { tokens } from '@/theme/tokens';
-import { appAlert } from '@/lib/appAlert';
 
 function ClipWorkspace({
   clipId,
@@ -78,9 +73,7 @@ function ClipWorkspace({
   const [textBox, setTextBox] = useState<ClipTextBoxState | null>(null);
   const [showSubtitleSheet, setShowSubtitleSheet] = useState(false);
   const [showTextBoxSheet, setShowTextBoxSheet] = useState(false);
-  const [showExportSheet, setShowExportSheet] = useState(false);
   const [showMoreSheet, setShowMoreSheet] = useState(false);
-  const [exportProgress, setExportProgress] = useState<ClipBuildProgress | null>(null);
   const [previewRatio, setPreviewRatio] = useState<'9:16' | '16:9'>('16:9');
   const [aiProgress, setAiProgress] = useState<AiPipelineProgress | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
@@ -184,39 +177,6 @@ function ClipWorkspace({
     [videoWidth, videoHeight],
   );
 
-  async function handleExport(options: {
-    ratios: ('9:16' | '16:9')[];
-    remuxOnly: boolean;
-  }) {
-    if (!clipId || !clip?.project_id) return;
-    setExportProgress({ state: 'building', progress: 0, message: 'Starting...' });
-    try {
-      const timeline =
-        (await loadEditDocument('clip', clipId)) ??
-        (await loadEditDocument('project', clip.project_id));
-      if (timeline && timeline.videos.length > 0 && !options.remuxOnly) {
-        const words = transcriptJson ? transcriptWordsFromRaw(transcriptJson) : [];
-        await buildTimelineExport(timeline, {
-          ratios: options.ratios,
-          wordsBySourcePath: videoPath ? { [videoPath]: words } : {},
-          clipId,
-          projectId: clip.project_id,
-          onProgress: setExportProgress,
-        });
-      } else {
-        await buildClipExport(clipId, clip.project_id, {
-          ratios: options.ratios,
-          remuxOnly: options.remuxOnly,
-          onProgress: setExportProgress,
-        });
-      }
-    } catch (error) {
-      if ((error as Error).message !== 'Export cancelled') {
-        appAlert('Export failed', error instanceof Error ? error.message : String(error));
-      }
-    }
-  }
-
   function handleToolPress(tool: EditorToolId) {
     switch (tool) {
       case 'edit':
@@ -246,7 +206,6 @@ function ClipWorkspace({
   }
 
   return (
-    <VideoThumbnailProvider paths={[videoPath]}>
     <View className="flex-1 bg-background">
       <Stack.Screen options={{ headerShown: false }} />
       <SafeAreaView edges={['top']} className="border-b border-border bg-background">
@@ -265,7 +224,12 @@ function ClipWorkspace({
               <Ionicons name="ellipsis-horizontal" size={16} color={tokens.colors.foreground} />
             </Pressable>
             <Pressable
-              onPress={() => setShowExportSheet(true)}
+              onPress={() =>
+                router.push({
+                  pathname: '/edit/[kind]/[id]',
+                  params: { kind: 'clip', id: clipId },
+                })
+              }
               className="rounded-lg bg-primary px-3 py-1.5"
             >
               <Text className="text-sm font-semibold text-primary-foreground">Export</Text>
@@ -401,17 +365,7 @@ function ClipWorkspace({
         }}
       />
 
-      <ExportSheet
-        visible={showExportSheet}
-        progress={exportProgress}
-        onClose={() => {
-          if (exportProgress?.state === 'building') cancelClipBuild();
-          setShowExportSheet(false);
-        }}
-        onExport={handleExport}
-      />
     </View>
-    </VideoThumbnailProvider>
   );
 }
 

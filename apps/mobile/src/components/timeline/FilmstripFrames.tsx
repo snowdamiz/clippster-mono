@@ -1,8 +1,7 @@
-import type { VideoThumbnail } from 'expo-video';
 import { useEffect, useMemo, useState } from 'react';
-import { View } from 'react-native';
+import { Image, View } from 'react-native';
 import { getExpoImage } from '@/lib/expoImage';
-import { getVideoFrames } from '@/services/videoThumbnails';
+import { getVideoFrames, type ThumbnailSource } from '@/services/videoThumbnails';
 
 const ExpoImage = getExpoImage();
 
@@ -12,32 +11,40 @@ export function FilmstripFrames({
   end,
   width,
   height,
+  fallbackUri,
+  sourceFingerprint,
 }: {
   path: string;
   start: number;
   end: number;
   width: number;
   height: number;
+  fallbackUri?: string;
+  sourceFingerprint?: string;
 }) {
-  const frameWidth = Math.max(40, height * (16 / 9));
+  const frameWidth = Math.max(40, height * 0.8);
   const count = Math.max(1, Math.min(24, Math.ceil(Math.max(width, 1) / frameWidth)));
   const times = useMemo(() => {
     const duration = Math.max(0.05, end - start);
     return Array.from({ length: count }, (_, index) => start + ((index + 0.5) / count) * duration);
   }, [count, end, start]);
 
-  const [frames, setFrames] = useState<(VideoThumbnail | null)[]>([]);
+  const [frames, setFrames] = useState<(ThumbnailSource | null)[]>([]);
 
   useEffect(() => {
     if (!path || width <= 0 || !ExpoImage) return;
     let cancelled = false;
-    void getVideoFrames(path, times, { maxHeight: Math.max(48, Math.round(height)) }).then((next) => {
+    setFrames(Array.from({ length: times.length }, () => null));
+    void getVideoFrames(path, times, {
+      maxHeight: Math.max(48, Math.round(height)),
+      sourceFingerprint,
+    }).then((next) => {
       if (!cancelled) setFrames(next);
     });
     return () => {
       cancelled = true;
     };
-  }, [height, path, times, width]);
+  }, [height, path, sourceFingerprint, times, width]);
 
   const cellWidth = width / count;
 
@@ -53,13 +60,23 @@ export function FilmstripFrames({
     >
       {times.map((time, index) => {
         const thumb = frames[index];
-        if (thumb && ExpoImage) {
+        if ((thumb || fallbackUri) && ExpoImage) {
           return (
             <ExpoImage
               key={`${time}-${index}`}
-              source={thumb}
+              source={thumb ?? fallbackUri}
               style={{ width: cellWidth, height }}
               contentFit="cover"
+            />
+          );
+        }
+        if (fallbackUri) {
+          return (
+            <Image
+              key={`${time}-${index}`}
+              source={{ uri: fallbackUri }}
+              style={{ width: cellWidth, height }}
+              resizeMode="cover"
             />
           );
         }

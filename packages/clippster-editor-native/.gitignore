@@ -1,0 +1,11 @@
+node_modules/
+android/.cxx/
+android/.gradle/
+android/build/
+android/local.properties
+cpp/build-host/
+ios/build/
+*.o
+*.so
+*.a
+.DS_Store

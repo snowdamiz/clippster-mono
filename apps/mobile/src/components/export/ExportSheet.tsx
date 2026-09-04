@@ -6,8 +6,8 @@ import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { appAlert } from '@/lib/appAlert';
 
-import type { ClipBuildProgress } from '@/services/clipBuildPipeline';
-import { cancelClipBuild } from '@/services/clipBuildPipeline';
+import type { EditorExportProgress as ClipBuildProgress } from '@/editor/export/exportProgress';
+import { cancelFfmpeg } from '@/services/ffmpeg';
 
 interface ExportSheetProps {
   visible: boolean;
@@ -132,7 +132,7 @@ export function ExportSheet({
 
           {building ? (
             <Pressable
-              onPress={() => cancelClipBuild()}
+              onPress={() => cancelFfmpeg()}
               className="items-center rounded-lg border border-destructive py-3"
             >
               <Text className="text-red-400">Cancel export</Text>

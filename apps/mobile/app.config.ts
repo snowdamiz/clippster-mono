@@ -84,10 +84,15 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
     [
+      '@clippster/editor-native',
+      {},
+    ],
+    [
       'ffmpeg-expo',
       {
+        // LGPL utility builds only — never ship GPL libx264 in production.
         enableDecoders: ['h264', 'hevc', 'aac', 'mp3'],
-        enableEncoders: ['aac', 'libx264'],
+        enableEncoders: ['aac'],
       },
     ],
     [

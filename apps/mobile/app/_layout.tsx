@@ -7,6 +7,7 @@ import { StatusBar } from 'expo-status-bar';
 import { openDatabaseSync } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import 'react-native-reanimated';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { AuthProvider } from '@/context/AuthContext';
@@ -59,6 +60,7 @@ export default function RootLayout() {
   }
 
   return (
+    <GestureHandlerRootView style={{ flex: 1 }}>
     <AppErrorBoundary>
       <AuthProvider>
         <AccountProvider>
@@ -67,26 +69,26 @@ export default function RootLayout() {
         <ThemeProvider value={navigationTheme}>
           <PlanGateGuard>
           <StatusBar style="light" />
-          <Stack screenOptions={{ headerShown: false, contentStyle: { backgroundColor: tokens.colors.background } }}>
+          <Stack screenOptions={{ headerShown: false, gestureEnabled: false, fullScreenGestureEnabled: false, contentStyle: { backgroundColor: tokens.colors.background } }}>
             <Stack.Screen name="index" />
             <Stack.Screen name="billing" />
-            <Stack.Screen name="stripe/success" options={{ headerShown: false }} />
-            <Stack.Screen name="stripe/cancel" options={{ headerShown: false }} />
+            <Stack.Screen name="stripe/success" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="stripe/cancel" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="(auth)" />
             <Stack.Screen name="(tabs)" />
-            <Stack.Screen name="auth/google/callback" options={{ headerShown: false }} />
-            <Stack.Screen name="project/[id]" options={{ headerShown: false }} />
-            <Stack.Screen name="clip/[id]" options={{ headerShown: false }} />
+            <Stack.Screen name="auth/google/callback" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="project/[id]" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="clip/[id]" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="adjust/[id]" options={{ headerShown: false, gestureEnabled: false }} />
-            <Stack.Screen name="edit/[kind]/[id]" options={{ headerShown: false }} />
-            <Stack.Screen name="schedule/[buildId]" options={{ headerShown: false }} />
-            <Stack.Screen name="framing/[projectId]" options={{ headerShown: false }} />
-            <Stack.Screen name="campaign/[id]" options={{ headerShown: false }} />
-            <Stack.Screen name="campaign/[id]/submit" options={{ headerShown: false }} />
-            <Stack.Screen name="inbox/[id]" options={{ headerShown: false }} />
-            <Stack.Screen name="profile/preview" options={{ headerShown: false }} />
-            <Stack.Screen name="profile/settings" options={{ headerShown: false }} />
-            <Stack.Screen name="profile/clipper" options={{ headerShown: false }} />
+            <Stack.Screen name="edit/[kind]/[id]" options={{ headerShown: false, gestureEnabled: false, fullScreenGestureEnabled: false }} />
+            <Stack.Screen name="schedule/[buildId]" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="framing/[projectId]" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="campaign/[id]" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="campaign/[id]/submit" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="inbox/[id]" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="profile/preview" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="profile/settings" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="profile/clipper" options={{ headerShown: false, gestureEnabled: false }} />
           </Stack>
           </PlanGateGuard>
         </ThemeProvider>
@@ -96,5 +98,6 @@ export default function RootLayout() {
         </AccountProvider>
       </AuthProvider>
     </AppErrorBoundary>
+    </GestureHandlerRootView>
   );
 }

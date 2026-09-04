@@ -1,5 +1,5 @@
-import { router, useFocusEffect } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
+import { router, useFocusEffect, useLocalSearchParams } from 'expo-router';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
@@ -41,6 +41,8 @@ type CatalogTab = 'streams' | 'videos';
 
 export default function DownloadScreen() {
   const { requireSubscription } = useAccount();
+  const { source } = useLocalSearchParams<{ source?: string }>();
+  const handledSource = useRef<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
   const [detectedPlatform, setDetectedPlatform] = useState<MediaPlatform | null>(null);
   const [vods, setVods] = useState<VodListItem[]>([]);
@@ -66,8 +68,8 @@ export default function DownloadScreen() {
     }, []),
   );
 
-  async function handleSearch(tabOverride?: CatalogTab) {
-    const input = searchInput.trim();
+  const handleSearch = useCallback(async (tabOverride?: CatalogTab, inputOverride?: string) => {
+    const input = (inputOverride ?? searchInput).trim();
     if (!input) {
       setError('Paste a stream link, channel URL, or @handle');
       return;
@@ -177,7 +179,15 @@ export default function DownloadScreen() {
     } finally {
       setLoading(false);
     }
-  }
+  }, [catalogTab, searchInput]);
+
+  useEffect(() => {
+    if (!source || handledSource.current === source) return;
+    handledSource.current = source;
+    setSearchInput(source);
+    setDetectedPlatform(detectPlatformFromInput(source));
+    void handleSearch(undefined, source);
+  }, [handleSearch, source]);
 
   function openDownloadOptions(item: VodListItem, platform: MediaPlatform) {
     if (!item.url && !item.download_url) return;
@@ -234,7 +244,7 @@ export default function DownloadScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <ScreenHeader title="Create" subtitle="Search a channel to browse and download VODs" />
+      <ScreenHeader title="Import from URL" subtitle="Choose a video to add to your projects" />
       <DownloadProgressCard
         jobs={jobs}
         onOpenProject={(projectId) => router.push(`/project/${projectId}`)}
