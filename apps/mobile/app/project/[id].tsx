@@ -408,7 +408,7 @@ export default function ProjectDetailScreen() {
                 if (!menuClip) return;
                 const clipId = menuClip.id;
                 setMenuClip(null);
-                openClip(clipId);
+                router.push({ pathname: '/adjust/[id]', params: { id: clipId } });
               }}
               onEdit={() => {
                 if (!menuClip) return;
