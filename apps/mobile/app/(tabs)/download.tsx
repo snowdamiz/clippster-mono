@@ -292,6 +292,7 @@ export default function DownloadScreen() {
         <View className="mt-3">
           <Button
             title={loading ? 'Searching…' : 'Search'}
+            variant="accent"
             onPress={() => void handleSearch()}
             disabled={loading || !searchInput.trim()}
           />
@@ -320,7 +321,7 @@ export default function DownloadScreen() {
         ) : null}
 
         {loading ? (
-          <ActivityIndicator className="mt-8" color={tokens.colors.primary} />
+          <ActivityIndicator className="mt-8" color={tokens.colors.accent} />
         ) : null}
 
         {!loading && vods.length > 0 ? (

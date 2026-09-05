@@ -1,16 +1,12 @@
 import type { ScheduledPost, ScheduledPostStatus } from '@clippster/api-client';
+import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  FlatList,
-  Pressable,
-  RefreshControl,
-  Text,
-  View,
-} from 'react-native';
-import { AppHeader } from '@/components/AppHeader';
+import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import { PostAnalyticsSheet } from '@/components/posts/PostAnalyticsSheet';
 import { PostCard } from '@/components/posts/PostCard';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { FilterChip } from '@/components/ui/FilterChip';
 import { analyticsApi, organizationsApi, schedulingApi } from '@/services/api';
 import { tokens } from '@/theme/tokens';
 
@@ -23,7 +19,12 @@ const FILTERS: { id: StatusFilter; label: string }[] = [
   { id: 'failed', label: 'Failed' },
 ];
 
-export default function PostsScreen() {
+interface PostsSheetProps {
+  visible: boolean;
+  onClose: () => void;
+}
+
+export function PostsSheet({ visible, onClose }: PostsSheetProps) {
   const [posts, setPosts] = useState<ScheduledPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -62,20 +63,22 @@ export default function PostsScreen() {
   }
 
   useEffect(() => {
+    if (!visible) return;
+    setLoading(true);
     void (async () => {
       try {
-        await loadPosts();
+        await loadPosts(filter === 'all' ? undefined : filter);
       } finally {
         setLoading(false);
       }
     })();
-  }, [loadPosts]);
+  }, [visible, filter, loadPosts]);
 
   useEffect(() => {
-    void loadPosts(filter === 'all' ? undefined : filter);
-  }, [filter, loadPosts]);
-
-  useEffect(() => {
+    if (!visible) {
+      if (refreshTimer.current) clearInterval(refreshTimer.current);
+      return;
+    }
     const hasPublishing = posts.some((p) => p.status === 'publishing');
     if (hasPublishing) {
       refreshTimer.current = setInterval(() => {
@@ -85,7 +88,7 @@ export default function PostsScreen() {
     return () => {
       if (refreshTimer.current) clearInterval(refreshTimer.current);
     };
-  }, [posts, filter, loadPosts]);
+  }, [visible, posts, filter, loadPosts]);
 
   async function handleCancel(postId: number) {
     const response = await schedulingApi.cancelScheduledPost(postId);
@@ -112,44 +115,63 @@ export default function PostsScreen() {
     }
   }
 
-  return (
-    <View className="flex-1 bg-background">
-      <AppHeader title="Posts" />
-      <View className="flex-row flex-wrap gap-2 px-4 py-2">
-        {FILTERS.map((item) => {
-          const active = filter === item.id;
-          return (
-            <Pressable
-              key={item.id}
-              onPress={() => setFilter(item.id)}
-              className={`rounded-full px-3 py-1.5 ${active ? 'bg-primary' : 'bg-surface border border-border'}`}
-            >
-              <Text className={`text-sm ${active ? 'text-primary-foreground' : 'text-muted'}`}>{item.label}</Text>
-            </Pressable>
-          );
-        })}
-      </View>
+  if (!visible) return null;
 
-      {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={tokens.colors.primary} />
+  return (
+    <>
+      <BottomSheet
+        visible={visible}
+        onClose={onClose}
+        variant="sheet"
+        title="Scheduled posts"
+        subtitle="View and manage upcoming posts"
+        headerIcon="calendar-outline"
+        scrollable
+        maxHeightClassName="max-h-[92%]"
+        headerAccessory={
+          <Pressable
+            onPress={() => void refresh()}
+            disabled={refreshing || loading}
+            className="rounded-md p-1"
+            hitSlop={8}
+          >
+            {refreshing ? (
+              <ActivityIndicator size="small" color={tokens.colors.accent} />
+            ) : (
+              <Ionicons name="refresh-outline" size={22} color={tokens.colors.muted} />
+            )}
+          </Pressable>
+        }
+      >
+        <View className="flex-row flex-wrap gap-2">
+          {FILTERS.map((item) => (
+            <FilterChip
+              key={item.id}
+              label={item.label}
+              selected={filter === item.id}
+              onPress={() => setFilter(item.id)}
+            />
+          ))}
         </View>
-      ) : (
-        <FlatList
-          data={posts}
-          keyExtractor={(item) => String(item.id)}
-          contentContainerClassName="px-4 pb-4"
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={() => void refresh()} />}
-          ListEmptyComponent={
-            <Text className="py-8 text-center text-muted">
-              No posts yet. Export a clip and schedule it to get started.
-            </Text>
-          }
-          renderItem={({ item }) => (
-            <PostCard post={item} onPress={() => setSelectedPost(item)} />
-          )}
-        />
-      )}
+
+        {loading ? (
+          <View className="items-center justify-center py-10">
+            <ActivityIndicator color={tokens.colors.accent} />
+          </View>
+        ) : posts.length === 0 ? (
+          <EmptyState
+            icon="calendar-outline"
+            title="No posts yet"
+            subtitle="Export a clip and schedule it to get started."
+          />
+        ) : (
+          <View className="gap-3">
+            {posts.map((item) => (
+              <PostCard key={String(item.id)} post={item} onPress={() => setSelectedPost(item)} />
+            ))}
+          </View>
+        )}
+      </BottomSheet>
 
       <PostAnalyticsSheet
         visible={!!selectedPost}
@@ -159,6 +181,6 @@ export default function PostsScreen() {
         onRetry={handleRetry}
         onUpdate={handleUpdate}
       />
-    </View>
+    </>
   );
 }

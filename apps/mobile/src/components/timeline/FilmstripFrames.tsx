@@ -32,7 +32,7 @@ export function FilmstripFrames({
   const [frames, setFrames] = useState<(ThumbnailSource | null)[]>([]);
 
   useEffect(() => {
-    if (!path || width <= 0 || !ExpoImage) return;
+    if (!path || width <= 0) return;
     let cancelled = false;
     setFrames(Array.from({ length: times.length }, () => null));
     void getVideoFrames(path, times, {
@@ -67,6 +67,16 @@ export function FilmstripFrames({
               source={thumb ?? fallbackUri}
               style={{ width: cellWidth, height }}
               contentFit="cover"
+            />
+          );
+        }
+        if (thumb && 'uri' in thumb) {
+          return (
+            <Image
+              key={`${time}-${index}`}
+              source={{ uri: thumb.uri }}
+              style={{ width: cellWidth, height }}
+              resizeMode="cover"
             />
           );
         }

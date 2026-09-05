@@ -163,15 +163,66 @@
     return router.currentRoute.value.path === path;
   }
 
+  function readTargetRect(el: HTMLElement) {
+    const rect = el.getBoundingClientRect();
+    return { top: rect.top, left: rect.left, width: rect.width, height: rect.height };
+  }
+
+  /** True when the rect is usable and not stuck in a stacked route-fade (header near bottom). */
+  function isSettledTargetRect(
+    el: HTMLElement,
+    rect: { top: number; left: number; width: number; height: number }
+  ): boolean {
+    if (rect.width < 8 || rect.height < 8) return false;
+    if (el.closest('.page-header') && rect.top > window.innerHeight * 0.45) return false;
+    return true;
+  }
+
   async function waitForTarget(targetId: string, gen: number): Promise<HTMLElement | null> {
-    const deadline = Date.now() + 2000;
+    const deadline = Date.now() + 2500;
+    let last: { top: number; left: number; width: number; height: number } | null = null;
+    let stableFrames = 0;
+
     while (Date.now() < deadline) {
       if (gen !== measureGen) return null;
       const el = document.querySelector(`[data-tour-id="${targetId}"]`) as HTMLElement | null;
-      if (el && el.getClientRects().length > 0) return el;
+      if (el) {
+        const rect = readTargetRect(el);
+        if (!isSettledTargetRect(el, rect)) {
+          scrollTourTargetIntoView(el);
+          last = null;
+          stableFrames = 0;
+          await waitFrames(1);
+          continue;
+        }
+        if (
+          last &&
+          Math.abs(last.top - rect.top) < 1 &&
+          Math.abs(last.left - rect.left) < 1 &&
+          Math.abs(last.width - rect.width) < 1 &&
+          Math.abs(last.height - rect.height) < 1
+        ) {
+          stableFrames += 1;
+          if (stableFrames >= 2) return el;
+        } else {
+          last = rect;
+          stableFrames = 0;
+        }
+      }
       await waitFrames(1);
     }
     return document.querySelector(`[data-tour-id="${targetId}"]`) as HTMLElement | null;
+  }
+
+  function applyHighlight(el: HTMLElement, step: TourStep) {
+    const rect = readTargetRect(el);
+    highlight.value = rect;
+    tooltipLayout.value = computeTooltipLayout(
+      { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
+      step.placement || 'right',
+      TOOLTIP_WIDTH,
+      TOOLTIP_HEIGHT
+    );
   }
 
   async function measure() {
@@ -228,25 +279,35 @@
 
     el.classList.add('app-tour-target');
     activeTargetEl = el;
-
-    const rect = el.getBoundingClientRect();
-    highlight.value = {
-      top: rect.top,
-      left: rect.left,
-      width: rect.width,
-      height: rect.height,
-    };
-
-    tooltipLayout.value = computeTooltipLayout(
-      { left: rect.left, top: rect.top, width: rect.width, height: rect.height },
-      step.placement || 'right',
-      TOOLTIP_WIDTH,
-      TOOLTIP_HEIGHT
-    );
+    applyHighlight(el, step);
 
     // Swap tooltip copy only once highlight + position match this step
     presentedStep.value = step;
     isLayoutPending.value = false;
+
+    // Route fade (leave+enter stacked) can finish after the first frames — keep
+    // correcting fixed spotlight coords until the rect stops moving.
+    void (async () => {
+      const deadline = Date.now() + 400;
+      while (Date.now() < deadline) {
+        if (gen !== measureGen || !isTourActive.value || activeTargetEl !== el) return;
+        scrollTourTargetIntoView(el);
+        const next = readTargetRect(el);
+        if (next.width >= 8 && next.height >= 8) {
+          const prev = highlight.value;
+          if (
+            !prev ||
+            Math.abs(prev.top - next.top) > 1 ||
+            Math.abs(prev.left - next.left) > 1 ||
+            Math.abs(prev.width - next.width) > 1 ||
+            Math.abs(prev.height - next.height) > 1
+          ) {
+            applyHighlight(el, step);
+          }
+        }
+        await waitFrames(2);
+      }
+    })();
   }
 
   function onKeydown(e: KeyboardEvent) {

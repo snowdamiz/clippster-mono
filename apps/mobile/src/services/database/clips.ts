@@ -192,6 +192,24 @@ export async function completeClipBuild(
   );
 }
 
+export async function deleteClipBuild(buildId: string): Promise<void> {
+  const db = getDatabase();
+  const { deleteLocalMediaFile } = await import('@/services/localMediaFiles');
+  const build = await getClipBuildById(buildId);
+  if (!build) return;
+  await deleteLocalMediaFile(build.file_path);
+  await deleteLocalMediaFile(build.thumbnail_path);
+  await db.runAsync('DELETE FROM clip_builds WHERE id = ?', [buildId]);
+}
+
+export async function setClipBuildThumbnail(buildId: string, thumbnailPath: string): Promise<void> {
+  const db = getDatabase();
+  await db.runAsync('UPDATE clip_builds SET thumbnail_path = ? WHERE id = ?', [
+    thumbnailPath,
+    buildId,
+  ]);
+}
+
 export async function getClipBuildsByClipId(clipId: string): Promise<ClipBuildRow[]> {
   const db = getDatabase();
   return db.getAllAsync<ClipBuildRow>(

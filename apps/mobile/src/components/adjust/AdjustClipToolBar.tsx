@@ -30,8 +30,8 @@ export function AdjustClipToolBar({
     canExtendBuffer('end', bufferStart, bufferEnd, mediaDuration);
 
   return (
-    <View className="h-[86px] border-t border-white/10 bg-black py-2">
-      <View className="flex-1 flex-row items-center justify-center gap-2 px-2">
+    <View className="border-t border-white/10 bg-black px-2 py-2">
+      <View className="flex-row items-center justify-center gap-2">
         <ToolButton
           icon="arrow-back-circle-outline"
           label={`−${CLIP_ADJUST_CONTEXT_SECONDS}s`}
@@ -72,12 +72,12 @@ function ToolButton({
       accessibilityLabel={label}
       disabled={disabled}
       onPress={onPress}
-      className={`h-[70px] min-w-[88px] items-center justify-center gap-2 rounded-lg bg-[#202023] px-3 ${
+      className={`h-10 min-w-[88px] flex-1 flex-row items-center justify-center gap-2 rounded-lg bg-[#202023] px-2 ${
         disabled ? 'opacity-30' : 'active:opacity-60'
       }`}
     >
-      <Ionicons name={icon} size={25} color={tokens.colors.foreground} />
-      <Text className="text-[10px] text-muted">{label}</Text>
+      <Ionicons name={icon} size={18} color={tokens.colors.foreground} />
+      <Text className="text-xs text-muted">{label}</Text>
     </Pressable>
   );
 }

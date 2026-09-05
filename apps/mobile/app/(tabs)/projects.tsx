@@ -13,6 +13,7 @@ import {
 } from 'react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { DownloadProgressCard } from '@/components/DownloadProgressCard';
+import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAccount } from '@/context/AccountContext';
@@ -317,63 +318,55 @@ export default function ProjectsScreen() {
         </Pressable>
       </Modal>
 
-      <Modal visible={showCreate} transparent animationType="slide" onRequestClose={closeCreateModal}>
-        <Pressable className="flex-1 justify-end bg-black/70" onPress={closeCreateModal}>
-          <Pressable
-            className="rounded-t-3xl border-t border-border bg-background px-4 pb-8 pt-3"
-            onPress={() => {}}
-          >
-            <View className="mb-5 h-1 w-10 self-center rounded-full bg-border" />
-            <Text className="text-xl font-bold text-foreground">New project</Text>
-            <Text className="mt-1 text-sm text-muted">
-              Paste a video or channel URL, or import a local video file.
+      <BottomSheet
+        visible={showCreate}
+        onClose={closeCreateModal}
+        variant="sheet"
+        title="New project"
+        subtitle="Paste a video or channel URL, or import a local video file."
+        keyboardAvoiding
+        closeMode="none"
+        secondaryAction={{ title: 'Cancel', onPress: closeCreateModal, variant: 'ghost' }}
+      >
+        <View className="gap-3">
+          <Input
+            value={sourceUrl}
+            onChangeText={setSourceUrl}
+            onSubmitEditing={handlePasteUrl}
+            placeholder="Paste a video or channel URL"
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="go"
+          />
+          <Button
+            title="Continue with URL"
+            variant="accent"
+            onPress={handlePasteUrl}
+            disabled={!sourceUrl.trim() || importing}
+          />
+        </View>
+
+        <View className="h-px bg-border" />
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Import local files"
+          onPress={() => void handleImportVideo()}
+          disabled={importing}
+          className="min-h-14 flex-row items-center gap-4 rounded-xl border border-border bg-surface px-4 active:bg-white/5"
+        >
+          <View className="h-10 w-10 items-center justify-center rounded-full bg-accent/15">
+            <Ionicons name="folder-open-outline" size={22} color={tokens.colors.accent} />
+          </View>
+          <View className="flex-1">
+            <Text className="text-sm font-semibold text-foreground">
+              {importing ? 'Importing…' : 'Import local files'}
             </Text>
-
-            <View className="mt-6 gap-3">
-              <Input
-                value={sourceUrl}
-                onChangeText={setSourceUrl}
-                onSubmitEditing={handlePasteUrl}
-                placeholder="Paste a video or channel URL"
-                autoCapitalize="none"
-                autoCorrect={false}
-                returnKeyType="go"
-              />
-              <Button
-                title="Continue with URL"
-                variant="accent"
-                onPress={handlePasteUrl}
-                disabled={!sourceUrl.trim() || importing}
-              />
-            </View>
-
-            <View className="my-5 h-px bg-border" />
-
-            <Pressable
-              accessibilityRole="button"
-              accessibilityLabel="Import local files"
-              onPress={() => void handleImportVideo()}
-              disabled={importing}
-              className="min-h-14 flex-row items-center gap-4 rounded-xl border border-border bg-surface px-4 active:bg-white/5"
-            >
-              <View className="h-10 w-10 items-center justify-center rounded-full bg-accent/15">
-                <Ionicons name="folder-open-outline" size={22} color={tokens.colors.accent} />
-              </View>
-              <View className="flex-1">
-                <Text className="text-sm font-semibold text-foreground">
-                  {importing ? 'Importing…' : 'Import local files'}
-                </Text>
-                <Text className="text-xs text-muted">Choose a video from this device</Text>
-              </View>
-              <Ionicons name="chevron-forward" size={18} color={tokens.colors.muted} />
-            </Pressable>
-
-            <View className="mt-3">
-              <Button title="Cancel" variant="ghost" onPress={closeCreateModal} />
-            </View>
-          </Pressable>
+            <Text className="text-xs text-muted">Choose a video from this device</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={tokens.colors.muted} />
         </Pressable>
-      </Modal>
+      </BottomSheet>
     </View>
   );
 }

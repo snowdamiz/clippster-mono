@@ -1,10 +1,11 @@
 import type { TargetAspectRatio } from '@clippster/shared-types';
-import { router } from 'expo-router';
 import * as MediaLibrary from 'expo-media-library';
 import * as Sharing from 'expo-sharing';
 import { useState } from 'react';
 import { Pressable, Text, View } from 'react-native';
 import { appAlert } from '@/lib/appAlert';
+import { PostSheet } from '@/components/schedule/PostSheet';
+import { BottomSheet } from '@/components/ui/BottomSheet';
 
 import type { EditorExportProgress as ClipBuildProgress } from '@/editor/export/exportProgress';
 import { cancelFfmpeg } from '@/services/ffmpeg';
@@ -30,11 +31,20 @@ export function ExportSheet({
   const [ratio169, setRatio169] = useState(false);
   const [remuxOnly, setRemuxOnly] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [postBuildId, setPostBuildId] = useState<string | null>(null);
 
-  if (!visible) return null;
+  if (!visible && !postBuildId) return null;
 
   const building = progress?.state === 'building';
   const completedPaths = progress?.state === 'complete' ? progress.outputPaths ?? [] : [];
+  const canStart = ratio916 || ratio169;
+
+  function startExport() {
+    const ratios: TargetAspectRatio[] = [];
+    if (ratio916) ratios.push('9:16');
+    if (ratio169) ratios.push('16:9');
+    if (ratios.length > 0) onExport({ ratios, remuxOnly });
+  }
 
   async function saveToCameraRoll() {
     if (!completedPaths.length) return;
@@ -70,121 +80,117 @@ export function ExportSheet({
   }
 
   return (
-    <View className="absolute inset-0 z-50 justify-end bg-black/70">
-      <View className="rounded-t-2xl bg-background">
-        <View className="flex-row items-center justify-between border-b border-border px-4 py-3">
-          <Text className="text-lg font-semibold text-foreground">{title}</Text>
-          <Pressable onPress={onClose} disabled={building}>
-            <Text className="text-primary">Close</Text>
-          </Pressable>
-        </View>
-
-        <View className="px-4 py-4">
+    <>
+    {visible ? (
+    <BottomSheet
+      visible={visible}
+      onClose={building ? () => undefined : onClose}
+      variant="sheet"
+      title={title}
+      headerIcon="download-outline"
+      dismissOnBackdrop={!building}
+      scrollable
+      primaryAction={
+        building
+          ? {
+              title: 'Cancel export',
+              variant: 'destructive',
+              onPress: cancelFfmpeg,
+            }
+          : {
+              title: completedPaths.length > 0 ? 'Export again' : 'Start export',
+              onPress: startExport,
+              disabled: !canStart,
+            }
+      }
+    >
+      <Pressable
+        onPress={() => setRatio916((value) => !value)}
+        className="flex-row items-center justify-between rounded-xl border border-border bg-surface px-4 py-3"
+      >
+        <Text className="font-medium text-foreground">9:16 (portrait)</Text>
+        <Text className="font-semibold text-accent">{ratio916 ? '✓' : ''}</Text>
+      </Pressable>
+      <Pressable
+        onPress={() => setRatio169((value) => !value)}
+        className="flex-row items-center justify-between rounded-xl border border-border bg-surface px-4 py-3"
+      >
+        <Text className="font-medium text-foreground">16:9 (landscape)</Text>
+        <Text className="font-semibold text-accent">{ratio169 ? '✓' : ''}</Text>
+      </Pressable>
+      {showRemux ? (
           <Pressable
-            onPress={() => setRatio916((v) => !v)}
-            className="mb-2 flex-row items-center justify-between rounded-lg bg-surface px-4 py-3"
-          >
-            <Text className="text-foreground">9:16 (portrait)</Text>
-            <Text className="text-primary">{ratio916 ? '✓' : ''}</Text>
-          </Pressable>
-          <Pressable
-            onPress={() => setRatio169((v) => !v)}
-            className="mb-2 flex-row items-center justify-between rounded-lg bg-surface px-4 py-3"
-          >
-            <Text className="text-foreground">16:9 (landscape)</Text>
-            <Text className="text-primary">{ratio169 ? '✓' : ''}</Text>
-          </Pressable>
-          {showRemux ? (
-          <Pressable
-            onPress={() => setRemuxOnly((v) => !v)}
-            className="mb-4 flex-row items-center justify-between rounded-lg bg-surface px-4 py-3"
+            onPress={() => setRemuxOnly((value) => !value)}
+            className="flex-row items-center justify-between rounded-xl border border-border bg-surface px-4 py-3"
           >
             <Text className="text-foreground">Remux only (no overlays)</Text>
-            <Text className="text-primary">{remuxOnly ? '✓' : ''}</Text>
+            <Text className="font-semibold text-accent">{remuxOnly ? '✓' : ''}</Text>
           </Pressable>
-          ) : (
-            <Text className="mb-4 text-sm text-muted">
-              Export matches the editor: clips, mute, images, music, and captions.
-            </Text>
-          )}
+      ) : (
+        <Text className="text-sm leading-5 text-muted">
+          Export matches the editor: clips, mute, images, music, and captions.
+        </Text>
+      )}
 
-          {progress ? (
-            <View className="mb-4 rounded-lg bg-surface px-4 py-3">
-              <Text className="text-sm text-foreground">{progress.message}</Text>
-              {progress.state === 'building' ? (
-                <View className="mt-2 h-2 overflow-hidden rounded bg-border">
-                  <View
-                    className="h-full bg-primary"
-                    style={{ width: `${Math.round(progress.progress * 100)}%` }}
-                  />
-                </View>
-              ) : null}
-              {progress.error ? (
-                <Text className="mt-1 text-xs text-red-400">{progress.error}</Text>
-              ) : null}
-              {progress.outputPaths?.length ? (
-                <Text className="mt-2 text-xs text-muted">
-                  Saved: {progress.outputPaths.map((p) => p.split('/').pop()).join(', ')}
-                </Text>
-              ) : null}
+      {progress ? (
+        <View className="rounded-xl border border-border bg-surface px-4 py-3">
+          <Text className="text-sm font-medium text-foreground">{progress.message}</Text>
+          {building ? (
+            <View className="mt-2 h-2 overflow-hidden rounded bg-border">
+              <View
+                className="h-full bg-accent"
+                style={{ width: `${Math.round(progress.progress * 100)}%` }}
+              />
             </View>
           ) : null}
-
-          {building ? (
-            <Pressable
-              onPress={() => cancelFfmpeg()}
-              className="items-center rounded-lg border border-destructive py-3"
-            >
-              <Text className="text-red-400">Cancel export</Text>
-            </Pressable>
-          ) : (
-            <>
-              <Pressable
-                onPress={() => {
-                  const ratios: TargetAspectRatio[] = [];
-                  if (ratio916) ratios.push('9:16');
-                  if (ratio169) ratios.push('16:9');
-                  if (ratios.length === 0) return;
-                  onExport({ ratios, remuxOnly });
-                }}
-                className="items-center rounded-lg bg-primary py-3"
-              >
-                <Text className="font-semibold text-primary-foreground">Start export</Text>
-              </Pressable>
-              {completedPaths.length ? (
-                <>
-                  <Pressable
-                    onPress={() => void saveToCameraRoll()}
-                    disabled={saving}
-                    className="mt-3 items-center rounded-lg border border-border py-3"
-                  >
-                    <Text className="font-semibold text-foreground">
-                      {saving ? 'Saving…' : 'Save to camera roll'}
-                    </Text>
-                  </Pressable>
-                  <Pressable
-                    onPress={() => void shareExport()}
-                    className="mt-3 items-center rounded-lg border border-border py-3"
-                  >
-                    <Text className="font-semibold text-foreground">Share</Text>
-                  </Pressable>
-                  {progress?.buildIds?.length ? (
-                    <Pressable
-                      onPress={() => {
-                        onClose();
-                        router.push(`/schedule/${progress.buildIds![0]}`);
-                      }}
-                      className="mt-3 items-center rounded-lg border border-primary py-3"
-                    >
-                      <Text className="font-semibold text-primary">Schedule post</Text>
-                    </Pressable>
-                  ) : null}
-                </>
-              ) : null}
-            </>
-          )}
+          {progress.error ? (
+            <Text className="mt-1 text-xs text-destructive">{progress.error}</Text>
+          ) : null}
+          {progress.outputPaths?.length ? (
+            <Text className="mt-2 text-xs text-muted">
+              Saved: {progress.outputPaths.map((path) => path.split('/').pop()).join(', ')}
+            </Text>
+          ) : null}
         </View>
-      </View>
-    </View>
+      ) : null}
+
+      {completedPaths.length > 0 ? (
+        <View className="gap-2">
+          <Pressable
+            onPress={() => void saveToCameraRoll()}
+            disabled={saving}
+            className="items-center rounded-xl border border-border py-3"
+          >
+            <Text className="font-semibold text-foreground">
+              {saving ? 'Saving…' : 'Save to camera roll'}
+            </Text>
+          </Pressable>
+          <Pressable
+            onPress={() => void shareExport()}
+            className="items-center rounded-xl border border-border py-3"
+          >
+            <Text className="font-semibold text-foreground">Share</Text>
+          </Pressable>
+          {progress?.buildIds?.length ? (
+            <Pressable
+              onPress={() => {
+                setPostBuildId(progress.buildIds![0]);
+                onClose();
+              }}
+              className="items-center rounded-xl border border-accent py-3"
+            >
+              <Text className="font-semibold text-accent">Schedule post</Text>
+            </Pressable>
+          ) : null}
+        </View>
+      ) : null}
+    </BottomSheet>
+    ) : null}
+    <PostSheet
+      visible={postBuildId != null}
+      buildId={postBuildId}
+      onClose={() => setPostBuildId(null)}
+    />
+    </>
   );
 }

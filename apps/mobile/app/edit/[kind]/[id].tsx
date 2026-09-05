@@ -11,7 +11,10 @@ import { tokens } from '@/theme/tokens';
 
 export default function MobileEditorRoute() {
   const router = useRouter();
-  const { kind, id } = useLocalSearchParams<{ kind?: string; id?: string }>();
+  const { kind, id } = useLocalSearchParams<{
+    kind?: string;
+    id?: string;
+  }>();
   const entryKind = kind === 'clip' ? 'clip' : 'project';
   const [title, setTitle] = useState('Video editor');
   const [controller, setController] = useState<MobileEditorController | null>(null);

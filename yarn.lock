@@ -3958,6 +3958,11 @@ expo-auth-session@~56.0.18:
     expo-web-browser "~56.0.6"
     invariant "^2.2.4"
 
+expo-blur@~56.0.4:
+  version "56.0.4"
+  resolved "https://registry.yarnpkg.com/expo-blur/-/expo-blur-56.0.4.tgz#7706b6348c7a12fd423651667b2de34a40959471"
+  integrity sha512-/rNpe2NDTmMbSktVJb5z7HoX6apYtq8KVKJNjWOQV7NG01+LvctWzFeMNxWSZVWfIKTndqdqABwqcpYmiCRxxg==
+
 expo-constants@~56.0.24:
   version "56.0.24"
   resolved "https://registry.npmjs.org/expo-constants/-/expo-constants-56.0.24.tgz"

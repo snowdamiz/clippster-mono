@@ -59,8 +59,24 @@ export function EditorCanvas({
     (asset) => asset.kind === 'video' || asset.kind === 'image',
   );
   const nativeReady = isNativePreviewAvailable();
-  // Only re-serialize when the edit document changes — not every playhead tick.
-  const documentJson = useMemo(() => JSON.stringify(document), [document]);
+  // Prefer proxy URIs for preview decode; export still uses original sourceUri.
+  const documentJson = useMemo(() => {
+    const assets = Object.fromEntries(
+      Object.entries(document.assets).map(([id, asset]) => {
+        if (!asset.proxy?.uri) return [id, asset];
+        return [
+          id,
+          {
+            ...asset,
+            sourceUri: asset.proxy.uri,
+            width: asset.proxy.width ?? asset.width,
+            height: asset.proxy.height ?? asset.height,
+          },
+        ];
+      }),
+    );
+    return JSON.stringify({ ...document, assets });
+  }, [document]);
 
   return (
     <View className="min-h-[240px] flex-1 items-center justify-center bg-black">

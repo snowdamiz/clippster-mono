@@ -81,17 +81,13 @@ export default function RootLayout() {
             <Stack.Screen name="auth/google/callback" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="project/[id]" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="clip/[id]" options={{ headerShown: false, gestureEnabled: false }} />
-            <Stack.Screen name="adjust/[id]" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="edit/[kind]/[id]" options={{ headerShown: false, gestureEnabled: false, fullScreenGestureEnabled: false }} />
-            <Stack.Screen name="schedule/[buildId]" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="framing/[projectId]" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="campaign/[id]" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="campaign/[id]/submit" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="inbox/[id]" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="messages/[id]" options={{ headerShown: false, gestureEnabled: true }} />
             <Stack.Screen name="profile/preview" options={{ headerShown: false, gestureEnabled: false }} />
-            <Stack.Screen name="profile/settings" options={{ headerShown: false, gestureEnabled: false }} />
-            <Stack.Screen name="profile/clipper" options={{ headerShown: false, gestureEnabled: false }} />
           </Stack>
           </PlanGateGuard>
         </ThemeProvider>

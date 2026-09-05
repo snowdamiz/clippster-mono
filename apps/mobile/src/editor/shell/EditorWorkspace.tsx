@@ -31,6 +31,7 @@ import {
   SetVideoVolumeCommand,
 } from '../commands/videoCommands';
 import { createMediaImportCommand } from '../media/createMediaImportCommand';
+import { prepareEditorProxy } from '../media/prepareEditorProxy';
 import { exportEditorProject } from '../export/exportEditorProject';
 import { createNativeEditorId } from '../model/nativeIds';
 import {
@@ -406,6 +407,7 @@ export function EditorWorkspace({
         createNativeEditorId,
         fingerprintMediaUri,
         mediaMode === 'overlay' ? 'overlay' : 'primary',
+        kind === 'video' ? prepareEditorProxy : undefined,
       );
       controller.commit(result.command);
       controller.updateSession({ selection: result.selection });

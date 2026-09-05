@@ -59,6 +59,7 @@
                       <span>Organization</span>
                     </button>
                     <button
+                      v-if="availableCampaigns.length > 0"
                       type="button"
                       :class="['schedule-dialog__context-tab', { 'schedule-dialog__context-tab--active': postingContext === 'campaign' }]"
                       @click="postingContext = 'campaign'"
@@ -512,7 +513,7 @@ import { publishToUserYoutube } from '@/services/userYoutubeApi';
 import { schedulePost, updateScheduledPostMedia } from '@/services/schedulingApi';
 import { invoke } from '@tauri-apps/api/core';
 import { listOrganizationCreatorProfiles, type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
-import { listMyCampaigns, type Campaign } from '@/services/campaignApi';
+import { listMyCampaigns, filterCampaignsOpenForPosting, type Campaign } from '@/services/campaignApi';
 import { fetchTokendCapabilities } from '@/services/tokend';
 
 interface Props {
@@ -753,8 +754,12 @@ async function loadCampaigns() {
   try {
     const res = await listMyCampaigns('active');
     if (res.success) {
-      availableCampaigns.value = res.campaigns;
-      if (availableCampaigns.value.length === 1) {
+      availableCampaigns.value = filterCampaignsOpenForPosting(res.campaigns);
+      if (availableCampaigns.value.length === 0 && postingContext.value === 'campaign') {
+        postingContext.value = 'org';
+        selectedCampaignId.value = null;
+        selectedCampaignProfileId.value = null;
+      } else if (availableCampaigns.value.length === 1) {
         selectedCampaignId.value = availableCampaigns.value[0].id;
         autoSelectCampaignProfile();
       } else {

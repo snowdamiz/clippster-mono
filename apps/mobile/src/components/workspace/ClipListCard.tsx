@@ -9,7 +9,7 @@ interface ClipListCardProps {
   index: number;
   fallbackThumbnail?: string | null;
   onPress: () => void;
-  onMore: () => void;
+  onDelete: () => void;
 }
 
 function viralityBadge(score: number | null): { bg: string; text: string } | null {
@@ -25,7 +25,7 @@ export function ClipListCard({
   index,
   fallbackThumbnail,
   onPress,
-  onMore,
+  onDelete,
 }: ClipListCardProps) {
   const start = clip.start_time ?? 0;
   const end = clip.end_time ?? start;
@@ -44,7 +44,7 @@ export function ClipListCard({
       className="overflow-hidden rounded-lg border border-border bg-surface active:bg-white/5"
     >
       <View className="flex-row gap-3 p-3">
-        <View className="h-16 w-24 overflow-hidden rounded-md border border-border bg-black/40">
+        <View className="relative h-16 w-24 overflow-hidden rounded-md border border-border bg-black/40">
           {thumbUri ? (
             <Image source={{ uri: thumbUri }} className="h-full w-full" resizeMode="cover" />
           ) : (
@@ -52,6 +52,19 @@ export function ClipListCard({
               <Ionicons name="videocam-outline" size={22} color={tokens.colors.muted} />
             </View>
           )}
+          <Pressable
+            accessibilityRole="button"
+            accessibilityLabel={`Play ${clip.name || 'clip'}`}
+            onPress={(event) => {
+              event.stopPropagation();
+              onPress();
+            }}
+            className="absolute inset-0 items-center justify-center"
+          >
+            <View className="h-8 w-8 items-center justify-center rounded-full border border-white/70 bg-black/65">
+              <Ionicons name="play" size={15} color="#ffffff" style={{ marginLeft: 2 }} />
+            </View>
+          </Pressable>
         </View>
 
         <View className="min-w-0 flex-1">
@@ -62,8 +75,17 @@ export function ClipListCard({
                 {clip.name || 'Untitled Clip'}
               </Text>
             </View>
-            <Pressable onPress={onMore} hitSlop={8} className="rounded-md p-1.5 active:bg-white/10">
-              <Ionicons name="ellipsis-vertical" size={16} color={tokens.colors.muted} />
+            <Pressable
+              accessibilityRole="button"
+              accessibilityLabel={`Delete ${clip.name || 'clip'}`}
+              onPress={(event) => {
+                event.stopPropagation();
+                onDelete();
+              }}
+              hitSlop={8}
+              className="rounded-md p-1.5 active:bg-destructive/15"
+            >
+              <Ionicons name="trash-outline" size={16} color={tokens.colors.destructive} />
             </Pressable>
           </View>
 

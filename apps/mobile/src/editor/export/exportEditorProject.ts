@@ -6,12 +6,13 @@ import { validateExportMetadata } from '@/lib/exportValidation';
 import { probeMediaMetadata } from '@/services/ffmpeg';
 import { getAllCachedAssets, resolveBrandingForAspect } from '@/services/orgAssetCache';
 import { getProjectVodPresetConfig } from '@/services/database/vod-presets';
+import { generateBuildThumbnail } from '@/services/clipThumbnailGeneration';
 import {
   completeClipBuild,
   createClipBuild,
   updateClipBuildProgress,
 } from '@/services/database/clips';
-import { addManualClip } from '@/services/database/workspace';
+import { addManualClip, updateClipBuiltThumbnail } from '@/services/database/workspace';
 import {
   createMobileEditorEngine,
   NativeMobileEditorEngine,
@@ -20,6 +21,7 @@ import type { MobileEditProjectV3 } from '../model/schema';
 import { ticksToSeconds } from '../model/schema';
 import { getVideoTrack } from '../model/timeline';
 import type { EditorExportProgress as ClipBuildProgress } from './exportProgress';
+import { applyVodFramingForExport } from './applyVodFraming';
 
 /**
  * Validation + native export orchestration + DB bookkeeping.
@@ -87,9 +89,11 @@ export async function exportEditorProject(
   });
 
   try {
-    await engine.load(document);
     for (let ratioIndex = 0; ratioIndex < ratios.length; ratioIndex += 1) {
       const ratio = ratios[ratioIndex];
+      await engine.load(
+        applyVodFramingForExport(document, ratio, vodConfig?.framingConfig),
+      );
       const stamp = Date.now();
       const outputPath = `${exportDir}${document.targetId}_${ratio.replace(':', 'x')}_${stamp}.mp4`;
       const canvas = document.canvas.outputByRatio[ratio];
@@ -133,12 +137,22 @@ export async function exportEditorProject(
         outputs.push(produced);
         if (build) {
           const info = await FileSystem.getInfoAsync(produced);
+          const thumbAt = Math.min(1, Math.max(0.1, (metadata.duration ?? 2) * 0.1));
+          const thumbnailPath = await generateBuildThumbnail(produced, build.id, thumbAt);
           await completeClipBuild(
             build.id,
             produced,
             info.exists && 'size' in info ? info.size : undefined,
             metadata.duration,
+            thumbnailPath ?? undefined,
           );
+          if (thumbnailPath && clipId) {
+            try {
+              await updateClipBuiltThumbnail(clipId, thumbnailPath);
+            } catch {
+              // Non-fatal — build thumbnail is already stored on the build row.
+            }
+          }
           buildIds.push(build.id);
         }
       } catch (error) {

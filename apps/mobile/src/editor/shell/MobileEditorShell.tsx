@@ -3,6 +3,7 @@ import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
 import { appAlert } from '@/lib/appAlert';
+import { beginPlaybackCritical } from '@/lib/mediaDecodeGate';
 import { EditorCanvas } from '../canvas/EditorCanvas';
 import {
   createMobileEditorEngine,
@@ -132,6 +133,11 @@ export function MobileEditorShell({
     else engine.pause();
     return undefined;
   }, [controller, durationTick, engine, playing]);
+
+  useEffect(() => {
+    if (!playing) return;
+    return beginPlaybackCritical();
+  }, [playing]);
 
   useEffect(() => () => {
     void engine.dispose();

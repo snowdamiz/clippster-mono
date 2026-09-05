@@ -15,12 +15,12 @@ import { appAlert } from '@/lib/appAlert';
 const PRIVACY_URL = 'https://clippster.app/privacy';
 const TERMS_URL = 'https://clippster.app/terms';
 
-export function CreditsRow() {
-  const { tierLabel, creditsLabel, loading, refreshAccount } = useAccount();
+export function CreditsRow({ onManage }: { onManage?: () => void }) {
+  const { tierLabel, creditsLabel, loading } = useAccount();
 
   return (
     <Pressable
-      onPress={() => router.push('/billing' as never)}
+      onPress={onManage}
       className="flex-row items-center justify-between rounded-xl border border-border bg-surface px-4 py-3"
     >
       <View>
@@ -29,9 +29,7 @@ export function CreditsRow() {
           {loading ? 'Syncing account…' : `${creditsLabel} AI credits`}
         </Text>
       </View>
-      <Pressable onPress={() => void refreshAccount()}>
-        <Text className="text-sm text-accent">Manage</Text>
-      </Pressable>
+      <Text className="text-sm text-accent">Manage</Text>
     </Pressable>
   );
 }

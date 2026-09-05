@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   LayoutChangeEvent,
   PanResponder,
@@ -19,15 +19,23 @@ const MIN_PPS = 8;
 function EdgeHandle({
   edge,
   left,
+  onStart,
   onMove,
+  onEnd,
 }: {
   edge: 'start' | 'end';
   left: number;
+  onStart: () => void;
   onMove: (dx: number) => void;
+  onEnd: () => void;
 }) {
   const lastX = useRef(0);
+  const onStartRef = useRef(onStart);
   const onMoveRef = useRef(onMove);
+  const onEndRef = useRef(onEnd);
+  onStartRef.current = onStart;
   onMoveRef.current = onMove;
+  onEndRef.current = onEnd;
 
   const pan = useMemo(
     () =>
@@ -38,12 +46,15 @@ function EdgeHandle({
         onShouldBlockNativeResponder: () => true,
         onPanResponderGrant: (event) => {
           lastX.current = event.nativeEvent.pageX;
+          onStartRef.current();
         },
         onPanResponderMove: (event) => {
           const x = event.nativeEvent.pageX;
           onMoveRef.current(x - lastX.current);
           lastX.current = x;
         },
+        onPanResponderRelease: () => onEndRef.current(),
+        onPanResponderTerminate: () => onEndRef.current(),
       }),
     [],
   );
@@ -114,6 +125,25 @@ export function AdjustClipTimeline({
 }) {
   const [trackWidth, setTrackWidth] = useState(0);
   const ppsRef = useRef(MIN_PPS);
+  const selectionRef = useRef({ selectStart, selectEnd });
+  const draggingRef = useRef(false);
+  const [dragSelection, setDragSelection] = useState({ selectStart, selectEnd });
+  const seekFrameRef = useRef<number | null>(null);
+  const pendingSeekRef = useRef(selectStart);
+
+  useEffect(
+    () => () => {
+      if (seekFrameRef.current != null) cancelAnimationFrame(seekFrameRef.current);
+    },
+    [],
+  );
+
+  useEffect(() => {
+    if (draggingRef.current) return;
+    const next = { selectStart, selectEnd };
+    selectionRef.current = next;
+    setDragSelection(next);
+  }, [selectEnd, selectStart]);
 
   const bufferDuration = Math.max(0.1, bufferEnd - bufferStart);
   const pixelsPerSecond =
@@ -121,8 +151,11 @@ export function AdjustClipTimeline({
   ppsRef.current = pixelsPerSecond;
 
   const width = trackWidth > 0 ? trackWidth : Math.max(bufferDuration * pixelsPerSecond, 160);
-  const selectLeft = (selectStart - bufferStart) * pixelsPerSecond;
-  const selectWidth = Math.max(HANDLE_WIDTH * 2 + 8, (selectEnd - selectStart) * pixelsPerSecond);
+  const selectLeft = (dragSelection.selectStart - bufferStart) * pixelsPerSecond;
+  const selectWidth = Math.max(
+    HANDLE_WIDTH * 2 + 8,
+    (dragSelection.selectEnd - dragSelection.selectStart) * pixelsPerSecond,
+  );
   const playheadX = Math.max(0, Math.min(width, (currentTime - bufferStart) * pixelsPerSecond));
 
   const ticks = useMemo(() => {
@@ -142,26 +175,44 @@ export function AdjustClipTimeline({
   }
 
   function applyTrim(edge: 'start' | 'end', dx: number) {
+    const current = selectionRef.current;
     const next = trimSelection({
       edge,
       deltaSeconds: dx / ppsRef.current,
-      selectStart,
-      selectEnd,
+      selectStart: current.selectStart,
+      selectEnd: current.selectEnd,
       bufferStart,
       bufferEnd,
     });
-    onSelectionChange(next);
-    onSeek(edge === 'start' ? next.selectStart : next.selectEnd);
+    selectionRef.current = next;
+    setDragSelection(next);
+    pendingSeekRef.current = edge === 'start' ? next.selectStart : next.selectEnd;
+    if (seekFrameRef.current == null) {
+      seekFrameRef.current = requestAnimationFrame(() => {
+        seekFrameRef.current = null;
+        onSeek(pendingSeekRef.current);
+      });
+    }
+  }
+
+  function finishTrim() {
+    draggingRef.current = false;
+    if (seekFrameRef.current != null) {
+      cancelAnimationFrame(seekFrameRef.current);
+      seekFrameRef.current = null;
+    }
+    onSeek(pendingSeekRef.current);
+    onSelectionChange(selectionRef.current);
   }
 
   return (
-    <View className="min-h-40 flex-1 border-y border-border bg-black">
+    <View className="border-y border-border bg-black">
       <View className="flex-row items-center justify-between px-4 py-2">
         <View>
           <Text className="text-xs font-semibold text-foreground">Adjust range</Text>
           <Text className="text-[11px] tabular-nums text-muted">
-            {formatClock(selectStart)} – {formatClock(selectEnd)} ·{' '}
-            {formatClock(selectEnd - selectStart)}
+            {formatClock(dragSelection.selectStart)} – {formatClock(dragSelection.selectEnd)} ·{' '}
+            {formatClock(dragSelection.selectEnd - dragSelection.selectStart)}
           </Text>
         </View>
         <Text className="text-[10px] text-muted">
@@ -169,7 +220,7 @@ export function AdjustClipTimeline({
         </Text>
       </View>
 
-      <View className="flex-1 justify-center px-3 pb-3" onLayout={onTrackLayout}>
+      <View className="justify-center px-3 pb-3" onLayout={onTrackLayout}>
         <View style={{ width: '100%' }}>
           <View style={{ width, height: 16, marginBottom: 6 }}>
             {ticks.map((tick) => (
@@ -250,11 +301,25 @@ export function AdjustClipTimeline({
               }}
             />
 
-            <EdgeHandle edge="start" left={selectLeft} onMove={(dx) => applyTrim('start', dx)} />
+            <EdgeHandle
+              edge="start"
+              left={selectLeft}
+              onStart={() => {
+                draggingRef.current = true;
+                selectionRef.current = dragSelection;
+              }}
+              onMove={(dx) => applyTrim('start', dx)}
+              onEnd={finishTrim}
+            />
             <EdgeHandle
               edge="end"
               left={selectLeft + selectWidth}
+              onStart={() => {
+                draggingRef.current = true;
+                selectionRef.current = dragSelection;
+              }}
               onMove={(dx) => applyTrim('end', dx)}
+              onEnd={finishTrim}
             />
 
             <PlayheadMarker x={playheadX} height={TRACK_HEIGHT + 12} />

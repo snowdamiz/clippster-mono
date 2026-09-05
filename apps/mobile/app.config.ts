@@ -48,6 +48,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     package: 'app.clippster.mobile',
     versionCode: 1,
+    softwareKeyboardLayoutMode: 'resize',
     adaptiveIcon: {
       backgroundColor: '#0a0a0b',
       foregroundImage: './assets/images/android-icon-foreground.png',

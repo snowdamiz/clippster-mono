@@ -2,6 +2,7 @@ import { createVideoPlayer, type VideoThumbnail } from 'expo-video';
 import * as FileSystem from 'expo-file-system/legacy';
 
 import { EDITOR_CACHE_POLICY } from '@/editor/performance/mediaPolicy';
+import { withThumbnailDecodeSlot } from '@/lib/mediaDecodeGate';
 import { getNativeEditorModule, isNativeEditorAvailable } from '@clippster/editor-native';
 
 /** Image-like source accepted by ExpoImage / RN Image. */
@@ -108,7 +109,7 @@ export async function getVideoFrames(
   path: string,
   times: number[],
   options?: { maxHeight?: number; sourceFingerprint?: string },
-): Promise<Array<ThumbnailSource | null>> {
+): Promise<(ThumbnailSource | null)[]> {
   const maxHeight = options?.maxHeight ?? 72;
   const sourceKey = options?.sourceFingerprint ?? path;
   const needed = times.map((time) => Math.max(0, time));
@@ -123,9 +124,14 @@ export async function getVideoFrames(
         );
         if (stillMissing.length === 0) return;
         if (isNativeEditorAvailable()) {
+          // Native extraction uses MediaMetadataRetriever / AVAssetImageGenerator, not a
+          // playback decoder. It must remain available while a preview exists, including
+          // when the previous stacked route still owns the playback-critical lock.
           await generateNativeFrames(path, stillMissing, sourceKey, maxHeight);
         } else {
-          await generateExpoFrames(path, stillMissing, sourceKey, maxHeight);
+          await withThumbnailDecodeSlot(async () => {
+            await generateExpoFrames(path, stillMissing, sourceKey, maxHeight);
+          });
         }
       })
       .catch((error) => {

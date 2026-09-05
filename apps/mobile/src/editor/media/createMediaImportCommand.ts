@@ -10,6 +10,7 @@ import {
   secondsToTicks,
   type EditorSelection,
   type MediaAssetRef,
+  type MediaDerivativeRef,
 } from '../model/schema';
 
 interface ImportedMedia {
@@ -25,6 +26,7 @@ export async function createMediaImportCommand(
   idFactory: EditorIdFactory,
   fingerprint: (uri: string) => Promise<string>,
   destination: 'primary' | 'overlay' = 'primary',
+  prepareProxy?: (uri: string) => Promise<MediaDerivativeRef | undefined>,
 ): Promise<{ command: EditorCommand; selection: EditorSelection }> {
   const now = Date.now();
   const assetId = idFactory('asset');
@@ -35,6 +37,8 @@ export async function createMediaImportCommand(
   );
   const timelineStart = Math.max(0, Math.min(playheadTick, EDITOR_MAX_TICKS - 1));
   const timelineEnd = Math.min(EDITOR_MAX_TICKS, timelineStart + durationTicks);
+  const proxy =
+    kind === 'video' && prepareProxy ? await prepareProxy(media.path) : undefined;
   const asset: MediaAssetRef = {
     id: assetId,
     kind,
@@ -43,6 +47,9 @@ export async function createMediaImportCommand(
     sourceFingerprint: await fingerprint(media.path),
     durationTicks,
     hasAudio: kind !== 'image',
+    proxy,
+    width: proxy?.width,
+    height: proxy?.height,
   };
 
   if (kind === 'video' && destination === 'primary') {

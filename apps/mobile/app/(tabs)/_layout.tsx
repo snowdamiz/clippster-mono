@@ -86,8 +86,6 @@ export default function TabsLayout() {
       <Tabs.Screen name="campaigns" options={{ href: null }} />
       <Tabs.Screen name="settings" options={{ href: null }} />
       <Tabs.Screen name="inbox" options={{ href: null }} />
-      <Tabs.Screen name="posts" options={{ href: null }} />
-      <Tabs.Screen name="accounts" options={{ href: null }} />
     </Tabs>
   );
 }
