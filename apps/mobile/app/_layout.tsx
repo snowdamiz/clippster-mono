@@ -12,6 +12,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { AppErrorBoundary } from '@/components/AppErrorBoundary';
 import { AuthProvider } from '@/context/AuthContext';
 import { AccountProvider } from '@/context/AccountContext';
+import { MessagingProvider } from '@/context/MessagingContext';
 import { DialogProvider } from '@/context/DialogContext';
 import { PlanGateGuard } from '@/components/subscription/PlanGateGuard';
 import { SubscriptionGateSheet } from '@/components/subscription/SubscriptionGateSheet';
@@ -64,6 +65,7 @@ export default function RootLayout() {
     <AppErrorBoundary>
       <AuthProvider>
         <AccountProvider>
+        <MessagingProvider>
         <CloudSyncProvider>
         <DialogProvider>
         <ThemeProvider value={navigationTheme}>
@@ -86,6 +88,7 @@ export default function RootLayout() {
             <Stack.Screen name="campaign/[id]" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="campaign/[id]/submit" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="inbox/[id]" options={{ headerShown: false, gestureEnabled: false }} />
+            <Stack.Screen name="messages/[id]" options={{ headerShown: false, gestureEnabled: true }} />
             <Stack.Screen name="profile/preview" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="profile/settings" options={{ headerShown: false, gestureEnabled: false }} />
             <Stack.Screen name="profile/clipper" options={{ headerShown: false, gestureEnabled: false }} />
@@ -95,6 +98,7 @@ export default function RootLayout() {
         <SubscriptionGateSheet />
         </DialogProvider>
         </CloudSyncProvider>
+        </MessagingProvider>
         </AccountProvider>
       </AuthProvider>
     </AppErrorBoundary>

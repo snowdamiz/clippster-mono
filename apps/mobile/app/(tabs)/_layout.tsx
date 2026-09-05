@@ -3,11 +3,12 @@ import { ActivityIndicator, View } from 'react-native';
 import { TabBarIcon } from '@/components/navigation/TabBarIcon';
 import { useAccount } from '@/context/AccountContext';
 import { useAuth } from '@/context/AuthContext';
+import { useMessaging } from '@/context/MessagingContext';
 import { tokens } from '@/theme/tokens';
 
 import type { ColorValue } from 'react-native';
 
-type TabRouteName = 'projects' | 'editor' | 'clips' | 'profile';
+type TabRouteName = 'projects' | 'editor' | 'clips' | 'messages' | 'profile';
 
 function tabBarIcon(name: TabRouteName) {
   function TabIcon({ color, size }: { focused: boolean; color: ColorValue; size: number }) {
@@ -19,6 +20,7 @@ function tabBarIcon(name: TabRouteName) {
 export default function TabsLayout() {
   const { authChecked, isAuthenticated } = useAuth();
   const { requiresPlanGate, accountReady } = useAccount();
+  const { totalUnread } = useMessaging();
 
   if (!authChecked || (isAuthenticated && !accountReady)) {
     return (
@@ -63,6 +65,19 @@ export default function TabsLayout() {
       <Tabs.Screen
         name="clips"
         options={{ title: 'Exports', tabBarIcon: tabBarIcon('clips') }}
+      />
+      <Tabs.Screen
+        name="messages"
+        options={{
+          title: 'Messages',
+          tabBarIcon: tabBarIcon('messages'),
+          tabBarBadge: totalUnread > 0 ? (totalUnread > 99 ? '99+' : totalUnread) : undefined,
+          tabBarBadgeStyle: {
+            backgroundColor: tokens.colors.accent,
+            color: '#fff',
+            fontSize: 10,
+          },
+        }}
       />
       <Tabs.Screen
         name="profile"

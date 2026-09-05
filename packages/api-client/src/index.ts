@@ -90,3 +90,17 @@ export type {
 } from './tokendApi';
 export { createKickApi } from './kickApi';
 export type { KickApi, KickClip, KickClipsResponse } from './kickApi';
+export {
+  createMessagingApi,
+  normalizeConversation,
+  normalizeMessage,
+} from './messagingApi';
+export type {
+  MessagingApi,
+  MessagingConversation,
+  MessagingMessage,
+  MessagingParticipant,
+  MessagingUserSearchResult,
+  MessageAttachment,
+  UnreadCounts,
+} from './messagingApi';
