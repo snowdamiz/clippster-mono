@@ -1,9 +1,10 @@
-import type { Clip, SubtitleSettings } from '@clippster/shared-types';
 import {
   parseClipTextOverlayJson,
   parseSubtitleSettings,
   serializeClipTextBoxState,
+  type Clip,
   type ClipTextBoxState,
+  type SubtitleSettings,
 } from '@clippster/shared-types';
 import { generateId, getDatabase, timestamp } from './index';
 

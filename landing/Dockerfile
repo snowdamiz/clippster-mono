@@ -4,6 +4,9 @@ FROM node:22-alpine AS builder
 
 WORKDIR /app
 
+ARG VITE_API_URL=https://api.clippster.app/api
+ENV VITE_API_URL=$VITE_API_URL
+
 # Copy package files
 COPY landing/package.json landing/yarn.lock ./
 
@@ -17,16 +20,18 @@ COPY packages/app-tour /packages/app-tour
 # Build the application
 RUN yarn build
 
-# Production stage - serve with nginx
-FROM nginx:alpine
+# Production stage — Node injects unique title/description/JSON-LD per URL
+FROM node:22-alpine
 
-# Copy custom nginx config
-COPY landing/nginx.conf /etc/nginx/conf.d/default.conf
+WORKDIR /app
 
-# Copy built assets from builder stage
-COPY --from=builder /app/dist /usr/share/nginx/html
+COPY --from=builder /app/dist ./dist
+COPY landing/server.mjs ./server.mjs
+COPY landing/src/seo ./src/seo
 
-# Expose port 8080 (Fly.io default)
+ENV PORT=8080
+ENV API_URL=https://api.clippster.app/api
+ENV SITE_URL=https://clippster.app
 EXPOSE 8080
 
-CMD ["nginx", "-g", "daemon off;"]
+CMD ["node", "server.mjs"]

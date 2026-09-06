@@ -278,6 +278,9 @@ defmodule ClippsterServerWeb.Router do
     get("/clippers/:slug", ClipperProfilesController, :show)
     get("/orgs/:slug", OrganizationPublicProfilesController, :show)
 
+    # Crawlable profile index for sitemap.xml and directory pages
+    get("/seo/sitemap", SeoController, :sitemap)
+
     get(
       "/clippers/:slug/portfolio-clips/:clip_id/presigned-url",
       ClipperProfilesController,
@@ -417,8 +420,25 @@ defmodule ClippsterServerWeb.Router do
     post("/ai/thumbnail/sessions/:id/reference", AIThumbnailController, :set_reference)
     post("/ai/thumbnail/sessions/:id/message", AIThumbnailController, :send_message)
     post("/ai/thumbnail/sessions/:id/generate", AIThumbnailController, :trigger_generation)
+    post("/ai/thumbnail/sessions/:id/generate-from-video", AIThumbnailController, :generate_from_video)
+    post("/ai/thumbnail/sessions/:id/continue-editable", AIThumbnailController, :continue_editable)
+    post("/ai/thumbnail/sessions/:id/analyze", AIThumbnailController, :analyze)
+    post("/ai/thumbnail/sessions/:id/apply-concept", AIThumbnailController, :apply_concept)
     post("/ai/thumbnail/sessions/:id/refine", AIThumbnailController, :send_refinement)
     post("/ai/thumbnail/sessions/:id/accept", AIThumbnailController, :accept)
+    post("/ai/thumbnail/sessions/:id/critique", AIThumbnailController, :critique)
+    post("/ai/thumbnail/sessions/:id/variations", AIThumbnailController, :variations)
+    post("/ai/thumbnail/sessions/:id/optimize", AIThumbnailController, :optimize)
+    post("/ai/thumbnail/sessions/:id/text-overlay", AIThumbnailController, :text_overlay)
+    post("/ai/thumbnail/sessions/:id/edit", AIThumbnailController, :edit)
+    post("/ai/thumbnail/sessions/:id/edit/face-swap", AIThumbnailController, :face_swap)
+    post("/ai/thumbnail/sessions/:id/edit/background-remove", AIThumbnailController, :background_remove)
+    post("/ai/thumbnail/sessions/:id/edit/background-replace", AIThumbnailController, :background_replace)
+    post("/ai/thumbnail/sessions/:id/edit/color-enhance", AIThumbnailController, :color_enhance)
+    post("/ai/thumbnail/sessions/:id/edit/upscale", AIThumbnailController, :upscale)
+    post("/ai/thumbnail/sessions/:id/edit/filter", AIThumbnailController, :filter)
+    post("/ai/thumbnail/sessions/:id/edit/combine", AIThumbnailController, :combine)
+    post("/ai/thumbnail/transcribe", AIThumbnailController, :transcribe_audio)
 
     # Image editor projects
     get("/image-editor/projects", ImageEditorController, :list_projects)

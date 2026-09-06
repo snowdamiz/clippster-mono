@@ -10,6 +10,7 @@ export interface Organization {
   public_discord?: string | null
   public_telegram?: string | null
   content_type_tags?: string[]
+  public_profile_enabled?: boolean
   settings?: {
     allow_ai?: boolean
   }

@@ -12,8 +12,8 @@ const features: Feature[] = [
   {
     icon: Brain,
     title: 'AI Highlight Detection',
-    description: 'Neural networks analyze your content in real-time, identifying peak moments, clutch plays, and viral-worthy reactions automatically.',
-    stat: { value: '95%', label: 'accuracy' },
+    description: 'Realtime highlight detection on desktop flags peak moments during a live stream or on a VOD—then you review and edit before export.',
+    stat: { value: 'Live', label: 'detect' },
     accentColor: 'cyan',
   },
   {
@@ -26,8 +26,8 @@ const features: Feature[] = [
   {
     icon: Wand2,
     title: 'Auto-Captions',
-    description: 'AI-generated captions with perfect timing. Multiple styling presets and language support built in.',
-    stat: { value: '40+', label: 'languages' },
+    description: 'AI-generated captions with timing controls, styling presets, and verified multi-language support in the desktop editor.',
+    stat: { value: '9', label: 'languages' },
     accentColor: 'pink',
   },
   {
@@ -46,8 +46,8 @@ const features: Feature[] = [
   {
     icon: Share2,
     title: 'Multi-Platform Export',
-    description: 'Schedule posts to Instagram and Twitter. Auto-optimized aspect ratios and formats for each platform.',
-    stat: { value: '5+', label: 'platforms' },
+    description: 'Schedule posts to Instagram, TikTok, X, and YouTube. Aspect ratios and formats tuned for short-form networks.',
+    stat: { value: '4', label: 'publish targets' },
     accentColor: 'pink',
   },
   {

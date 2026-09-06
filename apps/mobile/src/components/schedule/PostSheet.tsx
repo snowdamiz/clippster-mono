@@ -1,10 +1,13 @@
-import type { SocialPlatform, UserSocialAccount } from '@clippster/api-client';
-import type { Campaign, Organization, ServerOrganizationCreatorProfile } from '@clippster/api-client';
 import {
-  formatScheduleDate,
   filterCampaignsOpenForPosting,
+  formatScheduleDate,
   getMinScheduleTime,
   isValidScheduleTime,
+  type Campaign,
+  type Organization,
+  type ServerOrganizationCreatorProfile,
+  type SocialPlatform,
+  type UserSocialAccount,
 } from '@clippster/api-client';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';

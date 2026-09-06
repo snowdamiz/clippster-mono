@@ -178,12 +178,12 @@ export interface DetectedClipInput {
   description?: string | null;
   confidenceScore?: number | null;
   viralityScore?: number | null;
-  segments?: Array<{
+  segments?: {
     start_time: number;
     end_time: number;
     duration: number;
     transcript?: string | null;
-  }>;
+  }[];
 }
 
 export async function persistDetectedClips(

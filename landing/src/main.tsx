@@ -9,6 +9,10 @@ import App from './App'
 import { PricingPage } from './pages/PricingPage'
 import { PrivacyPage } from './pages/PrivacyPage'
 import { TermsPage } from './pages/TermsPage'
+import { ClipperDirectoryPage } from './pages/ClipperDirectoryPage'
+import { OrgDirectoryPage } from './pages/OrgDirectoryPage'
+import { DynamicSeoPage } from './pages/seo/DynamicSeoPage'
+import { RouteSeo } from './seo/RouteSeo'
 import { StripeReturnPage } from './pages/StripeReturnPage'
 import { ScrollToTop } from './components/ScrollToTop'
 import { LandingAnalyticsTracker } from './components/LandingAnalyticsTracker'
@@ -109,6 +113,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <BrowserRouter>
       <ScrollToTop />
+      <RouteSeo />
       <LandingAnalyticsTracker />
       <ToastProvider>
         <AuthProvider>
@@ -121,8 +126,26 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="/terms" element={<TermsPage />} />
                 <Route path="/stripe-success" element={<StripeReturnPage kind="success" />} />
                 <Route path="/stripe-cancel" element={<StripeReturnPage kind="cancel" />} />
+                <Route path="/clippers" element={<ClipperDirectoryPage />} />
+                <Route path="/orgs" element={<OrgDirectoryPage />} />
                 <Route path="/clippers/:slug" element={<ClipperPublicProfilePage />} />
                 <Route path="/orgs/:slug" element={<OrgPublicProfilePage />} />
+
+                {/* SEO content engine pages (pillars, platforms, guides, comparisons) */}
+                <Route path="/clipping-tool" element={<DynamicSeoPage />} />
+                <Route path="/video-editor" element={<DynamicSeoPage />} />
+                <Route path="/live-stream-clipping" element={<DynamicSeoPage />} />
+                <Route path="/clipping-campaigns" element={<DynamicSeoPage />} />
+                <Route path="/for-organizations" element={<DynamicSeoPage />} />
+                <Route path="/social-posting" element={<DynamicSeoPage />} />
+                <Route path="/clip-analytics" element={<DynamicSeoPage />} />
+                <Route path="/design-studio" element={<DynamicSeoPage />} />
+                <Route path="/methodology" element={<DynamicSeoPage />} />
+                <Route path="/authors/:slug" element={<DynamicSeoPage />} />
+                <Route path="/case-studies/:slug" element={<DynamicSeoPage />} />
+                <Route path="/platforms/:slug" element={<DynamicSeoPage />} />
+                <Route path="/vs/:slug" element={<DynamicSeoPage />} />
+                <Route path="/guides/:slug" element={<DynamicSeoPage />} />
 
                 {/* Lite editor (public) */}
                 <Route path="/editor" element={<LiteEditorPage />} />

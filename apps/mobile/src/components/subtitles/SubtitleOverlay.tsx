@@ -74,11 +74,10 @@ export function SubtitleOverlay({
   const strokeColor = override?.border2Color ?? settings.border2Color;
 
   const maxWords = maxWordsChunkForAspectRatioString(targetRatio, settings.animationStyle);
-  const sourceWords = words.length > 0 ? words : sampleFallback ? SAMPLE_CAPTION_WORDS : [];
-  const visible = useMemo(
-    () => getVisibleWordsAtTime(sourceWords, currentTime, maxWords),
-    [sourceWords, currentTime, maxWords],
-  );
+  const visible = useMemo(() => {
+    const sourceWords = words.length > 0 ? words : sampleFallback ? SAMPLE_CAPTION_WORDS : [];
+    return getVisibleWordsAtTime(sourceWords, currentTime, maxWords);
+  }, [words, sampleFallback, currentTime, maxWords]);
 
   const font = useMemo(
     () =>

@@ -32,7 +32,6 @@ export async function downloadAndImportSharedClip(
       return { success: false, error: `Download failed (${download.status})` };
     }
 
-    const fileInfo = await FileSystem.getInfoAsync(localPath);
     const project = await createProject(clip.name, clip.description);
 
     if (clip.branding_required && clip.branding_config) {
