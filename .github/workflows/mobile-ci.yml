@@ -90,18 +90,31 @@ jobs:
         run: ./gradlew assembleDebug --no-daemon
 
   ios-native:
-    runs-on: macos-15
+    runs-on: macos-26
     steps:
       - uses: actions/checkout@v4
+      - name: Select Xcode 26.4
+        run: |
+          # Expo SDK 56 requires Xcode 26.4+ (macos-15 defaults to 16.4 and fails ExpoModulesJSI).
+          if [ -d /Applications/Xcode_26.4.1.app ]; then
+            sudo xcode-select --switch /Applications/Xcode_26.4.1.app
+          elif [ -d /Applications/Xcode_26.4.app ]; then
+            sudo xcode-select --switch /Applications/Xcode_26.4.app
+          else
+            echo "Xcode 26.4 not found. Installed:"
+            ls /Applications/Xcode*.app || true
+            exit 1
+          fi
+          xcodebuild -version
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'yarn'
       - run: yarn install --frozen-lockfile
+      - name: Ensure ffmpeg-expo iOS CLI bits
+        run: node scripts/setup-ffmpeg-cli.mjs
       - name: Prebuild iOS project
         working-directory: apps/mobile
-        env:
-          SKIP_FFMPEG_DOWNLOAD: '1'
         run: npx expo prebuild --platform ios --no-install --non-interactive
       - name: Pod install
         working-directory: apps/mobile/ios
@@ -109,6 +122,7 @@ jobs:
       - name: Compile iOS simulator
         working-directory: apps/mobile/ios
         run: |
+          set -o pipefail
           WORKSPACE=$(ls -d *.xcworkspace | head -n 1)
           SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" | awk '/Schemes/{f=1;next} f&&NF{print $1; exit}')
           xcodebuild \
