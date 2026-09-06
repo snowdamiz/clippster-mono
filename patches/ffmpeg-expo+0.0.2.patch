@@ -221997,7 +221997,7 @@ index ee0dc00..cf43aeb 100644
      static func setLogCallback(
          _ context: UnsafeMutableRawPointer?,
          callback: @escaping (UnsafeMutableRawPointer?, Int32, UnsafePointer<CChar>?) -> Void
-@@ -23,213 +32,42 @@ class FFmpegBridge {
+@@ -23,213 +32,43 @@ class FFmpegBridge {
          logCallbackContext = context
          logCallback = callback
          
@@ -222007,7 +222007,8 @@ index ee0dc00..cf43aeb 100644
 -            
 -            // Format the log message
 +        av_log_set_callback { _, level, format, arguments in
-+            guard let callback = FFmpegBridge.logCallback, let format else { return }
++            // Xcode 26 / Swift 6: av_log va_list is bridged as CVaListPointer?
++            guard let callback = FFmpegBridge.logCallback, let format, let arguments else { return }
 +            // Forward warnings+ only — verbose demux floods JS.
 +            if level > AV_LOG_WARNING { return }
              var message = [CChar](repeating: 0, count: 1024)
