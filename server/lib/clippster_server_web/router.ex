@@ -278,6 +278,9 @@ defmodule ClippsterServerWeb.Router do
     get("/clippers/:slug", ClipperProfilesController, :show)
     get("/orgs/:slug", OrganizationPublicProfilesController, :show)
 
+    # Crawlable profile index for sitemap.xml and directory pages
+    get("/seo/sitemap", SeoController, :sitemap)
+
     get(
       "/clippers/:slug/portfolio-clips/:clip_id/presigned-url",
       ClipperProfilesController,

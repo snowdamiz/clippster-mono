@@ -43,6 +43,8 @@ import { AuthContext } from '../context/AuthContext'
 import { ToastContext } from '../context/ToastContext'
 import { API_BASE } from '../lib/apiBase'
 import { formatTimezoneForDisplay } from '../utils/formatTimezone'
+import { SeoHead } from '../seo/SeoHead'
+import { DEFAULT_OG_IMAGE, absoluteUrl, clipperProfileJsonLd } from '../seo/catalog'
 
 function PlatformGlyph({ platform, className }: { platform: string; className?: string }) {
   const p = platform.toLowerCase()
@@ -205,6 +207,11 @@ export function ClipperPublicProfilePage() {
   if (loading) {
     return (
       <div className="clipper-public-profile-page">
+        <SeoHead
+          title="Clipper profile | Clippster"
+          description="Loading a public clipper profile on Clippster."
+          robots="noindex, follow"
+        />
         <div className="profile-content profile-content--loading">
           <div className="loading-spinner">
             <Loader2 className="loading-spinner__icon" />
@@ -217,6 +224,11 @@ export function ClipperPublicProfilePage() {
   if (!profile) {
     return (
       <div className="clipper-public-profile-page">
+        <SeoHead
+          title="Clipper not found | Clippster"
+          description="This clipper profile does not exist or is private."
+          robots="noindex, nofollow"
+        />
         <div className="profile-content profile-content--empty">
           <div className="empty-state">
             <div className="empty-state__icon-wrapper">
@@ -238,8 +250,24 @@ export function ClipperPublicProfilePage() {
     (profile.languages?.length ?? 0) > 0
   )
   const statsFour = !!profile.total_views
+  const displayName = profile.display_name || 'Unnamed Clipper'
+  const profileDescription =
+    profile.bio?.trim() ||
+    `${displayName} is a clipper on Clippster. View campaigns, clips delivered, and specialties.`
   return (
     <div className="clipper-public-profile-page">
+      <SeoHead
+        title={`${displayName} | Clipper on Clippster`}
+        description={profileDescription.slice(0, 160)}
+        canonical={absoluteUrl(`/clippers/${profile.slug || slug}`)}
+        image={profile.avatar_url || DEFAULT_OG_IMAGE}
+        jsonLd={clipperProfileJsonLd({
+          name: displayName,
+          description: profileDescription,
+          slug: profile.slug || slug || '',
+          image: profile.avatar_url,
+        })}
+      />
       <div className="org-profile">
         {user?.owned_organization_id && (
           <div className="clipper-toolbar">

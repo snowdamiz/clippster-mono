@@ -1,4 +1,4 @@
-const DEFAULT_API_ORIGIN = 'https://clippster-server.fly.dev'
+const DEFAULT_API_ORIGIN = 'https://api.clippster.app'
 
 function stripTrailingSlash(value: string): string {
   return value.endsWith('/') ? value.slice(0, -1) : value

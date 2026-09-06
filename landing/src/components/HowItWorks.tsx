@@ -1,3 +1,4 @@
+import { Link } from 'react-router-dom'
 import { MonitorPlay, Sparkles, Scissors, Upload } from 'lucide-react'
 
 const steps = [
@@ -67,7 +68,11 @@ export function HowItWorks() {
           </h2>
           
           <p className="text-zinc-400 max-w-xl mx-auto text-lg leading-relaxed">
-            From live stream to published content in minutes, not hours.
+            From live stream to published content in minutes, not hours. See how the{' '}
+            <Link to="/clipping-tool" className="text-cyan-400 hover:text-cyan-300">
+              AI clipping tool
+            </Link>{' '}
+            works end to end.
           </p>
         </div>
 
