@@ -2076,3 +2076,181 @@ pub async fn download_youtube_vod_segment(
         }
     }
 }
+
+/// Fetch YouTube captions (manual or auto) via yt-dlp and return plain text + title.
+#[tauri::command]
+pub async fn fetch_youtube_captions(youtube_url: String) -> Result<String, String> {
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    let job_dir = std::env::temp_dir().join(format!(
+        "clippster-yt-captions-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&job_dir)
+        .map_err(|e| format!("Could not create captions workspace: {e}"))?;
+
+    let outtmpl = job_dir.join("subs").to_string_lossy().to_string();
+
+    let mut cmd = tokio::process::Command::new(&ytdlp_path);
+    no_window(&mut cmd);
+    cmd.args([
+        "--skip-download",
+        "--write-auto-sub",
+        "--write-sub",
+        "--sub-lang",
+        "en.*,en",
+        "--sub-format",
+        "vtt/srv3/best",
+        "--convert-subs",
+        "vtt",
+        "--no-playlist",
+        "--no-warnings",
+        "-o",
+        &outtmpl,
+        "--print",
+        "%(title)s",
+        &youtube_url,
+    ]);
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("Failed to run yt-dlp captions: {e}"))?;
+
+    let title = String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .next()
+        .unwrap_or("")
+        .trim()
+        .to_string();
+
+    let mut transcript = String::new();
+    if let Ok(entries) = std::fs::read_dir(&job_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let ext = path
+                .extension()
+                .and_then(|e| e.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if ext == "vtt" || ext == "srt" {
+                if let Ok(raw) = std::fs::read_to_string(&path) {
+                    transcript = strip_caption_markup(&raw);
+                    if transcript.len() >= 50 {
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    let _ = std::fs::remove_dir_all(&job_dir);
+
+    let payload = serde_json::json!({
+        "title": title,
+        "transcript": transcript,
+        "source": if transcript.len() >= 50 { "youtube_captions" } else { "empty" }
+    });
+    Ok(payload.to_string())
+}
+
+fn strip_caption_markup(raw: &str) -> String {
+    let mut lines: Vec<String> = Vec::new();
+    for line in raw.lines() {
+        let t = line.trim();
+        if t.is_empty()
+            || t.starts_with("WEBVTT")
+            || t.starts_with("NOTE")
+            || t.starts_with("Kind:")
+            || t.starts_with("Language:")
+            || t.contains("-->")
+            || t.chars().all(|c| c.is_ascii_digit() || c == ':' || c == ',' || c == '.')
+        {
+            continue;
+        }
+        let cleaned = t
+            .replace("<c>", "")
+            .replace("</c>", "")
+            .replace("&nbsp;", " ");
+        let cleaned = regex::Regex::new(r"<[^>]+>")
+            .ok()
+            .map(|re| re.replace_all(&cleaned, "").to_string())
+            .unwrap_or(cleaned);
+        let cleaned = cleaned.trim().to_string();
+        if !cleaned.is_empty() && lines.last().map(|l| l != &cleaned).unwrap_or(true) {
+            lines.push(cleaned);
+        }
+    }
+    lines.join(" ")
+}
+
+/// Download audio-only from YouTube for Whisper transcription. Returns absolute mp3 path.
+#[tauri::command]
+pub async fn download_youtube_audio_for_transcription(youtube_url: String) -> Result<String, String> {
+    let ytdlp_path = resolve_ytdlp_binary()?;
+    let ffmpeg_path = resolve_ffmpeg_binary().ok();
+    let job_dir = std::env::temp_dir().join(format!(
+        "clippster-yt-audio-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis())
+            .unwrap_or(0)
+    ));
+    std::fs::create_dir_all(&job_dir)
+        .map_err(|e| format!("Could not create audio workspace: {e}"))?;
+    let outtmpl = job_dir.join("audio.%(ext)s").to_string_lossy().to_string();
+
+    let mut cmd = tokio::process::Command::new(&ytdlp_path);
+    no_window(&mut cmd);
+    cmd.args([
+        "-x",
+        "--audio-format",
+        "mp3",
+        "--audio-quality",
+        "5",
+        "--no-playlist",
+        "--no-warnings",
+        "-o",
+        &outtmpl,
+        &youtube_url,
+    ]);
+    if let Some(ff) = ffmpeg_path.as_ref() {
+        if let Some(dir) = std::path::Path::new(ff).parent() {
+            cmd.arg("--ffmpeg-location").arg(dir);
+        }
+    }
+
+    let output = cmd
+        .output()
+        .await
+        .map_err(|e| format!("Failed to download YouTube audio: {e}"))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "yt-dlp audio download failed: {}",
+            &stderr[..stderr.len().min(400)]
+        ));
+    }
+
+    let mut found: Option<std::path::PathBuf> = None;
+    if let Ok(entries) = std::fs::read_dir(&job_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path
+                .extension()
+                .and_then(|e| e.to_str())
+                .map(|e| e.eq_ignore_ascii_case("mp3") || e.eq_ignore_ascii_case("m4a") || e.eq_ignore_ascii_case("webm"))
+                .unwrap_or(false)
+            {
+                found = Some(path);
+                break;
+            }
+        }
+    }
+
+    found
+        .map(|p| p.to_string_lossy().to_string())
+        .ok_or_else(|| "Audio file was not produced".to_string())
+}

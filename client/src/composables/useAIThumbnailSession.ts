@@ -117,6 +117,13 @@ export function useAIThumbnailSession() {
   async function updateMedia(data: {
     media_items?: Array<Record<string, unknown>>;
     key_frames?: Array<Record<string, unknown>>;
+    youtube_url?: string | null;
+    video_title?: string | null;
+    transcript?: string | null;
+    transcript_source?: string | null;
+    concepts?: api.ThumbnailConcept[];
+    video_summary?: Record<string, unknown> | null;
+    selected_concept_id?: string | null;
   }) {
     if (!session.value) return;
     const updated = await api.updateThumbnailMedia(session.value.id, data);
@@ -165,6 +172,62 @@ export function useAIThumbnailSession() {
     }
   }
 
+  async function generateFromVideo(opts: {
+    variant_count?: 4 | 8 | 12;
+    custom_instructions?: string;
+    concept_id?: string;
+  } = {}) {
+    if (!session.value) return;
+    isGenerating.value = true;
+    error.value = null;
+    try {
+      const updated = await api.generateThumbnailFromVideo(session.value.id, opts);
+      applySession(updated);
+    } catch (e: any) {
+      error.value = e.response?.data?.error || e.message || 'From-video generation failed';
+      throw e;
+    } finally {
+      isGenerating.value = false;
+    }
+  }
+
+  async function continueEditable(candidateIndex = 0) {
+    if (!session.value) return;
+    isGenerating.value = true;
+    error.value = null;
+    try {
+      const updated = await api.continueThumbnailEditable(session.value.id, candidateIndex);
+      applySession(updated);
+    } catch (e: any) {
+      error.value = e.response?.data?.error || e.message || 'Continue as editable failed';
+      throw e;
+    } finally {
+      isGenerating.value = false;
+    }
+  }
+
+  async function analyzeVideo() {
+    if (!session.value) return;
+    isLoading.value = true;
+    error.value = null;
+    try {
+      const result = await api.analyzeThumbnailVideo(session.value.id);
+      applySession(result.session);
+      return result;
+    } catch (e: any) {
+      error.value = e.response?.data?.error || e.message || 'Analyze failed';
+      throw e;
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  async function applyConcept(conceptId: string) {
+    if (!session.value) return;
+    const updated = await api.applyThumbnailConcept(session.value.id, conceptId);
+    applySession(updated);
+  }
+
   async function refine(message: string) {
     if (!session.value || !message.trim()) return;
     isRefining.value = true;
@@ -193,6 +256,24 @@ export function useAIThumbnailSession() {
       throw e;
     } finally {
       isAccepting.value = false;
+    }
+  }
+
+  async function runPostGen(
+    runner: () => Promise<{ session: api.AIThumbnailSession } & Record<string, unknown>>,
+  ) {
+    if (!session.value) return null;
+    isRefining.value = true;
+    error.value = null;
+    try {
+      const result = await runner();
+      if (result.session) applySession(result.session);
+      return result;
+    } catch (e: any) {
+      error.value = e.response?.data?.error || e.message || 'Post-gen action failed';
+      throw e;
+    } finally {
+      isRefining.value = false;
     }
   }
 
@@ -238,8 +319,13 @@ export function useAIThumbnailSession() {
     setReference,
     sendMessage,
     generate,
+    generateFromVideo,
+    continueEditable,
+    analyzeVideo,
+    applyConcept,
     refine,
     accept,
+    runPostGen,
     closeSession,
     clearError,
   };

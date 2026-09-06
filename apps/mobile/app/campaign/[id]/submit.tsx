@@ -1,4 +1,4 @@
-import type { SocialPlatform, UserSocialAccount } from '@clippster/api-client';
+import type { UserSocialAccount } from '@clippster/api-client';
 import { getPlatformDisplayName } from '@clippster/api-client';
 import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useMemo, useState } from 'react';

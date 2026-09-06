@@ -1,7 +1,7 @@
 defmodule ClippsterServerWeb.AIThumbnailController do
   use ClippsterServerWeb, :controller
 
-  alias ClippsterServer.AI.{ThumbnailSessions, ThumbnailComposer, ThumbnailSession}
+  alias ClippsterServer.AI.{ThumbnailSessions, ThumbnailComposer, ThumbnailSession, ThumbnailPostGen}
   alias ClippsterServer.Credits
   alias ClippsterServerWeb.AIChatController
 
@@ -11,6 +11,10 @@ defmodule ClippsterServerWeb.AIThumbnailController do
 
   @generation_credit_cost 8
   @refinement_credit_cost 4
+  @variant_credit_cost 2
+  @critique_credit_cost 4
+  @edit_credit_cost 4
+  @optimize_credit_cost 8
 
   # ---------------------------------------------------------------------------
   # List / CRUD
@@ -156,6 +160,13 @@ defmodule ClippsterServerWeb.AIThumbnailController do
         |> maybe_put(:key_frames, Map.get(params, "key_frames"))
         |> maybe_put(:canvas_width, Map.get(params, "canvas_width"))
         |> maybe_put(:canvas_height, Map.get(params, "canvas_height"))
+        |> maybe_put(:youtube_url, Map.get(params, "youtube_url"))
+        |> maybe_put(:video_title, Map.get(params, "video_title"))
+        |> maybe_put(:transcript, Map.get(params, "transcript"))
+        |> maybe_put(:transcript_source, Map.get(params, "transcript_source"))
+        |> maybe_put(:concepts, Map.get(params, "concepts"))
+        |> maybe_put(:video_summary, Map.get(params, "video_summary"))
+        |> maybe_put(:selected_concept_id, Map.get(params, "selected_concept_id"))
 
       {:ok, updated} = ThumbnailSessions.update_session(session, attrs)
       session = ThumbnailSessions.get_session_with_messages(updated.id)
@@ -449,8 +460,366 @@ defmodule ClippsterServerWeb.AIThumbnailController do
   end
 
   # ---------------------------------------------------------------------------
+  # Analyze / from-video / apply concept
+  # ---------------------------------------------------------------------------
+
+  def analyze(conn, %{"id" => id}) do
+    user = conn.assigns.current_user
+    api_key = get_api_key()
+
+    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+         {:ok, result} <- ThumbnailComposer.analyze_video(session, api_key) do
+      session = ThumbnailSessions.get_session_with_messages(result.session.id)
+
+      json(conn, %{
+        session: serialize_session(session),
+        concepts: result.concepts,
+        summary: result.summary
+      })
+    else
+      nil -> conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+      {:error, reason} -> conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+    end
+  end
+
+  def apply_concept(conn, %{"id" => id, "concept_id" => concept_id}) do
+    user = conn.assigns.current_user
+
+    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+         {:ok, updated} <- ThumbnailComposer.apply_concept(session, concept_id) do
+      json(conn, serialize_session(updated))
+    else
+      nil -> conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+      {:error, reason} -> conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+    end
+  end
+
+  def generate_from_video(conn, %{"id" => id} = params) do
+    user = conn.assigns.current_user
+    api_key = get_api_key()
+
+    variant_count =
+      case Map.get(params, "variant_count", 4) do
+        n when is_integer(n) and n in [4, 8, 12] -> n
+        n when is_binary(n) ->
+          case Integer.parse(n) do
+            {v, _} when v in [4, 8, 12] -> v
+            _ -> 4
+          end
+        _ -> 4
+      end
+
+    cost = variant_count * @variant_credit_cost
+
+    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+         :ok <- validate_has_video_context(session),
+         :ok <- check_credits(user.id, cost) do
+      if cost > 0, do: {:ok, _} = Credits.deduct_credits(user.id, cost)
+
+      {:ok, session} = ThumbnailSessions.update_session(session, %{status: "generating", generation_mode: "quick"})
+
+      case ThumbnailComposer.generate_from_video(session, api_key, params) do
+        {:ok, result} ->
+          {:ok, _} =
+            ThumbnailSessions.save_generation(session, %{
+              generation_mode: "quick",
+              candidates: result.candidates,
+              plate_url: nil,
+              recipe: nil,
+              composition: result.composition,
+              thumbnail_url: result.thumbnail_url,
+              canvas_width: result.canvas_width,
+              canvas_height: result.canvas_height,
+              status: "generated"
+            })
+
+          session = ThumbnailSessions.get_session_with_messages(session.id)
+          json(conn, serialize_session(session))
+
+        {:error, reason} ->
+          if cost > 0, do: Credits.add_credits(user.id, cost)
+          ThumbnailSessions.update_session_status(session, "discovery")
+          conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+      end
+    else
+      nil -> conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+      {:error, :missing_video_context} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "Attach video keyframes and a transcript first"})
+      {:error, :insufficient_credits, remaining} ->
+        conn
+        |> put_status(:payment_required)
+        |> json(%{error: "Insufficient credits", required: cost, remaining: remaining})
+    end
+  end
+
+  def continue_editable(conn, %{"id" => id} = params) do
+    user = conn.assigns.current_user
+    api_key = get_api_key()
+    idx = Map.get(params, "candidate_index", 0)
+
+    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+         :ok <- check_credits(user.id, @generation_credit_cost) do
+      if @generation_credit_cost > 0, do: {:ok, _} = Credits.deduct_credits(user.id, @generation_credit_cost)
+
+      case ThumbnailComposer.continue_as_editable(session, api_key, idx) do
+        {:ok, result} ->
+          {:ok, _} =
+            ThumbnailSessions.save_generation(session, %{
+              generation_mode: "editable",
+              candidates: [],
+              plate_url: result.plate_url,
+              recipe: result.recipe,
+              composition: result.composition,
+              thumbnail_url: result.thumbnail_url,
+              canvas_width: result.canvas_width,
+              canvas_height: result.canvas_height,
+              status: "generated"
+            })
+
+          session = ThumbnailSessions.get_session_with_messages(session.id)
+          json(conn, serialize_session(session))
+
+        {:error, reason} ->
+          if @generation_credit_cost > 0, do: Credits.add_credits(user.id, @generation_credit_cost)
+          conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+      end
+    else
+      nil -> conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+      {:error, :insufficient_credits, remaining} ->
+        conn
+        |> put_status(:payment_required)
+        |> json(%{
+          error: "Insufficient credits",
+          required: @generation_credit_cost,
+          remaining: remaining
+        })
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Post-gen tools
+  # ---------------------------------------------------------------------------
+
+  def critique(conn, %{"id" => id} = params) do
+    run_postgen(conn, id, @critique_credit_cost, fn session, api_key ->
+      url = working_image_url(session, params)
+      ThumbnailPostGen.critique(session, url, api_key, params)
+    end)
+  end
+
+  def variations(conn, %{"id" => id} = params) do
+    count =
+      case Map.get(params, "count", 4) do
+        n when is_integer(n) -> n
+        n when is_binary(n) -> String.to_integer(n)
+        _ -> 4
+      end
+      |> max(1)
+      |> min(10)
+
+    cost = count * @variant_credit_cost
+
+    run_postgen(conn, id, cost, fn session, api_key ->
+      url = working_image_url(session, params)
+      ThumbnailPostGen.variations(session, url, count, api_key, params)
+    end)
+  end
+
+  def optimize(conn, %{"id" => id, "idea" => idea} = params) do
+    run_postgen(conn, id, @optimize_credit_cost, fn session, api_key ->
+      ThumbnailPostGen.optimize(session, idea, api_key, params)
+    end)
+  end
+
+  def text_overlay(conn, %{"id" => id} = params) do
+    run_postgen(conn, id, 0, fn session, api_key ->
+      url = working_image_url(session, params)
+      ThumbnailPostGen.text_overlay(session, url, api_key, params)
+    end)
+  end
+
+  def edit(conn, %{"id" => id, "prompt" => prompt} = params) do
+    run_postgen(conn, id, @edit_credit_cost, fn session, api_key ->
+      url = working_image_url(session, params)
+      ThumbnailPostGen.edit(session, url, prompt, api_key, params)
+    end)
+  end
+
+  def face_swap(conn, %{"id" => id} = params) do
+    face_url = Map.get(params, "faceImageUrl") || Map.get(params, "face_image_url")
+
+    if is_nil(face_url) or face_url == "" do
+      conn |> put_status(:unprocessable_entity) |> json(%{error: "faceImageUrl is required"})
+    else
+      run_postgen(conn, id, @edit_credit_cost, fn session, api_key ->
+        url = working_image_url(session, params)
+        ThumbnailPostGen.face_swap(session, url, face_url, api_key)
+      end)
+    end
+  end
+
+  def background_remove(conn, %{"id" => id} = params) do
+    run_postgen(conn, id, 0, fn session, api_key ->
+      url = working_image_url(session, params)
+      ThumbnailPostGen.background_remove(session, url, api_key)
+    end)
+  end
+
+  def background_replace(conn, %{"id" => id} = params) do
+    bg = Map.get(params, "backgroundPrompt") || Map.get(params, "background_prompt")
+
+    if is_nil(bg) or bg == "" do
+      conn |> put_status(:unprocessable_entity) |> json(%{error: "backgroundPrompt is required"})
+    else
+      run_postgen(conn, id, @edit_credit_cost, fn session, api_key ->
+        url = working_image_url(session, params)
+        ThumbnailPostGen.background_replace(session, url, bg, api_key, params)
+      end)
+    end
+  end
+
+  def color_enhance(conn, %{"id" => id} = params) do
+    preset = Map.get(params, "preset", "cinematic")
+
+    run_postgen(conn, id, 0, fn session, api_key ->
+      url = working_image_url(session, params)
+      ThumbnailPostGen.color_enhance(session, url, preset, api_key, params)
+    end)
+  end
+
+  def upscale(conn, %{"id" => id} = params) do
+    scale = Map.get(params, "scale", "2x")
+
+    run_postgen(conn, id, 0, fn session, api_key ->
+      url = working_image_url(session, params)
+      ThumbnailPostGen.upscale(session, url, scale, api_key)
+    end)
+  end
+
+  def filter(conn, %{"id" => id} = params) do
+    filter_prompt = Map.get(params, "filterPrompt") || Map.get(params, "filter_prompt") || "cinematic"
+
+    run_postgen(conn, id, 0, fn session, api_key ->
+      url = working_image_url(session, params)
+      ThumbnailPostGen.filter(session, url, filter_prompt, api_key)
+    end)
+  end
+
+  def combine(conn, %{"id" => id} = params) do
+    url1 = Map.get(params, "imageUrl1") || Map.get(params, "image_url1")
+    url2 = Map.get(params, "imageUrl2") || Map.get(params, "image_url2")
+    prompt = Map.get(params, "prompt")
+
+    if is_nil(url1) or is_nil(url2) do
+      conn |> put_status(:unprocessable_entity) |> json(%{error: "imageUrl1 and imageUrl2 are required"})
+    else
+      run_postgen(conn, id, @edit_credit_cost, fn session, api_key ->
+        ThumbnailPostGen.combine(session, url1, url2, prompt, api_key, params)
+      end)
+    end
+  end
+
+  def transcribe_audio(conn, params) do
+    _user = conn.assigns.current_user
+    audio = Map.get(params, "audio")
+
+    case audio do
+      %Plug.Upload{path: path, filename: filename, content_type: content_type} ->
+        do_transcribe_upload(conn, path, filename, content_type || "audio/mpeg")
+
+      %{"path" => path} = upload when is_binary(path) ->
+        do_transcribe_upload(
+          conn,
+          path,
+          Map.get(upload, "filename") || "audio.mp3",
+          Map.get(upload, "content_type") || "audio/mpeg"
+        )
+
+      %{path: path} = upload when is_binary(path) ->
+        do_transcribe_upload(
+          conn,
+          path,
+          Map.get(upload, :filename) || "audio.mp3",
+          Map.get(upload, :content_type) || "audio/mpeg"
+        )
+
+      _ ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "audio file is required"})
+    end
+  end
+
+  defp do_transcribe_upload(conn, path, filename, content_type) do
+    with true <- File.exists?(path),
+         {:ok, binary} <- File.read(path),
+         {:ok, whisper} <-
+           ClippsterServer.AI.WhisperAPI.transcribe_binary(binary, %{
+             filename: filename,
+             content_type: content_type
+           }) do
+      text = Map.get(whisper, "text") || Map.get(whisper, :text) || ""
+
+      json(conn, %{
+        success: true,
+        text: text,
+        transcript: whisper
+      })
+    else
+      false ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: "Invalid audio upload"})
+
+      {:error, reason} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+    end
+  end
+
+  # ---------------------------------------------------------------------------
   # Helpers
   # ---------------------------------------------------------------------------
+
+  defp run_postgen(conn, id, cost, fun) do
+    user = conn.assigns.current_user
+    api_key = get_api_key()
+
+    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+         :ok <- check_credits(user.id, cost) do
+      if cost > 0, do: {:ok, _} = Credits.deduct_credits(user.id, cost)
+
+      case fun.(session, api_key) do
+        {:ok, %{session: updated} = result} ->
+          session = ThumbnailSessions.get_session_with_messages(updated.id)
+          json(conn, Map.merge(%{session: serialize_session(session)}, Map.drop(result, [:session])))
+
+        {:ok, result} when is_map(result) ->
+          session = ThumbnailSessions.get_session_with_messages(session.id)
+          json(conn, Map.merge(%{session: serialize_session(session)}, result))
+
+        {:error, reason} ->
+          if cost > 0, do: Credits.add_credits(user.id, cost)
+          conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+      end
+    else
+      nil -> conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+      {:error, :insufficient_credits, remaining} ->
+        conn
+        |> put_status(:payment_required)
+        |> json(%{error: "Insufficient credits", required: cost, remaining: remaining})
+    end
+  end
+
+  defp working_image_url(session, params) do
+    Map.get(params, "imageUrl") ||
+      Map.get(params, "image_url") ||
+      session.thumbnail_url ||
+      session.plate_url ||
+      (List.first(session.candidates || []) && (List.first(session.candidates)["url"] || List.first(session.candidates)[:url]))
+  end
+
+  defp validate_has_video_context(session) do
+    frames_ok = is_list(session.key_frames) and session.key_frames != []
+    transcript_ok = is_binary(session.transcript) and String.length(String.trim(session.transcript)) >= 50
+
+    if frames_ok and transcript_ok, do: :ok, else: {:error, :missing_video_context}
+  end
 
   defp require_ai_editor_access(conn, _opts) do
     user = conn.assigns.current_user
@@ -538,6 +907,13 @@ defmodule ClippsterServerWeb.AIThumbnailController do
       max_messages_per_round: session.max_messages_per_round,
       canvas_width: session.canvas_width,
       canvas_height: session.canvas_height,
+      youtube_url: session.youtube_url,
+      video_title: session.video_title,
+      transcript: session.transcript,
+      transcript_source: session.transcript_source,
+      concepts: session.concepts || [],
+      video_summary: session.video_summary,
+      selected_concept_id: session.selected_concept_id,
       messages: messages,
       inserted_at: session.inserted_at,
       updated_at: session.updated_at

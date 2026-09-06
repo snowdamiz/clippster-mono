@@ -94,8 +94,13 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
         // LGPL utility builds only — never ship GPL libx264 in production.
         enableDecoders: ['h264', 'hevc', 'aac', 'mp3'],
         enableEncoders: ['aac'],
+        // Must match RN 0.85 / withAndroidNdkVersion. Package default was 26.1,
+        // which cannot compile react-native-reanimated 4.3.x.
+        ndkVersion: '27.1.12297006',
       },
     ],
+    // After ffmpeg-expo so we always win if it tries to inject an older NDK.
+    ['./plugins/withAndroidNdkVersion', { version: '27.1.12297006' }],
     [
       'expo-image-picker',
       {

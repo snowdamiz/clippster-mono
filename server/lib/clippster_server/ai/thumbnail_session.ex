@@ -26,6 +26,13 @@ defmodule ClippsterServer.AI.ThumbnailSession do
     field :max_messages_per_round, :integer, default: 6
     field :canvas_width, :integer, default: 1280
     field :canvas_height, :integer, default: 720
+    field :youtube_url, :string
+    field :video_title, :string
+    field :transcript, :string
+    field :transcript_source, :string
+    field :concepts, {:array, :map}, default: []
+    field :video_summary, :map
+    field :selected_concept_id, :string
 
     belongs_to :user, ClippsterServer.Accounts.User
     has_many :messages, ClippsterServer.AI.ThumbnailMessage, foreign_key: :session_id
@@ -56,6 +63,13 @@ defmodule ClippsterServer.AI.ThumbnailSession do
       :max_messages_per_round,
       :canvas_width,
       :canvas_height,
+      :youtube_url,
+      :video_title,
+      :transcript,
+      :transcript_source,
+      :concepts,
+      :video_summary,
+      :selected_concept_id,
       :user_id
     ])
     |> validate_required([:user_id, :status, :generation_mode])

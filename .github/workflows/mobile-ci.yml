@@ -74,6 +74,11 @@ jobs:
         env:
           SKIP_FFMPEG_DOWNLOAD: '1'
         run: npx expo prebuild --platform android --no-install --non-interactive
+      - name: Verify Android NDK pin
+        working-directory: apps/mobile
+        run: |
+          grep -n 'ndkVersion' android/build.gradle
+          grep -q 'ndkVersion = "27.1.12297006"' android/build.gradle
       - name: Compile Android app (links editor-native via Expo autolinking)
         working-directory: apps/mobile/android
         run: ./gradlew assembleDebug --no-daemon

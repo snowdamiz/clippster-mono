@@ -18,7 +18,7 @@ let activeSlots = 0;
 
 let playbackCritical = 0;
 
-const waiters: Array<() => void> = [];
+const waiters: (() => void)[] = [];
 
 
 

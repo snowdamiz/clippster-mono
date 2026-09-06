@@ -1,5 +1,9 @@
-import type { ClipTextBoxState, TextOverlayStyle } from '@clippster/shared-types';
-import { TARGET_DIMENSIONS, type TargetAspectRatio } from '@clippster/shared-types';
+import {
+  TARGET_DIMENSIONS,
+  type ClipTextBoxState,
+  type TargetAspectRatio,
+  type TextOverlayStyle,
+} from '@clippster/shared-types';
 import { Group, RoundedRect, Text, matchFont } from '@shopify/react-native-skia';
 import { createElement } from 'react';
 
@@ -64,7 +68,6 @@ export function createTextPillSkiaElement(
 ) {
   const layout = layoutTextPill(state, targetRatio);
   const previewScale = options?.previewScale ?? 1;
-  const fw = layout.frameWidth * previewScale;
   const fh = layout.frameHeight * previewScale;
   const fontSize = layout.fontSize * previewScale;
   const boxW = layout.boxWidth * previewScale;

@@ -25,7 +25,7 @@ import {
 } from '@clippster/api-client';
 import { fetch as expoFetch } from 'expo/fetch';
 import { getApiBaseUrl } from '@/lib/config';
-import { clearAuthSession, getStoredToken } from './authStorage';
+import { getStoredToken } from './authStorage';
 
 let unauthorizedHandler: (() => void) | null = null;
 
