@@ -1,8 +1,8 @@
 diff --git a/node_modules/ffmpeg-expo/android/CMakeLists.txt b/node_modules/ffmpeg-expo/android/CMakeLists.txt
-index 49303e9..1922ce4 100644
+index 49303e9..ddba790 100644
 --- a/node_modules/ffmpeg-expo/android/CMakeLists.txt
 +++ b/node_modules/ffmpeg-expo/android/CMakeLists.txt
-@@ -4,13 +4,12 @@ project(ffmpeg-jni)
+@@ -4,13 +4,19 @@ project(ffmpeg-jni)
  set(CMAKE_CXX_STANDARD 17)
  set(CMAKE_CXX_STANDARD_REQUIRED ON)
  
@@ -13,12 +13,19 @@ index 49303e9..1922ce4 100644
  
 -# FFmpeg library paths
  set(FFMPEG_LIB_DIR ${CMAKE_SOURCE_DIR}/jniLibs/${ANDROID_ABI})
++set(EXPO_FFMPEG_CLI ${FFMPEG_LIB_DIR}/libexpo_ffmpeg.a)
++
++if(NOT EXISTS "${EXPO_FFMPEG_CLI}")
++  message(FATAL_ERROR
++    "Missing ${EXPO_FFMPEG_CLI}. Run: node scripts/setup-ffmpeg-cli.mjs "
++    "(provides expo_ffmpeg_execute). Do not rely on the ffmpeg-expo patch for this binary.")
++endif()
  
 -# Add FFmpeg shared libraries
  add_library(avcodec SHARED IMPORTED)
  set_target_properties(avcodec PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libavcodec.so)
  
-@@ -26,27 +25,44 @@ set_target_properties(swresample PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/
+@@ -26,27 +32,42 @@ set_target_properties(swresample PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/
  add_library(swscale SHARED IMPORTED)
  set_target_properties(swscale PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libswscale.so)
  
@@ -28,11 +35,6 @@ index 49303e9..1922ce4 100644
 +
 +add_library(avdevice SHARED IMPORTED)
 +set_target_properties(avdevice PROPERTIES IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libavdevice.so)
-+
-+add_library(expo-ffmpeg-cli STATIC IMPORTED)
-+set_target_properties(expo-ffmpeg-cli PROPERTIES
-+    IMPORTED_LOCATION ${FFMPEG_LIB_DIR}/libexpo_ffmpeg.a
-+)
 +
  include_directories(${CMAKE_SOURCE_DIR}/include)
  
@@ -45,11 +47,14 @@ index 49303e9..1922ce4 100644
  
 -# Link libraries
 -target_link_libraries(ffmpeg-jni
++# Force-load the CLI archive so expo_ffmpeg_execute is always pulled into the link.
 +set(FFMPEG_JNI_LIBS
      ${log-lib}
 -    avcodec
 +    ${android-lib}
-+    expo-ffmpeg-cli
++    -Wl,--whole-archive
++    ${EXPO_FFMPEG_CLI}
++    -Wl,--no-whole-archive
 +    avfilter
      avformat
 -    avutil
@@ -221439,18 +221444,6 @@ index 0000000..88577a2
 + */
 +
 +#endif /* SWSCALE_VERSION_MAJOR_H */
-diff --git a/node_modules/ffmpeg-expo/android/jniLibs/arm64-v8a/libexpo_ffmpeg.a b/node_modules/ffmpeg-expo/android/jniLibs/arm64-v8a/libexpo_ffmpeg.a
-new file mode 100644
-index 0000000..d6bd95b
-Binary files /dev/null and b/node_modules/ffmpeg-expo/android/jniLibs/arm64-v8a/libexpo_ffmpeg.a differ
-diff --git a/node_modules/ffmpeg-expo/android/jniLibs/armeabi-v7a/libexpo_ffmpeg.a b/node_modules/ffmpeg-expo/android/jniLibs/armeabi-v7a/libexpo_ffmpeg.a
-new file mode 100644
-index 0000000..4b39aa2
-Binary files /dev/null and b/node_modules/ffmpeg-expo/android/jniLibs/armeabi-v7a/libexpo_ffmpeg.a differ
-diff --git a/node_modules/ffmpeg-expo/android/jniLibs/x86_64/libexpo_ffmpeg.a b/node_modules/ffmpeg-expo/android/jniLibs/x86_64/libexpo_ffmpeg.a
-new file mode 100644
-index 0000000..b2a0074
-Binary files /dev/null and b/node_modules/ffmpeg-expo/android/jniLibs/x86_64/libexpo_ffmpeg.a differ
 diff --git a/node_modules/ffmpeg-expo/android/src/main/cpp/expo_ffmpeg.h b/node_modules/ffmpeg-expo/android/src/main/cpp/expo_ffmpeg.h
 new file mode 100644
 index 0000000..0e98c52

@@ -8,15 +8,15 @@ end
 
 Pod::Spec.new do |s|
   s.name           = 'ClippsterEditorNative'
-  s.version        = package['version']
-  s.summary        = package['description']
-  s.description    = package['description']
+  s.version        = package['version'] || '0.1.0'
+  s.summary        = package['description'] || 'Clippster native editor engine'
+  s.description    = package['description'] || 'Clippster native editor engine for iOS and Android'
   s.license        = { type: 'Proprietary' }
   s.author         = 'Clippster'
-  s.homepage       = 'https://clippster.com'
+  s.homepage       = 'https://clippster.app'
   s.platforms      = { ios: '15.1' }
   s.swift_version  = '5.9'
-  s.source         = { git: 'https://github.com/clippster/clippster.git' }
+  s.source         = { git: 'https://github.com/clippster/clippster-mono.git', tag: s.version }
   s.static_framework = true
 
   s.dependency 'ExpoModulesCore'

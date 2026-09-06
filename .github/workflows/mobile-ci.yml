@@ -5,14 +5,20 @@ on:
     paths:
       - 'apps/mobile/**'
       - 'packages/**'
+      - 'scripts/setup-ffmpeg-*.mjs'
+      - 'patches/ffmpeg-expo*'
       - 'package.json'
       - 'yarn.lock'
+      - '.github/workflows/mobile-ci.yml'
   pull_request:
     paths:
       - 'apps/mobile/**'
       - 'packages/**'
+      - 'scripts/setup-ffmpeg-*.mjs'
+      - 'patches/ffmpeg-expo*'
       - 'package.json'
       - 'yarn.lock'
+      - '.github/workflows/mobile-ci.yml'
 
 jobs:
   typecheck:
@@ -69,10 +75,10 @@ jobs:
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
       - run: yarn install --frozen-lockfile
+      - name: Ensure ffmpeg-expo Android CLI static libs
+        run: node scripts/setup-ffmpeg-cli.mjs
       - name: Prebuild Android project
         working-directory: apps/mobile
-        env:
-          SKIP_FFMPEG_DOWNLOAD: '1'
         run: npx expo prebuild --platform android --no-install --non-interactive
       - name: Verify Android NDK pin
         working-directory: apps/mobile
@@ -82,8 +88,6 @@ jobs:
       - name: Compile Android app (links editor-native via Expo autolinking)
         working-directory: apps/mobile/android
         run: ./gradlew assembleDebug --no-daemon
-        env:
-          SKIP_FFMPEG_DOWNLOAD: '1'
 
   ios-native:
     runs-on: macos-15
