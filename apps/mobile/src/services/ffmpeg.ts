@@ -1,12 +1,13 @@
 import { Platform } from 'react-native';
 import { EventEmitter, requireNativeModule } from 'expo-modules-core';
+import { getNativeEditorModule } from '@clippster/editor-native';
 
 import {
   adaptArgsForMobileEncoders,
   isHardwareMobileCodec,
   preferredMobileVideoCodec,
-  stripAssFilters,
 } from '@/lib/ffmpegArgs';
+import type { MediaProbeMetadata } from '@/lib/exportValidation';
 
 type FFmpegProgress = {
   time: number;
@@ -150,6 +151,38 @@ export async function getFfmpegVersion(): Promise<string> {
   }
 }
 
+export async function probeMediaMetadata(path: string): Promise<MediaProbeMetadata> {
+  const localPath = path.replace(/^file:\/\//, '');
+
+  // Prefer native MediaMetadataRetriever / AVAsset — FFmpeg log bridging often
+  // returns empty output even when the probe exits successfully.
+  const nativeEditor = getNativeEditorModule();
+  if (nativeEditor && typeof nativeEditor.probeMedia === 'function') {
+    const metadata = await nativeEditor.probeMedia(localPath);
+    return {
+      width: Number(metadata.width),
+      height: Number(metadata.height),
+      duration: Number(metadata.duration),
+      videoCodec: String(metadata.videoCodec).toLowerCase(),
+      audioCodec: metadata.audioCodec ? String(metadata.audioCodec).toLowerCase() : null,
+    };
+  }
+
+  const result = await executeNative(['-i', localPath, '-f', 'null', '-']);
+  const output = result.output ?? '';
+  const video = output.match(/Video:\s*([^,\s]+)[^\n]*?(\d{2,5})x(\d{2,5})/i);
+  const audio = output.match(/Audio:\s*([^,\s]+)/i);
+  const duration = output.match(/Duration:\s*(\d+):(\d+):(\d+(?:\.\d+)?)/i);
+  if (!video || !duration) throw new Error('Could not validate exported video metadata');
+  return {
+    videoCodec: video[1].toLowerCase(),
+    width: Number(video[2]),
+    height: Number(video[3]),
+    duration: Number(duration[1]) * 3600 + Number(duration[2]) * 60 + Number(duration[3]),
+    audioCodec: audio?.[1].toLowerCase() ?? null,
+  };
+}
+
 export async function runFfmpeg(
   args: string[],
   options?: { onProgress?: (ratio: number) => void },
@@ -157,25 +190,11 @@ export async function runFfmpeg(
   const preferred = preferredMobileVideoCodec(Platform.OS);
   const adapted = adaptArgsForMobileEncoders(args, preferred);
   try {
-    await runFfmpegWithCaptionFallback(adapted, options);
+    await runFfmpegRaw(adapted, options);
   } catch (error) {
     if (!adapted.some(isHardwareMobileCodec)) throw error;
-    console.warn(`[FFmpeg] ${preferred} failed, falling back to mpeg4`, error);
-    await runFfmpegWithCaptionFallback(adaptArgsForMobileEncoders(args, 'mpeg4'), options);
-  }
-}
-
-async function runFfmpegWithCaptionFallback(
-  args: string[],
-  options?: { onProgress?: (ratio: number) => void },
-): Promise<void> {
-  try {
+    console.warn(`[FFmpeg] ${preferred} failed, falling back to software H.264`, error);
     await runFfmpegRaw(args, options);
-  } catch (error) {
-    const withoutAss = stripAssFilters(args);
-    if (!withoutAss) throw error;
-    console.warn('[FFmpeg] ASS caption filter failed, retrying without burned-in captions', error);
-    await runFfmpegRaw(withoutAss, options);
   }
 }
 

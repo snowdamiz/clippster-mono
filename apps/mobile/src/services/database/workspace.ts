@@ -478,10 +478,24 @@ export async function getProjectClipRows(projectId: string): Promise<ProjectClip
 
 export async function deleteClip(clipId: string): Promise<void> {
   const db = getDatabase();
-  const clip = await db.getFirstAsync<{ project_id: string | null }>(
-    'SELECT project_id FROM clips WHERE id = ?',
+  const { deleteLocalMediaFile } = await import('@/services/localMediaFiles');
+  const clip = await db.getFirstAsync<{
+    project_id: string | null;
+    file_path: string | null;
+    built_thumbnail_path: string | null;
+  }>('SELECT project_id, file_path, built_thumbnail_path FROM clips WHERE id = ?', [clipId]);
+
+  const builds = await db.getAllAsync<{ file_path: string | null; thumbnail_path: string | null }>(
+    'SELECT file_path, thumbnail_path FROM clip_builds WHERE clip_id = ?',
     [clipId],
   );
+  for (const build of builds) {
+    await deleteLocalMediaFile(build.file_path);
+    await deleteLocalMediaFile(build.thumbnail_path);
+  }
+  await deleteLocalMediaFile(clip?.file_path);
+  await deleteLocalMediaFile(clip?.built_thumbnail_path);
+
   const versions = await db.getAllAsync<{ id: string }>(
     'SELECT id FROM clip_versions WHERE clip_id = ?',
     [clipId],

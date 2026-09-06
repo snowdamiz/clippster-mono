@@ -2,9 +2,10 @@ import { MaterialCommunityIcons } from '@expo/vector-icons';
 
 /** Matches lucide icons used in client/src/config/navigation.ts */
 const TAB_ICONS: Record<string, keyof typeof MaterialCommunityIcons.glyphMap> = {
-  download: 'plus-circle-outline',
   projects: 'home-outline',
+  editor: 'movie-edit-outline',
   clips: 'movie-open-outline',
+  messages: 'message-outline',
   profile: 'account-outline',
 };
 

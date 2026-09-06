@@ -40,3 +40,73 @@ jobs:
           cache: 'yarn'
       - run: yarn install --frozen-lockfile
       - run: yarn workspace mobile test
+
+  editor-native-core:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install CMake and build tools
+        run: sudo apt-get update && sudo apt-get install -y cmake g++ ninja-build
+      - name: Configure and test shared C++ graph core
+        working-directory: packages/clippster-editor-native/cpp
+        run: |
+          cmake -S . -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
+          cmake --build build
+          ctest --test-dir build --output-on-failure
+
+  android-native:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+      - uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+      - name: Setup Android SDK
+        uses: android-actions/setup-android@v3
+      - run: yarn install --frozen-lockfile
+      - name: Prebuild Android project
+        working-directory: apps/mobile
+        env:
+          SKIP_FFMPEG_DOWNLOAD: '1'
+        run: npx expo prebuild --platform android --no-install --non-interactive
+      - name: Compile Android app (links editor-native via Expo autolinking)
+        working-directory: apps/mobile/android
+        run: ./gradlew assembleDebug --no-daemon
+        env:
+          SKIP_FFMPEG_DOWNLOAD: '1'
+
+  ios-native:
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'yarn'
+      - run: yarn install --frozen-lockfile
+      - name: Prebuild iOS project
+        working-directory: apps/mobile
+        env:
+          SKIP_FFMPEG_DOWNLOAD: '1'
+        run: npx expo prebuild --platform ios --no-install --non-interactive
+      - name: Pod install
+        working-directory: apps/mobile/ios
+        run: pod install
+      - name: Compile iOS simulator
+        working-directory: apps/mobile/ios
+        run: |
+          WORKSPACE=$(ls -d *.xcworkspace | head -n 1)
+          SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" | awk '/Schemes/{f=1;next} f&&NF{print $1; exit}')
+          xcodebuild \
+            -workspace "$WORKSPACE" \
+            -scheme "$SCHEME" \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            build \
+            CODE_SIGNING_ALLOWED=NO

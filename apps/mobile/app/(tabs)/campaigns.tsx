@@ -4,14 +4,15 @@ import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
   FlatList,
-  Pressable,
   RefreshControl,
   Text,
   View,
 } from 'react-native';
-import { AppHeader } from '@/components/AppHeader';
+import { ScreenHeader } from '@/components/ScreenHeader';
 import { CampaignCard } from '@/components/campaign/CampaignCard';
 import { Card } from '@/components/ui/card';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { FilterChip } from '@/components/ui/FilterChip';
 import { campaignApi } from '@/services/api';
 import { tokens } from '@/theme/tokens';
 
@@ -64,24 +65,22 @@ export default function CampaignsScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <AppHeader title="Campaigns" />
+      <ScreenHeader title="Campaigns" />
       <View className="flex-row gap-2 px-4 py-3">
         {(['browse', 'mine'] as ViewMode[]).map((m) => (
-          <Pressable
+          <FilterChip
             key={m}
+            label={m === 'browse' ? 'Marketplace' : 'My campaigns'}
+            selected={mode === m}
             onPress={() => setMode(m)}
-            className={`flex-1 rounded-lg border py-2 ${mode === m ? 'border-primary bg-primary/10' : 'border-border'}`}
-          >
-            <Text className={`text-center text-sm font-medium ${mode === m ? 'text-primary' : 'text-foreground'}`}>
-              {m === 'browse' ? 'Marketplace' : 'My campaigns'}
-            </Text>
-          </Pressable>
+            className="flex-1"
+          />
         ))}
       </View>
 
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={tokens.colors.primary} />
+          <ActivityIndicator color={tokens.colors.accent} />
         </View>
       ) : (
         <FlatList
@@ -102,9 +101,15 @@ export default function CampaignsScreen() {
             ) : null
           }
           ListEmptyComponent={
-            <Text className="py-8 text-center text-muted">
-              {mode === 'browse' ? 'No active campaigns right now.' : 'You have not joined any campaigns yet.'}
-            </Text>
+            <EmptyState
+              icon="trophy-outline"
+              title={mode === 'browse' ? 'No campaigns' : 'No joined campaigns'}
+              subtitle={
+                mode === 'browse'
+                  ? 'Check back later for new marketplace campaigns.'
+                  : 'Join a campaign from the marketplace to get started.'
+              }
+            />
           }
           renderItem={({ item }) => (
             <CampaignCard

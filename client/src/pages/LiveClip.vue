@@ -2,8 +2,8 @@
   <div class="liveclip">
     <PageLayout title="Live Clip" description="Real-time clip detection" :show-header="true" :icon="Radio">
       <template #actions>
-        <div class="liveclip-actions">
-          <div class="liveclip-search" data-tour-id="tour-live-search">
+        <div class="liveclip-actions" data-tour-id="tour-live-search">
+          <div class="liveclip-search">
             <transition name="scale" mode="out-in">
               <div
                 v-if="detectedPlatform === 'YouTube'"
@@ -74,7 +74,7 @@
           <p class="liveclip__subtitle">Watch and track Live streams and detect clips in real-time with AI-powered analysis</p>
         </div>
 
-        <!-- Tour demo streamer -->
+        <!-- Tour demo streamer (same card chrome as real monitored channels) -->
         <div v-if="mockStreamerActive" class="liveclip__platform-sections" style="margin-bottom: 1rem">
           <div class="liveclip__platform-section">
             <div class="liveclip__platform-header">
@@ -83,27 +83,59 @@
               </div>
             </div>
             <div class="liveclip__list">
-              <div class="monitor-card monitor-card--live" data-tour-id="tour-mock-streamer">
-                <div class="monitor-card__header">
-                  <div class="monitor-card__avatar">
-                    <div class="monitor-card__avatar-fallback">
-                      <span style="font-size: 0.75rem; font-weight: 700">DEMO</span>
+              <div class="liveclip__list-inner">
+                <div class="monitor-card monitor-card--live" data-tour-id="tour-mock-streamer">
+                  <div class="monitor-card__header">
+                    <div class="monitor-card__avatar">
+                      <div class="monitor-card__avatar-fallback monitor-card__avatar-fallback--twitch">
+                        <span style="font-size: 0.75rem; font-weight: 700">DEMO</span>
+                      </div>
+                    </div>
+                    <div class="monitor-card__info">
+                      <div class="monitor-card__title-row">
+                        <span class="monitor-card__title">Demo Streamer</span>
+                        <div class="monitor-status monitor-status--live monitor-status--inline">
+                          <span class="monitor-status__dot"></span>
+                          LIVE
+                        </div>
+                      </div>
+                      <div class="monitor-card__subtitle">
+                        <span class="monitor-card__platform monitor-card__platform--twitch">Twitch</span>
+                      </div>
                     </div>
                   </div>
-                  <div class="monitor-card__info">
-                    <div class="monitor-card__name">Demo Streamer</div>
-                    <div class="monitor-card__meta">Sample channel for the tour</div>
-                  </div>
-                  <div class="monitor-card__actions">
-                    <button type="button" class="monitor-card__btn" data-tour-id="tour-mock-watch" @click.prevent>
-                      Watch
-                    </button>
-                    <button type="button" class="monitor-card__btn" data-tour-id="tour-mock-rec" @click.prevent>
-                      Rec
-                    </button>
-                    <button type="button" class="monitor-card__btn" data-tour-id="tour-mock-auto" @click.prevent>
-                      Auto
-                    </button>
+                  <div class="monitor-card__stats">
+                    <div class="monitor-card__actions">
+                      <button
+                        type="button"
+                        class="monitor-action monitor-action--watch"
+                        data-tour-id="tour-mock-watch"
+                        @click.prevent
+                      >
+                        <Eye class="monitor-action__icon" />
+                        Watch
+                      </button>
+                      <div class="monitor-action-group">
+                        <button
+                          type="button"
+                          class="monitor-action-group__btn"
+                          data-tour-id="tour-mock-rec"
+                          @click.prevent
+                        >
+                          <Video class="monitor-action__icon" />
+                          Rec
+                        </button>
+                        <button
+                          type="button"
+                          class="monitor-action-group__btn monitor-action-group__btn--primary"
+                          data-tour-id="tour-mock-auto"
+                          @click.prevent
+                        >
+                          <Sparkles class="monitor-action__icon" />
+                          Auto
+                        </button>
+                      </div>
+                    </div>
                   </div>
                 </div>
               </div>

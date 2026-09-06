@@ -45,3 +45,11 @@ export {
   type TimelineExportTransition,
   type TimelineExportVideo,
 } from './buildTimelineExport';
+export {
+  buildEditorRenderPlan,
+  type EditorBrandingDescriptor,
+  type EditorCaptionDescriptor,
+  type EditorRenderDescriptor,
+  type EditorRenderInput,
+  type EditorRenderPlan,
+} from './buildEditorRender';

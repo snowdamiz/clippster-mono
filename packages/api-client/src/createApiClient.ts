@@ -80,8 +80,26 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
         config.onUnauthorized();
       }
 
-      const data = (await response.json()) as T;
-      return data;
+      if (response.status === 204) {
+        return undefined as T;
+      }
+
+      const contentLength = response.headers?.get?.('content-length');
+      if (contentLength === '0') {
+        return undefined as T;
+      }
+
+      // Prefer json() for test mocks / fetch impls that only implement json().
+      if (typeof response.json === 'function' && typeof response.text !== 'function') {
+        return (await response.json()) as T;
+      }
+
+      const text = typeof response.text === 'function' ? await response.text() : '';
+      if (!text) {
+        return undefined as T;
+      }
+
+      return JSON.parse(text) as T;
     } finally {
       clearTimeout(timeout);
     }
@@ -133,8 +151,25 @@ export function createApiClient(config: ApiClientConfig): ApiClient {
           config.onUnauthorized();
         }
 
-        const data = (await response.json()) as T;
-        return { status: response.status, data };
+        if (response.status === 204) {
+          return { status: response.status, data: undefined as T };
+        }
+
+        const contentLength = response.headers?.get?.('content-length');
+        if (contentLength === '0') {
+          return { status: response.status, data: undefined as T };
+        }
+
+        if (typeof response.json === 'function' && typeof response.text !== 'function') {
+          return { status: response.status, data: (await response.json()) as T };
+        }
+
+        const text = typeof response.text === 'function' ? await response.text() : '';
+        if (!text) {
+          return { status: response.status, data: undefined as T };
+        }
+
+        return { status: response.status, data: JSON.parse(text) as T };
       } finally {
         clearTimeout(timeout);
       }

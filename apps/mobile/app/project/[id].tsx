@@ -8,7 +8,6 @@ import {
   Text,
   View,
 } from 'react-native';
-import { ClipActionSheet } from '@/components/workspace/ClipActionSheet';
 import { ClipDetectionSheet, type ClipDetectionPlan } from '@/components/editor/ClipDetectionSheet';
 import { ClipListCard } from '@/components/workspace/ClipListCard';
 import { VodPreview } from '@/components/workspace/VodPreview';
@@ -50,7 +49,6 @@ export default function ProjectDetailScreen() {
   const [aiProgress, setAiProgress] = useState<AiPipelineProgress | null>(null);
   const [aiBusy, setAiBusy] = useState(false);
   const [showDetectSheet, setShowDetectSheet] = useState(false);
-  const [menuClip, setMenuClip] = useState<ProjectClipRow | null>(null);
   const [playheadTime, setPlayheadTime] = useState(0);
   const aiPipelineRef = useRef<AiPipeline | null>(null);
   const openedDetectRef = useRef(false);
@@ -100,10 +98,13 @@ export default function ProjectDetailScreen() {
       setClips(clipRows);
 
       if (vodPath && !vodPath.startsWith('pending://') && clipRows.some((c) => !c.built_thumbnail_path)) {
+        // Defer until after VodPreview mounts and claims the decode gate, so
+        // thumbnail FFmpeg/expo-video work does not race the first seconds of playback.
         void (async () => {
           if (thumbGenRef.current) return;
           thumbGenRef.current = true;
           try {
+            await new Promise((r) => setTimeout(r, 750));
             const saved = await generateMissingClipThumbnails(vodPath, clipRows, async (clipId, path) => {
               await updateClipBuiltThumbnail(clipId, path);
             });
@@ -376,7 +377,7 @@ export default function ProjectDetailScreen() {
                     index={index + 1}
                     fallbackThumbnail={projectThumbnail}
                     onPress={() => openClip(clip.id)}
-                    onMore={() => setMenuClip(clip)}
+                    onDelete={() => handleDeleteClip(clip)}
                   />
                 ))}
               </ScrollView>
@@ -399,30 +400,6 @@ export default function ProjectDetailScreen() {
                 </View>
               </View>
             )}
-
-            <ClipActionSheet
-              visible={menuClip != null}
-              clipName={menuClip?.name || 'Untitled Clip'}
-              onClose={() => setMenuClip(null)}
-              onOpen={() => {
-                if (!menuClip) return;
-                const clipId = menuClip.id;
-                setMenuClip(null);
-                openClip(clipId);
-              }}
-              onEdit={() => {
-                if (!menuClip) return;
-                const clipId = menuClip.id;
-                setMenuClip(null);
-                router.push({ pathname: '/edit/[kind]/[id]', params: { kind: 'clip', id: clipId } });
-              }}
-              onDelete={() => {
-                if (!menuClip) return;
-                const clip = menuClip;
-                setMenuClip(null);
-                handleDeleteClip(clip);
-              }}
-            />
 
             <ClipDetectionSheet
               visible={showDetectSheet}

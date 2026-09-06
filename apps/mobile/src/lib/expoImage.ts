@@ -1,4 +1,4 @@
-import type { Image } from 'expo-image';
+import { Image } from 'expo-image';
 import { requireNativeModule } from 'expo-modules-core';
 
 let cached: typeof Image | null | undefined;
@@ -8,7 +8,7 @@ export function getExpoImage(): typeof Image | null {
   if (cached !== undefined) return cached;
   try {
     requireNativeModule('ExpoImage');
-    cached = require('expo-image').Image as typeof Image;
+    cached = Image;
   } catch {
     cached = null;
   }

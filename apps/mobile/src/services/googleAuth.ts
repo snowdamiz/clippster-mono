@@ -11,6 +11,17 @@ const GOOGLE_CALLBACK_PATH = 'auth/google/callback';
 /** Server only accepts clippster:// redirects for mobile=true mode. */
 const NATIVE_REDIRECT_URI = 'clippster://auth/google/callback';
 
+/**
+ * Auth session runs in Chrome Custom Tabs. On Android emulators that must use
+ * `localhost` + `adb reverse`, not `10.0.2.2` (RN fetch still uses getApiBaseUrl).
+ */
+function getAuthBrowserApiBaseUrl(): string {
+  if (__DEV__ && Platform.OS === 'android') {
+    return `http://localhost:${getDevServerPort()}/api`;
+  }
+  return getApiBaseUrl();
+}
+
 /** HTTP origin Google redirects to after sign-in (must be reachable from the device browser). */
 export function getOAuthCallbackBase(): string {
   if (__DEV__ && Platform.OS === 'android') {
@@ -77,7 +88,7 @@ export async function startGoogleAuth(): Promise<AuthResult> {
 
   const redirectUri = NATIVE_REDIRECT_URI;
   const oauthCallbackBase = encodeURIComponent(getOAuthCallbackBase());
-  const authUrl = `${getApiBaseUrl()}/auth/google?mobile=true&redirect_uri=${encodeURIComponent(redirectUri)}&oauth_callback_base=${oauthCallbackBase}`;
+  const authUrl = `${getAuthBrowserApiBaseUrl()}/auth/google?mobile=true&redirect_uri=${encodeURIComponent(redirectUri)}&oauth_callback_base=${oauthCallbackBase}`;
 
   const result = await WebBrowser.openAuthSessionAsync(authUrl, redirectUri);
 

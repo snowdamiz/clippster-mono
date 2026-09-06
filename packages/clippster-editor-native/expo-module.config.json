@@ -1,0 +1,9 @@
+{
+  "platforms": ["android", "ios"],
+  "android": {
+    "modules": ["app.clippster.editor.engine.ClippsterEditorNativeModule"]
+  },
+  "ios": {
+    "modules": ["ClippsterEditorNativeModule"]
+  }
+}

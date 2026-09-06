@@ -10,7 +10,13 @@ export type ClipEffectType =
   | 'sharpen'
   | 'letterbox'
   | 'glitch'
-  | 'mirror';
+  | 'mirror'
+  | 'brightness'
+  | 'exposure'
+  | 'contrast'
+  | 'saturation'
+  | 'temperature'
+  | 'tint';
 
 export interface ClipEffect {
   type: ClipEffectType;
@@ -20,7 +26,7 @@ export interface ClipEffect {
 export interface ClipEffectPreset {
   type: ClipEffectType;
   label: string;
-  category: 'color' | 'style';
+  category: 'color' | 'style' | 'adjust';
 }
 
 export const CLIP_EFFECT_PRESETS: ClipEffectPreset[] = [
@@ -29,6 +35,12 @@ export const CLIP_EFFECT_PRESETS: ClipEffectPreset[] = [
   { type: 'negative', label: 'Negative', category: 'color' },
   { type: 'warm', label: 'Warm', category: 'color' },
   { type: 'cool', label: 'Cool', category: 'color' },
+  { type: 'brightness', label: 'Brightness', category: 'adjust' },
+  { type: 'exposure', label: 'Exposure', category: 'adjust' },
+  { type: 'contrast', label: 'Contrast', category: 'adjust' },
+  { type: 'saturation', label: 'Saturation', category: 'adjust' },
+  { type: 'temperature', label: 'Temp', category: 'adjust' },
+  { type: 'tint', label: 'Tint', category: 'adjust' },
   { type: 'vignette', label: 'Vignette', category: 'style' },
   { type: 'grain', label: 'Grain', category: 'style' },
   { type: 'blur', label: 'Blur', category: 'style' },
@@ -74,6 +86,35 @@ export function effectColorMatrix(effect: ClipEffect): number[] | null {
       return mixMatrix([0.86, 0, 0.04, 0, 0, 0, 1.02, 0.04, 0, 0, 0.04, 0.06, 1.2, 0, 0.02, 0, 0, 0, 1, 0]);
     case 'sharpen':
       return mixMatrix([1.18, -0.06, -0.06, 0, 0, -0.06, 1.18, -0.06, 0, 0, -0.06, -0.06, 1.18, 0, 0, 0, 0, 0, 1, 0]);
+    case 'brightness': {
+      const b = (clampEffectIntensity(effect.intensity) - 50) / 50;
+      return mixMatrix([1, 0, 0, 0, b * 0.16, 0, 1, 0, 0, b * 0.16, 0, 0, 1, 0, b * 0.16, 0, 0, 0, 1, 0]);
+    }
+    case 'contrast': {
+      const c = 1 + ((clampEffectIntensity(effect.intensity) - 50) / 50) * 0.5;
+      const o = 0.5 * (1 - c);
+      return mixMatrix([c, 0, 0, 0, o, 0, c, 0, 0, o, 0, 0, c, 0, o, 0, 0, 0, 1, 0]);
+    }
+    case 'saturation': {
+      const s = 1 + ((clampEffectIntensity(effect.intensity) - 50) / 50);
+      const inv = 1 - s;
+      const r = 0.3086 * inv;
+      const g = 0.6094 * inv;
+      const b = 0.082 * inv;
+      return mixMatrix([
+        r + s, g, b, 0, 0, r, g + s, b, 0, 0, r, g, b + s, 0, 0, 0, 0, 0, 1, 0,
+      ]);
+    }
+    case 'exposure':
+    case 'temperature':
+    case 'tint':
+    case 'vignette':
+    case 'grain':
+    case 'blur':
+    case 'letterbox':
+    case 'glitch':
+    case 'mirror':
+      return null;
     default:
       return null;
   }
@@ -140,10 +181,14 @@ export function buildClipEffectFilters(effect: ClipEffect | null | undefined): s
   }
 }
 
-export function clipEffectVideoChain(effect: ClipEffect | null | undefined, speed: number): string {
+export function clipEffectVideoChain(
+  effect: ClipEffect | null | undefined,
+  speed: number,
+  inputLabel = 'scaled',
+): string {
   const filters = buildClipEffectFilters(effect);
   const speedFilter = speed !== 1 ? `setpts=PTS/${speed}` : null;
   const chain = [...filters, speedFilter].filter((part): part is string => Boolean(part));
-  if (chain.length === 0) return '[scaled]null[v]';
-  return `[scaled]${chain.join(',')}[v]`;
+  if (chain.length === 0) return `[${inputLabel}]null[v]`;
+  return `[${inputLabel}]${chain.join(',')}[v]`;
 }
