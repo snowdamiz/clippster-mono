@@ -119,12 +119,29 @@ jobs:
       - name: Pod install
         working-directory: apps/mobile/ios
         run: pod install
+      - name: Compile ClippsterEditorNative (fast fail)
+        working-directory: apps/mobile/ios
+        run: |
+          set -o pipefail
+          # Catch our Swift compile errors before the full app build (~20+ min).
+          xcodebuild \
+            -project Pods/Pods.xcodeproj \
+            -target ClippsterEditorNative \
+            -configuration Debug \
+            -sdk iphonesimulator \
+            -destination 'generic/platform=iOS Simulator' \
+            build \
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            ARCHS=arm64 \
+            COMPILER_INDEX_STORE_ENABLE=NO
       - name: Compile iOS simulator
         working-directory: apps/mobile/ios
         run: |
           set -o pipefail
           WORKSPACE=$(ls -d *.xcworkspace | head -n 1)
           SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" | awk '/Schemes/{f=1;next} f&&NF{print $1; exit}')
+          # macos-26 runners are arm64; skip x86_64 slice to cut compile time roughly in half.
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
@@ -132,4 +149,7 @@ jobs:
             -sdk iphonesimulator \
             -destination 'generic/platform=iOS Simulator' \
             build \
-            CODE_SIGNING_ALLOWED=NO
+            CODE_SIGNING_ALLOWED=NO \
+            ONLY_ACTIVE_ARCH=YES \
+            ARCHS=arm64 \
+            COMPILER_INDEX_STORE_ENABLE=NO

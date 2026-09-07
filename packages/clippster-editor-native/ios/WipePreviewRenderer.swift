@@ -45,7 +45,7 @@ final class WipePreviewRenderer {
           frame: frame,
           in: renderer.cgContext,
           outputSize: outputSize,
-          imageCache: imageCache,
+          imageCache: self.imageCache,
           videoFrames: frames,
           includedKinds: ["video"]
         )
