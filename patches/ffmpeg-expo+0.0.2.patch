@@ -221947,34 +221947,24 @@ index 9a9e31d..7ea56fe 100644
              }
          }
 diff --git a/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec b/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec
-index a0a9fce..e024704 100644
+index a0a9fce..2d1897e 100644
 --- a/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec
 +++ b/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec
 @@ -2,6 +2,13 @@ require 'json'
  
  package = JSON.parse(File.read(File.join(__dir__, '..', 'package.json')))
  
-+# Headers live inside the vendored xcframework. Keep both device + simulator
-+# slices so Debug simulator CI and device archives resolve libav*.
++# Absolute paths (resolved at `pod install`) so both the ExpoFFmpeg pod and the
++# app target can find libav* when FFmpeg.h is imported via the ObjC module.
 +ffmpeg_header_paths = [
-+  '"$(PODS_TARGET_SRCROOT)/Frameworks/FFmpeg.xcframework/ios-arm64/Headers"',
-+  '"$(PODS_TARGET_SRCROOT)/Frameworks/FFmpeg.xcframework/ios-arm64-simulator/Headers"',
-+].join(' ')
++  File.join(__dir__, 'Frameworks/FFmpeg.xcframework/ios-arm64/Headers'),
++  File.join(__dir__, 'Frameworks/FFmpeg.xcframework/ios-arm64-simulator/Headers'),
++].map { |path| %("#{path}") }.join(' ')
 +
  Pod::Spec.new do |s|
    s.name           = 'ExpoFFmpeg'
    s.version        = package['version']
-@@ -20,6 +27,9 @@ Pod::Spec.new do |s|
-   # Source files
-   s.source_files = '**/*.{h,m,mm,swift}'
-   s.exclude_files = 'Frameworks/**/*'
-+  # Keep FFmpeg C headers private so app targets importing ExpoFFmpeg do not
-+  # re-parse FFmpeg.h without the xcframework header search paths.
-+  s.private_header_files = '**/*.h'
- 
-   # Vendored framework
-   s.vendored_frameworks = 'Frameworks/FFmpeg.xcframework'
-@@ -34,12 +44,13 @@ Pod::Spec.new do |s|
+@@ -34,12 +41,15 @@ Pod::Spec.new do |s|
    s.pod_target_xcconfig = {
      'DEFINES_MODULE' => 'YES',
      'SWIFT_COMPILATION_MODE' => 'wholemodule',
@@ -221984,6 +221974,8 @@ index a0a9fce..e024704 100644
      'ENABLE_BITCODE' => 'NO'
    }
  
++  # App targets import ExpoFFmpeg's ObjC module (re-parses FFmpeg.h) and need
++  # the same libav* search paths as the pod itself.
    s.user_target_xcconfig = {
 -    'ENABLE_BITCODE' => 'NO'
 +    'ENABLE_BITCODE' => 'NO',
