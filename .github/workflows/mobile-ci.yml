@@ -133,7 +133,6 @@ jobs:
             build \
             CODE_SIGNING_ALLOWED=NO \
             ONLY_ACTIVE_ARCH=YES \
-            ARCHS=arm64 \
             COMPILER_INDEX_STORE_ENABLE=NO
       - name: Compile iOS simulator
         working-directory: apps/mobile/ios
@@ -141,7 +140,6 @@ jobs:
           set -o pipefail
           WORKSPACE=$(ls -d *.xcworkspace | head -n 1)
           SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" | awk '/Schemes/{f=1;next} f&&NF{print $1; exit}')
-          # macos-26 runners are arm64; skip x86_64 slice to cut compile time roughly in half.
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
@@ -151,5 +149,4 @@ jobs:
             build \
             CODE_SIGNING_ALLOWED=NO \
             ONLY_ACTIVE_ARCH=YES \
-            ARCHS=arm64 \
             COMPILER_INDEX_STORE_ENABLE=NO

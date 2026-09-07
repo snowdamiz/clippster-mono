@@ -221444,6 +221444,18 @@ index 0000000..88577a2
 + */
 +
 +#endif /* SWSCALE_VERSION_MAJOR_H */
+diff --git a/node_modules/ffmpeg-expo/android/jniLibs/arm64-v8a/libexpo_ffmpeg.a b/node_modules/ffmpeg-expo/android/jniLibs/arm64-v8a/libexpo_ffmpeg.a
+new file mode 100644
+index 0000000..d6bd95b
+Binary files /dev/null and b/node_modules/ffmpeg-expo/android/jniLibs/arm64-v8a/libexpo_ffmpeg.a differ
+diff --git a/node_modules/ffmpeg-expo/android/jniLibs/armeabi-v7a/libexpo_ffmpeg.a b/node_modules/ffmpeg-expo/android/jniLibs/armeabi-v7a/libexpo_ffmpeg.a
+new file mode 100644
+index 0000000..4b39aa2
+Binary files /dev/null and b/node_modules/ffmpeg-expo/android/jniLibs/armeabi-v7a/libexpo_ffmpeg.a differ
+diff --git a/node_modules/ffmpeg-expo/android/jniLibs/x86_64/libexpo_ffmpeg.a b/node_modules/ffmpeg-expo/android/jniLibs/x86_64/libexpo_ffmpeg.a
+new file mode 100644
+index 0000000..b2a0074
+Binary files /dev/null and b/node_modules/ffmpeg-expo/android/jniLibs/x86_64/libexpo_ffmpeg.a differ
 diff --git a/node_modules/ffmpeg-expo/android/src/main/cpp/expo_ffmpeg.h b/node_modules/ffmpeg-expo/android/src/main/cpp/expo_ffmpeg.h
 new file mode 100644
 index 0000000..0e98c52
@@ -221934,6 +221946,50 @@ index 9a9e31d..7ea56fe 100644
                  }
              }
          }
+diff --git a/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec b/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec
+index a0a9fce..e024704 100644
+--- a/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec
++++ b/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec
+@@ -2,6 +2,13 @@ require 'json'
+ 
+ package = JSON.parse(File.read(File.join(__dir__, '..', 'package.json')))
+ 
++# Headers live inside the vendored xcframework. Keep both device + simulator
++# slices so Debug simulator CI and device archives resolve libav*.
++ffmpeg_header_paths = [
++  '"$(PODS_TARGET_SRCROOT)/Frameworks/FFmpeg.xcframework/ios-arm64/Headers"',
++  '"$(PODS_TARGET_SRCROOT)/Frameworks/FFmpeg.xcframework/ios-arm64-simulator/Headers"',
++].join(' ')
++
+ Pod::Spec.new do |s|
+   s.name           = 'ExpoFFmpeg'
+   s.version        = package['version']
+@@ -20,6 +27,9 @@ Pod::Spec.new do |s|
+   # Source files
+   s.source_files = '**/*.{h,m,mm,swift}'
+   s.exclude_files = 'Frameworks/**/*'
++  # Keep FFmpeg C headers private so app targets importing ExpoFFmpeg do not
++  # re-parse FFmpeg.h without the xcframework header search paths.
++  s.private_header_files = '**/*.h'
+ 
+   # Vendored framework
+   s.vendored_frameworks = 'Frameworks/FFmpeg.xcframework'
+@@ -34,12 +44,13 @@ Pod::Spec.new do |s|
+   s.pod_target_xcconfig = {
+     'DEFINES_MODULE' => 'YES',
+     'SWIFT_COMPILATION_MODE' => 'wholemodule',
+-    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/Frameworks/FFmpeg.xcframework/ios-arm64/Headers"',
++    'HEADER_SEARCH_PATHS' => "$(inherited) #{ffmpeg_header_paths}",
+     'OTHER_LDFLAGS' => '-lz -lbz2 -liconv',
+     'ENABLE_BITCODE' => 'NO'
+   }
+ 
+   s.user_target_xcconfig = {
+-    'ENABLE_BITCODE' => 'NO'
++    'ENABLE_BITCODE' => 'NO',
++    'HEADER_SEARCH_PATHS' => "$(inherited) #{ffmpeg_header_paths}",
+   }
+ end
 diff --git a/node_modules/ffmpeg-expo/ios/FFmpeg.h b/node_modules/ffmpeg-expo/ios/FFmpeg.h
 index 3a55215..09c5913 100644
 --- a/node_modules/ffmpeg-expo/ios/FFmpeg.h
@@ -221957,7 +222013,7 @@ index 3a55215..09c5913 100644
 +
  #endif /* FFmpeg_h */
 diff --git a/node_modules/ffmpeg-expo/ios/FFmpegBridge.swift b/node_modules/ffmpeg-expo/ios/FFmpegBridge.swift
-index ee0dc00..cf43aeb 100644
+index ee0dc00..43804ac 100644
 --- a/node_modules/ffmpeg-expo/ios/FFmpegBridge.swift
 +++ b/node_modules/ffmpeg-expo/ios/FFmpegBridge.swift
 @@ -2,20 +2,29 @@ import Foundation
