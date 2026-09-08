@@ -65,7 +65,7 @@ export function DownloadOptionsSheet({
     setTimeRange(initialRange(totalDuration));
     setAutoSegment(false);
     setAutoSegmentDuration(30);
-  }, [visible, item?.id, totalDuration]);
+  }, [visible, item, totalDuration]);
 
   const selectedDuration = rangeDuration(timeRange);
   const fullStream = isFullStreamRange(timeRange, totalDuration);

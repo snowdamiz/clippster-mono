@@ -404,7 +404,7 @@ const capabilities = [
     graphic: RealtimeClippingGraphic,
     badge: { icon: Sparkles, text: 'AI-Powered', color: 'purple' },
     accentColor: 'purple',
-    highlights: ['Live Detection', '95% Accuracy', 'Instant Export'],
+    highlights: ['Live Detection', 'Realtime AI', 'Instant Export'],
   },
   {
     title: 'Picture-in-Picture Mode',
@@ -418,11 +418,11 @@ const capabilities = [
   {
     title: 'Advanced Video Editor',
     subtitle: 'Professional Tools',
-    description: 'Full-featured timeline editor with multi-track support, auto-captions in 40+ languages, effects, transitions, and one-click aspect ratio conversion.',
+    description: 'Full-featured timeline editor with multi-track support, auto-captions in 9 verified languages, effects, transitions, and one-click aspect ratio conversion.',
     graphic: VideoEditorGraphic,
     badge: { icon: Zap, text: 'Pro Editor', color: 'cyan' },
     accentColor: 'cyan',
-    highlights: ['Timeline Editor', '40+ Languages', 'Auto-Captions'],
+    highlights: ['Timeline Editor', '9 Languages', 'Auto-Captions'],
   },
   {
     title: 'Organization Tools',

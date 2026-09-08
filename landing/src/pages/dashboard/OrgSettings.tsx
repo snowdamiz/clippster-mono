@@ -39,6 +39,7 @@ interface EditData {
   public_discord: string
   public_telegram: string
   content_type_tags: string[]
+  public_profile_enabled: boolean
   settings: { allow_ai: boolean }
   restriction_defaults: Required<OrganizationRestrictionDefaults>
 }
@@ -78,6 +79,7 @@ export function OrgSettings() {
     public_discord: '',
     public_telegram: '',
     content_type_tags: [],
+    public_profile_enabled: false,
     settings: { allow_ai: true },
     restriction_defaults: { ...DEFAULT_RESTRICTIONS }
   })
@@ -106,6 +108,7 @@ export function OrgSettings() {
         public_discord: organization.public_discord || '',
         public_telegram: organization.public_telegram || '',
         content_type_tags: organization.content_type_tags || [],
+        public_profile_enabled: organization.public_profile_enabled === true,
         settings: { allow_ai: orgSettings.allow_ai !== false },
         restriction_defaults: {
           allow_ai: rd.allow_ai !== false,
@@ -154,6 +157,7 @@ export function OrgSettings() {
       editData.public_discord !== (organization.public_discord || '') ||
       editData.public_telegram !== (organization.public_telegram || '') ||
       JSON.stringify(editData.content_type_tags) !== JSON.stringify(organization.content_type_tags || []) ||
+      editData.public_profile_enabled !== (organization.public_profile_enabled === true) ||
       editData.settings.allow_ai !== currentAllowAi ||
       restrictionsChanged
     )
@@ -258,6 +262,27 @@ export function OrgSettings() {
               Preview Public Profile
             </a>
           )}
+          <button
+            type="button"
+            onClick={() =>
+              setEditData((prev) => ({
+                ...prev,
+                public_profile_enabled: !prev.public_profile_enabled,
+              }))
+            }
+            className={`flex items-center gap-2 h-8 px-3.5 text-xs font-semibold rounded-md border cursor-pointer ${
+              editData.public_profile_enabled
+                ? 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300'
+                : 'border-zinc-700 text-zinc-300'
+            }`}
+            title={
+              editData.public_profile_enabled
+                ? 'Public profile is listed for search engines when content is complete'
+                : 'Enable to list this organization publicly and in search'
+            }
+          >
+            {editData.public_profile_enabled ? 'Public profile on' : 'Public profile off'}
+          </button>
           <button
             type="button"
             onClick={() => setShowEditProfileDialog(true)}

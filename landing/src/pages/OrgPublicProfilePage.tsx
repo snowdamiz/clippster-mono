@@ -15,6 +15,8 @@ import {
   Video,
 } from 'lucide-react'
 import { getOrgPublicProfile, getContentTypeLabel, type OrgPublicProfile } from '@/services/orgPublicApi'
+import { SeoHead } from '../seo/SeoHead'
+import { DEFAULT_OG_IMAGE, absoluteUrl, orgProfileJsonLd } from '../seo/catalog'
 
 function ensureUrl(url: string): string {
   if (url.startsWith('http://') || url.startsWith('https://')) return url
@@ -93,6 +95,11 @@ export function OrgPublicProfilePage() {
   if (loading) {
     return (
       <div className="org-profile-page org-profile-page--centered">
+        <SeoHead
+          title="Organization profile | Clippster"
+          description="Loading a public organization profile on Clippster."
+          robots="noindex, follow"
+        />
         <Loader2 className="org-profile-page__loader" />
       </div>
     )
@@ -100,6 +107,11 @@ export function OrgPublicProfilePage() {
   if (!profile) {
     return (
       <div className="org-profile-page org-profile-page--centered org-profile-page--not-found">
+        <SeoHead
+          title="Organization not found | Clippster"
+          description="This organization profile does not exist."
+          robots="noindex, nofollow"
+        />
         <p>Organization not found</p>
       </div>
     )
@@ -164,8 +176,24 @@ export function OrgPublicProfilePage() {
     }
   }
 
+  const profileDescription =
+    profile.description ||
+    profile.bio ||
+    `${profile.name} is a clipping organization on Clippster.`
   return (
     <div className="org-profile-page">
+      <SeoHead
+        title={`${profile.name} | Clipping organization on Clippster`}
+        description={profileDescription.slice(0, 160)}
+        canonical={absoluteUrl(`/orgs/${profile.slug || slug}`)}
+        image={profile.logo_url || DEFAULT_OG_IMAGE}
+        jsonLd={orgProfileJsonLd({
+          name: profile.name,
+          description: profileDescription,
+          slug: profile.slug || slug || '',
+          image: profile.logo_url,
+        })}
+      />
       <div className="org-profile">
         <div className="org-hero">
           <div className="org-hero__banner" />

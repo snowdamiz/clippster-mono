@@ -317,7 +317,7 @@ export function MessagingProvider({ children }: { children: ReactNode }) {
       console.error('[Messaging] Failed to initialize:', error);
     }
   }, [
-    user?.id,
+    user,
     token,
     loadConversations,
     fetchTotalUnread,
@@ -669,15 +669,16 @@ export function MessagingProvider({ children }: { children: ReactNode }) {
   const activeConversation = activeConversationId
     ? conversationMap.get(activeConversationId) ?? null
     : null;
-  const activeMessages = activeConversationId
-    ? messagesMap.get(activeConversationId) ?? []
-    : [];
-  const activeTypingUserIds = activeConversationId
-    ? Array.from(typingMap.get(activeConversationId) ?? [])
-    : [];
 
-  const value = useMemo<MessagingContextValue>(
-    () => ({
+  const value = useMemo<MessagingContextValue>(() => {
+    const activeMessages = activeConversationId
+      ? messagesMap.get(activeConversationId) ?? []
+      : [];
+    const activeTypingUserIds = activeConversationId
+      ? Array.from(typingMap.get(activeConversationId) ?? [])
+      : [];
+
+    return {
       conversations,
       messagesByConversation: recordFromMap(messagesMap),
       unreadCounts: recordFromMap(unreadMap),
@@ -711,43 +712,41 @@ export function MessagingProvider({ children }: { children: ReactNode }) {
       deleteConversation,
       uploadAttachments,
       cleanup,
-    }),
-    [
-      conversations,
-      messagesMap,
-      unreadMap,
-      totalUnread,
-      activeConversationId,
-      activeConversation,
-      activeMessages,
-      activeTypingUserIds,
-      isLoading,
-      isLoadingMessages,
-      isSocketConnected,
-      isInitialized,
-      initializeGlobal,
-      refreshConversations,
-      fetchTotalUnread,
-      setActiveConversation,
-      loadOlderMessages,
-      sendMessage,
-      editMessage,
-      deleteMessage,
-      toggleMute,
-      sendTyping,
-      startGlobalDirectConversation,
-      startDirectConversation,
-      startGroupConversation,
-      sendAnnouncement,
-      startSupportConversation,
-      leaveConversation,
-      addParticipant,
-      removeParticipant,
-      deleteConversation,
-      uploadAttachments,
-      cleanup,
-    ],
-  );
+    };
+  }, [
+    conversations,
+    messagesMap,
+    unreadMap,
+    typingMap,
+    totalUnread,
+    activeConversationId,
+    activeConversation,
+    isLoading,
+    isLoadingMessages,
+    isSocketConnected,
+    isInitialized,
+    initializeGlobal,
+    refreshConversations,
+    fetchTotalUnread,
+    setActiveConversation,
+    loadOlderMessages,
+    sendMessage,
+    editMessage,
+    deleteMessage,
+    toggleMute,
+    sendTyping,
+    startGlobalDirectConversation,
+    startDirectConversation,
+    startGroupConversation,
+    sendAnnouncement,
+    startSupportConversation,
+    leaveConversation,
+    addParticipant,
+    removeParticipant,
+    deleteConversation,
+    uploadAttachments,
+    cleanup,
+  ]);
 
   return <MessagingContext.Provider value={value}>{children}</MessagingContext.Provider>;
 }

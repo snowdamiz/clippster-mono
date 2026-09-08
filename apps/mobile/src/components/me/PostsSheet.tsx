@@ -1,7 +1,7 @@
 import type { ScheduledPost, ScheduledPostStatus } from '@clippster/api-client';
 import { Ionicons } from '@expo/vector-icons';
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, View } from 'react-native';
 import { PostAnalyticsSheet } from '@/components/posts/PostAnalyticsSheet';
 import { PostCard } from '@/components/posts/PostCard';
 import { BottomSheet } from '@/components/ui/BottomSheet';

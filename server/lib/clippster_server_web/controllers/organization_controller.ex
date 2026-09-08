@@ -124,7 +124,8 @@ defmodule ClippsterServerWeb.OrganizationController do
             "public_telegram",
             "content_type_tags",
             "settings",
-            "restriction_defaults"
+            "restriction_defaults",
+            "public_profile_enabled"
           ])
 
         case Organizations.update_organization(organization, attrs, user) do
@@ -1123,6 +1124,7 @@ defmodule ClippsterServerWeb.OrganizationController do
       public_discord: org.public_discord,
       public_telegram: org.public_telegram,
       content_type_tags: org.content_type_tags || [],
+      public_profile_enabled: org.public_profile_enabled == true,
       owner_id: org.owner_id,
       created_at: org.inserted_at,
       settings: org.settings || %{},

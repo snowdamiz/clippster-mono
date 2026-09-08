@@ -760,7 +760,6 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
           do: %{
             id: profile.user.id,
             name: profile.user.name,
-            email: profile.user.email,
             last_active_at: profile.user.last_active_at
           },
           else: nil

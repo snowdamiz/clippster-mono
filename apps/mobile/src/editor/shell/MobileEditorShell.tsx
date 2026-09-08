@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 
@@ -57,6 +57,9 @@ export function MobileEditorShell({
   const [playheadTick, setPlayheadTick] = useState(state.session.playheadTick);
   const [visibleCapabilities, setVisibleCapabilities] = useState<string[]>([]);
   const document = state.document;
+  const documentId = document.id;
+  const documentRef = useRef(document);
+  documentRef.current = document;
   const engine = useMemo(() => createMobileEditorEngine(), []);
   const durationTick = document.tracks.reduce(
     (maximum, track) =>
@@ -69,7 +72,7 @@ export function MobileEditorShell({
     void (async () => {
       if (!NativeMobileEditorEngine.isAvailable()) return;
       try {
-        await engine.load(document);
+        await engine.load(documentRef.current);
         if (!cancelled) setVisibleCapabilities(engine.getVisibleCapabilityIds());
       } catch (error) {
         console.error('Failed to load native editor engine', error);
@@ -78,7 +81,7 @@ export function MobileEditorShell({
     return () => {
       cancelled = true;
     };
-  }, [document.id, engine]);
+  }, [documentId, engine]);
 
   useEffect(() => {
     if (!NativeMobileEditorEngine.isAvailable()) return;

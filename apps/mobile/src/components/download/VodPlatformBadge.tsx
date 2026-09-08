@@ -1,4 +1,3 @@
-import { Ionicons } from '@expo/vector-icons';
 import type { MediaPlatform } from '@clippster/shared-types';
 import { Text, View } from 'react-native';
 import { cn } from '@/lib/utils';

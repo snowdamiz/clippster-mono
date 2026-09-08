@@ -29,7 +29,7 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
   - Acknowledge what they said, then advance.
 
   ## DISCOVERY FLOW
-  Skip steps already answered:
+  Skip steps already answered (including from transcript analysis / selected concepts / attached video):
   1. Video topic / goal and platform (YouTube, Shorts, etc.)
   2. Hook emotion (shock, curiosity, hype, humor) and focal subject (face, product, gameplay)
   3. Hook text (0–5 words) and optional CTA — text that ADDS to the title, never repeats it
@@ -40,7 +40,9 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
   - Prefer 16:9 at 1280×720 unless the user asks for Shorts (9:16) or square (1:1).
   - Hook text should be short, bold, curiosity-driving.
   - Never set ready_to_generate=true without a concrete plan and user approval.
-  - If media/key frames or a reference thumbnail are attached, use them in the plan.
+  - If media/key frames, transcript, concepts, or a reference thumbnail are attached, use them in the plan.
+  - If concepts from video analysis exist, offer to lock one or refine it instead of re-asking for topic.
+  - If key frames are present, mention that "Generate variants from video" can produce multiple finished options.
   - generation_mode is set by the client (quick|editable). Reflect it in the summary but do not ask to change it unless the user brings it up.
 
   ## RESPONSE FORMAT
@@ -247,6 +249,234 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
 
       true ->
         generate(session, api_key, %{"generation_mode" => session.generation_mode})
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Analyze video → concepts
+  # ---------------------------------------------------------------------------
+
+  @analyze_system_prompt """
+  You are Clippster's thumbnail concept strategist. Given a video title and transcript,
+  invent THREE distinct high-CTR YouTube-style thumbnail concepts.
+
+  Respond with ONLY valid JSON:
+  {
+    "summary": "1-3 sentence content summary",
+    "concepts": [
+      {
+        "id": "concept-1",
+        "title": "Short concept name",
+        "description": "Why this concept works",
+        "prompt": "Full image-generation prompt including subject, emotion, composition, colors, and baked hook text if any",
+        "hook_text": "2-5 word hook",
+        "text_style": "bold|outline|gradient|minimal",
+        "text_placement": "left|right|top|bottom|center"
+      }
+    ]
+  }
+
+  Rules:
+  - Exactly 3 concepts with ids concept-1, concept-2, concept-3
+  - Concepts must be visually different (emotion, layout, focal subject)
+  - Hook text must NOT merely repeat the video title
+  - Prefer mobile-readable, high-contrast ideas
+  """
+
+  def analyze_video(session, api_key) do
+    transcript = session.transcript || ""
+
+    if String.length(String.trim(transcript)) < 50 do
+      {:error, "Transcript must be at least 50 characters to analyze"}
+    else
+      title = session.video_title || "Your Video"
+      truncated = String.slice(transcript, 0, 12_000)
+
+      user_content = """
+      Video title: #{title}
+
+      Transcript:
+      #{truncated}
+      """
+
+      messages = [
+        %{"role" => "system", "content" => @analyze_system_prompt},
+        %{"role" => "user", "content" => user_content}
+      ]
+
+      case call_chat(messages, api_key) do
+        {:ok, content} ->
+          case parse_json_object(content) do
+            {:ok, parsed} ->
+              concepts =
+                (Map.get(parsed, "concepts") || [])
+                |> Enum.take(3)
+                |> Enum.with_index(1)
+                |> Enum.map(fn {c, i} ->
+                  c
+                  |> Map.put_new("id", "concept-#{i}")
+                  |> Map.put_new("title", "Concept #{i}")
+                  |> Map.put_new("description", "")
+                  |> Map.put_new("prompt", Map.get(c, "hook_text") || "")
+                  |> Map.put_new("hook_text", "")
+                  |> Map.put_new("text_style", "bold")
+                  |> Map.put_new("text_placement", "left")
+                end)
+
+              summary = Map.get(parsed, "summary") || ""
+
+              {:ok, updated} =
+                ThumbnailSessions.update_session(session, %{
+                  concepts: concepts,
+                  video_summary: %{"text" => summary, "title" => title}
+                })
+
+              {:ok, %{session: updated, concepts: concepts, summary: summary}}
+
+            {:error, reason} ->
+              {:error, "Failed to parse concepts: #{inspect(reason)}"}
+          end
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    end
+  end
+
+  def apply_concept(session, concept_id) when is_binary(concept_id) do
+    concepts = session.concepts || []
+    concept = Enum.find(concepts, fn c -> Map.get(c, "id") == concept_id end)
+
+    if is_nil(concept) do
+      {:error, "Concept not found"}
+    else
+      summary = %{
+        "description" => Map.get(concept, "description") || Map.get(concept, "prompt"),
+        "hook_text" => Map.get(concept, "hook_text"),
+        "cta_text" => nil,
+        "emotion" => "curiosity",
+        "focal_subject" => Map.get(concept, "title"),
+        "layout" => Map.get(concept, "text_placement") || "face left, text right",
+        "color_palette" => ["#FF6B00", "#1E90FF", "#FFFFFF"],
+        "aspect_ratio" => "16:9",
+        "canvas_width" => session.canvas_width || 1280,
+        "canvas_height" => session.canvas_height || 720,
+        "style_notes" => Map.get(concept, "text_style"),
+        "generation_prompt" => Map.get(concept, "prompt")
+      }
+
+      {:ok, updated} =
+        ThumbnailSessions.update_session(session, %{
+          brief_summary: summary,
+          selected_concept_id: concept_id
+        })
+
+      {:ok, _msg} =
+        ThumbnailSessions.create_message(
+          session.id,
+          "assistant",
+          "Locked concept \"#{Map.get(concept, "title")}\". Ready to generate when you are.",
+          %{"ready_to_generate" => true, "summary" => summary, "concept_id" => concept_id}
+        )
+
+      {:ok, ThumbnailSessions.get_session_with_messages(updated.id)}
+    end
+  end
+
+  # ---------------------------------------------------------------------------
+  # Generate from video (multi-variant)
+  # ---------------------------------------------------------------------------
+
+  def generate_from_video(session, api_key, opts \\ %{}) do
+    variant_count =
+      case Map.get(opts, "variant_count") || Map.get(opts, :variant_count) || 4 do
+        n when n in [4, 8, 12] -> n
+        _ -> 4
+      end
+
+    custom = Map.get(opts, "custom_instructions") || Map.get(opts, :custom_instructions) || ""
+    concept_id = Map.get(opts, "concept_id") || Map.get(opts, :concept_id) || session.selected_concept_id
+    aspect = Map.get(opts, "aspect_ratio") || Map.get(opts, :aspect_ratio) || "16:9"
+    {width, height, aspect} = resolve_canvas(session, %{"aspect_ratio" => aspect})
+
+    concept =
+      if is_binary(concept_id) do
+        Enum.find(session.concepts || [], fn c -> Map.get(c, "id") == concept_id end)
+      end
+
+    summary_text =
+      case session.video_summary do
+        %{"text" => t} when is_binary(t) -> t
+        %{text: t} when is_binary(t) -> t
+        _ -> ""
+      end
+
+    title = session.video_title || "Video"
+    hook = if concept, do: Map.get(concept, "hook_text"), else: get_in(session.brief_summary || %{}, ["hook_text"])
+    base_prompt = if concept, do: Map.get(concept, "prompt"), else: get_in(session.brief_summary || %{}, ["generation_prompt"])
+
+    prompt = """
+    Create a high-CTR YouTube thumbnail from this video content.
+    Title: #{title}
+    Summary: #{summary_text}
+    Hook text (include boldly if present): #{hook || "none"}
+    Concept prompt: #{base_prompt || "Bold creator thumbnail matching the transcript energy"}
+    Custom direction: #{custom}
+    Use the attached keyframe reference images for likeness, scene, and subject.
+    Output a finished thumbnail with dramatic lighting, readable composition, and mobile-friendly contrast.
+    Aspect ratio #{aspect}.
+    """
+
+    refs = collect_reference_urls(session)
+
+    with {:ok, images} <-
+           generate_images(api_key, prompt, refs,
+             n: variant_count,
+             aspect_ratio: aspect,
+             width: width,
+             height: height
+           ),
+         {:ok, candidates} <- persist_candidates(session, images, width, height) do
+      composition = %{
+        "mode" => "from_video",
+        "canvas" => %{"width" => width, "height" => height, "aspect_ratio" => aspect},
+        "candidates" => candidates,
+        "variant_count" => variant_count,
+        "concept_id" => concept_id
+      }
+
+      {:ok,
+       %{
+         generation_mode: "quick",
+         candidates: candidates,
+         plate_url: nil,
+         recipe: nil,
+         composition: composition,
+         thumbnail_url: List.first(candidates)["url"],
+         canvas_width: width,
+         canvas_height: height
+       }}
+    end
+  end
+
+  def continue_as_editable(session, api_key, candidate_index \\ 0) do
+    candidates = session.candidates || []
+    chosen = Enum.at(candidates, candidate_index) || List.first(candidates)
+    url = chosen && (chosen["url"] || chosen[:url])
+
+    if is_nil(url) do
+      {:error, "No candidate to convert"}
+    else
+      summary =
+        Map.merge(session.brief_summary || %{}, %{
+          "description" =>
+            Map.get(session.brief_summary || %{}, "description") ||
+              "Editable plate derived from from-video variant",
+          "reference_variant_url" => url
+        })
+
+      session = %{session | brief_summary: summary, reference_image_url: url, generation_mode: "editable"}
+      generate_editable(session, api_key, summary, session.canvas_width || 1280, session.canvas_height || 720, "16:9")
     end
   end
 
@@ -704,7 +934,7 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
   # Image API
   # ---------------------------------------------------------------------------
 
-  defp generate_images(api_key, prompt, reference_urls, opts) do
+  def generate_images(api_key, prompt, reference_urls, opts) do
     model = System.get_env("OPENROUTER_IMAGE_MODEL") || @default_image_model
     n = Keyword.get(opts, :n, 1)
     aspect_ratio = Keyword.get(opts, :aspect_ratio, "16:9")
@@ -782,7 +1012,7 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
 
   defp extract_image_payloads(_), do: []
 
-  defp persist_candidates(session, images, width, height) do
+  def persist_candidates(session, images, width, height) do
     candidates =
       images
       |> Enum.with_index()
@@ -806,9 +1036,9 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
     if candidates == [], do: {:error, "Failed to persist candidates"}, else: {:ok, candidates}
   end
 
-  defp persist_single_image(_session, nil, _label), do: {:error, "No image payload"}
+  def persist_single_image(_session, nil, _label), do: {:error, "No image payload"}
 
-  defp persist_single_image(session, %{"url" => url}, _label) when is_binary(url) do
+  def persist_single_image(session, %{"url" => url}, _label) when is_binary(url) do
     if String.starts_with?(url, "http") do
       # Re-host if possible for permanence; otherwise keep provider URL
       case download_and_upload(session, url) do
@@ -820,7 +1050,7 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
     end
   end
 
-  defp persist_single_image(session, %{"b64" => b64} = img, label) when is_binary(b64) do
+  def persist_single_image(session, %{"b64" => b64} = img, label) when is_binary(b64) do
     mime = Map.get(img, "mime", "png")
     ext = if mime in ["jpeg", "jpg"], do: "jpg", else: "png"
     content_type = if ext == "jpg", do: "image/jpeg", else: "image/png"
@@ -846,7 +1076,7 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
     end
   end
 
-  defp persist_single_image(_, _, _), do: {:error, "Unsupported image payload"}
+  def persist_single_image(_, _, _), do: {:error, "Unsupported image payload"}
 
   defp download_and_upload(session, url) do
     case HTTPoison.get(url, [], recv_timeout: 60_000, follow_redirect: true) do
@@ -903,6 +1133,33 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
         ""
       end
 
+    video_meta =
+      cond do
+        is_binary(session.youtube_url) and session.youtube_url != "" ->
+          "\nYouTube URL: #{session.youtube_url}\nVideo title: #{session.video_title || "unknown"}"
+
+        is_binary(session.video_title) and session.video_title != "" ->
+          "\nVideo title: #{session.video_title}"
+
+        true ->
+          ""
+      end
+
+    transcript =
+      if is_binary(session.transcript) and session.transcript != "" do
+        snippet = String.slice(session.transcript, 0, 2000)
+        "\nTranscript (#{session.transcript_source || "unknown"}, truncated):\n#{snippet}"
+      else
+        ""
+      end
+
+    concepts =
+      if is_list(session.concepts) and session.concepts != [] do
+        "\nAnalyzed concepts: #{Jason.encode!(session.concepts)}\nSelected concept: #{session.selected_concept_id || "none"}"
+      else
+        ""
+      end
+
     brief =
       if session.brief_summary do
         "\nCurrent brief: #{Jason.encode!(session.brief_summary)}"
@@ -910,7 +1167,7 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
         ""
       end
 
-    Enum.join(parts, "\n") <> media <> frames <> ref <> brief
+    Enum.join(parts, "\n") <> media <> frames <> ref <> video_meta <> transcript <> concepts <> brief
   end
 
   defp collect_reference_urls(session) do

@@ -2,6 +2,7 @@
   "name": "@clippster/editor-native",
   "version": "0.1.0",
   "private": true,
+  "description": "Clippster native editor engine for iOS and Android",
   "main": "./src/index.ts",
   "types": "./src/index.ts",
   "scripts": {

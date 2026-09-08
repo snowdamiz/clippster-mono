@@ -14,6 +14,7 @@ defmodule ClippsterServer.Organizations.Organization do
     field :public_telegram, :string
     field :content_type_tags, {:array, :string}, default: []
     field :settings, :map, default: %{}
+    field :public_profile_enabled, :boolean, default: false
 
     # Instagram scheduling settings
     field :allow_personal_instagram, :boolean, default: true
@@ -124,7 +125,8 @@ defmodule ClippsterServer.Organizations.Organization do
       :settings,
       :allow_personal_instagram,
       :scheduling_enabled,
-      :restriction_defaults
+      :restriction_defaults,
+      :public_profile_enabled
     ])
     |> validate_length(:name, min: 2, max: 100)
     |> validate_length(:description, max: 500)

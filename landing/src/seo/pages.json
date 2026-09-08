@@ -1,0 +1,873 @@
+{
+  "siteUrl": "https://clippster.app",
+  "defaultImage": "https://clippster.app/og-image.png",
+  "siteName": "Clippster",
+  "privatePrefixes": [
+    "/dashboard",
+    "/admin",
+    "/login",
+    "/signup",
+    "/verify-email",
+    "/forgot-password",
+    "/reset-password",
+    "/invite",
+    "/auth",
+    "/oauth",
+    "/editor",
+    "/stripe-success",
+    "/stripe-cancel"
+  ],
+  "redirects": {
+    "/ai-clipping-tool": "/clipping-tool",
+    "/opus-alternative": "/vs/opus-clip",
+    "/vs/opus": "/vs/opus-clip",
+    "/eklipse-alternative": "/vs/eklipse",
+    "/streamladder-alternative": "/vs/streamladder",
+    "/medal-alternative": "/vs/medal",
+    "/powder-alternative": "/vs/powder"
+  },
+  "pages": {
+    "/": {
+      "title": "Clippster | Desktop Clipping Studio for Streamers",
+      "description": "Clippster is a desktop clipping studio: watch streams live, find highlights, edit on a timeline, and schedule clips to Instagram, TikTok, X, and YouTube.",
+      "noscript": "Clippster is a desktop clipping studio for streamers and clipper teams. Watch Kick, Twitch, X, YouTube, Rumble, and Pump.fun live, edit clips locally, add captions in 9 languages, and post to Instagram, TikTok, X, and YouTube.",
+      "type": "home",
+      "primaryKeyword": "clippster clipping studio",
+      "parent": null,
+      "priority": "1.0",
+      "changefreq": "weekly",
+      "schema": ["Organization", "SoftwareApplication"],
+      "faqs": [
+        {
+          "q": "What is Clippster?",
+          "a": "Clippster is a desktop clipping studio for livestream highlights. You watch and clip during a stream, edit on a multi-track timeline, caption the export, and schedule posts to Instagram, TikTok, X, and YouTube."
+        },
+        {
+          "q": "Is Clippster only an AI clipping tool?",
+          "a": "No. AI highlight detection is one part of the product. Clippster also includes live clipping with PiP and DVR, a full timeline editor, organization campaigns, and social scheduling. For AI clipping specifically, see the clipping tool page."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/clipping-tool": {
+      "title": "AI Clipping Tool for Streamers | Clippster",
+      "description": "AI clipping tool for Twitch, Kick, and YouTube. Detect highlights in real time on desktop, edit the timeline, and export vertical clips for TikTok and Reels.",
+      "noscript": "Clippster is an AI clipping tool that turns livestreams and VODs into short-form clips. Unlike queue-only web tools, it clips in real time on desktop, includes a full timeline editor, and supports clipping teams.",
+      "type": "pillar",
+      "primaryKeyword": "ai clipping tool",
+      "parent": null,
+      "priority": "0.9",
+      "changefreq": "weekly",
+      "schema": ["Organization", "SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "What is an AI clipping tool?",
+          "a": "An AI clipping tool watches a livestream or VOD, finds highlight-worthy moments, and turns them into short clips you can caption and post. Clippster does this in real time on desktop, not only from a finished VOD queue."
+        },
+        {
+          "q": "Which platforms can Clippster clip from?",
+          "a": "You can watch Kick, Twitch, X, YouTube, Rumble, and Pump.fun streams live on desktop, download VODs from supported sources, or upload local files. Publishing targets are Instagram, TikTok, X, and YouTube — not Kick, Twitch, Rumble, or Pump.fun."
+        },
+        {
+          "q": "Does Clippster work without uploading my whole VOD to the cloud?",
+          "a": "Yes. Clippster is a desktop app. Video stays on your machine until you choose to export or schedule a post."
+        },
+        {
+          "q": "Can clipping teams use Clippster?",
+          "a": "Yes. Organizations can run campaigns, recruit clippers, share assets, review submissions, and post from connected social accounts."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/video-editor": {
+      "title": "Desktop Video Editor for Creators | Clippster",
+      "description": "Clippster’s desktop NLE: multi-track timeline with cuts, captions, effects, color tools, branding, and social exports—built for creators, not only short clips.",
+      "noscript": "Clippster’s desktop video editor is a full multi-track creator NLE. Cut, caption, effects, color, branding, and export locally. Mobile has a simpler companion flow; the full timeline is desktop-only.",
+      "type": "pillar",
+      "primaryKeyword": "desktop video editor for creators",
+      "parent": null,
+      "priority": "0.8",
+      "changefreq": "weekly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "Is Clippster a full video editor?",
+          "a": "Yes. The desktop app includes a multi-track NLE with cuts, overlays, captions, effects, color tools, branding, and export. It is a creator timeline editor—not a Premiere/Resolve-class film finishing suite."
+        },
+        {
+          "q": "Is the editor only for short-form clips?",
+          "a": "No. Clippster’s product loop often ends in TikTok, Reels, or Shorts, but the editor itself is a full multi-track timeline for assembling and finishing video—not limited to short-film-only projects."
+        },
+        {
+          "q": "Does the mobile app have the same editor?",
+          "a": "No. Mobile has a simpler trim, caption, and framing flow. The full multi-track video editor is desktop-only."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/live-stream-clipping": {
+      "title": "Live Stream Clipping Software | Clippster",
+      "description": "Clip livestreams in real time with Clippster: desktop live watch, PiP, DVR scrubbing, hotkeys, and AI highlight detection while the stream is still on.",
+      "noscript": "Clippster live stream clipping lets you watch Kick, Twitch, X, YouTube, Rumble, and Pump.fun on desktop, clip with hotkeys or AI detect, and keep a DVR buffer without waiting for the VOD.",
+      "type": "pillar",
+      "primaryKeyword": "live stream clipping",
+      "parent": null,
+      "priority": "0.8",
+      "changefreq": "weekly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "Can I clip a stream while it is live?",
+          "a": "Yes on desktop. Clippster supports live watch with Picture-in-Picture, DVR, hotkey clips, and realtime AI detection so you do not have to wait for the VOD."
+        },
+        {
+          "q": "Is live clipping available on mobile?",
+          "a": "No. Live DVR, PiP, and realtime detect are desktop features. Mobile is for VOD download, AI clip detection after download, edit, and posting."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/clipping-campaigns": {
+      "title": "Clipping Campaign Software | Clippster",
+      "description": "Run clipping campaigns with budgets, CPM payouts, submissions, and clipper hiring. Clippster organizations manage campaigns from one dashboard.",
+      "noscript": "Clippster clipping campaigns let organizations set budgets and CPM rules, invite clippers, review submissions, and track post performance for paid clip work.",
+      "type": "pillar",
+      "primaryKeyword": "clipping campaign software",
+      "parent": null,
+      "priority": "0.8",
+      "changefreq": "weekly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "What is a clipping campaign?",
+          "a": "A clipping campaign is a structured job for clippers: a streamer or org sets goals, budgets, and payout rules; clippers submit posts; the org reviews and pays on performance."
+        },
+        {
+          "q": "Can I hire clippers inside Clippster?",
+          "a": "Yes. Organizations can post hiring openings and clippers can list public profiles in the clipper directory."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/for-organizations": {
+      "title": "Clipping Tools for Organizations | Clippster",
+      "description": "Clippster for organizations: shared streamers, campaigns, clipper hiring, asset libraries, and scheduled posting from connected social accounts.",
+      "noscript": "Organizations use Clippster to manage clipper teams, run campaigns, share brand assets, and publish to Instagram, TikTok, X, and YouTube from one workspace.",
+      "type": "pillar",
+      "primaryKeyword": "clipping organization software",
+      "parent": null,
+      "priority": "0.8",
+      "changefreq": "weekly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "Who are Clippster organizations for?",
+          "a": "Clipping agencies, streamer teams, and brands that manage multiple clippers, streamers, and campaigns instead of one solo creator workflow."
+        },
+        {
+          "q": "Do organizations get public profiles?",
+          "a": "Yes when enabled. Public org profiles can appear in the organization directory with campaigns and hiring context."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/social-posting": {
+      "title": "Schedule Clips to TikTok, Reels & Shorts | Clippster",
+      "description": "Schedule and publish clips to Instagram, TikTok, X, and YouTube from Clippster. Connect accounts via PostForMe and post from desktop or mobile.",
+      "noscript": "Clippster social posting schedules or publishes finished clips to Instagram, TikTok, X, and YouTube. Kick and Twitch are clip sources, not publish destinations.",
+      "type": "pillar",
+      "primaryKeyword": "schedule clips to tiktok",
+      "parent": null,
+      "priority": "0.8",
+      "changefreq": "weekly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "Which networks can Clippster post to?",
+          "a": "Instagram, TikTok, X, and YouTube via PostForMe. Clippster does not natively publish to Kick, Twitch, Rumble, or Pump.fun."
+        },
+        {
+          "q": "Is social posting on the free plan?",
+          "a": "No. Scheduling and publishing require a paid plan and connected social accounts."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/clip-analytics": {
+      "title": "Clip Performance Analytics | Clippster",
+      "description": "Track views, engagement, and campaign submission performance for clips you post through Clippster’s connected social accounts.",
+      "noscript": "Clippster clip analytics sync post-level metrics for PostForMe-connected accounts and campaign submissions so teams can see which clips earned views.",
+      "type": "pillar",
+      "primaryKeyword": "clip performance analytics",
+      "parent": null,
+      "priority": "0.7",
+      "changefreq": "weekly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "What analytics does Clippster show?",
+          "a": "Post-level metrics such as views, likes, comments, and related engagement for posts tied to connected accounts, plus campaign submission performance for orgs."
+        },
+        {
+          "q": "Is this a full social analytics suite?",
+          "a": "No. Clippster focuses on clip and campaign post performance for connected publishers—not a general competitor to dedicated analytics platforms."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/design-studio": {
+      "title": "Design Studio for Thumbnails (Beta) | Clippster",
+      "description": "Clippster Design Studio is a desktop beta for stream thumbnails and social graphics—canvas presets inside the clipping workspace, not a mobile photo editor.",
+      "noscript": "Design Studio (desktop beta) helps create thumbnails and stream graphics with canvas presets. It is not positioned as a general image editor and is not on mobile.",
+      "type": "pillar",
+      "primaryKeyword": "stream thumbnail design studio",
+      "parent": null,
+      "priority": "0.6",
+      "changefreq": "monthly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "What is Design Studio?",
+          "a": "A desktop beta workspace for thumbnails and social graphics with canvas presets, living alongside Clippster’s clipping tools."
+        },
+        {
+          "q": "Is Design Studio a full Photoshop alternative?",
+          "a": "No. It targets stream thumbnails and social graphics inside Clippster. Do not expect print design or mobile photo editing."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/platforms/twitch": {
+      "title": "Twitch Clipping Tool | Live & VOD | Clippster",
+      "description": "Clip Twitch livestreams and VODs with Clippster. Watch live on desktop, download VODs on desktop or mobile, then export to TikTok, Reels, Shorts, and X.",
+      "noscript": "Clippster clips Twitch as a source: live watch and VOD download on desktop, VOD on mobile. Twitch is not a publish target—post finished clips to Instagram, TikTok, X, or YouTube.",
+      "type": "platform",
+      "primaryKeyword": "twitch clipping tool",
+      "parent": "/clipping-tool",
+      "priority": "0.8",
+      "changefreq": "weekly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "Can Clippster clip Twitch live?",
+          "a": "Yes on desktop. Watch the stream, use PiP/DVR, and clip with hotkeys or AI detection while the broadcast is live."
+        },
+        {
+          "q": "Can I publish clips back to Twitch?",
+          "a": "No. Twitch is an ingest source. Publish or schedule finished clips to Instagram, TikTok, X, and YouTube."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/platforms/kick": {
+      "title": "Kick Clipping Tool | Live & VOD | Clippster",
+      "description": "Clip Kick livestreams and VODs with Clippster. Live watch on desktop, VOD download on desktop and mobile, then post to short-form networks.",
+      "noscript": "Clippster supports Kick live clipping on desktop and VOD download on desktop and mobile. Kick is source-only; publish to Instagram, TikTok, X, and YouTube.",
+      "type": "platform",
+      "primaryKeyword": "kick clipping tool",
+      "parent": "/clipping-tool",
+      "priority": "0.8",
+      "changefreq": "weekly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "Does Clippster support Kick live streams?",
+          "a": "Yes. Desktop live watch, DVR, and realtime clipping work for Kick the same way they do for Twitch."
+        },
+        {
+          "q": "Can Clippster post clips to Kick?",
+          "a": "No. Kick is a clip source only. Export or schedule to Instagram, TikTok, X, and YouTube."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/platforms/youtube": {
+      "title": "YouTube Clipping & Shorts Publishing | Clippster",
+      "description": "Clip YouTube livestreams and VODs, then publish Shorts or schedule to Instagram, TikTok, X, and YouTube from Clippster.",
+      "noscript": "Clippster ingests YouTube live and VOD on desktop and mobile, edits clips locally, and can publish or schedule back to YouTube Shorts plus Instagram, TikTok, and X via PostForMe.",
+      "type": "platform",
+      "primaryKeyword": "youtube clipping tool shorts",
+      "parent": "/clipping-tool",
+      "priority": "0.8",
+      "changefreq": "weekly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "Can I clip YouTube livestreams?",
+          "a": "Yes. Desktop supports live watch and clipping; VODs download on desktop and mobile."
+        },
+        {
+          "q": "Can Clippster publish YouTube Shorts?",
+          "a": "Yes. YouTube is both a source and a PostForMe publish target, along with Instagram, TikTok, and X."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/platforms/pumpfun": {
+      "title": "Pump.fun Livestream Clipping (Desktop) | Clippster",
+      "description": "Clip Pump.fun livestreams and VODs on Clippster desktop. LiveKit ingest is desktop-only—no mobile VOD path and no native Pump.fun publishing.",
+      "noscript": "Clippster clips Pump.fun on desktop with live watch and VOD download. There is no mobile VOD ingest and no publish-to-Pump.fun path; export to short-form networks instead.",
+      "type": "platform",
+      "primaryKeyword": "pump.fun livestream clipping",
+      "parent": "/clipping-tool",
+      "priority": "0.7",
+      "changefreq": "weekly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "Can I clip Pump.fun on mobile?",
+          "a": "No. Pump.fun ingest is desktop-only today."
+        },
+        {
+          "q": "Does Clippster post to Pump.fun?",
+          "a": "No. Pump.fun is a source. Finished clips go to Instagram, TikTok, X, or YouTube."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/platforms/x": {
+      "title": "Clip X Livestreams & Post to X | Clippster",
+      "description": "Watch and clip X livestreams on Clippster desktop, download broadcasts and VODs, then schedule posts to X, Instagram, TikTok, and YouTube.",
+      "noscript": "Clippster supports live watch and VOD/broadcast download for X on desktop, plus publishing or scheduling to X and other PostForMe networks.",
+      "type": "platform",
+      "primaryKeyword": "x twitter live clipping",
+      "parent": "/clipping-tool",
+      "priority": "0.7",
+      "changefreq": "weekly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "Can Clippster watch X livestreams?",
+          "a": "Yes on desktop. Clippster supports live watch for X alongside Kick, Twitch, YouTube, Rumble, and Pump.fun."
+        },
+        {
+          "q": "Can I post clips to X from Clippster?",
+          "a": "Yes. X is a PostForMe publish target along with Instagram, TikTok, and YouTube."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/platforms/rumble": {
+      "title": "Rumble Live & VOD Clipping | Clippster",
+      "description": "Watch and clip Rumble livestreams on Clippster desktop, download VODs on desktop and mobile, then export to short-form networks. Rumble is a source only.",
+      "noscript": "Clippster supports Rumble live watch on desktop and VOD download on desktop and mobile. Publishing to Rumble is not available—export to Instagram, TikTok, X, or YouTube.",
+      "type": "platform",
+      "primaryKeyword": "rumble live clipping",
+      "parent": "/clipping-tool",
+      "priority": "0.6",
+      "changefreq": "monthly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "Does Clippster clip Rumble live?",
+          "a": "Yes on desktop. Live watch, then edit and export. Rumble is a clip source only—not a publish destination."
+        },
+        {
+          "q": "Can I publish clips to Rumble?",
+          "a": "No. Export or schedule to Instagram, TikTok, X, and YouTube instead."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/vs/opus-clip": {
+      "title": "Clippster vs Opus Clip | Honest Comparison",
+      "description": "Compare Clippster and Opus Clip on live clipping, desktop editing, captions, campaigns, and posting. See which tool fits streamers vs queue-only VOD workflows.",
+      "noscript": "Clippster vs Opus Clip: Clippster is a desktop studio with live clipping, timeline editing, and org campaigns. Opus Clip is a web app focused on queued VOD clipping.",
+      "type": "comparison",
+      "primaryKeyword": "clippster vs opus clip",
+      "parent": "/clipping-tool",
+      "priority": "0.8",
+      "changefreq": "monthly",
+      "schema": ["FAQ"],
+      "faqs": [
+        {
+          "q": "Is Clippster better than Opus Clip?",
+          "a": "It depends. Opus Clip is strong for browser VOD queues. Clippster fits live desktop clipping, multi-track editing, and clipper campaigns. Choose based on workflow, not brand loyalty."
+        },
+        {
+          "q": "Does Clippster charge extra to post to social media?",
+          "a": "No separate social add-on. Paid plans include scheduling and posting to Instagram, TikTok, X, and YouTube via PostForMe."
+        },
+        {
+          "q": "Does Opus Clip do live clipping?",
+          "a": "Opus Clip is built around queued VOD processing. Clippster’s realtime live clipping is a desktop differentiator."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/vs/eklipse": {
+      "title": "Clippster vs Eklipse | Clipping Tool Comparison",
+      "description": "Compare Clippster and Eklipse for stream clipping, editing depth, team campaigns, and social posting. Honest tradeoffs for creators and orgs.",
+      "noscript": "Clippster vs Eklipse: Clippster emphasizes desktop live clipping, a full timeline editor, and organization campaigns. Evaluate Eklipse if you prefer its web-first clipping product.",
+      "type": "comparison",
+      "primaryKeyword": "clippster vs eklipse",
+      "parent": "/clipping-tool",
+      "priority": "0.7",
+      "changefreq": "monthly",
+      "schema": ["FAQ"],
+      "faqs": [
+        {
+          "q": "When should I choose Clippster over Eklipse?",
+          "a": "Choose Clippster when you need desktop live clipping with PiP/DVR, multi-track editing, and clipper campaign operations in one product."
+        },
+        {
+          "q": "When might Eklipse be a better fit?",
+          "a": "If you already rely on Eklipse’s web clipping flow and do not need Clippster’s desktop live studio or org campaign stack, staying on Eklipse can be simpler."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/vs/streamladder": {
+      "title": "Clippster vs StreamLadder | Comparison",
+      "description": "Clippster vs StreamLadder: desktop live clipping and campaigns versus StreamLadder’s clipping and clip-page workflows. Pick based on editing and team needs.",
+      "noscript": "Compare Clippster and StreamLadder. Clippster focuses on desktop live clipping, timeline editing, and org campaigns; StreamLadder is known for stream clip pages and related tools.",
+      "type": "comparison",
+      "primaryKeyword": "clippster vs streamladder",
+      "parent": "/clipping-tool",
+      "priority": "0.7",
+      "changefreq": "monthly",
+      "schema": ["FAQ"],
+      "faqs": [
+        {
+          "q": "Does Clippster replace StreamLadder clip pages?",
+          "a": "Not as a like-for-like clip-page host. Clippster is a clipping studio with editor, posting, and campaigns—different job than public clip pages."
+        },
+        {
+          "q": "Who should prefer Clippster?",
+          "a": "Teams that clip live on desktop, edit on a timeline, and run paid clipper campaigns."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/vs/medal": {
+      "title": "Clippster vs Medal | Clipping Comparison",
+      "description": "Compare Clippster and Medal for clipping. Medal is strong for in-game clips; Clippster targets livestream VODs, live desktop clipping, and clipper orgs.",
+      "noscript": "Clippster vs Medal: Medal focuses on gameplay clip capture. Clippster focuses on livestream ingest, AI highlights, desktop editing, and campaign workflows for streamers and clippers.",
+      "type": "comparison",
+      "primaryKeyword": "clippster vs medal",
+      "parent": "/clipping-tool",
+      "priority": "0.6",
+      "changefreq": "monthly",
+      "schema": ["FAQ"],
+      "faqs": [
+        {
+          "q": "Is Clippster like Medal?",
+          "a": "Only loosely. Medal is oriented around gameplay clip capture. Clippster is built for livestream/VOD clipping, editing, and posting for streamer ecosystems."
+        },
+        {
+          "q": "Can I use both?",
+          "a": "Yes. Many creators keep a game clip tool and a stream highlight studio. They solve different moments."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/vs/powder": {
+      "title": "Clippster vs Powder | AI Clipping Comparison",
+      "description": "Compare Clippster and Powder for AI clipping. See differences in live desktop workflows, editing, campaigns, and where each tool fits.",
+      "noscript": "Clippster vs Powder: Clippster is a desktop clipping studio with live clipping and org campaigns. Compare feature depth and workflow before switching tools.",
+      "type": "comparison",
+      "primaryKeyword": "clippster vs powder",
+      "parent": "/clipping-tool",
+      "priority": "0.6",
+      "changefreq": "monthly",
+      "schema": ["FAQ"],
+      "faqs": [
+        {
+          "q": "Why compare Clippster to Powder?",
+          "a": "Both help turn long video into short clips. Clippster’s wedge is live desktop clipping plus campaign infrastructure for clipper teams."
+        },
+        {
+          "q": "Should I switch from Powder?",
+          "a": "Only if you need Clippster-specific workflows (live desktop clipping, multi-track editor, org campaigns). Otherwise stay where your pipeline already works."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/guides/how-to-clip-twitch-streams": {
+      "title": "How to Clip Twitch Streams | Clippster Guide",
+      "description": "Step-by-step: watch a Twitch stream in Clippster, clip live or from VOD, edit vertically, and post to TikTok, Reels, Shorts, or X.",
+      "noscript": "Guide to clipping Twitch with Clippster: open the stream on desktop, clip live or download the VOD, edit captions, and schedule to short-form platforms—not back to Twitch.",
+      "type": "guide",
+      "primaryKeyword": "how to clip twitch streams",
+      "parent": "/platforms/twitch",
+      "priority": "0.7",
+      "changefreq": "monthly",
+      "schema": ["Article", "FAQ", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "Do I need a Twitch affiliate account to clip in Clippster?",
+          "a": "No. Clippster watches and downloads as an ingest client. You do not publish Twitch Clips through Clippster."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/guides/how-to-clip-kick-streams": {
+      "title": "How to Clip Kick Streams | Clippster Guide",
+      "description": "Clip Kick livestreams with Clippster: live desktop watch, VOD download, edit, and export to Instagram, TikTok, X, and YouTube.",
+      "noscript": "Learn how to clip Kick streams in Clippster—live on desktop or from VODs—then edit and schedule posts. Kick is a source, not a publish target.",
+      "type": "guide",
+      "primaryKeyword": "how to clip kick streams",
+      "parent": "/platforms/kick",
+      "priority": "0.7",
+      "changefreq": "monthly",
+      "schema": ["Article", "FAQ", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "Is Kick clipping different from Twitch in Clippster?",
+          "a": "The workflow is the same: live desktop ingest, VOD download, edit, then publish to short-form networks."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/guides/clip-pumpfun-livestreams": {
+      "title": "How to Clip Pump.fun Livestreams | Clippster",
+      "description": "Desktop guide to clipping Pump.fun livestreams and VODs in Clippster. Mobile VOD is not available; export to short-form publishers.",
+      "noscript": "Clip Pump.fun on Clippster desktop with live and VOD ingest. There is no mobile path and no publish-to-Pump.fun—export clips elsewhere.",
+      "type": "guide",
+      "primaryKeyword": "how to clip pump.fun livestreams",
+      "parent": "/platforms/pumpfun",
+      "priority": "0.6",
+      "changefreq": "monthly",
+      "schema": ["Article", "FAQ", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "Why desktop only for Pump.fun?",
+          "a": "Pump.fun ingest uses Clippster’s desktop LiveKit path. Mobile VOD for Pump.fun is not shipped."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/guides/clip-during-live-stream": {
+      "title": "How to Clip During a Live Stream | Clippster",
+      "description": "Clip while a stream is live: desktop PiP, DVR scrubbing, hotkeys, and realtime AI detection in Clippster—without waiting for the VOD.",
+      "noscript": "Clippster live clipping guide covering Picture-in-Picture, DVR, hotkeys, and realtime AI detect on desktop. Mobile does not include live DVR clipping.",
+      "type": "guide",
+      "primaryKeyword": "clip during live stream",
+      "parent": "/live-stream-clipping",
+      "priority": "0.7",
+      "changefreq": "monthly",
+      "schema": ["Article", "FAQ", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "Do I need the VOD to clip?",
+          "a": "No on desktop. Live watch with DVR lets you clip before the VOD is ready."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/guides/twitch-to-tiktok-workflow": {
+      "title": "Twitch to TikTok Workflow | Clippster Guide",
+      "description": "Turn Twitch moments into TikTok-ready vertical clips: ingest in Clippster, crop 9:16, caption, and schedule to TikTok.",
+      "noscript": "A Twitch-to-TikTok workflow in Clippster: clip from Twitch live or VOD, vertical crop, captions, then schedule to TikTok. Twitch itself is not the publish target.",
+      "type": "guide",
+      "primaryKeyword": "twitch to tiktok workflow",
+      "parent": "/social-posting",
+      "priority": "0.7",
+      "changefreq": "monthly",
+      "schema": ["Article", "FAQ", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "Does Clippster post to TikTok automatically from Twitch?",
+          "a": "You clip from Twitch, edit, then schedule or publish to TikTok with a connected account. It is not an auto-repost bot."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/guides/stream-to-youtube-shorts": {
+      "title": "Stream to YouTube Shorts Workflow | Clippster",
+      "description": "Convert livestream highlights into YouTube Shorts with Clippster: clip, vertical edit, caption, and publish Shorts via connected YouTube.",
+      "noscript": "Guide for turning stream highlights into YouTube Shorts inside Clippster—from ingest through vertical edit to PostForMe publishing.",
+      "type": "guide",
+      "primaryKeyword": "stream to youtube shorts",
+      "parent": "/platforms/youtube",
+      "priority": "0.7",
+      "changefreq": "monthly",
+      "schema": ["Article", "FAQ", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "Can Clippster publish Shorts directly?",
+          "a": "Yes when YouTube is connected through PostForMe on a paid plan."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/guides/vertical-crop-for-tiktok-reels-shorts": {
+      "title": "Vertical Crop for TikTok, Reels & Shorts | Guide",
+      "description": "Reframe landscape stream footage to 9:16 in Clippster for TikTok, Instagram Reels, and YouTube Shorts without guessing safe areas.",
+      "noscript": "How to vertical-crop stream clips in Clippster for TikTok, Reels, and Shorts using framing tools and 9:16 export presets.",
+      "type": "guide",
+      "primaryKeyword": "vertical crop for tiktok reels shorts",
+      "parent": "/video-editor",
+      "priority": "0.6",
+      "changefreq": "monthly",
+      "schema": ["Article", "FAQ", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "What aspect ratio should I export?",
+          "a": "Use 9:16 for TikTok, Reels, and Shorts. Clippster’s clip build flow supports vertical framing."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/guides/auto-captions-for-clips": {
+      "title": "Auto Captions for Clips | Clippster Guide",
+      "description": "Add auto-captions to stream clips in Clippster. Verified support covers 9 languages in the desktop editor UI.",
+      "noscript": "Generate timed captions for clips in Clippster. The desktop editor verifies 9 caption languages. Style and burn in before export.",
+      "type": "guide",
+      "primaryKeyword": "auto captions for clips",
+      "parent": "/video-editor",
+      "priority": "0.6",
+      "changefreq": "monthly",
+      "schema": ["Article", "FAQ", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "How many caption languages does Clippster support?",
+          "a": "Nine verified languages in the desktop editor UI. Older inflated language-count claims are not used."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/guides/how-to-run-a-clipping-campaign": {
+      "title": "How to Run a Clipping Campaign | Clippster",
+      "description": "Set up a Clippster clipping campaign: budget, CPM rules, clipper invites, submission review, and payouts.",
+      "noscript": "Organization guide to running a clipping campaign in Clippster—from campaign creation through submission review and CPM payouts.",
+      "type": "guide",
+      "primaryKeyword": "how to run a clipping campaign",
+      "parent": "/clipping-campaigns",
+      "priority": "0.7",
+      "changefreq": "monthly",
+      "schema": ["Article", "FAQ", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "Who can create campaigns?",
+          "a": "Organization accounts create and manage campaigns; clippers join and submit posts."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/guides/how-to-hire-clippers": {
+      "title": "How to Hire Clippers | Clippster Guide",
+      "description": "Hire clippers through Clippster: publish hiring posts, browse the clipper directory, and onboard talent into campaigns.",
+      "noscript": "Guide for organizations hiring clippers on Clippster using public profiles, hiring posts, and campaign invitations.",
+      "type": "guide",
+      "primaryKeyword": "how to hire clippers",
+      "parent": "/for-organizations",
+      "priority": "0.7",
+      "changefreq": "monthly",
+      "schema": ["Article", "FAQ", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "Where do I find clippers?",
+          "a": "Use the public clipper directory and org hiring posts, then invite selected clippers into campaigns."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/guides/make-money-clipping-streams": {
+      "title": "Make Money Clipping Streams | Clippster Guide",
+      "description": "Practical ways clippers earn: join campaigns, deliver posts, and get paid on CPM or campaign terms—without guaranteed income claims.",
+      "noscript": "How clippers use Clippster to find campaigns, submit clips, and earn based on campaign payout rules. Earnings depend on campaign terms and performance.",
+      "type": "guide",
+      "primaryKeyword": "make money clipping streams",
+      "parent": "/clipping-campaigns",
+      "priority": "0.7",
+      "changefreq": "monthly",
+      "schema": ["Article", "FAQ", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "Does Clippster guarantee clipper income?",
+          "a": "No. Pay depends on campaign budgets, CPM rules, and approved submissions."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/guides/clipper-payouts-cpm": {
+      "title": "Clipper Payouts & CPM Explained | Clippster",
+      "description": "Understand CPM-style clipper payouts in Clippster campaigns: how views map to payment math and what orgs configure.",
+      "noscript": "Explanation of clipper CPM payouts inside Clippster campaigns—how organizations set rates and how verified submissions drive payment calculations.",
+      "type": "guide",
+      "primaryKeyword": "clipper payouts cpm",
+      "parent": "/clipping-campaigns",
+      "priority": "0.6",
+      "changefreq": "monthly",
+      "schema": ["Article", "FAQ", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "What is CPM in clipping campaigns?",
+          "a": "CPM is a cost-per-thousand-views style payout rule orgs can configure so clippers are paid based on measured performance."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/guides/track-clip-views-across-platforms": {
+      "title": "Track Clip Views Across Platforms | Clippster",
+      "description": "Track clip views for posts and campaign submissions connected through Clippster. Honest scope: PostForMe metrics, not a full analytics suite.",
+      "noscript": "How to track clip views in Clippster for connected social posts and campaign submissions. Metrics sync for PostForMe accounts—not every network on the internet.",
+      "type": "guide",
+      "primaryKeyword": "track clip views across platforms",
+      "parent": "/clip-analytics",
+      "priority": "0.6",
+      "changefreq": "monthly",
+      "schema": ["Article", "FAQ", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "Which platforms sync view counts?",
+          "a": "Posts published through connected PostForMe accounts (Instagram, TikTok, X, YouTube) plus campaign submission tracking."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/methodology": {
+      "title": "SEO & Product Claim Methodology | Clippster",
+      "description": "How Clippster documents product capabilities for marketing and SEO: verified code paths, honest limitations, and review dates—no inflated language counts.",
+      "noscript": "Clippster methodology for public claims: capabilities must match shipped desktop, mobile, and API code. Unsupported accuracy percentages and inflated caption-language counts are excluded.",
+      "type": "authority",
+      "primaryKeyword": "clippster product claim methodology",
+      "parent": null,
+      "priority": "0.5",
+      "changefreq": "monthly",
+      "schema": ["Article", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "How does Clippster verify marketing claims?",
+          "a": "Claims are checked against shipped client, mobile, and server code. Unverified model-accuracy percentages and inflated caption-language counts are not used."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/authors/clippster-editorial": {
+      "title": "Clippster Editorial | Authors",
+      "description": "Meet the Clippster editorial byline responsible for product guides, comparisons, and methodology pages. Accountable authorship for SEO and GEO content.",
+      "noscript": "Clippster Editorial authors product guides, platform hubs, competitor comparisons, and the claim methodology page. Content is reviewed against shipped product capabilities.",
+      "type": "authority",
+      "primaryKeyword": "clippster editorial authors",
+      "parent": "/methodology",
+      "priority": "0.4",
+      "changefreq": "monthly",
+      "schema": ["Person", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "Who writes Clippster SEO guides?",
+          "a": "Clippster Editorial maintains product-facing guides and comparisons. Pages are reviewed against shipped desktop, mobile, and API capabilities before publish."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/case-studies/live-clipping-vs-vod-queue": {
+      "title": "Case Study: Live Clipping vs VOD Queue | Clippster",
+      "description": "Workflow case study: clipping during a live stream with PiP and DVR versus waiting for a finished VOD queue. Before/after steps without fabricated metrics.",
+      "noscript": "Case study comparing live desktop clipping (PiP, DVR, hotkeys, realtime detect) to a post-stream VOD queue. Describes workflow changes Clippster enables—no invented view or accuracy numbers.",
+      "type": "authority",
+      "primaryKeyword": "live clipping vs vod queue case study",
+      "parent": "/live-stream-clipping",
+      "priority": "0.5",
+      "changefreq": "monthly",
+      "schema": ["Article", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "Does this case study include performance percentages?",
+          "a": "No. It documents workflow differences only. Public benchmarks appear only when backed by reproducible first-party queries on the methodology page."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/case-studies/org-campaign-clipper-workflow": {
+      "title": "Case Study: Organization Campaign Workflow | Clippster",
+      "description": "Before/after workflow for running a clipping campaign: hiring clippers, sharing assets, reviewing submissions, and CPM payouts—without invented ROI numbers.",
+      "noscript": "Organization campaign case study: create a campaign, hire clippers, share assets, review submissions, and pay on verified CPM rules. Describes Clippster workflows, not fabricated earnings.",
+      "type": "authority",
+      "primaryKeyword": "clipping campaign organization case study",
+      "parent": "/clipping-campaigns",
+      "priority": "0.5",
+      "changefreq": "monthly",
+      "schema": ["Article", "BreadcrumbList"],
+      "faqs": [
+        {
+          "q": "Are campaign earnings guaranteed?",
+          "a": "No. Clipper pay depends on campaign budgets, rules, and approved submissions. This case study describes the workflow only."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/pricing": {
+      "title": "Clippster Pricing | Plans & Credits",
+      "description": "Clippster pricing starts free. Compare personal and organization plans for AI clip detection, captions, social posting, and team clipping campaigns.",
+      "noscript": "Clippster pricing: Free, Basic, Starter, Creator, and Pro plans plus organization seats. Credits equal one minute of video processing and roll over.",
+      "type": "legal",
+      "primaryKeyword": "clippster pricing",
+      "parent": null,
+      "priority": "0.8",
+      "changefreq": "weekly",
+      "schema": ["SoftwareApplication", "FAQ"],
+      "faqs": [
+        {
+          "q": "Is there a free plan?",
+          "a": "Yes. Free includes core access with plan gates on AI detection and social posting. Paid tiers unlock more credits and team features."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/clippers": {
+      "title": "Clipper Directory | Hire Clippers on Clippster",
+      "description": "Browse public clipper profiles on Clippster. Find clippers for Twitch, Kick, and YouTube campaigns with portfolios, specialties, and endorsements.",
+      "noscript": "The Clippster clipper directory lists public clippers looking for streaming clip work. Open a profile to see campaigns completed, clips delivered, and specialties.",
+      "type": "directory",
+      "primaryKeyword": "hire clippers directory",
+      "parent": "/for-organizations",
+      "priority": "0.7",
+      "changefreq": "daily",
+      "schema": ["FAQ"],
+      "faqs": [
+        {
+          "q": "Are all clippers listed publicly?",
+          "a": "Only clippers who publish a public profile appear in the directory and sitemap."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/orgs": {
+      "title": "Clipping Organizations Directory | Clippster",
+      "description": "Browse public clipping organizations on Clippster. See streamers, campaigns, and open hiring posts for clippers.",
+      "noscript": "Public Clippster organizations run clipping campaigns, manage streamers, and hire clippers from one dashboard.",
+      "type": "directory",
+      "primaryKeyword": "clipping organizations directory",
+      "parent": "/for-organizations",
+      "priority": "0.7",
+      "changefreq": "daily",
+      "schema": ["FAQ"],
+      "faqs": [
+        {
+          "q": "How do organizations get listed?",
+          "a": "Organizations appear when they enable a public profile that meets quality gates for indexing."
+        }
+      ],
+      "reviewedAt": "2026-09-05"
+    },
+    "/privacy": {
+      "title": "Privacy Policy | Clippster",
+      "description": "Read how Clippster collects, uses, and protects account, payment, and video data.",
+      "noscript": "Clippster privacy policy covering account data, uploaded video, payments, and contact at privacy@clippster.io.",
+      "type": "legal",
+      "primaryKeyword": "clippster privacy policy",
+      "parent": null,
+      "priority": "0.3",
+      "changefreq": "yearly",
+      "schema": [],
+      "faqs": [],
+      "reviewedAt": "2026-09-05"
+    },
+    "/terms": {
+      "title": "Terms of Service | Clippster",
+      "description": "Terms of service for using the Clippster clipping studio, desktop app, and organization features.",
+      "noscript": "Clippster terms of service for using the clipping studio, uploads, payments, and organization accounts.",
+      "type": "legal",
+      "primaryKeyword": "clippster terms of service",
+      "parent": null,
+      "priority": "0.3",
+      "changefreq": "yearly",
+      "schema": [],
+      "faqs": [],
+      "reviewedAt": "2026-09-05"
+    }
+  }
+}

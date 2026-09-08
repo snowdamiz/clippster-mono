@@ -8,6 +8,10 @@ android {
   namespace 'app.clippster.editor.engine'
   compileSdk 36
 
+  if (rootProject.hasProperty('ndkVersion')) {
+    ndkVersion rootProject.ext.ndkVersion
+  }
+
   defaultConfig {
     minSdk 24
     targetSdk 36

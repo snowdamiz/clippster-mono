@@ -122,11 +122,26 @@ defmodule ClippsterServer.ClipperProfiles do
   end
 
   @doc """
-  Returns true when a profile is public and has the required fields for directory visibility.
+  Returns true when a profile is public, directory-eligible, and has enough content to index.
+  Matches sitemap visibility (excludes basic-tier users).
   """
   def public_directory_profile?(%ClipperProfile{} = profile) do
+    profile = Repo.preload(profile, :user)
+
     profile.is_public == true and present_string?(profile.display_name) and
-      present_string?(profile.slug)
+      present_string?(profile.slug) and not basic_tier_user?(profile.user) and
+      clipper_has_indexable_content?(profile)
+  end
+
+  defp basic_tier_user?(%{subscription_tier: "basic"}), do: true
+  defp basic_tier_user?(_), do: false
+
+  defp clipper_has_indexable_content?(%ClipperProfile{} = profile) do
+    present_string?(profile.bio) or
+      (is_list(profile.specialty_tags) and profile.specialty_tags != []) or
+      (is_list(profile.portfolio_clips) and profile.portfolio_clips != []) or
+      (profile.total_campaigns_completed || 0) > 0 or
+      (profile.total_clips_delivered || 0) > 0
   end
 
   defp apply_filters(query, filters) do
@@ -190,6 +205,17 @@ defmodule ClippsterServer.ClipperProfiles do
     |> where([p], fragment("char_length(trim(coalesce(?, ''))) > 0", p.display_name))
     |> where([p], fragment("char_length(trim(coalesce(?, ''))) > 0", p.slug))
     |> where([p, u], u.subscription_tier != "basic" or is_nil(u.subscription_tier))
+    |> where(
+      [p],
+      (not is_nil(p.bio) and fragment("char_length(trim(?)) > 0", p.bio)) or
+        fragment("coalesce(array_length(?, 1), 0) > 0", p.specialty_tags) or
+        p.total_campaigns_completed > 0 or
+        p.total_clips_delivered > 0 or
+        fragment(
+          "exists (select 1 from clipper_portfolio_clips c where c.clipper_profile_id = ?)",
+          p.id
+        )
+    )
   end
 
   defp present_string?(value) when is_binary(value), do: String.trim(value) != ""
@@ -638,6 +664,23 @@ defmodule ClippsterServer.ClipperProfiles do
       on_conflict: :replace_all,
       conflict_target: [:clipper_profile_id, :period_type, :period_start]
     )
+  end
+
+  @doc """
+  Lists public clipper profiles for sitemap and directory pages.
+  Returns only crawlable fields — no emails or private account data.
+  """
+  def list_sitemap_clippers do
+    ClipperProfile
+    |> visible_in_public_directory()
+    |> select([p], %{
+      slug: p.slug,
+      updated_at: p.updated_at,
+      display_name: p.display_name,
+      bio: p.bio
+    })
+    |> order_by([p], asc: p.slug)
+    |> Repo.all()
   end
 
   @doc """
