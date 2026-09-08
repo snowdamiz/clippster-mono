@@ -4,6 +4,7 @@
     "modules": ["app.clippster.editor.engine.ClippsterEditorNativeModule"]
   },
   "ios": {
-    "modules": ["ClippsterEditorNativeModule"]
+    "modules": ["ClippsterEditorNativeModule"],
+    "podspecPath": "ClippsterEditorNative.podspec"
   }
 }
