@@ -221947,7 +221947,7 @@ index 9a9e31d..7ea56fe 100644
              }
          }
 diff --git a/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec b/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec
-index a0a9fce..20cb431 100644
+index a0a9fce..436cc8d 100644
 --- a/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec
 +++ b/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec
 @@ -2,6 +2,14 @@ require 'json'
@@ -221974,26 +221974,31 @@ index a0a9fce..20cb431 100644
    s.vendored_frameworks = 'Frameworks/FFmpeg.xcframework'
  
    # Required system frameworks
-@@ -34,12 +42,19 @@ Pod::Spec.new do |s|
+@@ -30,16 +38,22 @@ Pod::Spec.new do |s|
+   # System libraries
+   s.libraries = 'z', 'bz2', 'iconv'
+ 
+-  # Build settings
++  # Build settings — always keep $(inherited) so SDK-specific flags do not wipe
++  # CocoaPods' aggregated -lExpo / -lz / -framework VideoToolbox flags.
    s.pod_target_xcconfig = {
      'DEFINES_MODULE' => 'YES',
      'SWIFT_COMPILATION_MODE' => 'wholemodule',
 -    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/Frameworks/FFmpeg.xcframework/ios-arm64/Headers"',
+-    'OTHER_LDFLAGS' => '-lz -lbz2 -liconv',
 +    'HEADER_SEARCH_PATHS' => "$(inherited) #{ffmpeg_header_paths}",
-     'OTHER_LDFLAGS' => '-lz -lbz2 -liconv',
-+    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => "-lz -lbz2 -liconv -force_load \"#{simulator_lib}\"",
-+    'OTHER_LDFLAGS[sdk=iphoneos*]' => "-lz -lbz2 -liconv -force_load \"#{device_lib}\"",
++    'OTHER_LDFLAGS' => '$(inherited) -lz -lbz2 -liconv',
++    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => "$(inherited) -lz -lbz2 -liconv -force_load \"#{simulator_lib}\"",
++    'OTHER_LDFLAGS[sdk=iphoneos*]' => "$(inherited) -lz -lbz2 -liconv -force_load \"#{device_lib}\"",
      'ENABLE_BITCODE' => 'NO'
    }
  
-+  # App links -lExpoFFmpeg but does not transitively pull the static libffmpeg.a
-+  # from the xcframework; force_load the correct slice per SDK.
    s.user_target_xcconfig = {
 -    'ENABLE_BITCODE' => 'NO'
 +    'ENABLE_BITCODE' => 'NO',
 +    'HEADER_SEARCH_PATHS' => "$(inherited) #{ffmpeg_header_paths}",
-+    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => "-force_load \"#{simulator_lib}\"",
-+    'OTHER_LDFLAGS[sdk=iphoneos*]' => "-force_load \"#{device_lib}\"",
++    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => "$(inherited) -force_load \"#{simulator_lib}\"",
++    'OTHER_LDFLAGS[sdk=iphoneos*]' => "$(inherited) -force_load \"#{device_lib}\"",
    }
  end
 diff --git a/node_modules/ffmpeg-expo/ios/FFmpeg.h b/node_modules/ffmpeg-expo/ios/FFmpeg.h
