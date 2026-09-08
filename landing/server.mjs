@@ -41,7 +41,16 @@ const PROFILE_TTL_MS = 60 * 1000
 
 function getIndexHtml() {
   if (!cachedIndexHtml) {
-    cachedIndexHtml = fs.readFileSync(path.join(DIST_DIR, 'index.html'), 'utf8')
+    const distIndex = path.join(DIST_DIR, 'index.html')
+    const sourceIndex = path.join(__dirname, 'index.html')
+    // Prefer the Vite build; fall back to source so SEO unit tests can run without `yarn build`.
+    if (fs.existsSync(distIndex)) {
+      cachedIndexHtml = fs.readFileSync(distIndex, 'utf8')
+    } else if (fs.existsSync(sourceIndex)) {
+      cachedIndexHtml = fs.readFileSync(sourceIndex, 'utf8')
+    } else {
+      throw new Error(`Missing index.html (tried ${distIndex} and ${sourceIndex})`)
+    }
   }
   return cachedIndexHtml
 }
