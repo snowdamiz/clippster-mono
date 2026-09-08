@@ -370,17 +370,24 @@ export function buildSitemapXml(data) {
 
 function send(res, status, body, headers = {}) {
   const isHead = res.req?.method === 'HEAD'
+  const payload =
+    body == null || body === ''
+      ? Buffer.alloc(0)
+      : Buffer.isBuffer(body)
+        ? body
+        : Buffer.from(String(body))
   res.writeHead(status, {
     'X-Content-Type-Options': 'nosniff',
     'X-Frame-Options': 'SAMEORIGIN',
     'Referrer-Policy': 'strict-origin-when-cross-origin',
+    'Content-Length': String(payload.length),
     ...headers,
   })
   if (isHead) {
     res.end()
     return
   }
-  res.end(body)
+  res.end(payload)
 }
 
 function sendHtml(res, status, html, extraHeaders = {}) {
