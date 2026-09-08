@@ -541,7 +541,7 @@ export function mapWordsToTimeline(
   return mapped;
 }
 
-export function sourceRanges(doc: EditDocument): Array<{ start_time: number; end_time: number }> {
+export function sourceRanges(doc: EditDocument): { start_time: number; end_time: number }[] {
   return doc.videos.map((clip) => ({
     start_time: clip.sourceStart,
     end_time: clip.sourceEnd,

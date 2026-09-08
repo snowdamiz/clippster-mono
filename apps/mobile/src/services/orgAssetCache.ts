@@ -1,5 +1,4 @@
-import type { ServerOrganizationAsset } from '@clippster/api-client';
-import type { BrandingConfig } from '@clippster/api-client';
+import type { BrandingConfig, ServerOrganizationAsset } from '@clippster/api-client';
 import * as FileSystem from 'expo-file-system/legacy';
 import { getDatabase } from './database';
 import { organizationAssetsApi } from './api';

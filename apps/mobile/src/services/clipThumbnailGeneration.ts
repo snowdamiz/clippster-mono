@@ -1,7 +1,8 @@
 import * as FileSystem from 'expo-file-system/legacy';
 import { createVideoPlayer, type VideoThumbnail } from 'expo-video';
-import { extractThumbnail } from '@/services/ffmpeg';
 import { getExpoImage } from '@/lib/expoImage';
+import { withThumbnailDecodeSlot } from '@/lib/mediaDecodeGate';
+import { extractThumbnail } from '@/services/ffmpeg';
 
 export const CLIP_THUMB_DIR = `${FileSystem.documentDirectory}thumbnails/`;
 
@@ -11,6 +12,10 @@ async function ensureThumbDir(): Promise<void> {
 
 function clipThumbPath(clipId: string): string {
   return `${CLIP_THUMB_DIR}clip_${clipId}.jpg`;
+}
+
+function buildThumbPath(buildId: string): string {
+  return `${CLIP_THUMB_DIR}build_${buildId}.jpg`;
 }
 
 async function saveNativeThumbnail(thumbnail: VideoThumbnail, destPath: string): Promise<string | null> {
@@ -31,8 +36,47 @@ async function saveNativeThumbnail(thumbnail: VideoThumbnail, destPath: string):
 }
 
 /**
- * Desktop parity: `generate_thumbnail_at_timestamp` during clip detection.
+ * Extract a JPEG thumbnail from a local video into `destPath`.
  * FFmpeg when decode is available; otherwise expo-video + save JPEG to disk.
+ */
+export async function generateVideoThumbnailFile(
+  videoPath: string,
+  destPath: string,
+  timestampSeconds: number,
+): Promise<string | null> {
+  return withThumbnailDecodeSlot(async () => {
+    await ensureThumbDir();
+
+    try {
+      await extractThumbnail(videoPath, destPath, timestampSeconds);
+      if ((await FileSystem.getInfoAsync(destPath)).exists) return destPath;
+    } catch {
+      // remux-only FFmpeg stub — fall through to expo-video
+    }
+
+    if (!getExpoImage()) return null;
+
+    let player: ReturnType<typeof createVideoPlayer> | null = null;
+    try {
+      player = createVideoPlayer(videoPath);
+      if (typeof player.generateThumbnailsAsync !== 'function') return null;
+      const thumbs = await player.generateThumbnailsAsync([Math.max(0, timestampSeconds)], {
+        maxHeight: 320,
+      });
+      const native = thumbs[0];
+      if (!native) return null;
+      return await saveNativeThumbnail(native, destPath);
+    } catch (error) {
+      console.warn('[ClipThumbnail] generate failed', error);
+      return null;
+    } finally {
+      player?.release();
+    }
+  });
+}
+
+/**
+ * Desktop parity: `generate_thumbnail_at_timestamp` during clip detection.
  */
 export async function generateClipThumbnailAtTimestamp(
   videoPath: string,
@@ -40,33 +84,17 @@ export async function generateClipThumbnailAtTimestamp(
   clipId: string,
 ): Promise<string | null> {
   await ensureThumbDir();
-  const outputPath = clipThumbPath(clipId);
+  return generateVideoThumbnailFile(videoPath, clipThumbPath(clipId), timestampSeconds);
+}
 
-  try {
-    await extractThumbnail(videoPath, outputPath, timestampSeconds);
-    if ((await FileSystem.getInfoAsync(outputPath)).exists) return outputPath;
-  } catch {
-    // remux-only FFmpeg stub — fall through to expo-video
-  }
-
-  if (!getExpoImage()) return null;
-
-  let player: ReturnType<typeof createVideoPlayer> | null = null;
-  try {
-    player = createVideoPlayer(videoPath);
-    if (typeof player.generateThumbnailsAsync !== 'function') return null;
-    const thumbs = await player.generateThumbnailsAsync([Math.max(0, timestampSeconds)], {
-      maxHeight: 320,
-    });
-    const native = thumbs[0];
-    if (!native) return null;
-    return await saveNativeThumbnail(native, outputPath);
-  } catch (error) {
-    console.warn('[ClipThumbnail] generate failed', error);
-    return null;
-  } finally {
-    player?.release();
-  }
+/** Thumbnail for a completed clip build / export file. */
+export async function generateBuildThumbnail(
+  videoPath: string,
+  buildId: string,
+  timestampSeconds = 1,
+): Promise<string | null> {
+  await ensureThumbDir();
+  return generateVideoThumbnailFile(videoPath, buildThumbPath(buildId), timestampSeconds);
 }
 
 export interface ClipThumbnailTarget {

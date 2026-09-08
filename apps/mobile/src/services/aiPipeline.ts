@@ -51,7 +51,7 @@ type WhisperSegment = {
   start?: number;
   end?: number;
   text?: string;
-  words?: Array<{ start?: number; end?: number; word?: string; text?: string }>;
+  words?: { start?: number; end?: number; word?: string; text?: string }[];
   [key: string]: unknown;
 };
 
@@ -160,7 +160,7 @@ function stitchChunkTranscripts(
 
 function splitTranscriptIntoChunks(transcript: {
   duration?: number;
-  segments?: Array<{ start: number; end: number; text?: string }>;
+  segments?: { start: number; end: number; text?: string }[];
 }) {
   const chunkDuration = 15 * 60;
   const totalDuration = transcript.duration ?? 0;

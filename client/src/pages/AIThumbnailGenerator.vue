@@ -149,7 +149,11 @@
     <!-- Workspace -->
     <Teleport to="body">
       <Transition name="modal">
-        <div v-if="session" class="fixed inset-0 z-50 flex flex-col bg-[#0e0e10]">
+        <div
+          v-if="session"
+          class="aithumb-workspace fixed inset-x-0 bottom-0 z-50 flex flex-col bg-[#0e0e10]"
+          style="top: 32px"
+        >
           <header class="flex h-14 shrink-0 items-center justify-between border-b border-white/10 px-4">
             <div class="flex min-w-0 items-center gap-3">
               <button type="button" class="icon-ghost" title="Back to projects" @click="backToHome">
@@ -177,124 +181,190 @@
           </header>
 
           <div class="flex min-h-0 flex-1">
-            <aside class="flex w-[420px] shrink-0 flex-col min-h-0 border-r border-white/10 bg-zinc-950/80">
-              <div class="space-y-3 border-b border-white/10 p-3">
-                <div class="flex items-center justify-between gap-2">
-                  <p class="section-label">Video context</p>
-                  <button
-                    type="button"
-                    class="link-action"
-                    :disabled="isLoading || isAttachingVideo"
-                    @click="showVideoPicker = true"
-                  >
-                    {{ attachedVideo ? 'Change' : 'Pick video' }}
-                  </button>
-                </div>
+            <aside class="flex w-[360px] shrink-0 flex-col min-h-0 border-r border-white/10 bg-[#121214]">
+              <div class="shrink-0 space-y-5 overflow-y-auto p-4">
+                <!-- Video -->
+                <section class="space-y-2">
+                  <div class="flex items-center justify-between gap-2">
+                    <p class="section-label">Video</p>
+                    <button
+                      v-if="attachedVideo"
+                      type="button"
+                      class="link-action"
+                      :disabled="isLoading || isAttachingVideo"
+                      @click="showVideoPicker = true"
+                    >
+                      Change
+                    </button>
+                  </div>
 
-                <div
-                  v-if="attachedVideo"
-                  class="overflow-hidden rounded-lg border border-white/10 bg-zinc-900/60"
-                >
-                  <div class="flex items-center gap-2 p-2">
-                    <div class="size-12 shrink-0 overflow-hidden rounded bg-zinc-800">
-                      <img
-                        v-if="attachedVideo.thumbnailUrl"
-                        :src="attachedVideo.thumbnailUrl"
-                        :alt="attachedVideo.name"
-                        class="size-full object-cover"
-                      />
-                      <div v-else class="flex size-full items-center justify-center">
-                        <Film :size="16" class="text-zinc-600" />
+                  <div
+                    v-if="attachedVideo"
+                    class="overflow-hidden rounded-lg border border-white/10 bg-zinc-900/50"
+                  >
+                    <div class="flex items-center gap-2.5 p-2.5">
+                      <div class="size-11 shrink-0 overflow-hidden rounded-md bg-zinc-800">
+                        <img
+                          v-if="attachedVideo.thumbnailUrl"
+                          :src="attachedVideo.thumbnailUrl"
+                          :alt="attachedVideo.name"
+                          class="size-full object-cover"
+                        />
+                        <div v-else class="flex size-full items-center justify-center">
+                          <Film :size="16" class="text-zinc-600" />
+                        </div>
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <p class="truncate text-sm font-medium text-zinc-100">{{ attachedVideo.name }}</p>
+                        <p class="truncate text-[11px] text-zinc-500">
+                          {{ sourceLabel(attachedVideo.type) }}
+                          · {{ attachedKeyFrames.length }} frames
+                          <template v-if="session.transcript_source">
+                            · {{ session.transcript_source }}
+                          </template>
+                        </p>
                       </div>
                     </div>
-                    <div class="min-w-0 flex-1">
-                      <p class="truncate text-sm font-medium text-zinc-100">{{ attachedVideo.name }}</p>
-                      <p class="text-[11px] text-zinc-500">
-                        {{ attachedVideo.type === 'project' ? 'Video Library' : 'Built Clip' }}
-                        · {{ attachedKeyFrames.length }} keyframes
-                      </p>
+                    <div
+                      v-if="attachedKeyFrames.length"
+                      class="flex gap-1 overflow-x-auto border-t border-white/10 px-2.5 py-2"
+                    >
+                      <img
+                        v-for="frame in attachedKeyFrames.slice(0, 8)"
+                        :key="frame.index"
+                        :src="frame.url"
+                        :alt="`Frame ${frame.index + 1}`"
+                        class="size-9 shrink-0 rounded object-cover ring-1 ring-white/10"
+                      />
                     </div>
                   </div>
-                  <div v-if="attachedKeyFrames.length" class="flex gap-1 overflow-x-auto border-t border-white/10 p-2">
-                    <img
-                      v-for="frame in attachedKeyFrames.slice(0, 8)"
-                      :key="frame.index"
-                      :src="frame.url"
-                      :alt="`Frame ${frame.index + 1}`"
-                      class="size-10 shrink-0 rounded object-cover ring-1 ring-white/10"
-                    />
-                  </div>
-                </div>
 
-                <div
-                  v-else
-                  class="rounded-lg border border-dashed border-white/10 p-4 text-center"
-                >
-                  <Film :size="24" class="mx-auto text-zinc-600" />
-                  <p class="mt-2 text-xs text-zinc-500">Attach a library project or built clip</p>
                   <button
+                    v-else
                     type="button"
-                    class="btn-primary mt-3 px-3 py-1.5 text-xs"
+                    class="flex w-full flex-col items-center justify-center gap-2 rounded-lg border border-dashed border-white/15 bg-zinc-900/30 px-3 py-5 text-center transition-colors hover:border-sky-500/40 hover:bg-sky-500/5"
                     :disabled="isAttachingVideo"
                     @click="showVideoPicker = true"
                   >
-                    <Loader2 v-if="isAttachingVideo" :size="14" class="animate-spin" />
-                    <Film v-else :size="14" />
-                    Pick from library
+                    <Loader2 v-if="isAttachingVideo" :size="20" class="animate-spin text-sky-400" />
+                    <Film v-else :size="20" class="text-zinc-500" />
+                    <span class="text-xs font-medium text-zinc-300">Attach video</span>
+                    <span class="text-[11px] text-zinc-600">Library, clip, YouTube, or upload</span>
                   </button>
-                </div>
 
-                <button
-                  type="button"
-                  class="text-[11px] text-zinc-600 hover:text-zinc-400"
-                  @click="showAdvancedMedia = !showAdvancedMedia"
-                >
-                  {{ showAdvancedMedia ? 'Hide manual override' : 'Manual override' }}
-                </button>
-                <div v-if="showAdvancedMedia" class="space-y-2 rounded-lg border border-white/10 bg-zinc-900/40 p-2">
-                  <div class="flex gap-2">
-                    <input v-model="mediaName" type="text" placeholder="Video name" class="field-input flex-1" />
-                    <input v-model="mediaId" type="text" placeholder="Video id" class="field-input w-28" />
-                  </div>
-                  <textarea
-                    v-model="keyFramesInput"
-                    rows="2"
-                    placeholder="Key frames: JSON array or one URL per line"
-                    class="field-input w-full resize-none"
+                  <ThumbnailConceptCards
+                    v-if="session.concepts?.length || isAnalyzing"
+                    :concepts="session.concepts || []"
+                    :selected-id="session.selected_concept_id"
+                    :summary="videoSummaryText"
+                    :analyzing="isAnalyzing"
+                    :disabled="isLoading || isGenerating"
+                    @select="handleSelectConcept"
+                    @reanalyze="handleReanalyze"
                   />
-                  <button type="button" class="link-action" :disabled="!mediaId.trim() || isLoading" @click="saveMedia">
-                    Save media manually
-                  </button>
-                </div>
-              </div>
 
-              <div class="space-y-2 border-b border-white/10 p-3">
-                <p class="section-label">Reference image</p>
-                <div class="flex gap-2">
-                  <input v-model="referenceUrl" type="text" placeholder="https://… or paste / upload" class="field-input flex-1" />
-                  <button type="button" class="icon-btn" title="Paste from clipboard" @click="pasteReference">
-                    <ClipboardPaste :size="14" />
-                  </button>
-                  <label class="icon-btn cursor-pointer" title="Upload image">
-                    <Upload :size="14" />
-                    <input type="file" accept="image/*" class="hidden" @change="uploadReference" />
-                  </label>
-                </div>
-                <div class="flex items-center gap-2">
-                  <button type="button" class="link-action" :disabled="!referenceUrl.trim() || isLoading" @click="applyReference">
+                  <div
+                    v-if="hasVideoContext && isDiscovery"
+                    class="space-y-2 rounded-lg border border-white/10 bg-zinc-900/40 p-2.5"
+                  >
+                    <p class="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">From video</p>
+                    <div class="flex gap-2">
+                      <select v-model.number="variantCount" class="field-input flex-1 text-xs">
+                        <option :value="4">4 variants</option>
+                        <option :value="8">8 variants</option>
+                        <option :value="12">12 variants</option>
+                      </select>
+                      <button
+                        type="button"
+                        class="btn-primary px-3 py-1.5 text-xs"
+                        :disabled="isGenerating || isLoading"
+                        @click="runGenerateFromVideo"
+                      >
+                        Generate
+                      </button>
+                    </div>
+                    <input
+                      v-model="fromVideoInstructions"
+                      type="text"
+                      class="field-input w-full text-xs"
+                      placeholder="Optional creative direction…"
+                    />
+                  </div>
+                </section>
+
+                <!-- Reference -->
+                <section class="space-y-2">
+                  <div class="flex items-center justify-between gap-2">
+                    <p class="section-label">Reference image</p>
+                    <button
+                      v-if="session.reference_image_url"
+                      type="button"
+                      class="link-action"
+                      :disabled="isLoading"
+                      @click="clearReference"
+                    >
+                      Clear
+                    </button>
+                  </div>
+
+                  <div
+                    v-if="session.reference_image_url"
+                    class="overflow-hidden rounded-lg border border-white/10 bg-zinc-900/50"
+                  >
+                    <div class="flex items-center gap-2.5 p-2.5">
+                      <div class="size-11 shrink-0 overflow-hidden rounded-md bg-zinc-800">
+                        <img
+                          :src="session.reference_image_url"
+                          alt="Reference"
+                          class="size-full object-cover"
+                        />
+                      </div>
+                      <div class="min-w-0 flex-1">
+                        <p class="truncate text-sm font-medium text-zinc-100">Style reference</p>
+                        <p class="text-[11px] text-zinc-500">Guides composition and look</p>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="flex gap-1.5">
+                    <input
+                      v-model="referenceUrl"
+                      type="text"
+                      placeholder="https://… image URL"
+                      class="field-input min-w-0 flex-1 text-xs"
+                      :disabled="isLoading"
+                      @keyup.enter="applyReference"
+                    />
+                    <button
+                      type="button"
+                      class="icon-btn"
+                      title="Paste from clipboard"
+                      :disabled="isLoading"
+                      @click="pasteReference"
+                    >
+                      <ClipboardPaste :size="14" />
+                    </button>
+                    <label class="icon-btn cursor-pointer" title="Upload image">
+                      <Upload :size="14" />
+                      <input type="file" accept="image/*" class="hidden" @change="uploadReference" />
+                    </label>
+                  </div>
+                  <button
+                    v-if="referenceUrl.trim() && referenceUrl.trim() !== session.reference_image_url"
+                    type="button"
+                    class="link-action"
+                    :disabled="isLoading"
+                    @click="applyReference"
+                  >
                     Set reference
                   </button>
-                  <img
-                    v-if="session.reference_image_url"
-                    :src="session.reference_image_url"
-                    alt="Reference"
-                    class="ml-auto h-8 w-12 rounded object-cover ring-1 ring-white/10"
-                  />
-                </div>
+                </section>
               </div>
 
-              <div class="flex min-h-0 flex-1 flex-col">
+              <!-- Chat -->
+              <div class="flex min-h-0 flex-1 flex-col border-t border-white/10">
                 <ThumbnailChatPanel
+                  v-if="showChat"
                   :messages="messages"
                   :is-sending="isSending"
                   :is-generating="isGenerating"
@@ -316,6 +386,13 @@
                   @clear-error="clearError"
                   @generate="runGenerate"
                 />
+                <div v-else class="flex flex-1 flex-col justify-end p-3">
+                  <div class="rounded-lg border border-white/10 bg-zinc-900/40 px-3 py-2.5">
+                    <p class="text-xs text-zinc-500">
+                      Chat unlocks when this project has a transcript or a reference image.
+                    </p>
+                  </div>
+                </div>
               </div>
             </aside>
 
@@ -369,6 +446,24 @@
                     class="max-h-[55vh] max-w-full rounded-lg border border-white/10 object-contain"
                   />
                 </div>
+                <div v-if="session.composition?.mode === 'from_video' && !isCompleted" class="flex gap-2">
+                  <button
+                    type="button"
+                    class="rounded-lg border border-white/10 px-3 py-1.5 text-xs text-zinc-200 hover:bg-white/5"
+                    :disabled="isGenerating"
+                    @click="handleContinueEditable"
+                  >
+                    Continue as Editable
+                  </button>
+                </div>
+                <ThumbnailPostGenPanel
+                  v-if="session.id && workingImageUrl"
+                  :session-id="session.id"
+                  :image-url="workingImageUrl"
+                  :busy="isRefining || isGenerating"
+                  @done="handlePostGenDone"
+                  @error="handlePostGenError"
+                />
               </div>
 
               <!-- Editable -->
@@ -454,6 +549,15 @@
                     </ul>
                   </div>
                 </div>
+                <ThumbnailPostGenPanel
+                  v-if="session.id && workingImageUrl"
+                  class="mt-4"
+                  :session-id="session.id"
+                  :image-url="workingImageUrl"
+                  :busy="isRefining || isGenerating"
+                  @done="handlePostGenDone"
+                  @error="handlePostGenError"
+                />
               </div>
             </main>
           </div>
@@ -461,63 +565,11 @@
       </Transition>
     </Teleport>
 
-    <Teleport to="body">
-      <Transition name="modal">
-        <div
-          v-if="showCreateDialog"
-          class="fixed inset-0 z-[60] flex items-center justify-center bg-black/60"
-          @click.self="showCreateDialog = false"
-        >
-          <div class="w-full max-w-md rounded-lg border border-white/10 bg-zinc-900 p-6 shadow-xl">
-            <div class="mb-4 flex size-12 items-center justify-center rounded-full bg-sky-600/20">
-              <ImagePlus :size="24" class="text-sky-400" />
-            </div>
-            <h3 class="text-lg font-semibold text-zinc-100">New Thumbnail Project</h3>
-            <p class="mt-1 text-sm text-zinc-500">Choose a workflow, then name your project</p>
-
-            <div class="mt-4 grid grid-cols-2 gap-2">
-              <button
-                type="button"
-                class="rounded-lg border px-3 py-3 text-left transition-all"
-                :class="createMode === 'editable' ? 'border-sky-500 bg-sky-600/15 ring-1 ring-sky-500/40' : 'border-white/10 hover:border-white/20'"
-                @click="createMode = 'editable'"
-              >
-                <p class="text-sm font-semibold text-zinc-100">Editable</p>
-                <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">Text-free plate + live text layers in Image Editor</p>
-              </button>
-              <button
-                type="button"
-                class="rounded-lg border px-3 py-3 text-left transition-all"
-                :class="createMode === 'quick' ? 'border-sky-500 bg-sky-600/15 ring-1 ring-sky-500/40' : 'border-white/10 hover:border-white/20'"
-                @click="createMode = 'quick'"
-              >
-                <p class="text-sm font-semibold text-zinc-100">Quick</p>
-                <p class="mt-1 text-[11px] leading-relaxed text-zinc-500">Finished flat thumbnail with baked hook text</p>
-              </button>
-            </div>
-
-            <input
-              v-model="projectNameInput"
-              type="text"
-              maxlength="100"
-              placeholder="e.g., Episode 12 Thumbnail"
-              class="field-input mt-4 w-full"
-              autofocus
-              @keyup.enter="confirmCreate"
-            />
-            <p v-if="projectNameError" class="mt-2 text-xs text-red-400">{{ projectNameError }}</p>
-            <div class="mt-6 flex gap-2">
-              <button type="button" class="flex-1 rounded-lg border border-white/10 px-4 py-2 text-sm text-zinc-300 hover:bg-white/5" @click="showCreateDialog = false">
-                Cancel
-              </button>
-              <button type="button" class="btn-primary flex-1" @click="confirmCreate">
-                <Plus :size="14" /> Create
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <CreateThumbnailProjectDialog
+      v-model="showCreateDialog"
+      :is-creating="isCreatingProject"
+      @confirm="confirmCreate"
+    />
 
     <ThumbnailVideoPicker v-model="showVideoPicker" @attach="handleVideoAttach" />
   </PageLayout>
@@ -527,12 +579,15 @@
 import { ref, computed, watch, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
 import {
-  ImagePlus, Plus, Play, Trash2, ArrowLeft, Loader2, Sparkles,
+  ImagePlus, Plus, Play, Trash2, ArrowLeft, Loader2,
   Check, Upload, ClipboardPaste, ExternalLink, Film,
 } from 'lucide-vue-next';
 import PageLayout from '@/components/PageLayout.vue';
 import ThumbnailVideoPicker from '@/components/ai-thumbnail/ThumbnailVideoPicker.vue';
 import ThumbnailChatPanel from '@/components/ai-thumbnail/ThumbnailChatPanel.vue';
+import ThumbnailConceptCards from '@/components/ai-thumbnail/ThumbnailConceptCards.vue';
+import ThumbnailPostGenPanel from '@/components/ai-thumbnail/ThumbnailPostGenPanel.vue';
+import CreateThumbnailProjectDialog from '@/components/ai-thumbnail/CreateThumbnailProjectDialog.vue';
 import { useAIThumbnailSession } from '@/composables/useAIThumbnailSession';
 import { acceptQuickThumbnail, acceptEditableThumbnail, composeEditableFeedPreview } from '@/services/thumbnailRecipeAssemble';
 import type { ThumbnailGenerationMode, ThumbnailSessionSummary } from '@/services/aiThumbnailApi';
@@ -549,7 +604,8 @@ const {
   status, generationMode, isDiscovery, isGenerated, isCompleted,
   refinementRound, maxRefinementRounds, refinementMessagesRemaining, readyToGenerate,
   listSessions, createSession, loadSession, deleteSession, renameSession,
-  setMode, updateMedia, setReference, sendMessage, generate, refine, accept, closeSession,
+  setMode, updateMedia, setReference, sendMessage, generate, generateFromVideo,
+  continueEditable, analyzeVideo, applyConcept, refine, accept, closeSession,
   clearError,
 } = useAIThumbnailSession();
 
@@ -557,23 +613,49 @@ const sessions = ref<ThumbnailSessionSummary[]>([]);
 const isLoadingSessions = ref(false);
 const selectedProjects = ref<Set<number>>(new Set());
 const showCreateDialog = ref(false);
-const createMode = ref<ThumbnailGenerationMode>('editable');
+const isCreatingProject = ref(false);
 const showVideoPicker = ref(false);
-const showAdvancedMedia = ref(false);
 const isAttachingVideo = ref(false);
+const isAnalyzing = ref(false);
+const variantCount = ref<4 | 8 | 12>(4);
+const fromVideoInstructions = ref('');
 const attachedVideo = ref<ThumbnailVideoSelection | null>(null);
 const attachedKeyFrames = ref<ThumbnailKeyFrame[]>([]);
-const projectNameInput = ref('');
-const projectNameError = ref('');
 const draft = ref('');
-const mediaName = ref('');
-const mediaId = ref('');
-const keyFramesInput = ref('');
 const referenceUrl = ref('');
 const selectedCandidateIndex = ref(0);
 const editorProjectId = ref<number | null>(null);
 const editableFeedPreviewUrl = ref<string | null>(null);
 const isBuildingFeedPreview = ref(false);
+
+const workingImageUrl = computed(
+  () =>
+    selectedCandidate.value?.url ||
+    session.value?.thumbnail_url ||
+    session.value?.plate_url ||
+    null,
+);
+
+const videoSummaryText = computed(() => {
+  const vs = session.value?.video_summary;
+  if (!vs) return null;
+  return String((vs as any).text || (vs as any).summary || '') || null;
+});
+
+const hasVideoContext = computed(
+  () =>
+    !!attachedKeyFrames.value.length &&
+    !!(session.value?.transcript && session.value.transcript.length >= 50),
+);
+
+const showChat = computed(() => {
+  const transcriptOk =
+    !!(session.value?.transcript && String(session.value.transcript).trim().length >= 50);
+  const referenceOk = !!(session.value?.reference_image_url);
+  // Once generation has started, keep chat available for refine
+  const postGenerate = isGenerated.value || isCompleted.value || isGenerating.value;
+  return transcriptOk || referenceOk || postGenerate;
+});
 
 const selectedCandidate = computed(() => session.value?.candidates?.[selectedCandidateIndex.value] ?? null);
 const recipeTextLayers = computed(() => {
@@ -641,14 +723,24 @@ watch(session, (s) => {
   } | undefined;
 
   if (first?.id && first?.sourcePath) {
+    const source = String(first.source || first.type || 'project');
+    const type =
+      source === 'clip'
+        ? 'clip'
+        : source === 'youtube'
+          ? 'youtube'
+          : source === 'upload'
+            ? 'upload'
+            : 'project';
     attachedVideo.value = {
       id: String(first.id),
       name: String(first.name || first.id),
-      type: first.source === 'clip' ? 'clip' : 'project',
+      type,
       sourcePath: String(first.sourcePath),
       duration: first.duration ?? null,
       thumbnailUrl: first.thumbnailUrl,
       projectId: first.projectId,
+      youtubeUrl: (first as any).youtubeUrl || session.value?.youtube_url || undefined,
     };
   } else if (first?.id) {
     attachedVideo.value = {
@@ -670,9 +762,6 @@ watch(session, (s) => {
     }))
     .filter((f) => f.url);
 
-  mediaId.value = first?.id ? String(first.id) : '';
-  mediaName.value = first?.name ? String(first.name) : '';
-  keyFramesInput.value = s.key_frames?.length ? JSON.stringify(s.key_frames, null, 2) : '';
   referenceUrl.value = s.reference_image_url || '';
   selectedCandidateIndex.value = 0;
   if (s.status !== 'completed') editorProjectId.value = null;
@@ -688,24 +777,22 @@ async function loadHome() {
 }
 
 function openCreateDialog() {
-  projectNameInput.value = '';
-  projectNameError.value = '';
-  createMode.value = 'editable';
   showCreateDialog.value = true;
 }
 
-async function confirmCreate() {
-  const name = projectNameInput.value.trim();
-  if (!name) {
-    projectNameError.value = 'Project name is required';
-    return;
-  }
+async function confirmCreate(payload: { name: string; generation_mode: ThumbnailGenerationMode }) {
+  isCreatingProject.value = true;
   try {
-    const data = await createSession({ name, generation_mode: createMode.value });
-    await renameSession(data.id, name);
+    const data = await createSession({
+      name: payload.name,
+      generation_mode: payload.generation_mode,
+    });
+    await renameSession(data.id, payload.name);
     showCreateDialog.value = false;
   } catch {
-    projectNameError.value = 'Failed to create project. Please try again.';
+    alert('Failed to create project. Please try again.');
+  } finally {
+    isCreatingProject.value = false;
   }
 }
 
@@ -718,12 +805,90 @@ async function handleVideoAttach(payload: ThumbnailVideoAttachPayload) {
     await updateMedia({
       media_items: payload.media_items,
       key_frames: payload.key_frames,
+      youtube_url: payload.youtube_url || null,
+      video_title: payload.video_title || payload.selection.name,
+      transcript: payload.transcript || null,
+      transcript_source: payload.transcript_source || null,
+      concepts: [],
+      selected_concept_id: null,
     });
+    if (payload.transcript && payload.transcript.length >= 50) {
+      isAnalyzing.value = true;
+      try {
+        await analyzeVideo();
+      } catch (e) {
+        console.warn('[AIThumbnailGenerator] auto-analyze failed:', e);
+      } finally {
+        isAnalyzing.value = false;
+      }
+    }
   } catch (e) {
     console.error('[AIThumbnailGenerator] attach video failed:', e);
   } finally {
     isAttachingVideo.value = false;
   }
+}
+
+async function handleSelectConcept(conceptId: string) {
+  try {
+    await applyConcept(conceptId);
+  } catch (e) {
+    console.error('[AIThumbnailGenerator] apply concept failed:', e);
+  }
+}
+
+async function handleReanalyze() {
+  isAnalyzing.value = true;
+  try {
+    await analyzeVideo();
+  } finally {
+    isAnalyzing.value = false;
+  }
+}
+
+async function runGenerateFromVideo() {
+  try {
+    await generateFromVideo({
+      variant_count: variantCount.value,
+      custom_instructions: fromVideoInstructions.value.trim() || undefined,
+      concept_id: session.value?.selected_concept_id || undefined,
+    });
+  } catch (e) {
+    console.error('[AIThumbnailGenerator] from-video failed:', e);
+  }
+}
+
+async function handleContinueEditable() {
+  try {
+    await continueEditable(selectedCandidateIndex.value);
+  } catch (e) {
+    console.error('[AIThumbnailGenerator] continue editable failed:', e);
+  }
+}
+
+function sourceLabel(type: string | undefined) {
+  switch (type) {
+    case 'clip':
+      return 'Built Clip';
+    case 'youtube':
+      return 'YouTube';
+    case 'upload':
+      return 'Upload';
+    default:
+      return 'Video Library';
+  }
+}
+
+async function handlePostGenDone(result: Record<string, unknown>) {
+  const s = result.session as { id?: number } | undefined;
+  if (s?.id) {
+    await loadSession(s.id);
+  }
+}
+
+function handlePostGenError(message: string) {
+  console.error('[AIThumbnailGenerator] post-gen:', message);
+  alert(message);
 }
 
 async function openSession(id: number) {
@@ -806,27 +971,14 @@ async function changeMode(mode: ThumbnailGenerationMode) {
   }
 }
 
-function parseKeyFrames(): Array<Record<string, unknown>> {
-  const raw = keyFramesInput.value.trim();
-  if (!raw) return [];
-  try {
-    const parsed = JSON.parse(raw);
-    if (Array.isArray(parsed)) return parsed as Array<Record<string, unknown>>;
-  } catch { /* URL list */ }
-  return raw.split(/\n|,/).map((u) => u.trim()).filter(Boolean).map((url) => ({ url }));
-}
-
-async function saveMedia() {
-  if (!mediaId.value.trim()) return;
-  await updateMedia({
-    media_items: [{ id: mediaId.value.trim(), name: mediaName.value.trim() || mediaId.value.trim(), type: 'video' }],
-    key_frames: parseKeyFrames(),
-  });
-}
-
 async function applyReference() {
   const url = referenceUrl.value.trim();
   if (url) await setReference(url);
+}
+
+async function clearReference() {
+  referenceUrl.value = '';
+  await setReference('');
 }
 
 async function pasteReference() {

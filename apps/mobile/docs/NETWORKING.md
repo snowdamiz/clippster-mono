@@ -26,7 +26,19 @@ Before our mobile OAuth work, Google sign-in already used `http://localhost:4000
 
 The original problem was only **after** Google auth: the emulator browser hit `localhost:4000` on the device itself instead of your PC. Fix: **`adb reverse`**.
 
-`yarn dev` runs `adb reverse tcp:4000 tcp:4000` when an Android emulator is connected. API calls still use `10.0.2.2`; only the Google OAuth callback uses `localhost`.
+`yarn dev` / `yarn mobile` runs `adb reverse` for Phoenix and Metro when an Android device is connected. RN API calls still use `10.0.2.2`; the Google OAuth Custom Tab (start URL + callback) uses `localhost` via that reverse.
+
+## Metro bundler URL (Android emulator)
+
+Expo’s default deep link uses the host **LAN IP**. That address is often unreachable from the Android emulator (firewall / virtual NIC), so the app never loads JS.
+
+`scripts/start-dev.mjs` detects `emulator-*` devices and:
+
+1. Sets `REACT_NATIVE_PACKAGER_HOSTNAME=10.0.2.2`
+2. Opens the Clippster dev client with `http://10.0.2.2:<metro-port>` after Metro is listening
+3. Does **not** pass Expo `--android` on emulators (that would overwrite the URL with the LAN IP)
+
+Physical devices still use Expo `--android` (LAN hostname is correct there).
 
 Ensure this redirect URI is in **Google Cloud Console** (likely already there for desktop dev):
 

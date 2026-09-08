@@ -73,8 +73,8 @@
             </div>
           </div>
 
-          <!-- Supported platforms (tour hotspot) -->
-          <div class="streamvods-platforms" data-tour-id="tour-vod-platforms" aria-hidden="true">
+          <!-- Supported platforms (decorative; tour highlights page / search) -->
+          <div class="streamvods-platforms" aria-hidden="true">
             <img src="/capsule.svg" alt="" title="PumpFun" />
             <img src="/kick.svg" alt="" title="Kick" />
             <img src="/twitch.svg" alt="" title="Twitch" />
@@ -84,7 +84,8 @@
           </div>
 
           <!-- Search Input with Auto-Detection -->
-          <div class="streamvods-search" data-tour-id="tour-vod-search">
+          <div class="streamvods-search-group" data-tour-id="tour-vod-search">
+            <div class="streamvods-search">
             <transition name="scale" mode="out-in">
               <div
                 v-if="detectedPlatform === 'pumpfun'"
@@ -157,11 +158,13 @@
             <Search v-else class="streamvods-search-btn__icon" />
             Search
           </button>
+          </div>
         </div>
       </template>
 
       <div
         class="streamvods__content"
+        data-tour-id="tour-vod-page"
         :class="{ 'streamvods__content--empty': platformStore.clips.length === 0 && !platformStore.loading }"
       >
         <!-- YouTube Tabs -->
@@ -1793,6 +1796,12 @@
   .streamvods-search {
     position: relative;
     width: 280px;
+  }
+
+  .streamvods-search-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
   }
 
   .streamvods-search__icon {

@@ -11,6 +11,9 @@ const mobileRoot = path.resolve(__dirname, '..');
 const DEFAULT_METRO_PORT = Number(process.env.METRO_PORT) || 8082;
 const METRO_PORTS = [DEFAULT_METRO_PORT, 8083, 8084, 8085];
 
+/** Android emulator loopback to the host machine (LAN IPs are unreliable from the AVD). */
+const ANDROID_EMULATOR_HOST = '10.0.2.2';
+
 function killProcessOnPort(port) {
   try {
     if (process.platform === 'win32') {
@@ -71,6 +74,15 @@ function isPortInUse(port, host = '127.0.0.1', timeoutMs = 500) {
   });
 }
 
+async function waitForPort(port, timeoutMs = 120_000) {
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < timeoutMs) {
+    if (await isPortInUse(port)) return true;
+    await new Promise(resolve => setTimeout(resolve, 400));
+  }
+  return false;
+}
+
 async function findMetroPort() {
   if (!(await isPortInUse(DEFAULT_METRO_PORT))) {
     return DEFAULT_METRO_PORT;
@@ -89,8 +101,12 @@ async function findMetroPort() {
   return null;
 }
 
-function launchAndroidDevClient(port) {
-  const bundlerUrl = `http://10.0.2.2:${port}`;
+function isEmulatorSerial(serial) {
+  return /^emulator-\d+$/i.test(serial);
+}
+
+function launchAndroidDevClient(port, host) {
+  const bundlerUrl = `http://${host}:${port}`;
   const deepLink = `exp+clippster://expo-development-client/?url=${encodeURIComponent(bundlerUrl)}`;
   try {
     execSync(`adb shell am start -a android.intent.action.VIEW -d "${deepLink}"`, {
@@ -98,7 +114,9 @@ function launchAndroidDevClient(port) {
     });
     console.log(`Opened dev client → ${bundlerUrl}`);
   } catch {
-    console.warn(`Could not open dev client (${bundlerUrl}). Shake device → change bundle location manually.`);
+    console.warn(
+      `Could not open dev client (${bundlerUrl}). Open Clippster on the device and set the bundler URL manually.`,
+    );
   }
 }
 
@@ -156,10 +174,10 @@ function getPhoenixDevPort() {
   return process.env.PORT || '4000';
 }
 
-function setupAndroidPortReverse(port) {
+function setupAndroidPortReverse(port, reason) {
   try {
     execSync(`adb reverse tcp:${port} tcp:${port}`, { stdio: 'ignore' });
-    console.log(`adb reverse tcp:${port} tcp:${port} (emulator localhost → host Phoenix for Google OAuth)`);
+    console.log(`adb reverse tcp:${port} tcp:${port} (${reason})`);
   } catch {
     console.warn(`Could not run adb reverse for port ${port}`);
   }
@@ -189,41 +207,46 @@ clearMetroBundlerCache();
 let port = await findMetroPort();
 if (port == null) {
   throw new Error(
-    `No free Metro port found (${METRO_PORTS.join(', ')}). Stop stale Expo/Metro processes and retry.`
+    `No free Metro port found (${METRO_PORTS.join(', ')}). Stop stale Expo/Metro processes and retry.`,
   );
 }
 
 const androidDevices = listAndroidDevices();
 const launchAndroid = androidDevices.length > 0;
+const hasEmulator = androidDevices.some(isEmulatorSerial);
+/** Emulator must use 10.0.2.2; Expo's default LAN IP is unreachable from the AVD. */
+const emulatorBundlerHost = hasEmulator ? ANDROID_EMULATOR_HOST : null;
 
 console.log(`Starting Expo dev server on port ${port}`);
 
 if (launchAndroid) {
-  setupAndroidPortReverse(getPhoenixDevPort());
-  setupAndroidPortReverse(port);
+  setupAndroidPortReverse(getPhoenixDevPort(), 'emulator localhost → host Phoenix for Google OAuth');
+  setupAndroidPortReverse(port, 'emulator localhost → host Metro');
   console.log(`Android device detected (${androidDevices[0]}) — launching app`);
-  // Delay launch until Metro is listening (expo start spawns asynchronously).
-  setTimeout(() => launchAndroidDevClient(port), 8000);
 } else {
   console.log('No Android device detected — Metro only (start an emulator or run yarn mobile:android)');
 }
 
+const willRebuildAndroid = launchAndroid && (rebuildAndroid || !isDevClientInstalled());
 const expoArgs = ['expo', 'start', '--dev-client', '--clear', '--port', String(port)];
 
-if (launchAndroid) {
-  if (rebuildAndroid || !isDevClientInstalled()) {
-    if (rebuildAndroid) {
-      console.log('Rebuilding Android dev client (ffmpeg-expo and other native modules)…');
-    }
-    expoArgs.length = 0;
-    expoArgs.push('expo', 'run:android', '--port', String(port));
-  } else {
-    expoArgs.push('--android');
+if (willRebuildAndroid) {
+  if (rebuildAndroid) {
+    console.log('Rebuilding Android dev client (ffmpeg-expo and other native modules)…');
   }
+  expoArgs.length = 0;
+  expoArgs.push('expo', 'run:android', '--port', String(port));
+} else if (launchAndroid && !hasEmulator) {
+  // Physical device: Expo's LAN hostname is correct.
+  expoArgs.push('--android');
 }
 
 const childEnv = { ...process.env };
 delete childEnv.CI;
+if (emulatorBundlerHost) {
+  // Forces Metro + any Expo-opened deep link to advertise the emulator-reachable host.
+  childEnv.REACT_NATIVE_PACKAGER_HOSTNAME = emulatorBundlerHost;
+}
 
 const child = spawn('yarn', expoArgs, {
   cwd: mobileRoot,
@@ -231,6 +254,21 @@ const child = spawn('yarn', expoArgs, {
   shell: true,
   env: childEnv,
 });
+
+if (launchAndroid && !willRebuildAndroid && hasEmulator) {
+  // Do not pass Expo `--android` for emulators — it deep-links the host LAN IP and
+  // overwrites a working 10.0.2.2 connection. Wait for Metro, then open ourselves.
+  void (async () => {
+    const ready = await waitForPort(port);
+    if (!ready) {
+      console.warn(
+        `Metro did not listen on ${port} in time. Open Clippster and set bundler to http://${ANDROID_EMULATOR_HOST}:${port}`,
+      );
+      return;
+    }
+    launchAndroidDevClient(port, ANDROID_EMULATOR_HOST);
+  })();
+}
 
 child.on('exit', code => {
   process.exit(code ?? 1);

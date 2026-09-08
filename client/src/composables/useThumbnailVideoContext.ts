@@ -20,16 +20,21 @@ export interface ThumbnailVideoAttachPayload {
   keyFrames: ThumbnailKeyFrame[];
   media_items: Array<Record<string, unknown>>;
   key_frames: Array<Record<string, unknown>>;
+  youtube_url?: string;
+  video_title?: string;
+  transcript?: string;
+  transcript_source?: string;
 }
 
 export interface ThumbnailVideoSelection {
   id: string;
   name: string;
-  type: 'project' | 'clip';
+  type: 'project' | 'clip' | 'youtube' | 'upload';
   sourcePath: string;
   duration: number | null;
   thumbnailUrl?: string;
   projectId?: string;
+  youtubeUrl?: string;
 }
 const MIN_FRAMES = 6;
 const MAX_FRAMES = 12;

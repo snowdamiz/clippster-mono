@@ -37,10 +37,6 @@ export function kickClipToVodItem(clip: KickClip, channelSlug?: string): VodList
   const playlistUrl = clip.playlistUrl ?? null;
   const mp4Url = clip.mp4Url ?? null;
   const streamUrl = mp4Url || playlistUrl;
-  const isHls =
-    streamUrl != null &&
-    !mp4Url &&
-    (streamUrl.includes('.m3u8') || streamUrl.includes('stream.kick.com'));
 
   const streamedAt = clip.createdAt ?? clip.startTime ?? null;
 

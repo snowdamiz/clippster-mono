@@ -213,7 +213,7 @@ export async function updateClipTimeRange(
 
 export async function replaceClipSegments(
   clipId: string,
-  ranges: Array<{ start_time: number; end_time: number; transcript?: string | null }>,
+  ranges: { start_time: number; end_time: number; transcript?: string | null }[],
 ): Promise<void> {
   if (ranges.length === 0) {
     throw new Error('At least one segment is required');

@@ -5,11 +5,11 @@ import {
   ActivityIndicator,
   FlatList,
   RefreshControl,
-  Text,
   View,
 } from 'react-native';
-import { AppHeader } from '@/components/AppHeader';
+import { ScreenHeader } from '@/components/ScreenHeader';
 import { SharedClipCard } from '@/components/inbox/SharedClipCard';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { sharedClipsApi } from '@/services/api';
 import { tokens } from '@/theme/tokens';
 
@@ -46,10 +46,10 @@ export default function InboxScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <AppHeader title="Shared Clips" subtitle="Clips distributed by your organizations" />
+      <ScreenHeader title="Shared Clips" subtitle="Clips distributed by your organizations" />
       {loading ? (
         <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={tokens.colors.primary} />
+          <ActivityIndicator color={tokens.colors.accent} />
         </View>
       ) : (
         <FlatList
@@ -58,7 +58,11 @@ export default function InboxScreen() {
           contentContainerClassName="gap-3 px-4 py-4 pb-8"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
           ListEmptyComponent={
-            <Text className="py-8 text-center text-muted">No shared clips in your inbox.</Text>
+            <EmptyState
+              icon="mail-open-outline"
+              title="Inbox empty"
+              subtitle="No shared clips from your organizations yet."
+            />
           }
           renderItem={({ item }) => (
             <SharedClipCard clip={item} onPress={() => router.push(`/inbox/${item.id}`)} />

@@ -2,7 +2,6 @@ import type { Campaign } from '@clippster/api-client';
 import { formatCpm, getPlatformDisplayName } from '@clippster/api-client';
 import { Image, Pressable, Text, View } from 'react-native';
 import { Card } from '@/components/ui/card';
-import { tokens } from '@/theme/tokens';
 
 interface CampaignCardProps {
   campaign: Campaign;

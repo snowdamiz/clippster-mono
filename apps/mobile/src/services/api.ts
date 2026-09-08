@@ -21,10 +21,11 @@ import {
   createUserBrandingApi,
   createUserPreferencesApi,
   createAccountApi,
+  createMessagingApi,
 } from '@clippster/api-client';
 import { fetch as expoFetch } from 'expo/fetch';
 import { getApiBaseUrl } from '@/lib/config';
-import { clearAuthSession, getStoredToken } from './authStorage';
+import { getStoredToken } from './authStorage';
 
 let unauthorizedHandler: (() => void) | null = null;
 
@@ -64,4 +65,5 @@ export const kickApi = createKickApi(apiClient);
 export const userBrandingApi = createUserBrandingApi(apiClient);
 export const userPreferencesApi = createUserPreferencesApi(apiClient);
 export const accountApi = createAccountApi(apiClient);
+export const messagingApi = createMessagingApi(apiClient, { baseUrl: getApiBaseUrl() });
 export { apiClient };

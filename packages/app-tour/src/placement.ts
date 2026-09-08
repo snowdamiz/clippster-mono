@@ -128,6 +128,11 @@ function computeCaretOffset(
 /**
  * Scroll a tour target into view when needed, but never shift horizontal scroll.
  * Horizontal nudging clips full-screen editor toolbars; tour positioning uses viewport rects.
+ *
+ * Page-header targets also reset the nearest vertical scrollport. During DashboardLayout's
+ * fade transition (no out-in), the entering page stacks below the leaving one — without
+ * this reset, scrollIntoView({ block: 'nearest' }) pins the new header to the bottom edge
+ * and the spotlight keeps those stale coordinates.
  */
 export function scrollTourTargetIntoView(el: HTMLElement): void {
   const winX = window.scrollX;
@@ -138,7 +143,27 @@ export function scrollTourTargetIntoView(el: HTMLElement): void {
     parent = parent.parentElement;
   }
 
-  el.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  const inPageHeader = !!el.closest('.page-header');
+  if (inPageHeader) {
+    let scrollParent: HTMLElement | null = el.parentElement;
+    while (scrollParent) {
+      const style = getComputedStyle(scrollParent);
+      const oy = style.overflowY;
+      if (
+        (oy === 'auto' || oy === 'scroll' || oy === 'overlay') &&
+        scrollParent.scrollHeight > scrollParent.clientHeight + 1
+      ) {
+        scrollParent.scrollTop = 0;
+        break;
+      }
+      scrollParent = scrollParent.parentElement;
+    }
+  }
+
+  el.scrollIntoView({
+    block: inPageHeader ? 'nearest' : 'center',
+    inline: 'nearest',
+  });
 
   window.scrollTo(winX, window.scrollY);
   for (const { node, scrollLeft } of ancestors) {

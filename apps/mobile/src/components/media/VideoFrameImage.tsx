@@ -1,10 +1,9 @@
-import type { VideoThumbnail } from 'expo-video';
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useState } from 'react';
 import { Image as RnImage, Text, View, type ImageStyle, type StyleProp } from 'react-native';
 import { formatClock } from '@/lib/formatTime';
 import { getExpoImage } from '@/lib/expoImage';
-import { getVideoFrames } from '@/services/videoThumbnails';
+import { getVideoFrames, type ThumbnailSource } from '@/services/videoThumbnails';
 import { tokens } from '@/theme/tokens';
 
 const ExpoImage = getExpoImage();
@@ -20,7 +19,7 @@ export function VideoFrameImage({
   style: StyleProp<ImageStyle>;
   fallbackUri?: string | null;
 }) {
-  const [thumb, setThumb] = useState<VideoThumbnail | null>(null);
+  const [thumb, setThumb] = useState<ThumbnailSource | null>(null);
 
   useEffect(() => {
     if (!path || !ExpoImage) return;

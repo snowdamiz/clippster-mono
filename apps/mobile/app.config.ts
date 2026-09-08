@@ -48,6 +48,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   android: {
     package: 'app.clippster.mobile',
     versionCode: 1,
+    softwareKeyboardLayoutMode: 'resize',
     adaptiveIcon: {
       backgroundColor: '#0a0a0b',
       foregroundImage: './assets/images/android-icon-foreground.png',
@@ -84,12 +85,22 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
       },
     ],
     [
+      '@clippster/editor-native',
+      {},
+    ],
+    [
       'ffmpeg-expo',
       {
+        // LGPL utility builds only — never ship GPL libx264 in production.
         enableDecoders: ['h264', 'hevc', 'aac', 'mp3'],
-        enableEncoders: ['aac', 'libx264'],
+        enableEncoders: ['aac'],
+        // Must match RN 0.85 / withAndroidNdkVersion. Package default was 26.1,
+        // which cannot compile react-native-reanimated 4.3.x.
+        ndkVersion: '27.1.12297006',
       },
     ],
+    // After ffmpeg-expo so we always win if it tries to inject an older NDK.
+    ['./plugins/withAndroidNdkVersion', { version: '27.1.12297006' }],
     [
       'expo-image-picker',
       {

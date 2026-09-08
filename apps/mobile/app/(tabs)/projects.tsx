@@ -3,7 +3,6 @@ import { router, useFocusEffect } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import {
   ActivityIndicator,
-  FlatList,
   Image,
   Modal,
   Pressable,
@@ -14,14 +13,13 @@ import {
 } from 'react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { DownloadProgressCard } from '@/components/DownloadProgressCard';
+import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAccount } from '@/context/AccountContext';
-import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
 import type { Project } from '@clippster/shared-types';
-import { createProject, getAllProjects, getRawVideoByProjectId } from '@/services/database';
-import { pickAndImportLocalVideo, recordAndImportLocalVideo } from '@/services/localVideoImport';
+import { getAllProjects, getRawVideoByProjectId } from '@/services/database';
+import { pickAndImportLocalVideo } from '@/services/localVideoImport';
 import { tokens } from '@/theme/tokens';
 import { deleteProjectEverywhere } from '@/services/cloudSync';
 import {
@@ -35,11 +33,13 @@ import {
   type DownloadJob,
 } from '@/services/downloadQueue';
 import { appAlert } from '@/lib/appAlert';
+import { mobileDraftRepository } from '@/editor/persistence/asyncStorageDraftRepository';
 
 interface ProjectRow extends Project {
   platform?: string | null;
   duration?: number | null;
   thumbnailUri?: string | null;
+  hasEditorDraft: boolean;
 }
 
 function toLocalImageUri(path: string | null | undefined): string | null {
@@ -63,8 +63,7 @@ export default function ProjectsScreen() {
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
-  const [newName, setNewName] = useState('Untitled project');
-  const [creating, setCreating] = useState(false);
+  const [sourceUrl, setSourceUrl] = useState('');
   const [importing, setImporting] = useState(false);
   const [jobs, setJobs] = useState<DownloadJob[]>([]);
   const [menuProject, setMenuProject] = useState<ProjectRow | null>(null);
@@ -82,10 +81,15 @@ export default function ProjectsScreen() {
         rows.map(async (project) => {
           const raw = await getRawVideoByProjectId(project.id);
           const jobThumb = getDownloadJobs().find((job) => job.projectId === project.id)?.thumbnailUrl;
+          const hasEditorDraft = await mobileDraftRepository
+            .load('project', project.id)
+            .then((draft) => draft != null)
+            .catch(() => false);
           return {
             ...project,
             platform: raw?.platform ?? null,
             duration: raw?.duration ?? null,
+            hasEditorDraft,
             thumbnailUri: toLocalImageUri(
               project.thumbnail_path ?? raw?.thumbnail_path ?? jobThumb ?? null,
             ),
@@ -131,44 +135,14 @@ export default function ProjectsScreen() {
 
   function closeCreateModal() {
     setShowCreate(false);
-    setNewName('Untitled project');
+    setSourceUrl('');
   }
 
-  async function handleCreateEmptyProject() {
-    const trimmed = newName.trim();
-    if (!trimmed) return;
-    const allowed = await requireSubscription({
-      context: 'Create a new project',
-      type: 'project',
-    });
-    if (!allowed) return;
-    setCreating(true);
-    try {
-      await createProject(trimmed);
-      closeCreateModal();
-      await loadProjects();
-    } finally {
-      setCreating(false);
-    }
-  }
-
-  async function handleRecordVideo() {
-    const allowed = await requireSubscription({
-      context: 'Record a video',
-      type: 'project',
-    });
-    if (!allowed) return;
-
-    setImporting(true);
-    try {
-      const projectId = await recordAndImportLocalVideo();
-      if (projectId) {
-        closeCreateModal();
-        router.push(`/project/${projectId}`);
-      }
-    } finally {
-      setImporting(false);
-    }
+  function handlePasteUrl() {
+    const url = sourceUrl.trim();
+    if (!url) return;
+    closeCreateModal();
+    router.push({ pathname: '/(tabs)/download', params: { source: url } });
   }
 
   async function handleImportVideo() {
@@ -237,6 +211,13 @@ export default function ProjectsScreen() {
     );
   }
 
+  const downloads = projects.filter(
+    (project) => !project.hasEditorDraft && project.platform != null && project.platform !== 'manual',
+  );
+  const editorProjects = projects.filter(
+    (project) => project.hasEditorDraft || project.platform == null || project.platform === 'manual',
+  );
+
   return (
     <View className="flex-1 bg-background">
       <ScreenHeader showLogo />
@@ -251,7 +232,7 @@ export default function ProjectsScreen() {
 
       <View className="px-4 pt-4">
         <Pressable
-          onPress={() => router.push('/(tabs)/download')}
+          onPress={() => setShowCreate(true)}
           className="flex-row items-center gap-4 rounded-xl border border-border bg-surface p-4 active:bg-white/5"
         >
           <View className="h-14 w-14 items-center justify-center rounded-full bg-accent">
@@ -265,74 +246,34 @@ export default function ProjectsScreen() {
         </Pressable>
       </View>
 
-      <View className="mt-4 flex-row items-center justify-between px-4">
-        <Text className="text-sm font-semibold text-foreground">Your projects</Text>
-      </View>
-
       {loading ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator color={tokens.colors.accent} />
         </View>
       ) : (
-        <FlatList
-          data={projects}
-          keyExtractor={(item) => item.id}
-          numColumns={2}
-          columnWrapperStyle={{ gap: 12 }}
-          contentContainerClassName="px-4 py-4 gap-3"
-          ListEmptyComponent={
-            <View className="items-center rounded-xl border border-dashed border-border px-6 py-12">
-              <Ionicons name="film-outline" size={40} color={tokens.colors.muted} />
-              <Text className="mt-3 text-lg font-semibold text-foreground">No projects yet</Text>
-              <Text className="mt-2 text-center text-sm text-muted">
-                Tap New project to download a stream VOD or import a video from your library.
-              </Text>
-            </View>
-          }
-          renderItem={({ item }) => (
-            <Pressable
-              style={{ width: cardWidth }}
-              className="overflow-hidden rounded-xl border border-border bg-surface"
-              onPress={() => router.push(`/project/${item.id}`)}
-            >
-              <View
-                className="items-center justify-center bg-surfaceMuted"
-                style={{ width: cardWidth, aspectRatio: 16 / 9 }}
-              >
-                {item.thumbnailUri ? (
-                  <Image
-                    source={{ uri: item.thumbnailUri }}
-                    style={{ width: cardWidth, aspectRatio: 16 / 9 }}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <Ionicons name="play-circle-outline" size={28} color={tokens.colors.muted} />
-                )}
-                <Pressable
-                  onPress={() => openProjectMenu(item)}
-                  hitSlop={8}
-                  className="absolute right-1.5 top-1.5 h-8 w-8 items-center justify-center rounded-full bg-black/60"
-                >
-                  <Ionicons name="ellipsis-horizontal" size={16} color="#ffffff" />
-                </Pressable>
-              </View>
-              <View className="gap-0.5 p-2">
-                <Text className="text-sm font-semibold text-foreground" numberOfLines={2}>
-                  {item.name}
-                </Text>
-                <Text className="text-xs text-muted">
-                  {item.platform ? `${item.platform}` : 'Local'}
-                  {item.duration != null ? ` · ${formatDuration(item.duration)}` : ''}
-                </Text>
-              </View>
-            </Pressable>
-          )}
-        />
+        <ScrollView contentContainerClassName="gap-6 px-4 py-4">
+          <ProjectCategory
+            title="Downloads"
+            emptyMessage="Videos downloaded from a URL will appear here."
+            items={downloads}
+            cardWidth={cardWidth}
+            onOpen={(project) => router.push(`/project/${project.id}`)}
+            onMenu={openProjectMenu}
+          />
+          <ProjectCategory
+            title="Projects"
+            emptyMessage="Uploaded videos and editor projects will appear here."
+            items={editorProjects}
+            cardWidth={cardWidth}
+            onOpen={(project) =>
+              project.hasEditorDraft
+                ? router.push({ pathname: '/edit/[kind]/[id]', params: { kind: 'project', id: project.id } })
+                : router.push(`/project/${project.id}`)
+            }
+            onMenu={openProjectMenu}
+          />
+        </ScrollView>
       )}
-
-      <View className="border-t border-border px-4 py-3">
-        <Button title="Import local video" variant="outline" onPress={() => setShowCreate(true)} />
-      </View>
 
       <Modal
         visible={menuProject != null}
@@ -377,56 +318,124 @@ export default function ProjectsScreen() {
         </Pressable>
       </Modal>
 
-      <Modal visible={showCreate} transparent animationType="fade" onRequestClose={closeCreateModal}>
-        <View className="flex-1 items-center justify-center bg-black/70 px-6">
-          <ScrollView className="max-h-[90%] w-full" contentContainerClassName="grow justify-center">
-            <View className="w-full overflow-hidden rounded-xl border border-border bg-surface">
-              <View className="h-[3px] bg-accent" />
-              <View className="p-6">
-                <Text className="text-xl font-bold text-foreground">New video</Text>
-                <Text className="mt-2 text-sm text-muted">
-                  Record with your camera, pick a clip from your phone, or download a stream from Create.
-                </Text>
-
-                <View className="mt-6 gap-2">
-                  <Button
-                    title={importing ? 'Opening…' : 'Record video'}
-                    onPress={() => void handleRecordVideo()}
-                    disabled={importing || creating}
-                  />
-                  <Button
-                    title={importing ? 'Importing…' : 'Choose from camera roll'}
-                    variant="outline"
-                    onPress={() => void handleImportVideo()}
-                    disabled={importing || creating}
-                  />
-                </View>
-
-                <View className="my-6 flex-row items-center gap-3">
-                  <Separator className="flex-1" />
-                  <Text className="text-xs text-muted">or</Text>
-                  <Separator className="flex-1" />
-                </View>
-
-                <View className="gap-2">
-                  <Label>Empty project</Label>
-                  <Input value={newName} onChangeText={setNewName} placeholder="Project name" />
-                  <Button
-                    title="Create empty project"
-                    variant="outline"
-                    onPress={handleCreateEmptyProject}
-                    disabled={creating || importing || !newName.trim()}
-                  />
-                </View>
-
-                <View className="mt-4">
-                  <Button title="Cancel" variant="ghost" onPress={closeCreateModal} />
-                </View>
-              </View>
-            </View>
-          </ScrollView>
+      <BottomSheet
+        visible={showCreate}
+        onClose={closeCreateModal}
+        variant="sheet"
+        title="New project"
+        subtitle="Paste a video or channel URL, or import a local video file."
+        keyboardAvoiding
+        closeMode="none"
+        secondaryAction={{ title: 'Cancel', onPress: closeCreateModal, variant: 'ghost' }}
+      >
+        <View className="gap-3">
+          <Input
+            value={sourceUrl}
+            onChangeText={setSourceUrl}
+            onSubmitEditing={handlePasteUrl}
+            placeholder="Paste a video or channel URL"
+            autoCapitalize="none"
+            autoCorrect={false}
+            returnKeyType="go"
+          />
+          <Button
+            title="Continue with URL"
+            variant="accent"
+            onPress={handlePasteUrl}
+            disabled={!sourceUrl.trim() || importing}
+          />
         </View>
-      </Modal>
+
+        <View className="h-px bg-border" />
+
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel="Import local files"
+          onPress={() => void handleImportVideo()}
+          disabled={importing}
+          className="min-h-14 flex-row items-center gap-4 rounded-xl border border-border bg-surface px-4 active:bg-white/5"
+        >
+          <View className="h-10 w-10 items-center justify-center rounded-full bg-accent/15">
+            <Ionicons name="folder-open-outline" size={22} color={tokens.colors.accent} />
+          </View>
+          <View className="flex-1">
+            <Text className="text-sm font-semibold text-foreground">
+              {importing ? 'Importing…' : 'Import local files'}
+            </Text>
+            <Text className="text-xs text-muted">Choose a video from this device</Text>
+          </View>
+          <Ionicons name="chevron-forward" size={18} color={tokens.colors.muted} />
+        </Pressable>
+      </BottomSheet>
+    </View>
+  );
+}
+
+function ProjectCategory({
+  title,
+  emptyMessage,
+  items,
+  cardWidth,
+  onOpen,
+  onMenu,
+}: {
+  title: string;
+  emptyMessage: string;
+  items: ProjectRow[];
+  cardWidth: number;
+  onOpen: (project: ProjectRow) => void;
+  onMenu: (project: ProjectRow) => void;
+}) {
+  return (
+    <View>
+      <Text className="mb-3 text-base font-bold text-foreground">{title}</Text>
+      {items.length === 0 ? (
+        <View className="items-center rounded-xl border border-dashed border-border px-5 py-7">
+          <Text className="text-center text-sm text-muted">{emptyMessage}</Text>
+        </View>
+      ) : (
+        <View className="flex-row flex-wrap gap-3">
+          {items.map((item) => (
+            <Pressable
+              key={item.id}
+              style={{ width: cardWidth }}
+              className="overflow-hidden rounded-xl border border-border bg-surface"
+              onPress={() => onOpen(item)}
+            >
+              <View
+                className="items-center justify-center bg-surfaceMuted"
+                style={{ width: cardWidth, aspectRatio: 16 / 9 }}
+              >
+                {item.thumbnailUri ? (
+                  <Image
+                    source={{ uri: item.thumbnailUri }}
+                    style={{ width: cardWidth, aspectRatio: 16 / 9 }}
+                    resizeMode="cover"
+                  />
+                ) : (
+                  <Ionicons name="play-circle-outline" size={28} color={tokens.colors.muted} />
+                )}
+                <Pressable
+                  onPress={() => onMenu(item)}
+                  hitSlop={8}
+                  className="absolute right-1.5 top-1.5 h-8 w-8 items-center justify-center rounded-full bg-black/60"
+                >
+                  <Ionicons name="ellipsis-horizontal" size={16} color="#ffffff" />
+                </Pressable>
+              </View>
+              <View className="gap-0.5 p-2">
+                <Text className="text-sm font-semibold text-foreground" numberOfLines={2}>
+                  {item.name}
+                </Text>
+                <Text className="text-xs text-muted">
+                  {item.platform && item.platform !== 'manual' ? item.platform : 'Local'}
+                  {item.duration != null ? ` · ${formatDuration(item.duration)}` : ''}
+                </Text>
+              </View>
+            </Pressable>
+          ))}
+        </View>
+      )}
     </View>
   );
 }

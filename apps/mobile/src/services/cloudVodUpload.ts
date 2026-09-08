@@ -3,7 +3,7 @@ import type { CloudProjectSnapshot } from '@clippster/cloud-sync-schema';
 import { buildProjectSnapshot } from './database/snapshot';
 import { getRawVideoByProjectId } from './database';
 import { upsertCloudSyncMeta, getCloudSyncMeta } from './database/cloud-sync-meta';
-import { CLOUD_SYNC_ENABLED, cloudApi, pushProject } from './cloudSync';
+import { CLOUD_SYNC_ENABLED, cloudApi } from './cloudSync';
 
 export interface VodUploadProgress {
   projectId: string;

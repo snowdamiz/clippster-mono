@@ -4,7 +4,8 @@ import { memo, useEffect, useMemo, useRef, useState } from 'react';
 import { useWindowDimensions, View } from 'react-native';
 import { VideoPlayerControls } from '@/components/editor/VideoPlayerControls';
 import { useSmoothPlayerTime } from '@/hooks/useSmoothPlayerTime';
-import { configurePreviewPlayer } from '@/lib/configurePreviewPlayer';
+import { configureVodPlayer } from '@/lib/configurePreviewPlayer';
+import { beginPlaybackCritical } from '@/lib/mediaDecodeGate';
 import { toVideoSource } from '@/lib/playbackVideo';
 
 interface VodPreviewProps {
@@ -34,10 +35,12 @@ export function VodPreview({ videoPath, onTimeChange, onDurationChange }: VodPre
   const videoWidth = width;
   const videoHeight = width * (9 / 16);
 
-  const player = useVideoPlayer(toVideoSource(videoPath), configurePreviewPlayer);
+  const player = useVideoPlayer(toVideoSource(videoPath), configureVodPlayer);
   const lastNotify = useRef(0);
   const { currentTime: playheadTime, timeSV, noteSeek } = useSmoothPlayerTime(player);
   const [, setPlaybackEpoch] = useState(0);
+
+  useEffect(() => beginPlaybackCritical(), []);
 
   useEventListener(player, 'playingChange', () => {
     setPlaybackEpoch((value) => value + 1);

@@ -9,7 +9,7 @@ import { useAppTour } from "@/composables/useAppTour";
 
 const route = useRoute();
 const router = useRouter();
-const { notifyEditorReadyForTour, hasCompleted } = useAppTour();
+const { notifyEditorReadyForTour } = useAppTour();
 
 const isLoading = ref(true);
 const error = ref<string | null>(null);
@@ -56,30 +56,13 @@ async function loadProject() {
 		await nextTick();
 		await new Promise<void>((r) => requestAnimationFrame(() => requestAnimationFrame(() => r())));
 
-		const wantsTour =
-			route.query.tour === '1' ||
-			(loadedEditor &&
-				!hasCompleted('page_video_editor') &&
-				hasCompleted('desktop_sidebar') &&
-				(await isTourDemoProject(projectId)));
-
-		notifyEditorReadyForTour(wantsTour ? 'page_video_editor' : undefined);
+		notifyEditorReadyForTour(route.query.tour === '1' ? 'page_video_editor' : undefined);
 	} catch (err) {
 		if (controller.signal.aborted) return;
 		console.error('[OpenCutEditor] Failed to load project into editor:', err);
 		console.error('[OpenCutEditor] Error stack:', err instanceof Error ? err.stack : 'No stack trace');
 		error.value = err instanceof Error ? err.message : "Failed to load project";
 		isLoading.value = false;
-	}
-}
-
-async function isTourDemoProject(id: string): Promise<boolean> {
-	try {
-		const { getVideoEditorProject } = await import('@/services/database/video-editor-projects');
-		const project = await getVideoEditorProject(id);
-		return project?.name === 'Tour Demo';
-	} catch {
-		return false;
 	}
 }
 

@@ -44,7 +44,7 @@ export { createAnalyticsApi } from './analyticsApi';
 export type { AnalyticsApi, AnalyticsEvent } from './analyticsApi';
 export { createClipperProfilesApi, EXPERIENCE_LEVELS, SPECIALTY_TAGS, CONTENT_STYLE_TAGS, PREFERRED_PLATFORMS, CHANNEL_PLATFORMS, LANGUAGES, COMMON_TIMEZONES, getExperienceLevelLabel, getSpecialtyTagLabel, getContentStyleTagLabel, getPlatformLabel } from './clipperProfilesApi';
 export type { ClipperProfilesApi, ClipperProfile, ChannelLink, PortfolioClip, ReactNativeUploadFile as ClipperUploadFile } from './clipperProfilesApi';
-export { createCampaignApi, formatCpm, getPlatformDisplayName, detectPlatformFromUrl } from './campaignApi';
+export { createCampaignApi, formatCpm, getPlatformDisplayName, detectPlatformFromUrl, isCampaignOpenForPosting, filterCampaignsOpenForPosting } from './campaignApi';
 export type { CampaignApi, Campaign, CampaignSubmission, CampaignResource, CampaignParticipation, EarningsSummary, CampaignSubmissionAnalytics } from './campaignApi';
 export { createSharedClipsApi, getExpirationBadgeColor, getExpirationText } from './sharedClipsApi';
 export type { SharedClipsApi, SharedClip, BrandingConfig } from './sharedClipsApi';
@@ -90,3 +90,17 @@ export type {
 } from './tokendApi';
 export { createKickApi } from './kickApi';
 export type { KickApi, KickClip, KickClipsResponse } from './kickApi';
+export {
+  createMessagingApi,
+  normalizeConversation,
+  normalizeMessage,
+} from './messagingApi';
+export type {
+  MessagingApi,
+  MessagingConversation,
+  MessagingMessage,
+  MessagingParticipant,
+  MessagingUserSearchResult,
+  MessageAttachment,
+  UnreadCounts,
+} from './messagingApi';

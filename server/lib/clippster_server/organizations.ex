@@ -139,6 +139,46 @@ defmodule ClippsterServer.Organizations do
   end
 
   @doc """
+  Returns true when an organization opted into a public profile and has enough content to index.
+  """
+  def public_profile_indexable?(%Organization{} = organization) do
+    organization.public_profile_enabled == true and present_string?(organization.slug) and
+      present_string?(organization.name) and org_has_indexable_content?(organization)
+  end
+
+  defp org_has_indexable_content?(%Organization{} = organization) do
+    present_string?(organization.description) or present_string?(organization.bio) or
+      present_string?(organization.logo_url) or
+      (is_list(organization.content_type_tags) and organization.content_type_tags != [])
+  end
+
+  defp present_string?(value) when is_binary(value), do: String.trim(value) != ""
+  defp present_string?(_), do: false
+
+  @doc """
+  Lists organization public profiles for sitemap and directory pages.
+  """
+  def list_sitemap_organizations do
+    from(o in Organization,
+      where: o.public_profile_enabled == true,
+      where: not is_nil(o.slug) and o.slug != "",
+      where:
+        (not is_nil(o.description) and fragment("char_length(trim(?)) > 0", o.description)) or
+          (not is_nil(o.bio) and fragment("char_length(trim(?)) > 0", o.bio)) or
+          (not is_nil(o.logo_url) and fragment("char_length(trim(?)) > 0", o.logo_url)) or
+          fragment("coalesce(array_length(?, 1), 0) > 0", o.content_type_tags),
+      select: %{
+        slug: o.slug,
+        updated_at: o.updated_at,
+        name: o.name,
+        description: o.description
+      },
+      order_by: [asc: o.slug]
+    )
+    |> Repo.all()
+  end
+
+  @doc """
   Gets a public organization profile payload by slug.
   """
   def get_public_profile_by_slug(slug) when is_binary(slug) do
@@ -147,6 +187,15 @@ defmodule ClippsterServer.Organizations do
         nil
 
       organization ->
+        if public_profile_indexable?(organization) do
+          build_public_profile_payload(organization)
+        else
+          nil
+        end
+    end
+  end
+
+  defp build_public_profile_payload(organization) do
         # Total campaigns excludes draft (not public) and includes active, paused, and completed
         campaign_total =
           from(c in Campaign,
@@ -255,7 +304,6 @@ defmodule ClippsterServer.Organizations do
           social_accounts: social_accounts,
           hiring_post: hiring_post
         }
-    end
   end
 
   @doc """

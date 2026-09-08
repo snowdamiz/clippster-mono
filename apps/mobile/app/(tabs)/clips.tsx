@@ -1,6 +1,5 @@
 import { Ionicons } from '@expo/vector-icons';
 import { router, useFocusEffect } from 'expo-router';
-import * as Sharing from 'expo-sharing';
 import { useCallback, useMemo, useState } from 'react';
 import {
   ActivityIndicator,
@@ -12,15 +11,21 @@ import {
   View,
 } from 'react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { PostSheet } from '@/components/schedule/PostSheet';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
+import { appAlert } from '@/lib/appAlert';
+import { toLocalImageUri } from '@/lib/formatTime';
+import { generateBuildThumbnail } from '@/services/clipThumbnailGeneration';
 import {
+  deleteClipBuild,
   getCompletedClipBuildsWithDetails,
+  setClipBuildThumbnail,
   type BuiltClipItem,
 } from '@/services/database';
+import { saveMediaCopyToPickedFolder } from '@/services/saveMediaCopy';
 import { tokens } from '@/theme/tokens';
-import { appAlert } from '@/lib/appAlert';
 
 function formatDuration(seconds: number | null | undefined): string {
   if (!seconds || seconds <= 0) return '—';
@@ -45,20 +50,52 @@ function parseAspectRatios(raw: string | null): string[] {
   }
 }
 
+function sanitizeExportFileName(clipName: string, buildId: string): string {
+  const base = clipName.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').trim() || 'clip';
+  return `${base}_${buildId.slice(0, 8)}.mp4`;
+}
+
 export default function ClipsScreen() {
   const [items, setItems] = useState<BuiltClipItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [search, setSearch] = useState('');
+  const [postBuildId, setPostBuildId] = useState<string | null>(null);
+  const [savingBuildId, setSavingBuildId] = useState<string | null>(null);
+
+  const backfillMissingThumbnails = useCallback(async (rows: BuiltClipItem[]) => {
+    const missing = rows.filter((item) => !item.build.thumbnail_path && item.build.file_path);
+    if (missing.length === 0) return null;
+
+    const next = [...rows];
+    let updated = 0;
+    for (const item of missing) {
+      const thumbAt = Math.min(1, Math.max(0.1, (item.build.duration ?? 2) * 0.1));
+      const thumb = await generateBuildThumbnail(item.build.file_path, item.build.id, thumbAt);
+      if (!thumb) continue;
+      await setClipBuildThumbnail(item.build.id, thumb);
+      const index = next.findIndex((row) => row.build.id === item.build.id);
+      if (index >= 0) {
+        next[index] = {
+          ...next[index],
+          build: { ...next[index].build, thumbnail_path: thumb },
+        };
+        updated += 1;
+      }
+    }
+    return updated > 0 ? next : null;
+  }, []);
 
   const loadClips = useCallback(async () => {
     try {
       const rows = await getCompletedClipBuildsWithDetails(100);
       setItems(rows);
+      const withThumbs = await backfillMissingThumbnails(rows);
+      if (withThumbs) setItems(withThumbs);
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [backfillMissingThumbnails]);
 
   useFocusEffect(
     useCallback(() => {
@@ -85,22 +122,53 @@ export default function ClipsScreen() {
     );
   }, [items, search]);
 
-  async function shareClip(item: BuiltClipItem) {
-    if (!(await Sharing.isAvailableAsync())) {
-      appAlert('Unavailable', 'Sharing is not available on this device.');
-      return;
-    }
-    await Sharing.shareAsync(item.build.file_path, { mimeType: 'video/mp4' });
-  }
-
   function openProject(item: BuiltClipItem) {
     if (!item.projectId) return;
     router.push(`/project/${item.projectId}`);
   }
 
+  async function saveCopy(item: BuiltClipItem) {
+    setSavingBuildId(item.build.id);
+    try {
+      const result = await saveMediaCopyToPickedFolder(
+        item.build.file_path,
+        sanitizeExportFileName(item.clipName, item.build.id),
+      );
+      if (result === 'saved') {
+        appAlert('Saved', 'A copy of the export was saved to the folder you chose.');
+      }
+    } catch (error) {
+      appAlert('Save failed', error instanceof Error ? error.message : String(error));
+    } finally {
+      setSavingBuildId(null);
+    }
+  }
+
+  function confirmDelete(item: BuiltClipItem) {
+    appAlert(
+      'Delete export',
+      `Delete “${item.clipName}” from the app and remove the local video file?`,
+      [
+        { text: 'Cancel', style: 'cancel' },
+        {
+          text: 'Delete',
+          style: 'destructive',
+          onPress: () => {
+            void (async () => {
+              await deleteClipBuild(item.build.id);
+              setItems((prev) => prev.filter((row) => row.build.id !== item.build.id));
+            })();
+          },
+        },
+      ],
+    );
+  }
+
   function renderItem({ item }: { item: BuiltClipItem }) {
     const ratios = parseAspectRatios(item.build.aspect_ratios);
     const ratioLabel = ratios.length > 0 ? ratios.join(', ') : null;
+    const thumbUri = toLocalImageUri(item.build.thumbnail_path);
+    const saving = savingBuildId === item.build.id;
 
     return (
       <Pressable
@@ -108,8 +176,8 @@ export default function ClipsScreen() {
         className="mb-3 overflow-hidden rounded-xl border border-border bg-surface"
       >
         <View className="aspect-video w-full bg-surfaceMuted">
-          {item.build.thumbnail_path ? (
-            <Image source={{ uri: item.build.thumbnail_path }} className="h-full w-full" resizeMode="cover" />
+          {thumbUri ? (
+            <Image source={{ uri: thumbUri }} className="h-full w-full" resizeMode="cover" />
           ) : (
             <View className="h-full w-full items-center justify-center">
               <Ionicons name="film-outline" size={32} color={tokens.colors.muted} />
@@ -136,7 +204,7 @@ export default function ClipsScreen() {
               </>
             ) : null}
           </View>
-          <View className="mt-2 flex-row gap-2">
+          <View className="mt-2 flex-row flex-wrap gap-2">
             {item.projectId ? (
               <Pressable
                 onPress={() => openProject(item)}
@@ -146,16 +214,23 @@ export default function ClipsScreen() {
               </Pressable>
             ) : null}
             <Pressable
-              onPress={() => router.push(`/schedule/${item.build.id}`)}
-              className="rounded-lg bg-primary px-3 py-1.5"
-            >
-              <Text className="text-xs font-semibold text-primary-foreground">Post</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => void shareClip(item)}
+              onPress={() => void saveCopy(item)}
+              disabled={saving}
               className="rounded-lg border border-border px-3 py-1.5"
             >
-              <Text className="text-xs text-foreground">Share</Text>
+              <Text className="text-xs text-foreground">{saving ? 'Saving…' : 'Save copy'}</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => setPostBuildId(item.build.id)}
+              className="rounded-lg bg-accent px-3 py-1.5"
+            >
+              <Text className="text-xs font-semibold text-white">Post</Text>
+            </Pressable>
+            <Pressable
+              onPress={() => confirmDelete(item)}
+              className="rounded-lg border border-destructive/40 px-3 py-1.5"
+            >
+              <Text className="text-xs text-destructive">Delete</Text>
             </Pressable>
           </View>
         </View>
@@ -204,6 +279,11 @@ export default function ClipsScreen() {
             <Button title="Go to video library" variant="outline" onPress={() => router.push('/(tabs)/projects')} />
           </Card>
         }
+      />
+      <PostSheet
+        visible={postBuildId != null}
+        buildId={postBuildId}
+        onClose={() => setPostBuildId(null)}
       />
     </View>
   );

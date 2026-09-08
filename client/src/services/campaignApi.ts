@@ -853,6 +853,21 @@ export function formatCpm(cpm: string | number): string {
   return `$${value.toFixed(2)} per 1K views`;
 }
 
+/** Active campaigns that have not passed ends_at — eligible for posting. */
+export function isCampaignOpenForPosting(campaign: Pick<Campaign, 'status' | 'ends_at'>): boolean {
+  if (campaign.status !== 'active') return false;
+  if (!campaign.ends_at) return true;
+  const endsAt = new Date(campaign.ends_at);
+  if (Number.isNaN(endsAt.getTime())) return true;
+  return endsAt.getTime() > Date.now();
+}
+
+export function filterCampaignsOpenForPosting<T extends Pick<Campaign, 'status' | 'ends_at'>>(
+  campaigns: T[],
+): T[] {
+  return campaigns.filter(isCampaignOpenForPosting);
+}
+
 /**
  * Calculate estimated earnings based on views and CPM
  */

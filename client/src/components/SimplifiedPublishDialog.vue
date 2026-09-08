@@ -41,6 +41,7 @@
                       <span>Organization</span>
                     </button>
                     <button
+                      v-if="availableCampaigns.length > 0"
                       type="button"
                       :class="['publish-dialog__context-tab', { 'publish-dialog__context-tab--active': postingContext === 'campaign' }]"
                       @click="postingContext = 'campaign'"
@@ -283,7 +284,7 @@ import { useBackgroundPublish } from '@/composables/useBackgroundPublish';
 import { markBuildAsPublished } from '@/services/database/clip-build';
 import { getMyAssignedAccounts, listSocialAccounts, type SocialAccount } from '@/services/socialAccountsApi';
 import { listSocialAccounts as listUserSocialAccounts } from '@/services/clipperProfileApi';
-import { listMyCampaigns, type Campaign } from '@/services/campaignApi';
+import { listMyCampaigns, filterCampaignsOpenForPosting, type Campaign } from '@/services/campaignApi';
 import {
   getMyAssignedCreatorProfiles,
   listOrganizationCreatorProfiles,
@@ -613,8 +614,12 @@ async function loadCampaigns() {
   try {
     const res = await listMyCampaigns('active');
     if (res.success) {
-      availableCampaigns.value = res.campaigns;
-      if (availableCampaigns.value.length === 1) {
+      availableCampaigns.value = filterCampaignsOpenForPosting(res.campaigns);
+      if (availableCampaigns.value.length === 0 && postingContext.value === 'campaign') {
+        postingContext.value = 'org';
+        selectedCampaignId.value = null;
+        selectedCampaignProfileId.value = null;
+      } else if (availableCampaigns.value.length === 1) {
         selectedCampaignId.value = availableCampaigns.value[0].id;
         autoSelectCampaignProfile();
       }

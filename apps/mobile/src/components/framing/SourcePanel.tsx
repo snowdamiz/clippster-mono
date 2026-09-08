@@ -1,10 +1,13 @@
-import type { ManualFramingConfig } from '@clippster/shared-types';
+import { Ionicons } from '@expo/vector-icons';
+import type { ManualFramingConfig, ManualRegion } from '@clippster/shared-types';
 import { createDefaultManualRegion, MAX_POI_REGIONS } from '@clippster/shared-types';
 import type { VideoPlayer } from 'expo-video';
 import { VideoView } from 'expo-video';
 import { Pressable, Text, View } from 'react-native';
 import { DraggableRegionFrame } from './DraggableRegionFrame';
 import { appAlert } from '@/lib/appAlert';
+import { getActiveFramingRegions, replaceActiveFramingRegions } from './framingRegions';
+import { tokens } from '@/theme/tokens';
 
 interface SourcePanelProps {
   config: ManualFramingConfig;
@@ -12,6 +15,9 @@ interface SourcePanelProps {
   canvasWidth: number;
   canvasHeight: number;
   player: VideoPlayer | null;
+  currentTime: number;
+  selectedRegionId: string | null;
+  onSelectRegion: (regionId: string | null) => void;
 }
 
 export function SourcePanel({
@@ -20,37 +26,98 @@ export function SourcePanel({
   canvasWidth,
   canvasHeight,
   player,
+  currentTime,
+  selectedRegionId,
+  onSelectRegion,
 }: SourcePanelProps) {
-  function updateRegion(regionId: string, patch: { x?: number; y?: number; width?: number; height?: number }) {
-    onChange({
-      ...config,
-      regions: config.regions.map((region) =>
-        region.id === regionId ? { ...region, source: { ...region.source, ...patch } } : region,
+  const { regions: activeRegions, segmentIndex } = getActiveFramingRegions(config, currentTime);
+  const selectedRegion =
+    activeRegions.find((region) => region.id === selectedRegionId) ?? null;
+
+  function patchRegion(regionId: string, patch: Partial<ManualRegion>) {
+    onChange(
+      replaceActiveFramingRegions(
+        config,
+        segmentIndex,
+        activeRegions.map((region) =>
+          region.id === regionId ? { ...region, ...patch } : region,
+        ),
       ),
-    });
+    );
+  }
+
+  function updateRegion(
+    regionId: string,
+    patch: { x?: number; y?: number; width?: number; height?: number },
+  ) {
+    const region = activeRegions.find((item) => item.id === regionId);
+    if (!region) return;
+    patchRegion(regionId, { source: { ...region.source, ...patch } });
   }
 
   function addRegion() {
-    if (config.regions.length >= MAX_POI_REGIONS) {
+    if (activeRegions.length >= MAX_POI_REGIONS) {
       appAlert('Limit reached', `Maximum ${MAX_POI_REGIONS} regions.`);
       return;
     }
-    onChange({
-      ...config,
-      regions: [...config.regions, createDefaultManualRegion(config.regions.length)],
-    });
+    const region = createDefaultManualRegion(activeRegions.length);
+    region.aspectRatioLocked = false;
+    onChange(replaceActiveFramingRegions(config, segmentIndex, [...activeRegions, region]));
+    onSelectRegion(region.id);
   }
 
   function removeRegion(id: string) {
-    onChange({ ...config, regions: config.regions.filter((region) => region.id !== id) });
+    onChange(
+      replaceActiveFramingRegions(
+        config,
+        segmentIndex,
+        activeRegions.filter((region) => region.id !== id),
+      ),
+    );
+    if (selectedRegionId === id) onSelectRegion(null);
   }
 
   return (
     <View>
-      <View className="mb-2 flex-row items-center justify-between px-4">
-        <Text className="text-sm font-semibold text-foreground">Source regions</Text>
-        <Pressable onPress={addRegion} className="rounded bg-primary px-3 py-1">
-          <Text className="text-xs text-primary-foreground">Add region</Text>
+      <View className="mb-1.5 flex-row items-center gap-2 px-4">
+        <Text className="mr-auto text-xs font-semibold text-foreground">Source regions</Text>
+        {selectedRegion ? (
+          <Pressable
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: selectedRegion.aspectRatioLocked !== false }}
+            onPress={() =>
+              patchRegion(selectedRegion.id, {
+                aspectRatioLocked: selectedRegion.aspectRatioLocked === false,
+              })
+            }
+            className={`flex-row items-center gap-1 rounded-md border px-2 py-1 ${
+              selectedRegion.aspectRatioLocked !== false
+                ? 'border-emerald-400/40 bg-emerald-400/10'
+                : 'border-amber-400/40 bg-amber-400/10'
+            }`}
+          >
+            <Ionicons
+              name={selectedRegion.aspectRatioLocked !== false ? 'lock-closed' : 'lock-open'}
+              size={12}
+              color={
+                selectedRegion.aspectRatioLocked !== false
+                  ? tokens.colors.success
+                  : tokens.colors.warning
+              }
+            />
+            <Text
+              className={`text-[10px] font-semibold ${
+                selectedRegion.aspectRatioLocked !== false
+                  ? 'text-emerald-300'
+                  : 'text-amber-300'
+              }`}
+            >
+              {selectedRegion.aspectRatioLocked !== false ? 'Locked' : 'Free'}
+            </Text>
+          </Pressable>
+        ) : null}
+        <Pressable onPress={addRegion} className="rounded-md bg-accent px-2.5 py-1.5">
+          <Text className="text-[10px] font-semibold text-white">+ Region</Text>
         </Pressable>
       </View>
 
@@ -65,6 +132,7 @@ export function SourcePanel({
             style={{ width: canvasWidth, height: canvasHeight }}
             nativeControls={false}
             contentFit="contain"
+            surfaceType="textureView"
           />
         ) : (
           <View className="flex-1 items-center justify-center">
@@ -72,7 +140,7 @@ export function SourcePanel({
           </View>
         )}
 
-        {config.regions.map((region) => (
+        {activeRegions.map((region, index) => (
           <DraggableRegionFrame
             key={region.id}
             x={region.source.x}
@@ -80,10 +148,13 @@ export function SourcePanel({
             width={region.source.width}
             height={region.source.height}
             color={region.color}
+            label={region.label ?? `Region ${index + 1}`}
+            isSelected={selectedRegionId === region.id}
             canvasWidth={canvasWidth}
             canvasHeight={canvasHeight}
-            onMove={(x, y) => updateRegion(region.id, { x, y })}
-            onResize={(width, height) => updateRegion(region.id, { width, height })}
+            aspectRatioLocked={region.aspectRatioLocked !== false}
+            onChange={(rect) => updateRegion(region.id, rect)}
+            onSelect={() => onSelectRegion(region.id)}
             onRemove={() => removeRegion(region.id)}
           />
         ))}

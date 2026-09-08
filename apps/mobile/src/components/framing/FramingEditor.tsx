@@ -1,41 +1,59 @@
-import type { ActiveVodPresetConfig, ManualFramingConfig } from '@clippster/shared-types';
 import {
   createDefaultManualFramingConfig,
-  type TargetAspectRatio,
+  type ActiveVodPresetConfig,
+  type ManualFramingConfig,
 } from '@clippster/shared-types';
 import type { VideoPlayer } from 'expo-video';
 import { useCallback, useState } from 'react';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Pressable, Text, useWindowDimensions, View } from 'react-native';
 
-import { POISegmentTimeline } from './POISegmentTimeline';
+import { VideoPlayerControls } from '@/components/editor/VideoPlayerControls';
 import { SourcePanel } from './SourcePanel';
 import { TargetPanel } from './TargetPanel';
 
-type Tab = 'source' | 'target';
-
 interface FramingEditorProps {
   config: ActiveVodPresetConfig;
-  clipDuration: number;
   currentTime: number;
+  videoTime: number;
   player: VideoPlayer | null;
+  videoPath: string;
+  duration: number;
+  playing: boolean;
+  onSeek: (seconds: number) => void;
+  onTogglePlay: () => void;
   onSave: (config: ActiveVodPresetConfig) => Promise<void>;
-  onSeek: (time: number) => void;
 }
 
 export function FramingEditor({
   config,
-  clipDuration,
   currentTime,
+  videoTime,
   player,
-  onSave,
+  videoPath,
+  duration,
+  playing,
   onSeek,
+  onTogglePlay,
+  onSave,
 }: FramingEditorProps) {
-  const [tab, setTab] = useState<Tab>('source');
-  const [draft, setDraft] = useState<ActiveVodPresetConfig>(config);
+  const { width: windowWidth } = useWindowDimensions();
+  const [draft, setDraft] = useState<ActiveVodPresetConfig>(() => ({
+    ...config,
+    targetAspectRatio: '9:16',
+    framingConfig: {
+      ...(config.framingConfig ?? createDefaultManualFramingConfig('9:16')),
+      targetAspectRatio: '9:16',
+    },
+  }));
   const [saving, setSaving] = useState(false);
+  const [selectedRegionId, setSelectedRegionId] = useState<string | null>(
+    config.framingConfig?.regions[0]?.id ?? null,
+  );
 
-  const framing = draft.framingConfig ?? createDefaultManualFramingConfig(draft.targetAspectRatio);
-  const targetRatio = (draft.targetAspectRatio === '16:9' ? '16:9' : '9:16') as TargetAspectRatio;
+  const framing = draft.framingConfig ?? createDefaultManualFramingConfig('9:16');
+  const targetRatio = '9:16' as const;
+  const sourceWidth = Math.min(windowWidth - 32, 340);
+  const targetWidth = Math.min(148, (windowWidth - 48) * 0.42);
 
   const updateFraming = useCallback(
     (next: ManualFramingConfig) => {
@@ -43,17 +61,6 @@ export function FramingEditor({
     },
     [],
   );
-
-  const setRatio = (ratio: TargetAspectRatio) => {
-    setDraft((prev) => ({
-      ...prev,
-      targetAspectRatio: ratio,
-      framingConfig: {
-        ...(prev.framingConfig ?? createDefaultManualFramingConfig(ratio)),
-        targetAspectRatio: ratio,
-      },
-    }));
-  };
 
   const handleSave = async () => {
     setSaving(true);
@@ -66,75 +73,80 @@ export function FramingEditor({
 
   return (
     <View className="flex-1">
-      <View className="flex-row items-center justify-center gap-2 px-4 py-3">
-        {(['9:16', '16:9'] as const).map((ratio) => (
-          <Pressable
-            key={ratio}
-            onPress={() => setRatio(ratio)}
-            className={`rounded-full px-4 py-2 ${
-              targetRatio === ratio ? 'bg-primary' : 'bg-surface'
-            }`}
-          >
-            <Text className={targetRatio === ratio ? 'text-primary-foreground' : 'text-foreground'}>
-              {ratio}
-            </Text>
-          </Pressable>
-        ))}
-      </View>
+      <VideoPlayerControls
+        player={player}
+        currentTime={currentTime}
+        duration={duration}
+        playing={playing}
+        onTogglePlay={onTogglePlay}
+        onSeek={onSeek}
+      />
 
-      <View className="mb-3 flex-row border-b border-border">
-        {(['source', 'target'] as const).map((t) => (
-          <Pressable
-            key={t}
-            onPress={() => setTab(t)}
-            className={`flex-1 items-center py-3 ${tab === t ? 'border-b-2 border-primary' : ''}`}
-          >
-            <Text className={tab === t ? 'font-semibold text-primary' : 'text-muted'}>
-              {t === 'source' ? 'Source' : 'Target'}
+      <View className="flex-1 justify-between py-2">
+        <View className="border-b border-border pb-2">
+          <View className="mb-1 flex-row items-center gap-2 px-4">
+            <View className="h-5 w-5 items-center justify-center rounded-full bg-accent">
+              <Text className="text-[10px] font-bold text-white">1</Text>
+            </View>
+            <Text className="text-xs font-semibold uppercase tracking-wide text-muted">
+              Choose the source crop
             </Text>
-          </Pressable>
-        ))}
-      </View>
-
-      {tab === 'source' ? (
+          </View>
         <SourcePanel
           config={framing}
           onChange={updateFraming}
-          canvasWidth={340}
-          canvasHeight={191}
+          canvasWidth={sourceWidth}
+          canvasHeight={sourceWidth / (16 / 9)}
           player={player}
+          currentTime={currentTime}
+          selectedRegionId={selectedRegionId}
+          onSelectRegion={setSelectedRegionId}
         />
-      ) : (
+        </View>
+
+        <View className="pt-1">
+          <View className="mb-1 flex-row items-center gap-2 px-4">
+            <View className="h-5 w-5 items-center justify-center rounded-full bg-accent">
+              <Text className="text-[10px] font-bold text-white">2</Text>
+            </View>
+            <Text className="text-xs font-semibold uppercase tracking-wide text-muted">
+              Arrange the {targetRatio} output
+            </Text>
+          </View>
         <TargetPanel
           config={framing}
           targetRatio={targetRatio}
           onChange={updateFraming}
-          previewWidth={targetRatio === '9:16' ? 200 : 320}
-          player={player}
-        />
-      )}
-
-      <ScrollView className="flex-1" keyboardShouldPersistTaps="handled">
-        <POISegmentTimeline
-          config={framing}
-          clipDuration={clipDuration}
+          previewWidth={targetWidth}
+          videoPath={videoPath}
           currentTime={currentTime}
-          onChange={updateFraming}
-          onSeek={onSeek}
+          videoTime={videoTime}
+          playing={playing}
+          selectedRegionId={selectedRegionId}
+          onSelectRegion={setSelectedRegionId}
         />
+        </View>
+      </View>
 
-        <View className="px-4 py-4">
+      <View className="border-t border-border bg-surface px-4 py-3">
+        <View className="mb-2 flex-row items-center justify-between">
+          <Text className="text-xs font-medium text-foreground">
+            {framing.regions.length > 0 || framing.sourceFrameMode === 'use16x9'
+              ? 'Framing ready'
+              : 'Add a region or enable Use 16:9'}
+          </Text>
+          <Text className="text-[10px] font-semibold text-accent">{targetRatio}</Text>
+        </View>
           <Pressable
             onPress={() => void handleSave()}
             disabled={saving}
-            className="items-center rounded-lg bg-primary py-3"
+          className="items-center rounded-xl bg-accent py-3"
           >
-            <Text className="font-semibold text-primary-foreground">
+            <Text className="font-semibold text-white">
               {saving ? 'Saving...' : 'Save framing'}
             </Text>
           </Pressable>
-        </View>
-      </ScrollView>
+      </View>
     </View>
   );
 }

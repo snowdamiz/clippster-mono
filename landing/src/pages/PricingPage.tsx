@@ -265,7 +265,7 @@ const comparisonFeatures: ComparisonCategory[] = [
     category: 'Captions & Audio',
     features: [
       { name: 'Auto-captions', clippster: 'yes', opus: 'yes', winner: 'tie' },
-      { name: 'Languages', clippster: '40+', opus: '20+', winner: 'clippster' },
+      { name: 'Languages', clippster: '9 verified', opus: '20+ (vendor claim)', winner: 'tie' },
       { name: 'Caption styles', clippster: 'Customizable', opus: 'Templates', winner: 'clippster' },
       { name: 'Custom fonts', clippster: 'All plans', opus: 'Pro only', winner: 'clippster' },
       { name: 'Filler word removal', clippster: 'yes', opus: 'yes', winner: 'tie' },

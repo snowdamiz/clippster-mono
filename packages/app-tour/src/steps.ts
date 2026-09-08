@@ -195,7 +195,7 @@ export const pageLiveClipSteps: TourStep[] = [
     target: 'tour-mock-streamer',
     title: 'Demo streamer',
     body: "Here's a sample tracked streamer so you can learn the controls. It disappears when this tour ends.",
-    placement: 'right',
+    placement: 'bottom',
     injectMock: 'streamer',
   },
   {
@@ -227,17 +227,17 @@ export const pageLiveClipSteps: TourStep[] = [
 export const pageVodsSteps: TourStep[] = [
   {
     id: 'platforms',
-    target: 'tour-vod-platforms',
+    target: 'tour-vod-page',
     title: 'Supported platforms',
     body: 'Search channels on Kick, Twitch, and PumpFun. Platforms: PumpFun, Kick, Twitch, YouTube, Rumble, X.',
-    placement: 'bottom',
+    placement: 'left',
   },
   {
     id: 'full-videos',
-    target: 'tour-vod-platforms',
+    target: 'tour-vod-page',
     title: 'Videos, not just streams',
     body: 'YouTube, X, and Rumble also let you download full videos — not only live streams. YouTube and Rumble show Live Streams / Videos tabs.',
-    placement: 'bottom',
+    placement: 'left',
   },
   {
     id: 'direct-links',

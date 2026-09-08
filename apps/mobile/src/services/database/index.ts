@@ -2,6 +2,7 @@ import * as Crypto from 'expo-crypto';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { APP_METADATA_TABLE_SQL, LATEST_SCHEMA_VERSION, MIGRATIONS } from '@clippster/sqlite-schema';
 import type { Project } from '@clippster/shared-types';
+import { deleteLocalMediaFile, isDeletableLocalPath } from '@/services/localMediaFiles';
 
 const DB_NAME = 'clippster_mobile.db';
 
@@ -125,41 +126,6 @@ export async function getProject(id: string): Promise<Project | null> {
      FROM projects WHERE id = ?`,
     [id],
   );
-}
-
-function isDeletableLocalPath(path: string | null | undefined): path is string {
-  if (!path) return false;
-  if (
-    path.startsWith('pending://') ||
-    path.startsWith('clip://') ||
-    path.startsWith('http://') ||
-    path.startsWith('https://')
-  ) {
-    return false;
-  }
-  return true;
-}
-
-function playableSiblingPath(path: string): string | null {
-  if (path.endsWith('.play.mp4')) return null;
-  return path.replace(/\.[^./]+$/, '') + '.play.mp4';
-}
-
-async function deleteLocalMediaFile(path: string): Promise<void> {
-  const FileSystem = await import('expo-file-system/legacy');
-  try {
-    await FileSystem.deleteAsync(path, { idempotent: true });
-  } catch {
-    // File may already be gone.
-  }
-  const playable = playableSiblingPath(path);
-  if (playable) {
-    try {
-      await FileSystem.deleteAsync(playable, { idempotent: true });
-    } catch {
-      // ignore
-    }
-  }
 }
 
 /**
@@ -318,6 +284,8 @@ export {
   createClipBuild,
   updateClipBuildProgress,
   completeClipBuild,
+  deleteClipBuild,
+  setClipBuildThumbnail,
   getClipBuildsByClipId,
   getClipBuildById,
   getCompletedClipBuilds,

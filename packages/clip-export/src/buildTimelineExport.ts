@@ -1,8 +1,9 @@
-import type { SubtitleSettings, TargetAspectRatio, WordInfo } from '@clippster/shared-types';
+import type { ManualFramingConfig, SubtitleSettings, TargetAspectRatio, WordInfo } from '@clippster/shared-types';
 import { TARGET_DIMENSIONS } from '@clippster/shared-types';
 
 import { buildSubtitleAssContent } from './buildSubtitleAss';
 import { clipEffectVideoChain, type ClipEffect } from './buildClipEffects';
+import { buildFramingFilterGraph } from './buildFramingFilter';
 
 export const TIMELINE_TRANSITION_SECONDS = 0.5;
 export type TimelineExportTransition = 'none' | 'fade' | 'dissolve' | 'wipe';
@@ -13,8 +14,12 @@ export interface TimelineExportVideo {
   sourceEnd: number;
   speed: number;
   muted: boolean;
+  volume?: number;
   transitionIn?: TimelineExportTransition;
+  transitionDuration?: number;
   effect?: ClipEffect | null;
+  framingConfig?: ManualFramingConfig | null;
+  rotationDeg?: number;
 }
 
 export interface TimelineExportImage {
@@ -24,6 +29,12 @@ export interface TimelineExportImage {
   x: number;
   y: number;
   widthPct: number;
+  sourceStart?: number;
+  sourceEnd?: number;
+  speed?: number;
+  opacity?: number;
+  rotationDeg?: number;
+  crop?: { x: number; y: number; width: number; height: number };
 }
 
 export interface TimelineExportAudio {
@@ -32,6 +43,9 @@ export interface TimelineExportAudio {
   sourceEnd: number;
   timelineStart: number;
   volume: number;
+  speed?: number;
+  fadeIn?: number;
+  fadeOut?: number;
 }
 
 export interface TimelineExportInput {
@@ -44,6 +58,7 @@ export interface TimelineExportInput {
   subtitleSettings?: SubtitleSettings | null;
   subtitleWords?: WordInfo[];
   assPath?: string;
+  framingConfig?: ManualFramingConfig | null;
 }
 
 export interface TimelineExportStage {
@@ -73,7 +88,11 @@ function videoDuration(clip: TimelineExportVideo): number {
 
 export function timelineClipOverlap(previous: TimelineExportVideo, incoming: TimelineExportVideo): number {
   if (!incoming.transitionIn || incoming.transitionIn === 'none') return 0;
-  return Math.min(TIMELINE_TRANSITION_SECONDS, videoDuration(previous) / 2, videoDuration(incoming) / 2);
+  return Math.min(
+    incoming.transitionDuration ?? TIMELINE_TRANSITION_SECONDS,
+    videoDuration(previous) / 2,
+    videoDuration(incoming) / 2,
+  );
 }
 
 export function assembledTimelineDuration(videos: TimelineExportVideo[]): number {
@@ -105,18 +124,35 @@ export function buildTimelineClipArgs(input: {
   width: number;
   height: number;
   silentAudio: boolean;
+  targetRatio?: TargetAspectRatio;
+  framingConfig?: ManualFramingConfig | null;
 }): string[] {
   const duration = videoDuration(input.clip);
   const source = normalizeExportPath(input.clip.path);
   const speed = input.clip.speed || 1;
+  const framing =
+    input.framingConfig && input.targetRatio
+      ? buildFramingFilterGraph({
+          framingConfig: input.framingConfig,
+          targetRatio: input.targetRatio,
+        })
+      : null;
+  const baseVideoFilter = framing
+    ? `${framing.filterComplex};[${framing.outputLabel}]fps=30,setpts=PTS-STARTPTS[scaled]`
+    : containScale(input.width, input.height, '0:v', 'scaled');
+  const rotation =
+    input.clip.rotationDeg && input.clip.rotationDeg % 360 !== 0
+      ? `[scaled]rotate=${((input.clip.rotationDeg * Math.PI) / 180).toFixed(6)}:ow=iw:oh=ih:c=black[rotated]`
+      : null;
   const videoFilter = [
-    containScale(input.width, input.height, '0:v', 'scaled'),
-    clipEffectVideoChain(input.clip.effect, speed),
-  ].join(';');
+    baseVideoFilter,
+    rotation,
+    clipEffectVideoChain(input.clip.effect, speed, rotation ? 'rotated' : 'scaled'),
+  ].filter(Boolean).join(';');
 
   const audioFilter = input.silentAudio
     ? '[1:a]aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100[a]'
-    : `[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100,asetpts=PTS-STARTPTS,volume=1,atempo=${speed}[a]`;
+    : `[0:a]aformat=sample_fmts=fltp:channel_layouts=stereo:sample_rates=44100,asetpts=PTS-STARTPTS,volume=${input.clip.volume ?? 1},atempo=${speed}[a]`;
 
   return [
     '-ss',
@@ -256,6 +292,8 @@ export function buildTimelineExportPlan(input: TimelineExportInput): TimelineExp
         width: dims.width,
         height: dims.height,
         silentAudio: clip.muted,
+        targetRatio: input.targetRatio,
+        framingConfig: clip.framingConfig ?? input.framingConfig,
       }),
       outputPath,
     };
@@ -270,13 +308,31 @@ export function buildTimelineExportPlan(input: TimelineExportInput): TimelineExp
   let inputIndex = 1;
 
   for (const image of input.images) {
+    if (image.sourceStart != null) extraInputs.push('-ss', String(image.sourceStart));
+    if (image.sourceEnd != null && image.sourceStart != null) {
+      extraInputs.push('-t', String(image.sourceEnd - image.sourceStart));
+    }
     extraInputs.push('-i', normalizeExportPath(image.path));
     const width = Math.max(8, Math.round(dims.width * image.widthPct));
     const x = Math.round(image.x * dims.width);
     const y = Math.round(image.y * dims.height);
     const nextLabel = `ov${inputIndex}`;
+    const imageFilters: string[] = [];
+    if (image.crop) {
+      imageFilters.push(
+        `crop=iw*${image.crop.width}:ih*${image.crop.height}:iw*${image.crop.x}:ih*${image.crop.y}`,
+      );
+    }
+    imageFilters.push(`scale=${width}:-2`);
+    if (image.speed && image.speed !== 1) imageFilters.push(`setpts=PTS/${image.speed}`);
+    if (image.rotationDeg) {
+      imageFilters.push(`rotate=${image.rotationDeg}*PI/180:c=none:ow=rotw(iw):oh=roth(ih)`);
+    }
+    if (image.opacity != null && image.opacity < 1) {
+      imageFilters.push('format=rgba', `colorchannelmixer=aa=${image.opacity}`);
+    }
     filterParts.push(
-      `[${inputIndex}:v]scale=${width}:-2[img${inputIndex}]`,
+      `[${inputIndex}:v]${imageFilters.join(',')}[img${inputIndex}]`,
       `[${videoLabel}][img${inputIndex}]overlay=${x}:${y}:enable='between(t,${image.timelineStart},${image.timelineStart + image.duration})'[${nextLabel}]`,
     );
     videoLabel = nextLabel;
@@ -296,22 +352,33 @@ export function buildTimelineExportPlan(input: TimelineExportInput): TimelineExp
     videoLabel = 'subbed';
   }
 
-  const music = input.audio[0];
-  if (music) {
+  for (const audio of input.audio) {
     extraInputs.push(
       '-ss',
-      String(music.sourceStart),
+      String(audio.sourceStart),
       '-t',
-      String(music.sourceEnd - music.sourceStart),
+      String(audio.sourceEnd - audio.sourceStart),
       '-i',
-      normalizeExportPath(music.path),
+      normalizeExportPath(audio.path),
     );
-    const delay = Math.max(0, Math.round(music.timelineStart * 1000));
+    const delay = Math.max(0, Math.round(audio.timelineStart * 1000));
+    const sourceLabel = `aud${inputIndex}`;
+    const mixedLabel = `amix${inputIndex}`;
+    const speed = audio.speed ?? 1;
+    const duration = (audio.sourceEnd - audio.sourceStart) / speed;
+    const filters = [`volume=${audio.volume}`];
+    if (speed !== 1) filters.push(`atempo=${speed}`);
+    if (audio.fadeIn && audio.fadeIn > 0) filters.push(`afade=t=in:st=0:d=${audio.fadeIn}`);
+    if (audio.fadeOut && audio.fadeOut > 0) {
+      filters.push(`afade=t=out:st=${Math.max(0, duration - audio.fadeOut)}:d=${audio.fadeOut}`);
+    }
+    filters.push(`adelay=${delay}:all=1`);
     filterParts.push(
-      `[${inputIndex}:a]volume=${music.volume},adelay=${delay}:all=1[mus]`,
-      `[${audioLabel}][mus]amix=inputs=2:duration=first:dropout_transition=0[amix]`,
+      `[${inputIndex}:a]${filters.join(',')}[${sourceLabel}]`,
+      `[${audioLabel}][${sourceLabel}]amix=inputs=2:duration=first:dropout_transition=0[${mixedLabel}]`,
     );
-    audioLabel = 'amix';
+    audioLabel = mixedLabel;
+    inputIndex += 1;
   }
 
   const composeArgs = [
