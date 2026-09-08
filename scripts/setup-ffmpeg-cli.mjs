@@ -26,6 +26,10 @@ const jniLibs = path.join(packageRoot, 'android/jniLibs')
 const iosFrameworksRoot = path.join(packageRoot, 'ios/Frameworks')
 const iosXcframework = path.join(iosFrameworksRoot, 'FFmpeg.xcframework')
 const iosCliMarker = path.join(iosXcframework, 'ios-arm64/Headers/expo_ffmpeg.h')
+const iosSimulatorLib = path.join(
+  iosXcframework,
+  'ios-arm64_x86_64-simulator/libffmpeg.a',
+)
 const iosHeaderCopy = path.join(packageRoot, 'ios/expo_ffmpeg.h')
 
 if (process.env.SKIP_FFMPEG_DOWNLOAD === '1') {
@@ -120,7 +124,11 @@ async function setupIos() {
     return
   }
 
-  if (fs.existsSync(iosCliMarker) && fs.existsSync(iosHeaderCopy)) {
+  if (
+    fs.existsSync(iosCliMarker) &&
+    fs.existsSync(iosSimulatorLib) &&
+    fs.existsSync(iosHeaderCopy)
+  ) {
     console.log('[setup-ffmpeg-cli] iOS embed FFmpeg.xcframework already present')
     return
   }
@@ -153,8 +161,10 @@ async function setupIos() {
       fs.copyFileSync(headerSrc, iosHeaderCopy)
     }
 
-    if (!fs.existsSync(iosCliMarker)) {
-      throw new Error('[setup-ffmpeg-cli] iOS embed install incomplete (expo_ffmpeg.h missing)')
+    if (!fs.existsSync(iosCliMarker) || !fs.existsSync(iosSimulatorLib)) {
+      throw new Error(
+        '[setup-ffmpeg-cli] iOS embed install incomplete (need ios-arm64 headers + ios-arm64_x86_64-simulator/libffmpeg.a)',
+      )
     }
     console.log('[setup-ffmpeg-cli] installed iOS embed FFmpeg.xcframework')
   } finally {

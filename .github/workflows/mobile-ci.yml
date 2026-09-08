@@ -140,12 +140,22 @@ jobs:
           set -o pipefail
           WORKSPACE=$(ls -d *.xcworkspace | head -n 1)
           SCHEME=$(xcodebuild -list -workspace "$WORKSPACE" | awk '/Schemes/{f=1;next} f&&NF{print $1; exit}')
+          # Prefer a concrete arm64 simulator so we don't also link x86_64.
+          SIM_ID=$(xcrun simctl list devices available -j | python3 -c 'import json,sys; d=json.load(sys.stdin); 
+devs=[(r,x) for r,xs in d.get("devices",{}).items() if "iOS" in r for x in xs if x.get("isAvailable") and "iPhone" in x.get("name","")];
+print(devs[-1][1]["udid"] if devs else "")')
+          if [ -n "$SIM_ID" ]; then
+            DESTINATION="platform=iOS Simulator,id=$SIM_ID"
+          else
+            DESTINATION='generic/platform=iOS Simulator'
+          fi
+          echo "Using destination: $DESTINATION"
           xcodebuild \
             -workspace "$WORKSPACE" \
             -scheme "$SCHEME" \
             -configuration Debug \
             -sdk iphonesimulator \
-            -destination 'generic/platform=iOS Simulator' \
+            -destination "$DESTINATION" \
             build \
             CODE_SIGNING_ALLOWED=NO \
             ONLY_ACTIVE_ARCH=YES \

@@ -221947,39 +221947,53 @@ index 9a9e31d..7ea56fe 100644
              }
          }
 diff --git a/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec b/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec
-index a0a9fce..2d1897e 100644
+index a0a9fce..20cb431 100644
 --- a/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec
 +++ b/node_modules/ffmpeg-expo/ios/ExpoFFmpeg.podspec
-@@ -2,6 +2,13 @@ require 'json'
+@@ -2,6 +2,14 @@ require 'json'
  
  package = JSON.parse(File.read(File.join(__dir__, '..', 'package.json')))
  
-+# Absolute paths (resolved at `pod install`) so both the ExpoFFmpeg pod and the
-+# app target can find libav* when FFmpeg.h is imported via the ObjC module.
-+ffmpeg_header_paths = [
-+  File.join(__dir__, 'Frameworks/FFmpeg.xcframework/ios-arm64/Headers'),
-+  File.join(__dir__, 'Frameworks/FFmpeg.xcframework/ios-arm64-simulator/Headers'),
-+].map { |path| %("#{path}") }.join(' ')
++ffmpeg_xcframework = File.join(__dir__, 'Frameworks/FFmpeg.xcframework')
++device_headers = File.join(ffmpeg_xcframework, 'ios-arm64/Headers')
++simulator_headers = File.join(ffmpeg_xcframework, 'ios-arm64_x86_64-simulator/Headers')
++device_lib = File.join(ffmpeg_xcframework, 'ios-arm64/libffmpeg.a')
++simulator_lib = File.join(ffmpeg_xcframework, 'ios-arm64_x86_64-simulator/libffmpeg.a')
++
++ffmpeg_header_paths = [device_headers, simulator_headers].map { |path| %("#{path}") }.join(' ')
 +
  Pod::Spec.new do |s|
    s.name           = 'ExpoFFmpeg'
    s.version        = package['version']
-@@ -34,12 +41,15 @@ Pod::Spec.new do |s|
+@@ -21,7 +29,7 @@ Pod::Spec.new do |s|
+   s.source_files = '**/*.{h,m,mm,swift}'
+   s.exclude_files = 'Frameworks/**/*'
+ 
+-  # Vendored framework
++  # Vendored framework (slice copy alone is not enough for static .a + static_framework)
+   s.vendored_frameworks = 'Frameworks/FFmpeg.xcframework'
+ 
+   # Required system frameworks
+@@ -34,12 +42,19 @@ Pod::Spec.new do |s|
    s.pod_target_xcconfig = {
      'DEFINES_MODULE' => 'YES',
      'SWIFT_COMPILATION_MODE' => 'wholemodule',
 -    'HEADER_SEARCH_PATHS' => '"$(PODS_TARGET_SRCROOT)/Frameworks/FFmpeg.xcframework/ios-arm64/Headers"',
 +    'HEADER_SEARCH_PATHS' => "$(inherited) #{ffmpeg_header_paths}",
      'OTHER_LDFLAGS' => '-lz -lbz2 -liconv',
++    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => "-lz -lbz2 -liconv -force_load \"#{simulator_lib}\"",
++    'OTHER_LDFLAGS[sdk=iphoneos*]' => "-lz -lbz2 -liconv -force_load \"#{device_lib}\"",
      'ENABLE_BITCODE' => 'NO'
    }
  
-+  # App targets import ExpoFFmpeg's ObjC module (re-parses FFmpeg.h) and need
-+  # the same libav* search paths as the pod itself.
++  # App links -lExpoFFmpeg but does not transitively pull the static libffmpeg.a
++  # from the xcframework; force_load the correct slice per SDK.
    s.user_target_xcconfig = {
 -    'ENABLE_BITCODE' => 'NO'
 +    'ENABLE_BITCODE' => 'NO',
 +    'HEADER_SEARCH_PATHS' => "$(inherited) #{ffmpeg_header_paths}",
++    'OTHER_LDFLAGS[sdk=iphonesimulator*]' => "-force_load \"#{simulator_lib}\"",
++    'OTHER_LDFLAGS[sdk=iphoneos*]' => "-force_load \"#{device_lib}\"",
    }
  end
 diff --git a/node_modules/ffmpeg-expo/ios/FFmpeg.h b/node_modules/ffmpeg-expo/ios/FFmpeg.h
