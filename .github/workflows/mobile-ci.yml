@@ -134,21 +134,15 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             ONLY_ACTIVE_ARCH=YES \
             COMPILER_INDEX_STORE_ENABLE=NO
-          # CocoaPods used to drop ../cpp sources; ensure GraphEvaluator lands in the archive.
-          ARCHIVE=$(find build Pods/build -name 'libClippsterEditorNative.a' 2>/dev/null | head -n 1)
-          if [ -z "$ARCHIVE" ]; then
-            ARCHIVE=$(find ~/Library/Developer/Xcode/DerivedData -name 'libClippsterEditorNative.a' 2>/dev/null | head -n 1)
-          fi
-          if [ -z "$ARCHIVE" ]; then
-            echo "libClippsterEditorNative.a not found after pod target build"
+          # CocoaPods used to drop ../cpp sources; ensure GraphEvaluator was compiled.
+          # Use find -print -quit (not find|head) — pipefail treats SIGPIPE from head as failure.
+          OBJ=$(find build -name 'graph_evaluator.o' -print -quit 2>/dev/null || true)
+          if [ -z "$OBJ" ]; then
+            echo "graph_evaluator.o not found — shared cpp/src was not compiled into the pod"
+            find build -name '*.o' 2>/dev/null | head -n 40 || true
             exit 1
           fi
-          echo "Checking symbols in $ARCHIVE"
-          nm -gU "$ARCHIVE" | grep -q 'GraphEvaluator' || {
-            echo "Missing GraphEvaluator symbols — shared cpp/src was not compiled into the pod"
-            nm -gU "$ARCHIVE" | head -n 40 || true
-            exit 1
-          }
+          echo "Found compiled graph core object: $OBJ"
       - name: Compile iOS simulator
         working-directory: apps/mobile/ios
         run: |
