@@ -246,6 +246,8 @@ export async function healSchema(): Promise<void> {
     await addColumnIfMissing(db, 'image_assets', 'canvas_height', 'INTEGER');
     await addColumnIfMissing(db, 'image_assets', 'export_format', 'TEXT');
     await addColumnIfMissing(db, 'image_assets', 'editor_project_json', 'TEXT');
+    await addColumnIfMissing(db, 'image_assets', 'is_published', 'INTEGER DEFAULT 0');
+    await addColumnIfMissing(db, 'image_assets', 'published_at', 'INTEGER');
 
     // --- Design Studio: clips cover image columns ---
     await addColumnIfMissing(db, 'clips', 'cover_image_id', 'TEXT');

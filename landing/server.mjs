@@ -149,7 +149,7 @@ function organizationJsonLd() {
     '@type': 'Organization',
     name: 'Clippster',
     url: SITE_URL,
-    logo: `${SITE_URL}/logo-icon.svg`,
+    logo: `${SITE_URL}/favicon-192.png`,
   }
 }
 
