@@ -1509,34 +1509,46 @@ defmodule ClippsterServer.Accounts do
   end
 
   @doc """
-  Enables Circles access for a user.
+  Enables Tokend access for a user (connect, publish, VODs, Circles, live).
   """
-  def enable_circles(user_id) do
+  def enable_tokend(user_id) do
     user = get_user(user_id)
 
     if is_nil(user) do
       {:error, :user_not_found}
     else
       user
-      |> Ecto.Changeset.change(%{circles_enabled: true})
+      |> Ecto.Changeset.change(%{tokend_enabled: true})
       |> Repo.update()
     end
   end
 
   @doc """
-  Disables Circles access for a user.
+  Disables Tokend access for a user.
   """
-  def disable_circles(user_id) do
+  def disable_tokend(user_id) do
     user = get_user(user_id)
 
     if is_nil(user) do
       {:error, :user_not_found}
     else
       user
-      |> Ecto.Changeset.change(%{circles_enabled: false})
+      |> Ecto.Changeset.change(%{tokend_enabled: false})
       |> Repo.update()
     end
   end
+
+  @doc """
+  Returns true if the user can access Tokend features.
+  Admins always have access; others need tokend_enabled and creator/pro tier.
+  """
+  def can_access_tokend?(%{is_admin: true}), do: true
+
+  def can_access_tokend?(%{tokend_enabled: true, subscription_tier: tier})
+      when tier in ["creator", "pro"],
+      do: true
+
+  def can_access_tokend?(_user), do: false
 
   @doc """
   Enables campaigns access for a user.

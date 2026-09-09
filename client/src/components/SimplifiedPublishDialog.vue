@@ -293,6 +293,7 @@ import {
 } from '@/services/organizationProfilesApi';
 import { useAuthStore } from '@/stores/auth';
 import { fetchTokendCapabilities } from '@/services/tokend';
+import { canAccessTokend } from '@/utils/tokendAccess';
 
 type PersonalSocialAccount = {
   id: number;
@@ -382,7 +383,9 @@ const allPlatforms = [
 
 const tokendPublishEnabled = ref(false);
 const availablePlatforms = computed(() =>
-  allPlatforms.filter((p) => p.id !== 'tokend' || tokendPublishEnabled.value)
+  allPlatforms.filter(
+    (p) => p.id !== 'tokend' || (tokendPublishEnabled.value && canAccessTokend(authStore.user))
+  )
 );
 
 const selectedPublishPlatforms = ref<string[]>([]);

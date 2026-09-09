@@ -15,6 +15,8 @@ import {
   isTokendPublishPlatform,
   TOKEND_UNAVAILABLE_MESSAGES,
 } from '@/services/tokend';
+import { canAccessTokend } from '@/utils/tokendAccess';
+import { useAuthStore } from '@/stores/auth';
 
 export interface PublishTarget {
   platformId: string;
@@ -220,14 +222,20 @@ export function useBackgroundPublish() {
       const tokendCapabilities = targets.some((t) => isTokendPublishPlatform(t.platformId))
         ? await fetchTokendCapabilities().catch(() => null)
         : null;
+      const tokendAllowed = canAccessTokend(useAuthStore().user);
 
       for (const target of targets) {
         try {
-          if (isTokendPublishPlatform(target.platformId) && !tokendCapabilities?.publish) {
+          if (
+            isTokendPublishPlatform(target.platformId) &&
+            (!tokendAllowed || !tokendCapabilities?.publish)
+          ) {
             state.value.publishResults.push({
               platformId: target.platformId,
               success: false,
-              error: TOKEND_UNAVAILABLE_MESSAGES.publish,
+              error: tokendAllowed
+                ? TOKEND_UNAVAILABLE_MESSAGES.publish
+                : 'Tokend access is not enabled for this account.',
             });
             failedCount++;
             continue;

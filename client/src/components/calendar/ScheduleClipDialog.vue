@@ -515,6 +515,7 @@ import { invoke } from '@tauri-apps/api/core';
 import { listOrganizationCreatorProfiles, type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
 import { listMyCampaigns, filterCampaignsOpenForPosting, type Campaign } from '@/services/campaignApi';
 import { fetchTokendCapabilities } from '@/services/tokend';
+import { canAccessTokend } from '@/utils/tokendAccess';
 
 interface Props {
   open: boolean;
@@ -548,7 +549,9 @@ const allPlatforms = [
 
 const tokendScheduleEnabled = ref(false);
 const availablePlatforms = computed(() =>
-  allPlatforms.filter((p) => p.id !== 'tokend' || tokendScheduleEnabled.value)
+  allPlatforms.filter(
+    (p) => p.id !== 'tokend' || (tokendScheduleEnabled.value && canAccessTokend(authStore.user))
+  )
 );
 
 // State

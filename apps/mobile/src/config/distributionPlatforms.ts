@@ -46,6 +46,13 @@ export const DISTRIBUTION_PLATFORMS: DistributionPlatformConfig[] = [
   },
 ];
 
+export function getDistributionPlatforms(options?: {
+  includeTokend?: boolean;
+}): DistributionPlatformConfig[] {
+  if (options?.includeTokend) return DISTRIBUTION_PLATFORMS;
+  return DISTRIBUTION_PLATFORMS.filter((platform) => platform.id !== 'tokend');
+}
+
 export function getDistributionPlatform(id: SocialPlatform): DistributionPlatformConfig | undefined {
   return DISTRIBUTION_PLATFORMS.find((p) => p.id === id);
 }

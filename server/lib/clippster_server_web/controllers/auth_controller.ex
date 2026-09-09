@@ -903,7 +903,7 @@ defmodule ClippsterServerWeb.AuthController do
         is_admin: user.is_admin,
         is_moderator: user.is_moderator,
         ai_editor_enabled: user.ai_editor_enabled,
-        circles_enabled: user.circles_enabled,
+        tokend_enabled: user.tokend_enabled,
         campaigns_enabled: user.campaigns_enabled,
         account_type: user.account_type,
         owned_organization_id: user.owned_organization_id,

@@ -14,6 +14,8 @@ export interface AuthUser {
   created_by_organization_id?: number | null
   ai_allowed?: boolean
   ai_editor_enabled?: boolean
+  tokend_enabled?: boolean
+  campaigns_enabled?: boolean
   beta_activated?: boolean
   subscription?: {
     status: 'none' | 'active' | 'cancelled' | 'expired'

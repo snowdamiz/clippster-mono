@@ -2,10 +2,14 @@ import type { MediaPlatform } from '@clippster/shared-types';
 import { extractTokendChannel } from '@/services/tokendUrl';
 
 /** UI + search platform detection — mirrors desktop StreamVods.vue heuristics. */
-export function detectPlatformFromInput(input: string): MediaPlatform | null {
+export function detectPlatformFromInput(
+  input: string,
+  options?: { allowTokend?: boolean }
+): MediaPlatform | null {
   const val = input.trim();
   if (!val) return null;
 
+  const allowTokend = options?.allowTokend === true;
   const lowerVal = val.toLowerCase();
 
   if (lowerVal.includes('youtube.com') || lowerVal.includes('youtu.be')) return 'youtube';
@@ -13,9 +17,10 @@ export function detectPlatformFromInput(input: string): MediaPlatform | null {
   if (lowerVal.includes('kick.com')) return 'kick';
   if (lowerVal.includes('rumble.com')) return 'rumble';
   if (
-    lowerVal.includes('tokend.tv') ||
-    lowerVal.includes('localhost:4100') ||
-    lowerVal.includes('127.0.0.1:4100')
+    allowTokend &&
+    (lowerVal.includes('tokend.tv') ||
+      lowerVal.includes('localhost:4100') ||
+      lowerVal.includes('127.0.0.1:4100'))
   ) {
     return 'tokend';
   }
@@ -28,7 +33,7 @@ export function detectPlatformFromInput(input: string): MediaPlatform | null {
     return 'twitter';
   }
 
-  if (extractTokendChannel(val)) return 'tokend';
+  if (allowTokend && extractTokendChannel(val)) return 'tokend';
 
   // Bare handle fallback (Kick username, YouTube @handle, etc.)
   if (/^@?[a-zA-Z0-9_-]{3,}$/.test(val)) return 'kick';

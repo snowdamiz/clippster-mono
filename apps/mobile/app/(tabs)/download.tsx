@@ -15,12 +15,14 @@ import { DownloadProgressCard } from '@/components/DownloadProgressCard';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { useAccount } from '@/context/AccountContext';
+import { useAuth } from '@/context/AuthContext';
 import type { MediaPlatform, VodListItem } from '@clippster/shared-types';
 import {
   detectPlatformFromInput,
   isDirectVideoUrl,
   PLATFORM_LABELS,
 } from '@/lib/platformDetection';
+import { canAccessTokend } from '@/lib/tokendAccess';
 import { mediaApi, kickApi } from '@/services/api';
 import { getTokendVods } from '@/services/tokend';
 import { extractKickChannelSlug, kickClipToVodItem } from '@/lib/kick';
@@ -41,6 +43,8 @@ type CatalogTab = 'streams' | 'videos';
 
 export default function DownloadScreen() {
   const { requireSubscription } = useAccount();
+  const { user } = useAuth();
+  const tokendAllowed = canAccessTokend(user);
   const { source } = useLocalSearchParams<{ source?: string }>();
   const handledSource = useRef<string | null>(null);
   const [searchInput, setSearchInput] = useState('');
@@ -75,10 +79,12 @@ export default function DownloadScreen() {
       return;
     }
 
-    const platform = detectPlatformFromInput(input);
+    const platform = detectPlatformFromInput(input, { allowTokend: tokendAllowed });
     if (!platform) {
       setError(
-        'Could not detect the platform. Try a YouTube, Kick, Twitch, Rumble, Tokend, or X URL — or a channel @handle.',
+        tokendAllowed
+          ? 'Could not detect the platform. Try a YouTube, Kick, Twitch, Rumble, Tokend, or X URL — or a channel @handle.'
+          : 'Could not detect the platform. Try a YouTube, Kick, Twitch, Rumble, or X URL — or a channel @handle.',
       );
       return;
     }
@@ -179,15 +185,15 @@ export default function DownloadScreen() {
     } finally {
       setLoading(false);
     }
-  }, [catalogTab, searchInput]);
+  }, [catalogTab, searchInput, tokendAllowed]);
 
   useEffect(() => {
     if (!source || handledSource.current === source) return;
     handledSource.current = source;
     setSearchInput(source);
-    setDetectedPlatform(detectPlatformFromInput(source));
+    setDetectedPlatform(detectPlatformFromInput(source, { allowTokend: tokendAllowed }));
     void handleSearch(undefined, source);
-  }, [handleSearch, source]);
+  }, [handleSearch, source, tokendAllowed]);
 
   function openDownloadOptions(item: VodListItem, platform: MediaPlatform) {
     if (!item.url && !item.download_url) return;
@@ -278,7 +284,7 @@ export default function DownloadScreen() {
               value={searchInput}
               onChangeText={(text) => {
                 setSearchInput(text);
-                setDetectedPlatform(detectPlatformFromInput(text));
+                setDetectedPlatform(detectPlatformFromInput(text, { allowTokend: tokendAllowed }));
               }}
               onSubmitEditing={() => void handleSearch()}
               placeholder="Channel URL or @handle (e.g. kick.com/asmongold)"
@@ -341,7 +347,9 @@ export default function DownloadScreen() {
                   item={item}
                   platform={detectedPlatform ?? undefined}
                   onDownload={() => {
-                    const platform = detectedPlatform ?? detectPlatformFromInput(lastSearch);
+                    const platform =
+                      detectedPlatform ??
+                      detectPlatformFromInput(lastSearch, { allowTokend: tokendAllowed });
                     if (!platform || platform === 'manual') return;
                     openDownloadOptions(item, platform);
                   }}

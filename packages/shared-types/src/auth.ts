@@ -13,6 +13,7 @@ export interface AuthUser {
   created_by_organization_id?: number | null;
   ai_allowed?: boolean;
   beta_activated?: boolean;
+  tokend_enabled?: boolean;
   subscription?: SubscriptionStatus;
   credits?: {
     hours_remaining?: number | string;

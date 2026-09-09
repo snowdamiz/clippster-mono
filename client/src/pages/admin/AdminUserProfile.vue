@@ -64,9 +64,9 @@
                   <Sparkles :size="12" />
                   AI Editor Enabled
                 </span>
-                <span v-if="user.circles_enabled" class="status-badge status-badge--ai-editor">
-                  <Disc :size="12" />
-                  Circles Enabled
+                <span v-if="user.tokend_enabled" class="status-badge status-badge--ai-editor">
+                  <img src="/tokend.png" alt="" class="status-badge__tokend-icon" />
+                  Tokend Enabled
                 </span>
                 <span v-if="user.campaigns_enabled" class="status-badge status-badge--campaigns">
                   <Target :size="12" />
@@ -160,17 +160,17 @@
                 </div>
               </div>
 
-              <!-- Circles Access Group -->
+              <!-- Tokend Access Group -->
               <div class="action-group">
-                <div class="action-group__label">Circles Access</div>
+                <div class="action-group__label">Tokend Access</div>
                 <div class="action-group__buttons">
-                  <button @click="enableCircles" v-if="!user.circles_enabled" class="action-btn action-btn--outline">
-                    <Disc :size="18" />
-                    <span>Enable Circles</span>
+                  <button @click="enableTokend" v-if="!user.tokend_enabled" class="action-btn action-btn--outline">
+                    <img src="/tokend.png" alt="" class="action-btn__tokend-icon" />
+                    <span>Enable Tokend</span>
                   </button>
-                  <button @click="disableCircles" v-if="user.circles_enabled" class="action-btn action-btn--outline">
-                    <Disc :size="18" />
-                    <span>Disable Circles</span>
+                  <button @click="disableTokend" v-if="user.tokend_enabled" class="action-btn action-btn--outline">
+                    <img src="/tokend.png" alt="" class="action-btn__tokend-icon" />
+                    <span>Disable Tokend</span>
                   </button>
                 </div>
               </div>
@@ -582,7 +582,6 @@ import {
   Key,
   Sparkles,
   Target,
-  Disc,
   CreditCard,
   Coins,
   Info,
@@ -785,27 +784,27 @@ const disableAiEditor = async () => {
   }
 };
 
-const enableCircles = async () => {
+const enableTokend = async () => {
   try {
-    const response = await api.post(`/admin/users/${userId.value}/circles`);
+    const response = await api.post(`/admin/users/${userId.value}/tokend`);
     if (response.data.success) {
-      toast('Circles access enabled');
+      toast('Tokend access enabled');
       await loadUserProfile();
     }
   } catch (err: any) {
-    toastError(err.response?.data?.error || 'Failed to enable Circles');
+    toastError(err.response?.data?.error || 'Failed to enable Tokend');
   }
 };
 
-const disableCircles = async () => {
+const disableTokend = async () => {
   try {
-    const response = await api.delete(`/admin/users/${userId.value}/circles`);
+    const response = await api.delete(`/admin/users/${userId.value}/tokend`);
     if (response.data.success) {
-      toast('Circles access disabled');
+      toast('Tokend access disabled');
       await loadUserProfile();
     }
   } catch (err: any) {
-    toastError(err.response?.data?.error || 'Failed to disable Circles');
+    toastError(err.response?.data?.error || 'Failed to disable Tokend');
   }
 };
 
@@ -1148,6 +1147,19 @@ onMounted(() => {
 .status-badge--ai-editor {
   background: rgba(168, 85, 247, 0.15);
   color: #c084fc;
+}
+
+.status-badge__tokend-icon,
+.action-btn__tokend-icon {
+  width: 14px;
+  height: 14px;
+  object-fit: contain;
+  border-radius: 2px;
+}
+
+.action-btn__tokend-icon {
+  width: 18px;
+  height: 18px;
 }
 
 .status-badge--campaigns {

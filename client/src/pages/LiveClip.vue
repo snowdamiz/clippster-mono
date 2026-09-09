@@ -639,6 +639,8 @@
     fetchTokendCapabilities,
     TOKEND_UNAVAILABLE_MESSAGES,
   } from '@/services/tokend';
+  import { canAccessTokend } from '@/utils/tokendAccess';
+  import { useAuthStore } from '@/stores/auth';
   import XBroadcastExplainerDialog from '@/components/XBroadcastExplainerDialog.vue';
   import type { MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
@@ -654,6 +656,7 @@
 
   const { gates, requireSubscription } = useSubscriptionGate();
   const { success, error: showError } = useToast();
+  const authStore = useAuthStore();
 
   type ExtendedStreamer = Omit<MonitoredStreamer, 'platform'> & {
     platform: Platform;
@@ -1329,9 +1332,10 @@
     } else if (lowerVal.includes('twitter.com') || lowerVal.includes('x.com')) {
       detectedPlatform.value = 'Twitter';
     } else if (
-      lowerVal.includes('tokend.tv') ||
-      lowerVal.includes('localhost:4100') ||
-      lowerVal.includes('127.0.0.1:4100')
+      canAccessTokend(authStore.user) &&
+      (lowerVal.includes('tokend.tv') ||
+        lowerVal.includes('localhost:4100') ||
+        lowerVal.includes('127.0.0.1:4100'))
     ) {
       detectedPlatform.value = 'Tokend';
     } else {
