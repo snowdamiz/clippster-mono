@@ -201,11 +201,16 @@
 
     const userSubscription = (authStore.user as any)?.subscription;
     const subscriptionStatus = userSubscription?.status;
-    const hasSelectedPlan = localStorage.getItem('has_selected_plan');
+    const serverHasSelectedPlan = !!(authStore.user as any)?.has_selected_plan;
+    if (serverHasSelectedPlan) {
+      localStorage.setItem('has_selected_plan', 'true');
+    }
+    const hasSelectedPlan = serverHasSelectedPlan || !!localStorage.getItem('has_selected_plan');
 
     console.log('[App] Subscription gate check:', {
       subscriptionStatus,
       hasSelectedPlan,
+      serverHasSelectedPlan,
       userSubscription,
     });
 

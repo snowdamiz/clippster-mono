@@ -26,6 +26,35 @@ defmodule ClippsterServerWeb.SubscriptionController do
   end
 
   @doc """
+  Mark that the authenticated user selected the Free plan (plan picker complete).
+  Does not re-grant signup free credits.
+  """
+  def select_free(conn, _params) do
+    with {:ok, user_id} <- get_user_id_from_token(conn),
+         {:ok, user} <- Accounts.mark_plan_selected(user_id) do
+      json(conn, %{
+        success: true,
+        has_selected_plan: user.has_selected_plan
+      })
+    else
+      {:error, :unauthorized} ->
+        conn
+        |> put_status(401)
+        |> json(%{success: false, error: "Unauthorized"})
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(404)
+        |> json(%{success: false, error: "User not found"})
+
+      {:error, changeset} ->
+        conn
+        |> put_status(422)
+        |> json(%{success: false, error: "Failed to select free plan", details: inspect(changeset)})
+    end
+  end
+
+  @doc """
   Get available subscription tiers and pricing.
   """
   def get_tiers(conn, _params) do

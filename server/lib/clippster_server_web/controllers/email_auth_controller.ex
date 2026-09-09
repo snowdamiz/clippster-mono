@@ -76,7 +76,8 @@ defmodule ClippsterServerWeb.EmailAuthController do
                 owned_organization_id: user.owned_organization_id,
                 created_by_organization_id: user.created_by_organization_id,
                 ai_allowed: ai_allowed,
-                is_affiliate: Affiliates.is_affiliate?(user.id)
+                is_affiliate: Affiliates.is_affiliate?(user.id),
+                has_selected_plan: user.has_selected_plan || false
               }
             })
 
@@ -200,7 +201,8 @@ defmodule ClippsterServerWeb.EmailAuthController do
                 owned_organization_id: user.owned_organization_id,
                 created_by_organization_id: user.created_by_organization_id,
                 ai_allowed: ai_allowed,
-                is_affiliate: Affiliates.is_affiliate?(user.id)
+                is_affiliate: Affiliates.is_affiliate?(user.id),
+                has_selected_plan: user.has_selected_plan || false
               }
             })
 

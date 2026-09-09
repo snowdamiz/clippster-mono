@@ -18,7 +18,7 @@ const router = createRouter({
           accountType: user?.account_type,
           ownedOrgId: user?.owned_organization_id,
           createdByOrgId: user?.created_by_organization_id,
-          hasSelectedPlan: !!localStorage.getItem('has_selected_plan'),
+          hasSelectedPlan: !!(user as any)?.has_selected_plan || !!localStorage.getItem('has_selected_plan'),
           subStatus: (user as any)?.subscription?.status,
         });
         
@@ -29,6 +29,7 @@ const router = createRouter({
           user.account_type !== 'organization' &&
           !user.owned_organization_id &&
           !user.created_by_organization_id &&
+          !(user as any)?.has_selected_plan &&
           !localStorage.getItem('has_selected_plan')
         ) {
           if (!subscriptionStillCoversAccess((user as any).subscription)) {
@@ -669,12 +670,16 @@ export function isOrgAccountOwner(
 
 // Helper to check if a user needs to select a plan (new user flow)
 function needsPlanSelection(
-  user?: { account_type?: string; owned_organization_id?: string | number | null; is_admin?: boolean; created_by_organization_id?: string | number | null; subscription?: { status?: string; end_date?: string | null; days_remaining?: number } } | null
+  user?: { account_type?: string; owned_organization_id?: string | number | null; is_admin?: boolean; created_by_organization_id?: string | number | null; has_selected_plan?: boolean; subscription?: { status?: string; end_date?: string | null; days_remaining?: number } } | null
 ): boolean {
   if (!user) return false;
   if (user.is_admin) return false;
   if (user.account_type === 'organization' || user.owned_organization_id) return false;
   if (user.created_by_organization_id) return false;
+  if (user.has_selected_plan) {
+    localStorage.setItem('has_selected_plan', 'true');
+    return false;
+  }
   const hasSelectedPlan = localStorage.getItem('has_selected_plan');
   if (hasSelectedPlan) return false;
   if (subscriptionStillCoversAccess(user.subscription)) return false;

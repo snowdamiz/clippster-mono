@@ -80,7 +80,11 @@
     if (isOrgOnlyAccount.value) return false;
     if (authStore.user?.created_by_organization_id) return false;
 
-    const hasSelectedPlan = localStorage.getItem('has_selected_plan');
+    const serverHasSelectedPlan = !!(authStore.user as any)?.has_selected_plan;
+    if (serverHasSelectedPlan) {
+      localStorage.setItem('has_selected_plan', 'true');
+    }
+    const hasSelectedPlan = serverHasSelectedPlan || !!localStorage.getItem('has_selected_plan');
     const u = authStore.user as any;
     const subscription = u?.subscription ?? {
       status: u?.subscription_status,

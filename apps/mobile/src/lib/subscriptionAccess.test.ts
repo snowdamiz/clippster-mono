@@ -55,7 +55,7 @@ describe('subscriptionAccess', () => {
     assert.equal(requiresPlanSelectionGate(user(), status({ status: 'expired' }), false), true);
     assert.equal(requiresPlanSelectionGate(user(), status({ status: 'active' }), false), false);
     assert.equal(requiresPlanSelectionGate(user({ is_admin: true }), status(), false), false);
-    assert.equal(requiresPlanSelectionGate(user(), status(), true), false);
+    assert.equal(requiresPlanSelectionGate(user({ has_selected_plan: true }), status(), false), false);
     assert.equal(requiresPlanSelectionGate(user(), status({ status: 'expired' }), true), false);
   });
 });

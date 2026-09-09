@@ -9,6 +9,19 @@ export interface AuthUser {
   created_by_organization_id?: number | null
   is_admin?: boolean
   is_moderator?: boolean
+  has_selected_plan?: boolean
+  subscription?: {
+    status?: string
+    tier?: string | null
+    tier_name?: string | null
+    needs_subscription?: boolean
+    days_remaining?: number
+    end_date?: string | null
+  }
+  credits?: {
+    hours_remaining?: number | string
+    minutes_remaining?: number | string
+  }
 }
 
 export interface AuthState {

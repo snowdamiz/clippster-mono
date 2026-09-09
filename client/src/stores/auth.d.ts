@@ -17,6 +17,7 @@ export interface AuthUser {
   tokend_enabled?: boolean
   campaigns_enabled?: boolean
   beta_activated?: boolean
+  has_selected_plan?: boolean
   subscription?: {
     status: 'none' | 'active' | 'cancelled' | 'expired'
     tier: string | null

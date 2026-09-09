@@ -1445,8 +1445,16 @@
     }
   }
 
-  /** Continue with free tier — mark plan selected and go to default route */
-  function continueWithFree() {
+  /** Continue with free tier — mark plan selected on server and go to default route */
+  async function continueWithFree() {
+    try {
+      await api.post('/subscription/select-free');
+      if (authStore.user) {
+        (authStore.user as any).has_selected_plan = true;
+      }
+    } catch (err) {
+      console.warn('[Billing] Failed to persist free plan selection on server:', err);
+    }
     localStorage.setItem('has_selected_plan', 'true');
     // Trigger auth state refresh to update gates
     window.dispatchEvent(new CustomEvent('auth-state-changed', { detail: { userId: authStore.user?.id } }));

@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate, useLocation } from 'react-router-dom'
 import { Mail, Lock, Loader2, AlertCircle, Eye, EyeOff, Wallet } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { getPostAuthPath } from '@/lib/accountRouting'
 
 function WalletLoginButton({
   onWalletAuth,
@@ -76,13 +77,17 @@ export function LoginPage() {
   const navigate = useNavigate()
   const location = useLocation()
 
-  const getRedirectPath = (u: { owned_organization_id?: number | null } | null) => {
-    // Always use the user's actual org — never use stale location.state.from
-    // which may belong to a different user's expired session
-    if (u?.owned_organization_id) return `/dashboard/org/${u.owned_organization_id}`
-    const from = (location.state as any)?.from
-    if (from) return from
-    return '/dashboard'
+  const getRedirectPath = (u: Parameters<typeof getPostAuthPath>[0]) => {
+    const from = (location.state as { from?: string | { pathname?: string } } | null)?.from
+    const fromPath = typeof from === 'string' ? from : from?.pathname
+    if (
+      fromPath?.startsWith('/org/apply') ||
+      fromPath?.startsWith('/account') ||
+      fromPath?.startsWith('/dashboard/org')
+    ) {
+      return fromPath
+    }
+    return getPostAuthPath(u)
   }
 
   // Only auto-redirect if user navigated here while already authenticated
