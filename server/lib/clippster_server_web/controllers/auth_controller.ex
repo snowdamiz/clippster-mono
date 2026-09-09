@@ -201,7 +201,8 @@ defmodule ClippsterServerWeb.AuthController do
               created_by_organization_id: user.created_by_organization_id,
               ai_allowed: ai_allowed,
               beta_activated: user.beta_activated,
-              is_affiliate: Affiliates.is_affiliate?(user.id)
+              is_affiliate: Affiliates.is_affiliate?(user.id),
+              has_selected_plan: user.has_selected_plan || false
             }
           })
 
@@ -746,7 +747,8 @@ defmodule ClippsterServerWeb.AuthController do
         owned_organization_id: user.owned_organization_id,
         created_by_organization_id: user.created_by_organization_id,
         ai_allowed: ai_allowed,
-        beta_activated: user.beta_activated
+        beta_activated: user.beta_activated,
+        has_selected_plan: user.has_selected_plan || false
       })
 
     params =
@@ -784,6 +786,7 @@ defmodule ClippsterServerWeb.AuthController do
         "created_by_organization_id" => user.created_by_organization_id || "",
         "ai_allowed" => ai_allowed,
         "beta_activated" => user.beta_activated,
+        "has_selected_plan" => user.has_selected_plan || false,
         "is_new_user" => to_string(is_new_user),
         "subscription_status" => subscription_status.status,
         "subscription_tier" => subscription_status.tier || "",
@@ -911,6 +914,7 @@ defmodule ClippsterServerWeb.AuthController do
         ai_allowed: ai_allowed,
         beta_activated: user.beta_activated,
         is_affiliate: Affiliates.is_affiliate?(user.id),
+        has_selected_plan: user.has_selected_plan || false,
         subscription: subscription_status,
         credits: %{
           hours_remaining: credits_balance.hours_remaining,

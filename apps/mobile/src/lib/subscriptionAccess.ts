@@ -52,6 +52,7 @@ export function requiresPlanSelectionGate(
   if (!user) return false;
   if (bypassesPersonalSubscription(user)) return false;
   if (hasValidSubscription(status)) return false;
+  if (user.has_selected_plan) return false;
   return !hasSelectedPlan;
 }
 

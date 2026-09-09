@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Mail, Lock, Loader2, AlertCircle, Eye, EyeOff } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { getPostAuthPath } from '@/lib/accountRouting'
 
 export function SignupPage() {
   const [email, setEmail] = useState('')
@@ -25,10 +26,7 @@ export function SignupPage() {
   const [wasAuthOnMount] = useState(() => isAuthenticated)
   useEffect(() => {
     if (wasAuthOnMount && isAuthenticated && user) {
-      const dest = user.owned_organization_id
-        ? `/dashboard/org/${user.owned_organization_id}`
-        : '/dashboard'
-      navigate(dest, { replace: true })
+      navigate(getPostAuthPath(user), { replace: true })
     }
   }, [isAuthenticated, user, navigate]) // eslint-disable-line react-hooks/exhaustive-deps
 

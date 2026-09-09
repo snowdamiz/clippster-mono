@@ -5,6 +5,8 @@
   "privatePrefixes": [
     "/dashboard",
     "/admin",
+    "/account",
+    "/org/apply",
     "/login",
     "/signup",
     "/verify-email",

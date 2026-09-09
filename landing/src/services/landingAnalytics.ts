@@ -8,6 +8,7 @@ export type LandingAnalyticsEvent =
   | 'landing_nav_click'
   | 'landing_cta_click'
   | 'landing_signup_click'
+  | 'landing_signin_click'
   | 'landing_pricing_click'
   | 'landing_external_link_click'
 

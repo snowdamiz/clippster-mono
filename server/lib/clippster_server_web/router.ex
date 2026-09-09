@@ -339,6 +339,7 @@ defmodule ClippsterServerWeb.Router do
 
     # Subscription management (requires auth)
     get("/subscription/status", SubscriptionController, :get_status)
+    post("/subscription/select-free", SubscriptionController, :select_free)
     post("/subscription/checkout", SubscriptionController, :create_checkout)
     post("/subscription/promo/validate", SubscriptionController, :validate_promo)
     post("/subscription/crypto-quote", SubscriptionController, :get_crypto_quote)

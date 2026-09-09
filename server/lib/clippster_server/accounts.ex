@@ -390,6 +390,25 @@ defmodule ClippsterServer.Accounts do
   end
 
   @doc """
+  Marks that the user completed the one-time plan picker (Free or paid).
+  Idempotent — does not re-grant free credits.
+  """
+  def mark_plan_selected(user_id) when is_integer(user_id) do
+    case get_user(user_id) do
+      nil ->
+        {:error, :not_found}
+
+      %{has_selected_plan: true} = user ->
+        {:ok, user}
+
+      user ->
+        user
+        |> User.plan_selection_changeset(%{has_selected_plan: true})
+        |> Repo.update()
+    end
+  end
+
+  @doc """
   Deactivates a user account.
   """
   def deactivate_user(user_id) do

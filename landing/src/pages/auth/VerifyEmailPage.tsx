@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { Link, useNavigate } from 'react-router-dom'
 import { Loader2, AlertCircle, ArrowLeft, Mail } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
+import { getPostAuthPath } from '@/lib/accountRouting'
 
 export function VerifyEmailPage() {
   const [otp, setOtp] = useState('')
@@ -25,10 +26,7 @@ export function VerifyEmailPage() {
   const [wasAuthOnMount] = useState(() => isAuthenticated)
   useEffect(() => {
     if (wasAuthOnMount && isAuthenticated && user) {
-      const dest = user.owned_organization_id
-        ? `/dashboard/org/${user.owned_organization_id}`
-        : '/dashboard'
-      navigate(dest, { replace: true })
+      navigate(getPostAuthPath(user), { replace: true })
     }
   }, [isAuthenticated, user, navigate]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -68,10 +66,7 @@ export function VerifyEmailPage() {
 
     const result = await verifyEmailOtp(pendingVerificationEmail, otp)
     if (result.success && result.user) {
-      const dest = result.user.owned_organization_id
-        ? `/dashboard/org/${result.user.owned_organization_id}`
-        : '/dashboard'
-      navigate(dest, { replace: true })
+      navigate(getPostAuthPath(result.user), { replace: true })
     }
   }, [pendingVerificationEmail, otp, verifyEmailOtp, navigate])
 

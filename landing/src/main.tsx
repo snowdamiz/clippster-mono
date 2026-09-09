@@ -17,6 +17,7 @@ import { StripeReturnPage } from './pages/StripeReturnPage'
 import { ScrollToTop } from './components/ScrollToTop'
 import { LandingAnalyticsTracker } from './components/LandingAnalyticsTracker'
 import { AuthProvider } from './context/AuthContext'
+import { AuthDialogProvider } from './context/AuthDialogContext'
 import { ToastProvider } from './context/ToastContext'
 import { ProtectedRoute } from './components/ProtectedRoute'
 import { AdminRoute } from './components/AdminRoute'
@@ -35,6 +36,18 @@ const LiteEditorPage = lazy(() => import('./pages/LiteEditorPage').then(m => ({ 
 // Public pages
 const ClipperPublicProfilePage = lazy(() => import('./pages/ClipperPublicProfilePage').then(m => ({ default: m.ClipperPublicProfilePage })))
 const OrgPublicProfilePage = lazy(() => import('./pages/OrgPublicProfilePage').then(m => ({ default: m.OrgPublicProfilePage })))
+
+// Account (personal) dashboard
+const AccountLayout = lazy(() => import('./layouts/AccountLayout').then(m => ({ default: m.AccountLayout })))
+const AccountHome = lazy(() => import('./pages/account/AccountHome').then(m => ({ default: m.AccountHome })))
+const AccountBilling = lazy(() => import('./pages/account/AccountBilling').then(m => ({ default: m.AccountBilling })))
+const AccountProfile = lazy(() => import('./pages/account/AccountProfile').then(m => ({ default: m.AccountProfile })))
+const AccountSocial = lazy(() => import('./pages/account/AccountSocial').then(m => ({ default: m.AccountSocial })))
+const AccountPosts = lazy(() => import('./pages/account/AccountPosts').then(m => ({ default: m.AccountPosts })))
+const AccountMessages = lazy(() => import('./pages/account/AccountMessages').then(m => ({ default: m.AccountMessages })))
+const AccountSettings = lazy(() => import('./pages/account/AccountSettings').then(m => ({ default: m.AccountSettings })))
+const ForOrganizationsPage = lazy(() => import('./pages/ForOrganizationsPage').then(m => ({ default: m.ForOrganizationsPage })))
+const OrgApplyPage = lazy(() => import('./pages/org/OrgApplyPage').then(m => ({ default: m.OrgApplyPage })))
 
 // Dashboard layout
 const DashboardLayout = lazy(() => import('./layouts/DashboardLayout').then(m => ({ default: m.DashboardLayout })))
@@ -117,6 +130,7 @@ createRoot(document.getElementById('root')!).render(
       <LandingAnalyticsTracker />
       <ToastProvider>
         <AuthProvider>
+          <AuthDialogProvider>
             <Suspense fallback={loadingFallback}>
               <Routes>
                 {/* Public pages */}
@@ -130,13 +144,13 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="/orgs" element={<OrgDirectoryPage />} />
                 <Route path="/clippers/:slug" element={<ClipperPublicProfilePage />} />
                 <Route path="/orgs/:slug" element={<OrgPublicProfilePage />} />
+                <Route path="/for-organizations" element={<ForOrganizationsPage />} />
 
                 {/* SEO content engine pages (pillars, platforms, guides, comparisons) */}
                 <Route path="/clipping-tool" element={<DynamicSeoPage />} />
                 <Route path="/video-editor" element={<DynamicSeoPage />} />
                 <Route path="/live-stream-clipping" element={<DynamicSeoPage />} />
                 <Route path="/clipping-campaigns" element={<DynamicSeoPage />} />
-                <Route path="/for-organizations" element={<DynamicSeoPage />} />
                 <Route path="/social-posting" element={<DynamicSeoPage />} />
                 <Route path="/clip-analytics" element={<DynamicSeoPage />} />
                 <Route path="/design-studio" element={<DynamicSeoPage />} />
@@ -159,6 +173,33 @@ createRoot(document.getElementById('root')!).render(
                 <Route path="/invite/:token" element={<AcceptInvitationPage />} />
                 <Route path="/auth/google/callback" element={<GoogleCallbackPage />} />
                 <Route path="/oauth/callback" element={<OAuthCallbackPage />} />
+
+                {/* Personal account dashboard */}
+                <Route
+                  path="/account"
+                  element={
+                    <ProtectedRoute>
+                      <AccountLayout />
+                    </ProtectedRoute>
+                  }
+                >
+                  <Route index element={<AccountHome />} />
+                  <Route path="messages" element={<AccountMessages />} />
+                  <Route path="profile" element={<AccountProfile />} />
+                  <Route path="social" element={<AccountSocial />} />
+                  <Route path="posts" element={<AccountPosts />} />
+                  <Route path="settings" element={<AccountSettings />} />
+                  <Route path="billing" element={<AccountBilling />} />
+                </Route>
+
+                <Route
+                  path="/org/apply"
+                  element={
+                    <ProtectedRoute>
+                      <OrgApplyPage />
+                    </ProtectedRoute>
+                  }
+                />
 
                 {/* Protected dashboard routes */}
                 <Route
@@ -218,6 +259,7 @@ createRoot(document.getElementById('root')!).render(
                 </Route>
               </Routes>
             </Suspense>
+          </AuthDialogProvider>
         </AuthProvider>
       </ToastProvider>
     </BrowserRouter>

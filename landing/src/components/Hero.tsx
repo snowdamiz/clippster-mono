@@ -1,11 +1,12 @@
 import { ChevronRight, Apple, Monitor, Loader2, Sparkles } from 'lucide-react'
-import { Link } from 'react-router-dom'
 import { useDownloads } from '../hooks/usePlatform'
 import { trackDownloadClick, trackLandingEvent } from '@/services/landingAnalytics'
+import { useAuthDialog } from '@/context/AuthDialogContext'
 
 export function Hero() {
   const { primaryDownload, otherDownloads, isLoading } = useDownloads()
   const secondaryDownload = otherDownloads[0]
+  const { openAuthDialog } = useAuthDialog()
 
   return (
     <section className="relative pt-32 pb-20 sm:pt-40 sm:pb-28 lg:pt-48 lg:pb-32 overflow-hidden">
@@ -27,10 +28,13 @@ export function Hero() {
       
       <div className="relative z-10 max-w-4xl mx-auto px-6 text-center">
         {/* Announcement badge - cyan themed */}
-        <Link
-          to="/signup"
+        <button
+          type="button"
           className="group inline-flex items-center gap-2 px-4 py-2 rounded-full border border-[#1f1f23] bg-[#141416] backdrop-blur-sm hover:border-[rgba(255,255,255,0.1)] transition-all duration-300 mb-8"
-          onClick={() => trackLandingEvent('landing_signup_click', { source: 'hero_beta_badge', button_label: 'Open Beta' })}
+          onClick={() => {
+            trackLandingEvent('landing_signup_click', { source: 'hero_beta_badge', button_label: 'Open Beta' })
+            openAuthDialog()
+          }}
         >
           <span className="flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-cyan-500/15 text-xs font-medium text-cyan-400">
             <Sparkles className="w-3 h-3" />
@@ -38,7 +42,7 @@ export function Hero() {
           </span>
           <span className="text-sm text-zinc-400 group-hover:text-zinc-300 transition-colors">Clippster is open to everyone</span>
           <ChevronRight className="w-4 h-4 text-zinc-500 group-hover:text-cyan-400 group-hover:translate-x-0.5 transition-all" />
-        </Link>
+        </button>
 
         {/* Main headline - enhanced */}
         <h1 className="text-4xl sm:text-5xl md:text-6xl lg:text-7xl font-bold tracking-[-0.02em] text-white mb-6 leading-[1.1]">
