@@ -22,7 +22,8 @@ import {
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Input } from '@/components/ui/input';
 import { AccountsSheet } from '@/components/me/AccountsSheet';
-import { DISTRIBUTION_PLATFORMS } from '@/config/distributionPlatforms';
+import { getDistributionPlatforms } from '@/config/distributionPlatforms';
+import { useAuth } from '@/context/AuthContext';
 import {
   analyticsApi,
   campaignApi,
@@ -35,6 +36,7 @@ import { getClipBuildById, getClipById, type ClipBuildRow } from '@/services/dat
 import { uploadMediaWithProgress } from '@/services/mediaUpload';
 import { tokens } from '@/theme/tokens';
 import { appAlert } from '@/lib/appAlert';
+import { canAccessTokend } from '@/lib/tokendAccess';
 
 function parseAspectRatios(raw: string | null): string[] {
   if (!raw) return [];
@@ -54,6 +56,12 @@ interface PostSheetProps {
 }
 
 export function PostSheet({ visible, buildId, onClose }: PostSheetProps) {
+  const { user } = useAuth();
+  const tokendAllowed = canAccessTokend(user);
+  const availablePlatforms = useMemo(
+    () => getDistributionPlatforms({ includeTokend: tokendAllowed }),
+    [tokendAllowed]
+  );
   const onCloseRef = useRef(onClose);
   onCloseRef.current = onClose;
 
@@ -179,7 +187,7 @@ export function PostSheet({ visible, buildId, onClose }: PostSheetProps) {
   }, [platformAccounts, accountId]);
 
   const aspectRatios = parseAspectRatios(build?.aspect_ratios ?? null);
-  const selectedPlatform = DISTRIBUTION_PLATFORMS.find((p) => p.id === platform);
+  const selectedPlatform = availablePlatforms.find((p) => p.id === platform);
   const aspectWarning =
     selectedPlatform &&
     aspectRatios.length > 0 &&
@@ -495,7 +503,7 @@ export function PostSheet({ visible, buildId, onClose }: PostSheetProps) {
             <View className="gap-2">
               <Text className="text-sm font-medium text-foreground">Platforms</Text>
               <View className="flex-row flex-wrap gap-2.5">
-                {DISTRIBUTION_PLATFORMS.map((p) => {
+                {availablePlatforms.map((p) => {
                   const active = platform === p.id;
                   return (
                     <Pressable

@@ -15,6 +15,8 @@ import {
   isTokendPublishPlatform,
   TOKEND_UNAVAILABLE_MESSAGES,
 } from '@/services/tokend';
+import { canAccessTokend } from '@/utils/tokendAccess';
+import { useAuthStore } from '@/stores/auth';
 
 export interface PublishTarget {
   platformId: string;
@@ -32,6 +34,7 @@ export interface BackgroundPublishMetadata {
   brandingProfileId?: number;
   aspectRatio?: string;
   buildType?: 'org' | 'campaign' | 'personal';
+  mediaType?: 'image' | 'video' | 'reel';
 }
 
 export interface BackgroundPublishState {
@@ -110,15 +113,15 @@ export function useBackgroundPublish() {
         thumbnailFile = dataUrlToFile(thumbnailDataUrl, thumbnailName);
       }
 
-      console.log('[BackgroundPublish] Uploading', Object.keys(aspectRatioOutputPaths).length, 'aspect ratio videos...');
+      console.log('[BackgroundPublish] Uploading', Object.keys(aspectRatioOutputPaths).length, 'aspect ratio media files...');
 
-      // Upload each unique aspect ratio video
+      // Upload each unique aspect ratio media file
       for (const [aspectRatio, outputPath] of Object.entries(aspectRatioOutputPaths)) {
-        console.log(`[BackgroundPublish] Uploading ${aspectRatio} video:`, outputPath);
-        
-        // Read video file as Blob
+        console.log(`[BackgroundPublish] Uploading ${aspectRatio} media:`, outputPath);
+
+        // Read media file as Blob
         const videoDataUrl = await invoke<string>('read_file_as_data_url', { filePath: outputPath });
-        const fileName = outputPath.split(/[/\\]/).pop() || `video_${aspectRatio.replace(':', 'x')}.mp4`;
+        const fileName = outputPath.split(/[/\\]/).pop() || `media_${aspectRatio.replace(':', 'x')}.mp4`;
         const videoFile = dataUrlToFile(videoDataUrl, fileName);
 
         // Upload via server endpoint
@@ -219,14 +222,20 @@ export function useBackgroundPublish() {
       const tokendCapabilities = targets.some((t) => isTokendPublishPlatform(t.platformId))
         ? await fetchTokendCapabilities().catch(() => null)
         : null;
+      const tokendAllowed = canAccessTokend(useAuthStore().user);
 
       for (const target of targets) {
         try {
-          if (isTokendPublishPlatform(target.platformId) && !tokendCapabilities?.publish) {
+          if (
+            isTokendPublishPlatform(target.platformId) &&
+            (!tokendAllowed || !tokendCapabilities?.publish)
+          ) {
             state.value.publishResults.push({
               platformId: target.platformId,
               success: false,
-              error: TOKEND_UNAVAILABLE_MESSAGES.publish,
+              error: tokendAllowed
+                ? TOKEND_UNAVAILABLE_MESSAGES.publish
+                : 'Tokend access is not enabled for this account.',
             });
             failedCount++;
             continue;
@@ -252,7 +261,8 @@ export function useBackgroundPublish() {
 
           const mediaUrl = mediaData.media_url;
           const thumbUrl = mediaData.thumbnail_url || thumbnailUrl;
-          console.log(`[BackgroundPublish] Publishing to ${target.platformId} with ${platformAspectRatio} video:`, mediaUrl);
+          const mediaType = metadata?.mediaType || 'video';
+          console.log(`[BackgroundPublish] Publishing to ${target.platformId} with ${platformAspectRatio} ${mediaType}:`, mediaUrl);
 
           let response: any;
           if (target.accountType === 'org' && orgId) {
@@ -262,7 +272,7 @@ export function useBackgroundPublish() {
               creator_profile_id: metadata?.creatorProfileId || undefined,
               media_url: mediaUrl,
               caption: caption,
-              media_type: 'video',
+              media_type: mediaType,
               thumbnail_url: thumbUrl || undefined,
             });
           } else {
@@ -271,7 +281,7 @@ export function useBackgroundPublish() {
               account_id: target.accountId,
               media_url: mediaUrl,
               caption: caption,
-              media_type: 'video' as const,
+              media_type: mediaType,
               thumbnail_url: thumbUrl || undefined,
               creator_profile_id: metadata?.creatorProfileId || undefined,
               campaign_id: metadata?.campaignId || undefined,

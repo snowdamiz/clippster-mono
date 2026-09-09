@@ -24,6 +24,18 @@ defmodule ClippsterServerWeb.TokendController do
               :create_viewer_token
             ]
 
+  plug :require_tokend_access
+       when action in [
+              :connect_user,
+              :connect_org,
+              :connect_url_user,
+              :connect_url_org,
+              :partner_catalog,
+              :create_media_grant,
+              :redeem_media_grant,
+              :create_viewer_token
+            ]
+
   @session_ttl_seconds 900
 
   @doc """
@@ -890,4 +902,17 @@ defmodule ClippsterServerWeb.TokendController do
   end
 
   defp format_errors(other), do: inspect(other)
+
+  defp require_tokend_access(conn, _opts) do
+    user = conn.assigns.current_user
+
+    if Accounts.can_access_tokend?(user) do
+      conn
+    else
+      conn
+      |> put_status(:forbidden)
+      |> json(%{success: false, error: "Tokend access is not enabled for this account."})
+      |> halt()
+    end
+  end
 end

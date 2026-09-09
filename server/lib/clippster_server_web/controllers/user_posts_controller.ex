@@ -7,6 +7,7 @@ defmodule ClippsterServerWeb.UserPostsController do
 
   require Logger
 
+  alias ClippsterServer.Accounts
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Campaigns.UserPost
   alias ClippsterServer.Organizations
@@ -61,7 +62,15 @@ defmodule ClippsterServerWeb.UserPostsController do
   POST /api/user/tokend/publish
   """
   def publish_tokend(conn, params) do
-    publish_to_tokend(conn, params)
+    user = conn.assigns.current_user
+
+    if Accounts.can_access_tokend?(user) do
+      publish_to_tokend(conn, params)
+    else
+      conn
+      |> put_status(:forbidden)
+      |> json(%{success: false, error: "Tokend access is not enabled for this account."})
+    end
   end
 
   defp publish_to_tokend(conn, params) do

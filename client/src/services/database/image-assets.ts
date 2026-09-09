@@ -202,3 +202,12 @@ export async function deleteImageAsset(id: string): Promise<void> {
   const db = await getDatabase();
   await db.execute('DELETE FROM image_assets WHERE id = ?', [id]);
 }
+
+export async function markImageAsPublished(id: string): Promise<void> {
+  const db = await getDatabase();
+  const now = timestamp();
+  await db.execute(
+    'UPDATE image_assets SET is_published = 1, published_at = ?, updated_at = ? WHERE id = ? AND (is_published IS NULL OR is_published = 0)',
+    [now, now, id]
+  );
+}

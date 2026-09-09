@@ -5,8 +5,12 @@ import { detectPlatformFromUrl, getPlatformConfig } from '../config/platforms';
 import { extractTokendChannel, isTokendUrl, parseTokendMediaRef } from './tokendUrl';
 
 describe('platforms', () => {
-  it('detects tokend URLs', () => {
-    assert.equal(detectPlatformFromUrl('https://tokend.tv/seed-nova'), 'tokend');
+  it('detects tokend URLs when allowed', () => {
+    assert.equal(
+      detectPlatformFromUrl('https://tokend.tv/seed-nova', { allowTokend: true }),
+      'tokend'
+    );
+    assert.equal(detectPlatformFromUrl('https://tokend.tv/seed-nova'), null);
     assert.equal(detectPlatformFromUrl('https://www.youtube.com/watch?v=abc'), 'youtube');
   });
 

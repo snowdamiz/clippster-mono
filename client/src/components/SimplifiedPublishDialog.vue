@@ -15,11 +15,12 @@
               <div class="publish-dialog__icon">
                 <Rocket :size="24" />
               </div>
-              <h2 class="publish-dialog__title">Publish Clip</h2>
-              <p class="publish-dialog__subtitle">{{ clip?.name || 'Clip' }} • {{ formatDuration(build.duration) }}</p>
+              <h2 class="publish-dialog__title">{{ isImageMedia ? 'Publish Image' : 'Publish Clip' }}</h2>
+              <p class="publish-dialog__subtitle">{{ dialogSubtitle }}</p>
               <!-- Badges -->
               <div class="publish-dialog__badges">
                 <span class="publish-dialog__badge publish-dialog__badge--ratio">{{ parsedAspectRatio }}</span>
+                <span v-if="isImageMedia" class="publish-dialog__badge">Image</span>
                 <span v-if="brandingLabel" class="publish-dialog__badge publish-dialog__badge--branding">{{ brandingLabel }}</span>
               </div>
             </div>
@@ -292,6 +293,7 @@ import {
 } from '@/services/organizationProfilesApi';
 import { useAuthStore } from '@/stores/auth';
 import { fetchTokendCapabilities } from '@/services/tokend';
+import { canAccessTokend } from '@/utils/tokendAccess';
 
 type PersonalSocialAccount = {
   id: number;
@@ -303,17 +305,33 @@ type PersonalSocialAccount = {
 
 type ClipWithBuilds = Clip & { builds: ClipBuild[] };
 
-const props = defineProps<{
-  modelValue: boolean;
-  clip: ClipWithBuilds | null;
-  build: ClipBuild;
-  filePath: string;
-  thumbnailUrl: string | null;
-}>();
+const props = withDefaults(
+  defineProps<{
+    modelValue: boolean;
+    clip?: ClipWithBuilds | null;
+    build?: ClipBuild | null;
+    filePath: string;
+    thumbnailUrl: string | null;
+    /** Defaults to video (clip builds). Pass 'image' for Image Library publishing. */
+    mediaType?: 'video' | 'image';
+    /** Display title when publishing non-clip media (e.g. image name). */
+    title?: string;
+    /** Override aspect ratio when no build is provided. */
+    aspectRatio?: string;
+  }>(),
+  {
+    clip: null,
+    build: null,
+    mediaType: 'video',
+    title: undefined,
+    aspectRatio: undefined,
+  }
+);
 
 const emit = defineEmits<{
   'update:modelValue': [value: boolean];
   close: [];
+  published: [];
 }>();
 
 const backgroundPublish = useBackgroundPublish();
@@ -324,12 +342,24 @@ function handleClose() {
   emit('close');
 }
 
+const isImageMedia = computed(() => props.mediaType === 'image');
+
+const dialogSubtitle = computed(() => {
+  if (isImageMedia.value) {
+    return props.title || props.clip?.name || 'Image';
+  }
+  const name = props.clip?.name || props.title || 'Clip';
+  const duration = formatDuration(props.build?.duration);
+  return duration ? `${name} • ${duration}` : name;
+});
+
 const parsedAspectRatio = computed(() => {
+  if (props.aspectRatio) return props.aspectRatio;
   const ar = props.build?.aspect_ratios;
-  if (!ar) return '16:9';
+  if (!ar) return isImageMedia.value ? '1:1' : '16:9';
   try {
     const parsed = JSON.parse(ar);
-    if (Array.isArray(parsed)) return parsed[0] || '16:9';
+    if (Array.isArray(parsed)) return parsed[0] || (isImageMedia.value ? '1:1' : '16:9');
     return parsed;
   } catch {
     return ar;
@@ -353,7 +383,9 @@ const allPlatforms = [
 
 const tokendPublishEnabled = ref(false);
 const availablePlatforms = computed(() =>
-  allPlatforms.filter((p) => p.id !== 'tokend' || tokendPublishEnabled.value)
+  allPlatforms.filter(
+    (p) => p.id !== 'tokend' || (tokendPublishEnabled.value && canAccessTokend(authStore.user))
+  )
 );
 
 const selectedPublishPlatforms = ref<string[]>([]);
@@ -697,7 +729,7 @@ async function handlePublish() {
   isPublishing.value = true;
   
   try {
-    const aspectRatio = props.build?.aspect_ratios || '16:9';
+    const aspectRatio = parsedAspectRatio.value;
 
     // Build publish targets and platformToRatioMap
     const publishTargets: any[] = [];
@@ -714,7 +746,7 @@ async function handlePublish() {
         accountId: Number(accountIdStr),
       });
 
-      // Map every platform to the build's aspect ratio
+      // Map every platform to the media aspect ratio
       platformToRatioMap[platformId] = aspectRatio;
     }
 
@@ -743,6 +775,7 @@ async function handlePublish() {
       buildType: buildType as 'org' | 'campaign' | 'personal' | undefined,
       aspectRatio,
       platformToRatioMap,
+      mediaType: (isImageMedia.value ? 'image' : 'video') as 'image' | 'video',
     };
     
     backgroundPublish.queuePublish(
@@ -756,7 +789,8 @@ async function handlePublish() {
     if (props.build?.id) {
       await markBuildAsPublished(props.build.id);
     }
-    
+
+    emit('published');
     emit('update:modelValue', false);
     emit('close');
   } finally {

@@ -74,7 +74,7 @@ export function organizationJsonLd() {
     '@type': 'Organization',
     name: SITE_NAME,
     url: SITE_URL,
-    logo: absoluteUrl('/logo-icon.svg'),
+    logo: absoluteUrl('/favicon-192.png'),
     sameAs: [] as string[],
   }
 }
@@ -165,7 +165,7 @@ export function articleJsonLd(input: {
       url: SITE_URL,
       logo: {
         '@type': 'ImageObject',
-        url: absoluteUrl('/logo-icon.svg'),
+        url: absoluteUrl('/favicon-192.png'),
       },
     },
     image: DEFAULT_OG_IMAGE,

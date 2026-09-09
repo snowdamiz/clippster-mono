@@ -13,6 +13,8 @@ import { generateId } from '@/services/database';
 import { trackEvent } from '@/services/analytics';
 import { useToast } from '@/composables/useToast';
 import { fetchTokendCapabilities, TOKEND_UNAVAILABLE_MESSAGES } from '@/services/tokend';
+import { canAccessTokend } from '@/utils/tokendAccess';
+import { useAuthStore } from '@/stores/auth';
 
 // Event emitter for download completion notifications
 const completionCallbacks = new Set<(download: ActiveDownload) => void>();
@@ -533,6 +535,10 @@ export function useDownloads() {
   ): Promise<string> {
     const provider = options.provider || 'pumpfun';
     if (provider === 'tokend') {
+      const authStore = useAuthStore();
+      if (!canAccessTokend(authStore.user)) {
+        throw new Error('Tokend access is not enabled for this account.');
+      }
       const capabilities = await fetchTokendCapabilities().catch(() => null);
       if (!capabilities?.download) {
         throw new Error(TOKEND_UNAVAILABLE_MESSAGES.download);

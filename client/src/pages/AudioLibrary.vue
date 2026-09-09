@@ -75,26 +75,16 @@
             Audio
           </button>
           <button
-            v-if="canUseCircles"
+            v-if="canUseTokend"
             type="button"
             :class="['audio-tab', { 'audio-tab--active': activeTab === 'circles' }]"
             @click="activeTab = 'circles'"
           >
             Circles
           </button>
-          <button
-            v-else
-            type="button"
-            class="audio-tab audio-tab--disabled"
-            disabled
-            title="Coming Soon"
-          >
-            Circles
-            <span class="audio-tab__badge">Coming Soon</span>
-          </button>
         </div>
 
-        <CirclesLibraryView v-if="activeTab === 'circles' && canUseCircles" />
+        <CirclesLibraryView v-if="activeTab === 'circles' && canUseTokend" />
 
         <template v-if="activeTab === 'audio'">
           <!-- Active Downloads Section -->
@@ -576,7 +566,7 @@
   import { useAudioPlayer } from '@/composables/useAudioPlayer';
   import { useToast } from '@/composables/useToast';
   import { useAuthStore } from '@/stores/auth';
-  import { canAccessCircles } from '@/utils/circlesAccess';
+  import { canAccessTokend } from '@/utils/tokendAccess';
   import type { AudioDownloadResult } from '@/composables/useAudioDownloads';
   import {
     getAllDownloadedAudio,
@@ -624,7 +614,7 @@
   const searchQuery = ref('');
   const activeTab = ref<'audio' | 'circles'>('audio');
   const authStore = useAuthStore();
-  const canUseCircles = computed(() => canAccessCircles(authStore.user));
+  const canUseTokend = computed(() => canAccessTokend(authStore.user));
   const showCreatePlaylistDialog = ref(false);
   const showAddToPlaylistDialog = ref(false);
   const showPlaylistDetailDialog = ref(false);

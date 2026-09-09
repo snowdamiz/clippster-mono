@@ -1938,17 +1938,17 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   @doc """
-  Enables Circles access for a user.
+  Enables Tokend access for a user.
   """
-  def enable_circles(conn, %{"user_id" => user_id_string}) do
+  def enable_tokend(conn, %{"user_id" => user_id_string}) do
     case parse_integer(user_id_string) do
       {:ok, user_id} ->
-        case Accounts.enable_circles(user_id) do
+        case Accounts.enable_tokend(user_id) do
           {:ok, user} ->
             json(conn, %{
               success: true,
-              message: "Circles access enabled",
-              user: %{id: user.id, circles_enabled: user.circles_enabled}
+              message: "Tokend access enabled",
+              user: %{id: user.id, tokend_enabled: user.tokend_enabled}
             })
 
           {:error, :user_not_found} ->
@@ -1966,17 +1966,17 @@ defmodule ClippsterServerWeb.AdminController do
   end
 
   @doc """
-  Disables Circles access for a user.
+  Disables Tokend access for a user.
   """
-  def disable_circles(conn, %{"user_id" => user_id_string}) do
+  def disable_tokend(conn, %{"user_id" => user_id_string}) do
     case parse_integer(user_id_string) do
       {:ok, user_id} ->
-        case Accounts.disable_circles(user_id) do
+        case Accounts.disable_tokend(user_id) do
           {:ok, user} ->
             json(conn, %{
               success: true,
-              message: "Circles access disabled",
-              user: %{id: user.id, circles_enabled: user.circles_enabled}
+              message: "Tokend access disabled",
+              user: %{id: user.id, tokend_enabled: user.tokend_enabled}
             })
 
           {:error, :user_not_found} ->
@@ -2326,7 +2326,7 @@ defmodule ClippsterServerWeb.AdminController do
               owned_organization_id: user.owned_organization_id,
               ai_editor_enabled: user.ai_editor_enabled,
               campaigns_enabled: user.campaigns_enabled,
-              circles_enabled: user.circles_enabled,
+              tokend_enabled: user.tokend_enabled,
               created_at: user.inserted_at,
               last_active_at: user.last_active_at,
               credits: %{

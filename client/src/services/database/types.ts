@@ -488,6 +488,8 @@ export interface ImageAsset {
   canvas_height: number | null;
   export_format: ImageExportFormat | null;
   editor_project_json: string | null;
+  is_published?: boolean | number;
+  published_at?: number | null;
   created_at: number;
   updated_at: number;
   // Organization asset fields (null for local assets)

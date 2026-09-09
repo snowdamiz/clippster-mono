@@ -142,7 +142,13 @@ export function AccountProvider({ children }: { children: ReactNode }) {
         getHasSelectedPlan(),
       ]);
 
-      setHasSelectedPlanState(planSelected);
+      const serverSelected = !!user?.has_selected_plan;
+      if (serverSelected) {
+        await setHasSelectedPlan(true);
+        setHasSelectedPlanState(true);
+      } else {
+        setHasSelectedPlanState(planSelected);
+      }
 
       if (balanceRes.success) {
         nextSubscription = balanceRes.subscription ?? null;
@@ -183,7 +189,7 @@ export function AccountProvider({ children }: { children: ReactNode }) {
     }
 
     return { subscription: nextSubscription, totalAvailable: nextTotalAvailable };
-  }, [isAuthenticated]);
+  }, [isAuthenticated, user?.has_selected_plan]);
 
   useEffect(() => {
     if (!authChecked) return;
@@ -200,6 +206,11 @@ export function AccountProvider({ children }: { children: ReactNode }) {
   }, [isAuthenticated, refreshAccount]);
 
   const continueWithFreePlan = useCallback(async () => {
+    try {
+      await subscriptionApi.selectFree();
+    } catch {
+      // Still mark locally; server is source of truth on next refresh
+    }
     await setHasSelectedPlan(true);
     setHasSelectedPlanState(true);
   }, []);

@@ -597,6 +597,7 @@
   import { useAppTour } from '@/composables/useAppTour';
   import { useAuthStore } from '@/stores/auth';
   import { fetchTokendCapabilities, TOKEND_UNAVAILABLE_MESSAGES } from '@/services/tokend';
+  import { canAccessTokend } from '@/utils/tokendAccess';
 
   const router = useRouter();
   const { gates } = useSubscriptionGate();
@@ -619,7 +620,9 @@
       twitter: 'twitter',
       tokend: 'tokend',
     };
-    return map[key] ?? null;
+    const platform = map[key] ?? null;
+    if (platform === 'tokend' && !canAccessTokend(authStore.user)) return null;
+    return platform;
   }
 
   /** Read deep-link search from route so first paint already shows creator + loading. */
@@ -734,9 +737,10 @@
 
     // Check for Tokend creator URLs (tokend.tv or local web :4100)
     if (
-      lowerVal.includes('tokend.tv') ||
-      lowerVal.includes('localhost:4100') ||
-      lowerVal.includes('127.0.0.1:4100')
+      canAccessTokend(authStore.user) &&
+      (lowerVal.includes('tokend.tv') ||
+        lowerVal.includes('localhost:4100') ||
+        lowerVal.includes('127.0.0.1:4100'))
     ) {
       detectedPlatform.value = 'tokend';
       return;

@@ -7,7 +7,9 @@ import { ConnectPlatformSheet } from '@/components/social/ConnectPlatformSheet';
 import { SocialAccountCard } from '@/components/social/SocialAccountCard';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { DISTRIBUTION_PLATFORMS } from '@/config/distributionPlatforms';
+import { useAuth } from '@/context/AuthContext';
 import { appAlert } from '@/lib/appAlert';
+import { canAccessTokend } from '@/lib/tokendAccess';
 import { organizationsApi, userSocialApi } from '@/services/api';
 import { startPostForMeOAuth } from '@/services/postForMeOAuth';
 import { startPostForMeOrgOAuth } from '@/services/postForMeOrgOAuth';
@@ -20,6 +22,8 @@ interface AccountsSheetProps {
 }
 
 export function AccountsSheet({ visible, onClose }: AccountsSheetProps) {
+  const { user } = useAuth();
+  const tokendAllowed = canAccessTokend(user);
   const [accounts, setAccounts] = useState<UserSocialAccount[]>([]);
   const [organizations, setOrganizations] = useState<Organization[]>([]);
   const [selectedOrgId, setSelectedOrgId] = useState<number | null>(null);
@@ -32,18 +36,23 @@ export function AccountsSheet({ visible, onClose }: AccountsSheetProps) {
   const loadAccounts = useCallback(async () => {
     const response = await userSocialApi.listAccounts();
     const list = response.social_accounts ?? response.accounts ?? [];
-    setAccounts(list);
+    setAccounts(
+      tokendAllowed ? list : list.filter((account) => account.platform !== 'tokend')
+    );
 
     const orgResponse = await organizationsApi.listMyOrganizations();
     if (orgResponse.success) {
       setOrganizations(orgResponse.organizations);
     }
-  }, []);
+  }, [tokendAllowed]);
 
   const loadOrgAccounts = useCallback(async (orgId: number) => {
     const response = await userSocialApi.listOrgAccounts(orgId);
-    setOrgAccounts(response.social_accounts ?? response.accounts ?? []);
-  }, []);
+    const list = response.social_accounts ?? response.accounts ?? [];
+    setOrgAccounts(
+      tokendAllowed ? list : list.filter((account) => account.platform !== 'tokend')
+    );
+  }, [tokendAllowed]);
 
   useEffect(() => {
     if (!visible) return;
@@ -261,6 +270,7 @@ export function AccountsSheet({ visible, onClose }: AccountsSheetProps) {
       <ConnectPlatformSheet
         visible={showConnect}
         connectingPlatform={connectingPlatform ?? connectingOrgPlatform}
+        includeTokend={tokendAllowed}
         onClose={() => setShowConnect(false)}
         onConnect={(platform) => {
           if (orgMode) void handleOrgConnect(platform);

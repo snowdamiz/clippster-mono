@@ -47,6 +47,13 @@ export function createSubscriptionApi(client: ApiClient) {
       return client.get<SubscriptionTiersResponse>('/subscription/tiers');
     },
 
+    selectFree() {
+      return client.post<{ success: boolean; has_selected_plan?: boolean; error?: string }>(
+        '/subscription/select-free',
+        {},
+      );
+    },
+
     createCheckout(
       tier: string,
       options?: { billing_interval?: 'monthly' | 'yearly'; return_context?: string },

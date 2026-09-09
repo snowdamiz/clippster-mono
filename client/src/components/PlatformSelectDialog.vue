@@ -102,6 +102,7 @@
   import { listUserTokendAccounts } from '@/services/userTokendApi';
   import { listSocialAccounts } from '@/services/socialAccountsApi';
   import { fetchTokendCapabilities } from '@/services/tokend';
+  import { canAccessTokend } from '@/utils/tokendAccess';
 
   type PlatformId = 'instagram' | 'twitter' | 'tiktok' | 'youtube' | 'tokend';
 
@@ -175,7 +176,7 @@
       });
     }
 
-    if (tokendPublishEnabled.value && tokendCount.value > 0) {
+    if (tokendPublishEnabled.value && canAccessTokend(authStore.user) && tokendCount.value > 0) {
       platforms.push({
         id: 'tokend',
         name: 'Tokend',

@@ -390,6 +390,25 @@ defmodule ClippsterServer.Accounts do
   end
 
   @doc """
+  Marks that the user completed the one-time plan picker (Free or paid).
+  Idempotent — does not re-grant free credits.
+  """
+  def mark_plan_selected(user_id) when is_integer(user_id) do
+    case get_user(user_id) do
+      nil ->
+        {:error, :not_found}
+
+      %{has_selected_plan: true} = user ->
+        {:ok, user}
+
+      user ->
+        user
+        |> User.plan_selection_changeset(%{has_selected_plan: true})
+        |> Repo.update()
+    end
+  end
+
+  @doc """
   Deactivates a user account.
   """
   def deactivate_user(user_id) do
@@ -1509,34 +1528,46 @@ defmodule ClippsterServer.Accounts do
   end
 
   @doc """
-  Enables Circles access for a user.
+  Enables Tokend access for a user (connect, publish, VODs, Circles, live).
   """
-  def enable_circles(user_id) do
+  def enable_tokend(user_id) do
     user = get_user(user_id)
 
     if is_nil(user) do
       {:error, :user_not_found}
     else
       user
-      |> Ecto.Changeset.change(%{circles_enabled: true})
+      |> Ecto.Changeset.change(%{tokend_enabled: true})
       |> Repo.update()
     end
   end
 
   @doc """
-  Disables Circles access for a user.
+  Disables Tokend access for a user.
   """
-  def disable_circles(user_id) do
+  def disable_tokend(user_id) do
     user = get_user(user_id)
 
     if is_nil(user) do
       {:error, :user_not_found}
     else
       user
-      |> Ecto.Changeset.change(%{circles_enabled: false})
+      |> Ecto.Changeset.change(%{tokend_enabled: false})
       |> Repo.update()
     end
   end
+
+  @doc """
+  Returns true if the user can access Tokend features.
+  Admins always have access; others need tokend_enabled and creator/pro tier.
+  """
+  def can_access_tokend?(%{is_admin: true}), do: true
+
+  def can_access_tokend?(%{tokend_enabled: true, subscription_tier: tier})
+      when tier in ["creator", "pro"],
+      do: true
+
+  def can_access_tokend?(_user), do: false
 
   @doc """
   Enables campaigns access for a user.

@@ -57,6 +57,14 @@ export function getPlatformConfig(id: string): MobilePlatformConfig | undefined 
   return MOBILE_PLATFORMS.find((platform) => platform.id === id);
 }
 
-export function detectPlatformFromUrl(url: string): MediaPlatform | null {
-  return detectPlatformFromInput(url);
+export function getMobilePlatforms(options?: { includeTokend?: boolean }): MobilePlatformConfig[] {
+  if (options?.includeTokend) return MOBILE_PLATFORMS;
+  return MOBILE_PLATFORMS.filter((platform) => platform.id !== 'tokend');
+}
+
+export function detectPlatformFromUrl(
+  url: string,
+  options?: { allowTokend?: boolean }
+): MediaPlatform | null {
+  return detectPlatformFromInput(url, options);
 }

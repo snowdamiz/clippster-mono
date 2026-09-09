@@ -2,7 +2,7 @@ import { Ionicons } from '@expo/vector-icons';
 import type { SocialPlatform } from '@clippster/api-client';
 import { ActivityIndicator, Pressable, Text, View } from 'react-native';
 import {
-  DISTRIBUTION_PLATFORMS,
+  getDistributionPlatforms,
   type DistributionPlatformConfig,
 } from '@/config/distributionPlatforms';
 import { TokendPlatformIcon } from '@/components/icons/TokendLogo';
@@ -12,6 +12,7 @@ import { tokens } from '@/theme/tokens';
 interface ConnectPlatformSheetProps {
   visible: boolean;
   connectingPlatform: SocialPlatform | null;
+  includeTokend?: boolean;
   onClose: () => void;
   onConnect: (platform: SocialPlatform) => void;
 }
@@ -51,9 +52,12 @@ function PlatformOption({
 export function ConnectPlatformSheet({
   visible,
   connectingPlatform,
+  includeTokend = false,
   onClose,
   onConnect,
 }: ConnectPlatformSheetProps) {
+  const platforms = getDistributionPlatforms({ includeTokend });
+
   return (
     <BottomSheet
       visible={visible}
@@ -70,7 +74,7 @@ export function ConnectPlatformSheet({
       }}
     >
       <View className="gap-2">
-        {DISTRIBUTION_PLATFORMS.map((platform) => (
+        {platforms.map((platform) => (
           <PlatformOption
             key={platform.id}
             platform={platform}

@@ -1201,6 +1201,7 @@ import { listUserInstagramAccounts, type UserInstagramAccount } from '@/services
 import { listUserYoutubeAccounts, type UserYoutubeAccount } from '@/services/userYoutubeApi';
 import { listUserTokendAccounts, type UserTokendAccount } from '@/services/userTokendApi';
 import { fetchTokendCapabilities } from '@/services/tokend';
+import { canAccessTokend } from '@/utils/tokendAccess';
 import { createProject } from '@/services/database/projects';
 import { updateClip } from '@/services/database/clips';
 import type {
@@ -1287,7 +1288,9 @@ const allPlatforms = [
 
 const tokendPublishEnabled = ref(false);
 const availablePlatforms = computed(() =>
-  allPlatforms.filter((p) => p.id !== 'tokend' || tokendPublishEnabled.value)
+  allPlatforms.filter(
+    (p) => p.id !== 'tokend' || (tokendPublishEnabled.value && canAccessTokend(authStore.user))
+  )
 );
 
 const props = defineProps<{

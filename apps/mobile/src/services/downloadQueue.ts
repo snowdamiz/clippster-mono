@@ -342,6 +342,12 @@ async function runDownload(job: DownloadJob): Promise<void> {
   let useFfmpegDownload = false;
 
   if (job.platform === 'tokend') {
+    const { getStoredUser } = await import('./authStorage');
+    const { canAccessTokend } = await import('@/lib/tokendAccess');
+    if (!canAccessTokend(await getStoredUser())) {
+      throw new Error('Tokend access is not enabled for this account.');
+    }
+
     const { parseTokendMediaRef, TOKEND_UNAVAILABLE_MESSAGES, fetchTokendMode, getTokendCapabilities } =
       await import('./tokend');
     const modeInfo = await fetchTokendMode();

@@ -1427,6 +1427,7 @@
     type AffiliatePayout,
   } from '@/services/affiliateApi';
   import { useAuthStore } from '@/stores/auth';
+  import { canAccessTokend } from '@/utils/tokendAccess';
   import { usePermissionsStore } from '@/stores/permissions';
 
   const { toast } = useToast();
@@ -1897,43 +1898,50 @@
   let cleanupYoutubeAuth: (() => void) | null = null;
   let cleanupReconnectAuth: (() => void) | null = null;
 
-  const availablePlatforms = [
-    {
-      id: 'instagram',
-      name: 'Instagram',
-      icon: markRaw(Instagram),
-      iconClass: 'platform-card__icon--instagram',
-      available: true,
-    },
-    {
-      id: 'tiktok',
-      name: 'TikTok',
-      icon: markRaw(Music2),
-      iconClass: 'platform-card__icon--tiktok',
-      available: true,
-    },
-    {
-      id: 'x',
-      name: 'X (Twitter)',
-      icon: markRaw(XLogo),
-      iconClass: 'platform-card__icon--x',
-      available: true,
-    },
-    {
-      id: 'youtube',
-      name: 'YouTube Shorts',
-      icon: markRaw(Youtube),
-      iconClass: 'platform-card__icon--youtube',
-      available: true,
-    },
-    {
-      id: 'tokend',
-      name: 'Tokend',
-      icon: markRaw(TokendLogo),
-      iconClass: 'platform-card__icon--tokend',
-      available: true,
-    },
-  ];
+  const availablePlatforms = computed(() => {
+    const platforms = [
+      {
+        id: 'instagram',
+        name: 'Instagram',
+        icon: markRaw(Instagram),
+        iconClass: 'platform-card__icon--instagram',
+        available: true,
+      },
+      {
+        id: 'tiktok',
+        name: 'TikTok',
+        icon: markRaw(Music2),
+        iconClass: 'platform-card__icon--tiktok',
+        available: true,
+      },
+      {
+        id: 'x',
+        name: 'X (Twitter)',
+        icon: markRaw(XLogo),
+        iconClass: 'platform-card__icon--x',
+        available: true,
+      },
+      {
+        id: 'youtube',
+        name: 'YouTube Shorts',
+        icon: markRaw(Youtube),
+        iconClass: 'platform-card__icon--youtube',
+        available: true,
+      },
+      {
+        id: 'tokend',
+        name: 'Tokend',
+        icon: markRaw(TokendLogo),
+        iconClass: 'platform-card__icon--tokend',
+        available: true,
+      },
+    ];
+
+    if (!canAccessTokend(authStore.user)) {
+      return platforms.filter((p) => p.id !== 'tokend');
+    }
+    return platforms;
+  });
 
   const paymentMethodForm = reactive({ method_type: '', is_default: false, details: {} as Record<string, string> });
 
@@ -2024,19 +2032,20 @@
   const loadSocialAccounts = async () => {
     loadingSocialAccounts.value = true;
     try {
+      const tokendAllowed = canAccessTokend(authStore.user);
       const [igResponse, twResponse, tkResponse, ytResponse, tokendResponse] = await Promise.all([
         listUserInstagramAccounts(),
         listUserTwitterAccounts(),
         listUserTiktokAccounts(),
         listUserYoutubeAccounts(),
-        listUserTokendAccounts(),
+        tokendAllowed ? listUserTokendAccounts() : Promise.resolve({ success: true, accounts: [] }),
       ]);
       const accounts: any[] = [];
       if (igResponse.success) accounts.push(...igResponse.accounts);
       if (twResponse.success) accounts.push(...twResponse.accounts);
       if (tkResponse.success) accounts.push(...tkResponse.accounts);
       if (ytResponse.success) accounts.push(...ytResponse.accounts);
-      if (tokendResponse.success) accounts.push(...tokendResponse.accounts);
+      if (tokendAllowed && tokendResponse.success) accounts.push(...tokendResponse.accounts);
       socialAccounts.value = accounts;
     } catch (error) {
       toast({ title: 'Error', description: 'Failed to load social accounts' });

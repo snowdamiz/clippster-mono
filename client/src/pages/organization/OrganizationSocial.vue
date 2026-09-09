@@ -134,7 +134,7 @@
             </button>
           </div>
 
-          <div class="social-accounts__platform-connect">
+          <div v-if="canUseTokend" class="social-accounts__platform-connect">
             <div class="social-accounts__platform-info">
               <div class="social-accounts__platform-badge social-accounts__platform-badge--tokend">
                 <img src="/tokend.png" alt="" class="social-accounts__platform-svg" />
@@ -451,7 +451,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted } from 'vue';
+  import { ref, onMounted, onUnmounted, computed } from 'vue';
   import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     Globe,
@@ -477,6 +477,8 @@
   import OrgScheduledPostsList from '@/components/organization/OrgScheduledPostsList.vue';
   import { useOrganization } from '@/composables/useOrganization';
   import { useToast } from '@/composables/useToast';
+  import { useAuthStore } from '@/stores/auth';
+  import { canAccessTokend } from '@/utils/tokendAccess';
   import {
     listSocialAccounts,
     startInstagramOAuthPopup,
@@ -503,6 +505,8 @@
 
   const { organizationId, isAdmin, members, loadOrganization } = useOrganization();
   const { showToast } = useToast();
+  const authStore = useAuthStore();
+  const canUseTokend = computed(() => canAccessTokend(authStore.user));
 
   const loading = ref(true);
   const connectingPlatform = ref<ConnectPlatform | null>(null);
@@ -599,7 +603,9 @@
     try {
       const response = await listSocialAccounts(organizationId.value, true);
       if (response.success) {
-        accounts.value = response.accounts;
+        accounts.value = canUseTokend.value
+          ? response.accounts
+          : response.accounts.filter((account) => account.platform !== 'tokend');
       } else {
         showToast('Failed to load accounts', 'error');
       }

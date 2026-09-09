@@ -15,7 +15,7 @@ defmodule ClippsterServer.Accounts.User do
     field :is_moderator, :boolean, default: false
     field :ai_editor_enabled, :boolean, default: false
     field :campaigns_enabled, :boolean, default: false
-    field :circles_enabled, :boolean, default: false
+    field :tokend_enabled, :boolean, default: false
 
     # Associations
     has_one :clipper_profile, ClipperProfile
@@ -73,6 +73,9 @@ defmodule ClippsterServer.Accounts.User do
 
     # Free tier monthly credit tracking
     field :free_tier_last_credit_grant, :utc_datetime
+
+    # Completed one-time plan picker (free or paid) — source of truth across clients
+    field :has_selected_plan, :boolean, default: false
 
     # Activity tracking
     field :last_active_at, :utc_datetime
@@ -380,6 +383,15 @@ defmodule ClippsterServer.Accounts.User do
   end
 
   @doc """
+  Changeset for marking that the user completed plan selection (free or paid).
+  """
+  def plan_selection_changeset(user, attrs) do
+    user
+    |> cast(attrs, [:has_selected_plan])
+    |> validate_required([:has_selected_plan])
+  end
+
+  @doc """
   Changeset for beta activation.
   """
   def beta_activation_changeset(user) do
@@ -413,7 +425,8 @@ defmodule ClippsterServer.Accounts.User do
       :admin_discount_percent,
       :admin_discount_months_remaining,
       :admin_discount_applied_at,
-      :admin_discount_stripe_coupon_id
+      :admin_discount_stripe_coupon_id,
+      :has_selected_plan
     ])
     |> validate_inclusion(:subscription_status, ["none", "active", "cancelled", "expired"])
     |> validate_inclusion(:subscription_tier, ["basic", "starter", "creator", "pro", nil])

@@ -339,6 +339,7 @@ defmodule ClippsterServerWeb.Router do
 
     # Subscription management (requires auth)
     get("/subscription/status", SubscriptionController, :get_status)
+    post("/subscription/select-free", SubscriptionController, :select_free)
     post("/subscription/checkout", SubscriptionController, :create_checkout)
     post("/subscription/promo/validate", SubscriptionController, :validate_promo)
     post("/subscription/crypto-quote", SubscriptionController, :get_crypto_quote)
@@ -1410,8 +1411,8 @@ defmodule ClippsterServerWeb.Router do
     # AI editor access management
     post("/admin/users/:user_id/ai-editor", AdminController, :enable_ai_editor)
     delete("/admin/users/:user_id/ai-editor", AdminController, :disable_ai_editor)
-    post("/admin/users/:user_id/circles", AdminController, :enable_circles)
-    delete("/admin/users/:user_id/circles", AdminController, :disable_circles)
+    post("/admin/users/:user_id/tokend", AdminController, :enable_tokend)
+    delete("/admin/users/:user_id/tokend", AdminController, :disable_tokend)
 
     # Campaigns access management
     post("/admin/users/:user_id/campaigns", AdminController, :enable_campaigns)

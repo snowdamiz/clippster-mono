@@ -21,7 +21,8 @@ import {
   Mail,
   MessageSquare,
   Percent,
-  Shield
+  Shield,
+  User,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
@@ -282,6 +283,16 @@ export function DashboardSidebar({ variant = 'organization', onNavigate }: Dashb
 
       {/* Footer: User Profile */}
       <div className="border-t border-zinc-800 p-[0.3rem]">
+        {isOrganizationSidebar && (
+          <Link
+            to="/account"
+            onClick={onNavigate}
+            className="flex items-center gap-2 w-full py-2 px-2 mb-0.5 rounded-md text-xs text-zinc-400 hover:text-cyan-400 hover:bg-zinc-800/60 transition-colors no-underline"
+          >
+            <User className="w-3.5 h-3.5 shrink-0" />
+            <span className="flex-1 text-left">Personal account</span>
+          </Link>
+        )}
         {user && (
           <div className="flex items-center gap-2 w-full py-2 px-2 rounded-md">
             {user.avatar_url ? (

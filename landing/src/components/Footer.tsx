@@ -1,4 +1,4 @@
-import { Twitter, Github, MessageCircle, Building2 } from 'lucide-react'
+import { Twitter, Github, MessageCircle } from 'lucide-react'
 import { Link } from 'react-router-dom'
 import { trackLandingEvent } from '@/services/landingAnalytics'
 
@@ -131,20 +131,6 @@ export function Footer() {
           <div className="flex items-center gap-6 text-xs text-zinc-600">
             <Link to="/guides/how-to-clip-twitch-streams" className="hover:text-cyan-400 transition-colors">
               Guides
-            </Link>
-            <Link
-              to="/dashboard"
-              className="flex items-center gap-1.5 hover:text-zinc-400 transition-colors"
-              onClick={() =>
-                trackLandingEvent('landing_cta_click', {
-                  source: 'footer_bottom',
-                  button_label: 'Organization Portal',
-                  path: '/dashboard',
-                })
-              }
-            >
-              <Building2 className="w-3 h-3" />
-              Organization Portal
             </Link>
           </div>
         </div>

@@ -113,7 +113,8 @@ defmodule ClippsterServer.Subscriptions do
             subscription_end_date: end_date,
             subscription_renewal_method: "stripe",
             stripe_subscription_id: stripe_subscription_id,
-            stripe_customer_id: stripe_customer_id || user.stripe_customer_id
+            stripe_customer_id: stripe_customer_id || user.stripe_customer_id,
+            has_selected_plan: true
           })
           |> Repo.update()
 
@@ -179,7 +180,8 @@ defmodule ClippsterServer.Subscriptions do
             subscription_tier: tier,
             subscription_start_date: start_date,
             subscription_end_date: end_date,
-            subscription_renewal_method: "crypto"
+            subscription_renewal_method: "crypto",
+            has_selected_plan: true
           })
           |> Repo.update()
 
