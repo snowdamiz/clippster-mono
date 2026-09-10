@@ -90,8 +90,8 @@ const palette = computed(() => {
 
 <style scoped>
 .summary-card {
-  background: rgba(168, 85, 247, 0.08);
-  border: 1px solid rgba(168, 85, 247, 0.25);
+  background: rgba(14, 165, 233, 0.08);
+  border: 1px solid rgba(14, 165, 233, 0.25);
   border-radius: 10px;
   overflow: hidden;
   margin: 8px 0;
@@ -104,8 +104,8 @@ const palette = computed(() => {
   padding: 10px 12px;
   font-size: 12px;
   font-weight: 600;
-  color: #c084fc;
-  border-bottom: 1px solid rgba(168, 85, 247, 0.15);
+  color: var(--sidebar-accent, #0ea5e9);
+  border-bottom: 1px solid rgba(14, 165, 233, 0.15);
 }
 
 .summary-card__body {
@@ -133,7 +133,7 @@ const palette = computed(() => {
 }
 
 .summary-badge {
-  background: rgba(168, 85, 247, 0.2);
+  background: rgba(14, 165, 233, 0.2);
   padding: 1px 8px;
   border-radius: 4px;
   font-size: 11px;

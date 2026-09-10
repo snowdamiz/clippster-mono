@@ -4,10 +4,12 @@ defmodule ClippsterServer.AI.ThumbnailSession do
 
   @valid_statuses ~w(discovery generating generated refining completed)
   @valid_modes ~w(quick editable)
+  @valid_creator_modes ~w(image thumbnail)
 
   schema "ai_thumbnail_sessions" do
     field :name, :string
     field :status, :string, default: "discovery"
+    field :creator_mode, :string, default: "thumbnail"
     field :generation_mode, :string, default: "editable"
     field :media_items, {:array, :map}, default: []
     field :key_frames, {:array, :map}, default: []
@@ -29,6 +31,7 @@ defmodule ClippsterServer.AI.ThumbnailSession do
     field :youtube_url, :string
     field :video_title, :string
     field :transcript, :string
+    field :transcript_backed, :boolean, default: false
     field :transcript_source, :string
     field :concepts, {:array, :map}, default: []
     field :video_summary, :map
@@ -45,6 +48,7 @@ defmodule ClippsterServer.AI.ThumbnailSession do
     |> cast(attrs, [
       :name,
       :status,
+      :creator_mode,
       :generation_mode,
       :media_items,
       :key_frames,
@@ -66,14 +70,16 @@ defmodule ClippsterServer.AI.ThumbnailSession do
       :youtube_url,
       :video_title,
       :transcript,
+      :transcript_backed,
       :transcript_source,
       :concepts,
       :video_summary,
       :selected_concept_id,
       :user_id
     ])
-    |> validate_required([:user_id, :status, :generation_mode])
+    |> validate_required([:user_id, :status, :creator_mode, :generation_mode])
     |> validate_inclusion(:status, @valid_statuses)
+    |> validate_inclusion(:creator_mode, @valid_creator_modes)
     |> validate_inclusion(:generation_mode, @valid_modes)
     |> foreign_key_constraint(:user_id)
   end

@@ -77,7 +77,7 @@
                       'justify-center px-0': isCollapsed,
                       'gap-3 px-3': !isCollapsed,
                     }"
-                    :title="isCollapsed ? item.badge ? `${item.name} (${item.badge})` : item.name : undefined"
+                    :title="isCollapsed ? (item.badge ? `${item.name} (${item.badge})` : item.name) : undefined"
                     :data-tour-id="tourIdForItem(item)"
                     @click="(e) => onNavClick(e, item)"
                   >
@@ -138,7 +138,13 @@
                       {{ liveCreatorsCount > 99 ? '99+' : liveCreatorsCount }}
                     </span>
                     <span
-                      v-if="item.badge && !isCollapsed && item.name !== 'Messages' && item.name !== 'Live' && item.name !== 'My Creators'"
+                      v-if="
+                        item.badge &&
+                        !isCollapsed &&
+                        item.name !== 'Messages' &&
+                        item.name !== 'Live' &&
+                        item.name !== 'My Creators'
+                      "
                       class="ml-auto px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none rounded whitespace-nowrap"
                       :class="
                         item.badge === 'Beta'
@@ -293,6 +299,7 @@
   } from '@/components/ui/dropdown-menu';
   import api from '@/services/api';
   import { canAccessAIVideo } from '@/utils/aiVideoAccess';
+  import { canAccessCampaigns, canAccessImageEditor } from '@/utils/featureAccess';
   import { useAppTour, useTourFlags } from '@/composables/useAppTour';
   import {
     Zap,
@@ -525,70 +532,79 @@
   // ===== Navigation Filtering =====
   function getVisibleGroupItems(items: NavigationItem[]): NavigationItem[] {
     if (useOrganizationSidebar.value) {
-      return items.filter(
-        (item) => item.name !== 'Admin' && item.name !== 'Bug Report' && !item.navHidden
-      );
+      return items.filter((item) => item.name !== 'Admin' && item.name !== 'Bug Report' && !item.navHidden);
     }
 
-    return items.filter((item) => {
-      if (item.navHidden) {
-        return false;
-      }
-      // Hide Admin and Bug Report from navigation - they're now in the profile dropdown
-      if (item.name === 'Admin' || item.name === 'Bug Report') {
-        return false;
-      }
-      // Check affiliate-only items
-      if (item.affiliateOnly) {
-        return authStore.user?.is_affiliate === true;
-      }
-      // Check admin-only items
-      if (item.adminOnly) {
-        return authStore.user?.is_admin === true;
-      }
-      // Check organization owner-only items
-      if (item.orgOnly) {
-        return isOrgAccountOwner.value;
-      }
-      // Always show Organizations page (even if not a member of any organization)
-      if (item.path === '/organizations') {
+    return items
+      .filter((item) => {
+        if (item.navHidden) {
+          return false;
+        }
+        // Hide Admin and Bug Report from navigation - they're now in the profile dropdown
+        if (item.name === 'Admin' || item.name === 'Bug Report') {
+          return false;
+        }
+        // Check affiliate-only items
+        if (item.affiliateOnly) {
+          return authStore.user?.is_affiliate === true;
+        }
+        // Check admin-only items
+        if (item.adminOnly) {
+          return authStore.user?.is_admin === true;
+        }
+        // Check organization owner-only items
+        if (item.orgOnly) {
+          return isOrgAccountOwner.value;
+        }
+        // Always show Organizations page (even if not a member of any organization)
+        if (item.path === '/organizations') {
+          return true;
+        }
+        // Check organization member items
+        if (item.orgMember) {
+          if (isOrgAccountOwner.value) return true;
+          return userOrganizations.value.length > 0;
+        }
+        // Hide Live when feature is disabled
+        if (item.path === '/live-clip' && !isLiveClipEnabled.value) {
+          return false;
+        }
+        if (item.path === '/campaigns' && !canAccessCampaigns(authStore.user)) {
+          return false;
+        }
+        // Check restricted account items
+        if (item.restrictedHidden && permissionsStore.isRestricted) {
+          // Special handling for items with specific permission checks
+          if (item.path === '/assets' && permissionsStore.allowAssetUploads) {
+            return true;
+          }
+          if (item.path === '/prompts' && permissionsStore.allowCustomPrompts) {
+            return true;
+          }
+          // Otherwise hide if marked as restrictedHidden
+          return false;
+        }
         return true;
-      }
-      // Check organization member items
-      if (item.orgMember) {
-        if (isOrgAccountOwner.value) return true;
-        return userOrganizations.value.length > 0;
-      }
-      // Hide Live when feature is disabled
-      if (item.path === '/live-clip' && !isLiveClipEnabled.value) {
-        return false;
-      }
-      // Check restricted account items
-      if (item.restrictedHidden && permissionsStore.isRestricted) {
-        // Special handling for items with specific permission checks
-        if (item.path === '/assets' && permissionsStore.allowAssetUploads) {
-          return true;
+      })
+      .map((item) => {
+        if (item.path === '/ai-video') {
+          const hasAccess = canAccessAIVideo(authStore.user);
+          return {
+            ...item,
+            disabled: !hasAccess,
+            badge: hasAccess ? item.badge : 'Coming Soon',
+          };
         }
-        if (item.path === '/prompts' && permissionsStore.allowCustomPrompts) {
-          return true;
+        if (item.path === '/design-studio' || item.path === '/ai-image') {
+          const hasAccess = canAccessImageEditor(authStore.user);
+          return {
+            ...item,
+            disabled: !hasAccess,
+            badge: hasAccess ? item.badge : 'Coming Soon',
+          };
         }
-        // Otherwise hide if marked as restrictedHidden
-        return false;
-      }
-      return true;
-    }).map((item) => {
-      // Dynamically disable AI Video Editor / AI Thumbnail Creator for non-authorized users
-      // (same grant: admin, or ai_editor_enabled + Creator/Pro)
-      if (item.path === '/ai-video' || item.path === '/ai-thumbnail') {
-        const hasAccess = canAccessAIVideo(authStore.user);
-        return {
-          ...item,
-          disabled: !hasAccess,
-          badge: hasAccess ? item.badge : 'Coming Soon',
-        };
-      }
-      return item;
-    });
+        return item;
+      });
   }
 
   function isActive(path: string): boolean {

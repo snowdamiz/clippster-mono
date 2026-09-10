@@ -213,11 +213,14 @@ defmodule ClippsterServer.Credits do
   Adds hours to user balance (uncapped — used by subscription activation and renewals).
   """
   def add_credits(user_id, hours) do
-    {:ok, user_credit} = get_or_create_user_credits(user_id)
+    Repo.transaction(fn ->
+      user_credit = lock_user_credits(user_id)
 
-    user_credit
-    |> UserCredit.add_hours_changeset(hours)
-    |> Repo.update()
+      case UserCredit.add_hours_changeset(user_credit, hours) |> Repo.update() do
+        {:ok, updated_credit} -> updated_credit
+        {:error, changeset} -> Repo.rollback(changeset)
+      end
+    end)
   end
 
   @doc """
@@ -273,7 +276,7 @@ defmodule ClippsterServer.Credits do
   """
   def deduct_credits(user_id, hours) do
     Repo.transaction(fn ->
-      {:ok, user_credit} = get_or_create_user_credits(user_id)
+      user_credit = lock_user_credits(user_id)
 
       case UserCredit.deduct_hours_changeset(user_credit, hours) |> Repo.update() do
         {:ok, updated_credit} ->
@@ -287,6 +290,15 @@ defmodule ClippsterServer.Credits do
           Repo.rollback(changeset)
       end
     end)
+  end
+
+  defp lock_user_credits(user_id) do
+    {:ok, _user_credit} = get_or_create_user_credits(user_id)
+
+    UserCredit
+    |> where([credit], credit.user_id == ^user_id)
+    |> lock("FOR UPDATE")
+    |> Repo.one!()
   end
 
   @doc """

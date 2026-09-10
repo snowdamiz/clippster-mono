@@ -1,19 +1,29 @@
 defmodule ClippsterServerWeb.AIThumbnailController do
   use ClippsterServerWeb, :controller
 
-  alias ClippsterServer.AI.{ThumbnailSessions, ThumbnailComposer, ThumbnailSession, ThumbnailPostGen}
+  alias ClippsterServer.AI.{
+    ImageGenerationPolicy,
+    ImageGenerationReadiness,
+    ThumbnailSessions,
+    ThumbnailComposer,
+    ThumbnailSession,
+    ThumbnailPostGen
+  }
+
   alias ClippsterServer.Credits
+  alias ClippsterServer.Storage
   alias ClippsterServerWeb.AIChatController
 
   require Logger
 
   plug :require_ai_editor_access
 
+  # Fallback only — prefer generation_credit_cost/1 / ImageGenerationPolicy.
   @generation_credit_cost 8
-  @refinement_credit_cost 4
+  @refinement_credit_cost 2
   @variant_credit_cost 2
   @critique_credit_cost 4
-  @edit_credit_cost 4
+  @edit_credit_cost 2
   @optimize_credit_cost 8
 
   # ---------------------------------------------------------------------------
@@ -22,7 +32,7 @@ defmodule ClippsterServerWeb.AIThumbnailController do
 
   def list_sessions(conn, _params) do
     user = conn.assigns.current_user
-    sessions = ThumbnailSessions.list_user_sessions(user.id, limit: 50)
+    sessions = ThumbnailSessions.list_user_sessions(user.id, limit: 50, creator_mode: "thumbnail")
 
     json(conn, %{
       sessions:
@@ -32,7 +42,7 @@ defmodule ClippsterServerWeb.AIThumbnailController do
             name: s.name,
             status: s.status,
             generation_mode: s.generation_mode,
-            thumbnail_url: s.thumbnail_url,
+            thumbnail_url: Storage.browser_accessible_url(s.thumbnail_url),
             updated_at: s.updated_at,
             inserted_at: s.inserted_at
           }
@@ -44,6 +54,7 @@ defmodule ClippsterServerWeb.AIThumbnailController do
     user = conn.assigns.current_user
 
     attrs = %{
+      creator_mode: "thumbnail",
       media_items: Map.get(params, "media_items", []),
       key_frames: Map.get(params, "key_frames", []),
       generation_mode: Map.get(params, "generation_mode", "editable"),
@@ -75,27 +86,36 @@ defmodule ClippsterServerWeb.AIThumbnailController do
   def get_session(conn, %{"id" => id}) do
     user = conn.assigns.current_user
 
-    case ThumbnailSessions.get_user_session(id, user.id) do
+    case get_thumbnail_session(id, user.id) do
       nil ->
         conn |> put_status(:not_found) |> json(%{error: "Session not found"})
 
-      _session ->
-        session = ThumbnailSessions.get_session_with_messages(id)
-        json(conn, serialize_session(session))
+      session ->
+        case recover_stuck_generation(session, user.id, generation_credit_cost(session)) do
+          {:ok, recovered} ->
+            session = ThumbnailSessions.get_session_with_messages(recovered.id)
+            json(conn, serialize_session(session))
+
+          {:error, reason} ->
+            conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+        end
     end
   end
 
   def delete_session(conn, %{"id" => id}) do
     user = conn.assigns.current_user
 
-    case ThumbnailSessions.get_user_session(id, user.id) do
+    case get_thumbnail_session(id, user.id) do
       nil ->
         conn |> put_status(:not_found) |> json(%{error: "Session not found"})
 
       session ->
         case ThumbnailSessions.delete_session_with_assets(session) do
-          {:ok, _} -> json(conn, %{ok: true})
-          {:error, _} -> conn |> put_status(:internal_server_error) |> json(%{error: "Failed to delete"})
+          {:ok, _} ->
+            json(conn, %{ok: true})
+
+          {:error, _} ->
+            conn |> put_status(:internal_server_error) |> json(%{error: "Failed to delete"})
         end
     end
   end
@@ -103,12 +123,15 @@ defmodule ClippsterServerWeb.AIThumbnailController do
   def rename_session(conn, %{"id" => id, "name" => name}) do
     user = conn.assigns.current_user
 
-    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+    with session when not is_nil(session) <- get_thumbnail_session(id, user.id),
          {:ok, updated} <- ThumbnailSessions.update_session(session, %{name: name}) do
       json(conn, %{ok: true, name: updated.name})
     else
-      nil -> conn |> put_status(:not_found) |> json(%{error: "Session not found"})
-      {:error, _} -> conn |> put_status(:internal_server_error) |> json(%{error: "Failed to rename"})
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+
+      {:error, _} ->
+        conn |> put_status(:internal_server_error) |> json(%{error: "Failed to rename"})
     end
   end
 
@@ -116,10 +139,11 @@ defmodule ClippsterServerWeb.AIThumbnailController do
   # Mode / media / reference
   # ---------------------------------------------------------------------------
 
-  def update_mode(conn, %{"id" => id, "generation_mode" => mode}) when mode in ["quick", "editable"] do
+  def update_mode(conn, %{"id" => id, "generation_mode" => mode})
+      when mode in ["quick", "editable"] do
     user = conn.assigns.current_user
 
-    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id) do
+    with session when not is_nil(session) <- get_thumbnail_session(id, user.id) do
       # Switching after generate: reset generation artifacts but keep brief
       attrs =
         if session.status in ["generated", "refining", "completed"] do
@@ -147,13 +171,15 @@ defmodule ClippsterServerWeb.AIThumbnailController do
   end
 
   def update_mode(conn, _params) do
-    conn |> put_status(:unprocessable_entity) |> json(%{error: "generation_mode must be quick or editable"})
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: "generation_mode must be quick or editable"})
   end
 
   def update_media(conn, %{"id" => id} = params) do
     user = conn.assigns.current_user
 
-    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id) do
+    with session when not is_nil(session) <- get_thumbnail_session(id, user.id) do
       attrs =
         %{}
         |> maybe_put(:media_items, Map.get(params, "media_items"))
@@ -167,6 +193,7 @@ defmodule ClippsterServerWeb.AIThumbnailController do
         |> maybe_put(:concepts, Map.get(params, "concepts"))
         |> maybe_put(:video_summary, Map.get(params, "video_summary"))
         |> maybe_put(:selected_concept_id, Map.get(params, "selected_concept_id"))
+        |> maybe_mark_transcript_backed(session, params)
 
       {:ok, updated} = ThumbnailSessions.update_session(session, attrs)
       session = ThumbnailSessions.get_session_with_messages(updated.id)
@@ -179,7 +206,7 @@ defmodule ClippsterServerWeb.AIThumbnailController do
   def set_reference(conn, %{"id" => id} = params) do
     user = conn.assigns.current_user
 
-    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id) do
+    with session when not is_nil(session) <- get_thumbnail_session(id, user.id) do
       url = Map.get(params, "reference_image_url") || Map.get(params, "url")
       meta = Map.get(params, "reference_image_meta") || Map.get(params, "meta") || %{}
 
@@ -204,7 +231,9 @@ defmodule ClippsterServerWeb.AIThumbnailController do
     user = conn.assigns.current_user
     api_key = get_api_key()
 
-    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+    with session when not is_nil(session) <- get_thumbnail_session(id, user.id),
+         {:ok, session} <-
+           recover_stuck_generation(session, user.id, generation_credit_cost(session)),
          :ok <- validate_discovery_status(session),
          {:ok, _user_msg} <- ThumbnailSessions.create_message(session.id, "user", message),
          {:ok, result} <- ThumbnailComposer.chat(session, message, api_key) do
@@ -229,50 +258,50 @@ defmodule ClippsterServerWeb.AIThumbnailController do
   def trigger_generation(conn, %{"id" => id} = params) do
     user = conn.assigns.current_user
     api_key = get_api_key()
+    requested_session = ThumbnailSessions.get_user_session(id, user.id, "thumbnail")
 
-    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+    credit_cost =
+      if requested_session,
+        do: generation_credit_cost(requested_session),
+        else: @generation_credit_cost
+
+    mode =
+      Map.get(params, "generation_mode") ||
+        (requested_session && requested_session.generation_mode) ||
+        "editable"
+
+    with session when not is_nil(session) <- requested_session,
+         {:ok, session} <- recover_stuck_generation(session, user.id, credit_cost),
          :ok <- validate_can_generate(session),
-         :ok <- check_credits(user.id, @generation_credit_cost) do
-      if @generation_credit_cost > 0 do
-        {:ok, _} = Credits.deduct_credits(user.id, @generation_credit_cost)
-      end
+         {:ok, session} <- claim_and_charge(session, user.id, credit_cost, mode) do
+      try do
+        case ThumbnailComposer.generate(session, api_key, %{"generation_mode" => mode}) do
+          {:ok, result} ->
+            case ThumbnailSessions.save_generation(session, %{
+                   generation_mode: result.generation_mode,
+                   candidates: result.candidates,
+                   plate_url: result.plate_url,
+                   recipe: result.recipe,
+                   composition: result.composition,
+                   thumbnail_url: result.thumbnail_url,
+                   canvas_width: result.canvas_width,
+                   canvas_height: result.canvas_height,
+                   status: "generated"
+                 }) do
+              {:ok, saved} ->
+                saved = ThumbnailSessions.get_session_with_messages(saved.id)
+                json(conn, serialize_session(saved))
 
-      mode = Map.get(params, "generation_mode") || session.generation_mode || "editable"
+              {:error, reason} ->
+                generation_failed(conn, session, user.id, credit_cost, reason)
+            end
 
-      {:ok, session} =
-        ThumbnailSessions.update_session(session, %{
-          status: "generating",
-          generation_mode: mode
-        })
-
-      case ThumbnailComposer.generate(session, api_key, %{"generation_mode" => mode}) do
-        {:ok, result} ->
-          {:ok, _saved} =
-            ThumbnailSessions.save_generation(session, %{
-              generation_mode: result.generation_mode,
-              candidates: result.candidates,
-              plate_url: result.plate_url,
-              recipe: result.recipe,
-              composition: result.composition,
-              thumbnail_url: result.thumbnail_url,
-              canvas_width: result.canvas_width,
-              canvas_height: result.canvas_height,
-              status: "generated"
-            })
-
-          session = ThumbnailSessions.get_session_with_messages(session.id)
-          json(conn, serialize_session(session))
-
-        {:error, reason} ->
-          if @generation_credit_cost > 0 do
-            Credits.add_credits(user.id, @generation_credit_cost)
-          end
-
-          ThumbnailSessions.update_session_status(session, "discovery")
-
-          conn
-          |> put_status(:unprocessable_entity)
-          |> json(%{error: inspect(reason)})
+          {:error, reason} ->
+            generation_failed(conn, session, user.id, credit_cost, reason)
+        end
+      rescue
+        error ->
+          generation_failed(conn, session, user.id, credit_cost, Exception.message(error))
       end
     else
       nil ->
@@ -281,12 +310,17 @@ defmodule ClippsterServerWeb.AIThumbnailController do
       {:error, :invalid_status} ->
         conn |> put_status(:conflict) |> json(%{error: "Session is not ready for generation"})
 
+      {:error, :generation_already_claimed} ->
+        conn
+        |> put_status(:conflict)
+        |> json(%{error: "Thumbnail generation is already in progress"})
+
       {:error, :insufficient_credits, remaining} ->
         conn
         |> put_status(:payment_required)
         |> json(%{
           error: "Insufficient credits",
-          required: @generation_credit_cost,
+          required: credit_cost,
           remaining: remaining
         })
 
@@ -299,15 +333,10 @@ defmodule ClippsterServerWeb.AIThumbnailController do
     user = conn.assigns.current_user
     api_key = get_api_key()
 
-    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+    with session when not is_nil(session) <- get_thumbnail_session(id, user.id),
          :ok <- validate_can_refine(session),
-         true <- ThumbnailSession.can_refine?(session) || {:error, :max_rounds},
-         :ok <- check_credits(user.id, @refinement_credit_cost) do
-      if @refinement_credit_cost > 0 do
-        {:ok, _} = Credits.deduct_credits(user.id, @refinement_credit_cost)
-      end
-
-      # Start new round if needed
+         true <- ThumbnailSession.can_refine?(session) || {:error, :max_rounds} do
+      # Clarification chat is free; charge only when applying image/recipe changes.
       {:ok, session} =
         if session.status == "generated" or session.refinement_messages_used == 0 do
           ThumbnailSessions.start_refinement(session)
@@ -325,40 +354,68 @@ defmodule ClippsterServerWeb.AIThumbnailController do
           text_only = Map.get(response, "text_only", false)
 
           if apply_changes do
-            case ThumbnailComposer.refine_generation(session, change, api_key, %{
-                   "text_only" => text_only
-                 }) do
-              {:ok, gen} ->
-                {:ok, _} =
-                  ThumbnailSessions.save_generation(session, %{
-                    generation_mode: gen.generation_mode,
-                    candidates: gen.candidates,
-                    plate_url: gen.plate_url,
-                    recipe: gen.recipe,
-                    composition: gen.composition,
-                    thumbnail_url: gen.thumbnail_url,
-                    canvas_width: Map.get(gen, :canvas_width),
-                    canvas_height: Map.get(gen, :canvas_height),
-                    status: "refining"
-                  })
-
-                session = ThumbnailSessions.get_session_with_messages(session.id)
-
-                json(conn, %{
-                  session: serialize_session(session),
-                  response: %{
-                    "message" => Map.get(response, "message") || "Updated.",
-                    "apply_changes" => true,
-                    "text_only" => text_only
-                  }
-                })
-
-              {:error, reason} ->
+            case check_credits(user.id, @refinement_credit_cost) do
+              :ok ->
                 if @refinement_credit_cost > 0 do
-                  Credits.add_credits(user.id, @refinement_credit_cost)
+                  {:ok, _} = Credits.deduct_credits(user.id, @refinement_credit_cost)
                 end
 
-                conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+                try do
+                  case ThumbnailComposer.refine_generation(session, change, api_key, %{
+                         "text_only" => text_only
+                       }) do
+                    {:ok, gen} ->
+                      {:ok, _} =
+                        ThumbnailSessions.save_generation(session, %{
+                          generation_mode: gen.generation_mode,
+                          candidates: gen.candidates,
+                          plate_url: gen.plate_url,
+                          recipe: gen.recipe,
+                          composition: gen.composition,
+                          thumbnail_url: gen.thumbnail_url,
+                          canvas_width: Map.get(gen, :canvas_width),
+                          canvas_height: Map.get(gen, :canvas_height),
+                          status: "refining"
+                        })
+
+                      session = ThumbnailSessions.get_session_with_messages(session.id)
+
+                      json(conn, %{
+                        session: serialize_session(session),
+                        response: %{
+                          "message" => Map.get(response, "message") || "Updated.",
+                          "apply_changes" => true,
+                          "text_only" => text_only,
+                          "creditsCharged" => @refinement_credit_cost
+                        }
+                      })
+
+                    {:error, reason} ->
+                      if @refinement_credit_cost > 0 do
+                        Credits.add_credits(user.id, @refinement_credit_cost)
+                      end
+
+                      conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+                  end
+                rescue
+                  error ->
+                    if @refinement_credit_cost > 0 do
+                      Credits.add_credits(user.id, @refinement_credit_cost)
+                    end
+
+                    conn
+                    |> put_status(:unprocessable_entity)
+                    |> json(%{error: Exception.message(error)})
+                end
+
+              {:error, :insufficient_credits, remaining} ->
+                conn
+                |> put_status(:payment_required)
+                |> json(%{
+                  error: "Insufficient credits",
+                  required: @refinement_credit_cost,
+                  remaining: remaining
+                })
             end
           else
             session = ThumbnailSessions.get_session_with_messages(session.id)
@@ -367,16 +424,13 @@ defmodule ClippsterServerWeb.AIThumbnailController do
               session: serialize_session(session),
               response: %{
                 "message" => Map.get(response, "message") || Map.get(result, :message),
-                "apply_changes" => false
+                "apply_changes" => false,
+                "creditsCharged" => 0
               }
             })
           end
 
         {:error, reason} ->
-          if @refinement_credit_cost > 0 do
-            Credits.add_credits(user.id, @refinement_credit_cost)
-          end
-
           conn |> put_status(:internal_server_error) |> json(%{error: inspect(reason)})
       end
     else
@@ -392,15 +446,6 @@ defmodule ClippsterServerWeb.AIThumbnailController do
       false ->
         conn |> put_status(:conflict) |> json(%{error: "Maximum refinement rounds reached"})
 
-      {:error, :insufficient_credits, remaining} ->
-        conn
-        |> put_status(:payment_required)
-        |> json(%{
-          error: "Insufficient credits",
-          required: @refinement_credit_cost,
-          remaining: remaining
-        })
-
       {:error, reason} ->
         conn |> put_status(:internal_server_error) |> json(%{error: inspect(reason)})
     end
@@ -409,7 +454,7 @@ defmodule ClippsterServerWeb.AIThumbnailController do
   def accept(conn, %{"id" => id} = params) do
     user = conn.assigns.current_user
 
-    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+    with session when not is_nil(session) <- get_thumbnail_session(id, user.id),
          :ok <- validate_can_accept(session) do
       candidate_index = Map.get(params, "candidate_index", 0)
 
@@ -467,7 +512,7 @@ defmodule ClippsterServerWeb.AIThumbnailController do
     user = conn.assigns.current_user
     api_key = get_api_key()
 
-    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+    with session when not is_nil(session) <- get_thumbnail_session(id, user.id),
          {:ok, result} <- ThumbnailComposer.analyze_video(session, api_key) do
       session = ThumbnailSessions.get_session_with_messages(result.session.id)
 
@@ -477,20 +522,26 @@ defmodule ClippsterServerWeb.AIThumbnailController do
         summary: result.summary
       })
     else
-      nil -> conn |> put_status(:not_found) |> json(%{error: "Session not found"})
-      {:error, reason} -> conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+
+      {:error, reason} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
     end
   end
 
   def apply_concept(conn, %{"id" => id, "concept_id" => concept_id}) do
     user = conn.assigns.current_user
 
-    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+    with session when not is_nil(session) <- get_thumbnail_session(id, user.id),
          {:ok, updated} <- ThumbnailComposer.apply_concept(session, concept_id) do
       json(conn, serialize_session(updated))
     else
-      nil -> conn |> put_status(:not_found) |> json(%{error: "Session not found"})
-      {:error, reason} -> conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+
+      {:error, reason} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
     end
   end
 
@@ -500,55 +551,84 @@ defmodule ClippsterServerWeb.AIThumbnailController do
 
     variant_count =
       case Map.get(params, "variant_count", 4) do
-        n when is_integer(n) and n in [4, 8, 12] -> n
+        n when is_integer(n) and n in [4, 8, 12] ->
+          n
+
         n when is_binary(n) ->
           case Integer.parse(n) do
             {v, _} when v in [4, 8, 12] -> v
             _ -> 4
           end
-        _ -> 4
+
+        _ ->
+          4
       end
 
     cost = variant_count * @variant_credit_cost
 
-    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+    with session when not is_nil(session) <- get_thumbnail_session(id, user.id),
+         {:ok, session} <-
+           recover_stuck_generation(
+             session,
+             user.id,
+             max(cost, generation_credit_cost(session))
+           ),
          :ok <- validate_has_video_context(session),
          :ok <- check_credits(user.id, cost) do
       if cost > 0, do: {:ok, _} = Credits.deduct_credits(user.id, cost)
 
-      {:ok, session} = ThumbnailSessions.update_session(session, %{status: "generating", generation_mode: "quick"})
+      {:ok, session} =
+        ThumbnailSessions.update_session(session, %{
+          status: "generating",
+          generation_mode: "quick"
+        })
 
-      case ThumbnailComposer.generate_from_video(session, api_key, params) do
-        {:ok, result} ->
-          {:ok, _} =
-            ThumbnailSessions.save_generation(session, %{
-              generation_mode: "quick",
-              candidates: result.candidates,
-              plate_url: nil,
-              recipe: nil,
-              composition: result.composition,
-              thumbnail_url: result.thumbnail_url,
-              canvas_width: result.canvas_width,
-              canvas_height: result.canvas_height,
-              status: "generated"
-            })
+      try do
+        case ThumbnailComposer.generate_from_video(session, api_key, params) do
+          {:ok, result} ->
+            {:ok, _} =
+              ThumbnailSessions.save_generation(session, %{
+                generation_mode: "quick",
+                candidates: result.candidates,
+                plate_url: nil,
+                recipe: nil,
+                composition: result.composition,
+                thumbnail_url: result.thumbnail_url,
+                canvas_width: result.canvas_width,
+                canvas_height: result.canvas_height,
+                status: "generated"
+              })
 
-          session = ThumbnailSessions.get_session_with_messages(session.id)
-          json(conn, serialize_session(session))
+            session = ThumbnailSessions.get_session_with_messages(session.id)
+            json(conn, serialize_session(session))
 
-        {:error, reason} ->
+          {:error, reason} ->
+            if cost > 0, do: Credits.add_credits(user.id, cost)
+            ThumbnailSessions.update_session_status(session, "discovery")
+            conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+        end
+      rescue
+        error ->
           if cost > 0, do: Credits.add_credits(user.id, cost)
           ThumbnailSessions.update_session_status(session, "discovery")
-          conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+          conn |> put_status(:unprocessable_entity) |> json(%{error: Exception.message(error)})
       end
     else
-      nil -> conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+
       {:error, :missing_video_context} ->
-        conn |> put_status(:unprocessable_entity) |> json(%{error: "Attach video keyframes and a transcript first"})
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{error: "Attach video keyframes and a transcript first"})
+
       {:error, :insufficient_credits, remaining} ->
         conn
         |> put_status(:payment_required)
         |> json(%{error: "Insufficient credits", required: cost, remaining: remaining})
+
+      {:error, reason} ->
+        conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
     end
   end
 
@@ -557,42 +637,54 @@ defmodule ClippsterServerWeb.AIThumbnailController do
     api_key = get_api_key()
     idx = Map.get(params, "candidate_index", 0)
 
-    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
-         :ok <- check_credits(user.id, @generation_credit_cost) do
-      if @generation_credit_cost > 0, do: {:ok, _} = Credits.deduct_credits(user.id, @generation_credit_cost)
+    with session when not is_nil(session) <- get_thumbnail_session(id, user.id) do
+      credit_cost = generation_credit_cost(session)
 
-      case ThumbnailComposer.continue_as_editable(session, api_key, idx) do
-        {:ok, result} ->
-          {:ok, _} =
-            ThumbnailSessions.save_generation(session, %{
-              generation_mode: "editable",
-              candidates: [],
-              plate_url: result.plate_url,
-              recipe: result.recipe,
-              composition: result.composition,
-              thumbnail_url: result.thumbnail_url,
-              canvas_width: result.canvas_width,
-              canvas_height: result.canvas_height,
-              status: "generated"
-            })
+      case check_credits(user.id, credit_cost) do
+        :ok ->
+          if credit_cost > 0, do: {:ok, _} = Credits.deduct_credits(user.id, credit_cost)
 
-          session = ThumbnailSessions.get_session_with_messages(session.id)
-          json(conn, serialize_session(session))
+          try do
+            case ThumbnailComposer.continue_as_editable(session, api_key, idx) do
+              {:ok, result} ->
+                {:ok, _} =
+                  ThumbnailSessions.save_generation(session, %{
+                    generation_mode: "editable",
+                    candidates: [],
+                    plate_url: result.plate_url,
+                    recipe: result.recipe,
+                    composition: result.composition,
+                    thumbnail_url: result.thumbnail_url,
+                    canvas_width: result.canvas_width,
+                    canvas_height: result.canvas_height,
+                    status: "generated"
+                  })
 
-        {:error, reason} ->
-          if @generation_credit_cost > 0, do: Credits.add_credits(user.id, @generation_credit_cost)
-          conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+                session = ThumbnailSessions.get_session_with_messages(session.id)
+                json(conn, serialize_session(session))
+
+              {:error, reason} ->
+                if credit_cost > 0, do: Credits.add_credits(user.id, credit_cost)
+                conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+            end
+          rescue
+            error ->
+              if credit_cost > 0, do: Credits.add_credits(user.id, credit_cost)
+              conn |> put_status(:unprocessable_entity) |> json(%{error: Exception.message(error)})
+          end
+
+        {:error, :insufficient_credits, remaining} ->
+          conn
+          |> put_status(:payment_required)
+          |> json(%{
+            error: "Insufficient credits",
+            required: credit_cost,
+            remaining: remaining
+          })
       end
     else
-      nil -> conn |> put_status(:not_found) |> json(%{error: "Session not found"})
-      {:error, :insufficient_credits, remaining} ->
-        conn
-        |> put_status(:payment_required)
-        |> json(%{
-          error: "Insufficient credits",
-          required: @generation_credit_cost,
-          remaining: remaining
-        })
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "Session not found"})
     end
   end
 
@@ -697,7 +789,8 @@ defmodule ClippsterServerWeb.AIThumbnailController do
   end
 
   def filter(conn, %{"id" => id} = params) do
-    filter_prompt = Map.get(params, "filterPrompt") || Map.get(params, "filter_prompt") || "cinematic"
+    filter_prompt =
+      Map.get(params, "filterPrompt") || Map.get(params, "filter_prompt") || "cinematic"
 
     run_postgen(conn, id, 0, fn session, api_key ->
       url = working_image_url(session, params)
@@ -711,7 +804,9 @@ defmodule ClippsterServerWeb.AIThumbnailController do
     prompt = Map.get(params, "prompt")
 
     if is_nil(url1) or is_nil(url2) do
-      conn |> put_status(:unprocessable_entity) |> json(%{error: "imageUrl1 and imageUrl2 are required"})
+      conn
+      |> put_status(:unprocessable_entity)
+      |> json(%{error: "imageUrl1 and imageUrl2 are required"})
     else
       run_postgen(conn, id, @edit_credit_cost, fn session, api_key ->
         ThumbnailPostGen.combine(session, url1, url2, prompt, api_key, params)
@@ -780,25 +875,37 @@ defmodule ClippsterServerWeb.AIThumbnailController do
     user = conn.assigns.current_user
     api_key = get_api_key()
 
-    with session when not is_nil(session) <- ThumbnailSessions.get_user_session(id, user.id),
+    with session when not is_nil(session) <- get_thumbnail_session(id, user.id),
          :ok <- check_credits(user.id, cost) do
       if cost > 0, do: {:ok, _} = Credits.deduct_credits(user.id, cost)
 
-      case fun.(session, api_key) do
-        {:ok, %{session: updated} = result} ->
-          session = ThumbnailSessions.get_session_with_messages(updated.id)
-          json(conn, Map.merge(%{session: serialize_session(session)}, Map.drop(result, [:session])))
+      try do
+        case fun.(session, api_key) do
+          {:ok, %{session: updated} = result} ->
+            session = ThumbnailSessions.get_session_with_messages(updated.id)
 
-        {:ok, result} when is_map(result) ->
-          session = ThumbnailSessions.get_session_with_messages(session.id)
-          json(conn, Map.merge(%{session: serialize_session(session)}, result))
+            json(
+              conn,
+              Map.merge(%{session: serialize_session(session)}, Map.drop(result, [:session]))
+            )
 
-        {:error, reason} ->
+          {:ok, result} when is_map(result) ->
+            session = ThumbnailSessions.get_session_with_messages(session.id)
+            json(conn, Map.merge(%{session: serialize_session(session)}, result))
+
+          {:error, reason} ->
+            if cost > 0, do: Credits.add_credits(user.id, cost)
+            conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+        end
+      rescue
+        error ->
           if cost > 0, do: Credits.add_credits(user.id, cost)
-          conn |> put_status(:unprocessable_entity) |> json(%{error: inspect(reason)})
+          conn |> put_status(:unprocessable_entity) |> json(%{error: Exception.message(error)})
       end
     else
-      nil -> conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+      nil ->
+        conn |> put_status(:not_found) |> json(%{error: "Session not found"})
+
       {:error, :insufficient_credits, remaining} ->
         conn
         |> put_status(:payment_required)
@@ -811,25 +918,79 @@ defmodule ClippsterServerWeb.AIThumbnailController do
       Map.get(params, "image_url") ||
       session.thumbnail_url ||
       session.plate_url ||
-      (List.first(session.candidates || []) && (List.first(session.candidates)["url"] || List.first(session.candidates)[:url]))
+      (List.first(session.candidates || []) &&
+         (List.first(session.candidates)["url"] || List.first(session.candidates)[:url]))
+  end
+
+  defp get_thumbnail_session(id, user_id) do
+    ThumbnailSessions.get_user_session(id, user_id, "thumbnail")
   end
 
   defp validate_has_video_context(session) do
     frames_ok = is_list(session.key_frames) and session.key_frames != []
-    transcript_ok = is_binary(session.transcript) and String.length(String.trim(session.transcript)) >= 50
+
+    transcript_ok =
+      is_binary(session.transcript) and String.length(String.trim(session.transcript)) >= 50
 
     if frames_ok and transcript_ok, do: :ok, else: {:error, :missing_video_context}
+  end
+
+  defp recover_stuck_generation(%{status: "generating"} = session, user_id, credit_cost) do
+    if stuck_failed_generation?(session) do
+      _ = Credits.add_credits(user_id, credit_cost)
+
+      case ThumbnailSessions.update_session_status(session, "discovery") do
+        {:ok, recovered} -> {:ok, recovered}
+        {:error, reason} -> {:error, reason}
+      end
+    else
+      {:ok, session}
+    end
+  end
+
+  defp recover_stuck_generation(session, _user_id, _credit_cost), do: {:ok, session}
+
+  defp stuck_failed_generation?(session) do
+    blank_url?(session.thumbnail_url) and blank_candidates?(session.candidates) and
+      blank_url?(session.plate_url)
+  end
+
+  defp blank_url?(url) when url in [nil, ""], do: true
+  defp blank_url?(_), do: false
+
+  defp blank_candidates?(candidates) when candidates in [nil, []], do: true
+
+  defp blank_candidates?(candidates) when is_list(candidates) do
+    Enum.all?(candidates, fn
+      %{"url" => url} -> blank_url?(url)
+      %{url: url} -> blank_url?(url)
+      _ -> true
+    end)
+  end
+
+  defp blank_candidates?(_), do: true
+
+  defp generation_credit_cost(session) do
+    transcript_backed =
+      session.transcript_backed ||
+        (is_binary(session.transcript) and String.length(String.trim(session.transcript)) >= 50)
+
+    has_base_image =
+      is_binary(session.reference_image_url) and
+        String.trim(session.reference_image_url) != ""
+
+    ImageGenerationPolicy.thumbnail_credit_cost(transcript_backed, has_base_image)
   end
 
   defp require_ai_editor_access(conn, _opts) do
     user = conn.assigns.current_user
 
-    if AIChatController.can_access_ai_editor?(user) do
+    if AIChatController.can_access_image_editor?(user) do
       conn
     else
       conn
       |> put_status(:forbidden)
-      |> json(%{error: "AI Thumbnail Generator requires access on a Creator or Pro plan."})
+      |> json(%{error: "AI Thumbnail Creator requires access on a Creator or Pro plan."})
       |> halt()
     end
   end
@@ -841,8 +1002,18 @@ defmodule ClippsterServerWeb.AIThumbnailController do
   defp validate_discovery_status(%{status: "discovery"}), do: :ok
   defp validate_discovery_status(_), do: {:error, :invalid_status}
 
-  defp validate_can_generate(%{status: status}) when status in ["discovery", "generated"], do: :ok
-  defp validate_can_generate(_), do: {:error, :invalid_status}
+  defp validate_can_generate(%{status: "discovery"} = session) do
+    session = ThumbnailSessions.get_session_with_messages(session.id)
+
+    if ImageGenerationReadiness.latest_assistant_ready?(session.messages) and
+         is_map(session.brief_summary) do
+      :ok
+    else
+      {:error, :invalid_status}
+    end
+  end
+
+  defp validate_can_generate(_session), do: {:error, :invalid_status}
 
   defp validate_can_refine(%{status: status}) when status in ["generated", "refining"], do: :ok
   defp validate_can_refine(_), do: {:error, :invalid_status}
@@ -866,57 +1037,68 @@ defmodule ClippsterServerWeb.AIThumbnailController do
     end
   end
 
+  defp claim_and_charge(session, user_id, credit_cost, generation_mode) do
+    case ThumbnailSessions.claim_generation(session, %{generation_mode: generation_mode}) do
+      {:ok, claimed} ->
+        case check_credits(user_id, credit_cost) do
+          :ok ->
+            case Credits.deduct_credits(user_id, credit_cost) do
+              {:ok, _balance} ->
+                {:ok, claimed}
+
+              {:error, reason} ->
+                ThumbnailSessions.update_session_status(claimed, "discovery")
+                credit_deduction_error(user_id, credit_cost, reason)
+            end
+
+          error ->
+            ThumbnailSessions.update_session_status(claimed, "discovery")
+            error
+        end
+
+      error ->
+        error
+    end
+  end
+
+  defp generation_failed(conn, session, user_id, credit_cost, reason) do
+    refund_result = Credits.add_credits(user_id, credit_cost)
+    reset_result = ThumbnailSessions.update_session_status(session, "discovery")
+
+    error =
+      case {refund_result, reset_result} do
+        {{:ok, _credit}, {:ok, _session}} -> inspect(reason)
+        other -> "#{inspect(reason)}; compensation failed: #{inspect(other)}"
+      end
+
+    conn
+    |> put_status(:unprocessable_entity)
+    |> json(%{error: error})
+  end
+
+  defp credit_deduction_error(user_id, credit_cost, reason) do
+    case check_credits(user_id, credit_cost) do
+      {:error, :insufficient_credits, remaining} ->
+        {:error, :insufficient_credits, remaining}
+
+      _ ->
+        {:error, {:credit_deduction_failed, reason}}
+    end
+  end
+
   defp maybe_put(map, _key, nil), do: map
   defp maybe_put(map, key, value), do: Map.put(map, key, value)
 
-  defp serialize_session(session) do
-    messages =
-      if Ecto.assoc_loaded?(session.messages) do
-        Enum.map(session.messages, fn msg ->
-          %{
-            id: msg.id,
-            role: msg.role,
-            content: msg.content,
-            metadata: msg.metadata,
-            inserted_at: msg.inserted_at
-          }
-        end)
-      else
-        []
-      end
+  defp maybe_mark_transcript_backed(attrs, session, params) do
+    transcript = Map.get(params, "transcript")
 
-    %{
-      id: session.id,
-      name: session.name,
-      status: session.status,
-      generation_mode: session.generation_mode,
-      media_items: session.media_items,
-      key_frames: session.key_frames,
-      reference_image_url: session.reference_image_url,
-      reference_image_meta: session.reference_image_meta,
-      brief_summary: session.brief_summary,
-      candidates: session.candidates,
-      plate_url: session.plate_url,
-      recipe: session.recipe,
-      composition: session.composition,
-      result: session.result,
-      thumbnail_url: session.thumbnail_url,
-      refinement_round: session.refinement_round,
-      refinement_messages_used: session.refinement_messages_used,
-      max_refinement_rounds: session.max_refinement_rounds,
-      max_messages_per_round: session.max_messages_per_round,
-      canvas_width: session.canvas_width,
-      canvas_height: session.canvas_height,
-      youtube_url: session.youtube_url,
-      video_title: session.video_title,
-      transcript: session.transcript,
-      transcript_source: session.transcript_source,
-      concepts: session.concepts || [],
-      video_summary: session.video_summary,
-      selected_concept_id: session.selected_concept_id,
-      messages: messages,
-      inserted_at: session.inserted_at,
-      updated_at: session.updated_at
-    }
+    if session.transcript_backed ||
+         (is_binary(transcript) and String.length(String.trim(transcript)) >= 50) do
+      Map.put(attrs, :transcript_backed, true)
+    else
+      attrs
+    end
   end
+
+  defp serialize_session(session), do: ThumbnailSessions.serialize_session(session)
 end
