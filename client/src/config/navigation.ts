@@ -99,7 +99,6 @@ export const navigationItems: NavigationItem[] = [
     path: '/campaigns',
     icon: Megaphone,
     group: 'browse',
-    adminOnly: true,
     tourId: 'nav-campaigns',
   },
 
@@ -156,8 +155,8 @@ export const navigationItems: NavigationItem[] = [
     group: 'create',
   },
   {
-    name: 'AI Thumbnail Creator',
-    path: '/ai-thumbnail',
+    name: 'AI Image Creator',
+    path: '/ai-image',
     icon: Sparkles,
     group: 'create',
   },

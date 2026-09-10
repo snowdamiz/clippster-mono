@@ -2,6 +2,7 @@ defmodule ClippsterServerWeb.AIChatController do
   use ClippsterServerWeb, :controller
 
   alias ClippsterServer.AI.{ChatSessions, ChatComposer, VideoComposer, ReferenceAnalyzer}
+  alias ClippsterServer.AppSettings
   alias ClippsterServer.Credits
 
   require Logger
@@ -535,6 +536,17 @@ defmodule ClippsterServerWeb.AIChatController do
   def can_access_ai_editor?(nil), do: false
 
   def can_access_ai_editor?(user) do
+    AppSettings.is_ai_video_enabled?() || has_individual_ai_editor_access?(user)
+  end
+
+  @doc false
+  def can_access_image_editor?(nil), do: false
+
+  def can_access_image_editor?(user) do
+    AppSettings.is_image_editor_enabled?() || has_individual_ai_editor_access?(user)
+  end
+
+  defp has_individual_ai_editor_access?(user) do
     user.is_admin || (user.ai_editor_enabled && user.subscription_tier in ["creator", "pro"])
   end
 

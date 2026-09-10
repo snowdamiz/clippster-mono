@@ -6,6 +6,7 @@ defmodule ClippsterServer.Accounts do
   import Ecto.Query, warn: false
   alias ClippsterServer.Repo
   alias ClippsterServer.Accounts.User
+  alias ClippsterServer.AppSettings
   alias ClippsterServer.Credits
   alias ClippsterServer.{Emails, Mailer, Analytics}
   alias ClippsterServer.Auth.TokenGenerator
@@ -1561,13 +1562,13 @@ defmodule ClippsterServer.Accounts do
   Returns true if the user can access Tokend features.
   Admins always have access; others need tokend_enabled and creator/pro tier.
   """
-  def can_access_tokend?(%{is_admin: true}), do: true
+  def can_access_tokend?(nil), do: false
 
-  def can_access_tokend?(%{tokend_enabled: true, subscription_tier: tier})
-      when tier in ["creator", "pro"],
-      do: true
-
-  def can_access_tokend?(_user), do: false
+  def can_access_tokend?(user) do
+    AppSettings.is_tokend_enabled?() or
+      user.is_admin or
+      (user.tokend_enabled and user.subscription_tier in ["creator", "pro"])
+  end
 
   @doc """
   Enables campaigns access for a user.

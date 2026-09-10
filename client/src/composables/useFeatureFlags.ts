@@ -1,12 +1,19 @@
 import { ref, readonly } from 'vue';
 import api from '@/services/api';
+import { featureFlags } from './featureFlagState';
 
 // Feature flags state (shared across all components using this composable)
-const isLiveClipEnabled = ref(true); // Default to true until we fetch from server
-const isBetaModeEnabled = ref(false); // Default to false until we fetch from server
-const isLoading = ref(false);
+const {
+  isLiveClipEnabled,
+  isBetaModeEnabled,
+  isAIVideoEnabled,
+  isImageEditorEnabled,
+  isTokendEnabled,
+  isCampaignsEnabled,
+  isLoading,
+  error,
+} = featureFlags;
 const lastFetchTime = ref<number | null>(null);
-const error = ref<string | null>(null);
 
 // Cache duration: 5 minutes
 const CACHE_DURATION_MS = 5 * 60 * 1000;
@@ -44,6 +51,10 @@ export function useFeatureFlags() {
         const flags = response.data.feature_flags;
         isLiveClipEnabled.value = flags.live_clip_enabled ?? true;
         isBetaModeEnabled.value = flags.beta_mode_enabled ?? false;
+        isAIVideoEnabled.value = flags.ai_video_enabled ?? false;
+        isImageEditorEnabled.value = flags.image_editor_enabled ?? false;
+        isTokendEnabled.value = flags.tokend_enabled ?? false;
+        isCampaignsEnabled.value = flags.campaigns_enabled ?? false;
         lastFetchTime.value = Date.now();
       }
     } catch (err) {
@@ -103,6 +114,34 @@ export function useFeatureFlags() {
     }
   }
 
+  const rolloutFlags = {
+    ai_video_enabled: isAIVideoEnabled,
+    image_editor_enabled: isImageEditorEnabled,
+    tokend_enabled: isTokendEnabled,
+    campaigns_enabled: isCampaignsEnabled,
+  } as const;
+
+  type RolloutFlagKey = keyof typeof rolloutFlags;
+
+  async function setRolloutFlag(key: RolloutFlagKey, enabled: boolean): Promise<boolean> {
+    try {
+      const response = await api.put(`/admin/settings/${key}`, {
+        key,
+        value: String(enabled),
+      });
+
+      if (!response.data.success) return false;
+
+      rolloutFlags[key].value = enabled;
+      lastFetchTime.value = Date.now();
+      return true;
+    } catch (err) {
+      console.error(`[FeatureFlags] Failed to update ${key}:`, err);
+      error.value = err instanceof Error ? err.message : 'Failed to update setting';
+      return false;
+    }
+  }
+
   /**
    * Initialize feature flags by fetching from server.
    * Call this once when the app starts.
@@ -122,6 +161,10 @@ export function useFeatureFlags() {
     // State (readonly to prevent direct mutation)
     isLiveClipEnabled: readonly(isLiveClipEnabled),
     isBetaModeEnabled: readonly(isBetaModeEnabled),
+    isAIVideoEnabled: readonly(isAIVideoEnabled),
+    isImageEditorEnabled: readonly(isImageEditorEnabled),
+    isTokendEnabled: readonly(isTokendEnabled),
+    isCampaignsEnabled: readonly(isCampaignsEnabled),
     isLoading: readonly(isLoading),
     error: readonly(error),
 
@@ -131,13 +174,8 @@ export function useFeatureFlags() {
     fetchFeatureFlags,
     setLiveClipEnabled,
     setBetaModeEnabled,
+    setRolloutFlag,
   };
 }
 
-// Export a singleton for components that need direct access to the reactive values
-export const featureFlags = {
-  isLiveClipEnabled,
-  isBetaModeEnabled,
-  isLoading,
-  error,
-};
+export { featureFlags } from './featureFlagState';

@@ -8,11 +8,19 @@ defmodule ClippsterServer.AppSettings do
   # Known feature flag keys
   @live_clip_enabled_key "live_clip_enabled"
   @beta_mode_enabled_key "beta_mode_enabled"
+  @ai_video_enabled_key "ai_video_enabled"
+  @image_editor_enabled_key "image_editor_enabled"
+  @tokend_enabled_key "tokend_enabled"
+  @campaigns_enabled_key "campaigns_enabled"
 
   # Default values for feature flags
   @default_settings %{
     @live_clip_enabled_key => "true",
-    @beta_mode_enabled_key => "false"
+    @beta_mode_enabled_key => "false",
+    @ai_video_enabled_key => "false",
+    @image_editor_enabled_key => "false",
+    @tokend_enabled_key => "false",
+    @campaigns_enabled_key => "false"
   }
 
   @doc """
@@ -61,7 +69,11 @@ defmodule ClippsterServer.AppSettings do
   def get_feature_flags do
     %{
       live_clip_enabled: is_live_clip_enabled?(),
-      beta_mode_enabled: is_beta_mode_enabled?()
+      beta_mode_enabled: is_beta_mode_enabled?(),
+      ai_video_enabled: is_ai_video_enabled?(),
+      image_editor_enabled: is_image_editor_enabled?(),
+      tokend_enabled: is_tokend_enabled?(),
+      campaigns_enabled: is_campaigns_enabled?()
     }
   end
 
@@ -69,7 +81,7 @@ defmodule ClippsterServer.AppSettings do
   Check if the Live Clip feature is enabled.
   """
   def is_live_clip_enabled? do
-    get_setting(@live_clip_enabled_key) == "true"
+    enabled?(@live_clip_enabled_key)
   end
 
   @doc """
@@ -83,7 +95,7 @@ defmodule ClippsterServer.AppSettings do
   Check if Beta Mode is enabled.
   """
   def is_beta_mode_enabled? do
-    get_setting(@beta_mode_enabled_key) == "true"
+    enabled?(@beta_mode_enabled_key)
   end
 
   @doc """
@@ -92,4 +104,11 @@ defmodule ClippsterServer.AppSettings do
   def set_beta_mode_enabled(enabled) when is_boolean(enabled) do
     set_setting(@beta_mode_enabled_key, to_string(enabled))
   end
+
+  def is_ai_video_enabled?, do: enabled?(@ai_video_enabled_key)
+  def is_image_editor_enabled?, do: enabled?(@image_editor_enabled_key)
+  def is_tokend_enabled?, do: enabled?(@tokend_enabled_key)
+  def is_campaigns_enabled?, do: enabled?(@campaigns_enabled_key)
+
+  defp enabled?(key), do: get_setting(key) == "true"
 end

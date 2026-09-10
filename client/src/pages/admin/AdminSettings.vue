@@ -64,6 +64,37 @@
             </p>
           </div>
 
+          <div v-for="flag in rolloutFlagDefinitions" :key="flag.key" class="admin-settings__flag">
+            <div class="admin-settings__flag-info">
+              <div class="admin-settings__flag-icon admin-settings__flag-icon--violet">
+                <component :is="flag.icon" class="admin-settings__flag-icon-svg" />
+              </div>
+              <div>
+                <span class="admin-settings__flag-name">{{ flag.name }}</span>
+                <p class="admin-settings__flag-desc">{{ flag.description }}</p>
+              </div>
+            </div>
+            <div class="admin-settings__flag-control">
+              <span v-if="featureFlagsLoading" class="admin-settings__flag-loading">
+                <Loader2 class="admin-settings__flag-loading-icon" />
+                Loading...
+              </span>
+              <button
+                class="admin-settings__toggle"
+                :class="{ 'admin-settings__toggle--active': rolloutFlagValues[flag.key] }"
+                :disabled="featureFlagsLoading || updatingRolloutFlags[flag.key]"
+                role="switch"
+                :aria-checked="rolloutFlagValues[flag.key]"
+                @click="toggleRolloutFeature(flag.key)"
+              >
+                <span
+                  class="admin-settings__toggle-thumb"
+                  :class="{ 'admin-settings__toggle-thumb--active': rolloutFlagValues[flag.key] }"
+                />
+              </button>
+            </div>
+          </div>
+
           <!-- Beta Mode Toggle -->
           <div class="admin-settings__flag">
             <div class="admin-settings__flag-info">
@@ -144,7 +175,8 @@
         <div class="admin-settings__section-header">
           <h3 class="admin-settings__section-title">Leaderboard Management</h3>
           <p class="admin-settings__section-desc">
-            Manually trigger leaderboard recalculation. Normally runs automatically on Monday (weekly) and the 1st of each month (monthly). Use this to populate data immediately without waiting for the scheduled run.
+            Manually trigger leaderboard recalculation. Normally runs automatically on Monday (weekly) and the 1st of
+            each month (monthly). Use this to populate data immediately without waiting for the scheduled run.
           </p>
         </div>
 
@@ -155,7 +187,9 @@
             </div>
             <div>
               <span class="admin-settings__branding-label">Scheduled Recalculation</span>
-              <p class="admin-settings__branding-hint">Weekly: every Monday 00:00 UTC &nbsp;·&nbsp; Monthly: 1st of month 00:00 UTC</p>
+              <p class="admin-settings__branding-hint">
+                Weekly: every Monday 00:00 UTC &nbsp;·&nbsp; Monthly: 1st of month 00:00 UTC
+              </p>
             </div>
           </div>
 
@@ -174,7 +208,11 @@
               :disabled="refreshingLeaderboard !== null"
               @click="refreshLeaderboard('monthly')"
             >
-              <Loader2 v-if="refreshingLeaderboard === 'monthly'" :size="14" class="admin-settings__flag-loading-icon" />
+              <Loader2
+                v-if="refreshingLeaderboard === 'monthly'"
+                :size="14"
+                class="admin-settings__flag-loading-icon"
+              />
               <RefreshCw v-else :size="14" />
               {{ refreshingLeaderboard === 'monthly' ? 'Refreshing...' : 'Refresh Monthly' }}
             </button>
@@ -189,7 +227,14 @@
             </button>
           </div>
 
-          <div v-if="leaderboardRefreshResult" class="admin-settings__lb-result" :class="{ 'admin-settings__lb-result--success': leaderboardRefreshResult.success, 'admin-settings__lb-result--error': !leaderboardRefreshResult.success }">
+          <div
+            v-if="leaderboardRefreshResult"
+            class="admin-settings__lb-result"
+            :class="{
+              'admin-settings__lb-result--success': leaderboardRefreshResult.success,
+              'admin-settings__lb-result--error': !leaderboardRefreshResult.success,
+            }"
+          >
             <Check v-if="leaderboardRefreshResult.success" :size="14" />
             <span>{{ leaderboardRefreshResult.message }}</span>
           </div>
@@ -201,14 +246,17 @@
         <div class="admin-settings__section-header">
           <h3 class="admin-settings__section-title">Free Tier Branding</h3>
           <p class="admin-settings__section-desc">
-            Configure the watermark, intro, and outro that are automatically applied to all free tier user outputs.
-            Free tier users cannot override these settings.
+            Configure the watermark, intro, and outro that are automatically applied to all free tier user outputs. Free
+            tier users cannot override these settings.
           </p>
         </div>
 
         <div class="admin-settings__branding">
           <div class="admin-settings__branding-status">
-            <div class="admin-settings__branding-indicator" :class="{ 'admin-settings__branding-indicator--active': freeTierBrandingConfigured }">
+            <div
+              class="admin-settings__branding-indicator"
+              :class="{ 'admin-settings__branding-indicator--active': freeTierBrandingConfigured }"
+            >
               <Check v-if="freeTierBrandingConfigured" :size="14" />
               <ImageIcon v-else :size="14" />
             </div>
@@ -217,9 +265,10 @@
                 {{ freeTierBrandingConfigured ? 'Branding Configured' : 'No Branding Set' }}
               </span>
               <p class="admin-settings__branding-hint">
-                {{ freeTierBrandingConfigured
-                  ? 'Free tier outputs will include admin watermark/intro/outro'
-                  : 'Free tier outputs will not have any branding applied'
+                {{
+                  freeTierBrandingConfigured
+                    ? 'Free tier outputs will include admin watermark/intro/outro'
+                    : 'Free tier outputs will not have any branding applied'
                 }}
               </p>
             </div>
@@ -274,7 +323,12 @@
                     <Play :size="14" />
                   </div>
                   <span class="admin-settings__asset-name">
-                    {{ selectedIntroName || (introConfiguredRatios > 0 ? `${introConfiguredRatios} ratio(s) configured` : 'No intro configured') }}
+                    {{
+                      selectedIntroName ||
+                      (introConfiguredRatios > 0
+                        ? `${introConfiguredRatios} ratio(s) configured`
+                        : 'No intro configured')
+                    }}
                   </span>
                 </div>
                 <button
@@ -312,7 +366,12 @@
                     <SkipForward :size="14" />
                   </div>
                   <span class="admin-settings__asset-name">
-                    {{ selectedOutroName || (outroConfiguredRatios > 0 ? `${outroConfiguredRatios} ratio(s) configured` : 'No outro configured') }}
+                    {{
+                      selectedOutroName ||
+                      (outroConfiguredRatios > 0
+                        ? `${outroConfiguredRatios} ratio(s) configured`
+                        : 'No outro configured')
+                    }}
                   </span>
                 </div>
                 <button
@@ -342,11 +401,7 @@
             </div>
           </div>
 
-          <button
-            class="admin-settings__branding-save"
-            :disabled="savingBranding"
-            @click="saveFreeTierBranding"
-          >
+          <button class="admin-settings__branding-save" :disabled="savingBranding" @click="saveFreeTierBranding">
             <Loader2 v-if="savingBranding" :size="14" class="admin-settings__flag-loading-icon" />
             <span>{{ savingBranding ? 'Saving...' : 'Save Branding' }}</span>
           </button>
@@ -385,7 +440,25 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue';
-  import { Settings, Radio, KeyRound, Check, Loader2, ImageIcon, Trophy, RefreshCw, Upload, Play, SkipForward, Settings2, Image as ImageIconLucide } from 'lucide-vue-next';
+  import {
+    Settings,
+    Radio,
+    KeyRound,
+    Check,
+    Loader2,
+    ImageIcon,
+    Trophy,
+    RefreshCw,
+    Upload,
+    Play,
+    SkipForward,
+    Settings2,
+    Image as ImageIconLucide,
+    Wand2,
+    Paintbrush,
+    Globe2,
+    Megaphone,
+  } from 'lucide-vue-next';
   import api from '@/services/api';
   import PageLayout from '@/components/PageLayout.vue';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
@@ -393,17 +466,26 @@
   import WatermarkPositionPicker, { type CreatorWatermarkSettings } from '@/components/WatermarkPositionPicker.vue';
   import IntroOutroRatioPicker from '@/components/IntroOutroRatioPicker.vue';
   import type { RatioAssetMap } from '@/services/database/types';
-  import { listOrganizationAssets, uploadOrganizationAsset, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
+  import {
+    listOrganizationAssets,
+    uploadOrganizationAsset,
+    type ServerOrganizationAsset,
+  } from '@/services/organizationAssetsApi';
   import { useAuthStore } from '@/stores/auth';
   import { readFile } from '@tauri-apps/plugin-fs';
 
   const {
     isLiveClipEnabled,
     isBetaModeEnabled,
+    isAIVideoEnabled,
+    isImageEditorEnabled,
+    isTokendEnabled,
+    isCampaignsEnabled,
     isLoading: featureFlagsLoading,
     fetchFeatureFlags,
     setLiveClipEnabled,
     setBetaModeEnabled,
+    setRolloutFlag,
   } = useFeatureFlags();
 
   const { success, error } = useToast();
@@ -413,7 +495,60 @@
 
   const updatingLiveClipFlag = ref(false);
   const updatingBetaModeFlag = ref(false);
+  type RolloutFlagKey = 'ai_video_enabled' | 'image_editor_enabled' | 'tokend_enabled' | 'campaigns_enabled';
+
+  const updatingRolloutFlags = ref<Record<RolloutFlagKey, boolean>>({
+    ai_video_enabled: false,
+    image_editor_enabled: false,
+    tokend_enabled: false,
+    campaigns_enabled: false,
+  });
+  const rolloutFlagDefinitions = [
+    {
+      key: 'ai_video_enabled',
+      name: 'AI Video Editor',
+      description: 'Release AI video creation to every user while retaining individual access grants.',
+      icon: Wand2,
+    },
+    {
+      key: 'image_editor_enabled',
+      name: 'Image Editor',
+      description: 'Release the image editor and AI image creation tools to every user.',
+      icon: Paintbrush,
+    },
+    {
+      key: 'tokend_enabled',
+      name: 'Tokend',
+      description: 'Release Tokend browsing, account connections, downloads, and publishing to every user.',
+      icon: Globe2,
+    },
+    {
+      key: 'campaigns_enabled',
+      name: 'Campaigns',
+      description: 'Release campaign discovery and participation access to every user.',
+      icon: Megaphone,
+    },
+  ] as const;
+  const rolloutFlagValues = computed<Record<RolloutFlagKey, boolean>>(() => ({
+    ai_video_enabled: isAIVideoEnabled.value,
+    image_editor_enabled: isImageEditorEnabled.value,
+    tokend_enabled: isTokendEnabled.value,
+    campaigns_enabled: isCampaignsEnabled.value,
+  }));
   const titleBarPlatformOverride = ref<string>('auto');
+
+  const toggleRolloutFeature = async (key: RolloutFlagKey) => {
+    updatingRolloutFlags.value[key] = true;
+    try {
+      const enabled = !rolloutFlagValues.value[key];
+      const updated = await setRolloutFlag(key, enabled);
+      if (!updated) {
+        error('Update failed', 'The platform-wide feature setting could not be updated.');
+      }
+    } finally {
+      updatingRolloutFlags.value[key] = false;
+    }
+  };
 
   const toggleLiveClipFeature = async () => {
     updatingLiveClipFlag.value = true;
@@ -492,7 +627,7 @@
   const uploadingWatermark = ref(false);
   const uploadingIntro = ref(false);
   const uploadingOutro = ref(false);
-  
+
   // Watermark picker state
   const showWatermarkPositionPicker = ref(false);
   const orgAssets = ref<ServerOrganizationAsset[]>([]);
@@ -507,24 +642,28 @@
   const selectedWatermark = computed(() => {
     if (!freeTierBranding.value.watermark_id) return null;
     const sid = extractServerId(freeTierBranding.value.watermark_id);
-    return orgAssets.value.find(a => a.id === sid);
+    return orgAssets.value.find((a) => a.id === sid);
   });
   const selectedIntroName = computed(() => {
     const introSettings = freeTierBranding.value.intro_settings;
     if (!introSettings) return null;
-    const firstEntry = Object.values(introSettings).find((v): v is { assetId: string } => v !== null && v !== undefined);
+    const firstEntry = Object.values(introSettings).find(
+      (v): v is { assetId: string } => v !== null && v !== undefined
+    );
     if (!firstEntry) return null;
     const sid = extractServerId(firstEntry.assetId);
-    const asset = orgAssets.value.find(a => a.id === sid);
+    const asset = orgAssets.value.find((a) => a.id === sid);
     return asset?.name ?? null;
   });
   const selectedOutroName = computed(() => {
     const outroSettings = freeTierBranding.value.outro_settings;
     if (!outroSettings) return null;
-    const firstEntry = Object.values(outroSettings).find((v): v is { assetId: string } => v !== null && v !== undefined);
+    const firstEntry = Object.values(outroSettings).find(
+      (v): v is { assetId: string } => v !== null && v !== undefined
+    );
     if (!firstEntry) return null;
     const sid = extractServerId(firstEntry.assetId);
-    const asset = orgAssets.value.find(a => a.id === sid);
+    const asset = orgAssets.value.find((a) => a.id === sid);
     return asset?.name ?? null;
   });
 
@@ -551,30 +690,36 @@
       };
     } finally {
       refreshingLeaderboard.value = null;
-      setTimeout(() => { leaderboardRefreshResult.value = null; }, 5000);
+      setTimeout(() => {
+        leaderboardRefreshResult.value = null;
+      }, 5000);
     }
   }
 
   const freeTierBrandingConfigured = computed(() => {
     const hasWatermark = !!freeTierBranding.value.watermark_id;
-    const hasIntro = !!freeTierBranding.value.intro_settings && Object.values(freeTierBranding.value.intro_settings).some(v => v !== null);
-    const hasOutro = !!freeTierBranding.value.outro_settings && Object.values(freeTierBranding.value.outro_settings).some(v => v !== null);
+    const hasIntro =
+      !!freeTierBranding.value.intro_settings &&
+      Object.values(freeTierBranding.value.intro_settings).some((v) => v !== null);
+    const hasOutro =
+      !!freeTierBranding.value.outro_settings &&
+      Object.values(freeTierBranding.value.outro_settings).some((v) => v !== null);
     return hasWatermark || hasIntro || hasOutro;
   });
-  
+
   const watermarkConfiguredRatios = computed(() => {
     if (!freeTierBranding.value.watermark_settings) return 0;
-    return Object.values(freeTierBranding.value.watermark_settings).filter(v => v !== null).length;
+    return Object.values(freeTierBranding.value.watermark_settings).filter((v) => v !== null).length;
   });
-  
+
   const introConfiguredRatios = computed(() => {
     if (!freeTierBranding.value.intro_settings) return 0;
-    return Object.values(freeTierBranding.value.intro_settings).filter(v => v !== null).length;
+    return Object.values(freeTierBranding.value.intro_settings).filter((v) => v !== null).length;
   });
-  
+
   const outroConfiguredRatios = computed(() => {
     if (!freeTierBranding.value.outro_settings) return 0;
-    return Object.values(freeTierBranding.value.outro_settings).filter(v => v !== null).length;
+    return Object.values(freeTierBranding.value.outro_settings).filter((v) => v !== null).length;
   });
 
   async function loadFreeTierBranding() {
@@ -593,7 +738,7 @@
       console.warn('[AdminSettings] Failed to load free tier branding:', err);
     }
   }
-  
+
   async function loadAssets() {
     const orgId = adminOrgId.value;
     if (!orgId) return;
@@ -617,9 +762,14 @@
     const fileName = selected.split(/[\\/]/).pop() || 'file';
     const ext = fileName.split('.').pop()?.toLowerCase() || 'mp4';
     const mimeMap: Record<string, string> = {
-      mp4: 'video/mp4', mov: 'video/quicktime', avi: 'video/x-msvideo',
-      mkv: 'video/x-matroska', webm: 'video/webm', flv: 'video/x-flv',
-      wmv: 'video/x-ms-wmv', m4v: 'video/x-m4v',
+      mp4: 'video/mp4',
+      mov: 'video/quicktime',
+      avi: 'video/x-msvideo',
+      mkv: 'video/x-matroska',
+      webm: 'video/webm',
+      flv: 'video/x-flv',
+      wmv: 'video/x-ms-wmv',
+      m4v: 'video/x-m4v',
     };
     const bytes = await readFile(selected);
     return new File([bytes], fileName, { type: mimeMap[ext] || 'video/mp4' });
@@ -635,14 +785,19 @@
     const fileName = selected.split(/[\\/]/).pop() || 'file';
     const ext = fileName.split('.').pop()?.toLowerCase() || 'png';
     const mimeMap: Record<string, string> = {
-      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-      webp: 'image/webp', gif: 'image/gif',
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      webp: 'image/webp',
+      gif: 'image/gif',
     };
     const bytes = await readFile(selected);
     return new File([bytes], fileName, { type: mimeMap[ext] || 'image/png' });
   }
 
-  async function extractVideoMetadata(videoBlob: Blob): Promise<{ duration: number | null; width: number | null; height: number | null; thumbnail: File | null }> {
+  async function extractVideoMetadata(
+    videoBlob: Blob
+  ): Promise<{ duration: number | null; width: number | null; height: number | null; thumbnail: File | null }> {
     return new Promise((resolve) => {
       const video = document.createElement('video');
       video.preload = 'metadata';
@@ -656,14 +811,26 @@
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
           canvas.getContext('2d')?.drawImage(video, 0, 0);
-          canvas.toBlob((blob) => {
-            const thumbnail = blob ? new File([blob], 'thumbnail.jpg', { type: 'image/jpeg' }) : null;
-            resolve({ duration: video.duration || null, width: video.videoWidth || null, height: video.videoHeight || null, thumbnail });
-            URL.revokeObjectURL(video.src);
-          }, 'image/jpeg', 0.8);
+          canvas.toBlob(
+            (blob) => {
+              const thumbnail = blob ? new File([blob], 'thumbnail.jpg', { type: 'image/jpeg' }) : null;
+              resolve({
+                duration: video.duration || null,
+                width: video.videoWidth || null,
+                height: video.videoHeight || null,
+                thumbnail,
+              });
+              URL.revokeObjectURL(video.src);
+            },
+            'image/jpeg',
+            0.8
+          );
         };
       };
-      video.onerror = () => { clearTimeout(timeout); resolve({ duration: null, width: null, height: null, thumbnail: null }); };
+      video.onerror = () => {
+        clearTimeout(timeout);
+        resolve({ duration: null, width: null, height: null, thumbnail: null });
+      };
       video.src = URL.createObjectURL(videoBlob);
     });
   }
@@ -671,36 +838,45 @@
   async function extractImageDimensions(imageBlob: Blob): Promise<{ width: number | null; height: number | null }> {
     return new Promise((resolve) => {
       const img = new window.Image();
-      img.onload = () => { resolve({ width: img.naturalWidth, height: img.naturalHeight }); URL.revokeObjectURL(img.src); };
-      img.onerror = () => { resolve({ width: null, height: null }); URL.revokeObjectURL(img.src); };
+      img.onload = () => {
+        resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        URL.revokeObjectURL(img.src);
+      };
+      img.onerror = () => {
+        resolve({ width: null, height: null });
+        URL.revokeObjectURL(img.src);
+      };
       img.src = URL.createObjectURL(imageBlob);
     });
   }
-  
+
   function openWatermarkPositionPicker() {
     if (!freeTierBranding.value.watermark_id) return;
     showWatermarkPositionPicker.value = true;
   }
-  
+
   function saveWatermarkPosition(settings: CreatorWatermarkSettings) {
     freeTierBranding.value.watermark_settings = settings;
     showWatermarkPositionPicker.value = false;
   }
-  
+
   function saveIntroSettings(settings: RatioAssetMap) {
     freeTierBranding.value.intro_settings = settings;
     showIntroRatioPicker.value = false;
   }
-  
+
   function saveOutroSettings(settings: RatioAssetMap) {
     freeTierBranding.value.outro_settings = settings;
     showOutroRatioPicker.value = false;
   }
-  
+
   async function handleWatermarkUpload() {
     if (uploadingWatermark.value) return;
     const orgId = adminOrgId.value;
-    if (!orgId) { error('No organization', 'Admin account must own an organization to upload assets'); return; }
+    if (!orgId) {
+      error('No organization', 'Admin account must own an organization to upload assets');
+      return;
+    }
     uploadingWatermark.value = true;
     try {
       const file = await selectImageFileNative();
@@ -729,7 +905,10 @@
   async function handleIntroUpload() {
     if (uploadingIntro.value) return;
     const orgId = adminOrgId.value;
-    if (!orgId) { error('No organization', 'Admin account must own an organization to upload assets'); return; }
+    if (!orgId) {
+      error('No organization', 'Admin account must own an organization to upload assets');
+      return;
+    }
     uploadingIntro.value = true;
     try {
       const file = await selectVideoFileNative();
@@ -766,7 +945,10 @@
   async function handleOutroUpload() {
     if (uploadingOutro.value) return;
     const orgId = adminOrgId.value;
-    if (!orgId) { error('No organization', 'Admin account must own an organization to upload assets'); return; }
+    if (!orgId) {
+      error('No organization', 'Admin account must own an organization to upload assets');
+      return;
+    }
     uploadingOutro.value = true;
     try {
       const file = await selectVideoFileNative();
@@ -809,7 +991,7 @@
           watermark_settings: freeTierBranding.value.watermark_settings,
           intro_settings: freeTierBranding.value.intro_settings,
           outro_settings: freeTierBranding.value.outro_settings,
-        }
+        },
       });
       success('Branding saved', 'Free tier branding settings have been updated');
     } catch (err) {

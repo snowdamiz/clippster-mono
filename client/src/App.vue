@@ -181,7 +181,9 @@
     () =>
       currentRoute.path === '/editor' ||
       currentRoute.path === '/design-studio/edit' ||
-      currentRoute.path.startsWith('/design-studio/edit'),
+      currentRoute.path.startsWith('/design-studio/edit') ||
+      currentRoute.path === '/ai-image/session' ||
+      currentRoute.path === '/ai-image/thumbnail',
   );
   const isStudioSessionPage = computed(() => currentRoute.path === '/studio/record/session');
 
