@@ -490,7 +490,9 @@ defmodule ClippsterServer.Social.Providers.PostForMe do
       }
       |> Map.merge(extra)
 
-    message = "[PostForMe] #{String.upcase(to_string(method))} #{path}"
+    message =
+      "[PostForMe] #{String.upcase(to_string(method))} #{path} status=#{status} attempt=#{attempt}"
+
     metadata = Map.to_list(metadata)
 
     case result do
@@ -545,15 +547,30 @@ defmodule ClippsterServer.Social.Providers.PostForMe do
     |> Map.new()
   end
 
-  defp map_auth_url_response(%{"url" => url, "platform" => platform} = payload) do
-    {:ok, %AuthUrlResponse{url: url, platform: platform, raw: payload}}
+  defp map_auth_url_response(%{"url" => url, "platform" => platform} = payload)
+       when is_binary(url) and is_binary(platform) and platform != "" do
+    case URI.new(url) do
+      {:ok, %URI{scheme: scheme, host: host}}
+      when scheme in ["https", "http"] and is_binary(host) and host != "" ->
+        {:ok, %AuthUrlResponse{url: url, platform: platform, raw: payload}}
+
+      _ ->
+        invalid_auth_url_response(payload)
+    end
   end
 
-  defp map_auth_url_response(payload) do
+  defp map_auth_url_response(payload), do: invalid_auth_url_response(payload)
+
+  defp invalid_auth_url_response(payload) do
+    # Do not log the payload: OAuth URLs can contain credentials and state.
+    Logger.warning(
+      "[PostForMe] POST /v1/social-accounts/auth-url returned an invalid sign-in URL response"
+    )
+
     {:error,
      api_error(
        :invalid_response,
-       "Invalid auth URL response payload from Post For Me",
+       "Post For Me did not return a valid sign-in link. Please try reconnecting again.",
        nil,
        false,
        payload
