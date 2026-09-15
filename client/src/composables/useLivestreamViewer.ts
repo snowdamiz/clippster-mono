@@ -26,6 +26,7 @@ import type {
 } from '@/types/livestream';
 import { useLivestreamMonitoring } from './useLivestreamMonitoring';
 import { useHlsPlayback } from './useHlsPlayback';
+import { deleteWatchLivestreamRecording } from '@/utils/watchLivestreamCleanup';
 import {
   checkKickLivestream,
   startKickRecording,
@@ -737,6 +738,7 @@ export function useLivestreamViewer() {
       if (state.value.tempSessionId && state.value.isTempRecording) {
         try {
           await stopKickRecordingSession(state.value.tempSessionId);
+          await deleteWatchLivestreamRecording(state.value.tempSessionId);
         } catch {
           // Ignore cleanup errors
         }
@@ -907,6 +909,7 @@ export function useLivestreamViewer() {
       if (state.value.tempSessionId && state.value.isTempRecording) {
         try {
           await stopTwitchRecordingSession(state.value.tempSessionId);
+          await deleteWatchLivestreamRecording(state.value.tempSessionId);
         } catch {
           // Ignore cleanup errors
         }
@@ -1045,6 +1048,7 @@ export function useLivestreamViewer() {
       if (state.value.tempSessionId && state.value.isTempRecording) {
         try {
           await stopYouTubeRecordingSession(state.value.tempSessionId);
+          await deleteWatchLivestreamRecording(state.value.tempSessionId);
         } catch {
           // Ignore cleanup errors
         }
@@ -1183,6 +1187,7 @@ export function useLivestreamViewer() {
       if (state.value.tempSessionId && state.value.isTempRecording) {
         try {
           await stopRumbleRecordingSession(state.value.tempSessionId);
+          await deleteWatchLivestreamRecording(state.value.tempSessionId);
         } catch {
           // Ignore cleanup errors
         }
@@ -1320,6 +1325,7 @@ export function useLivestreamViewer() {
       if (state.value.tempSessionId && state.value.isTempRecording) {
         try {
           await stopTwitterRecordingSession(state.value.tempSessionId);
+          await deleteWatchLivestreamRecording(state.value.tempSessionId);
         } catch {
           // Ignore cleanup errors
         }
@@ -2807,6 +2813,7 @@ export function useLivestreamViewer() {
               await tryRemoveEndedTwitterBroadcastById(currentStreamerId, 'viewer-closed');
             }
           }
+          await deleteWatchLivestreamRecording(state.value.tempSessionId);
         } catch (error) {
           console.warn('[LiveViewer] Failed to cleanup temp session:', error);
         }

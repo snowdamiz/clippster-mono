@@ -404,6 +404,90 @@ pub fn delete_livestream_recording(session_id: String) -> Result<(), String> {
     }
 }
 
+/// Watch / Auto-DVR session directory name prefixes.
+/// Record / auto-detect sessions use UUID folder names and must be preserved.
+const WATCH_LIVESTREAM_SESSION_PREFIXES: &[&str] = &[
+    "kick-view-",
+    "kick-dvr-",
+    "twitch-view-",
+    "twitch-dvr-",
+    "youtube-view-",
+    "youtube-dvr-",
+    "rumble-view-",
+    "rumble-dvr-",
+    "twitter-view-",
+    "twitter-dvr-",
+];
+
+fn is_watch_livestream_session_name(name: &str) -> bool {
+    WATCH_LIVESTREAM_SESSION_PREFIXES
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
+}
+
+/// Delete leftover watch/temp DVR recording folders only.
+/// Does not touch UUID record/auto-detect session directories (project media).
+#[tauri::command]
+pub fn cleanup_watch_livestream_recordings() -> Result<u32, String> {
+    use std::fs;
+
+    let recordings_dir = get_livestream_recordings_dir()?;
+    if !recordings_dir.exists() {
+        return Ok(0);
+    }
+
+    let mut deleted: u32 = 0;
+    let entries = fs::read_dir(&recordings_dir)
+        .map_err(|e| format!("Failed to read livestream recordings directory: {}", e))?;
+
+    for entry in entries {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(e) => {
+                println!(
+                    "[Storage] Warning: Failed to read livestream recordings entry: {}",
+                    e
+                );
+                continue;
+            }
+        };
+
+        let file_type = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if !file_type.is_dir() {
+            continue;
+        }
+
+        let name = entry.file_name();
+        let Some(name_str) = name.to_str() else {
+            continue;
+        };
+        if !is_watch_livestream_session_name(name_str) {
+            continue;
+        }
+
+        match fs::remove_dir_all(entry.path()) {
+            Ok(_) => {
+                deleted += 1;
+                println!(
+                    "[Storage] Deleted orphaned watch livestream recording: {}",
+                    name_str
+                );
+            }
+            Err(e) => {
+                println!(
+                    "[Storage] Warning: Failed to delete watch livestream recording {}: {}",
+                    name_str, e
+                );
+            }
+        }
+    }
+
+    Ok(deleted)
+}
+
 /// Storage paths structure
 #[derive(Debug, Clone)]
 pub struct StoragePaths {

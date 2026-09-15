@@ -26,6 +26,10 @@ import type {
   SupportedLivestreamPlatform,
 } from '@/types/livestream';
 import {
+  cleanupOrphanedWatchLivestreamRecordings,
+  deleteWatchLivestreamRecording,
+} from '@/utils/watchLivestreamCleanup';
+import {
   checkKickLivestream,
   startKickRecording,
   stopKickRecording,
@@ -726,6 +730,30 @@ async function handleDvrStreamEnd(streamerId: string, mintId: string) {
     return;
   }
 
+  // Check for YouTube DVR session
+  const youtubeSession = youtubeDvrSessions.value.get(streamerId);
+  if (youtubeSession) {
+    console.log('[LiveMonitor] Cleaning up YouTube DVR session for', mintId);
+    await stopYouTubeDvrRecording(streamerId);
+
+    updateDvrSessionsMap((map) => {
+      map.delete(streamerId);
+    });
+    return;
+  }
+
+  // Check for Rumble DVR session
+  const rumbleSession = rumbleDvrSessions.value.get(streamerId);
+  if (rumbleSession) {
+    console.log('[LiveMonitor] Cleaning up Rumble DVR session for', mintId);
+    await stopRumbleDvrRecording(streamerId);
+
+    updateDvrSessionsMap((map) => {
+      map.delete(streamerId);
+    });
+    return;
+  }
+
   // Check for Twitter DVR session
   const twitterSession = twitterDvrSessions.value.get(streamerId);
   if (twitterSession) {
@@ -1030,6 +1058,8 @@ async function stopKickDvrRecording(streamerId: string): Promise<void> {
     console.warn('[LiveMonitor] Failed to stop Kick DVR session', error);
   }
 
+  await deleteWatchLivestreamRecording(session.sessionId);
+
   // Remove from tracking
   const newMap = new Map(kickDvrSessions.value);
   newMap.delete(streamerId);
@@ -1124,6 +1154,8 @@ async function stopTwitchDvrRecording(streamerId: string): Promise<void> {
     console.warn('[LiveMonitor] Failed to stop Twitch DVR session', error);
   }
 
+  await deleteWatchLivestreamRecording(session.sessionId);
+
   // Remove from tracking
   const newMap = new Map(twitchDvrSessions.value);
   newMap.delete(streamerId);
@@ -1217,6 +1249,8 @@ async function stopTwitterDvrRecording(streamerId: string): Promise<void> {
   } catch (error) {
     console.warn('[LiveMonitor] Failed to stop Twitter DVR session', error);
   }
+
+  await deleteWatchLivestreamRecording(session.sessionId);
 
   // Remove from tracking
   const newMap = new Map(twitterDvrSessions.value);
@@ -1355,6 +1389,8 @@ async function stopYouTubeDvrRecording(streamerId: string): Promise<void> {
     console.warn('[LiveMonitor] Failed to stop YouTube DVR session', error);
   }
 
+  await deleteWatchLivestreamRecording(session.sessionId);
+
   // Remove from tracking
   const newMap = new Map(youtubeDvrSessions.value);
   newMap.delete(streamerId);
@@ -1450,6 +1486,8 @@ async function stopRumbleDvrRecording(streamerId: string): Promise<void> {
   } catch (error) {
     console.warn('[LiveMonitor] Failed to stop Rumble DVR session', error);
   }
+
+  await deleteWatchLivestreamRecording(session.sessionId);
 
   // Remove from tracking
   const newMap = new Map(rumbleDvrSessions.value);
@@ -2693,6 +2731,9 @@ export async function initGlobalLiveStatusPolling(): Promise<void> {
   }
 
   console.log('[GlobalLiveStatus] Initializing global live status polling...');
+
+  // Clear leftover watch/temp DVR folders from prior runs (never touches record/auto-detect UUIDs)
+  void cleanupOrphanedWatchLivestreamRecordings();
   
   // Import database function
   const { getAllMonitoredStreamers } = await import('@/services/database');
