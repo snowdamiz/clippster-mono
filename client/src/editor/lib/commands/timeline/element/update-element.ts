@@ -35,7 +35,7 @@ export type UpdatableEffectProps = Partial<
 >;
 
 export type UpdatableCaptionProps = Partial<
-	Pick<CaptionElement, "name" | "opacity" | "blendMode" | "transform" | "hidden" | "locked" | "groupId">
+	Pick<CaptionElement, "name" | "opacity" | "transform" | "hidden" | "locked" | "groupId">
 >;
 
 export type UpdatableElementProps =

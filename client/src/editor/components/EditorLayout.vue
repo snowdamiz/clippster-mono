@@ -33,6 +33,10 @@ import {
 	ChevronDown,
 } from "lucide-vue-next";
 
+const props = withDefaults(defineProps<{ initialTab?: "media" | "templates" }>(), {
+	initialTab: "media",
+});
+
 // Register global editor actions and keybindings
 useEditorActions();
 useKeybindingsListener();
@@ -63,7 +67,7 @@ const TAB_KEYS = [
 
 type Tab = (typeof TAB_KEYS)[number];
 
-const IMAGE_MODE_ONLY_TABS: Tab[] = ["templates", "brandkit", "aitools"];
+const IMAGE_MODE_ONLY_TABS: Tab[] = ["brandkit", "aitools"];
 
 const visibleTabs = computed(() => TAB_KEYS.filter((t) => !IMAGE_MODE_ONLY_TABS.includes(t)));
 
@@ -90,7 +94,7 @@ type ImageDockTab = "properties" | Tab;
 const IMAGE_DOCK_PRIMARY: ImageDockTab[] = ["properties", "media"];
 const IMAGE_DOCK_MORE: Tab[] = ["templates", "filters", "brandkit", "aitools", "stickers", "text", "settings"];
 
-const activeTab = ref<Tab | null>("media");
+const activeTab = ref<Tab | null>(props.initialTab);
 const imageDockTab = ref<ImageDockTab>("properties");
 const imageMoreOpen = ref(false);
 const propertiesCollapsed = ref(false);

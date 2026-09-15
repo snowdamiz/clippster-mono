@@ -1,5 +1,6 @@
 import type { ClipEffect } from '@clippster/clip-export';
 import type { SubtitleSettings, TargetAspectRatio } from '@clippster/shared-types';
+import type { TemplateInstanceProvenance } from '@clippster/template-schema';
 
 export const MOBILE_EDIT_SCHEMA_VERSION = 3 as const;
 export const EDITOR_TICKS_PER_SECOND = 60_000;
@@ -72,6 +73,8 @@ export interface TimedItem {
   id: EditorId;
   timelineStart: EditorTick;
   timelineEnd: EditorTick;
+  templateSlotId?: string;
+  templateDecorationId?: 'title';
 }
 
 export interface VideoItem extends TimedItem {
@@ -218,6 +221,7 @@ export interface MobileEditProjectV3 {
   tracks: EditorTrack[];
   captionDocument?: CaptionDocument;
   branding?: BrandingReference;
+  templateInstance?: TemplateInstanceProvenance;
   createdAt: number;
   updatedAt: number;
 }

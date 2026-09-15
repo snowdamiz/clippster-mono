@@ -156,6 +156,7 @@
       @scroll-to-timeline="onScrollToTimeline"
       @refresh-clips="refreshClips"
       @edit-clip="onEditClip"
+      @instant-edit="(clipId) => emit('instantEdit', clipId)"
       @adjust-clip="onAdjustClip"
       @add-clip="handleAddClip"
       @publish-now="onPublishNow"

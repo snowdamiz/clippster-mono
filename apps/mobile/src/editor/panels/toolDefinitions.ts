@@ -2,6 +2,7 @@ import type { SelectionKind } from '../model/schema';
 
 export type EditorToolId =
   | 'edit'
+  | 'templates'
   | 'text'
   | 'captions'
   | 'audio'
@@ -90,6 +91,7 @@ export const TOOL_CAPABILITY_IDS: Partial<Record<EditorToolId, string>> = {
 
 const GLOBAL_EDITOR_TOOLS: EditorTool[] = [
   tool('edit', 'Edit'),
+  tool('templates', 'Instant Edit'),
   tool('text', 'Text', { capabilityId: 'text' }),
   tool('captions', 'Captions', { capabilityId: 'captions' }),
   tool('audio', 'Audio', { capabilityId: 'audio_mix' }),

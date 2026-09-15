@@ -7,6 +7,7 @@
 import { invoke } from '@tauri-apps/api/core';
 import {
   createVideoEditorProject,
+  deleteVideoEditorProject,
   createVideoEditorSource,
   getOrCreateVideoEditorEdit,
   recalculateProjectDuration,
@@ -72,11 +73,20 @@ export interface CreateProjectFromProjectOptions {
 export async function createVideoEditorProjectFromClip(
   options: CreateProjectFromClipOptions
 ): Promise<CreateProjectFromClipResult> {
-  const { clipId, clipTitle, videoSrc, clipStartTime, clipEndTime, rawVideoParentProjectId } = options;
+  const {
+    clipId,
+    clipTitle,
+    videoSrc,
+    clipStartTime,
+    clipEndTime,
+    clipSegments,
+    rawVideoParentProjectId,
+  } = options;
 
   // Create a new video editor project with the clip's name
   const projectName = `${clipTitle || 'Untitled'} - Video Project`;
   const newProjectId = await createVideoEditorProject(projectName);
+  try {
 
   // Get video server port for constructing video URLs
   const videoServerPort = await invoke<number>('get_video_server_port');
@@ -84,7 +94,19 @@ export async function createVideoEditorProjectFromClip(
   // Resolve the clip's extracted video file path.
   // We ALWAYS extract the clip segment from the VOD so the editor
   // only ever works with the short clip file — never the full VOD.
-  const clipDuration = clipEndTime - clipStartTime;
+  const validSegments = (clipSegments ?? []).filter(
+    (segment) =>
+      Number.isFinite(segment.start_time) &&
+      Number.isFinite(segment.end_time) &&
+      segment.end_time > segment.start_time,
+  );
+  const clipDuration =
+    validSegments.length > 0
+      ? validSegments.reduce(
+          (duration, segment) => duration + segment.end_time - segment.start_time,
+          0,
+        )
+      : clipEndTime - clipStartTime;
   let clipVideoPath = '';
   let clipThumbnailPath: string | null = null;
 
@@ -112,6 +134,7 @@ export async function createVideoEditorProjectFromClip(
           clipId,
           clipStartTime,
           clipEndTime,
+          clipSegments: validSegments,
           outputPath,
           videoSrc,
           rawVideoParentProjectId: rawVideoParentProjectId ?? null,
@@ -176,6 +199,12 @@ export async function createVideoEditorProjectFromClip(
     sources,
     videoEditorEditId,
   };
+  } catch (error) {
+    await deleteVideoEditorProject(newProjectId).catch((cleanupError) => {
+      console.error('[video-editor-project-creator] Failed to roll back project:', cleanupError);
+    });
+    throw error;
+  }
 }
 
 /**

@@ -91,9 +91,12 @@ export async function exportEditorProject(
   try {
     for (let ratioIndex = 0; ratioIndex < ratios.length; ratioIndex += 1) {
       const ratio = ratios[ratioIndex];
-      await engine.load(
-        applyVodFramingForExport(document, ratio, vodConfig?.framingConfig),
+      const exportDocument = applyVodFramingForExport(
+        document,
+        ratio,
+        vodConfig?.framingConfig,
       );
+      await engine.load(exportDocument);
       const stamp = Date.now();
       const outputPath = `${exportDir}${document.targetId}_${ratio.replace(':', 'x')}_${stamp}.mp4`;
       const canvas = document.canvas.outputByRatio[ratio];
@@ -133,6 +136,10 @@ export async function exportEditorProject(
             ),
           ),
           frameTolerance: 1 / canvas.fps,
+          requireAudio: getVideoTrack(exportDocument).items.some((item) => {
+            const asset = exportDocument.assets[item.assetId];
+            return item.volume > 0 && asset?.hasAudio !== false;
+          }),
         });
         outputs.push(produced);
         if (build) {

@@ -1,4 +1,4 @@
-use tauri_plugin_shell::{process::CommandEvent, ShellExt};
+use tauri_plugin_shell::ShellExt;
 
 use once_cell::sync::Lazy;
 use serde::{Deserialize, Serialize};
@@ -8,7 +8,6 @@ use std::{
         atomic::{AtomicBool, Ordering},
         Arc, Mutex,
     },
-    time::Duration,
 };
 use tauri::{Emitter, Runtime};
 
@@ -465,131 +464,42 @@ async fn run_ffmpeg_for_video_editor_export<R: Runtime>(
     progress_export_id: Option<String>,
     progress_total_duration: Option<f64>,
 ) -> Result<Vec<u8>, String> {
-    let shell = app.shell();
-    let (mut rx, child) = shell
+    if cancel_flag
+        .as_ref()
+        .is_some_and(|flag| flag.load(Ordering::SeqCst))
+    {
+        return Err(FFMPEG_EXPORT_CANCELLED.to_string());
+    }
+    let output = app
+        .shell()
         .sidecar("ffmpeg")
         .map_err(|e| format!("Failed to get ffmpeg sidecar: {}", e))?
         .args(args)
-        .spawn()
-        .map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
-
-    let mut stderr_buf = Vec::new();
-    let mut stderr_text_tail = String::new();
-    let mut last_emitted_progress = 0.0_f64;
-
-    loop {
-        if cancel_flag
-            .as_ref()
-            .is_some_and(|flag| flag.load(Ordering::SeqCst))
-        {
-            let _ = child.kill();
-            return Err(FFMPEG_EXPORT_CANCELLED.to_string());
-        }
-
-        tokio::select! {
-            event = rx.recv() => {
-                match event {
-                    Some(CommandEvent::Stderr(data)) => {
-                        stderr_buf.extend_from_slice(&data);
-                        if let (Some(export_id), Some(total_duration)) =
-                            (progress_export_id.as_ref(), progress_total_duration)
-                        {
-                            stderr_text_tail.push_str(&String::from_utf8_lossy(&data));
-                            if stderr_text_tail.len() > 8192 {
-                                stderr_text_tail = stderr_text_tail
-                                    .chars()
-                                    .rev()
-                                    .take(4096)
-                                    .collect::<String>()
-                                    .chars()
-                                    .rev()
-                                    .collect();
-                            }
-                            if let Some(seconds) = parse_ffmpeg_progress_seconds(&stderr_text_tail) {
-                                if total_duration > 0.001 {
-                                    let progress = (seconds / total_duration).clamp(0.0, 0.995);
-                                    if progress - last_emitted_progress >= 0.005 || progress >= 0.995 {
-                                        last_emitted_progress = progress;
-                                        let _ = app.emit(
-                                            "video-editor-export-progress",
-                                            VideoEditorExportProgressPayload {
-                                                export_id: export_id.clone(),
-                                                progress,
-                                            },
-                                        );
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    Some(CommandEvent::Terminated(payload)) => {
-                        if payload.code == Some(0) {
-                            return Ok(stderr_buf);
-                        }
-
-                        let stderr = String::from_utf8_lossy(&stderr_buf);
-                        return Err(format!("FFmpeg export failed: {}", stderr));
-                    }
-                    Some(CommandEvent::Error(err)) => {
-                        let _ = child.kill();
-                        return Err(format!("FFmpeg process error: {}", err));
-                    }
-                    Some(_) => {}
-                    None => return Err("FFmpeg closed without termination".to_string()),
-                }
-            }
-            _ = tokio::time::sleep(Duration::from_millis(120)) => {}
-        }
+        .output()
+        .await
+        .map_err(|e| format!("Failed to execute FFmpeg: {}", e))?;
+    if cancel_flag
+        .as_ref()
+        .is_some_and(|flag| flag.load(Ordering::SeqCst))
+    {
+        return Err(FFMPEG_EXPORT_CANCELLED.to_string());
     }
-}
-
-fn parse_ffmpeg_progress_seconds(text: &str) -> Option<f64> {
-    let mut latest: Option<f64> = None;
-
-    for line in text.lines().rev().take(80) {
-        let trimmed = line.trim();
-        if let Some(value) = trimmed.strip_prefix("out_time_ms=") {
-            if let Ok(us) = value.trim().parse::<f64>() {
-                latest = Some(us / 1_000_000.0);
-                break;
-            }
-        }
-        if let Some(value) = trimmed.strip_prefix("out_time_us=") {
-            if let Ok(us) = value.trim().parse::<f64>() {
-                latest = Some(us / 1_000_000.0);
-                break;
-            }
-        }
-        if let Some(value) = trimmed.strip_prefix("out_time=") {
-            latest = parse_ffmpeg_timecode(value.trim());
-            if latest.is_some() {
-                break;
-            }
-        }
-
-        // Fallback for FFmpeg's default stats line: "... time=00:00:12.34 ..."
-        if let Some(idx) = trimmed.find("time=") {
-            let after = &trimmed[idx + "time=".len()..];
-            let value = after.split_whitespace().next().unwrap_or("");
-            latest = parse_ffmpeg_timecode(value);
-            if latest.is_some() {
-                break;
-            }
-        }
+    if !output.status.success() {
+        return Err(format!(
+            "FFmpeg export failed: {}",
+            String::from_utf8_lossy(&output.stderr)
+        ));
     }
-
-    latest
-}
-
-fn parse_ffmpeg_timecode(value: &str) -> Option<f64> {
-    let parts: Vec<&str> = value.split(':').collect();
-    if parts.len() != 3 {
-        return None;
+    if let (Some(export_id), Some(_)) = (progress_export_id, progress_total_duration) {
+        let _ = app.emit(
+            "video-editor-export-progress",
+            VideoEditorExportProgressPayload {
+                export_id,
+                progress: 0.995,
+            },
+        );
     }
-    let hours = parts[0].parse::<f64>().ok()?;
-    let minutes = parts[1].parse::<f64>().ok()?;
-    let seconds = parts[2].parse::<f64>().ok()?;
-    Some(hours * 3600.0 + minutes * 60.0 + seconds)
+    Ok(output.stderr)
 }
 
 /// Video/audio codec flags for the final mux (MP4 vs WebM, quality tiers, optional `-an`).

@@ -247,6 +247,36 @@ export function validateMobileEditProject(raw: unknown): DocumentValidation {
       }
     });
   }
+  if (document.templateInstance) {
+    const instance = document.templateInstance;
+    if (!instance.templateId || !instance.templateVersionId) {
+      errors.push('templateInstance must identify a template version');
+    }
+    if (!instance.compilerVersion || !instance.analyzerVersion) {
+      errors.push('templateInstance must identify compiler and analyzer versions');
+    }
+    const slotIds = new Set<string>();
+    const itemSlotIds = new Set(
+      document.tracks.flatMap((track) =>
+        track.items.flatMap((item) => (item.templateSlotId ? [item.templateSlotId] : [])),
+      ),
+    );
+    instance.bindings.forEach((binding, index) => {
+      if (slotIds.has(binding.slotId)) {
+        errors.push(`templateInstance.bindings[${index}].slotId is duplicated`);
+      }
+      slotIds.add(binding.slotId);
+      if (!document.assets[binding.assetId]) {
+        errors.push(`templateInstance.bindings[${index}].assetId does not reference an asset`);
+      }
+      if (!itemSlotIds.has(binding.slotId)) {
+        errors.push(`templateInstance.bindings[${index}].slotId does not reference a timeline item`);
+      }
+      if (binding.sourceEndMs <= binding.sourceStartMs) {
+        errors.push(`templateInstance.bindings[${index}] has an invalid source range`);
+      }
+    });
+  }
   return { valid: errors.length === 0, errors };
 }
 

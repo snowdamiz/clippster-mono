@@ -196,6 +196,10 @@ interface BaseTimelineElement {
 	locked?: boolean;
 	/** Optional nested group id for Photoshop-style layer groups */
 	groupId?: string | null;
+	/** Stable template slot identity retained after blueprint runtime-ID remapping. */
+	templateSlotId?: string;
+	/** Template definition/version that generated this ordinary editable element. */
+	templateProvenance?: { templateId: string; templateVersionId: string; logicalElementId: string };
 }
 
 // ── Shape masks ───────────────────────────────────────────────────────────

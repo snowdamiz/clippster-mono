@@ -2,8 +2,17 @@ use crate::utils::file_utils;
 use crate::video::ffmpeg::extract_clip_segment;
 use crate::video::ffmpeg::extract_waveform_data;
 use crate::video::ffmpeg::generate_thumbnail_at_time;
+use serde::Deserialize;
 use std::path::Path;
-use tauri::command;
+use tauri::{command, AppHandle};
+use tauri_plugin_shell::ShellExt;
+
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ClipSegmentRange {
+    start_time: f64,
+    end_time: f64,
+}
 
 /// Extract a clip segment from a video file
 #[command]
@@ -53,6 +62,111 @@ pub async fn extract_clip(
     }
 
     println!("[Rust] ✓ Clip extracted successfully: {}", output_path);
+    Ok(())
+}
+
+/// Extract disjoint VOD ranges and concatenate only those ranges in timeline order.
+#[command]
+pub async fn extract_clip_segments(
+    app: AppHandle,
+    source_path: String,
+    output_path: String,
+    segments: Vec<ClipSegmentRange>,
+) -> Result<(), String> {
+    if segments.is_empty() {
+        return Err("At least one clip segment is required".to_string());
+    }
+    let source = Path::new(&source_path)
+        .canonicalize()
+        .map_err(|e| format!("Could not resolve source video path: {} ({})", source_path, e))?;
+    let output = Path::new(&output_path);
+    if let Some(parent) = output.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| format!("Failed to create output directory: {}", e))?;
+    }
+
+    let mut previous_end = -1.0;
+    for (index, segment) in segments.iter().enumerate() {
+        if !segment.start_time.is_finite()
+            || !segment.end_time.is_finite()
+            || segment.start_time < 0.0
+            || segment.end_time <= segment.start_time
+            || segment.start_time < previous_end
+        {
+            return Err(format!("Invalid or overlapping clip segment at index {}", index));
+        }
+        previous_end = segment.end_time;
+    }
+
+    let stamp = uuid::Uuid::new_v4();
+    let mut temporary_segments = Vec::with_capacity(segments.len());
+    let concat_list_path = output.with_extension(format!("{}.concat.txt", stamp));
+    let cleanup = |paths: &[std::path::PathBuf]| {
+        for path in paths {
+            let _ = std::fs::remove_file(path);
+        }
+        let _ = std::fs::remove_file(&concat_list_path);
+    };
+
+    for (index, segment) in segments.iter().enumerate() {
+        let segment_path = output.with_extension(format!("{}.segment-{}.mp4", stamp, index));
+        if let Err(error) = extract_clip_segment(
+            &source.to_string_lossy(),
+            &segment_path.to_string_lossy(),
+            segment.start_time,
+            segment.end_time,
+        )
+        .await
+        {
+            cleanup(&temporary_segments);
+            return Err(format!("FFmpeg segment {} extraction failed: {}", index, error));
+        }
+        temporary_segments.push(segment_path);
+    }
+
+    let concat_content = temporary_segments
+        .iter()
+        .map(|path| {
+            let escaped = path.to_string_lossy().replace('\\', "/").replace('\'', "'\\''");
+            format!("file '{}'\n", escaped)
+        })
+        .collect::<String>();
+    if let Err(error) = std::fs::write(&concat_list_path, concat_content) {
+        cleanup(&temporary_segments);
+        return Err(format!("Failed to create segment concat list: {}", error));
+    }
+
+    let result = app
+        .shell()
+        .sidecar("ffmpeg")
+        .map_err(|e| format!("Could not launch FFmpeg sidecar: {}", e))?
+        .args([
+            "-nostdin",
+            "-f",
+            "concat",
+            "-safe",
+            "0",
+            "-i",
+            &concat_list_path.to_string_lossy(),
+            "-c",
+            "copy",
+            "-movflags",
+            "+faststart",
+            "-y",
+            &output.to_string_lossy(),
+        ])
+        .output()
+        .await;
+    cleanup(&temporary_segments);
+
+    let command_output = result.map_err(|e| format!("Failed to concatenate clip segments: {}", e))?;
+    if !command_output.status.success() {
+        let _ = std::fs::remove_file(output);
+        return Err(format!(
+            "FFmpeg segment concatenation failed: {}",
+            String::from_utf8_lossy(&command_output.stderr)
+        ));
+    }
     Ok(())
 }
 

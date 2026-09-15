@@ -1364,6 +1364,7 @@ video::get_decoder_info,
 
 // Clip Extractor commands
 clip_extractor_commands::extract_clip,
+clip_extractor_commands::extract_clip_segments,
 clip_extractor_commands::generate_clip_thumbnail,
 clip_extractor_commands::generate_waveform,
 clip_extractor_commands::delete_file,

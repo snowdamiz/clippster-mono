@@ -380,6 +380,7 @@ export interface MediaPanelEmits {
   (e: 'seekVideo', time: number): void;
   (e: 'watermarkSettingsChanged', settings: WatermarkSettings): void;
   (e: 'editClip', clipId: string): void;
+  (e: 'instantEdit', clipId: string): void;
   (e: 'adjustClip', clipId: string): void;
   (e: 'addClip'): void;
   (e: 'transcribeProject'): void;

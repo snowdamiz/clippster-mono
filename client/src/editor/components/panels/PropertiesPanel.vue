@@ -12,6 +12,7 @@ import EffectProperties from "./properties/EffectProperties.vue";
 import CaptionProperties from "./properties/CaptionProperties.vue";
 import CaptionMultiProperties from "./properties/CaptionMultiProperties.vue";
 import TransitionProperties from "./properties/TransitionProperties.vue";
+import TemplateSlotProperties from "./properties/TemplateSlotProperties.vue";
 import { Settings } from "lucide-vue-next";
 import { useImageMode } from "../../composables/useImageMode";
 import type { Transition } from "../../types/transitions";
@@ -90,6 +91,11 @@ const selectedTransition = computed((): Transition | null => {
 					:key="element.id"
 					class="min-h-0 flex-1 overflow-hidden"
 				>
+					<TemplateSlotProperties
+						v-if="element.type === 'video' || element.type === 'image'"
+						:element="(element as VideoElement | ImageElement)"
+						:track-id="track.id"
+					/>
 					<TextProperties
 						v-if="element.type === 'text'"
 						:element="(element as TextElement)"

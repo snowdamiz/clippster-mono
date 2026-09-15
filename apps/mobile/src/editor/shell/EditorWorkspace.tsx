@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { Alert } from 'react-native';
+import type { TemplateManifest } from '@clippster/template-schema';
+import { getNativeEditorModule } from '@clippster/editor-native';
 
 import { appAlert } from '@/lib/appAlert';
 import { SubtitleSheet } from '@/components/subtitles/SubtitleSheet';
@@ -20,6 +23,7 @@ import { createTextCommand } from '../commands/createTextCommand';
 import {
   SetTransitionCommand,
   ReplaceMediaAssetCommand,
+  ReplaceTemplateSlotMediaCommand,
   UpdateAudioItemCommand,
   UpdateOverlayItemCommand,
   UpdateTextItemCommand,
@@ -52,6 +56,9 @@ import { TransitionSheet } from '../panels/TransitionSheet';
 import type { EditorToolId } from '../panels/toolDefinitions';
 import { fingerprintMediaUri } from '../persistence/nativeMediaProbe';
 import type { MobileEditorController } from '../state/editorController';
+import { ApplyTemplateCommand } from '../templates/ApplyTemplateCommand';
+import { compileMobileTemplate } from '../templates/compileTemplate';
+import { InstantEditSheet } from '../templates/InstantEditSheet';
 import { MobileEditorShell } from './MobileEditorShell';
 
 export function EditorWorkspace({
@@ -81,8 +88,14 @@ export function EditorWorkspace({
   const [textStyleTargetId, setTextStyleTargetId] = useState<string | null>(null);
   const [exportVisible, setExportVisible] = useState(false);
   const [exportProgress, setExportProgress] = useState<ClipBuildProgress | null>(null);
+  const [templatesVisible, setTemplatesVisible] = useState(false);
+  const [templateBusy, setTemplateBusy] = useState(false);
 
   const handleToolRequest = (tool: EditorToolId, playheadTick: number) => {
+    if (tool === 'templates') {
+      setTemplatesVisible(true);
+      return;
+    }
     if (tool === 'add' || tool === 'overlay' || tool === 'audio') {
       setMediaMode(tool);
       setInsertionTick(playheadTick);
@@ -201,7 +214,12 @@ export function EditorWorkspace({
       item &&
       'assetId' in item
     ) {
-      void replaceMedia(item.assetId, selection.kind === 'video' ? 'video' : 'image');
+      void replaceMedia(
+        item.assetId,
+        selection.kind === 'video' ? 'video' : 'image',
+        item.id,
+        item.templateSlotId,
+      );
       return;
     }
 
@@ -419,13 +437,33 @@ export function EditorWorkspace({
     }
   };
 
-  const replaceMedia = async (assetId: string, kind: 'video' | 'image') => {
+  const replaceMedia = async (
+    assetId: string,
+    kind: 'video' | 'image',
+    itemId?: string,
+    templateSlotId?: string,
+  ) => {
     try {
       const picked = kind === 'video' ? await pickEditorVideo() : await pickEditorImage();
       if (!picked) return;
       const asset = controller.snapshot.document.assets[assetId];
       if (!asset) return;
-      const durationTicks = asset.durationTicks;
+      let durationTicks = asset.durationTicks;
+      let width = asset.width;
+      let height = asset.height;
+      let hasAudio = asset.hasAudio;
+      if (kind === 'video') {
+        const pickedDuration =
+          'duration' in picked && typeof picked.duration === 'number' ? picked.duration : 0;
+        if (pickedDuration > 0) durationTicks = secondsToTicks(pickedDuration);
+        const probe = await getNativeEditorModule()?.probeMedia(picked.path);
+        if (probe) {
+          durationTicks = secondsToTicks(probe.duration);
+          width = probe.width;
+          height = probe.height;
+          hasAudio = Boolean(probe.audioCodec);
+        }
+      }
       let requiredSourceEnd = 0;
       controller.snapshot.document.tracks.forEach((track) => {
         if (track.kind === 'text') return;
@@ -439,23 +477,71 @@ export function EditorWorkspace({
         appAlert('Replacement is too short', 'Choose media long enough for the current edit.');
         return;
       }
-      controller.commit(
-        new ReplaceMediaAssetCommand(
-          assetId,
-          {
+      const replacement = {
             ...asset,
+            id:
+              itemId && templateSlotId
+                ? createNativeEditorId('template_replacement_asset')
+                : asset.id,
             sourceUri: picked.path,
             sourceFingerprint: await fingerprintMediaUri(picked.path),
             durationTicks,
+            width,
+            height,
+            hasAudio,
             proxy: undefined,
             thumbnail: undefined,
-          },
-          Date.now(),
-        ),
+          };
+      controller.commit(
+        itemId && templateSlotId
+          ? new ReplaceTemplateSlotMediaCommand(
+              itemId,
+              templateSlotId,
+              replacement,
+              Date.now(),
+            )
+          : new ReplaceMediaAssetCommand(assetId, replacement, Date.now()),
       );
     } catch (error) {
       appAlert('Could not replace media', error instanceof Error ? error.message : String(error));
     }
+  };
+
+  const selectTemplate = (manifest: TemplateManifest) => {
+    const apply = () => {
+      setTemplateBusy(true);
+      try {
+        const draft = compileMobileTemplate({
+          document: controller.snapshot.document,
+          manifest,
+          idFactory: createNativeEditorId,
+          seed: Date.now() & 0x7fffffff,
+        });
+        controller.commit(new ApplyTemplateCommand(draft.document));
+        controller.updateSession({ playheadTick: 0, selection: undefined });
+        setTemplatesVisible(false);
+      } catch (error) {
+        appAlert(
+          'Could not prepare Instant Edit',
+          error instanceof Error ? error.message : String(error),
+        );
+      } finally {
+        setTemplateBusy(false);
+      }
+    };
+    const hasContent = controller.snapshot.document.tracks.some((track) => track.items.length > 0);
+    if (!hasContent) {
+      apply();
+      return;
+    }
+    Alert.alert(
+      'Replace current composition?',
+      'Instant Edit keeps your source media but replaces timeline items. You can undo this as one step.',
+      [
+        { text: 'Cancel', style: 'cancel' },
+        { text: 'Replace', style: 'destructive', onPress: apply },
+      ],
+    );
   };
 
   const activeTransition = transitionTargetId
@@ -502,6 +588,17 @@ export function EditorWorkspace({
               ? ['audio']
               : ['video', 'image', 'audio']
         }
+      />
+      <InstantEditSheet
+        visible={templatesVisible}
+        busy={templateBusy}
+        mediaCount={Object.values(controller.snapshot.document.assets).filter(
+          (asset) => asset.kind !== 'audio',
+        ).length}
+        onClose={() => {
+          if (!templateBusy) setTemplatesVisible(false);
+        }}
+        onSelect={selectTemplate}
       />
       <TextEditorSheet
         visible={textSheetVisible}

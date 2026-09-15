@@ -54,4 +54,25 @@ describe('validateExportMetadata', () => {
       /one-frame/,
     );
   });
+
+  it('accepts a video-only export when the composition has no audible source', () => {
+    assert.doesNotThrow(() =>
+      validateExportMetadata(
+        {
+          width: 1080,
+          height: 1920,
+          duration: 12,
+          videoCodec: 'h264',
+          audioCodec: null,
+        },
+        {
+          width: 1080,
+          height: 1920,
+          duration: 12,
+          frameTolerance: 1 / 30,
+          requireAudio: false,
+        },
+      ),
+    );
+  });
 });

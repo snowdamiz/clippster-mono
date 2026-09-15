@@ -390,6 +390,13 @@ function onContextAction(action: string) {
 				:class="track.type === 'audio' ? 'group-hover:opacity-0' : ''"
 			>
 				<span class="truncate text-[10px] leading-none font-medium text-white/90">{{ element.name }}</span>
+				<span
+					v-if="element.templateSlotId"
+					class="ml-1 mr-1 flex-shrink-0 rounded bg-fuchsia-500/70 px-1 py-0.5 text-[8px] leading-none font-medium text-white"
+					:title="`Instant Edit slot: ${element.templateSlotId}`"
+				>
+					Slot
+				</span>
 				<!-- Layer indicator badge -->
 				<span
 					v-if="element.orderIndex !== undefined && element.orderIndex > 0"

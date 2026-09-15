@@ -10,7 +10,6 @@ import android.media.MediaCodecInfo
 import android.media.MediaCodecList
 import android.media.MediaExtractor
 import android.media.MediaFormat
-import android.media.MediaMetadataRetriever
 import android.media.MediaMuxer
 import android.net.Uri
 import android.util.Log
@@ -87,6 +86,7 @@ class HardwareExportPipeline {
         outputWidth = width,
         outputHeight = height,
         fps = fps,
+        includeAudio = clip.volume > 0.0,
         onProgress = onProgress,
       )
     }
@@ -121,6 +121,7 @@ class HardwareExportPipeline {
           outputWidth = width,
           outputHeight = height,
           fps = fps,
+          includeAudio = clip.volume > 0.0,
           onProgress = { clipProgress ->
             onProgress(
               TRANSCODE_PROGRESS_WEIGHT *
@@ -190,7 +191,7 @@ class HardwareExportPipeline {
       encodeOverlayVideo(
         context = context,
         sceneJson = sceneJson,
-        durationTicks = clips.maxOf(SceneSource::timelineEnd),
+        durationTicks = sceneDurationTicks(sceneJson),
         outputPath = videoOnlyFile.path,
         width = width,
         height = height,
@@ -233,32 +234,64 @@ class HardwareExportPipeline {
     val totalFrames = kotlin.math.ceil(
       durationTicks.toDouble() * fps / TICKS_PER_SECOND,
     ).toLong().coerceAtLeast(1L)
-    val codecInfo = findBitmapAvcEncoder(encodedWidth, encodedHeight)
-    val colorFormat = selectBitmapColorFormat(codecInfo, MediaFormat.MIMETYPE_VIDEO_AVC)
-    val format = MediaFormat.createVideoFormat(
-      MediaFormat.MIMETYPE_VIDEO_AVC,
-      encodedWidth,
-      encodedHeight,
-    ).apply {
-      setInteger(MediaFormat.KEY_COLOR_FORMAT, colorFormat)
-      setInteger(MediaFormat.KEY_BIT_RATE, bitrateFor(encodedWidth, encodedHeight, fps))
-      setInteger(MediaFormat.KEY_FRAME_RATE, fps)
-      setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 1)
-    }
+    val frames = SequentialVideoFrameSource(context)
+    val compositor = FrameOverlayCompositor(context)
+    val canvasBitmap = Bitmap.createBitmap(encodedWidth, encodedHeight, Bitmap.Config.ARGB_8888)
+    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+    Log.i(TAG, "Overlay export $encodedWidth x $encodedHeight @ ${fps}fps, $totalFrames frames")
 
     var encoder: MediaCodec? = null
+    var encoderInputSurface: Surface? = null
     var muxer: MediaMuxer? = null
     var muxerStarted = false
-    val retrievers = mutableMapOf<String, MediaMetadataRetriever>()
-    val compositor = FrameOverlayCompositor(context)
+    var useSurfaceInput = true
+    var colorFormat = MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface
     try {
       File(outputPath).delete()
-      val activeEncoder = MediaCodec.createByCodecName(codecInfo.name)
-      encoder = activeEncoder
-      activeEncoder.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+      val format = MediaFormat.createVideoFormat(
+        MediaFormat.MIMETYPE_VIDEO_AVC,
+        encodedWidth,
+        encodedHeight,
+      ).apply {
+        setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
+        setInteger(MediaFormat.KEY_BIT_RATE, bitrateFor(encodedWidth, encodedHeight, fps))
+        setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+        setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
+      }
+      val surfaceEncoder = try {
+        MediaCodec.createEncoderByType(MediaFormat.MIMETYPE_VIDEO_AVC).also { codec ->
+          codec.configure(format, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        }
+      } catch (error: Throwable) {
+        Log.w(TAG, "Surface overlay encoder unavailable", error)
+        null
+      }
+      if (surfaceEncoder != null) {
+        encoder = surfaceEncoder
+        encoderInputSurface = surfaceEncoder.createInputSurface()
+        surfaceEncoder.start()
+      } else {
+        useSurfaceInput = false
+        val codecInfo = findBitmapAvcEncoder(encodedWidth, encodedHeight)
+        colorFormat = selectBitmapColorFormat(codecInfo, MediaFormat.MIMETYPE_VIDEO_AVC)
+        val bufferFormat = MediaFormat.createVideoFormat(
+          MediaFormat.MIMETYPE_VIDEO_AVC,
+          encodedWidth,
+          encodedHeight,
+        ).apply {
+          setInteger(MediaFormat.KEY_COLOR_FORMAT, colorFormat)
+          setInteger(MediaFormat.KEY_BIT_RATE, bitrateFor(encodedWidth, encodedHeight, fps))
+          setInteger(MediaFormat.KEY_FRAME_RATE, fps)
+          setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, 2)
+        }
+        val bufferEncoder = MediaCodec.createByCodecName(codecInfo.name)
+        encoder = bufferEncoder
+        bufferEncoder.configure(bufferFormat, null, null, MediaCodec.CONFIGURE_FLAG_ENCODE)
+        bufferEncoder.start()
+      }
+      val activeEncoder = requireNotNull(encoder)
       val outputMuxer = MediaMuxer(outputPath, MediaMuxer.OutputFormat.MUXER_OUTPUT_MPEG_4)
       muxer = outputMuxer
-      activeEncoder.start()
 
       val info = MediaCodec.BufferInfo()
       var muxerTrack = -1
@@ -270,38 +303,57 @@ class HardwareExportPipeline {
         throwIfCancelled()
         var madeProgress = false
         if (!inputEnded) {
-          val inputIndex = activeEncoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
-          if (inputIndex >= 0) {
-            if (submittedFrames < totalFrames) {
-              val tick = submittedFrames * TICKS_PER_SECOND / fps
-              val frameJson = ClippsterEditorNativeModule.evaluateDocument(
-                sceneJson,
-                tick,
-                false,
-              )
-              val bitmap = renderEvaluatedFrame(
-                context,
-                frameJson,
-                encodedWidth,
-                encodedHeight,
-                retrievers,
-                compositor,
-              )
-              val inputBuffer = requireNotNull(activeEncoder.getInputBuffer(inputIndex))
-              inputBuffer.clear()
-              bitmapToYuv420(bitmap, inputBuffer, colorFormat)
-              bitmap.recycle()
-              val ptsUs = submittedFrames * 1_000_000L / fps
-              activeEncoder.queueInputBuffer(
-                inputIndex,
-                0,
-                encodedWidth * encodedHeight * 3 / 2,
-                ptsUs,
-                0,
-              )
+          if (submittedFrames < totalFrames) {
+            val tick = submittedFrames * TICKS_PER_SECOND / fps
+            val frameJson = ClippsterEditorNativeModule.evaluateDocument(
+              sceneJson,
+              tick,
+              false,
+            )
+            val bitmap = renderEvaluatedFrame(
+              frameJson,
+              canvasBitmap,
+              frames,
+              compositor,
+              paint,
+            )
+            val ptsUs = submittedFrames * 1_000_000L / fps
+            if (useSurfaceInput) {
+              val surface = requireNotNull(encoderInputSurface)
+              val canvas = surface.lockHardwareCanvas()
+              try {
+                canvas.drawBitmap(bitmap, 0f, 0f, paint)
+              } finally {
+                surface.unlockCanvasAndPost(canvas)
+              }
               submittedFrames++
               onProgress(submittedFrames.toDouble() / totalFrames)
+              madeProgress = true
+              if (submittedFrames >= totalFrames) {
+                activeEncoder.signalEndOfInputStream()
+                inputEnded = true
+              }
             } else {
+              val inputIndex = activeEncoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+              if (inputIndex >= 0) {
+                val inputBuffer = requireNotNull(activeEncoder.getInputBuffer(inputIndex))
+                inputBuffer.clear()
+                bitmapToYuv420(bitmap, inputBuffer, colorFormat)
+                activeEncoder.queueInputBuffer(
+                  inputIndex,
+                  0,
+                  encodedWidth * encodedHeight * 3 / 2,
+                  ptsUs,
+                  0,
+                )
+                submittedFrames++
+                onProgress(submittedFrames.toDouble() / totalFrames)
+                madeProgress = true
+              }
+            }
+          } else if (!useSurfaceInput) {
+            val inputIndex = activeEncoder.dequeueInputBuffer(CODEC_TIMEOUT_US)
+            if (inputIndex >= 0) {
               activeEncoder.queueInputBuffer(
                 inputIndex,
                 0,
@@ -310,8 +362,8 @@ class HardwareExportPipeline {
                 MediaCodec.BUFFER_FLAG_END_OF_STREAM,
               )
               inputEnded = true
+              madeProgress = true
             }
-            madeProgress = true
           }
         }
 
@@ -347,53 +399,41 @@ class HardwareExportPipeline {
       check(muxerStarted) { "Overlay encoder produced no output" }
     } finally {
       compositor.clear()
-      retrievers.values.forEach { runCatching { it.release() } }
+      frames.release()
+      if (!canvasBitmap.isRecycled) canvasBitmap.recycle()
       runCatching { encoder?.stop() }
       runCatching { encoder?.release() }
+      runCatching { encoderInputSurface?.release() }
       runCatching { if (muxerStarted) muxer?.stop() }
       runCatching { muxer?.release() }
     }
   }
 
   private fun renderEvaluatedFrame(
-    context: Context,
     frameJson: String,
-    width: Int,
-    height: Int,
-    retrievers: MutableMap<String, MediaMetadataRetriever>,
+    canvasBitmap: Bitmap,
+    frames: SequentialVideoFrameSource,
     compositor: FrameOverlayCompositor,
+    paint: Paint,
   ): Bitmap {
     val frame = JSONObject(frameJson)
     frame.optString("error").takeIf(String::isNotBlank)?.let(::error)
-    val base = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-    val canvas = Canvas(base)
-    canvas.drawColor(Color.BLACK)
+    canvasBitmap.eraseColor(Color.BLACK)
+    val canvas = Canvas(canvasBitmap)
+    val width = canvasBitmap.width
+    val height = canvasBitmap.height
     val frameCanvas = frame.optJSONObject("canvas")
     val frameWidth = frameCanvas?.optDouble("width", width.toDouble()) ?: width.toDouble()
     val frameHeight = frameCanvas?.optDouble("height", height.toDouble()) ?: height.toDouble()
     val layers = frame.optJSONArray("layers")
-    val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
     if (layers != null) {
       for (index in 0 until layers.length()) {
         val layer = layers.optJSONObject(index) ?: continue
         if (layer.optString("kind") != "video") continue
         val sourceUri = layer.optString("sourceUri")
         if (sourceUri.isBlank()) continue
-        val retriever = retrievers.getOrPut(sourceUri) {
-          MediaMetadataRetriever().apply {
-            val uri = Uri.parse(sourceUri)
-            if (uri.scheme == "content" || uri.scheme == "file") {
-              setDataSource(context, uri)
-            } else {
-              setDataSource(localPath(sourceUri))
-            }
-          }
-        }
-        val sourceUs = ticksToUs(layer.optLong("sourceTick", 0L))
-        val sourceBitmap = retriever.getFrameAtTime(
-          sourceUs,
-          MediaMetadataRetriever.OPTION_CLOSEST,
-        ) ?: continue
+        val sourceBitmap = frames.getFrame(sourceUri, ticksToUs(layer.optLong("sourceTick", 0L)))
+          ?: continue
         canvas.save()
         canvas.scale(
           (width / frameWidth).toFloat(),
@@ -409,12 +449,9 @@ class HardwareExportPipeline {
           frame.optLong("tick", layer.optLong("sourceTick", 0L)),
         )
         canvas.restore()
-        sourceBitmap.recycle()
       }
     }
-    val composed = compositor.compose(base, frameJson)
-    base.recycle()
-    return composed
+    return compositor.compose(canvasBitmap, frameJson, inPlace = true)
   }
 
   private fun bitmapToYuv420(
@@ -468,6 +505,7 @@ class HardwareExportPipeline {
     outputWidth: Int,
     outputHeight: Int,
     fps: Int,
+    includeAudio: Boolean = true,
     onProgress: (Double) -> Unit,
   ): List<String> {
     require(speed.isFinite() && speed > 0.0) { "Video speed must be greater than zero" }
@@ -506,7 +544,8 @@ class HardwareExportPipeline {
       audioExtractor = activeAudioExtractor
       val audioTrack = findTrack(activeAudioExtractor, "audio/")
       val audioFormat = audioTrack.takeIf { it >= 0 }?.let(activeAudioExtractor::getTrackFormat)
-      val copyAudio = audioFormat?.getString(MediaFormat.KEY_MIME) == MediaFormat.MIMETYPE_AUDIO_AAC
+      val copyAudio = includeAudio &&
+        audioFormat?.getString(MediaFormat.KEY_MIME) == MediaFormat.MIMETYPE_AUDIO_AAC
       if (audioFormat != null && !copyAudio) {
         Log.w(TAG, "Skipping non-AAC audio track: ${audioFormat.getString(MediaFormat.KEY_MIME)}")
       }
@@ -755,7 +794,9 @@ class HardwareExportPipeline {
     onProgress: (Double) -> Unit,
   ) {
     val videoFormat = inspectSegment(File(videoPath)).videoFormat
-    val audioFormats = clips.map { clip -> inspectAacFormat(clip.sourceUri) }
+    val audioFormats = clips.map { clip ->
+      if (clip.volume > 0.0) inspectAacFormat(clip.sourceUri) else null
+    }
     val referenceAudioFormat = audioFormats.firstNotNullOfOrNull { it }
     var muxer: MediaMuxer? = null
     var muxerStarted = false
@@ -1028,7 +1069,10 @@ class HardwareExportPipeline {
   private fun sceneRequiresOverlayBurnIn(sceneJson: String): Boolean {
     val root = JSONObject(sceneJson)
     val captions = root.optJSONObject("captionDocument")
-    if (captions?.optBoolean("enabled", false) == true) return true
+    if (
+      captions?.optBoolean("enabled", false) == true &&
+      (captions.optJSONArray("words")?.length() ?: 0) > 0
+    ) return true
     val tracks = root.optJSONArray("tracks") ?: return false
     for (index in 0 until tracks.length()) {
       val track = tracks.optJSONObject(index) ?: continue
@@ -1037,6 +1081,17 @@ class HardwareExportPipeline {
         "text", "overlay" -> if (items != null && items.length() > 0) return true
         "video" -> {
           if ((track.optJSONArray("transitions")?.length() ?: 0) > 0) return true
+          if (items != null && items.length() > 0) {
+            val ordered = (0 until items.length())
+              .mapNotNull(items::optJSONObject)
+              .sortedBy { it.optLong("timelineStart") }
+            if (
+              ordered.first().optLong("timelineStart") > 0L ||
+              ordered.zipWithNext().any { (left, right) ->
+                right.optLong("timelineStart") != left.optLong("timelineEnd")
+              }
+            ) return true
+          }
           if (items != null && (0 until items.length()).any { itemIndex ->
               (items.optJSONObject(itemIndex)?.optJSONArray("effectStack")?.length() ?: 0) > 0
             }
@@ -1047,6 +1102,22 @@ class HardwareExportPipeline {
       }
     }
     return false
+  }
+
+  private fun sceneDurationTicks(sceneJson: String): Long {
+    val tracks = JSONObject(sceneJson).optJSONArray("tracks") ?: error("Scene contains no tracks")
+    var durationTicks = 0L
+    for (trackIndex in 0 until tracks.length()) {
+      val items = tracks.optJSONObject(trackIndex)?.optJSONArray("items") ?: continue
+      for (itemIndex in 0 until items.length()) {
+        durationTicks = max(
+          durationTicks,
+          items.optJSONObject(itemIndex)?.optLong("timelineEnd", 0L) ?: 0L,
+        )
+      }
+    }
+    require(durationTicks > 0L) { "Scene contains no timed content" }
+    return durationTicks
   }
 
   private fun parseScene(sceneJson: String): List<SceneSource> {
@@ -1064,10 +1135,7 @@ class HardwareExportPipeline {
           ?: error("Video item has no assetId")
         val asset = assets.optJSONObject(assetId)
           ?: error("Scene asset not found: $assetId")
-        val sourceUri = asset.optJSONObject("proxy")
-          ?.optString("uri")
-          ?.takeIf(String::isNotBlank)
-          ?: asset.optString("sourceUri").takeIf(String::isNotBlank)
+        val sourceUri = asset.optString("sourceUri").takeIf(String::isNotBlank)
           ?: error("Video asset has no sourceUri")
         val timelineStart = videoItem.requireLong("timelineStart")
         val timelineEnd = videoItem.requireLong("timelineEnd")
@@ -1081,6 +1149,10 @@ class HardwareExportPipeline {
         require(speed.isFinite() && speed > 0.0) {
           "Video item speed must be greater than zero"
         }
+        val volume = videoItem.optDouble("volume", 1.0)
+        require(volume.isFinite() && volume in 0.0..1.0) {
+          "Video item volume must be between zero and one"
+        }
         clips += SceneSource(
           sourceUri,
           timelineStart,
@@ -1088,10 +1160,10 @@ class HardwareExportPipeline {
           sourceStart,
           sourceEnd,
           speed,
+          volume,
         )
       }
     }
-    require(clips.isNotEmpty()) { "Scene contains no video track item" }
     return clips.sortedBy(SceneSource::timelineStart)
   }
 
@@ -1182,6 +1254,7 @@ class HardwareExportPipeline {
     val sourceStart: Long,
     val sourceEnd: Long,
     val speed: Double,
+    val volume: Double,
   )
 
   private data class SegmentFormat(

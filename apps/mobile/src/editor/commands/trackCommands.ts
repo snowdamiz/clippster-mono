@@ -13,6 +13,7 @@ import {
   type TextTrack,
   type TimedTextItem,
   type TransitionKind,
+  type VideoItem,
 } from '../model/schema';
 import { getVideoTrack, reflowVideoTrack, replaceVideoTrack } from '../model/timeline';
 import type { EditorCommand } from './command';
@@ -311,9 +312,44 @@ export class ReplaceMediaAssetCommand implements EditorCommand {
     if (!current) return document;
     if (this.replacement.id !== this.assetId) throw new Error('Replacement must preserve asset ID');
     if (this.replacement.kind !== current.kind) throw new Error('Replacement media kind must match');
+    const requiredSourceEnd = document.tracks.reduce(
+      (maximum, track) =>
+        Math.max(
+          maximum,
+          ...track.items.flatMap((item) =>
+            'assetId' in item && item.assetId === this.assetId && 'sourceEnd' in item
+              ? [item.sourceEnd]
+              : [],
+          ),
+        ),
+      0,
+    );
+    if (this.replacement.durationTicks < requiredSourceEnd) {
+      throw new Error('Replacement media is shorter than the source ranges used on the timeline');
+    }
     return {
       ...document,
       assets: { ...document.assets, [this.assetId]: this.replacement },
+      templateInstance: document.templateInstance
+        ? {
+            ...document.templateInstance,
+            sourceLineage: document.templateInstance.sourceLineage.map((source) =>
+              source.assetId === this.assetId
+                ? { ...source, sourceFingerprint: this.replacement.sourceFingerprint }
+                : source,
+            ),
+            bindings: document.templateInstance.bindings.map((binding) =>
+              binding.assetId === this.assetId
+                ? {
+                    ...binding,
+                    sourceFingerprint: this.replacement.sourceFingerprint,
+                    reasonCodes: ['creator-selected'],
+                    locked: true,
+                  }
+                : binding,
+            ),
+          }
+        : undefined,
       updatedAt: this.updatedAt,
     };
   }
@@ -321,7 +357,141 @@ export class ReplaceMediaAssetCommand implements EditorCommand {
   invert(before: MobileEditProjectV3): EditorCommand {
     const asset = before.assets[this.assetId];
     if (!asset) throw new Error(`Cannot restore missing asset ${this.assetId}`);
-    return new RestoreAssetCommand(asset, this.updatedAt);
+    return new RestoreTemplateAwareAssetCommand(
+      asset,
+      before.templateInstance,
+      this.updatedAt,
+    );
+  }
+}
+
+export class ReplaceTemplateSlotMediaCommand implements EditorCommand {
+  readonly type = 'ReplaceTemplateSlotMedia';
+
+  constructor(
+    readonly itemId: string,
+    readonly slotId: string,
+    readonly replacement: MediaAssetRef,
+    private readonly updatedAt: number,
+  ) {}
+
+  apply(document: MobileEditProjectV3): MobileEditProjectV3 {
+    let originalItem: VideoItem | OverlayItem | AudioItem | undefined;
+    for (const track of document.tracks) {
+      if (track.kind === 'text') continue;
+      const candidate = track.items.find((item) => item.id === this.itemId);
+      if (candidate) {
+        originalItem = candidate;
+        break;
+      }
+    }
+    if (!originalItem) {
+      throw new Error(`Template slot item ${this.itemId} is unavailable`);
+    }
+    const originalAsset = document.assets[originalItem.assetId];
+    if (!originalAsset) throw new Error(`Template slot source ${originalItem.assetId} is unavailable`);
+    if (this.replacement.kind !== originalAsset.kind) {
+      throw new Error('Replacement media kind must match the template slot');
+    }
+    if (this.replacement.durationTicks < originalItem.sourceEnd) {
+      throw new Error('Replacement media is shorter than the source range used by this slot');
+    }
+    const tracks = document.tracks.map((track) => {
+      if (track.kind === 'text') return track;
+      const replaceAsset = <T extends VideoItem | OverlayItem | AudioItem>(item: T): T =>
+        item.id === this.itemId ? { ...item, assetId: this.replacement.id } : item;
+      if (track.kind === 'video') return { ...track, items: track.items.map(replaceAsset) };
+      if (track.kind === 'overlay') return { ...track, items: track.items.map(replaceAsset) };
+      return { ...track, items: track.items.map(replaceAsset) };
+    });
+    const bindings = document.templateInstance?.bindings.map((binding) =>
+      binding.slotId === this.slotId
+        ? {
+            ...binding,
+            assetId: this.replacement.id,
+            sourceFingerprint: this.replacement.sourceFingerprint,
+            reasonCodes: ['creator-selected'],
+            locked: true,
+          }
+        : binding,
+    );
+    const usedFingerprints = new Set(bindings?.map((binding) => binding.sourceFingerprint));
+    return {
+      ...document,
+      assets: { ...document.assets, [this.replacement.id]: this.replacement },
+      tracks,
+      templateInstance:
+        document.templateInstance && bindings
+          ? {
+              ...document.templateInstance,
+              bindings,
+              sourceLineage: [
+                ...document.templateInstance.sourceLineage.filter(
+                  (source) =>
+                    usedFingerprints.has(source.sourceFingerprint) &&
+                    source.sourceFingerprint !== this.replacement.sourceFingerprint,
+                ),
+                {
+                  assetId: this.replacement.id,
+                  sourceFingerprint: this.replacement.sourceFingerprint,
+                },
+              ].filter(
+                (source, index, lineage) =>
+                  lineage.findIndex(
+                    (candidate) => candidate.sourceFingerprint === source.sourceFingerprint,
+                  ) === index,
+              ),
+            }
+          : document.templateInstance,
+      updatedAt: this.updatedAt,
+    };
+  }
+
+  invert(before: MobileEditProjectV3): EditorCommand {
+    return new RestoreDocumentSnapshotCommand(before);
+  }
+}
+
+class RestoreDocumentSnapshotCommand implements EditorCommand {
+  readonly type = 'RestoreDocumentSnapshot';
+
+  constructor(private readonly snapshot: MobileEditProjectV3) {}
+
+  apply(): MobileEditProjectV3 {
+    return structuredClone(this.snapshot);
+  }
+
+  invert(before: MobileEditProjectV3): EditorCommand {
+    return new RestoreDocumentSnapshotCommand(before);
+  }
+}
+
+class RestoreTemplateAwareAssetCommand implements EditorCommand {
+  readonly type = 'RestoreTemplateAwareAsset';
+
+  constructor(
+    private readonly asset: MediaAssetRef,
+    private readonly templateInstance: MobileEditProjectV3['templateInstance'],
+    private readonly updatedAt: number,
+  ) {}
+
+  apply(document: MobileEditProjectV3): MobileEditProjectV3 {
+    return {
+      ...document,
+      assets: { ...document.assets, [this.asset.id]: this.asset },
+      templateInstance: this.templateInstance,
+      updatedAt: this.updatedAt,
+    };
+  }
+
+  invert(before: MobileEditProjectV3): EditorCommand {
+    const current = before.assets[this.asset.id];
+    if (!current) throw new Error(`Cannot restore missing asset ${this.asset.id}`);
+    return new RestoreTemplateAwareAssetCommand(
+      current,
+      before.templateInstance,
+      this.updatedAt,
+    );
   }
 }
 

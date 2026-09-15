@@ -238,6 +238,12 @@ export async function writeSceneFrameSequenceToDisk(
 		return { pattern, frameCount: count };
 	} finally {
 		renderer?.dispose();
+		renderer = null;
+		// Release the full-resolution backing store before FFmpeg starts. Keeping
+		// a 1080p/4K OffscreenCanvas alive through encode can push WebView2 over
+		// its process memory limit immediately after an otherwise successful export.
+		encodeCanvas.width = 1;
+		encodeCanvas.height = 1;
 		videoCache.endExportSession();
 	}
 }

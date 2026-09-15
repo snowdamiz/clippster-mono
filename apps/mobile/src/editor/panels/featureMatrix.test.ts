@@ -109,7 +109,7 @@ function clipFixture() {
 describe('editor feature matrix', () => {
   it('exposes every expected contextual tool when capabilities are unlocked', () => {
     const expected: Record<string, EditorToolId[]> = {
-      global: ['edit', 'text', 'captions', 'audio', 'overlay', 'effects', 'filters', 'adjust', 'add'],
+      global: ['edit', 'templates', 'text', 'captions', 'audio', 'overlay', 'effects', 'filters', 'adjust', 'add'],
       video: ['split', 'speed', 'volume', 'crop', 'reframe', 'rotate', 'replace', 'duplicate', 'delete'],
       text: ['edit', 'style', 'font', 'color', 'animation', 'duration', 'duplicate', 'delete'],
       caption: ['edit', 'style', 'font', 'color', 'animation', 'duration'],

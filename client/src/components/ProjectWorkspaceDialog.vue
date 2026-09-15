@@ -200,6 +200,16 @@
                     <Clapperboard :size="14" />
                     <span>{{ isCreatingProject ? 'Opening editor...' : 'Edit full project in editor' }}</span>
                   </button>
+                  <button
+                    type="button"
+                    class="workspace-dialog__full-project-btn"
+                    :disabled="isCreatingProject"
+                    title="Create a personalized editable Instant Edit from the full video"
+                    @click="onInstantEditFullProject"
+                  >
+                    <Sparkles :size="14" />
+                    <span>Instant Edit full video</span>
+                  </button>
                 </div>
                 <MediaPanel
                   v-show="rightPanelTab === 'clips'"
@@ -237,6 +247,7 @@
                   @seekVideo="onSeekVideo"
                   @watermarkSettingsChanged="onWatermarkSettingsChanged"
                   @editClip="onEditClip"
+                  @instantEdit="onInstantEditClip"
                   @addClip="onAddClip"
                   @publishNow="onPublishNow"
                   @buildDialogOpen="onBuildDialogOpen"
@@ -423,7 +434,7 @@
     getVideoEditorProjectsForRawVideo,
     type VideoEditorProject,
   } from '@/services/database';
-  import { X, Film, Smartphone, Clapperboard } from 'lucide-vue-next';
+  import { X, Film, Smartphone, Clapperboard, Sparkles } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import type {
     ActiveVodPresetConfig,
@@ -559,6 +570,7 @@
   const showExistingProjectDialog = ref(false);
   const existingProjectForClip = ref<VideoEditorProject | null>(null);
   const isFullProjectEditorOpen = ref(false);
+  const pendingInstantEdit = ref(false);
   const pendingFullProjectEdit = ref<{
     projectId: string;
     projectName: string;
@@ -4901,8 +4913,17 @@
   }
 
   async function onEditFullProject() {
+    await beginFullProjectEdit(false);
+  }
+
+  async function onInstantEditFullProject() {
+    await beginFullProjectEdit(true);
+  }
+
+  async function beginFullProjectEdit(instantEdit: boolean) {
     const project = props.project;
     if (!project) return;
+    pendingInstantEdit.value = instantEdit;
 
     try {
       const rawVideos = await resolveRawVideosForProject(project.id, project.parent_id);
@@ -4916,8 +4937,12 @@
         return;
       }
 
-      const existingProjects = await getVideoEditorProjectsForRawVideo(primary.id);
+      // Instant Edit always starts a fresh editable project (architecture invariant).
+      const existingProjects = instantEdit
+        ? []
+        : await getVideoEditorProjectsForRawVideo(primary.id);
       if (existingProjects.length > 0) {
+        pendingInstantEdit.value = instantEdit;
         isFullProjectEditorOpen.value = true;
         existingProjectForClip.value = existingProjects[0];
         pendingFullProjectEdit.value = {
@@ -4929,7 +4954,7 @@
         return;
       }
 
-      await openFullProjectInNewEditor(project.id, project.name, project.parent_id);
+      await openFullProjectInNewEditor(project.id, project.name, project.parent_id, instantEdit);
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to open full project in editor:', error);
       showError('Failed to Open Editor', 'Could not open the full project in the video editor.');
@@ -4940,6 +4965,7 @@
     projectId: string,
     projectName: string,
     parentProjectId?: string | null,
+    instantEdit = false,
   ) {
     isCreatingProject.value = true;
 
@@ -4955,7 +4981,10 @@
         libraryProjectId: projectId,
       });
 
-      router.push({ path: '/editor', query: { projectId: result.projectId } });
+      router.push({
+        path: '/editor',
+        query: { projectId: result.projectId, ...(instantEdit ? { instantEdit: '1' } : {}) },
+      });
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to create full-project editor:', error);
       showError('Failed to Open Editor', 'Could not create video editor project. Please try again.');
@@ -4964,64 +4993,68 @@
     }
   }
 
-  // Function to open the clip editor dialog
-  async function onEditClip(clipId: string) {
-    isFullProjectEditorOpen.value = false;
-    pendingFullProjectEdit.value = null;
-
-    // Find the clip in our local data
+  function resolveClipEditorInput(clipId: string) {
     const clip = timelineClips.value.find((c: any) => c.id === clipId);
     if (!clip) {
       console.warn('[ProjectWorkspaceDialog] Clip not found for editing:', clipId);
-      return;
+      return null;
     }
-
-    // Get the clip's start and end times from segments
     let startTime = 0;
     let endTime = duration.value;
-
     if (clip.segments && clip.segments.length > 0) {
       startTime = Math.min(...clip.segments.map((s: any) => s.start_time));
       endTime = Math.max(...clip.segments.map((s: any) => s.end_time));
     }
+    const segments: { start_time: number; end_time: number }[] =
+      clip.segments && clip.segments.length > 0
+        ? clip.segments.map((s: any) => ({
+            start_time: s.start_time,
+            end_time: s.end_time,
+          }))
+        : [{ start_time: startTime, end_time: endTime }];
+    return { clipTitle: clip.title || 'Untitled Clip', startTime, endTime, segments };
+  }
 
-    // Build segments array
-    let segments: { start_time: number; end_time: number }[];
-    if (clip.segments && clip.segments.length > 0) {
-      segments = clip.segments.map((s: any) => ({
-        start_time: s.start_time,
-        end_time: s.end_time,
-      }));
-    } else {
-      segments = [{ start_time: startTime, end_time: endTime }];
-    }
+  // Function to open the clip editor dialog
+  async function onEditClip(clipId: string) {
+    await beginClipEdit(clipId, false);
+  }
 
-    const clipTitle = clip.title || 'Untitled Clip';
+  async function onInstantEditClip(clipId: string) {
+    await beginClipEdit(clipId, true);
+  }
 
-    // Check if there are existing video editor projects for this clip
-    try {
-      const existingProjects = await getVideoEditorProjectsForClip(clipId);
+  async function beginClipEdit(clipId: string, instantEdit: boolean) {
+    pendingInstantEdit.value = instantEdit;
+    isFullProjectEditorOpen.value = false;
+    pendingFullProjectEdit.value = null;
+    const input = resolveClipEditorInput(clipId);
+    if (!input) return;
+    const { clipTitle, startTime, endTime, segments } = input;
+    // Instant Edit always creates a new project. Regular Edit may reopen an existing one.
+    if (!instantEdit) {
+      try {
+        const existingProjects = await getVideoEditorProjectsForClip(clipId);
 
-      if (existingProjects.length > 0) {
-        // Show the existing project dialog
-        existingProjectForClip.value = existingProjects[0]; // Use most recently updated
-        pendingClipToEdit.value = {
-          clipId,
-          startTime,
-          endTime,
-          title: clipTitle,
-          segments,
-        };
-        showExistingProjectDialog.value = true;
-        return;
+        if (existingProjects.length > 0) {
+          pendingInstantEdit.value = instantEdit;
+          existingProjectForClip.value = existingProjects[0];
+          pendingClipToEdit.value = {
+            clipId,
+            startTime,
+            endTime,
+            title: clipTitle,
+            segments,
+          };
+          showExistingProjectDialog.value = true;
+          return;
+        }
+      } catch (error) {
+        console.warn('[ProjectWorkspaceDialog] Failed to check for existing projects:', error);
       }
-    } catch (error) {
-      console.warn('[ProjectWorkspaceDialog] Failed to check for existing projects:', error);
-      // Continue to create a new project
     }
 
-    // No existing project - create a new video editor project
-    await openClipInNewProject(clipId, clipTitle, startTime, endTime, segments);
+    await openClipInNewProject(clipId, clipTitle, startTime, endTime, segments, instantEdit);
   }
 
   // Open clip in a new video editor project
@@ -5030,7 +5063,8 @@
     clipTitle: string,
     startTime: number,
     endTime: number,
-    segments: { start_time: number; end_time: number }[]
+    segments: { start_time: number; end_time: number }[],
+    instantEdit = false,
   ) {
     isCreatingProject.value = true;
 
@@ -5064,7 +5098,10 @@
 
       // Navigate to the new OpenCut editor
       // Don't close the dialog - the route change will handle cleanup
-      router.push({ path: '/editor', query: { projectId: result.projectId } });
+      router.push({
+        path: '/editor',
+        query: { projectId: result.projectId, ...(instantEdit ? { instantEdit: '1' } : {}) },
+      });
     } catch (error) {
       console.error('[ProjectWorkspaceDialog] Failed to create video editor project:', error);
       showError('Failed to Open Editor', 'Could not create video editor project. Please try again.');
@@ -5084,7 +5121,14 @@
       pendingFullProjectEdit.value = null;
       showExistingProjectDialog.value = false;
       existingProjectForClip.value = null;
-      router.push({ path: '/editor', query: { projectId: project.id } });
+      router.push({
+        path: '/editor',
+        query: {
+          projectId: project.id,
+          ...(pendingInstantEdit.value ? { instantEdit: '1' } : {}),
+        },
+      });
+      pendingInstantEdit.value = false;
       return;
     }
 
@@ -5115,7 +5159,14 @@
 
     // Navigate to the OpenCut editor
     // Don't close the dialog - the route change will handle cleanup
-    router.push({ path: '/editor', query: { projectId: project.id } });
+    router.push({
+      path: '/editor',
+      query: {
+        projectId: project.id,
+        ...(pendingInstantEdit.value ? { instantEdit: '1' } : {}),
+      },
+    });
+    pendingInstantEdit.value = false;
   }
 
   // Handle existing project dialog - open existing
@@ -5127,6 +5178,7 @@
 
   // Handle existing project dialog - create new
   async function onCreateNewProject() {
+    const instantEdit = pendingInstantEdit.value;
     if (isFullProjectEditorOpen.value) {
       const pending = pendingFullProjectEdit.value;
       showExistingProjectDialog.value = false;
@@ -5138,10 +5190,12 @@
           pending.projectId,
           pending.projectName,
           props.project?.parent_id ?? null,
+          instantEdit,
         );
       }
 
       pendingFullProjectEdit.value = null;
+      pendingInstantEdit.value = false;
       return;
     }
 
@@ -5151,9 +5205,17 @@
     showExistingProjectDialog.value = false;
     existingProjectForClip.value = null;
 
-    await openClipInNewProject(pending.clipId, pending.title, pending.startTime, pending.endTime, pending.segments);
+    await openClipInNewProject(
+      pending.clipId,
+      pending.title,
+      pending.startTime,
+      pending.endTime,
+      pending.segments,
+      instantEdit,
+    );
 
     pendingClipToEdit.value = null;
+    pendingInstantEdit.value = false;
   }
 
   // Handle existing project dialog - cancel
@@ -5163,6 +5225,7 @@
     pendingClipToEdit.value = null;
     pendingFullProjectEdit.value = null;
     isFullProjectEditorOpen.value = false;
+    pendingInstantEdit.value = false;
   }
 
   // Pause video when the clip build settings dialog opens

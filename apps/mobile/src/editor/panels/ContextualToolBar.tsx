@@ -10,6 +10,7 @@ import {
 
 const TOOL_ICONS: Record<EditorToolId, keyof typeof Ionicons.glyphMap> = {
   edit: 'create-outline',
+  templates: 'flash-outline',
   text: 'text-outline',
   captions: 'chatbubble-ellipses-outline',
   audio: 'musical-notes-outline',

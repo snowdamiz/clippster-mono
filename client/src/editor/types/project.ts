@@ -1,4 +1,5 @@
 import type { ManualSourceFramingPayload } from "@/types";
+import type { TemplateInstanceProvenance } from "@clippster/template-schema";
 import type { TScene } from "./timeline";
 import type { ImageDocument } from "./image-document";
 
@@ -83,6 +84,8 @@ export interface TProjectSettings {
 	canvasSourceFraming?: ManualSourceFramingPayload | null;
 	/** Pixel-engine document bag (Phase 5 architecture; compositor remains primary in v1). */
 	imageDocument?: ImageDocument | null;
+	/** Immutable definition lineage and stable slot bindings for an Instant Edit instance. */
+	templateInstance?: TemplateInstanceProvenance | null;
 }
 
 export interface TTimelineViewState {

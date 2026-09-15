@@ -3,6 +3,7 @@ import { createVideoPlayer, type VideoThumbnail } from 'expo-video';
 import { getExpoImage } from '@/lib/expoImage';
 import { withThumbnailDecodeSlot } from '@/lib/mediaDecodeGate';
 import { extractThumbnail } from '@/services/ffmpeg';
+import { getNativeEditorModule } from '@clippster/editor-native';
 
 export const CLIP_THUMB_DIR = `${FileSystem.documentDirectory}thumbnails/`;
 
@@ -46,6 +47,16 @@ export async function generateVideoThumbnailFile(
 ): Promise<string | null> {
   return withThumbnailDecodeSlot(async () => {
     await ensureThumbDir();
+
+    try {
+      const native = getNativeEditorModule();
+      if (native) {
+        await native.generateThumbnail(videoPath, timestampSeconds, destPath);
+        if ((await FileSystem.getInfoAsync(destPath)).exists) return destPath;
+      }
+    } catch {
+      // Fall through to FFmpeg and expo-video compatibility paths.
+    }
 
     try {
       await extractThumbnail(videoPath, destPath, timestampSeconds);

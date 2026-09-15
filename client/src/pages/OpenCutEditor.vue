@@ -114,7 +114,7 @@ function handleBack() {
 
 	<!-- Editor -->
 	<div v-else class="opencut-editor h-screen w-screen overflow-hidden">
-		<EditorLayout />
+		<EditorLayout :initial-tab="route.query.instantEdit === '1' ? 'templates' : 'media'" />
 	</div>
 </template>
 

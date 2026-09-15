@@ -394,6 +394,17 @@
                                 <span>Edit Clip</span>
                               </button>
 
+                              <button
+                                class="clips-tab-dropdown-item w-full px-3 py-2 flex items-center gap-3 text-sm transition-colors rounded-md mx-0"
+                                @click.stop="
+                                  emit('instantEdit', clip.id);
+                                  closeActionMenu();
+                                "
+                              >
+                                <Sparkles class="h-4 w-4 text-blue-400" />
+                                <span>Instant Edit</span>
+                              </button>
+
                               <!-- Adjust Clip (only in project context) -->
                               <button
                                 v-if="props.showAdjustClipButton"
@@ -1336,6 +1347,7 @@
     scrollToTimeline: [];
     refreshClips: [];
     editClip: [clipId: string];
+    instantEdit: [clipId: string];
     addClip: [];
     adjustClip: [clipId: string];
     publishNow: [clip: ClipWithVersion];

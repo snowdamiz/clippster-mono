@@ -31,6 +31,7 @@ import UploadMediaView from "./assets/UploadMediaView.vue";
 import TranscriptView from "./assets/TranscriptView.vue";
 import ImageSourcesView from "./assets/ImageSourcesView.vue";
 import TemplatesView from "./assets/TemplatesView.vue";
+import VideoTemplatesView from "./assets/VideoTemplatesView.vue";
 import BrandKitView from "./assets/BrandKitView.vue";
 import AIToolsView from "./assets/AIToolsView.vue";
 import AIBrollView from "./assets/AIBrollView.vue";
@@ -453,8 +454,9 @@ const sortOrder = ref<"asc" | "desc">("asc");
       </Dialog>
     </div>
 
-		<!-- Templates view (image mode only) -->
-		<TemplatesView v-else-if="activeTab === 'templates'" />
+		<!-- Image presets and editable video Instant Edit definitions are separate engines. -->
+		<TemplatesView v-else-if="activeTab === 'templates' && isImageMode" />
+		<VideoTemplatesView v-else-if="activeTab === 'templates'" />
 
 		<!-- Brand Kit view (image mode only) -->
 		<BrandKitView v-else-if="activeTab === 'brandkit'" />

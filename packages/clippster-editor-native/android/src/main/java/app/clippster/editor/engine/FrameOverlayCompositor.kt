@@ -8,8 +8,10 @@ import org.json.JSONObject
 class FrameOverlayCompositor(context: Context) {
   private val bitmapCache = OverlayBitmapCache(context)
 
-  fun compose(baseBitmap: Bitmap, frameJson: String): Bitmap {
-    val output = baseBitmap.copy(Bitmap.Config.ARGB_8888, true)
+  fun compose(baseBitmap: Bitmap, frameJson: String, inPlace: Boolean = false): Bitmap {
+    val output =
+      if (inPlace && baseBitmap.isMutable) baseBitmap
+      else baseBitmap.copy(Bitmap.Config.ARGB_8888, true)
     val frame = runCatching { JSONObject(frameJson) }.getOrNull() ?: return output
     OverlayFrameRenderer.draw(Canvas(output), frame, bitmapCache)
     return output

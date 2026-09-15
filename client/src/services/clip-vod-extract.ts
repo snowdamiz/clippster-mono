@@ -195,6 +195,7 @@ export interface ExtractUnbuiltClipSegmentParams {
 	clipStartTime: number;
 	clipEndTime: number;
 	outputPath: string;
+	clipSegments?: Array<{ start_time: number; end_time: number }>;
 	/** Project workspace player URL — decoded path wins (same VOD the user is watching). */
 	videoSrc?: string | null;
 	/** When clip.project_id is a child/segment project with no raw_videos, pass parent project id. */
@@ -208,7 +209,15 @@ export interface ExtractUnbuiltClipSegmentParams {
 export async function extractUnbuiltClipSegmentToPath(
 	params: ExtractUnbuiltClipSegmentParams,
 ): Promise<void> {
-	const { clipId, clipStartTime, clipEndTime, outputPath, videoSrc, rawVideoParentProjectId } = params;
+	const {
+		clipId,
+		clipStartTime,
+		clipEndTime,
+		clipSegments,
+		outputPath,
+		videoSrc,
+		rawVideoParentProjectId,
+	} = params;
 
 	const clip = await getClip(clipId);
 	if (!clip) {
@@ -235,10 +244,30 @@ export async function extractUnbuiltClipSegmentToPath(
 		clipId,
 	});
 
-	await invoke("extract_clip", {
-		sourcePath: vodPath,
-		outputPath,
-		startTime: clipStartTime,
-		endTime: clipEndTime,
-	});
+	const segments = (clipSegments ?? [])
+		.filter(
+			(segment) =>
+				Number.isFinite(segment.start_time) &&
+				Number.isFinite(segment.end_time) &&
+				segment.end_time > segment.start_time,
+		)
+		.sort((left, right) => left.start_time - right.start_time);
+	if (segments.length > 1) {
+		await invoke("extract_clip_segments", {
+			sourcePath: vodPath,
+			outputPath,
+			segments: segments.map((segment) => ({
+				startTime: segment.start_time,
+				endTime: segment.end_time,
+			})),
+		});
+	} else {
+		const segment = segments[0];
+		await invoke("extract_clip", {
+			sourcePath: vodPath,
+			outputPath,
+			startTime: segment?.start_time ?? clipStartTime,
+			endTime: segment?.end_time ?? clipEndTime,
+		});
+	}
 }
