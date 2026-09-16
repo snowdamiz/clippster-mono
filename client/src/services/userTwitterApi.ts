@@ -107,7 +107,7 @@ export async function startUserTwitterOAuth(
       throw new Error('Post For Me response did not include connection_id');
     }
 
-    await invoke('start_post_for_me_oauth', { authUrl: connectResponse.data.auth_url });
+    await invoke('start_social_oauth', { authUrl: connectResponse.data.auth_url });
 
     let cancelled = false;
 
