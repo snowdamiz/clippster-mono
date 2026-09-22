@@ -25,9 +25,10 @@ export function MenuRow({
   return (
     <Pressable
       onPress={onPress}
-      className="flex-row items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3.5 active:bg-white/5"
+      accessibilityRole="button"
+      className="min-h-[60px] flex-row items-center gap-3 border-b border-border py-[13px] active:bg-white/5"
     >
-      <View className="h-9 w-9 items-center justify-center rounded-lg bg-accent/10">
+      <View className="h-[38px] w-[38px] items-center justify-center rounded-xl bg-surfaceMuted">
         <Ionicons
           name={icon}
           size={18}
@@ -36,11 +37,11 @@ export function MenuRow({
       </View>
       <View className="flex-1 min-w-0">
         <Text
-          className={`text-base font-medium ${destructive ? 'text-destructive' : 'text-foreground'}`}
+          className={`text-sm font-semibold ${destructive ? 'text-destructive' : 'text-foreground'}`}
         >
           {title}
         </Text>
-        {subtitle ? <Text className="text-sm text-muted">{subtitle}</Text> : null}
+        {subtitle ? <Text className="text-xs leading-5 text-muted">{subtitle}</Text> : null}
       </View>
       {value ? <Text className="text-sm text-muted">{value}</Text> : null}
       {trailing ?? (

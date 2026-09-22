@@ -15,6 +15,7 @@ export interface AuthUser {
   beta_activated?: boolean;
   has_selected_plan?: boolean;
   tokend_enabled?: boolean;
+  campaigns_enabled?: boolean;
   subscription?: SubscriptionStatus;
   credits?: {
     hours_remaining?: number | string;

@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { AppHeader } from '@/components/AppHeader';
+import { CampaignAccessGate } from '@/components/campaign/CampaignAccessGate';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { DISTRIBUTION_PLATFORMS } from '@/config/distributionPlatforms';
@@ -20,6 +21,14 @@ import { tokens } from '@/theme/tokens';
 import { appAlert } from '@/lib/appAlert';
 
 export default function CampaignSubmitScreen() {
+  return (
+    <CampaignAccessGate>
+      <CampaignSubmitContent />
+    </CampaignAccessGate>
+  );
+}
+
+function CampaignSubmitContent() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const campaignId = Number(id);
   const [builds, setBuilds] = useState<ClipBuildRow[]>([]);

@@ -24,6 +24,7 @@ export interface BottomSheetAction {
 }
 
 export interface BottomSheetProps {
+  inline?: boolean;
   visible: boolean;
   onClose: () => void;
   variant?: BottomSheetVariant;
@@ -54,7 +55,7 @@ function defaultsForVariant(variant: BottomSheetVariant) {
   switch (variant) {
     case 'dialog':
       return {
-        showAccentBar: true,
+        showAccentBar: false,
         showHandle: false,
         closeMode: 'icon' as const,
         animationType: 'fade' as const,
@@ -81,6 +82,7 @@ function defaultsForVariant(variant: BottomSheetVariant) {
 }
 
 export function BottomSheet({
+  inline = false,
   visible,
   onClose,
   variant = 'sheet',
@@ -206,7 +208,7 @@ export function BottomSheet({
         >
           {footer}
           {(primaryAction || secondaryAction) && (
-            <View className={cn('gap-2', secondaryAction && primaryAction ? 'flex-row' : '')}>
+            <View className={'gap-2'}>
               {secondaryAction ? (
                 <Button
                   title={secondaryAction.title}
@@ -239,13 +241,15 @@ export function BottomSheet({
     </>
   );
 
+  if (inline) return <View className="flex-1">{body}</View>;
+
   const panel = (
     <Pressable
       className={cn(
         'overflow-hidden border-border bg-surface',
         isDialog
-          ? cn('w-full max-w-md rounded-xl border', heightClass)
-          : cn('w-full rounded-t-3xl border-t bg-background', heightClass),
+          ? cn('w-full max-w-md rounded-2xl border', heightClass)
+          : cn('w-full rounded-t-[24px]', heightClass),
       )}
       onPress={(e) => e.stopPropagation()}
       testID={testID}

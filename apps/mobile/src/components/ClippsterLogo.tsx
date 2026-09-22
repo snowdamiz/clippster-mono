@@ -50,7 +50,7 @@ function ClippsterLogoWordmark({ height = 20 }: { height?: number }) {
 
 export function ClippsterLogo({ iconSize = 32, wordmarkHeight = 20 }: ClippsterLogoProps) {
   return (
-    <View className="flex-row items-center justify-center gap-3">
+    <View style={{ flexDirection: 'row', alignItems: 'center', justifyContent: 'center', gap: 12 }}>
       <ClippsterLogoIcon size={iconSize} />
       <ClippsterLogoWordmark height={wordmarkHeight} />
     </View>

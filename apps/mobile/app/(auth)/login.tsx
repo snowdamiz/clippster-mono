@@ -9,6 +9,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Separator } from '@/components/ui/separator';
 import { useAuth } from '@/context/AuthContext';
+import { tokens } from '@/theme/tokens';
 
 export default function LoginScreen() {
   const { loginWithEmail, authenticateWithGoogle, loading, error, clearError } = useAuth();
@@ -28,20 +29,25 @@ export default function LoginScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
+    <SafeAreaView style={{ flex: 1, backgroundColor: tokens.colors.background }}>
       <KeyboardAvoidingView
-        className="flex-1"
+        style={{ flex: 1 }}
         behavior={Platform.OS === 'ios' ? 'padding' : undefined}
       >
-        <ScrollView contentContainerClassName="flex-grow justify-center px-6 py-8">
-          <View className="mb-8 items-center">
-            <ClippsterLogo />
-            <Text className="mt-2 text-muted">Sign in to your account</Text>
+        <ScrollView keyboardShouldPersistTaps="handled" showsVerticalScrollIndicator={false} contentContainerStyle={{ flexGrow: 1, justifyContent: 'center', alignItems: 'center', paddingHorizontal: 28, paddingVertical: 40 }}>
+          <View style={{ width: '100%', maxWidth: 420 }}>
+          <View style={{ marginBottom: 32, alignItems: 'center' }}>
+            <View style={{ marginBottom: 28 }}><ClippsterLogo iconSize={40} wordmarkHeight={28} /></View>
+            <Text style={{ color: tokens.colors.accent, fontSize: 10, fontWeight: '700', letterSpacing: 2, marginBottom: 12 }}>YOUR CREATIVE WORKSPACE</Text>
+            <Text style={{ color: tokens.colors.foreground, fontSize: 32, lineHeight: 38, fontWeight: '700', letterSpacing: -1, textAlign: 'center' }}>Your next great clip{'\n'}starts here.</Text>
+            <Text className="mt-2 text-muted" style={{ marginTop: 8, color: tokens.colors.muted, fontSize: 15 }}>
+              Sign in to your account
+            </Text>
           </View>
 
-          <Card>
-            <View className="gap-4">
-              <View className="gap-2">
+          <Card style={{ padding: 0, backgroundColor: 'transparent' }}>
+            <View style={{ gap: 20 }}>
+              <View style={{ gap: 9 }}>
                 <Label>Email</Label>
                 <Input
                   autoCapitalize="none"
@@ -53,7 +59,7 @@ export default function LoginScreen() {
                 />
               </View>
 
-              <View className="gap-2">
+              <View style={{ gap: 9 }}>
                 <Label>Password</Label>
                 <Input
                   secureTextEntry
@@ -61,12 +67,12 @@ export default function LoginScreen() {
                   onChangeText={setPassword}
                   placeholder="••••••••"
                 />
-                <Link href={"/(auth)/forgot-password" as any} className="text-sm text-primary">
+                <Link href={"/(auth)/forgot-password" as any} style={{ alignSelf: 'flex-end', paddingVertical: 6, color: tokens.colors.accent, fontSize: 13 }}>
                   Forgot password?
                 </Link>
               </View>
 
-              {error ? <Text className="text-sm text-red-400">{error}</Text> : null}
+              {error ? <Text className="text-sm text-red-400" style={{ color: tokens.colors.destructive, fontSize: 14 }}>{error}</Text> : null}
 
               <Button
                 title="Sign in"
@@ -75,7 +81,11 @@ export default function LoginScreen() {
                 disabled={loading || !email || !password}
               />
 
-              <Separator />
+              <View style={{ flexDirection: 'row', alignItems: 'center', gap: 14 }}>
+                <View style={{ flex: 1 }}><Separator /></View>
+                <Text style={{ color: tokens.colors.muted, fontSize: 12 }}>or continue with</Text>
+                <View style={{ flex: 1 }}><Separator /></View>
+              </View>
 
               <Button
                 title="Continue with Google"
@@ -94,12 +104,13 @@ export default function LoginScreen() {
             </View>
           </Card>
 
-          <Text className="mt-6 text-center text-sm text-muted">
-            No account?{' '}
-            <Link href="/(auth)/register" className="text-primary">
-              Create one
+          <Text className="mt-6 text-center text-sm text-muted" style={{ marginTop: 24, textAlign: 'center', color: tokens.colors.muted, fontSize: 14 }}>
+            New to Clippster?{' '}
+            <Link href="/(auth)/register" className="text-primary" style={{ color: tokens.colors.accent }}>
+              Create an account
             </Link>
           </Text>
+          </View>
         </ScrollView>
       </KeyboardAvoidingView>
     </SafeAreaView>

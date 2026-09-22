@@ -15,6 +15,8 @@ import { ScreenHeader } from '@/components/ScreenHeader';
 import { DownloadProgressCard } from '@/components/DownloadProgressCard';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { Button } from '@/components/ui/button';
+import { Tabs } from '@/components/ui/tabs';
+import { MenuRow } from '@/components/navigation/MenuRow';
 import { Input } from '@/components/ui/input';
 import { useAccount } from '@/context/AccountContext';
 import type { Project } from '@clippster/shared-types';
@@ -59,7 +61,8 @@ function formatDuration(seconds: number | null | undefined): string {
 export default function ProjectsScreen() {
   const { requireSubscription } = useAccount();
   const { width: windowWidth } = useWindowDimensions();
-  const cardWidth = (windowWidth - 32 - 12) / 2;
+  const cardWidth = (windowWidth - 40 - 12) / 2;
+  const [libraryTab, setLibraryTab] = useState('projects');
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
@@ -220,60 +223,39 @@ export default function ProjectsScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <ScreenHeader showLogo />
-
-      <DownloadProgressCard
-        jobs={jobs}
-        onOpenProject={(projectId) => router.push(`/project/${projectId}`)}
-        onRetry={(jobId) => void retryDownload(jobId)}
-        onCancel={(jobId) => void cancelDownload(jobId)}
-        onRemove={(jobId) => void removeDownload(jobId)}
-      />
-
-      <View className="px-4 pt-4">
-        <Pressable
-          onPress={() => setShowCreate(true)}
-          className="flex-row items-center gap-4 rounded-xl border border-border bg-surface p-4 active:bg-white/5"
-        >
-          <View className="h-14 w-14 items-center justify-center rounded-full bg-accent">
-            <Ionicons name="add" size={32} color={tokens.colors.primaryForeground} />
-          </View>
-          <View className="flex-1">
-            <Text className="text-lg font-bold text-foreground">New project</Text>
-            <Text className="text-sm text-muted">Download a VOD or import from your device</Text>
-          </View>
-          <Ionicons name="chevron-forward" size={20} color={tokens.colors.muted} />
-        </Pressable>
-      </View>
-
-      {loading ? (
-        <View className="flex-1 items-center justify-center">
-          <ActivityIndicator color={tokens.colors.accent} />
+      <ScreenHeader title="Home" />
+      <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 24, gap: 17 }}>
+        <View>
+          <Text className="mb-2 text-[11px] font-semibold tracking-widest text-muted">YOUR WORKSPACE</Text>
+          <Text className="mb-2 text-[28px] font-bold tracking-tight text-foreground">Make your next move.</Text>
+          <Text className="text-sm leading-5 text-muted">Pick up an edit or start with a new video.</Text>
         </View>
-      ) : (
-        <ScrollView contentContainerClassName="gap-6 px-4 py-4">
-          <ProjectCategory
-            title="Downloads"
-            emptyMessage="Videos downloaded from a URL will appear here."
-            items={downloads}
-            cardWidth={cardWidth}
-            onOpen={(project) => router.push(`/project/${project.id}`)}
-            onMenu={openProjectMenu}
-          />
-          <ProjectCategory
-            title="Projects"
-            emptyMessage="Uploaded videos and editor projects will appear here."
-            items={editorProjects}
-            cardWidth={cardWidth}
-            onOpen={(project) =>
-              project.hasEditorDraft
-                ? router.push({ pathname: '/edit/[kind]/[id]', params: { kind: 'project', id: project.id } })
-                : router.push(`/project/${project.id}`)
-            }
-            onMenu={openProjectMenu}
-          />
-        </ScrollView>
-      )}
+        <Button title="＋ New project" variant="accent" onPress={() => setShowCreate(true)} />
+        <DownloadProgressCard jobs={jobs} onOpenProject={(id) => router.push(`/project/${id}`)} onRetry={(id) => void retryDownload(id)} onCancel={(id) => void cancelDownload(id)} onRemove={(id) => void removeDownload(id)} />
+        {editorProjects.some(project => project.hasEditorDraft) ? (
+          <View className="gap-3">
+            <Text className="text-[17px] font-semibold text-foreground">Continue editing</Text>
+            {editorProjects.filter(project => project.hasEditorDraft).slice(0, 1).map(project => (
+              <Pressable key={project.id} accessibilityRole="button" onPress={() => router.push({ pathname: '/edit/[kind]/[id]', params: { kind: 'project', id: project.id } })} className="min-h-[72px] flex-row items-center gap-3">
+                <View className="h-[58px] w-[72px] items-center justify-center overflow-hidden rounded-[10px] bg-surfaceMuted">
+                  {project.thumbnailUri ? <Image source={{ uri: project.thumbnailUri }} style={{ width: 72, height: 58 }} /> : <Ionicons name="film-outline" size={24} color={tokens.colors.muted} />}
+                </View>
+                <View className="flex-1 gap-1"><Text numberOfLines={1} className="text-sm font-semibold text-foreground">{project.name}</Text><Text className="text-xs text-muted">Draft · Saved on this device</Text></View>
+                <Ionicons name="chevron-forward" size={20} color={tokens.colors.muted} />
+              </Pressable>
+            ))}
+          </View>
+        ) : null}
+        <Text className="text-[17px] font-semibold text-foreground">Your library</Text>
+        <Tabs items={[{ key: 'projects', label: 'Projects' }, { key: 'downloads', label: 'Downloads' }]} value={libraryTab} onChange={setLibraryTab} />
+        {loading ? <ActivityIndicator color={tokens.colors.accent} /> : (
+          <ProjectCategory title="" emptyMessage={libraryTab === 'projects' ? 'Your projects will appear here. Start with a new video.' : 'Videos downloaded from a URL will appear here.'}
+            items={libraryTab === 'projects' ? editorProjects : downloads} cardWidth={cardWidth}
+            onOpen={(project) => project.hasEditorDraft ? router.push({ pathname: '/edit/[kind]/[id]', params: { kind: 'project', id: project.id } }) : router.push(`/project/${project.id}`)}
+            onMenu={openProjectMenu} />
+        )}
+        <MenuRow icon="file-tray-outline" title="Shared clips" subtitle="Clips from your organizations" onPress={() => router.push('/(tabs)/inbox')} />
+      </ScrollView>
 
       <Modal
         visible={menuProject != null}
@@ -388,7 +370,7 @@ function ProjectCategory({
 }) {
   return (
     <View>
-      <Text className="mb-3 text-base font-bold text-foreground">{title}</Text>
+      {title ? <Text className="mb-3 text-base font-bold text-foreground">{title}</Text> : null}
       {items.length === 0 ? (
         <View className="items-center rounded-xl border border-dashed border-border px-5 py-7">
           <Text className="text-center text-sm text-muted">{emptyMessage}</Text>
@@ -399,7 +381,7 @@ function ProjectCategory({
             <Pressable
               key={item.id}
               style={{ width: cardWidth }}
-              className="overflow-hidden rounded-xl border border-border bg-surface"
+              className="overflow-hidden rounded-2xl bg-surface"
               onPress={() => onOpen(item)}
             >
               <View

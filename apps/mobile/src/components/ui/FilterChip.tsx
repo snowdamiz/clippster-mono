@@ -8,21 +8,20 @@ interface FilterChipProps {
   className?: string;
 }
 
-/** Selection chip matching Home/Accounts accent styling. */
 export function FilterChip({ label, selected, onPress, className }: FilterChipProps) {
   return (
     <Pressable
       onPress={onPress}
       className={cn(
-        'rounded-lg border px-3 py-2',
-        selected ? 'border-accent bg-accent/10' : 'border-border bg-surface',
+        'min-h-11 justify-center rounded-xl px-3 py-2',
+        selected ? 'bg-surfaceMuted' : 'bg-transparent',
         className,
       )}
     >
       <Text
         className={cn(
           'text-center text-sm font-medium',
-          selected ? 'text-accent' : 'text-foreground',
+          selected ? 'text-foreground' : 'text-muted',
         )}
       >
         {label}

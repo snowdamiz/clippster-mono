@@ -7,13 +7,19 @@ import {
   Image,
   Pressable,
   RefreshControl,
+  StyleSheet,
   Text,
   View,
 } from 'react-native';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { ExportPreview } from '@/components/export/ExportPreview';
+import { MenuRow } from '@/components/navigation/MenuRow';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { PostSheet } from '@/components/schedule/PostSheet';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
+import { Tabs } from '@/components/ui/tabs';
+import { PostsSheet } from '@/components/me/PostsSheet';
 import { Input } from '@/components/ui/input';
 import { appAlert } from '@/lib/appAlert';
 import { toLocalImageUri } from '@/lib/formatTime';
@@ -56,9 +62,11 @@ function sanitizeExportFileName(clipName: string, buildId: string): string {
 }
 
 export default function ClipsScreen() {
+  const [showPosts, setShowPosts] = useState(false);
   const [items, setItems] = useState<BuiltClipItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
+  const [selected, setSelected] = useState<BuiltClipItem | null>(null);
   const [search, setSearch] = useState('');
   const [postBuildId, setPostBuildId] = useState<string | null>(null);
   const [savingBuildId, setSavingBuildId] = useState<string | null>(null);
@@ -165,75 +173,18 @@ export default function ClipsScreen() {
   }
 
   function renderItem({ item }: { item: BuiltClipItem }) {
-    const ratios = parseAspectRatios(item.build.aspect_ratios);
-    const ratioLabel = ratios.length > 0 ? ratios.join(', ') : null;
     const thumbUri = toLocalImageUri(item.build.thumbnail_path);
-    const saving = savingBuildId === item.build.id;
-
+    const metadata = [formatDuration(item.build.duration), formatFileSize(item.build.file_size), ...parseAspectRatios(item.build.aspect_ratios)].join(' · ');
     return (
-      <Pressable
-        onPress={() => openProject(item)}
-        className="mb-3 overflow-hidden rounded-xl border border-border bg-surface"
-      >
-        <View className="aspect-video w-full bg-surfaceMuted">
-          {thumbUri ? (
-            <Image source={{ uri: thumbUri }} className="h-full w-full" resizeMode="cover" />
-          ) : (
-            <View className="h-full w-full items-center justify-center">
-              <Ionicons name="film-outline" size={32} color={tokens.colors.muted} />
-            </View>
-          )}
+      <Pressable accessibilityRole="button" accessibilityLabel={`Open ${item.clipName}`} onPress={() => setSelected(item)} style={styles.row}>
+        <View style={styles.thumbnail}>
+          {thumbUri ? <Image source={{ uri: thumbUri }} style={styles.image} resizeMode="cover" /> : <Ionicons name="film-outline" size={24} color={tokens.colors.muted} />}
         </View>
-        <View className="gap-1 p-3">
-          <Text className="font-medium text-foreground" numberOfLines={1}>
-            {item.clipName}
-          </Text>
-          {item.projectName ? (
-            <Text className="text-xs text-muted" numberOfLines={1}>
-              {item.projectName}
-            </Text>
-          ) : null}
-          <View className="mt-1 flex-row flex-wrap gap-2">
-            <Text className="text-xs text-muted">{formatDuration(item.build.duration)}</Text>
-            <Text className="text-xs text-muted">·</Text>
-            <Text className="text-xs text-muted">{formatFileSize(item.build.file_size)}</Text>
-            {ratioLabel ? (
-              <>
-                <Text className="text-xs text-muted">·</Text>
-                <Text className="text-xs text-muted">{ratioLabel}</Text>
-              </>
-            ) : null}
-          </View>
-          <View className="mt-2 flex-row flex-wrap gap-2">
-            {item.projectId ? (
-              <Pressable
-                onPress={() => openProject(item)}
-                className="rounded-lg border border-border px-3 py-1.5"
-              >
-                <Text className="text-xs text-foreground">Open project</Text>
-              </Pressable>
-            ) : null}
-            <Pressable
-              onPress={() => void saveCopy(item)}
-              disabled={saving}
-              className="rounded-lg border border-border px-3 py-1.5"
-            >
-              <Text className="text-xs text-foreground">{saving ? 'Saving…' : 'Save copy'}</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setPostBuildId(item.build.id)}
-              className="rounded-lg bg-accent px-3 py-1.5"
-            >
-              <Text className="text-xs font-semibold text-white">Post</Text>
-            </Pressable>
-            <Pressable
-              onPress={() => confirmDelete(item)}
-              className="rounded-lg border border-destructive/40 px-3 py-1.5"
-            >
-              <Text className="text-xs text-destructive">Delete</Text>
-            </Pressable>
-          </View>
+        <View style={styles.details}>
+          <Text style={styles.title} numberOfLines={2}>{item.clipName}</Text>
+          <Text style={styles.metadata}>{metadata}</Text>
         </View>
+        <Ionicons name="chevron-forward" size={20} color={tokens.colors.muted} />
       </Pressable>
     );
   }
@@ -248,38 +199,37 @@ export default function ClipsScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <ScreenHeader title="Exports" subtitle="Built clips ready to post" />
-      <FlatList
+      <ScreenHeader title="Exports" />
+      <View className="gap-[17px] px-5 pt-2 pb-3">
+        {!showPosts ? <Input value={search} onChangeText={setSearch} placeholder="Search exports" autoCapitalize="none" autoCorrect={false} /> : null}
+        <Tabs items={[{ key: 'exports', label: 'Exports' }, { key: 'posts', label: 'Posts' }]} value={showPosts ? 'posts' : 'exports'} onChange={key => setShowPosts(key === 'posts')} />
+      </View>
+      {showPosts ? <PostsSheet embedded visible onClose={() => setShowPosts(false)} /> : <FlatList
         data={filtered}
         keyExtractor={(item) => item.build.id}
         renderItem={renderItem}
-        contentContainerClassName="px-4 py-4 pb-10"
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
-        ListHeaderComponent={
-          <View className="mb-4 gap-3">
-            <Input
-              value={search}
-              onChangeText={setSearch}
-              placeholder="Search clips…"
-              autoCapitalize="none"
-              autoCorrect={false}
-            />
-            <Text className="text-sm text-muted">
-              {filtered.length} clip{filtered.length === 1 ? '' : 's'}
-            </Text>
-          </View>
-        }
+        contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 8, paddingBottom: 32 }}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor={tokens.colors.accent} />}
         ListEmptyComponent={
           <Card className="items-center gap-3 py-8">
             <Ionicons name="film-outline" size={40} color={tokens.colors.muted} />
-            <Text className="text-center text-base font-medium text-foreground">No built clips yet</Text>
+            <Text className="text-center text-base font-medium text-foreground">{search.trim() ? 'No matching exports' : 'Your clips, ready to share'}</Text>
             <Text className="text-center text-sm text-muted">
-              Export clips from a project and they will appear here — just like on desktop.
+              {search.trim() ? 'Try another clip or project name.' : 'Export your first clip from a project. Find every finished video here.'}
             </Text>
             <Button title="Go to video library" variant="outline" onPress={() => router.push('/(tabs)/projects')} />
           </Card>
         }
-      />
+      />}
+      <BottomSheet visible={selected != null} onClose={() => setSelected(null)} title={selected?.clipName ?? 'Clip options'} subtitle={selected ? [formatDuration(selected.build.duration), formatFileSize(selected.build.file_size), ...parseAspectRatios(selected.build.aspect_ratios)].join(' · ') : undefined}>
+        {selected ? <View style={{ gap: 8 }}>
+          <ExportPreview path={selected.build.file_path} />
+          <MenuRow icon="arrow-up-circle-outline" title="Post clip" subtitle="Share to your connected accounts" onPress={() => { setSelected(null); setPostBuildId(selected.build.id); }} />
+          {selected.projectId ? <MenuRow icon="folder-open-outline" title="Open project" onPress={() => { setSelected(null); openProject(selected); }} /> : null}
+          <MenuRow icon="download-outline" title={savingBuildId === selected.build.id ? 'Saving…' : 'Save a copy'} subtitle="Choose a folder on your device" onPress={() => { if (savingBuildId !== selected.build.id) void saveCopy(selected); }} />
+          <MenuRow icon="trash-outline" title="Delete export" destructive onPress={() => { setSelected(null); confirmDelete(selected); }} />
+        </View> : null}
+      </BottomSheet>
       <PostSheet
         visible={postBuildId != null}
         buildId={postBuildId}
@@ -288,3 +238,13 @@ export default function ClipsScreen() {
     </View>
   );
 }
+
+
+const styles = StyleSheet.create({
+  row: { flexDirection: 'row', alignItems: 'center', paddingVertical: 13, borderBottomWidth: StyleSheet.hairlineWidth, borderBottomColor: tokens.colors.border, gap: 12 },
+  thumbnail: { width: 72, height: 58, borderRadius: 10, overflow: 'hidden', backgroundColor: tokens.colors.surfaceMuted, alignItems: 'center', justifyContent: 'center' },
+  image: { width: '100%', height: '100%' },
+  details: { flex: 1, gap: 4 },
+  title: { color: tokens.colors.foreground, fontSize: 14, lineHeight: 19, fontWeight: '600' },
+  metadata: { color: tokens.colors.muted, fontSize: 12, lineHeight: 18 },
+});

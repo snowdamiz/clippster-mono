@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { CampaignCard } from '@/components/campaign/CampaignCard';
+import { CampaignAccessGate } from '@/components/campaign/CampaignAccessGate';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/EmptyState';
 import { FilterChip } from '@/components/ui/FilterChip';
@@ -19,6 +20,14 @@ import { tokens } from '@/theme/tokens';
 type ViewMode = 'browse' | 'mine';
 
 export default function CampaignsScreen() {
+  return (
+    <CampaignAccessGate>
+      <CampaignsContent />
+    </CampaignAccessGate>
+  );
+}
+
+function CampaignsContent() {
   const [mode, setMode] = useState<ViewMode>('browse');
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [earnings, setEarnings] = useState<EarningsSummary | null>(null);

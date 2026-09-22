@@ -335,7 +335,6 @@ export function MobileEditorShell({
           selectionKind={state.session.selection?.kind ?? null}
           visibleCapabilityIds={visibleCapabilities}
           onToolPress={handleTool}
-          onClearSelection={() => controller.updateSession({ selection: null })}
         />
       </SafeAreaView>
     </View>

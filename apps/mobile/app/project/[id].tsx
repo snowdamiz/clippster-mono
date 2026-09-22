@@ -342,34 +342,11 @@ export default function ProjectDetailScreen() {
             ) : clips.length > 0 ? (
               <ScrollView
                 className="flex-1"
-                contentContainerClassName="gap-3 px-4 py-4 pb-10"
+                contentContainerClassName="gap-[17px] px-5 py-3 pb-10"
                 showsVerticalScrollIndicator={false}
               >
-                <View className="mb-1 flex-row items-center justify-between">
-                  <View className="flex-row items-center gap-2">
-                    <View className="h-1.5 w-1.5 rounded-full bg-accent" />
-                    <Text className="text-[11px] font-semibold uppercase tracking-wider text-muted">
-                      Detected
-                    </Text>
-                    <Text className="text-[10px] text-muted">{clips.length}</Text>
-                  </View>
-                  <View className="flex-row items-center gap-2">
-                    <Pressable
-                      onPress={() => void createClip()}
-                      className="rounded-md border border-border bg-surface px-2.5 py-1"
-                    >
-                      <Text className="text-[11px] font-semibold text-foreground">Add</Text>
-                    </Pressable>
-                    <Pressable
-                      onPress={() => void openDetectSheet()}
-                      disabled={aiBusy}
-                      className="flex-row items-center gap-1 rounded-md bg-primary px-2.5 py-1"
-                    >
-                      <Ionicons name="sparkles" size={11} color={tokens.colors.primaryForeground} />
-                      <Text className="text-[11px] font-semibold text-primary-foreground">Detect</Text>
-                    </Pressable>
-                  </View>
-                </View>
+                <Text className="text-[17px] font-semibold text-foreground">Clips · {clips.length}</Text>
+                <Button title="Find clips with AI" variant="accent" onPress={() => void openDetectSheet()} disabled={aiBusy} />
                 {clips.map((clip, index) => (
                   <ClipListCard
                     key={clip.id}
@@ -380,6 +357,7 @@ export default function ProjectDetailScreen() {
                     onDelete={() => handleDeleteClip(clip)}
                   />
                 ))}
+                <Button title="＋ Add clip manually" variant="outline" onPress={() => void createClip()} />
               </ScrollView>
             ) : (
               <View className="flex-1 items-center justify-center px-6">
@@ -392,11 +370,11 @@ export default function ProjectDetailScreen() {
                 </Text>
                 <View className="mt-6 gap-2">
                   <Button
-                    title="Detect Clips"
+                    title="Find clips with AI" variant="accent"
                     onPress={() => void openDetectSheet()}
                     disabled={aiBusy}
                   />
-                  <Button title="Add Clip" variant="outline" onPress={() => void createClip()} />
+                  <Button title="＋ Add clip manually" variant="outline" onPress={() => void createClip()} />
                 </View>
               </View>
             )}

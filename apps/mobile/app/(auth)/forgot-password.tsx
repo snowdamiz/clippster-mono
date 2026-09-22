@@ -1,7 +1,7 @@
 import { Link, router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Text, View } from 'react-native';
+import { AuthScreen } from '@/components/auth/AuthScreen';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -33,20 +33,15 @@ export default function ForgotPasswordScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView contentContainerClassName="flex-grow justify-center px-6 py-8">
-          <View className="mb-8 items-center">
-            <Text className="text-3xl font-bold text-foreground">Reset password</Text>
-            <Text className="mt-2 text-center text-muted">
-              Enter your account email and we will send a reset link.
+    <AuthScreen title="Reset password">
+          <View className="gap-2">
+            <Text className="text-[28px] font-bold tracking-tight text-foreground">Forgot your{'\n'}password?</Text>
+            <Text className="text-sm leading-5 text-muted">
+              We’ll email you a link to reset it.
             </Text>
           </View>
 
-          <Card>
+          <Card style={{ backgroundColor: 'transparent', padding: 0 }}>
             <View className="gap-4">
               <View className="gap-2">
                 <Label>Email</Label>
@@ -64,7 +59,7 @@ export default function ForgotPasswordScreen() {
               {message ? <Text className="text-sm text-green-400">{message}</Text> : null}
 
               <Button
-                title={loading ? 'Sending…' : 'Send reset link'}
+                title={loading ? 'Sending…' : 'Send reset link'} variant="accent"
                 onPress={() => void handleSubmit()}
                 disabled={loading || !email.trim()}
               />
@@ -78,8 +73,6 @@ export default function ForgotPasswordScreen() {
               Sign in
             </Link>
           </Text>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+    </AuthScreen>
   );
 }

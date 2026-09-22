@@ -20,11 +20,12 @@ const FILTERS: { id: StatusFilter; label: string }[] = [
 ];
 
 interface PostsSheetProps {
+  embedded?: boolean;
   visible: boolean;
   onClose: () => void;
 }
 
-export function PostsSheet({ visible, onClose }: PostsSheetProps) {
+export function PostsSheet({ visible, onClose, embedded = false }: PostsSheetProps) {
   const [posts, setPosts] = useState<ScheduledPost[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -120,12 +121,15 @@ export function PostsSheet({ visible, onClose }: PostsSheetProps) {
   return (
     <>
       <BottomSheet
+        inline={embedded}
+        showHandle={!embedded}
+        closeMode={embedded ? 'none' : 'icon'}
         visible={visible}
         onClose={onClose}
         variant="sheet"
-        title="Scheduled posts"
-        subtitle="View and manage upcoming posts"
-        headerIcon="calendar-outline"
+        title={embedded ? undefined : 'Posts'}
+        subtitle={embedded ? undefined : 'Scheduled, published, and failed'}
+        headerIcon={embedded ? undefined : 'calendar-outline'}
         scrollable
         maxHeightClassName="max-h-[92%]"
         headerAccessory={

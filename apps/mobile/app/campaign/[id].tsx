@@ -10,6 +10,7 @@ import {
   View,
 } from 'react-native';
 import { AppHeader } from '@/components/AppHeader';
+import { CampaignAccessGate } from '@/components/campaign/CampaignAccessGate';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -18,6 +19,14 @@ import { tokens } from '@/theme/tokens';
 import { appAlert } from '@/lib/appAlert';
 
 export default function CampaignDetailScreen() {
+  return (
+    <CampaignAccessGate>
+      <CampaignDetailContent />
+    </CampaignAccessGate>
+  );
+}
+
+function CampaignDetailContent() {
   const { id } = useLocalSearchParams<{ id: string }>();
   const campaignId = Number(id);
   const [campaign, setCampaign] = useState<Campaign | null>(null);

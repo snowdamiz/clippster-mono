@@ -3,7 +3,7 @@ import { router, useLocalSearchParams } from 'expo-router';
 import { useCallback, useEffect, useState } from 'react';
 import { Image, Linking, Pressable, ScrollView, Text, View } from 'react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
-import { CreditsRow } from '@/components/account/AccountSettingsPanel';
+import { BottomSheet } from '@/components/ui/BottomSheet';
 import { AccountsSheet } from '@/components/me/AccountsSheet';
 import { BillingSheet } from '@/components/me/BillingSheet';
 import { BrandingSheet } from '@/components/me/BrandingSheet';
@@ -17,6 +17,7 @@ import { PublicProfileLinkRow } from '@/components/profile/PublicProfileLinkRow'
 import { Button } from '@/components/ui/button';
 import { useAccount } from '@/context/AccountContext';
 import { useAuth } from '@/context/AuthContext';
+import { useFeatureFlags } from '@/context/FeatureFlagsContext';
 import { confirmAccountDeletion } from '@/lib/confirmAccountDeletion';
 import { getAppVersion } from '@/lib/config';
 import { appAlert } from '@/lib/appAlert';
@@ -27,6 +28,7 @@ const PRIVACY_URL = 'https://clippster.app/privacy';
 const TERMS_URL = 'https://clippster.app/terms';
 
 type MeSheet =
+  | 'settings'
   | 'clipper'
   | 'security'
   | 'preferences'
@@ -40,6 +42,7 @@ type MeSheet =
 export default function ProfileScreen() {
   const { sheet: sheetParam } = useLocalSearchParams<{ sheet?: string }>();
   const { user, authProvider, logout } = useAuth();
+  const { canAccessCampaigns } = useFeatureFlags();
   const { tierLabel, creditsLabel } = useAccount();
   const [deleting, setDeleting] = useState(false);
   const [clipperLoading, setClipperLoading] = useState(true);
@@ -107,13 +110,13 @@ export default function ProfileScreen() {
     <View className="flex-1 bg-background">
       <ScreenHeader title="Me" />
 
-      <ScrollView contentContainerClassName="gap-4 px-4 py-4 pb-10">
+      <ScrollView contentContainerClassName="gap-4 px-5 py-3 pb-10">
         <Pressable
           onPress={() => setOpenSheet('clipper')}
-          className="overflow-hidden rounded-xl border border-border bg-surface"
+          className="overflow-hidden"
         >
-          <View className="h-[3px] bg-accent" />
-          <View className="flex-row items-center gap-4 p-4">
+          
+          <View className="flex-row items-center gap-3 py-2">
             {avatarUrl ? (
               <Image source={{ uri: avatarUrl }} className="h-14 w-14 rounded-full" />
             ) : (
@@ -132,109 +135,28 @@ export default function ProfileScreen() {
           </View>
         </Pressable>
 
-        <CreditsRow onManage={() => setOpenSheet('billing')} />
-
-        <View className="gap-2">
-          <Text className="text-xs font-semibold uppercase tracking-wide text-muted">Account</Text>
-          <MenuRow
-            icon="shield-checkmark-outline"
-            title="Email & password"
-            subtitle="Change login email or password"
-            onPress={() => setOpenSheet('security')}
-          />
-          <MenuRow
-            icon="options-outline"
-            title="Preferences"
-            subtitle="Notifications and time format (synced)"
-            onPress={() => setOpenSheet('preferences')}
-          />
-          <MenuRow
-            icon="color-palette-outline"
-            title="Creator branding"
-            subtitle="Intros, outros, watermarks — synced with desktop"
-            onPress={() => setOpenSheet('branding')}
-          />
-        </View>
-
-        <View className="gap-2">
-          <Text className="text-xs font-semibold uppercase tracking-wide text-muted">
-            Subscription
-          </Text>
-          <MenuRow
-            icon="card-outline"
-            title="Plans & billing"
-            subtitle={`${tierLabel} · ${creditsLabel} credits`}
-            onPress={() => setOpenSheet('billing')}
-          />
-        </View>
-
-        <View className="gap-2">
-          <Text className="text-xs font-semibold uppercase tracking-wide text-muted">
-            Distribution
-          </Text>
-          <MenuRow
-            icon="link-outline"
-            title="Connected accounts"
-            subtitle="Link Instagram, TikTok, YouTube, X via Post For Me"
-            onPress={() => setOpenSheet('accounts')}
-          />
-          <MenuRow
-            icon="calendar-outline"
-            title="Scheduled posts"
-            subtitle="View and manage upcoming posts"
-            onPress={() => setOpenSheet('posts')}
-          />
-        </View>
-
-        <View className="gap-2">
-          <Text className="text-xs font-semibold uppercase tracking-wide text-muted">Workspace</Text>
-          <MenuRow
-            icon="cloud-outline"
-            title="Cloud & sync"
-            subtitle="Storage, sync settings, shared inbox"
-            onPress={() => setOpenSheet('cloud')}
-          />
-          <MenuRow
-            icon="briefcase-outline"
-            title="Clipper profile"
-            subtitle="Portfolio, campaigns, and public profile"
-            onPress={() => setOpenSheet('clipper')}
-          />
-        </View>
-
-        <View className="gap-2">
-          <Text className="text-xs font-semibold uppercase tracking-wide text-muted">About</Text>
-          <MenuRow
-            icon="information-circle-outline"
-            title="App version"
-            value={getAppVersion()}
-            onPress={() => {}}
-            trailing={<View />}
-          />
-          <MenuRow
-            icon="document-text-outline"
-            title="Privacy Policy"
-            onPress={() => void Linking.openURL(PRIVACY_URL)}
-          />
-          <MenuRow
-            icon="document-outline"
-            title="Terms of Service"
-            onPress={() => void Linking.openURL(TERMS_URL)}
-          />
-          <Text className="px-1 text-xs text-muted">Signed in via {authProvider ?? 'email'}</Text>
-        </View>
-
-        <View className="gap-2 pt-2">
-          <Button title="Sign out" variant="outline" onPress={handleLogout} />
-          <Button
-            title={deleting ? 'Deleting…' : 'Delete account'}
-            variant="outline"
-            onPress={handleDeleteAccount}
-            disabled={deleting}
-          />
+        <MenuRow icon="card-outline" title="Your plan & AI credits" subtitle={`${tierLabel} · ${creditsLabel} AI credits`} onPress={() => setOpenSheet('billing')} />
+        <View>
+          <MenuRow icon="person-outline" title="Clipper profile" subtitle="Portfolio and public presence" onPress={() => setOpenSheet('clipper')} />
+          <MenuRow icon="link-outline" title="Connected accounts" subtitle="Personal and organization channels" onPress={() => setOpenSheet('accounts')} />
+          <MenuRow icon="calendar-outline" title="Posts" subtitle="Scheduled, published, and failed" onPress={() => setOpenSheet('posts')} />
+          <MenuRow icon="color-palette-outline" title="Creator branding" subtitle="Profiles, intros, outros, watermarks" onPress={() => setOpenSheet('branding')} />
+          <MenuRow icon="cloud-outline" title="Cloud & shared work" subtitle="Sync conflicts and shared clips" onPress={() => setOpenSheet('cloud')} />
+          {canAccessCampaigns ? <MenuRow icon="trophy-outline" title="Campaigns" subtitle="Opportunities and submissions" onPress={() => router.push('/(tabs)/campaigns')} /> : null}
+          <MenuRow icon="settings-outline" title="Settings" subtitle="Security, preferences, and about" onPress={() => setOpenSheet('settings')} />
         </View>
       </ScrollView>
 
+      <BottomSheet visible={openSheet === 'settings'} onClose={closeSheet} title="Settings">
+        <MenuRow icon="shield-checkmark-outline" title="Email & password" onPress={() => setOpenSheet('security')} />
+        <MenuRow icon="options-outline" title="Preferences" onPress={() => setOpenSheet('preferences')} />
+        <MenuRow icon="information-circle-outline" title="App version" value={getAppVersion()} onPress={() => {}} trailing={<View />} />
+        <MenuRow icon="document-text-outline" title="Privacy Policy" onPress={() => void Linking.openURL(PRIVACY_URL)} />
+        <MenuRow icon="document-outline" title="Terms of Service" onPress={() => void Linking.openURL(TERMS_URL)} />
+        <Text className="text-xs text-muted">Signed in via {authProvider ?? 'email'}</Text>
+        <Button title="Sign out" variant="outline" onPress={handleLogout} />
+        <Button title={deleting ? 'Deleting…' : 'Delete account'} variant="destructive" disabled={deleting} onPress={handleDeleteAccount} />
+      </BottomSheet>
       <ClipperProfileSheet
         visible={openSheet === 'clipper'}
         onClose={closeSheet}
