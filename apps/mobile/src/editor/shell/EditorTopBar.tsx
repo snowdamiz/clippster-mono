@@ -23,8 +23,8 @@ export function EditorTopBar({
   onExport: () => void;
 }) {
   return (
-    <View className="h-12 flex-row items-center gap-1 border-b border-border px-2 pr-14">
-      <IconButton icon="close" label="Close editor" onPress={onClose} />
+    <View className="min-h-[60px] flex-row items-center gap-1 px-3">
+      <IconButton icon="chevron-back" label="Close editor" onPress={onClose} />
       <Text className="flex-1 px-1 text-sm font-semibold text-foreground" numberOfLines={1}>
         {title}
       </Text>
@@ -35,9 +35,9 @@ export function EditorTopBar({
         accessibilityRole="button"
         accessibilityLabel="Export"
         onPress={onExport}
-        className="min-h-10 justify-center rounded-lg bg-accent px-3 active:opacity-70"
+        className="min-h-11 justify-center rounded-xl px-3 active:opacity-70"
       >
-        <Text className="text-sm font-semibold text-white">Export</Text>
+        <Text className="text-sm font-semibold text-accent">Export</Text>
       </Pressable>
     </View>
   );

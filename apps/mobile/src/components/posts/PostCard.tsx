@@ -1,80 +1,55 @@
-import type { ScheduledPost, ScheduledPostStatus } from '@clippster/api-client';
-import { getSocialPlatformLabel } from '@clippster/api-client';
-import { Ionicons } from '@expo/vector-icons';
-import { Image, Pressable, Text, View } from 'react-native';
-import { DISTRIBUTION_PLATFORMS } from '@/config/distributionPlatforms';
-import { tokens } from '@/theme/tokens';
-
-const STATUS_COLORS: Record<ScheduledPostStatus, string> = {
-  pending: tokens.colors.muted,
-  scheduled: tokens.colors.primary,
-  publishing: tokens.colors.warning,
-  published: tokens.colors.success,
-  failed: tokens.colors.destructive,
-  canceled: tokens.colors.muted,
-};
+import type { ScheduledPost } from '@clippster/api-client'
+import { getSocialPlatformLabel } from '@clippster/api-client'
+import { Ionicons } from '@expo/vector-icons'
+import { Image, Pressable, Text, View } from 'react-native'
+import { tokens } from '@/theme/tokens'
+import { PostStatusBadge } from './PostStatusBadge'
 
 interface PostCardProps {
-  post: ScheduledPost;
-  onPress: () => void;
+  post: ScheduledPost
+  onPress: () => void
 }
 
 export function PostCard({ post, onPress }: PostCardProps) {
-  const platformConfig = DISTRIBUTION_PLATFORMS.find((p) => p.id === post.platform);
-  const statusColor = STATUS_COLORS[post.status] ?? tokens.colors.muted;
-  const scheduledLabel = post.posted_at ?? post.scheduled_at;
-
+  const date = post.posted_at ?? post.scheduled_at
+  const platform = getSocialPlatformLabel(post.platform)
   return (
-    <Pressable
-      onPress={onPress}
-      className="mb-3 flex-row overflow-hidden rounded-xl border border-border bg-surface"
-    >
-      {post.thumbnail_url ? (
-        <Image source={{ uri: post.thumbnail_url }} className="h-24 w-20 bg-surfaceMuted" />
-      ) : (
-        <View className="h-24 w-20 items-center justify-center bg-surfaceMuted">
-          <Ionicons name="videocam-outline" size={28} color={tokens.colors.muted} />
+    <Pressable accessibilityRole="button" onPress={onPress} className="gap-3 rounded-[18px] bg-surface p-4">
+      <PostStatusBadge status={post.status} />
+      <View className="flex-row items-center gap-3">
+        <View className="h-[58px] w-[72px] items-center justify-center overflow-hidden rounded-[10px] bg-surfaceMuted">
+          {post.thumbnail_url ? (
+            <Image source={{ uri: post.thumbnail_url }} className="h-full w-full" resizeMode="cover" />
+          ) : (
+            <Ionicons name="videocam-outline" size={22} color={tokens.colors.muted} />
+          )}
         </View>
-      )}
-
-      <View className="flex-1 px-3 py-2">
-        <View className="flex-row items-center gap-2">
-          {platformConfig ? (
-            <Ionicons name={platformConfig.icon} size={16} color={tokens.colors.foreground} />
-          ) : null}
-          <Text className="text-sm font-semibold text-foreground">
-            {getSocialPlatformLabel(post.platform)}
+        <View className="min-w-0 flex-1 gap-1">
+          <Text className="text-sm font-semibold text-foreground" numberOfLines={2}>
+            {post.caption || `${platform} post`}
           </Text>
-          <View className="rounded-full px-2 py-0.5" style={{ backgroundColor: `${statusColor}22` }}>
-            <Text className="text-xs capitalize" style={{ color: statusColor }}>
-              {post.status}
+          <Text className="text-xs text-muted">
+            {platform}
+            {post.social_account?.username ? ` · @${post.social_account.username}` : ''}
+          </Text>
+          {date ? (
+            <Text className="text-xs text-muted">
+              {new Date(date).toLocaleString(undefined, {
+                month: 'short',
+                day: 'numeric',
+                hour: 'numeric',
+                minute: '2-digit'
+              })}
             </Text>
-          </View>
+          ) : null}
+          {post.status === 'failed' && post.error_message ? (
+            <Text className="text-xs text-destructive" numberOfLines={2}>
+              {post.error_message}
+            </Text>
+          ) : null}
         </View>
-
-        {post.social_account?.username ? (
-          <Text className="mt-0.5 text-xs text-muted">@{post.social_account.username}</Text>
-        ) : null}
-
-        {post.caption ? (
-          <Text className="mt-1 text-sm text-foreground" numberOfLines={2}>
-            {post.caption}
-          </Text>
-        ) : null}
-
-        {scheduledLabel ? (
-          <Text className="mt-1 text-xs text-muted">
-            {post.status === 'published' ? 'Posted' : 'Scheduled'}:{' '}
-            {new Date(scheduledLabel).toLocaleString()}
-          </Text>
-        ) : null}
-
-        {post.status === 'failed' && post.error_message ? (
-          <Text className="mt-1 text-xs text-red-400" numberOfLines={1}>
-            {post.error_message}
-          </Text>
-        ) : null}
+        <Ionicons name="chevron-forward" size={18} color={tokens.colors.muted} />
       </View>
     </Pressable>
-  );
+  )
 }

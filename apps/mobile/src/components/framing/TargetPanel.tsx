@@ -215,7 +215,7 @@ export function TargetPanel({
             accessibilityRole="checkbox"
             accessibilityState={{ checked: use16x9 }}
             onPress={() => setUse16x9(!use16x9)}
-            className={`rounded-md border px-2.5 py-1 ${
+            className={`min-h-11 justify-center rounded-xl border px-3 py-2 ${
               use16x9 ? 'border-accent bg-accent/15' : 'border-border bg-surface'
             }`}
           >
@@ -225,16 +225,16 @@ export function TargetPanel({
           </Pressable>
         ) : null}
       </View>
-      <View className={`w-full ${use16x9 ? 'flex-row items-center justify-center gap-3' : 'items-center'}`}>
+      <View className={`w-full ${use16x9 ? 'items-center gap-[17px]' : 'items-center'}`}>
         <View
           style={{
-            borderWidth: 3,
+            borderWidth: 1,
             borderColor: tokens.colors.accent,
             shadowColor: tokens.colors.accent,
-            shadowOpacity: 0.75,
+            shadowOpacity: 0,
             shadowRadius: 8,
             shadowOffset: { width: 0, height: 0 },
-            elevation: 8,
+            elevation: 0,
           }}
           className="rounded-[15px] bg-accent"
         >
@@ -300,7 +300,7 @@ export function TargetPanel({
         </View>
 
         {use16x9 ? (
-          <View className="w-40 gap-3 rounded-xl border border-border bg-surface px-3 py-3">
+          <View className="w-full gap-3 rounded-[18px] bg-surface px-4 py-4">
           <View>
               <Text className="text-[10px] font-medium text-muted">
                 Background blur {Math.round(blurAmount)}

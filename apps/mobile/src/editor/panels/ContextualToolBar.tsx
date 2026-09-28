@@ -1,12 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons'
+import { Pressable, ScrollView, Text, View } from 'react-native'
 
-import { tokens } from '@/theme/tokens';
-import type { SelectionKind } from '../model/schema';
-import {
-  toolsForSelection,
-  type EditorToolId,
-} from './toolDefinitions';
+import { tokens } from '@/theme/tokens'
+import type { SelectionKind } from '../model/schema'
+import { toolsForSelection, type EditorToolId } from './toolDefinitions'
 
 const TOOL_ICONS: Record<EditorToolId, keyof typeof Ionicons.glyphMap> = {
   edit: 'create-outline',
@@ -34,60 +31,47 @@ const TOOL_ICONS: Record<EditorToolId, keyof typeof Ionicons.glyphMap> = {
   duration: 'time-outline',
   opacity: 'water-outline',
   fade: 'analytics-outline',
-  transition: 'git-compare-outline',
-};
+  transition: 'git-compare-outline'
+}
 
 export function ContextualToolBar({
   selectionKind,
   onToolPress,
-  onClearSelection,
-  visibleCapabilityIds,
+  visibleCapabilityIds
 }: {
-  selectionKind: SelectionKind | null;
-  onToolPress: (tool: EditorToolId) => void;
-  onClearSelection: () => void;
-  visibleCapabilityIds?: ReadonlySet<string> | string[];
+  selectionKind: SelectionKind | null
+  onToolPress: (tool: EditorToolId) => void
+  visibleCapabilityIds?: ReadonlySet<string> | string[]
 }) {
-  const tools = toolsForSelection(selectionKind, visibleCapabilityIds);
+  const tools = toolsForSelection(selectionKind, visibleCapabilityIds)
   return (
-    <View className="h-[86px] border-t border-white/10 bg-black py-2">
+    <View className="h-[82px] bg-background py-2">
       <ScrollView
         horizontal
         showsHorizontalScrollIndicator={false}
-        contentContainerClassName="items-center gap-1 px-1"
+        contentContainerClassName="items-center gap-1.5 px-4"
+        bounces
+        overScrollMode="never"
       >
-        {selectionKind ? (
-          <Pressable
-            accessibilityRole="button"
-            accessibilityLabel="Back to all tools"
-            onPress={onClearSelection}
-            className="h-[70px] w-12 items-center justify-center gap-1 rounded-lg bg-[#202023]"
-          >
-            <Ionicons name="chevron-back" size={21} color={tokens.colors.foreground} />
-            <Text className="text-[10px] text-muted">Back</Text>
-          </Pressable>
-        ) : null}
         {tools.map((tool) => (
           <Pressable
             key={tool.id}
             accessibilityRole="button"
             accessibilityLabel={tool.label}
             onPress={() => onToolPress(tool.id)}
-            className="h-[70px] min-w-[68px] items-center justify-center gap-2 rounded-lg bg-[#202023] px-2 active:opacity-60"
+            className="h-16 min-w-[70px] items-center justify-center gap-1.5 rounded-xl bg-surface px-2 active:opacity-60"
           >
             <Ionicons
               name={TOOL_ICONS[tool.id]}
-              size={25}
+              size={22}
               color={tool.destructive ? tokens.colors.destructive : tokens.colors.foreground}
             />
-            <Text
-              className={`text-xs ${tool.destructive ? 'text-destructive' : 'text-foreground'}`}
-            >
+            <Text className={`text-[11px] ${tool.destructive ? 'text-destructive' : 'text-foreground'}`}>
               {tool.label}
             </Text>
           </Pressable>
         ))}
       </ScrollView>
     </View>
-  );
+  )
 }

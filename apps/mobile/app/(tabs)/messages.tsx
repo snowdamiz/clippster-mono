@@ -103,14 +103,14 @@ export default function MessagesScreen() {
         rightAction={
           <Pressable
             onPress={() => setShowNew(true)}
-            className="h-9 w-9 items-center justify-center rounded-full bg-surfaceMuted"
+            className="min-h-11 min-w-11 items-center justify-center"
           >
             <Ionicons name="add" size={22} color={tokens.colors.accent} />
           </Pressable>
         }
       />
 
-      <View className="border-b border-border px-4 py-2">
+      <View className="px-5 py-2">
         <Input
           value={search}
           onChangeText={setSearch}
@@ -124,9 +124,9 @@ export default function MessagesScreen() {
       <Pressable
         onPress={() => void openSupport()}
         disabled={openingSupport}
-        className="flex-row items-center gap-3 border-b border-border bg-accent/5 px-4 py-3"
+        className="flex-row items-center gap-3 border-b border-border mx-5 py-3"
       >
-        <View className="h-12 w-12 items-center justify-center rounded-full bg-accent/15">
+        <View className="h-[38px] w-[38px] items-center justify-center rounded-xl bg-surfaceMuted">
           {openingSupport ? (
             <ActivityIndicator color={tokens.colors.accent} />
           ) : (

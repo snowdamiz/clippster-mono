@@ -1,16 +1,8 @@
-import { Link, Stack } from 'expo-router';
-import { Text, View } from 'react-native';
+import { router } from 'expo-router';
+import { View } from 'react-native';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Button } from '@/components/ui/button';
 
 export default function NotFoundScreen() {
-  return (
-    <>
-      <Stack.Screen options={{ title: 'Not found' }} />
-      <View className="flex-1 items-center justify-center bg-background px-6">
-        <Text className="text-xl font-bold text-foreground">Screen not found</Text>
-        <Link href={'/' as any} className="mt-4 text-primary">
-          Go home
-        </Link>
-      </View>
-    </>
-  );
+  return <View className="flex-1 justify-center bg-background px-5"><EmptyState icon="search-outline" title="Page not found" subtitle="This screen is no longer available." action={<Button title="Go to Home" onPress={() => router.replace('/')} />} /></View>;
 }

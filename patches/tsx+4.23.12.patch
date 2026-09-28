@@ -1,0 +1,14 @@
+diff --git a/node_modules/tsx/dist/temporary-directory-B83uKxJF.cjs b/node_modules/tsx/dist/temporary-directory-B83uKxJF.cjs
+index 2d8def9..4d45546 100644
+--- a/node_modules/tsx/dist/temporary-directory-B83uKxJF.cjs
++++ b/node_modules/tsx/dist/temporary-directory-B83uKxJF.cjs
+@@ -1 +1 @@
+-"use strict";var s=require("node:path"),r=require("node:os");const{geteuid:e}=process,t=e?e():r.userInfo().username,i=s.join(r.tmpdir(),`tsx-${t}`);exports.tmpdir=i;
++"use strict";var s=require("node:path"),r=require("node:os");const{geteuid:e}=process;let t;if(e)t=e();else try{t=r.userInfo().username}catch{t=process.env.USERNAME||process.env.USER||"user"}const i=s.join(r.tmpdir(),`tsx-${t}`);exports.tmpdir=i;
+diff --git a/node_modules/tsx/dist/temporary-directory-BDDVQOvU.mjs b/node_modules/tsx/dist/temporary-directory-BDDVQOvU.mjs
+index d62743a..d190c65 100644
+--- a/node_modules/tsx/dist/temporary-directory-BDDVQOvU.mjs
++++ b/node_modules/tsx/dist/temporary-directory-BDDVQOvU.mjs
+@@ -1 +1 @@
+-import s from"node:path";import o from"node:os";const{geteuid:r}=process,t=r?r():o.userInfo().username,e=s.join(o.tmpdir(),`tsx-${t}`);export{e as t};
++import s from"node:path";import o from"node:os";const{geteuid:r}=process;let t;if(r)t=r();else try{t=o.userInfo().username}catch{t=process.env.USERNAME||process.env.USER||"user"}const e=s.join(o.tmpdir(),`tsx-${t}`);export{e as t};

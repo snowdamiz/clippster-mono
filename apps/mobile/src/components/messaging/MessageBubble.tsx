@@ -19,7 +19,7 @@ export function MessageBubble({ message, isOwn, onLongPress }: MessageBubbleProp
 
   if (message.deletedAt) {
     return (
-      <View className={`my-1 max-w-[80%] ${isOwn ? 'self-end' : 'self-start'}`}>
+      <View className={`my-1 max-w-[88%] ${isOwn ? 'self-end' : 'self-start'}`}>
         <View className="rounded-2xl border border-border bg-surfaceMuted px-3 py-2">
           <Text className="italic text-muted">Message deleted</Text>
         </View>
@@ -33,14 +33,14 @@ export function MessageBubble({ message, isOwn, onLongPress }: MessageBubbleProp
     <Pressable
       onLongPress={onLongPress}
       delayLongPress={350}
-      className={`my-1 max-w-[80%] ${isOwn ? 'self-end' : 'self-start'}`}
+      className={`my-1 max-w-[88%] ${isOwn ? 'self-end' : 'self-start'}`}
     >
       {!isOwn && message.sender?.displayName ? (
         <Text className="mb-0.5 ml-1 text-[11px] text-muted">{message.sender.displayName}</Text>
       ) : null}
       <View
-        className={`overflow-hidden rounded-2xl px-3 py-2 ${
-          isOwn ? 'rounded-br-md bg-accent' : 'rounded-bl-md bg-surfaceMuted'
+        className={`overflow-hidden rounded-[18px] px-[14px] py-3 ${
+          isOwn ? 'rounded-br-md bg-accent' : 'rounded-bl-md bg-surface'
         }`}
       >
         {attachments.map((attachment) => (
@@ -52,15 +52,15 @@ export function MessageBubble({ message, isOwn, onLongPress }: MessageBubbleProp
           />
         ))}
         {message.content ? (
-          <Text className={`text-[15px] leading-5 ${isOwn ? 'text-white' : 'text-foreground'}`}>
+          <Text className={`text-[15px] leading-5 ${isOwn ? 'text-primary-foreground' : 'text-foreground'}`}>
             {message.content}
           </Text>
         ) : null}
         <View className="mt-1 flex-row items-center justify-end gap-1">
           {message.editedAt ? (
-            <Text className={`text-[10px] ${isOwn ? 'text-white/70' : 'text-muted'}`}>edited</Text>
+            <Text className={`text-[10px] ${isOwn ? 'text-primary-foreground/70' : 'text-muted'}`}>edited</Text>
           ) : null}
-          <Text className={`text-[10px] ${isOwn ? 'text-white/70' : 'text-muted'}`}>
+          <Text className={`text-[10px] ${isOwn ? 'text-primary-foreground/70' : 'text-muted'}`}>
             {formatMessageTime(message.insertedAt)}
           </Text>
         </View>

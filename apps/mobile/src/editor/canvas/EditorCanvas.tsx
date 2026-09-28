@@ -1,32 +1,26 @@
-import {
-  ClippsterEditorPreview,
-  isNativePreviewAvailable,
-} from '@clippster/editor-native';
-import { useMemo } from 'react';
-import { Pressable, Text, useWindowDimensions, View } from 'react-native';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-  runOnJS,
-  useAnimatedStyle,
-  useSharedValue,
-} from 'react-native-reanimated';
+import { ClippsterEditorPreview, isNativePreviewAvailable } from '@clippster/editor-native'
+import { useMemo } from 'react'
+import { Pressable, Text, useWindowDimensions, View } from 'react-native'
+import { Gesture, GestureDetector } from 'react-native-gesture-handler'
+import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated'
 
-import { EditorAudioPlayback } from '../engine/EditorAudioPlayback';
+import { EditorAudioPlayback } from '../engine/EditorAudioPlayback'
 import {
   ticksToSeconds,
   transformForRatio,
   type EditorSelection,
   type MobileEditProjectV3,
-  type Transform,
-} from '../model/schema';
-import { resolveVideoAtTick } from '../model/timeline';
-import { CanvasControls } from './CanvasControls';
+  type Transform
+} from '../model/schema'
+import { resolveVideoAtTick } from '../model/timeline'
+import { CanvasControls } from './CanvasControls'
 
 /**
  * Single native preview surface + RN selection chrome / audio mix.
  * Video, text, and image overlays are composed by @clippster/editor-native.
  */
 export function EditorCanvas({
+  saveStatus,
   document,
   playheadTick,
   playing,
@@ -35,58 +29,66 @@ export function EditorCanvas({
   onSelectionChange,
   onRatioChange,
   onToggleSafeArea,
-  onTransformItem,
+  onTransformItem
 }: {
-  document: MobileEditProjectV3;
-  playheadTick: number;
-  playing: boolean;
-  scrubbing: boolean;
-  selection: EditorSelection | null;
-  onSelectionChange: (selection: EditorSelection | null) => void;
-  onRatioChange: (ratio: '9:16' | '16:9') => void;
-  onToggleSafeArea: () => void;
-  onTransformItem: (itemId: string, transform: Transform) => void;
+  saveStatus: string
+  document: MobileEditProjectV3
+  playheadTick: number
+  playing: boolean
+  scrubbing: boolean
+  selection: EditorSelection | null
+  onSelectionChange: (selection: EditorSelection | null) => void
+  onRatioChange: (ratio: '9:16' | '16:9') => void
+  onToggleSafeArea: () => void
+  onTransformItem: (itemId: string, transform: Transform) => void
 }) {
-  const { width: windowWidth, height: windowHeight } = useWindowDimensions();
-  const ratio = document.canvas.activeRatio;
-  const aspectRatio = ratio === '9:16' ? 9 / 16 : 16 / 9;
-  const maxWidth = windowWidth;
-  const maxHeight = Math.min(windowHeight * 0.5, 480);
-  const width = Math.min(maxWidth, maxHeight * aspectRatio);
-  const height = width / aspectRatio;
-  const activeVideo = resolveVideoAtTick(document, playheadTick);
-  const hasMedia = Object.values(document.assets).some(
-    (asset) => asset.kind === 'video' || asset.kind === 'image',
-  );
-  const nativeReady = isNativePreviewAvailable();
+  const { width: windowWidth, height: windowHeight } = useWindowDimensions()
+  const ratio = document.canvas.activeRatio
+  const aspectRatio = ratio === '9:16' ? 9 / 16 : 16 / 9
+  const maxWidth = windowWidth - 40
+  const maxHeight = Math.min(windowHeight * 0.5, 480)
+  const width = Math.min(maxWidth, maxHeight * aspectRatio)
+  const height = width / aspectRatio
+  const activeVideo = resolveVideoAtTick(document, playheadTick)
+  const hasMedia = Object.values(document.assets).some((asset) => asset.kind === 'video' || asset.kind === 'image')
+  const nativeReady = isNativePreviewAvailable()
   // Prefer proxy URIs for preview decode; export still uses original sourceUri.
   const documentJson = useMemo(() => {
     const assets = Object.fromEntries(
       Object.entries(document.assets).map(([id, asset]) => {
-        if (!asset.proxy?.uri) return [id, asset];
+        if (!asset.proxy?.uri) return [id, asset]
         return [
           id,
           {
             ...asset,
             sourceUri: asset.proxy.uri,
             width: asset.proxy.width ?? asset.width,
-            height: asset.proxy.height ?? asset.height,
-          },
-        ];
-      }),
-    );
-    return JSON.stringify({ ...document, assets });
-  }, [document]);
+            height: asset.proxy.height ?? asset.height
+          }
+        ]
+      })
+    )
+    return JSON.stringify({ ...document, assets })
+  }, [document])
 
   return (
-    <View className="min-h-[240px] flex-1 items-center justify-center bg-black">
+    <View className="min-h-[240px] flex-1 items-center justify-center bg-background px-5">
+      <View className="w-full flex-row items-center justify-between">
+        <View className="rounded-[7px] bg-surfaceMuted px-2 py-[5px]">
+          <Text className="text-[11px] text-muted">{saveStatus}</Text>
+        </View>
+        <CanvasControls
+          activeRatio={ratio}
+          safeAreaVisible={document.canvas.safeAreaVisible}
+          onRatioChange={onRatioChange}
+          onToggleSafeArea={onToggleSafeArea}
+        />
+      </View>
       <Pressable
         accessibilityRole="button"
         accessibilityLabel="Video canvas"
-        onPress={() =>
-          onSelectionChange(activeVideo ? { kind: 'video', id: activeVideo.id } : null)
-        }
-        className="overflow-hidden bg-black"
+        onPress={() => onSelectionChange(activeVideo ? { kind: 'video', id: activeVideo.id } : null)}
+        className="overflow-hidden rounded-[14px] bg-black"
         style={{ width, height: Math.min(height, maxHeight) }}
       >
         {!hasMedia ? (
@@ -114,38 +116,30 @@ export function EditorCanvas({
           .flatMap((track) => track.items)
           .filter((item) => playheadTick >= item.timelineStart && playheadTick < item.timelineEnd)
           .map((item) => {
-            const audioAsset = document.assets[item.assetId];
-            if (!audioAsset) return null;
-            const position = playheadTick - item.timelineStart;
-            const duration = item.timelineEnd - item.timelineStart;
-            const fadeIn = item.fadeInTicks > 0 ? Math.min(1, position / item.fadeInTicks) : 1;
-            const fadeOut =
-              item.fadeOutTicks > 0
-                ? Math.min(1, (duration - position) / item.fadeOutTicks)
-                : 1;
+            const audioAsset = document.assets[item.assetId]
+            if (!audioAsset) return null
+            const position = playheadTick - item.timelineStart
+            const duration = item.timelineEnd - item.timelineStart
+            const fadeIn = item.fadeInTicks > 0 ? Math.min(1, position / item.fadeInTicks) : 1
+            const fadeOut = item.fadeOutTicks > 0 ? Math.min(1, (duration - position) / item.fadeOutTicks) : 1
             return (
               <EditorAudioPlayback
                 key={item.id}
                 uri={audioAsset.proxy?.uri ?? audioAsset.sourceUri}
-                sourceSeconds={ticksToSeconds(
-                  item.sourceStart + Math.round(position * item.speed),
-                )}
+                sourceSeconds={ticksToSeconds(item.sourceStart + Math.round(position * item.speed))}
                 playing={playing}
                 scrubbing={scrubbing}
                 volume={item.volume * Math.max(0, Math.min(fadeIn, fadeOut))}
                 speed={item.speed}
               />
-            );
+            )
           })}
 
         {document.tracks
           .filter((track) => track.kind === 'overlay' || track.kind === 'text')
           .flatMap((track) =>
             track.items
-              .filter(
-                (item) =>
-                  playheadTick >= item.timelineStart && playheadTick < item.timelineEnd,
-              )
+              .filter((item) => playheadTick >= item.timelineStart && playheadTick < item.timelineEnd)
               .map((item) => (
                 <CanvasItem
                   key={item.id}
@@ -154,14 +148,14 @@ export function EditorCanvas({
                   onPress={() =>
                     onSelectionChange({
                       kind: track.kind === 'text' ? 'text' : 'overlay',
-                      id: item.id,
+                      id: item.id
                     })
                   }
                   canvasWidth={width}
                   canvasHeight={height}
                   onTransform={(next) => onTransformItem(item.id, next)}
                 />
-              )),
+              ))
           )}
 
         <CaptionHitTarget
@@ -170,27 +164,21 @@ export function EditorCanvas({
           selected={selection?.kind === 'caption'}
           onPress={() => {
             if (document.captionDocument) {
-              onSelectionChange({ kind: 'caption', id: document.captionDocument.id });
+              onSelectionChange({ kind: 'caption', id: document.captionDocument.id })
             }
           }}
           canvasWidth={width}
           canvasHeight={height}
           onTransform={(transform) => {
             if (document.captionDocument) {
-              onTransformItem(document.captionDocument.id, transform);
+              onTransformItem(document.captionDocument.id, transform)
             }
           }}
         />
         {document.canvas.safeAreaVisible ? <SafeAreaGuide ratio={ratio} /> : null}
-        <CanvasControls
-          activeRatio={ratio}
-          safeAreaVisible={document.canvas.safeAreaVisible}
-          onRatioChange={onRatioChange}
-          onToggleSafeArea={onToggleSafeArea}
-        />
       </Pressable>
     </View>
-  );
+  )
 }
 
 function CanvasItem({
@@ -199,79 +187,79 @@ function CanvasItem({
   onPress,
   canvasWidth,
   canvasHeight,
-  onTransform,
+  onTransform
 }: {
-  transform: Transform;
-  selected: boolean;
-  onPress: () => void;
-  canvasWidth: number;
-  canvasHeight: number;
-  onTransform: (transform: Transform) => void;
+  transform: Transform
+  selected: boolean
+  onPress: () => void
+  canvasWidth: number
+  canvasHeight: number
+  onTransform: (transform: Transform) => void
 }) {
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const gestureScale = useSharedValue(1);
-  const gestureRotation = useSharedValue(0);
+  const translateX = useSharedValue(0)
+  const translateY = useSharedValue(0)
+  const gestureScale = useSharedValue(1)
+  const gestureRotation = useSharedValue(0)
   const commitMove = (x: number, y: number) => {
     onTransform({
       ...transform,
       positionX: Math.max(0, Math.min(1, transform.positionX + x / canvasWidth)),
-      positionY: Math.max(0, Math.min(1, transform.positionY + y / canvasHeight)),
-    });
-  };
+      positionY: Math.max(0, Math.min(1, transform.positionY + y / canvasHeight))
+    })
+  }
   const commitScale = (scale: number) => {
     onTransform({
       ...transform,
       scaleX: Math.max(0.1, Math.min(5, transform.scaleX * scale)),
-      scaleY: Math.max(0.1, Math.min(5, transform.scaleY * scale)),
-    });
-  };
+      scaleY: Math.max(0.1, Math.min(5, transform.scaleY * scale))
+    })
+  }
   const commitRotation = (radians: number) => {
     onTransform({
       ...transform,
-      rotationDeg: transform.rotationDeg + (radians * 180) / Math.PI,
-    });
-  };
+      rotationDeg: transform.rotationDeg + (radians * 180) / Math.PI
+    })
+  }
   const gesture = Gesture.Simultaneous(
     Gesture.Pan()
       .enabled(selected)
       .onUpdate((event) => {
-        translateX.value = event.translationX;
-        translateY.value = event.translationY;
+        translateX.value = event.translationX
+        translateY.value = event.translationY
       })
       .onEnd((event) => {
-        runOnJS(commitMove)(event.translationX, event.translationY);
-        translateX.value = 0;
-        translateY.value = 0;
+        runOnJS(commitMove)(event.translationX, event.translationY)
+        translateX.value = 0
+        translateY.value = 0
       }),
     Gesture.Pinch()
       .enabled(selected)
       .onUpdate((event) => {
-        gestureScale.value = event.scale;
+        gestureScale.value = event.scale
       })
       .onEnd((event) => {
-        runOnJS(commitScale)(event.scale);
-        gestureScale.value = 1;
+        runOnJS(commitScale)(event.scale)
+        gestureScale.value = 1
       }),
     Gesture.Rotation()
       .enabled(selected)
       .onUpdate((event) => {
-        gestureRotation.value = event.rotation;
+        gestureRotation.value = event.rotation
       })
       .onEnd((event) => {
-        runOnJS(commitRotation)(event.rotation);
-        gestureRotation.value = 0;
-      }),
-  );
+        runOnJS(commitRotation)(event.rotation)
+        gestureRotation.value = 0
+      })
+  )
   const animatedStyle = useAnimatedStyle(() => ({
     transform: [
       { translateX: -80 * transform.anchorX + translateX.value },
       { translateY: -96 * transform.anchorY + translateY.value },
       { scaleX: transform.scaleX * gestureScale.value },
       { scaleY: transform.scaleY * gestureScale.value },
-      { rotate: `${transform.rotationDeg + (gestureRotation.value * 180) / Math.PI}deg` },
-    ],
-  }));
+      { rotate: `${transform.rotationDeg + (gestureRotation.value * 180) / Math.PI}deg` }
+    ]
+  }))
   return (
     <GestureDetector gesture={gesture}>
       <Animated.View
@@ -279,15 +267,15 @@ function CanvasItem({
         style={[
           {
             left: `${transform.positionX * 100}%`,
-            top: `${transform.positionY * 100}%`,
+            top: `${transform.positionY * 100}%`
           },
-          animatedStyle,
+          animatedStyle
         ]}
       >
         <Pressable onPress={onPress} className="flex-1" />
       </Animated.View>
     </GestureDetector>
-  );
+  )
 }
 
 function CaptionHitTarget({
@@ -297,22 +285,20 @@ function CaptionHitTarget({
   onPress,
   canvasWidth,
   canvasHeight,
-  onTransform,
+  onTransform
 }: {
-  document: MobileEditProjectV3;
-  playheadTick: number;
-  selected: boolean;
-  onPress: () => void;
-  canvasWidth: number;
-  canvasHeight: number;
-  onTransform: (transform: Transform) => void;
+  document: MobileEditProjectV3
+  playheadTick: number
+  selected: boolean
+  onPress: () => void
+  canvasWidth: number
+  canvasHeight: number
+  onTransform: (transform: Transform) => void
 }) {
-  const captions = document.captionDocument;
-  if (!captions?.enabled) return null;
-  const phrase = captions.phrases.find(
-    (candidate) => playheadTick >= candidate.start && playheadTick < candidate.end,
-  );
-  if (!phrase) return null;
+  const captions = document.captionDocument
+  if (!captions?.enabled) return null
+  const phrase = captions.phrases.find((candidate) => playheadTick >= candidate.start && playheadTick < candidate.end)
+  if (!phrase) return null
   return (
     <CanvasItem
       transform={transformForRatio(captions.transform, document.canvas.activeRatio)}
@@ -322,7 +308,7 @@ function CaptionHitTarget({
       canvasHeight={canvasHeight}
       onTransform={onTransform}
     />
-  );
+  )
 }
 
 function SafeAreaGuide({ ratio }: { ratio: '9:16' | '16:9' }) {
@@ -336,5 +322,5 @@ function SafeAreaGuide({ ratio }: { ratio: '9:16' | '16:9' }) {
           : { left: '6%', right: '6%', top: '10%', bottom: '10%' }
       }
     />
-  );
+  )
 }

@@ -19,7 +19,6 @@ import { MessageComposer } from '@/components/messaging/MessageComposer';
 import { TypingIndicator } from '@/components/messaging/TypingIndicator';
 import { useAuth } from '@/context/AuthContext';
 import { useMessaging } from '@/context/MessagingContext';
-import { appAlert } from '@/lib/appAlert';
 import { tokens } from '@/theme/tokens';
 
 export default function MessageThreadScreen() {
@@ -89,7 +88,7 @@ export default function MessageThreadScreen() {
         listRef.current?.scrollToEnd({ animated: true });
       });
     } catch (error) {
-      appAlert('Send failed', error instanceof Error ? error.message : 'Could not send message');
+      throw error;
     } finally {
       setSending(false);
     }

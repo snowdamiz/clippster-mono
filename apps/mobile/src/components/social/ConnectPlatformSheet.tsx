@@ -30,16 +30,19 @@ function PlatformOption({
     <Pressable
       onPress={onPress}
       disabled={connecting}
-      className="flex-row items-center gap-3 rounded-lg border border-border bg-background px-4 py-3 active:bg-white/5"
+      className="min-h-[60px] flex-row items-center gap-3 border-b border-border py-[13px] active:bg-white/5"
     >
-      <View className="h-10 w-10 items-center justify-center rounded-lg bg-foreground/10">
+      <View className="h-[38px] w-[38px] items-center justify-center rounded-xl bg-surfaceMuted">
         {platform.id === 'tokend' ? (
           <TokendPlatformIcon size={22} />
         ) : (
           <Ionicons name={platform.icon} size={22} color={tokens.colors.foreground} />
         )}
       </View>
-      <Text className="flex-1 text-base font-medium text-foreground">{platform.name}</Text>
+      <View className="flex-1">
+        <Text className="text-sm font-semibold text-foreground">{platform.name}</Text>
+        <Text className="text-xs text-muted">Continue to authorization</Text>
+      </View>
       {connecting ? (
         <ActivityIndicator size="small" color={tokens.colors.accent} />
       ) : (
@@ -62,9 +65,9 @@ export function ConnectPlatformSheet({
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      variant="dialog"
-      title="Connect Social Account"
-      subtitle="Choose a platform to connect and start posting"
+      variant="page"
+      title="Connect an account"
+      subtitle="Choose a platform. A secure browser opens for authorization."
       headerIcon="share-social-outline"
       dismissOnBackdrop={!connectingPlatform}
       secondaryAction={{

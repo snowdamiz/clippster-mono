@@ -33,7 +33,9 @@
     "mobile:android": "yarn workspace mobile android",
     "mobile:android:rebuild": "yarn workspace mobile android:rebuild",
     "mobile:typecheck": "yarn workspace mobile typecheck",
-    "mobile:lint": "yarn workspace mobile lint"
+    "mobile:lint": "yarn workspace mobile lint",
+    "mobile:update:preview": "yarn workspace mobile update:preview",
+    "mobile:update:production": "yarn workspace mobile update:production"
   },
   "devDependencies": {
     "@vue/compiler-sfc": "^3.5.13",

@@ -70,7 +70,7 @@ export function PreferencesSheet({ visible, onClose }: PreferencesSheetProps) {
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      variant="sheet"
+      variant="page"
       title="Preferences"
       subtitle="Notifications and time format (synced)"
       headerIcon="options-outline"

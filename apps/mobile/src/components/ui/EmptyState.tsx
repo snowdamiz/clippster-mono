@@ -10,16 +10,15 @@ interface EmptyStateProps {
   action?: ReactNode;
 }
 
-/** Dashed empty card matching Home / Accounts. */
 export function EmptyState({ icon = 'folder-open-outline', title, subtitle, action }: EmptyStateProps) {
   return (
-    <View className="items-center rounded-xl border border-dashed border-border px-6 py-10">
-      <View className="mb-3 h-12 w-12 items-center justify-center rounded-xl bg-accent/15">
-        <Ionicons name={icon} size={24} color={tokens.colors.accent} />
+    <View className="items-center gap-[18px] px-3 py-[50px]">
+      <View className="h-[70px] w-[70px] items-center justify-center rounded-[23px] bg-surfaceMuted">
+        <Ionicons name={icon} size={30} color={tokens.colors.accent} />
       </View>
-      <Text className="text-center text-lg font-semibold text-foreground">{title}</Text>
+      <Text className="text-center text-[28px] font-bold tracking-tight text-foreground">{title}</Text>
       {subtitle ? (
-        <Text className="mt-2 text-center text-sm text-muted">{subtitle}</Text>
+        <Text className="text-center text-sm leading-5 text-muted">{subtitle}</Text>
       ) : null}
       {action ? <View className="mt-4">{action}</View> : null}
     </View>

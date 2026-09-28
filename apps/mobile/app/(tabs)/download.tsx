@@ -250,7 +250,7 @@ export default function DownloadScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <ScreenHeader title="Import from URL" subtitle="Choose a video to add to your projects" />
+      <ScreenHeader title="Find a video" showBack />
       <DownloadProgressCard
         jobs={jobs}
         onOpenProject={(projectId) => router.push(`/project/${projectId}`)}
@@ -270,7 +270,8 @@ export default function DownloadScreen() {
         onConfirm={(plan) => void confirmDownload(plan)}
       />
 
-      <ScrollView contentContainerClassName="px-4 py-4">
+      <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled" contentContainerClassName="px-5 py-4 pb-10">
+        <Text className="mb-2 text-xs font-semibold text-foreground">Video URL or channel</Text>
         <View className="flex-row items-center gap-2">
           {detectedPlatform ? (
             <View className="rounded-full border border-border bg-surface px-3 py-1">
@@ -287,7 +288,7 @@ export default function DownloadScreen() {
                 setDetectedPlatform(detectPlatformFromInput(text, { allowTokend: tokendAllowed }));
               }}
               onSubmitEditing={() => void handleSearch()}
-              placeholder="Channel URL or @handle (e.g. kick.com/asmongold)"
+              placeholder="Paste a video URL or @creator"
               autoCapitalize="none"
               autoCorrect={false}
               returnKeyType="search"
@@ -304,12 +305,13 @@ export default function DownloadScreen() {
           />
         </View>
 
+        <Text className="mt-4 text-sm leading-[21px] text-muted">Paste a video link or browse a supported channel. YouTube, Twitch, Kick, Rumble, X{tokendAllowed ? ", and Tokend" : ""}.</Text>
         {showCatalogTabs ? (
           <View className="mt-4 flex-row gap-2">
             {(['streams', 'videos'] as const).map((tab) => (
               <Pressable
                 key={tab}
-                className={`flex-1 rounded-lg border px-3 py-2 ${
+                className={`min-h-11 flex-1 justify-center rounded-[14px] border px-3 py-2 ${
                   catalogTab === tab ? 'border-accent bg-accent/10' : 'border-border bg-surface'
                 }`}
                 onPress={() => void switchCatalogTab(tab)}

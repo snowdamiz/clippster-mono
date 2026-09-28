@@ -1,6 +1,6 @@
 import net from 'net';
 import fs from 'fs';
-import { execSync, spawn } from 'child_process';
+import { execFileSync, execSync, spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
@@ -13,6 +13,107 @@ const METRO_PORTS = [DEFAULT_METRO_PORT, 8083, 8084, 8085];
 
 /** Android emulator loopback to the host machine (LAN IPs are unreliable from the AVD). */
 const ANDROID_EMULATOR_HOST = '10.0.2.2';
+
+function resolveAdb() {
+  const candidates = [
+    process.env.ADB_EXECUTABLE,
+    process.env.ANDROID_HOME && path.join(process.env.ANDROID_HOME, 'platform-tools', 'adb.exe'),
+    process.env.ANDROID_SDK_ROOT && path.join(process.env.ANDROID_SDK_ROOT, 'platform-tools', 'adb.exe'),
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Android', 'Sdk', 'platform-tools', 'adb.exe'),
+    'adb',
+  ].filter(Boolean);
+
+  for (const candidate of candidates) {
+    if (candidate === 'adb' || fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+const adb = resolveAdb();
+
+if (adb && adb !== 'adb') {
+  const adbDir = path.dirname(adb);
+  process.env.PATH = `${adbDir}${path.delimiter}${process.env.PATH ?? ''}`;
+}
+
+function runAdb(args, options = {}) {
+  if (!adb) throw new Error('Android Debug Bridge (adb) was not found');
+  return execFileSync(adb, args, options);
+}
+
+function resolveEmulator() {
+  const sdkRoots = [process.env.ANDROID_HOME, process.env.ANDROID_SDK_ROOT,
+    process.env.LOCALAPPDATA && path.join(process.env.LOCALAPPDATA, 'Android', 'Sdk')].filter(Boolean);
+  for (const root of sdkRoots) {
+    const candidate = path.join(root, 'emulator', process.platform === 'win32' ? 'emulator.exe' : 'emulator');
+    if (fs.existsSync(candidate)) return candidate;
+  }
+  return null;
+}
+
+function listAndroidAvds(emulator) {
+  try {
+    return execFileSync(emulator, ['-list-avds'], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] })
+      .split(/\r?\n/).map(value => value.trim()).filter(Boolean);
+  } catch {
+    return [];
+  }
+}
+
+async function startAndroidEmulatorIfNeeded() {
+  if (!adb) return;
+  try {
+    runAdb(['start-server'], { stdio: 'ignore' });
+  } catch {
+    // The first adb invocation can fail while the daemon is starting.
+  }
+  if (listAndroidDevices().length > 0) return;
+  const emulator = resolveEmulator();
+  if (!emulator) return;
+  const avds = listAndroidAvds(emulator);
+  const avd = process.env.MOBILE_ANDROID_AVD || avds[0];
+  if (!avd) return;
+
+  console.log(`No Android device detected — starting emulator ${avd}`);
+  const child = spawn(emulator, ['-avd', avd], { detached: true, stdio: 'ignore', windowsHide: true });
+  child.unref();
+
+  const startedAt = Date.now();
+  let restartedAdb = false;
+  while (Date.now() - startedAt < 180_000) {
+    if (listAndroidDevices().length > 0) return;
+    if (!restartedAdb && Date.now() - startedAt > 15_000) {
+      try {
+        runAdb(['kill-server'], { stdio: 'ignore' });
+        runAdb(['start-server'], { stdio: 'ignore' });
+      } catch {
+        // Continue polling; the emulator may still be reconnecting.
+      }
+      restartedAdb = true;
+    }
+    await new Promise(resolve => setTimeout(resolve, 1500));
+  }
+  console.warn('Android emulator did not become available to adb within 180 seconds. Metro will continue running.');
+}
+
+async function waitForAndroidBoot() {
+  if (!adb) return;
+  const startedAt = Date.now();
+  while (Date.now() - startedAt < 180_000) {
+    try {
+      if (listAndroidDevices().length === 0) {
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        continue;
+      }
+      const booted = runAdb(['shell', 'getprop', 'sys.boot_completed'], { encoding: 'utf8' }).trim();
+      if (booted === '1') return;
+    } catch {
+      // ADB may report the emulator before Android services are ready.
+    }
+    await new Promise(resolve => setTimeout(resolve, 1500));
+  }
+  console.warn('Android emulator connected but did not report boot completion within 180 seconds.');
+}
 
 function killProcessOnPort(port) {
   try {
@@ -77,10 +178,21 @@ function isPortInUse(port, host = '127.0.0.1', timeoutMs = 500) {
 async function waitForPort(port, timeoutMs = 120_000) {
   const startedAt = Date.now();
   while (Date.now() - startedAt < timeoutMs) {
-    if (await isPortInUse(port)) return true;
+    if (await isMetroReady(port)) return true;
     await new Promise(resolve => setTimeout(resolve, 400));
   }
   return false;
+}
+
+async function isMetroReady(port) {
+  try {
+    const response = await fetch(`http://127.0.0.1:${port}/status`, { signal: AbortSignal.timeout(1000) });
+    if (!response.ok) return false;
+    const body = await response.text();
+    return body.includes('packager-status:running');
+  } catch {
+    return false;
+  }
 }
 
 async function findMetroPort() {
@@ -109,6 +221,7 @@ function launchAndroidDevClient(port, host) {
   const bundlerUrl = `http://${host}:${port}`;
   const deepLink = `exp+clippster://expo-development-client/?url=${encodeURIComponent(bundlerUrl)}`;
   try {
+    runAdb(['shell', 'am', 'force-stop', 'app.clippster.mobile'], { stdio: 'ignore' });
     execSync(`adb shell am start -a android.intent.action.VIEW -d "${deepLink}"`, {
       stdio: 'ignore',
     });
@@ -122,7 +235,7 @@ function launchAndroidDevClient(port, host) {
 
 function listAndroidDevices() {
   try {
-    const output = execSync('adb devices', {
+    const output = runAdb(['devices'], {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'ignore'],
     });
@@ -138,7 +251,7 @@ function listAndroidDevices() {
 
 function isDevClientInstalled() {
   try {
-    const output = execSync('adb shell pm list packages app.clippster.mobile', {
+    const output = runAdb(['shell', 'pm', 'list', 'packages', 'app.clippster.mobile'], {
       encoding: 'utf-8',
       stdio: ['pipe', 'pipe', 'ignore'],
     });
@@ -176,7 +289,7 @@ function getPhoenixDevPort() {
 
 function setupAndroidPortReverse(port, reason) {
   try {
-    execSync(`adb reverse tcp:${port} tcp:${port}`, { stdio: 'ignore' });
+    runAdb(['reverse', `tcp:${port}`, `tcp:${port}`], { stdio: 'ignore' });
     console.log(`adb reverse tcp:${port} tcp:${port} (${reason})`);
   } catch {
     console.warn(`Could not run adb reverse for port ${port}`);
@@ -211,6 +324,8 @@ if (port == null) {
   );
 }
 
+await startAndroidEmulatorIfNeeded();
+await waitForAndroidBoot();
 const androidDevices = listAndroidDevices();
 const launchAndroid = androidDevices.length > 0;
 const hasEmulator = androidDevices.some(isEmulatorSerial);
@@ -218,6 +333,12 @@ const hasEmulator = androidDevices.some(isEmulatorSerial);
 const emulatorBundlerHost = hasEmulator ? ANDROID_EMULATOR_HOST : null;
 
 console.log(`Starting Expo dev server on port ${port}`);
+
+if (!adb) {
+  console.warn(
+    'Android SDK platform-tools (adb) was not found. Metro will run without opening an emulator. Set ANDROID_HOME or ADB_EXECUTABLE to your Android SDK.',
+  );
+}
 
 if (launchAndroid) {
   setupAndroidPortReverse(getPhoenixDevPort(), 'emulator localhost → host Phoenix for Google OAuth');
@@ -228,18 +349,6 @@ if (launchAndroid) {
 }
 
 const willRebuildAndroid = launchAndroid && (rebuildAndroid || !isDevClientInstalled());
-const expoArgs = ['expo', 'start', '--dev-client', '--clear', '--port', String(port)];
-
-if (willRebuildAndroid) {
-  if (rebuildAndroid) {
-    console.log('Rebuilding Android dev client (ffmpeg-expo and other native modules)…');
-  }
-  expoArgs.length = 0;
-  expoArgs.push('expo', 'run:android', '--port', String(port));
-} else if (launchAndroid && !hasEmulator) {
-  // Physical device: Expo's LAN hostname is correct.
-  expoArgs.push('--android');
-}
 
 const childEnv = { ...process.env };
 delete childEnv.CI;
@@ -248,18 +357,40 @@ if (emulatorBundlerHost) {
   childEnv.REACT_NATIVE_PACKAGER_HOSTNAME = emulatorBundlerHost;
 }
 
-const child = spawn('yarn', expoArgs, {
-  cwd: mobileRoot,
-  stdio: 'inherit',
-  shell: true,
-  env: childEnv,
-});
+function startMetro() {
+  const expoArgs = ['expo', 'start', '--dev-client', '--clear', '--port', String(port)];
+  if (launchAndroid && !hasEmulator) expoArgs.push('--android');
+  return spawn('yarn', expoArgs, {
+    cwd: mobileRoot,
+    stdio: 'inherit',
+    shell: true,
+    env: childEnv,
+  });
+}
 
-if (launchAndroid && !willRebuildAndroid && hasEmulator) {
+let child;
+if (willRebuildAndroid) {
+  console.log('Building and installing the Android dev client before starting Metro…');
+  const build = spawn('yarn', ['expo', 'run:android', '--no-bundler'], {
+    cwd: mobileRoot,
+    stdio: 'inherit',
+    shell: true,
+    env: childEnv,
+  });
+  build.once('exit', code => {
+    if (code !== 0) process.exit(code ?? 1);
+    child = startMetro();
+    child.on('exit', childCode => process.exit(childCode ?? 1));
+  });
+} else {
+  child = startMetro();
+}
+
+if (launchAndroid && hasEmulator) {
   // Do not pass Expo `--android` for emulators — it deep-links the host LAN IP and
   // overwrites a working 10.0.2.2 connection. Wait for Metro, then open ourselves.
   void (async () => {
-    const ready = await waitForPort(port);
+    const ready = await waitForPort(port, 300_000);
     if (!ready) {
       console.warn(
         `Metro did not listen on ${port} in time. Open Clippster and set bundler to http://${ANDROID_EMULATOR_HOST}:${port}`,
@@ -270,6 +401,3 @@ if (launchAndroid && !willRebuildAndroid && hasEmulator) {
   })();
 }
 
-child.on('exit', code => {
-  process.exit(code ?? 1);
-});
