@@ -1,6 +1,7 @@
 import { router } from 'expo-router';
 import { useState } from 'react';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
+import { ActivityIndicator, Text, View } from 'react-native';
+import { Tabs } from '@/components/ui/tabs';
 import { PlanTierCard } from '@/components/subscription/PlanTierCard';
 import { BottomSheet } from '@/components/ui/BottomSheet';
 import { useAccount } from '@/context/AccountContext';
@@ -16,6 +17,8 @@ interface BillingSheetProps {
 export function BillingSheet({ visible, onClose }: BillingSheetProps) {
   const {
     loading,
+    creditsLabel,
+    tierLabel,
     tiers,
     subscription,
     continueWithFreePlan,
@@ -48,6 +51,8 @@ export function BillingSheet({ visible, onClose }: BillingSheetProps) {
         onClose();
         router.replace('/(tabs)/projects');
       }
+    } catch (error) {
+      appAlert('Checkout failed', error instanceof Error ? error.message : 'Could not open checkout.');
     } finally {
       setBusyTier(null);
     }
@@ -59,12 +64,11 @@ export function BillingSheet({ visible, onClose }: BillingSheetProps) {
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      variant="sheet"
+      variant="page"
       title="Plans & billing"
       subtitle="Select the plan that works best for you."
       headerIcon="card-outline"
       scrollable
-      maxHeightClassName="max-h-[92%]"
     >
       {loading && displayTiers.length <= 1 ? (
         <View className="items-center justify-center py-10">
@@ -72,43 +76,9 @@ export function BillingSheet({ visible, onClose }: BillingSheetProps) {
         </View>
       ) : (
         <View className="gap-4">
-          <View className="flex-row self-end overflow-hidden rounded-lg border border-border">
-            <Pressable
-              onPress={() => setInterval('monthly')}
-              className={`px-3 py-2 ${interval === 'monthly' ? 'bg-accent' : 'bg-surface'}`}
-            >
-              <Text
-                className={`text-xs font-semibold ${
-                  interval === 'monthly' ? 'text-primary-foreground' : 'text-muted'
-                }`}
-              >
-                Monthly
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setInterval('yearly')}
-              className={`flex-row items-center gap-1 px-3 py-2 ${
-                interval === 'yearly' ? 'bg-accent' : 'bg-surface'
-              }`}
-            >
-              <Text
-                className={`text-xs font-semibold ${
-                  interval === 'yearly' ? 'text-primary-foreground' : 'text-muted'
-                }`}
-              >
-                Yearly
-              </Text>
-              <View className="rounded-full bg-black/20 px-1.5 py-0.5">
-                <Text
-                  className={`text-[9px] font-bold uppercase ${
-                    interval === 'yearly' ? 'text-primary-foreground' : 'text-muted'
-                  }`}
-                >
-                  Save 1 month
-                </Text>
-              </View>
-            </Pressable>
-          </View>
+          <View className="gap-2 rounded-[18px] bg-surface p-4"><Text className="text-sm font-semibold text-foreground">Current plan · {tierLabel}</Text><Text className="text-sm text-muted">{creditsLabel} AI credits available</Text></View>
+          <Tabs items={[{key:"monthly", label:"Monthly"}, {key:"yearly",label:"Yearly"}]} value={interval} onChange={(value) => {if (!busyTier) setInterval(value as BillingInterval);}} />
+          <Text className="text-sm leading-[21px] text-muted">Yearly plans save one month.</Text>
 
           {displayTiers.map((tier) => (
             <PlanTierCard

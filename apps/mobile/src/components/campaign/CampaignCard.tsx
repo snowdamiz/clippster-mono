@@ -15,8 +15,9 @@ export function CampaignCard({ campaign, onPress, joined, participationStatus }:
     campaign.join_type === 'application_required' ? 'Application required' : 'Open to join';
 
   return (
-    <Pressable onPress={onPress}>
+    <Pressable accessibilityRole="button" onPress={onPress}>
       <Card className="gap-3">
+        {campaign.cover_image_url ? <Image source={{uri: campaign.cover_image_url}} className="aspect-video w-full rounded-[14px]" resizeMode="cover" /> : null}
         <View className="flex-row items-center gap-3">
           {campaign.organization?.logo_url ? (
             <Image source={{ uri: campaign.organization.logo_url }} className="h-10 w-10 rounded-full" />
@@ -28,12 +29,12 @@ export function CampaignCard({ campaign, onPress, joined, participationStatus }:
             </View>
           )}
           <View className="flex-1">
-            <Text className="font-semibold text-foreground">{campaign.title}</Text>
+            <Text className="text-[17px] font-semibold text-foreground">{campaign.title}</Text>
             <Text className="text-sm text-muted">{campaign.organization?.name}</Text>
           </View>
           {joined ? (
-            <View className="rounded-full bg-primary/20 px-2 py-1">
-              <Text className="text-xs text-primary">{participationStatus ?? 'Joined'}</Text>
+            <View className="rounded-full bg-accent/15 px-2 py-1">
+              <Text className="text-xs text-accent">{participationStatus ?? 'Joined'}</Text>
             </View>
           ) : null}
         </View>
@@ -57,6 +58,7 @@ export function CampaignCard({ campaign, onPress, joined, participationStatus }:
         <Text className="text-xs text-muted">
           Platforms: {campaign.allowed_platforms.map(getPlatformDisplayName).join(', ')}
         </Text>
+        <Text className="min-h-11 pt-3 text-sm font-semibold text-accent">View campaign →</Text>
       </Card>
     </Pressable>
   );

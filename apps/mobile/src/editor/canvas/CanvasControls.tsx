@@ -1,49 +1,57 @@
-import { Pressable, Text, View } from 'react-native';
+import { useState } from 'react'
+import { Pressable, Switch, Text, View } from 'react-native'
+import { EditorChoices, EditorSheet } from '../panels/EditorSheet'
+import { tokens } from '@/theme/tokens'
 
-import type { CanvasRatio } from '../model/schema';
+import type { CanvasRatio } from '../model/schema'
 
 export function CanvasControls({
   activeRatio,
   safeAreaVisible,
   onRatioChange,
-  onToggleSafeArea,
+  onToggleSafeArea
 }: {
-  activeRatio: CanvasRatio;
-  safeAreaVisible: boolean;
-  onRatioChange: (ratio: CanvasRatio) => void;
-  onToggleSafeArea: () => void;
+  activeRatio: CanvasRatio
+  safeAreaVisible: boolean
+  onRatioChange: (ratio: CanvasRatio) => void
+  onToggleSafeArea: () => void
 }) {
+  const [open, setOpen] = useState(false)
   return (
-    <View className="absolute right-2 top-2 z-20 flex-row gap-1">
-      {(['9:16', '16:9'] as const).map((ratio) => (
-        <Pressable
-          key={ratio}
-          accessibilityRole="button"
-          accessibilityLabel={`Use ${ratio} canvas`}
-          onPress={() => onRatioChange(ratio)}
-          className={`min-h-9 justify-center rounded-full px-3 ${
-            activeRatio === ratio ? 'bg-primary' : 'bg-black/70'
-          }`}
-        >
-          <Text
-            className={`text-xs font-semibold ${
-              activeRatio === ratio ? 'text-primary-foreground' : 'text-foreground'
-            }`}
-          >
-            {ratio}
-          </Text>
-        </Pressable>
-      ))}
+    <>
       <Pressable
         accessibilityRole="button"
-        accessibilityLabel="Toggle platform safe area"
-        onPress={onToggleSafeArea}
-        className={`min-h-9 justify-center rounded-full px-3 ${
-          safeAreaVisible ? 'bg-accent' : 'bg-black/70'
-        }`}
+        accessibilityLabel="Canvas settings"
+        onPress={() => setOpen(true)}
+        className="min-h-11 justify-center px-3"
       >
-        <Text className="text-xs font-semibold text-foreground">Safe</Text>
+        <Text className="text-[13px] font-semibold text-accent">Canvas</Text>
       </Pressable>
-    </View>
-  );
+      <EditorSheet
+        visible={open}
+        title="Canvas"
+        onClose={() => setOpen(false)}
+        secondaryAction={{ title: 'Done', onPress: () => setOpen(false), variant: 'accent' }}
+      >
+        <EditorChoices
+          options={[
+            { value: '9:16', label: '9:16 Portrait' },
+            { value: '16:9', label: '16:9 Landscape' }
+          ]}
+          value={activeRatio}
+          onChange={onRatioChange}
+        />
+        <View className="min-h-[60px] flex-row items-center justify-between gap-3">
+          <Text className="flex-1 text-sm text-foreground">Show platform safe area</Text>
+          <Switch
+            accessibilityLabel="Show platform safe area"
+            value={safeAreaVisible}
+            onValueChange={onToggleSafeArea}
+            trackColor={{ true: tokens.colors.accent }}
+          />
+        </View>
+        <Text className="text-sm leading-[21px] text-muted">Keep important text and faces inside the guides.</Text>
+      </EditorSheet>
+    </>
+  )
 }

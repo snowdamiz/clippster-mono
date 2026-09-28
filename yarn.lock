@@ -2509,6 +2509,11 @@ anymatch@~3.1.2:
     normalize-path "^3.0.0"
     picomatch "^2.0.4"
 
+arg@^4.1.0:
+  version "4.1.3"
+  resolved "https://registry.yarnpkg.com/arg/-/arg-4.1.3.tgz#269fc7ad5b8e42cb63c896d5666017261c144089"
+  integrity sha512-58S9QDqG0Xx27YwPSt9fJxivjYl432YCwfDMfZ+71RAqUrZef7LrKQZ3LHLOwCS4FLNBplP533Zx895SeOCHvA==
+
 arg@^5.0.2:
   version "5.0.2"
   resolved "https://registry.npmjs.org/arg/-/arg-5.0.2.tgz"
@@ -4019,6 +4024,11 @@ expo-document-picker@~56.0.3:
   resolved "https://registry.npmjs.org/expo-document-picker/-/expo-document-picker-56.0.4.tgz"
   integrity sha512-75Apf74XNkYYohObIH19VZw42xpe0gmEnPccuzGXKVAzlvTYCfibSgW17F+6vt4paOfZEnAoZ1QFZM6dmaujRA==
 
+expo-eas-client@~56.0.0:
+  version "56.0.1"
+  resolved "https://registry.yarnpkg.com/expo-eas-client/-/expo-eas-client-56.0.1.tgz#cf37ac0f9ca318c90e325f72fbdd904d4428f047"
+  integrity sha512-r8h0ZIExacCrSRgY+ARfhMvFqosLHLJt1L7jyhvabfr1DN/ZDKDsYbovss2tzkpEUZGxZ3BPcB5epCwUsBBdOA==
+
 expo-file-system@~56.0.11:
   version "56.0.11"
   resolved "https://registry.yarnpkg.com/expo-file-system/-/expo-file-system-56.0.11.tgz#658b16c08c2f31cdfe9379f4c1867be9404c2e56"
@@ -4201,6 +4211,11 @@ expo-status-bar@~56.0.4:
   resolved "https://registry.npmjs.org/expo-status-bar/-/expo-status-bar-56.0.4.tgz"
   integrity sha512-IGs/fDfkHXofy2ZQrGiXayhFK04HB85FZXorhcEhDZEcqASKgSqpak+HwUtAaR0MeTJwWyHNF7I6VmVbbp8EcA==
 
+expo-structured-headers@~56.0.0:
+  version "56.0.0"
+  resolved "https://registry.yarnpkg.com/expo-structured-headers/-/expo-structured-headers-56.0.0.tgz#7b21c20e08d7f29eaa7fc0ce11a2c34844d6448f"
+  integrity sha512-Yv4x+SQxNnMQm4nu8NFfzx197YaDhdYH2N0u7tGErwWTmH9Tm1SAhqo7bLbBWLC9kf7W+kdzTshLU9rTiCXWGw==
+
 expo-symbols@^56.0.7:
   version "56.0.7"
   resolved "https://registry.npmjs.org/expo-symbols/-/expo-symbols-56.0.7.tgz"
@@ -4213,6 +4228,27 @@ expo-updates-interface@~56.0.1:
   version "56.0.2"
   resolved "https://registry.npmjs.org/expo-updates-interface/-/expo-updates-interface-56.0.2.tgz"
   integrity sha512-eWTwSZ9y8vrULG2oBn2TQSSIwBGSq/TxGJ3jY6tuVS2FWH/ASRIiKs3zkUZTRoC3ZuV2alz0mUClYV7nNrFx8g==
+
+expo-updates@~56.0.27:
+  version "56.0.27"
+  resolved "https://registry.yarnpkg.com/expo-updates/-/expo-updates-56.0.27.tgz#63a3204d9ab4dc5071dcd285a0011c9406632c75"
+  integrity sha512-erLOsYaqa/acCry9eKrH1EpRrWZXptU18maCm24LubCuVkBhaJOuwfkODop85ekOX3Xx1lrCkJV/apOL2Y0vqg==
+  dependencies:
+    "@expo/code-signing-certificates" "^0.0.6"
+    "@expo/plist" "^0.7.0"
+    "@expo/spawn-async" "^1.8.0"
+    arg "^4.1.0"
+    chalk "^4.1.2"
+    debug "^4.3.4"
+    expo-eas-client "~56.0.0"
+    expo-manifests "~56.0.4"
+    expo-structured-headers "~56.0.0"
+    expo-updates-interface "~56.0.1"
+    getenv "^2.0.0"
+    glob "^13.0.0"
+    ignore "^5.3.1"
+    nullthrows "^1.1.1"
+    resolve-from "^5.0.0"
 
 expo-video@~56.1.4:
   version "56.1.4"

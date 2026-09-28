@@ -1,12 +1,9 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Pressable, ScrollView, Text, View } from 'react-native';
+import { Ionicons } from '@expo/vector-icons'
+import { Pressable, ScrollView, Text, View } from 'react-native'
 
-import { tokens } from '@/theme/tokens';
-import type { SelectionKind } from '../model/schema';
-import {
-  toolsForSelection,
-  type EditorToolId,
-} from './toolDefinitions';
+import { tokens } from '@/theme/tokens'
+import type { SelectionKind } from '../model/schema'
+import { toolsForSelection, type EditorToolId } from './toolDefinitions'
 
 const TOOL_ICONS: Record<EditorToolId, keyof typeof Ionicons.glyphMap> = {
   edit: 'create-outline',
@@ -34,19 +31,19 @@ const TOOL_ICONS: Record<EditorToolId, keyof typeof Ionicons.glyphMap> = {
   duration: 'time-outline',
   opacity: 'water-outline',
   fade: 'analytics-outline',
-  transition: 'git-compare-outline',
-};
+  transition: 'git-compare-outline'
+}
 
 export function ContextualToolBar({
   selectionKind,
   onToolPress,
-  visibleCapabilityIds,
+  visibleCapabilityIds
 }: {
-  selectionKind: SelectionKind | null;
-  onToolPress: (tool: EditorToolId) => void;
-  visibleCapabilityIds?: ReadonlySet<string> | string[];
+  selectionKind: SelectionKind | null
+  onToolPress: (tool: EditorToolId) => void
+  visibleCapabilityIds?: ReadonlySet<string> | string[]
 }) {
-  const tools = toolsForSelection(selectionKind, visibleCapabilityIds);
+  const tools = toolsForSelection(selectionKind, visibleCapabilityIds)
   return (
     <View className="h-[82px] bg-background py-2">
       <ScrollView
@@ -69,14 +66,12 @@ export function ContextualToolBar({
               size={22}
               color={tool.destructive ? tokens.colors.destructive : tokens.colors.foreground}
             />
-            <Text
-              className={`text-[11px] ${tool.destructive ? 'text-destructive' : 'text-foreground'}`}
-            >
+            <Text className={`text-[11px] ${tool.destructive ? 'text-destructive' : 'text-foreground'}`}>
               {tool.label}
             </Text>
           </Pressable>
         ))}
       </ScrollView>
     </View>
-  );
+  )
 }

@@ -40,7 +40,7 @@ type ConflictHandler = (payload: {
   projectId: string;
   localSnapshot: CloudProjectSnapshot;
   serverSnapshot: CloudProjectSnapshot;
-}) => Promise<'keep_mine' | 'use_cloud' | 'save_copy'>;
+}) => Promise<'keep_mine' | 'use_cloud' | 'save_copy' | 'defer'>;
 
 let conflictHandler: ConflictHandler | null = null;
 let syncInProgress = false;

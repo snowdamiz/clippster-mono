@@ -1,7 +1,7 @@
 import { Ionicons } from '@expo/vector-icons';
 import { useEffect, useMemo, useState } from 'react';
-import { Modal, Pressable, ScrollView, Switch, Text, View } from 'react-native';
-import { Button } from '@/components/ui/button';
+import { Pressable, Switch, Text, View } from 'react-native';
+import { BottomSheet } from '@/components/ui/BottomSheet';
 import { VodTimeRangePicker, type TimeRangeValue } from '@/components/download/VodTimeRangePicker';
 import { CaptionPresetPicker } from '@/components/subtitles/CaptionPresetPicker';
 import { DEFAULT_CAPTION_PRESET_ID } from '@/lib/captionPresets';
@@ -55,26 +55,12 @@ export function ClipDetectionSheet({
   const canConfirm = !starting && (total <= 0 || selectedDuration >= 10);
 
   return (
-    <Modal visible={visible} transparent animationType="slide" onRequestClose={onClose}>
-      <View className="flex-1 justify-end bg-black/70">
-        <View className="max-h-[92%] rounded-t-2xl border-t border-border bg-background">
-          <View className="flex-row items-center justify-between px-4 pt-4">
-            <View className="flex-1">
-              <Text className="text-lg font-semibold text-foreground">Detect Clips</Text>
-              <Text className="mt-1 text-sm text-muted">AI-powered clip detection</Text>
-            </View>
-            <Pressable onPress={onClose} disabled={starting} className="p-2">
-              <Ionicons name="close" size={22} color={tokens.colors.muted} />
-            </Pressable>
-          </View>
-
-          <ScrollView
-            className="px-4 py-4"
-            contentContainerClassName="gap-4 pb-6"
-            keyboardShouldPersistTaps="handled"
-            nestedScrollEnabled
-          >
-            <View className="rounded-lg border border-border bg-surface px-3 py-2">
+    <BottomSheet visible={visible} onClose={onClose} variant="page" title="Find clips with AI" primaryAction={{
+      title: starting ? 'Detecting…' : 'Start detection',
+      disabled: !canConfirm,
+      onPress: () => onConfirm({ prompt: selectedPrompt, startTime: timeRange.startTime, endTime: timeRange.endTime, enhanced: false, subtitlesEnabled, subtitlePresetId }),
+    }} secondaryAction={{title:'Cancel',onPress:onClose,disabled:starting}}>
+            <View className="rounded-[18px] bg-surface px-3 py-2">
               <Text className="text-xs text-muted">Video duration</Text>
               <Text className="text-sm font-medium text-foreground">
                 {Math.floor(total / 60)}m {total % 60}s
@@ -84,7 +70,7 @@ export function ClipDetectionSheet({
             {total > 0 ? (
               <View className="gap-2">
                 <Text className="text-sm font-semibold text-foreground">Detection time range</Text>
-                <View className="rounded-lg border border-border bg-surface p-3">
+                <View className="rounded-[18px] bg-surface p-3">
                   <VodTimeRangePicker totalDuration={total} value={timeRange} onChange={setTimeRange} />
                 </View>
               </View>
@@ -94,7 +80,7 @@ export function ClipDetectionSheet({
               <Text className="text-sm font-semibold text-foreground">Detection prompt</Text>
               <Pressable
                 onPress={() => setShowPrompts((open) => !open)}
-                className="flex-row items-center justify-between rounded-lg border border-border bg-surface px-3 py-3"
+                className="flex-row items-center justify-between rounded-[18px] bg-surface px-3 py-3"
               >
                 <Text className="flex-1 text-sm text-foreground" numberOfLines={1}>
                   {selectedPrompt.name}
@@ -123,7 +109,7 @@ export function ClipDetectionSheet({
                 : null}
             </View>
 
-            <View className="rounded-lg border border-border bg-surface px-3 py-3">
+            <View className="rounded-[18px] bg-surface px-3 py-3">
               <View className="flex-row items-center justify-between">
                 <View className="flex-1 pr-3">
                   <View className="flex-row items-center gap-2">
@@ -145,10 +131,10 @@ export function ClipDetectionSheet({
               </View>
             </View>
 
-            <View className="rounded-lg border border-border bg-surface px-3 py-3">
+            <View className="rounded-[18px] bg-surface px-3 py-3">
               <View className="flex-row items-center justify-between">
                 <View className="flex-1 pr-3">
-                  <Text className="text-sm font-medium text-foreground">Include subtitles</Text>
+                  <Text className="text-sm font-medium text-foreground">Include captions</Text>
                   <Text className="mt-1 text-xs text-muted">
                     Automatically add captions to all detected clips
                   </Text>
@@ -175,31 +161,6 @@ export function ClipDetectionSheet({
                 does not have a transcript yet.
               </Text>
             </View>
-          </ScrollView>
-
-          <View className="flex-row gap-3 border-t border-border px-4 py-3">
-            <View className="flex-1">
-              <Button variant="outline" title="Cancel" onPress={onClose} disabled={starting} />
-            </View>
-            <View className="flex-1">
-              <Button
-                title={starting ? 'Detecting…' : 'Detect clips'}
-                onPress={() =>
-                  onConfirm({
-                    prompt: selectedPrompt,
-                    startTime: timeRange.startTime,
-                    endTime: timeRange.endTime,
-                    enhanced: false,
-                    subtitlesEnabled,
-                    subtitlePresetId,
-                  })
-                }
-                disabled={!canConfirm}
-              />
-            </View>
-          </View>
-        </View>
-      </View>
-    </Modal>
+    </BottomSheet>
   );
 }

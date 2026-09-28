@@ -111,6 +111,46 @@ jobs:
         # Context = monorepo root (for packages/app-tour); dockerfile stays under landing/
         run: flyctl deploy . --remote-only --config landing/fly.toml --dockerfile landing/Dockerfile
 
+  # Publish mobile JS/asset OTA (EAS Update production channel)
+  deploy-mobile-ota:
+    needs: create-release
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check for EXPO_TOKEN
+        run: |
+          if [ -z "${{ secrets.EXPO_TOKEN }}" ]; then
+            echo "::error::Add repository secret EXPO_TOKEN (Expo access token) so release can publish mobile OTA updates. Create one at https://expo.dev/settings/access-tokens"
+            exit 1
+          fi
+
+      - uses: actions/checkout@v6
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: yarn
+
+      - name: Setup EAS
+        uses: expo/expo-github-action@v8
+        with:
+          eas-version: latest
+          token: ${{ secrets.EXPO_TOKEN }}
+
+      - name: Install dependencies
+        run: yarn install --frozen-lockfile
+
+      - name: Publish production OTA update
+        working-directory: apps/mobile
+        env:
+          EXPO_PUBLIC_API_URL: https://api.clippster.app/api
+        run: |
+          eas update \
+            --channel production \
+            --environment production \
+            --message "Release v${{ needs.create-release.outputs.version }}" \
+            --non-interactive
+
   # Build for each platform
   build-tauri:
     needs: create-release

@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { router } from 'expo-router';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { ScreenHeader } from '@/components/ScreenHeader';
+import { Tabs } from '@/components/ui/tabs';
 import { PlanTierCard } from '@/components/subscription/PlanTierCard';
 import { useAccount } from '@/context/AccountContext';
 import { useAuth } from '@/context/AuthContext';
@@ -13,6 +14,8 @@ export default function BillingScreen() {
   const { logout } = useAuth();
   const {
     loading,
+    creditsLabel,
+    tierLabel,
     tiers,
     subscription,
     continueWithFreePlan,
@@ -45,6 +48,8 @@ export default function BillingScreen() {
       if (result.outcome === 'paid') {
         router.replace('/(tabs)/projects');
       }
+    } catch (error) {
+      appAlert('Checkout failed', error instanceof Error ? error.message : 'Could not open checkout.');
     } finally {
       setBusyTier(null);
     }
@@ -81,7 +86,7 @@ export default function BillingScreen() {
           <ActivityIndicator color={tokens.colors.accent} />
         </View>
       ) : (
-        <ScrollView contentContainerClassName="gap-4 px-4 py-4 pb-10">
+        <ScrollView contentContainerClassName="gap-[17px] px-5 py-4 pb-10">
           {requiresPlanGate ? (
             <View className="rounded-xl border border-accent/30 bg-accent/10 px-4 py-3">
               <Text className="font-semibold text-foreground">
@@ -95,43 +100,9 @@ export default function BillingScreen() {
             </View>
           ) : null}
 
-          <View className="flex-row self-end overflow-hidden rounded-lg border border-border">
-            <Pressable
-              onPress={() => setInterval('monthly')}
-              className={`px-3 py-2 ${interval === 'monthly' ? 'bg-accent' : 'bg-surface'}`}
-            >
-              <Text
-                className={`text-xs font-semibold ${
-                  interval === 'monthly' ? 'text-primary-foreground' : 'text-muted'
-                }`}
-              >
-                Monthly
-              </Text>
-            </Pressable>
-            <Pressable
-              onPress={() => setInterval('yearly')}
-              className={`flex-row items-center gap-1 px-3 py-2 ${
-                interval === 'yearly' ? 'bg-accent' : 'bg-surface'
-              }`}
-            >
-              <Text
-                className={`text-xs font-semibold ${
-                  interval === 'yearly' ? 'text-primary-foreground' : 'text-muted'
-                }`}
-              >
-                Yearly
-              </Text>
-              <View className="rounded-full bg-black/20 px-1.5 py-0.5">
-                <Text
-                  className={`text-[9px] font-bold uppercase ${
-                    interval === 'yearly' ? 'text-primary-foreground' : 'text-muted'
-                  }`}
-                >
-                  Save 1 month
-                </Text>
-              </View>
-            </Pressable>
-          </View>
+          <View className="gap-2 rounded-[18px] bg-surface p-4"><Text className="text-sm font-semibold text-foreground">Current plan · {tierLabel}</Text><Text className="text-sm text-muted">{creditsLabel} AI credits available</Text></View>
+          <Tabs items={[{key:"monthly", label:"Monthly"}, {key:"yearly",label:"Yearly"}]} value={interval} onChange={(value) => {if (!busyTier) setInterval(value as BillingInterval);}} />
+          <Text className="text-sm leading-[21px] text-muted">Yearly plans save one month.</Text>
 
           {displayTiers.map((tier) => (
             <PlanTierCard

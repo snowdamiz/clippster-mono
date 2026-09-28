@@ -45,13 +45,13 @@ export function ConversationRow({
   return (
     <Pressable
       onPress={onPress}
-      className={`flex-row items-center gap-3 border-b border-border px-4 py-3 ${
+      className={`flex-row items-center gap-3 border-b border-border px-5 py-4 ${
         pinned ? 'bg-accent/5' : 'bg-background'
       }`}
     >
-      <View className="h-12 w-12 items-center justify-center overflow-hidden rounded-full bg-surfaceMuted">
+      <View className="h-10 w-10 items-center justify-center overflow-hidden rounded-full bg-surfaceMuted">
         {avatarUrl && conversation.type === 'direct' ? (
-          <Image source={{ uri: avatarUrl }} className="h-12 w-12" />
+          <Image source={{ uri: avatarUrl }} className="h-10 w-10" />
         ) : (
           <Ionicons name={typeIcon(conversation.type)} size={22} color={tokens.colors.accent} />
         )}
@@ -79,7 +79,7 @@ export function ConversationRow({
           </Text>
           {unread ? (
             <View className="min-w-[20px] items-center rounded-full bg-accent px-1.5 py-0.5">
-              <Text className="text-[11px] font-bold text-white">
+              <Text className="text-[11px] font-bold text-primary-foreground">
                 {unreadCount > 99 ? '99+' : unreadCount}
               </Text>
             </View>

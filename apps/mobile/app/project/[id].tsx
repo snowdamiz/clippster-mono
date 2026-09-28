@@ -11,6 +11,9 @@ import {
 import { ClipDetectionSheet, type ClipDetectionPlan } from '@/components/editor/ClipDetectionSheet';
 import { ClipListCard } from '@/components/workspace/ClipListCard';
 import { VodPreview } from '@/components/workspace/VodPreview';
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { VodTimeRangePicker } from '@/components/download/VodTimeRangePicker';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { ScreenHeader } from '@/components/ScreenHeader';
 import { Button } from '@/components/ui/button';
 import type { Project } from '@clippster/shared-types';
@@ -219,16 +222,20 @@ export default function ProjectDetailScreen() {
     setAiProgress({ stage: 'idle', progress: 0, message: 'Cancelling…' });
   }
 
+  const [manualRange, setManualRange] = useState<{startTime:number;endTime:number} | null>(null);
+  function openManualClip() { const startTime = Math.max(0, Math.min(playheadTime, Math.max(0, videoDuration-1))); setManualRange({startTime,endTime:Math.min(videoDuration,startTime+30)}); }
+
   async function createClip() {
     if (!id || !videoPath) return;
     const duration = videoDuration > 0 ? videoDuration : playheadTime + 30;
-    const start = Math.max(0, playheadTime);
-    const end = Math.min(duration, start + 30);
+    const start = manualRange?.startTime ?? Math.max(0, playheadTime);
+    const end = manualRange?.endTime ?? Math.min(duration, start + 30);
     try {
       const clipId = await addManualClip(id, videoPath, start, end > start ? end : start + 30);
       const { queueProjectSync } = await import('@/services/cloudSync');
       void queueProjectSync(id);
       await loadWorkspace({ silent: true });
+      setManualRange(null);
       router.push({ pathname: '/clip/[id]', params: { id: clipId } });
     } catch (error) {
       appAlert('Could not create clip', error instanceof Error ? error.message : String(error));
@@ -270,7 +277,7 @@ export default function ProjectDetailScreen() {
           </View>
         ) : !videoPath || !project || !id ? (
           <View className="flex-1 items-center justify-center px-6">
-            <Text className="text-center text-muted">Video file is missing from device storage.</Text>
+            <EmptyState icon="document-outline" title="Video isn’t on this device" subtitle="Check its download or import the original video again." action={<Button title="View downloads" onPress={() => router.replace("/(tabs)/projects")} />} />
           </View>
         ) : (
           <>
@@ -357,7 +364,7 @@ export default function ProjectDetailScreen() {
                     onDelete={() => handleDeleteClip(clip)}
                   />
                 ))}
-                <Button title="＋ Add clip manually" variant="outline" onPress={() => void createClip()} />
+                <Button title="＋ Add clip manually" variant="outline" onPress={openManualClip} />
               </ScrollView>
             ) : (
               <View className="flex-1 items-center justify-center px-6">
@@ -374,11 +381,15 @@ export default function ProjectDetailScreen() {
                     onPress={() => void openDetectSheet()}
                     disabled={aiBusy}
                   />
-                  <Button title="＋ Add clip manually" variant="outline" onPress={() => void createClip()} />
+                  <Button title="＋ Add clip manually" variant="outline" onPress={openManualClip} />
                 </View>
               </View>
             )}
 
+            <BottomSheet visible={manualRange != null} onClose={() => setManualRange(null)} variant="page" title="Add a clip" primaryAction={{title:'Create clip',disabled:!manualRange || manualRange.endTime<=manualRange.startTime,onPress:()=>void createClip()}}>
+              <Text className="text-sm text-muted">Choose the moment you want to keep. Fine-tune its range next.</Text>
+              {manualRange ? <VodTimeRangePicker totalDuration={videoDuration} minSelectionSeconds={1} value={manualRange} onChange={setManualRange} /> : null}
+            </BottomSheet>
             <ClipDetectionSheet
               visible={showDetectSheet}
               videoDuration={videoDuration}

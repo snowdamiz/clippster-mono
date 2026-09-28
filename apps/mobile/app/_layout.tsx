@@ -18,6 +18,7 @@ import { PlanGateGuard } from '@/components/subscription/PlanGateGuard';
 import { SubscriptionGateSheet } from '@/components/subscription/SubscriptionGateSheet';
 import { CloudSyncProvider } from '@/context/CloudSyncContext';
 import { FeatureFlagsProvider } from '@/context/FeatureFlagsContext';
+import { useAppUpdatesOnLaunch } from '@/hooks/useAppUpdatesOnLaunch';
 import { DB_NAME, initDatabase } from '@/services/database';
 import { initCrashReporting } from '@/services/crashReporting';
 import { tokens } from '@/theme/tokens';
@@ -41,6 +42,7 @@ const navigationTheme = {
 
 export default function RootLayout() {
   const [ready, setReady] = useState(false);
+  useAppUpdatesOnLaunch(ready);
 
   useEffect(() => {
     async function prepare() {

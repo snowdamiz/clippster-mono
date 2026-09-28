@@ -1,4 +1,4 @@
-import type { ChannelLink, ClipperProfile, PortfolioClip } from '@clippster/api-client';
+import type { ChannelLink, ClipperProfile, PortfolioClip } from '@clippster/api-client'
 import {
   CHANNEL_PLATFORMS,
   COMMON_TIMEZONES,
@@ -7,118 +7,108 @@ import {
   LANGUAGES,
   PREFERRED_PLATFORMS,
   SPECIALTY_TAGS,
-  getPlatformLabel,
-} from '@clippster/api-client';
-import { Ionicons } from '@expo/vector-icons';
-import * as DocumentPicker from 'expo-document-picker';
-import { router } from 'expo-router';
-import { useCallback, useEffect, useState } from 'react';
-import {
-  ActivityIndicator,
-  Image,
-  Pressable,
-  Text,
-  View,
-} from 'react-native';
-import { PublicProfileLinkRow } from '@/components/profile/PublicProfileLinkRow';
-import { SettingRow } from '@/components/profile/SettingRow';
-import { formatTimezoneLabel, SingleSelectChips, TagSelect } from '@/components/profile/TagSelect';
-import { BottomSheet } from '@/components/ui/BottomSheet';
-import { Button } from '@/components/ui/button';
-import { Card } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import { Separator } from '@/components/ui/separator';
-import { Tabs } from '@/components/ui/tabs';
-import { useAuth } from '@/context/AuthContext';
-import { appAlert } from '@/lib/appAlert';
-import { clipperProfilesApi } from '@/services/api';
-import { getCompletedClipBuilds } from '@/services/database/clips';
-import { tokens } from '@/theme/tokens';
+  getPlatformLabel
+} from '@clippster/api-client'
+import { Ionicons } from '@expo/vector-icons'
+import * as DocumentPicker from 'expo-document-picker'
+import { router } from 'expo-router'
+import { useCallback, useEffect, useState } from 'react'
+import { ActivityIndicator, Image, Pressable, Text, View } from 'react-native'
+import { PublicProfileLinkRow } from '@/components/profile/PublicProfileLinkRow'
+import { SettingRow } from '@/components/profile/SettingRow'
+import { formatTimezoneLabel, SingleSelectChips, TagSelect } from '@/components/profile/TagSelect'
+import { BottomSheet } from '@/components/ui/BottomSheet'
+import { Button } from '@/components/ui/button'
+import { Card } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { Separator } from '@/components/ui/separator'
+import { MenuRow } from '@/components/navigation/MenuRow'
+import { useAuth } from '@/context/AuthContext'
+import { appAlert } from '@/lib/appAlert'
+import { clipperProfilesApi } from '@/services/api'
+import { getCompletedClipBuilds } from '@/services/database/clips'
+import { tokens } from '@/theme/tokens'
 
-type Tab = 'edit' | 'channels' | 'portfolio';
+type Tab = 'overview' | 'edit' | 'skills' | 'channels' | 'portfolio'
 
 interface ClipperProfileSheetProps {
-  visible: boolean;
-  onClose: () => void;
-  onProfileUpdated?: () => void;
+  visible: boolean
+  onClose: () => void
+  onProfileUpdated?: () => void
 }
 
-export function ClipperProfileSheet({
-  visible,
-  onClose,
-  onProfileUpdated,
-}: ClipperProfileSheetProps) {
-  const { user } = useAuth();
-  const [profile, setProfile] = useState<ClipperProfile | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [tab, setTab] = useState<Tab>('edit');
-  const [displayName, setDisplayName] = useState('');
-  const [bio, setBio] = useState('');
-  const [experienceLevel, setExperienceLevel] = useState('');
-  const [specialtyTags, setSpecialtyTags] = useState<string[]>([]);
-  const [contentStyleTags, setContentStyleTags] = useState<string[]>([]);
-  const [preferredPlatforms, setPreferredPlatforms] = useState<string[]>([]);
-  const [languages, setLanguages] = useState<string[]>([]);
-  const [timezone, setTimezone] = useState('');
-  const [isPublic, setIsPublic] = useState(true);
-  const [lookingForWork, setLookingForWork] = useState(false);
-  const [channelLinks, setChannelLinks] = useState<ChannelLink[]>([]);
-  const [portfolioClips, setPortfolioClips] = useState<PortfolioClip[]>([]);
-  const [newLinkPlatform, setNewLinkPlatform] = useState('tiktok');
-  const [newLinkUrl, setNewLinkUrl] = useState('');
-  const [newLinkUsername, setNewLinkUsername] = useState('');
+export function ClipperProfileSheet({ visible, onClose, onProfileUpdated }: ClipperProfileSheetProps) {
+  const { user } = useAuth()
+  const [profile, setProfile] = useState<ClipperProfile | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [tab, setTab] = useState<Tab>('overview')
+  const [displayName, setDisplayName] = useState('')
+  const [bio, setBio] = useState('')
+  const [experienceLevel, setExperienceLevel] = useState('')
+  const [specialtyTags, setSpecialtyTags] = useState<string[]>([])
+  const [contentStyleTags, setContentStyleTags] = useState<string[]>([])
+  const [preferredPlatforms, setPreferredPlatforms] = useState<string[]>([])
+  const [languages, setLanguages] = useState<string[]>([])
+  const [timezone, setTimezone] = useState('')
+  const [isPublic, setIsPublic] = useState(true)
+  const [lookingForWork, setLookingForWork] = useState(false)
+  const [channelLinks, setChannelLinks] = useState<ChannelLink[]>([])
+  const [portfolioClips, setPortfolioClips] = useState<PortfolioClip[]>([])
+  const [newLinkPlatform, setNewLinkPlatform] = useState('tiktok')
+  const [newLinkUrl, setNewLinkUrl] = useState('')
+  const [newLinkUsername, setNewLinkUsername] = useState('')
 
   const loadProfile = useCallback(async () => {
-    const response = await clipperProfilesApi.getMyProfile();
+    const response = await clipperProfilesApi.getMyProfile()
     if (!response.success || !response.profile) {
-      setProfile(null);
-      return;
+      setProfile(null)
+      return
     }
-    const p = response.profile;
-    setProfile(p);
-    setDisplayName(p.display_name ?? '');
-    setBio(p.bio ?? '');
-    setExperienceLevel(p.experience_level ?? '');
-    setSpecialtyTags(p.specialty_tags ?? []);
-    setContentStyleTags(p.content_style_tags ?? []);
-    setPreferredPlatforms(p.preferred_platforms ?? []);
-    setLanguages(p.languages ?? []);
-    setTimezone(p.timezone ?? COMMON_TIMEZONES[0]);
-    setIsPublic(p.is_public);
-    setLookingForWork(p.looking_for_work);
-    setChannelLinks(p.channel_links ?? []);
-    setPortfolioClips(p.portfolio_clips ?? []);
-  }, []);
+    const p = response.profile
+    setProfile(p)
+    setDisplayName(p.display_name ?? '')
+    setBio(p.bio ?? '')
+    setExperienceLevel(p.experience_level ?? '')
+    setSpecialtyTags(p.specialty_tags ?? [])
+    setContentStyleTags(p.content_style_tags ?? [])
+    setPreferredPlatforms(p.preferred_platforms ?? [])
+    setLanguages(p.languages ?? [])
+    setTimezone(p.timezone ?? COMMON_TIMEZONES[0])
+    setIsPublic(p.is_public)
+    setLookingForWork(p.looking_for_work)
+    setChannelLinks(p.channel_links ?? [])
+    setPortfolioClips(p.portfolio_clips ?? [])
+  }, [])
 
   useEffect(() => {
-    if (!visible) return;
+    if (!visible) return
     void (async () => {
-      setLoading(true);
+      setLoading(true)
       try {
-        await loadProfile();
+        await loadProfile()
       } finally {
-        setLoading(false);
+        setLoading(false)
       }
-    })();
-  }, [visible, loadProfile]);
+    })()
+  }, [visible, loadProfile])
 
-  if (!visible) return null;
+  if (!visible) return null
 
   async function saveVisibility(value: boolean) {
-    setIsPublic(value);
-    const response = await clipperProfilesApi.updateMyProfile({ is_public: value });
+    setIsPublic(value)
+    const response = await clipperProfilesApi.updateMyProfile({ is_public: value })
     if (response.success) {
-      await loadProfile();
+      await loadProfile()
     } else {
-      appAlert('Error', response.error ?? 'Failed to update visibility');
-      setIsPublic(!value);
+      appAlert('Error', response.error ?? 'Failed to update visibility')
+      setIsPublic(!value)
     }
   }
 
   async function saveProfile() {
-    setSaving(true);
+    setSaving(true)
     try {
       const response = await clipperProfilesApi.updateMyProfile({
         display_name: displayName.trim() || null,
@@ -130,100 +120,100 @@ export function ClipperProfileSheet({
         languages,
         timezone: timezone || null,
         is_public: isPublic,
-        looking_for_work: lookingForWork,
-      });
+        looking_for_work: lookingForWork
+      })
       if (response.success) {
-        appAlert('Saved', 'Your clipper profile has been updated.');
-        await loadProfile();
-        onProfileUpdated?.();
+        appAlert('Saved', 'Your clipper profile has been updated.')
+        await loadProfile()
+        onProfileUpdated?.()
       } else {
-        appAlert('Error', response.error ?? 'Failed to save profile');
+        appAlert('Error', response.error ?? 'Failed to save profile')
       }
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
   }
 
   async function uploadAvatar() {
-    const result = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true });
-    if (result.canceled || !result.assets[0]) return;
+    const result = await DocumentPicker.getDocumentAsync({ type: 'image/*', copyToCacheDirectory: true })
+    if (result.canceled || !result.assets[0]) return
 
-    const asset = result.assets[0];
+    const asset = result.assets[0]
     const response = await clipperProfilesApi.uploadAvatar({
       uri: asset.uri,
       name: asset.name ?? 'avatar.jpg',
-      type: asset.mimeType ?? 'image/jpeg',
-    });
+      type: asset.mimeType ?? 'image/jpeg'
+    })
     if (response.success) {
-      await loadProfile();
-      onProfileUpdated?.();
+      await loadProfile()
+      onProfileUpdated?.()
     } else {
-      appAlert('Upload failed', response.error ?? 'Could not upload avatar');
+      appAlert('Upload failed', response.error ?? 'Could not upload avatar')
     }
   }
 
   async function addChannelLink() {
     if (!newLinkUrl.trim()) {
-      appAlert('URL required', 'Enter a channel URL.');
-      return;
+      appAlert('URL required', 'Enter a channel URL.')
+      return
     }
     const response = await clipperProfilesApi.createChannelLink({
       platform: newLinkPlatform,
       url: newLinkUrl.trim(),
-      username: newLinkUsername.trim() || undefined,
-    });
+      username: newLinkUsername.trim() || undefined
+    })
     if (response.success) {
-      setNewLinkUrl('');
-      setNewLinkUsername('');
-      await loadProfile();
+      setNewLinkUrl('')
+      setNewLinkUsername('')
+      await loadProfile()
     } else {
-      appAlert('Error', response.error ?? 'Failed to add channel link');
+      appAlert('Error', response.error ?? 'Failed to add channel link')
     }
   }
 
   async function deleteLink(id: number) {
-    await clipperProfilesApi.deleteChannelLink(id);
-    await loadProfile();
+    await clipperProfilesApi.deleteChannelLink(id)
+    await loadProfile()
   }
 
   async function uploadPortfolioFromDevice() {
-    const result = await DocumentPicker.getDocumentAsync({ type: 'video/*', copyToCacheDirectory: true });
-    if (result.canceled || !result.assets[0]) return;
-    const asset = result.assets[0];
+    const result = await DocumentPicker.getDocumentAsync({ type: 'video/*', copyToCacheDirectory: true })
+    if (result.canceled || !result.assets[0]) return
+    const asset = result.assets[0]
     const response = await clipperProfilesApi.uploadPortfolioClip({
       uri: asset.uri,
       name: asset.name ?? 'portfolio.mp4',
-      type: asset.mimeType ?? 'video/mp4',
-    });
+      type: asset.mimeType ?? 'video/mp4'
+    })
     if (response.success) {
-      await loadProfile();
+      await loadProfile()
     } else {
-      appAlert('Upload failed', response.error ?? 'Could not upload portfolio clip');
+      appAlert('Upload failed', response.error ?? 'Could not upload portfolio clip')
     }
   }
 
   async function addPortfolioFromExport() {
-    const builds = await getCompletedClipBuilds(20);
+    const builds = await getCompletedClipBuilds(20)
     if (builds.length === 0) {
-      appAlert('No exports', 'Export a clip first from a project.');
-      return;
+      appAlert('No exports', 'Export a clip first from a project.')
+      return
     }
-    const build = builds[0];
+    const build = builds[0]
     const response = await clipperProfilesApi.uploadPortfolioClip({
       uri: build.file_path,
       name: `export_${build.id}.mp4`,
-      type: 'video/mp4',
-    });
+      type: 'video/mp4'
+    })
     if (response.success) {
-      await loadProfile();
+      await loadProfile()
     } else {
-      appAlert('Upload failed', response.error ?? 'Could not add export to portfolio');
+      appAlert('Upload failed', response.error ?? 'Could not add export to portfolio')
     }
   }
 
   async function deletePortfolio(id: number) {
-    await clipperProfilesApi.deletePortfolioClip(id);
-    await loadProfile();
+    await clipperProfilesApi.deletePortfolioClip(id)
+    await loadProfile()
   }
 
   function startCreateProfile() {
@@ -252,17 +242,24 @@ export function ClipperProfileSheet({
       badges: [],
       is_affiliate: false,
       inserted_at: '',
-      updated_at: '',
-    });
+      updated_at: ''
+    })
   }
 
   return (
     <BottomSheet
       visible={visible}
-      onClose={onClose}
-      variant="sheet"
-      title="Clipper profile"
-      subtitle="Portfolio, campaigns, and public profile"
+      onClose={tab === 'overview' ? onClose : () => setTab('overview')}
+      variant="page"
+      title={
+        {
+          overview: 'Clipper profile',
+          edit: 'About you',
+          skills: 'Skills & preferences',
+          channels: 'Channel links',
+          portfolio: 'Portfolio'
+        }[tab]
+      }
       headerIcon="briefcase-outline"
       maxHeightClassName="max-h-[92%]"
       scrollable
@@ -277,77 +274,94 @@ export function ClipperProfileSheet({
           <View className="h-16 w-16 items-center justify-center rounded-full bg-surfaceMuted">
             <Ionicons name="person" size={28} color={tokens.colors.muted} />
           </View>
-          <Text className="text-center text-lg font-semibold text-foreground">
-            Create your clipper profile
-          </Text>
+          <Text className="text-center text-lg font-semibold text-foreground">Create your clipper profile</Text>
           <Text className="text-center text-muted">
             Build your public portfolio so organizations can discover your work.
           </Text>
-          <Button title="Get started" onPress={startCreateProfile} />
+          <Button title="Get started" variant="accent" onPress={startCreateProfile} />
         </Card>
       ) : (
         <>
-          <Card className="overflow-hidden p-0">
-            <View className="h-[3px] bg-accent" />
-            <View className="flex-row items-center gap-4 p-4">
-              <Pressable onPress={uploadAvatar}>
-                {profile.avatar_url ? (
-                  <Image source={{ uri: profile.avatar_url }} className="h-16 w-16 rounded-full" />
-                ) : (
-                  <View className="h-16 w-16 items-center justify-center rounded-full bg-surfaceMuted">
-                    <Ionicons name="person" size={28} color={tokens.colors.muted} />
+          {tab === 'overview' ? (
+            <>
+              <Card className="overflow-hidden p-0" style={{ backgroundColor: 'transparent' }}>
+                <View className="flex-row items-center gap-4 p-4">
+                  <Pressable onPress={uploadAvatar}>
+                    {profile.avatar_url ? (
+                      <Image source={{ uri: profile.avatar_url }} className="h-16 w-16 rounded-full" />
+                    ) : (
+                      <View className="h-16 w-16 items-center justify-center rounded-full bg-surfaceMuted">
+                        <Ionicons name="person" size={28} color={tokens.colors.muted} />
+                      </View>
+                    )}
+                  </Pressable>
+                  <View className="flex-1 gap-0.5">
+                    <Text className="text-lg font-semibold text-foreground">
+                      {displayName || user?.name || 'Your name'}
+                    </Text>
+                    <Text className="text-sm text-muted">{user?.email ?? ''}</Text>
+                    {profile.slug ? <PublicProfileLinkRow slug={profile.slug} /> : null}
                   </View>
-                )}
-              </Pressable>
-              <View className="flex-1 gap-0.5">
-                <Text className="text-lg font-semibold text-foreground">
-                  {displayName || user?.name || 'Your name'}
-                </Text>
-                <Text className="text-sm text-muted">{user?.email ?? ''}</Text>
-                {profile.slug ? <PublicProfileLinkRow slug={profile.slug} /> : null}
-              </View>
-            </View>
-          </Card>
+                </View>
+              </Card>
 
-          <SettingRow
-            title={isPublic ? 'Profile is public' : 'Profile is private'}
-            description={
-              isPublic
-                ? 'Organizations can find you in the directory'
-                : 'Only you can see your profile'
-            }
-            value={isPublic}
-            onValueChange={(value) => void saveVisibility(value)}
-            icon={
-              <Ionicons
-                name={isPublic ? 'globe-outline' : 'lock-closed-outline'}
-                size={20}
-                color={isPublic ? tokens.colors.accent : tokens.colors.muted}
+              <SettingRow
+                title={isPublic ? 'Profile is public' : 'Profile is private'}
+                description={isPublic ? 'Organizations can find you in the directory' : 'Only you can see your profile'}
+                value={isPublic}
+                onValueChange={(value) => void saveVisibility(value)}
+                icon={
+                  <Ionicons
+                    name={isPublic ? 'globe-outline' : 'lock-closed-outline'}
+                    size={20}
+                    color={isPublic ? tokens.colors.accent : tokens.colors.muted}
+                  />
+                }
               />
-            }
-          />
 
-          <Card className="gap-2">
-            <Text className="text-sm font-semibold text-foreground">Portfolio stats</Text>
-            <View className="flex-row justify-between">
-              <Text className="text-muted">Clips delivered</Text>
-              <Text className="text-foreground">{profile.total_clips_delivered}</Text>
-            </View>
-            <View className="flex-row justify-between">
-              <Text className="text-muted">Endorsements</Text>
-              <Text className="text-foreground">{profile.total_endorsements}</Text>
-            </View>
-          </Card>
-
-          <Tabs
-            items={[
-              { key: 'edit', label: 'Edit' },
-              { key: 'channels', label: 'Channels' },
-              { key: 'portfolio', label: 'Portfolio' },
-            ]}
-            value={tab}
-            onChange={(key) => setTab(key as Tab)}
-          />
+              <View className="flex-row gap-3">
+                <View className="flex-1 gap-1 rounded-[18px] bg-surface p-4">
+                  <Text className="text-[28px] font-bold text-foreground">{profile.total_clips_delivered}</Text>
+                  <Text className="text-xs text-muted">Clips delivered</Text>
+                </View>
+                <View className="flex-1 gap-1 rounded-[18px] bg-surface p-4">
+                  <Text className="text-[28px] font-bold text-foreground">{profile.total_endorsements}</Text>
+                  <Text className="text-xs text-muted">Endorsements</Text>
+                </View>
+              </View>
+              <MenuRow
+                icon="person-outline"
+                title="About you"
+                subtitle="Name, bio, avatar"
+                onPress={() => setTab('edit')}
+              />
+              <MenuRow
+                icon="sparkles-outline"
+                title="Skills & preferences"
+                subtitle="Experience, languages, timezone"
+                onPress={() => setTab('skills')}
+              />
+              <MenuRow
+                icon="link-outline"
+                title="Channel links"
+                subtitle="Your public social profiles"
+                onPress={() => setTab('channels')}
+              />
+              <MenuRow
+                icon="film-outline"
+                title="Portfolio"
+                subtitle="Show your best work"
+                onPress={() => setTab('portfolio')}
+              />
+              {profile.slug ? (
+                <Button
+                  title="Preview public profile"
+                  variant="outline"
+                  onPress={() => router.push(`/profile/preview?slug=${profile.slug}`)}
+                />
+              ) : null}
+            </>
+          ) : null}
 
           {tab === 'edit' ? (
             <View className="gap-4">
@@ -355,11 +369,7 @@ export function ClipperProfileSheet({
                 <Text className="text-lg font-semibold text-foreground">About you</Text>
                 <View className="gap-2">
                   <Label>Display name</Label>
-                  <Input
-                    value={displayName}
-                    onChangeText={setDisplayName}
-                    placeholder="Your clipper name"
-                  />
+                  <Input value={displayName} onChangeText={setDisplayName} placeholder="Your clipper name" />
                 </View>
                 <View className="gap-2">
                   <Label>Bio</Label>
@@ -374,6 +384,17 @@ export function ClipperProfileSheet({
                 </View>
               </Card>
 
+              <Button title="Change avatar" variant="ghost" onPress={uploadAvatar} />
+              <Button
+                title={saving ? 'Saving…' : 'Save profile'}
+                variant="accent"
+                disabled={saving}
+                onPress={saveProfile}
+              />
+            </View>
+          ) : null}
+          {tab === 'skills' ? (
+            <View className="gap-[17px]">
               <Card className="gap-5 p-4">
                 <Text className="text-lg font-semibold text-foreground">Skills & experience</Text>
                 <SingleSelectChips
@@ -425,7 +446,7 @@ export function ClipperProfileSheet({
                   description="Your primary working timezone."
                   options={COMMON_TIMEZONES.map((tz) => ({
                     value: tz,
-                    label: formatTimezoneLabel(tz),
+                    label: formatTimezoneLabel(tz)
                   }))}
                   value={timezone}
                   onChange={setTimezone}
@@ -439,12 +460,11 @@ export function ClipperProfileSheet({
                   description="Show organizations that you're open to new campaigns."
                   value={lookingForWork}
                   onValueChange={setLookingForWork}
-                  icon={
-                    <Ionicons name="briefcase-outline" size={20} color={tokens.colors.primary} />
-                  }
+                  icon={<Ionicons name="briefcase-outline" size={20} color={tokens.colors.primary} />}
                 />
                 <Button
                   title={saving ? 'Saving...' : 'Save profile'}
+                  variant="accent"
                   disabled={saving}
                   onPress={saveProfile}
                 />
@@ -457,9 +477,7 @@ export function ClipperProfileSheet({
               {channelLinks.map((link) => (
                 <View key={link.id} className="flex-row items-center justify-between gap-2">
                   <View className="flex-1">
-                    <Text className="font-medium text-foreground">
-                      {getPlatformLabel(link.platform)}
-                    </Text>
+                    <Text className="font-medium text-foreground">{getPlatformLabel(link.platform)}</Text>
                     <Text className="text-sm text-muted" numberOfLines={1}>
                       {link.username ? `@${link.username}` : link.url}
                     </Text>
@@ -478,58 +496,36 @@ export function ClipperProfileSheet({
                     onPress={() => setNewLinkPlatform(p.value)}
                     className={`rounded-full border px-3 py-1 ${newLinkPlatform === p.value ? 'border-primary' : 'border-border'}`}
                   >
-                    <Text
-                      className={
-                        newLinkPlatform === p.value ? 'text-primary' : 'text-foreground'
-                      }
-                    >
-                      {p.label}
-                    </Text>
+                    <Text className={newLinkPlatform === p.value ? 'text-primary' : 'text-foreground'}>{p.label}</Text>
                   </Pressable>
                 ))}
               </View>
-              <Input
-                value={newLinkUrl}
-                onChangeText={setNewLinkUrl}
-                placeholder="https://..."
-                autoCapitalize="none"
-              />
-              <Input
-                value={newLinkUsername}
-                onChangeText={setNewLinkUsername}
-                placeholder="Username (optional)"
-              />
+              <Input value={newLinkUrl} onChangeText={setNewLinkUrl} placeholder="https://..." autoCapitalize="none" />
+              <Input value={newLinkUsername} onChangeText={setNewLinkUsername} placeholder="Username (optional)" />
               <Button title="Add link" variant="outline" onPress={addChannelLink} />
             </Card>
           ) : null}
 
           {tab === 'portfolio' ? (
             <Card className="gap-4">
+              <View className="flex-row flex-wrap gap-3">
               {portfolioClips.map((clip) => (
-                <View key={clip.id} className="flex-row items-center justify-between">
+                <View key={clip.id} className="w-[48%] gap-2 overflow-hidden rounded-[18px] bg-surfaceMuted p-3">
+                  <Pressable onPress={() => profile.slug && router.push(`/profile/preview?slug=${profile.slug}`)}>
+                    {clip.thumbnail_url ? <Image source={{uri: clip.thumbnail_url}} className="aspect-video w-full rounded-[10px]" /> : <View className="aspect-video w-full items-center justify-center rounded-[10px] bg-background"><Ionicons name="film-outline" size={28} color={tokens.colors.muted}/></View>}
+                  </Pressable>
                   <View className="flex-1">
-                    <Text className="font-medium text-foreground">
-                      {clip.title ?? `Clip #${clip.id}`}
-                    </Text>
-                    {clip.duration ? (
-                      <Text className="text-sm text-muted">{Math.round(clip.duration)}s</Text>
-                    ) : null}
+                    <Text className="font-medium text-foreground">{clip.title ?? `Clip #${clip.id}`}</Text>
+                    {clip.duration ? <Text className="text-sm text-muted">{Math.round(clip.duration)}s</Text> : null}
                   </View>
-                  <Pressable onPress={() => deletePortfolio(clip.id)}>
+                  <Pressable accessibilityLabel="Remove portfolio clip" className="min-h-11 min-w-11 items-center justify-center self-end" onPress={() => appAlert("Remove portfolio clip?", "This removes the clip from your public portfolio.", [{text:"Cancel",style:"cancel"},{text:"Remove",style:"destructive",onPress:()=>void deletePortfolio(clip.id)}])}>
                     <Ionicons name="trash-outline" size={20} color={tokens.colors.destructive} />
                   </Pressable>
                 </View>
               ))}
-              <Button
-                title="Upload from camera roll"
-                variant="outline"
-                onPress={uploadPortfolioFromDevice}
-              />
-              <Button
-                title="Add from latest export"
-                variant="outline"
-                onPress={addPortfolioFromExport}
-              />
+              </View>
+              <Button title="Upload from camera roll" variant="outline" onPress={uploadPortfolioFromDevice} />
+              <Button title="Add from latest export" variant="outline" onPress={addPortfolioFromExport} />
               {profile.slug ? (
                 <Button
                   title="Preview public profile"
@@ -542,5 +538,5 @@ export function ClipperProfileSheet({
         </>
       )}
     </BottomSheet>
-  );
+  )
 }

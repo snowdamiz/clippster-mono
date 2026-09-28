@@ -8,6 +8,7 @@ import {
   View,
 } from 'react-native';
 import { BottomSheet } from '@/components/ui/BottomSheet';
+import { Tabs } from '@/components/ui/tabs';
 import { Input } from '@/components/ui/input';
 import { messagingApi, organizationsApi } from '@/services/api';
 import { tokens } from '@/theme/tokens';
@@ -143,36 +144,18 @@ export function NewConversationSheet({ visible, onClose, onCreated }: NewConvers
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      title="New conversation"
+      variant="page"
+      title={mode === "group" ? "New group" : mode === "announcement" ? "New announcement" : "New conversation"}
       primaryAction={{
-        title: submitting ? 'Creating…' : mode === 'announcement' ? 'Send' : 'Start',
+        title: submitting ? 'Creating…' : mode === 'announcement' ? 'Send announcement' : mode === 'group' ? 'Create group' : 'Start conversation',
         onPress: () => void handleSubmit(),
         disabled: submitting,
       }}
       secondaryAction={{ title: 'Cancel', onPress: onClose }}
       keyboardAvoiding
-      maxHeightClassName="max-h-[90%]"
     >
       <View className="gap-3">
-        <View className="flex-row gap-2">
-          {(['direct', 'group', 'announcement'] as ComposeMode[]).map((item) => (
-            <Pressable
-              key={item}
-              onPress={() => setMode(item)}
-              className={`rounded-full px-3 py-1.5 ${
-                mode === item ? 'bg-accent' : 'bg-surfaceMuted'
-              }`}
-            >
-              <Text
-                className={`text-xs font-semibold capitalize ${
-                  mode === item ? 'text-white' : 'text-muted'
-                }`}
-              >
-                {item}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+        <Tabs items={[{key: "direct", label:"Direct"}, {key:"group",label:"Group"}, {key:"announcement",label:"Announcement"}]} value={mode} onChange={(value) => { if (!submitting) { setMode(value as ComposeMode); setSelectedIds([]); if (value === "announcement") setOrgId(adminOrgs[0]?.id ?? null); } }} />
 
         {(mode === 'group' || mode === 'announcement' || (mode === 'direct' && orgs.length > 0)) &&
         orgs.length > 0 ? (
@@ -183,7 +166,7 @@ export function NewConversationSheet({ visible, onClose, onCreated }: NewConvers
                 <Pressable
                   key={org.id}
                   onPress={() => setOrgId(org.id)}
-                  className={`mr-2 rounded-full px-3 py-1.5 ${
+                  className={`mr-2 min-h-11 justify-center rounded-xl px-3 py-2 ${
                     orgId === org.id ? 'bg-accent/20 border border-accent' : 'bg-surfaceMuted'
                   }`}
                 >
@@ -236,7 +219,7 @@ export function NewConversationSheet({ visible, onClose, onCreated }: NewConvers
                             toggleUser(user.id);
                           }
                         }}
-                        className={`mb-1 flex-row items-center justify-between rounded-lg px-3 py-2.5 ${
+                        className={`min-h-[60px] flex-row items-center justify-between border-b border-border px-3 py-3 ${
                           selected ? 'bg-accent/15' : 'bg-surfaceMuted'
                         }`}
                       >

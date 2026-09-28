@@ -6,7 +6,9 @@ import { EditorWorkspace } from '@/editor/shell/EditorWorkspace';
 import { MobileEditorController } from '@/editor/state/editorController';
 import { loadEditorEntry } from '@/editor/state/loadEditorEntry';
 import { mobileEditorDependencies } from '@/editor/state/mobileEditorDependencies';
-import { appAlert } from '@/lib/appAlert';
+import type { MissingMedia } from '@/editor/persistence/mediaRecovery';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Button } from '@/components/ui/button';
 import { tokens } from '@/theme/tokens';
 
 export default function MobileEditorRoute() {
@@ -18,7 +20,8 @@ export default function MobileEditorRoute() {
   const entryKind = kind === 'clip' ? 'clip' : 'project';
   const [title, setTitle] = useState('Video editor');
   const [controller, setController] = useState<MobileEditorController | null>(null);
-  const [missingMediaCount, setMissingMediaCount] = useState(0);
+  const [missingMedia, setMissingMedia] = useState<MissingMedia[]>([]);
+  const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!id) return;
@@ -27,7 +30,7 @@ export default function MobileEditorRoute() {
       .then((loaded) => {
         if (!active) return;
         setTitle(loaded.title);
-        setMissingMediaCount(loaded.missingMedia.length);
+        setMissingMedia(loaded.missingMedia);
         setController(
           new MobileEditorController(
             loaded.document,
@@ -41,16 +44,16 @@ export default function MobileEditorRoute() {
       })
       .catch((error) => {
         if (!active) return;
-        appAlert('Could not open editor', error instanceof Error ? error.message : String(error), [
-          { text: 'Back', onPress: () => router.back() },
-        ]);
+        setLoadError(error instanceof Error ? error.message : 'Please try again.');
       });
     return () => {
       active = false;
     };
   }, [entryKind, id, router]);
 
-  if (!id || !controller) {
+  if (loadError || !id) return <View className="flex-1 justify-center bg-background px-5"><EmptyState icon="alert-circle-outline" title="Could not open editor" subtitle={loadError ?? 'No project was selected.'} action={<Button title="Back to library" onPress={() => router.replace('/(tabs)/projects')} />} /></View>;
+
+  if (!controller) {
     return (
       <View className="flex-1 items-center justify-center bg-background px-6">
         <ActivityIndicator color={tokens.colors.accent} />
@@ -61,17 +64,10 @@ export default function MobileEditorRoute() {
 
   return (
     <View className="flex-1">
-      {missingMediaCount > 0 ? (
-        <View className="bg-destructive px-4 py-2">
-          <Text className="text-center text-xs font-semibold text-white">
-            {missingMediaCount} media {missingMediaCount === 1 ? 'file is' : 'files are'} unavailable.
-            Replace missing media before export.
-          </Text>
-        </View>
-      ) : null}
       <EditorWorkspace
         title={title}
         controller={controller}
+        missingMedia={missingMedia}
         onClose={() => router.back()}
       />
     </View>

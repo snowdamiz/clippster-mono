@@ -1,22 +1,8 @@
 import { router } from 'expo-router';
-import { useEffect } from 'react';
-import { Text, View } from 'react-native';
-import { tokens } from '@/theme/tokens';
+import { View } from 'react-native';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { Button } from '@/components/ui/button';
 
 export default function StripeCancelScreen() {
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      router.replace('/billing');
-    }, 800);
-    return () => clearTimeout(timer);
-  }, []);
-
-  return (
-    <View className="flex-1 items-center justify-center bg-background px-6">
-      <Text className="text-center text-lg font-semibold text-foreground">Checkout cancelled</Text>
-      <Text className="mt-2 text-center text-sm text-muted" style={{ color: tokens.colors.muted }}>
-        No charge was made. You can pick a plan again anytime.
-      </Text>
-    </View>
-  );
+  return <View className="flex-1 justify-center bg-background px-5"><EmptyState icon="card-outline" title="Checkout canceled" subtitle="You haven’t completed a plan purchase. You can choose a plan again." action={<Button title="Back to plans" onPress={() => router.replace('/billing')} />} /></View>;
 }

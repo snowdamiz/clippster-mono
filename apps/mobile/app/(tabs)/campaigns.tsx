@@ -13,7 +13,7 @@ import { CampaignCard } from '@/components/campaign/CampaignCard';
 import { CampaignAccessGate } from '@/components/campaign/CampaignAccessGate';
 import { Card } from '@/components/ui/card';
 import { EmptyState } from '@/components/ui/EmptyState';
-import { FilterChip } from '@/components/ui/FilterChip';
+import { Tabs } from '@/components/ui/tabs';
 import { campaignApi } from '@/services/api';
 import { tokens } from '@/theme/tokens';
 
@@ -28,6 +28,7 @@ export default function CampaignsScreen() {
 }
 
 function CampaignsContent() {
+  const [loadError, setLoadError] = useState<string | null>(null);
   const [mode, setMode] = useState<ViewMode>('browse');
   const [campaigns, setCampaigns] = useState<Campaign[]>([]);
   const [earnings, setEarnings] = useState<EarningsSummary | null>(null);
@@ -35,10 +36,12 @@ function CampaignsContent() {
   const [refreshing, setRefreshing] = useState(false);
 
   const loadCampaigns = useCallback(async () => {
+    try {
     const response =
       mode === 'browse'
         ? await campaignApi.listActiveCampaigns()
         : await campaignApi.listMyCampaigns();
+    if (!response.success) throw new Error('Could not load campaigns.');
     if (response.success) {
       setCampaigns(response.campaigns);
     }
@@ -50,6 +53,8 @@ function CampaignsContent() {
     } else {
       setEarnings(null);
     }
+    setLoadError(null);
+    } catch (error) { setLoadError(error instanceof Error ? error.message : 'Could not load campaigns.'); }
   }, [mode]);
 
   useEffect(() => {
@@ -75,18 +80,9 @@ function CampaignsContent() {
   return (
     <View className="flex-1 bg-background">
       <ScreenHeader title="Campaigns" />
-      <View className="flex-row gap-2 px-4 py-3">
-        {(['browse', 'mine'] as ViewMode[]).map((m) => (
-          <FilterChip
-            key={m}
-            label={m === 'browse' ? 'Marketplace' : 'My campaigns'}
-            selected={mode === m}
-            onPress={() => setMode(m)}
-            className="flex-1"
-          />
-        ))}
-      </View>
+      <View className="px-5 py-[17px]"><Tabs items={[{key:"browse",label:"Marketplace"},{key:"mine",label:"My campaigns"}]} value={mode} onChange={(value) => setMode(value as ViewMode)} /></View>
 
+      {loadError ? <Text className="px-5 py-3 text-sm text-destructive">{loadError} Pull down to retry.</Text> : null}
       {loading ? (
         <View className="flex-1 items-center justify-center">
           <ActivityIndicator color={tokens.colors.accent} />
@@ -95,13 +91,13 @@ function CampaignsContent() {
         <FlatList
           data={campaigns}
           keyExtractor={(item) => String(item.id)}
-          contentContainerClassName="gap-3 px-4 pb-8"
+          contentContainerClassName="gap-[17px] px-5 pb-8"
           refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} />}
           ListHeaderComponent={
             mode === 'mine' && earnings ? (
               <Card className="mb-1 gap-1">
                 <Text className="font-semibold text-foreground">Earnings</Text>
-                <Text className="text-foreground">Earned: ${earnings.total_earned}</Text>
+                <Text className="text-[32px] font-bold text-foreground">${earnings.total_earned}</Text>
                 <Text className="text-muted">Pending: ${earnings.pending}</Text>
                 <Text className="text-sm text-muted">
                   {earnings.verified_submissions}/{earnings.total_submissions} verified submissions

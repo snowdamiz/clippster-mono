@@ -1,5 +1,9 @@
 import { useState } from 'react';
 
+import { BottomSheet } from '@/components/ui/BottomSheet';
+import { EmptyState } from '@/components/ui/EmptyState';
+import { MenuRow } from '@/components/navigation/MenuRow';
+import type { MissingMedia } from '../persistence/mediaRecovery';
 import { appAlert } from '@/lib/appAlert';
 import { SubtitleSheet } from '@/components/subtitles/SubtitleSheet';
 import { ExportSheet } from '@/components/export/ExportSheet';
@@ -46,6 +50,7 @@ import {
   PropertySliderSheet,
   type PropertySliderConfig,
 } from '../panels/PropertySliderSheet';
+import { CaptionWordsSheet } from '../panels/CaptionWordsSheet';
 import { TextEditorSheet } from '../panels/TextEditorSheet';
 import { TextStyleSheet } from '../panels/TextStyleSheet';
 import { TransitionSheet } from '../panels/TransitionSheet';
@@ -57,12 +62,15 @@ import { MobileEditorShell } from './MobileEditorShell';
 export function EditorWorkspace({
   title,
   controller,
+  missingMedia = [],
   onClose,
 }: {
   title: string;
   controller: MobileEditorController;
+  missingMedia?: MissingMedia[];
   onClose: () => void;
 }) {
+  const [unresolvedMedia, setUnresolvedMedia] = useState(missingMedia);
   const [mediaSheetVisible, setMediaSheetVisible] = useState(false);
   const [mediaMode, setMediaMode] = useState<'add' | 'overlay' | 'audio'>('add');
   const [mediaBusy, setMediaBusy] = useState(false);
@@ -76,6 +84,8 @@ export function EditorWorkspace({
     kind: 'video' | 'overlay';
     mode: 'filters' | 'effects' | 'adjust';
   } | null>(null);
+  const [captionWordsVisible, setCaptionWordsVisible] = useState(false);
+  const [textStyleMode, setTextStyleMode] = useState<'style' | 'animation'>('style');
   const [captionsVisible, setCaptionsVisible] = useState(false);
   const [transitionTargetId, setTransitionTargetId] = useState<string | null>(null);
   const [textStyleTargetId, setTextStyleTargetId] = useState<string | null>(null);
@@ -215,6 +225,7 @@ export function EditorWorkspace({
       item?.kind === 'text' &&
       (tool === 'style' || tool === 'font' || tool === 'color' || tool === 'animation')
     ) {
+      setTextStyleMode(tool === 'animation' ? 'animation' : 'style');
       setTextStyleTargetId(item.id);
       return;
     }
@@ -419,9 +430,9 @@ export function EditorWorkspace({
     }
   };
 
-  const replaceMedia = async (assetId: string, kind: 'video' | 'image') => {
+  const replaceMedia = async (assetId: string, kind: 'video' | 'image' | 'audio') => {
     try {
-      const picked = kind === 'video' ? await pickEditorVideo() : await pickEditorImage();
+      const picked = kind === 'video' ? await pickEditorVideo() : kind === 'audio' ? await pickEditorAudio() : await pickEditorImage();
       if (!picked) return;
       const asset = controller.snapshot.document.assets[assetId];
       if (!asset) return;
@@ -453,6 +464,7 @@ export function EditorWorkspace({
           Date.now(),
         ),
       );
+      setUnresolvedMedia(current => current.filter(missing => missing.asset.id !== assetId));
     } catch (error) {
       appAlert('Could not replace media', error instanceof Error ? error.message : String(error));
     }
@@ -488,6 +500,10 @@ export function EditorWorkspace({
         onExport={() => setExportVisible(true)}
         onToolRequest={handleToolRequest}
       />
+      <BottomSheet visible={unresolvedMedia.length > 0} variant="page" title="Media recovery" onClose={onClose} secondaryAction={{title:'Back to library',onPress:onClose}}>
+        <EmptyState icon="document-outline" title="An original file is missing" subtitle="Your draft is safe. Select the original media to continue." />
+        {unresolvedMedia.map(({asset}) => <MenuRow key={asset.id} icon="folder-open-outline" title="Replace missing media" subtitle={asset.sourceUri.split('/').pop()} onPress={() => void replaceMedia(asset.id, asset.kind)} />)}
+      </BottomSheet>
       <MediaImportSheet
         visible={mediaSheetVisible}
         busy={mediaBusy}
@@ -570,7 +586,9 @@ export function EditorWorkspace({
           setEffectTarget(null);
         }}
       />
+      <CaptionWordsSheet visible={captionWordsVisible} controller={controller} onClose={() => setCaptionWordsVisible(false)} />
       <SubtitleSheet
+        onEditWords={() => {setCaptionsVisible(false); setCaptionWordsVisible(true);}}
         visible={captionsVisible}
         settings={controller.snapshot.document.captionDocument?.settings ?? null}
         hasTranscript={Boolean(controller.snapshot.document.captionDocument?.words.length)}
@@ -604,6 +622,7 @@ export function EditorWorkspace({
         }}
       />
       <TextStyleSheet
+        mode={textStyleMode}
         visible={Boolean(activeText)}
         initialStyle={activeText?.style}
         initialAnimation={activeText?.animationIn}

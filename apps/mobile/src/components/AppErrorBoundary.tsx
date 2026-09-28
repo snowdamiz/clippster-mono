@@ -1,5 +1,6 @@
 import { Component, type ErrorInfo, type ReactNode } from 'react';
-import { Text, View } from 'react-native';
+import { View } from 'react-native';
+import { EmptyState } from '@/components/ui/EmptyState';
 import { Button } from '@/components/ui/button';
 import { captureException } from '@/services/crashReporting';
 
@@ -28,8 +29,7 @@ export class AppErrorBoundary extends Component<Props, State> {
     if (this.state.hasError) {
       return (
         <View className="flex-1 items-center justify-center bg-background px-6">
-          <Text className="mb-2 text-xl font-bold text-foreground">Something went wrong</Text>
-          <Text className="mb-6 text-center text-muted">{this.state.message}</Text>
+          <EmptyState icon="alert-circle-outline" title="Something went wrong" subtitle="We couldn’t load this screen. Try again to reopen it." />
           <Button title="Try again" onPress={() => this.setState({ hasError: false, message: '' })} />
         </View>
       );
