@@ -1,10 +1,15 @@
 import Config
 
+# Docker Engine on Linux needs a reachable host interface for the web media service.
+{:ok, dev_bind_ip} =
+  System.get_env("PHX_DEV_BIND_IP", "127.0.0.1") |> String.to_charlist() |> :inet.parse_address()
+
 # Configure your database
 config :clippster_server, ClippsterServer.Repo,
   username: "postgres",
   password: "postgres",
   hostname: "localhost",
+  port: String.to_integer(System.get_env("DATABASE_PORT", "5432")),
   database: "clippster_server_dev",
   stacktrace: true,
   show_sensitive_data_on_connection_error: true,
@@ -17,9 +22,8 @@ config :clippster_server, ClippsterServer.Repo,
 # watchers to your application. For example, we can use it
 # to bundle .js and .css sources.
 config :clippster_server, ClippsterServerWeb.Endpoint,
-  # Binding to loopback ipv4 address prevents access from other machines.
-  # Change to `ip: {0, 0, 0, 0}` to allow access from other machines.
-  http: [ip: {127, 0, 0, 1}, port: String.to_integer(System.get_env("PORT") || "4000")],
+  # Loopback by default; Linux Docker users can opt into a reachable host interface.
+  http: [ip: dev_bind_ip, port: String.to_integer(System.get_env("PORT") || "4000")],
   check_origin: false,
   code_reloader: true,
   debug_errors: true,

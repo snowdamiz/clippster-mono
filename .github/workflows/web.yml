@@ -1,0 +1,99 @@
+name: Web workspace
+on:
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'packages/**'
+      - 'client/src/**'
+      - 'client/public/logo*.svg'
+      - 'server/lib/clippster_server/auth/**'
+      - 'server/lib/clippster_server_web/controllers/auth_controller.ex'
+      - 'server/lib/clippster_server_web/oauth_callback_target.ex'
+      - 'server/lib/clippster_server_web/router.ex'
+      - 'server/priv/repo/migrations/**'
+      - 'server/test/**'
+      - 'server/config/**'
+      - 'server/docker-compose.yml'
+      - 'package.json'
+      - '.node-version'
+      - 'scripts/dev-setup*'
+      - 'scripts/deploy-fly*'
+      - '.github/workflows/web.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: web-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    defaults:
+      run:
+        working-directory: apps/web
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.node-version'
+          cache: npm
+          cache-dependency-path: apps/web/package-lock.json
+      - run: npm ci --workspaces=false
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - run: npm run typecheck --workspaces=false
+      - run: npm test --workspaces=false
+      - run: node --test ../../scripts/deploy-fly.test.mjs ../../scripts/dev-setup.test.mjs
+      - run: npm run build --workspaces=false
+      - run: npx playwright install --with-deps chromium
+      - run: npm run test:e2e --workspaces=false
+      - name: Linux production image
+        working-directory: .
+        run: docker build -f apps/web/Dockerfile -t clippster-web:ci .
+      - name: Docker development startup
+        working-directory: .
+        run: |
+          docker compose -f server/docker-compose.yml up --build --wait web
+          curl --fail http://localhost:5175/api/health
+          docker compose -f server/docker-compose.yml stop web
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: web-test-results
+          path: apps/web/test-results/
+          retention-days: 7
+
+  oauth-api:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      MIX_ENV: test
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U postgres" --health-interval 10s
+          --health-timeout 5s --health-retries 5
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: erlef/setup-beam@v1
+        with:
+          otp-version: '28'
+          elixir-version: '1.19'
+      - run: mix deps.get
+      - run: >-
+          mix test test/clippster_server/auth/workspace_oauth_test.exs
+          test/clippster_server_web/controllers/workspace_google_controller_test.exs
+          test/clippster_server_web/oauth_callback_target_test.exs
+          test/clippster_server_web/controllers/switch_google_account_controller_test.exs

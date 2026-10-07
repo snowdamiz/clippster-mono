@@ -1,0 +1,46 @@
+@import 'tailwindcss';
+@import '../../../client/src/styles/theme.css';
+@custom-variant dark (&:is(.dark *));
+@source './**/*.{vue,ts}';
+@source '../../../client/src/components/VideoPlayer.vue';
+@source '../../../client/src/components/VideoControls.vue';
+@source '../../../client/src/components/ProjectWorkspaceHeader.vue';
+@layer base {
+  body {
+    margin: 0;
+    min-width: 360px;
+    background: var(--sidebar-bg);
+    color: var(--sidebar-text);
+    font-family: Inter, system-ui, sans-serif;
+  }
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:not(:disabled),
+  a {
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  :focus-visible {
+    outline: 2px solid var(--editor-accent);
+    outline-offset: 3px;
+  }
+}
+@layer components {
+  .field {
+    @apply w-full rounded-lg border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-sky-500 focus:outline-none;
+  }
+  .button-primary {
+    @apply inline-flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-400 disabled:hover:bg-sky-500;
+  }
+  .button-secondary {
+    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/10;
+  }
+}

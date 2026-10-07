@@ -4,27 +4,11 @@
       <div v-if="modelValue" class="workspace-dialog__overlay">
         <Transition name="dialog" appear>
           <div v-if="modelValue" class="workspace-dialog" role="dialog" aria-modal="true">
-            <!-- Header -->
-            <div class="workspace-dialog__header">
-              <div class="workspace-dialog__header-left">
-                <div class="workspace-dialog__header-icon">
-                  <Film :size="14" />
-                </div>
-                <h2 class="workspace-dialog__title" :title="project?.name || 'New Project'">
-                  {{ project?.name || 'New Project' }}
-                </h2>
-                <span
-                  v-if="vodPresetConfig"
-                  class="workspace-dialog__vod-badge"
-                  :title="`VOD Pre-Edit: ${vodPresetConfig.targetAspectRatio}`"
-                >
-                  {{ vodPresetConfig.targetAspectRatio }} Pre-Edit
-                </span>
-              </div>
-              <button class="workspace-dialog__close" @click="close" title="Close (Esc)">
-                <X :size="16" />
-              </button>
-            </div>
+            <ProjectWorkspaceHeader
+              :title="project?.name || 'New Project'"
+              :badge="vodPresetConfig ? `${vodPresetConfig.targetAspectRatio} Pre-Edit` : undefined"
+              @close="close"
+            />
 
             <!-- Main Content Area -->
             <div class="workspace-dialog__content">
@@ -96,6 +80,7 @@
                 <!-- Video Player Container -->
                 <div class="workspace-dialog__video-wrapper" style="position: relative">
                   <VideoPlayer
+                    :resolve-media-src="convertFileSrc"
                     :video-src="videoSrc"
                     :video-loading="videoLoading"
                     :video-error="videoError"
@@ -423,8 +408,8 @@
     getVideoEditorProjectsForRawVideo,
     type VideoEditorProject,
   } from '@/services/database';
-  import { X, Film, Smartphone, Clapperboard } from 'lucide-vue-next';
-  import { invoke } from '@tauri-apps/api/core';
+  import { Smartphone, Clapperboard } from 'lucide-vue-next';
+  import { invoke, convertFileSrc } from '@tauri-apps/api/core';
   import type {
     ActiveVodPresetConfig,
     ManualFramingConfig,
@@ -434,6 +419,7 @@
     WordInfo,
     WhisperSegment,
   } from '@/types';
+  import ProjectWorkspaceHeader from './ProjectWorkspaceHeader.vue';
   import VideoPlayer from './VideoPlayer.vue';
   import VideoControls from './VideoControls.vue';
   import MediaPanel from './MediaPanel.vue';
@@ -5759,82 +5745,6 @@
     box-shadow:
       0 25px 80px rgba(0, 0, 0, 0.6),
       0 0 1px rgba(255, 255, 255, 0.1);
-  }
-
-  /* ===== Header (Condensed) ===== */
-  .workspace-dialog__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.75rem;
-    background-color: rgba(0, 0, 0, 0.4);
-    border-bottom: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    flex-shrink: 0;
-  }
-
-  .workspace-dialog__header-left {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: 0;
-  }
-
-  .workspace-dialog__header-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border-radius: 6px;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(168, 85, 247, 0.15) 100%);
-    border: 1px solid rgba(139, 92, 246, 0.3);
-    color: #a78bfa;
-    flex-shrink: 0;
-  }
-
-  .workspace-dialog__title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text, #f4f4f5);
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    letter-spacing: -0.01em;
-  }
-
-  .workspace-dialog__vod-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.125rem 0.5rem;
-    font-size: 0.625rem;
-    font-weight: 600;
-    border-radius: 0.25rem;
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #6ee7b7;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-
-  .workspace-dialog__close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted, #71717a);
-    cursor: pointer;
-    transition: all 150ms ease;
-    flex-shrink: 0;
-  }
-
-  .workspace-dialog__close:hover {
-    background-color: rgba(255, 255, 255, 0.08);
-    color: var(--sidebar-text, #f4f4f5);
   }
 
   /* ===== Main Content Area ===== */

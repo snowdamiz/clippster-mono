@@ -6,9 +6,58 @@ services:
       POSTGRES_PASSWORD: postgres
       POSTGRES_DB: clippster_server_dev
     ports:
-      - "5432:5432"
+      - "${DATABASE_PORT:-5432}:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
 
+  web:
+    profiles: [web]
+    build:
+      context: ..
+      dockerfile: apps/web/Dockerfile
+      target: development
+    env_file:
+      - path: ../apps/web/.env
+        required: false
+    environment:
+      NODE_ENV: development
+      HOST: 0.0.0.0
+      PORT: 8090
+      WEB_ORIGIN: http://localhost:5175
+      CLIPPSTER_API_URL: ${WEB_DOCKER_API_URL:-http://host.docker.internal:4000/api}
+      WEB_DATA_DIR: /data
+      FFMPEG_PATH: ffmpeg
+      FFPROBE_PATH: ffprobe
+      YTDLP_PATH: /opt/ytdlp/bin/yt-dlp
+      # Reliable Vite reloads on Docker Desktop bind mounts.
+      WEB_WATCH_POLL: "true"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    ports:
+      - "127.0.0.1:5175:5175"
+      - "127.0.0.1:8090:8090"
+    volumes:
+      - web_data:/data
+      - ../apps/web/src:/workspace/apps/web/src:ro
+      - ../apps/web/server:/workspace/apps/web/server:ro
+      - ../apps/web/scripts:/workspace/apps/web/scripts:ro
+      - ../apps/web/vite.config.ts:/workspace/apps/web/vite.config.ts:ro
+      - ../apps/web/index.html:/workspace/apps/web/index.html:ro
+      - ../client/src:/workspace/client/src:ro
+      - ../client/public/logo.svg:/workspace/client/public/logo.svg:ro
+      - ../client/public/logo-titlebar.svg:/workspace/client/public/logo-titlebar.svg:ro
+      - ../packages/shared-types:/workspace/packages/shared-types:ro
+      - ../packages/api-client:/workspace/packages/api-client:ro
+      - ../packages/clip-export:/workspace/packages/clip-export:ro
+      - ../packages/cloud-sync-schema:/workspace/packages/cloud-sync-schema:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "Promise.all([5175,8090].map(p=>fetch('http://127.0.0.1:'+p+(p===8090?'/api/health':'')))).then(rs=>process.exit(rs.every(r=>r.ok)?0:1)).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+    stop_grace_period: 30s
+
 volumes:
   postgres_data:
+  web_data:

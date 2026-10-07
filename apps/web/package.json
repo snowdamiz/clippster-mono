@@ -1,0 +1,43 @@
+{
+  "name": "@clippster/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=24.0.0"
+  },
+  "scripts": {
+    "dev": "node scripts/dev.mjs",
+    "dev:ui": "vite",
+    "dev:server": "tsx watch --env-file-if-exists=.env server/index.ts",
+    "build": "vite build && node scripts/build-server.mjs",
+    "start": "node --env-file-if-exists=.env dist/server.mjs",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
+    "test": "vitest run",
+    "test:e2e": "playwright test"
+  },
+  "dependencies": {
+    "express": "^5.1.0",
+    "express-rate-limit": "^8.1.0",
+    "hls.js": "^1.6.15",
+    "ipaddr.js": "^2.2.0",
+    "lucide-vue-next": "^0.548.0",
+    "vue": "^3.5.13",
+    "zod": "3.25.76"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.56.0",
+    "@tailwindcss/postcss": "^4.1.16",
+    "@types/express": "^5.0.3",
+    "@types/node": "^24.9.1",
+    "@vitejs/plugin-vue": "^5.2.1",
+    "esbuild": "^0.25.10",
+    "tailwindcss": "^4.1.16",
+    "tailwindcss-animate": "^1.0.7",
+    "tsx": "4.23.12",
+    "typescript": "~5.6.2",
+    "vite": "^6.4.1",
+    "vitest": "^3.2.4",
+    "vue-tsc": "^2.1.10"
+  }
+}

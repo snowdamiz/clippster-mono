@@ -1,4 +1,5 @@
-import type { SubtitleSettings, WordInfo } from '@clippster/shared-types';
+import { TARGET_DIMENSIONS } from '@clippster/shared-types';
+import type { SubtitleSettings, WordInfo, TargetAspectRatio } from '@clippster/shared-types';
 
 export interface SubtitleAssInput {
   settings: SubtitleSettings;
@@ -46,15 +47,19 @@ function getEffectiveSettings(settings: SubtitleSettings, targetRatio: string): 
 
 export function buildSubtitleAssContent(input: SubtitleAssInput): string {
   const settings = getEffectiveSettings(input.settings, input.targetRatio);
-  const marginV = Math.round((100 - settings.positionPercentage) * 19.2);
+  const dimensions = TARGET_DIMENSIONS[input.targetRatio as TargetAspectRatio] ?? {
+    width: 1080,
+    height: 1920,
+  };
+  const marginV = Math.round(((100 - settings.positionPercentage) * dimensions.height) / 100);
   const outline = settings.border1Width + settings.border2Width;
 
   const header = `[Script Info]
 Title: Clippster Export
 ScriptType: v4.00+
 WrapStyle: 0
-PlayResX: 1080
-PlayResY: 1920
+PlayResX: ${dimensions.width}
+PlayResY: ${dimensions.height}
 ScaledBorderAndShadow: yes
 
 [V4+ Styles]

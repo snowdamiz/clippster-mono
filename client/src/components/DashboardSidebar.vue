@@ -38,123 +38,11 @@
               <!-- Navigation Items -->
               <ul class="sidebar-nav-group__items m-0 p-0 flex flex-col gap-0.5">
                 <li v-for="item in getVisibleGroupItems(group.items)" :key="item.path">
-                  <!-- Disabled item (non-clickable) -->
-                  <div
-                    v-if="item.disabled"
-                    class="flex items-center w-full py-2 rounded-md text-[var(--sidebar-text-muted)] bg-transparent border-[none] no-underline text-sm opacity-40 cursor-not-allowed select-none"
-                    :class="{
-                      'justify-center px-0': isCollapsed,
-                      'gap-3 px-3': !isCollapsed,
-                    }"
-                    :title="isCollapsed ? item.badge || item.name : undefined"
-                    :data-tour-id="tourIdForItem(item)"
-                  >
-                    <div class="relative flex items-center justify-center shrink-0">
-                      <component :is="item.icon as Component" class="w-[18px] h-[18px]" />
-                    </div>
-                    <span v-if="!isCollapsed" class="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {{ item.name }}
-                    </span>
-                    <span
-                      v-if="item.badge && !isCollapsed"
-                      class="ml-auto px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none rounded whitespace-nowrap"
-                      :class="
-                        item.badge === 'Beta'
-                          ? 'bg-[var(--sidebar-accent)] text-black'
-                          : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)]'
-                      "
-                    >
-                      {{ item.badge }}
-                    </span>
-                  </div>
-                  <!-- Normal nav item -->
-                  <router-link
-                    v-else
-                    :to="item.path"
-                    class="flex items-center w-full py-2 rounded-md text-[var(--sidebar-text-muted)] bg-transparent border-[none] no-underline text-sm transition-all duration-150 cursor-pointer hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)]"
-                    :class="{
-                      'sidebar-nav-item--active': isActive(item.path),
-                      'justify-center px-0': isCollapsed,
-                      'gap-3 px-3': !isCollapsed,
-                    }"
-                    :title="isCollapsed ? (item.badge ? `${item.name} (${item.badge})` : item.name) : undefined"
-                    :data-tour-id="tourIdForItem(item)"
-                    @click="(e) => onNavClick(e, item)"
-                  >
-                    <div class="relative flex items-center justify-center shrink-0">
-                      <div
-                        v-if="item.useImage"
-                        class="sidebar-nav-item__custom-icon w-[18px] h-[18px] bg-current"
-                        :style="{
-                          maskImage: `url(${item.icon})`,
-                          WebkitMaskImage: `url(${item.icon})`,
-                        }"
-                      />
-                      <component v-else :is="item.icon as Component" class="w-[18px] h-[18px]" />
-                      <!-- Unread badge for Messages (icon badge when collapsed) -->
-                      <span
-                        v-if="item.name === 'Messages' && totalUnreadMessages > 0 && isCollapsed"
-                        class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 flex items-center justify-center text-xs font-semibold bg-[#ef4444] text-black rounded-lg"
-                      >
-                        {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
-                      </span>
-                      <!-- Live badge for Live (icon badge when collapsed) -->
-                      <span
-                        v-if="item.name === 'Live' && liveCount > 0 && isCollapsed"
-                        class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 flex items-center justify-center text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-lg"
-                      >
-                        {{ liveCount > 99 ? '99+' : liveCount }}
-                      </span>
-                      <!-- Live badge for My Creators (icon badge when collapsed) -->
-                      <span
-                        v-if="item.name === 'My Creators' && liveCreatorsCount > 0 && isCollapsed"
-                        class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 flex items-center justify-center text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-lg"
-                      >
-                        {{ liveCreatorsCount > 99 ? '99+' : liveCreatorsCount }}
-                      </span>
-                    </div>
-                    <span v-if="!isCollapsed" class="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {{ item.name }}
-                    </span>
-                    <!-- Unread badge for Messages (right side when expanded) -->
-                    <span
-                      v-if="item.name === 'Messages' && totalUnreadMessages > 0 && !isCollapsed"
-                      class="ml-auto flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold bg-[#ef4444] text-black rounded-md"
-                    >
-                      {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
-                    </span>
-                    <!-- Live badge for Live (right side when expanded) -->
-                    <span
-                      v-if="item.name === 'Live' && liveCount > 0 && !isCollapsed"
-                      class="ml-auto flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-md"
-                    >
-                      {{ liveCount > 99 ? '99+' : liveCount }}
-                    </span>
-                    <!-- Live badge for My Creators (right side when expanded) -->
-                    <span
-                      v-if="item.name === 'My Creators' && liveCreatorsCount > 0 && !isCollapsed"
-                      class="ml-auto flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-md"
-                    >
-                      {{ liveCreatorsCount > 99 ? '99+' : liveCreatorsCount }}
-                    </span>
-                    <span
-                      v-if="
-                        item.badge &&
-                        !isCollapsed &&
-                        item.name !== 'Messages' &&
-                        item.name !== 'Live' &&
-                        item.name !== 'My Creators'
-                      "
-                      class="ml-auto px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none rounded whitespace-nowrap"
-                      :class="
-                        item.badge === 'Beta'
-                          ? 'bg-[var(--sidebar-accent)] text-black'
-                          : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)]'
-                      "
-                    >
-                      {{ item.badge }}
-                    </span>
-                  </router-link>
+                  <SidebarNavigationItem :name="item.name" :href="item.path" :icon="item.icon as Component"
+                    :use-image="item.useImage" :badge="item.badge" :disabled="item.disabled" :collapsed="isCollapsed"
+                    :active="isActive(item.path)" :link-component="RouterLink" :data-tour-id="tourIdForItem(item)"
+                    :count="item.name === 'Messages' ? totalUnreadMessages : item.name === 'Live' ? liveCount : item.name === 'My Creators' ? liveCreatorsCount : 0"
+                    :count-color="item.name === 'Messages' ? '#ef4444' : undefined" @click="(e: MouseEvent) => !item.disabled && onNavClick(e, item)" />
                 </li>
               </ul>
             </div>
@@ -270,8 +158,9 @@
 </template>
 
 <script setup lang="ts">
+  import SidebarNavigationItem from './SidebarNavigationItem.vue';
   import { ref, computed, onMounted, onUnmounted, watch, type Component } from 'vue';
-  import { useRoute, useRouter } from 'vue-router';
+  import { RouterLink, useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
 
   const props = defineProps<{
@@ -784,12 +673,6 @@
     list-style: none;
   }
 
-  .sidebar-nav-item__custom-icon {
-    mask-size: contain;
-    mask-repeat: no-repeat;
-    mask-position: center;
-  }
-
   .sidebar-footer {
     border-top: 1px solid var(--sidebar-border);
   }
@@ -800,15 +683,6 @@
 
   .sidebar--native {
     padding-top: 32px; /* Account for custom titlebar */
-  }
-
-  .sidebar-nav-item--active {
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-accent);
-  }
-
-  .sidebar-nav-item--active:hover {
-    background-color: var(--sidebar-active-hover);
   }
 
   .sidebar-collapsed-divider {

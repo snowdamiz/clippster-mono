@@ -166,6 +166,9 @@ defmodule ClippsterServerWeb.Router do
   scope "/api", ClippsterServerWeb do
     pipe_through(:api_rate_limited)
 
+    post("/auth/google/start", AuthController, :workspace_google_request)
+    post("/auth/google/exchange", AuthController, :workspace_google_exchange)
+
     # Beta code verification (rate limited to prevent brute force)
     post("/beta/verify-code", BetaController, :verify_code)
   end

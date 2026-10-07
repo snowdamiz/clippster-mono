@@ -48,7 +48,7 @@
             />
             <Volume2 v-else class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
           </button>
-          <div class="relative w-24 h-1 bg-white/10 rounded-full">
+          <div class="relative hidden sm:block w-24 h-1 bg-white/10 rounded-full">
             <div
               class="absolute left-0 top-0 h-full bg-white/40 rounded-full transition-all duration-150"
               :style="{ width: `${volume * 100}%` }"
