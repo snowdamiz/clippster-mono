@@ -78,6 +78,9 @@ jobs:
           java-version: '17'
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The action's default also requests the retired SDK "tools" package.
+          packages: 'platform-tools'
       - run: yarn install --frozen-lockfile
       - name: Ensure ffmpeg-expo Android CLI static libs
         run: node scripts/setup-ffmpeg-cli.mjs
