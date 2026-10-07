@@ -325,11 +325,41 @@ defmodule ClippsterServerWeb.AuthController do
   @doc """
   Initiates Google OAuth flow by redirecting to Google's authorization URL.
   """
+  def workspace_google_request(conn, params) do
+    with {:ok, workspace} <- ClippsterServer.Auth.WorkspaceOAuth.start_params(params),
+         {:ok, url} <-
+           build_google_auth_url(
+             conn,
+             %{"referral_code" => params["referral_code"]},
+             nil,
+             workspace
+           ) do
+      conn |> put_resp_header("cache-control", "no-store") |> json(%{success: true, url: url})
+    else
+      {:error, :not_configured} ->
+        conn |> put_status(503) |> json(%{error: "Google sign-in is unavailable."})
+
+      _ ->
+        conn |> put_status(400) |> json(%{error: "Invalid web sign-in request."})
+    end
+  end
+
+  def workspace_google_exchange(conn, params) do
+    with {:ok, user_id} <- ClippsterServer.Auth.WorkspaceOAuth.exchange(params),
+         %{} = user <- Accounts.get_user(user_id),
+         {:ok, token} <- generate_google_user_token(user) do
+      conn
+      |> put_resp_header("cache-control", "no-store")
+      |> json(%{success: true, token: token, user: %{id: user.id}})
+    else
+      _ -> conn |> put_status(400) |> json(%{error: "Invalid or expired sign-in code."})
+    end
+  end
+
   def google_request(conn, params) do
     case build_google_auth_url(conn, params, nil) do
       {:ok, google_auth_url} ->
         IO.puts("\n=== Redirecting to Google OAuth ===")
-        IO.puts("Google Auth URL: #{google_auth_url}")
         redirect(conn, external: google_auth_url)
 
       {:error, :not_configured} ->
@@ -442,7 +472,6 @@ defmodule ClippsterServerWeb.AuthController do
   """
   def google_callback(conn, %{"code" => code} = params) do
     IO.puts("\n=== Google OAuth Callback ===")
-    IO.puts("Received code: #{String.slice(code, 0, 20)}...")
 
     case parse_oauth_state(conn, params["state"]) do
       {:ok, web_opts} ->
@@ -559,7 +588,6 @@ defmodule ClippsterServerWeb.AuthController do
   # Fallback for missing code parameter
   def google_callback(conn, params) do
     IO.puts("\n=== Google OAuth Callback - No Code ===")
-    IO.puts("Params: #{inspect(params)}")
 
     {web_opts, error_msg} =
       case parse_oauth_state(conn, params["state"]) do
@@ -658,10 +686,17 @@ defmodule ClippsterServerWeb.AuthController do
 
         {:ok,
          %{
+           workspace: Map.get(payload, "workspace", false) == true,
+           client_state: Map.get(payload, "client_state"),
+           code_challenge: Map.get(payload, "code_challenge"),
            web: web_mode,
            mobile: mobile_mode,
            invite: invite_mode,
-           origin: origin,
+           origin:
+             if(Map.get(payload, "workspace", false),
+               do: Map.get(payload, "origin"),
+               else: origin
+             ),
            redirect_uri: Map.get(payload, "redirect_uri"),
            oauth_callback_base: Map.get(payload, "oauth_callback_base"),
            referral_code: sanitize_referral_code(Map.get(payload, "referral_code")),
@@ -677,7 +712,18 @@ defmodule ClippsterServerWeb.AuthController do
     end
   end
 
-  defp send_auth_success_html(conn, token, user, %{mobile: true, redirect_uri: redirect_uri}, is_new_user)
+  defp send_auth_success_html(conn, _token, user, %{workspace: true} = opts, _is_new_user) do
+    code = ClippsterServer.Auth.WorkspaceOAuth.issue(user.id, opts)
+    workspace_redirect(conn, opts, %{"code" => code})
+  end
+
+  defp send_auth_success_html(
+         conn,
+         token,
+         user,
+         %{mobile: true, redirect_uri: redirect_uri},
+         is_new_user
+       )
        when is_binary(redirect_uri) do
     case OAuthCallbackTarget.normalize_mobile_redirect_uri(redirect_uri) do
       {:ok, safe_uri} ->
@@ -799,11 +845,18 @@ defmodule ClippsterServerWeb.AuthController do
     redirect(conn, external: "http://localhost:54321/google-callback?#{params}")
   end
 
+  defp send_auth_error_html(conn, error_message, %{workspace: true} = opts) do
+    error = if error_message == "access_denied", do: "google_cancelled", else: "google_failed"
+    workspace_redirect(conn, opts, %{"error" => error})
+  end
+
   defp send_auth_error_html(conn, error_message, %{mobile: true, redirect_uri: redirect_uri})
        when is_binary(redirect_uri) do
     case OAuthCallbackTarget.normalize_mobile_redirect_uri(redirect_uri) do
       {:ok, safe_uri} ->
-        redirect(conn, external: OAuthCallbackTarget.append_query(safe_uri, %{"error" => error_message}))
+        redirect(conn,
+          external: OAuthCallbackTarget.append_query(safe_uri, %{"error" => error_message})
+        )
 
       {:error, _reason} ->
         conn
@@ -852,6 +905,19 @@ defmodule ClippsterServerWeb.AuthController do
       })
 
     redirect(conn, external: "http://localhost:54321/google-callback?#{params}")
+  end
+
+  defp workspace_redirect(conn, opts, params) do
+    url =
+      OAuthCallbackTarget.append_query(
+        opts.origin <> "/api/auth/google/callback",
+        Map.put(params, "state", opts.client_state)
+      )
+
+    conn
+    |> put_resp_header("cache-control", "no-store")
+    |> put_resp_header("referrer-policy", "no-referrer")
+    |> redirect(external: url)
   end
 
   defp maybe_put_state_value(map, _key, nil), do: map
@@ -1025,7 +1091,7 @@ defmodule ClippsterServerWeb.AuthController do
     TokenGenerator.generate_token(token_claims)
   end
 
-  defp build_google_auth_url(conn, params, switch_user_id) do
+  defp build_google_auth_url(conn, params, switch_user_id, workspace \\ nil) do
     config = Application.get_env(:ueberauth, Ueberauth.Strategy.Google.OAuth, [])
     client_id = Keyword.get(config, :client_id) || System.get_env("GOOGLE_CLIENT_ID")
 
@@ -1078,6 +1144,7 @@ defmodule ClippsterServerWeb.AuthController do
         |> maybe_put_state_value("invite_token", invite_token)
         |> maybe_put_state_value("switch_user_id", switch_user_id)
 
+      state_payload = Map.merge(state_payload, workspace || %{})
       state_data = Phoenix.Token.sign(conn, @google_state_salt, state_payload)
 
       # Force account picker when switching so the user can choose another Gmail
@@ -1112,7 +1179,8 @@ defmodule ClippsterServerWeb.AuthController do
 
   defp resolve_mobile_google_callback_url(_), do: {:error, :missing_callback_base}
 
-  defp google_oauth_callback_url(%{mobile: true, oauth_callback_base: base}) when is_binary(base) do
+  defp google_oauth_callback_url(%{mobile: true, oauth_callback_base: base})
+       when is_binary(base) do
     case resolve_mobile_google_callback_url(base) do
       {:ok, url} -> url
       {:error, _reason} -> default_google_oauth_callback_url()

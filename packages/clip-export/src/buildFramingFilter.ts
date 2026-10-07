@@ -6,6 +6,7 @@ export interface FramingFilterInput {
   targetRatio: TargetAspectRatio;
   sourceWidth?: number;
   sourceHeight?: number;
+  fit?: 'cover' | 'contain';
 }
 
 export interface FramingFilterResult {
@@ -18,29 +19,6 @@ export interface FramingFilterResult {
 function ratioToValue(ratio: string): number {
   const [w, h] = ratio.split(':').map(Number);
   return (w || 16) / (h || 9);
-}
-
-function regionCropFilter(region: ManualRegion, inputLabel: string, index: number): string {
-  const { source, output } = region;
-  const cropLabel = `crop${index}`;
-  const scaleLabel = `scaled${index}`;
-  const overlayLabel = `ovl${index}`;
-
-  const cropW = Math.max(1, Math.round(source.width * 1000)) / 1000;
-  const cropH = Math.max(1, Math.round(source.height * 1000)) / 1000;
-  const cropX = Math.max(0, Math.round(source.x * 1000)) / 1000;
-  const cropY = Math.max(0, Math.round(source.y * 1000)) / 1000;
-
-  const outW = Math.round(output.width * 1000) / 1000;
-  const outH = Math.round(output.height * 1000) / 1000;
-  const outX = Math.round(output.x * 1000) / 1000;
-  const outY = Math.round(output.y * 1000) / 1000;
-
-  return [
-    `[${inputLabel}]crop=iw*${cropW}:ih*${cropH}:iw*${cropX}:ih*${cropY}[${cropLabel}]`,
-    `[${cropLabel}]scale=iw*${outW / cropW}:ih*${outH / cropH}[${scaleLabel}]`,
-    `[base][${scaleLabel}]overlay=main_w*${outX}:main_h*${outY}[${overlayLabel}]`,
-  ].join(';');
 }
 
 export function getActiveRegionsForTime(
@@ -67,7 +45,7 @@ export function buildFramingFilterGraph(input: FramingFilterInput): FramingFilte
   if (!framingConfig || framingConfig.regions.length === 0) {
     const sourceRatio = ratioToValue(framingConfig?.sourceAspectRatio ?? '16:9');
     const targetRatioVal = ratioToValue(targetRatio);
-    if (sourceRatio > targetRatioVal) {
+    if (input.fit === 'cover' || (input.fit !== 'contain' && sourceRatio > targetRatioVal)) {
       return {
         filterComplex: `[0:v]scale=${width}:${height}:force_original_aspect_ratio=increase,crop=${width}:${height}:(iw-${width})/2:(ih-${height})/2[framed]`,
         outputLabel: 'framed',
@@ -84,7 +62,12 @@ export function buildFramingFilterGraph(input: FramingFilterInput): FramingFilte
   }
 
   const regions = framingConfig.regions;
-  const filters: string[] = [`color=c=black:s=${width}x${height}:d=1[base]`];
+  // Split the composed source explicitly: filtered output labels are single-use.
+  // Derive the background from it as well to retain its full duration and frame rate.
+  const filters: string[] = [
+    `[0:v]split=${regions.length + 1}[base_source]${regions.map((_, index) => `[region_source${index}]`).join('')}`,
+    `[base_source]scale=${width}:${height},setsar=1,drawbox=c=black:t=fill[base]`,
+  ];
   let currentLabel = 'base';
 
   regions.forEach((region, index) => {
@@ -102,9 +85,9 @@ export function buildFramingFilterGraph(input: FramingFilterInput): FramingFilte
     const overlayLabel = index === regions.length - 1 ? 'framed' : `ovl${index}`;
 
     filters.push(
-      `[0:v]crop=iw*${cropW}:ih*${cropH}:iw*${cropX}:ih*${cropY}[${cropLabel}]`,
-      `[${cropLabel}]scale=${outW}:${outH}[${scaleLabel}]`,
-      `[${currentLabel}][${scaleLabel}]overlay=${outX}:${outY}[${overlayLabel}]`,
+      `[region_source${index}]crop=iw*${cropW}:ih*${cropH}:iw*${cropX}:ih*${cropY}[${cropLabel}]`,
+      `[${cropLabel}]scale=${outW}:${outH},setsar=1[${scaleLabel}]`,
+      `[${currentLabel}][${scaleLabel}]overlay=${outX}:${outY}:shortest=1[${overlayLabel}]`,
     );
     currentLabel = overlayLabel;
   });

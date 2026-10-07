@@ -1,0 +1,27 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "skipLibCheck": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "types": ["vite/client", "node"],
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["../../client/src/*"],
+      "@clippster/shared-types": ["../../packages/shared-types/src/index.ts"],
+      "@clippster/api-client": ["../../packages/api-client/src/index.ts"],
+      "@clippster/clip-export": ["../../packages/clip-export/src/index.ts"],
+      "vue": ["node_modules/vue"],
+      "lucide-vue-next": ["node_modules/lucide-vue-next"],
+      "hls.js": ["node_modules/hls.js"],
+      "vitest": ["node_modules/vitest"],
+      "@clippster/cloud-sync-schema": ["../../packages/cloud-sync-schema/src/index.ts"],
+      "zod": ["node_modules/zod"]
+    }
+  },
+  "include": ["src/**/*.ts", "src/**/*.vue", "tests/shared-ui/**/*.ts", "tests/shared-ui/**/*.vue", "vite.config.ts"]
+}

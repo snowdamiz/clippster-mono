@@ -376,7 +376,6 @@
 
 <script setup lang="ts">
   import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
-  import { convertFileSrc } from '@tauri-apps/api/core';
   import { Video, AlertTriangle, Film, RotateCcw } from 'lucide-vue-next';
   import Hls from 'hls.js';
 
@@ -387,7 +386,7 @@
     ManualRegion,
     ManualFramingConfig,
   } from '@/types';
-  import type { ClipTextBoxState } from '@/utils/clipTextBox';
+  import type { ClipTextBoxState } from '@clippster/shared-types';
   import { use169BlurSliderToCssPx } from '@/utils/use169Blur';
   import {
     maxWordsChunkForAspectRatioString,
@@ -397,7 +396,7 @@
     getSubtitleLineHeightMultiplier,
     getSubtitleWordSafetyPaddingPx,
     getSubtitleWordSpacingPx,
-  } from '@/services/subtitle-renderer';
+  } from '@/utils/subtitleLayout';
 
   interface WatermarkData {
     dataUrl: string; // Data URL for display
@@ -407,6 +406,8 @@
 
   interface Props {
     videoSrc: string | null;
+    /** Host adapter for local desktop assets; browser URLs pass through unchanged. */
+    resolveMediaSrc?: (path: string) => string;
     videoLoading: boolean;
     videoError: string | null;
     isPlaying: boolean;
@@ -474,6 +475,7 @@
   }
 
   const props = withDefaults(defineProps<Props>(), {
+    resolveMediaSrc: (path: string) => path,
     focalPoint: () => ({ x: 0.5, y: 0.5 }),
     subtitleSettings: () => ({
       enabled: false,
@@ -894,7 +896,7 @@
       return assetId;
     }
     try {
-      return convertFileSrc(assetId);
+      return props.resolveMediaSrc(assetId);
     } catch {
       return assetId;
     }
@@ -1372,7 +1374,13 @@
 
   // Get all words from the current segment
   const segmentWords = computed((): WordInfo[] => {
-    if (!currentSegment.value) return [];
+    if (!currentSegment.value) {
+      // Browser AI responses may contain word timestamps without Whisper segments.
+      // Keep desktop gaps empty when an explicit segment timeline is present.
+      return props.subtitleSettings?.enabled && !props.transcriptSegments?.length
+        ? props.transcriptWords ?? []
+        : [];
+    }
 
     const segment = currentSegment.value;
 

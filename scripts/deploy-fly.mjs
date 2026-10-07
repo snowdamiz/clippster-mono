@@ -4,6 +4,15 @@ import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const TARGETS = {
+  web: {
+    cwd: '.',
+    config: 'apps/web/fly.toml',
+    dockerfile: 'apps/web/Dockerfile',
+    tokenKey: 'FLY_WEB_TOKEN',
+    label: 'web app',
+    appName: 'clippster-web',
+    extraArgs: ['--ha=false']
+  },
   server: {
     cwd: 'server',
     tokenKey: 'FLY_SERVER_TOKEN',
@@ -54,14 +63,9 @@ function parseEnvFile(fileContent) {
   return values;
 }
 
-function runDeploy({ cwd, tokenKey, label, appName, config, dockerfile }) {
-  if (!fs.existsSync(ENV_FILE)) {
-    console.error(`Error: ${ENV_FILE} not found`);
-    process.exit(1);
-  }
-
-  const envValues = parseEnvFile(fs.readFileSync(ENV_FILE, 'utf8'));
-  const flyApiToken = envValues.get(tokenKey);
+function runDeploy({ cwd, tokenKey, label, appName, config, dockerfile, extraArgs = [] }) {
+  const envValues = fs.existsSync(ENV_FILE) ? parseEnvFile(fs.readFileSync(ENV_FILE, 'utf8')) : new Map();
+  const flyApiToken = process.env[tokenKey] || process.env.FLY_API_TOKEN || envValues.get(tokenKey);
 
   if (!flyApiToken) {
     console.error(`Error: ${tokenKey} not found in ${ENV_FILE}`);
@@ -72,7 +76,7 @@ function runDeploy({ cwd, tokenKey, label, appName, config, dockerfile }) {
   console.log(`Deploying ${label} to fly.io (${appName})...`);
 
   // Positional "." keeps build context at monorepo root when cwd is "."
-  const args = ['deploy', '.', '--remote-only'];
+  const args = ['deploy', '.', '--remote-only', ...extraArgs];
   if (config) {
     args.push('--config', config);
   }
@@ -106,7 +110,7 @@ function runDeploy({ cwd, tokenKey, label, appName, config, dockerfile }) {
 function main() {
   const target = process.argv[2];
   if (!target || !(target in TARGETS)) {
-    console.error('Usage: node scripts/deploy-fly.mjs <server|landing>');
+    console.error('Usage: node scripts/deploy-fly.mjs <server|landing|web>');
     process.exit(1);
   }
 

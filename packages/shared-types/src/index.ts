@@ -14,3 +14,4 @@ export * from './editor';
  * Desktop SQLite uses snake_case column names; TypeScript interfaces mirror those names.
  * API JSON from Phoenix typically uses snake_case as well.
  */
+export type { WebClip, WebClipInput, WebProject, WebJob, WebWorkspace } from './web';

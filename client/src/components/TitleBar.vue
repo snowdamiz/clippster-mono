@@ -12,11 +12,7 @@
     <!-- Drag region -->
     <div class="titlebar-drag-region" data-tauri-drag-region>
       <!-- App logo -->
-      <div class="titlebar-app-info">
-        <img src="/logo-titlebar.svg" alt="Clippster Logo Icon" class="titlebar-logo-icon" />
-        <img src="/logo.svg" alt="Clippster Logo" class="titlebar-logo" />
-        <!-- <span class="titlebar-beta-tag">Closed Beta</span> -->
-      </div>
+      <AppBrand class="titlebar-app-info" />
     </div>
 
     <!-- Window controls -->
@@ -432,6 +428,7 @@
 </template>
 
 <script setup lang="ts">
+  import AppBrand from './AppBrand.vue';
   import { ref, onMounted, onUnmounted } from 'vue';
   import { getCurrentWebviewWindow } from '@tauri-apps/api/webviewWindow';
   import { invoke } from '@tauri-apps/api/core';
@@ -698,46 +695,12 @@
     -webkit-app-region: drag;
   }
 
-  .titlebar-app-info {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding-left: 12px;
-    gap: 8px;
-  }
-
   /* macOS app info positioning - center content and avoid window controls */
   .titlebar-macos .titlebar-app-info {
     position: absolute;
     left: 50%;
     transform: translateX(-50%);
     padding-left: 0;
-  }
-
-  .titlebar-logo-icon {
-    height: 14px;
-    width: auto;
-  }
-
-  .titlebar-logo {
-    height: 14px;
-    width: auto;
-    filter: brightness(0) invert(1); /* Make logo white for dark titlebar */
-    opacity: 0.9;
-    margin-top: 2px;
-  }
-
-  .titlebar-beta-tag {
-    font-size: 9px;
-    font-weight: 600;
-    background: rgba(239, 68, 68, 0.9);
-    color: white;
-    padding: 2px 6px;
-    border-radius: 9999px;
-    margin-left: 4px;
-    letter-spacing: 0.5px;
-    text-transform: uppercase;
-    white-space: nowrap;
   }
 
   .titlebar-keyboard-button,

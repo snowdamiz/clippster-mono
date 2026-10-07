@@ -34,16 +34,28 @@
                 <template v-for="(crumb, index) in breadcrumbs" :key="index">
                   <!-- First breadcrumb slot for custom content (e.g., OrganizationSelector) -->
                   <slot v-if="index === 0" name="firstBreadcrumb">
-                    <router-link v-if="crumb.path" :to="crumb.path" class="page-header__breadcrumb-link">
+                    <component
+                      :is="breadcrumbLink"
+                      v-if="crumb.path"
+                      :to="breadcrumbLink !== 'a' ? crumb.path : undefined"
+                      :href="breadcrumbLink === 'a' ? crumb.path : undefined"
+                      class="page-header__breadcrumb-link"
+                    >
                       {{ crumb.label }}
-                    </router-link>
+                    </component>
                     <span v-else class="page-header__breadcrumb-text">{{ crumb.label }}</span>
                   </slot>
                   <!-- Regular breadcrumbs -->
                   <template v-else>
-                    <router-link v-if="crumb.path" :to="crumb.path" class="page-header__breadcrumb-link">
+                    <component
+                      :is="breadcrumbLink"
+                      v-if="crumb.path"
+                      :to="breadcrumbLink !== 'a' ? crumb.path : undefined"
+                      :href="breadcrumbLink === 'a' ? crumb.path : undefined"
+                      class="page-header__breadcrumb-link"
+                    >
                       {{ crumb.label }}
-                    </router-link>
+                    </component>
                     <span v-else class="page-header__breadcrumb-text">{{ crumb.label }}</span>
                   </template>
                   <ChevronRight v-if="index < breadcrumbs.length - 1" class="page-header__breadcrumb-separator" />
@@ -69,7 +81,8 @@
 </template>
 
 <script setup lang="ts">
-  import type { Component } from 'vue';
+  import { getCurrentInstance, type Component } from 'vue';
+  const breadcrumbLink = getCurrentInstance()?.appContext.components.RouterLink || 'a';
   import { ChevronRight } from 'lucide-vue-next';
 
   export interface BreadcrumbItem {
