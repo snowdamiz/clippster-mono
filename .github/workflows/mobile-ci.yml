@@ -34,6 +34,8 @@ jobs:
       - run: yarn install --frozen-lockfile
       - run: yarn workspace @clippster/shared-types test
       - run: yarn workspace @clippster/api-client test
+      - name: Install FFmpeg for shared export regression tests
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: yarn workspace @clippster/clip-export test
       - run: yarn mobile:typecheck
       - run: yarn mobile:lint
