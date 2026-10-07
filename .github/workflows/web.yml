@@ -15,6 +15,7 @@ on:
       - 'server/config/**'
       - 'server/docker-compose.yml'
       - 'package.json'
+      - '.node-version'
       - 'scripts/dev-setup*'
       - 'scripts/deploy-fly*'
       - '.github/workflows/web.yml'
@@ -37,7 +38,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: '24'
+          node-version-file: '.node-version'
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci --workspaces=false

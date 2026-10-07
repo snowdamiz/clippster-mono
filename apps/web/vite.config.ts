@@ -15,7 +15,9 @@ export default defineConfig({
       '@clippster/clip-export': resolve('../../packages/clip-export/src/index.ts'),
       vue: require.resolve('vue/dist/vue.runtime.esm-bundler.js'),
       'lucide-vue-next': require.resolve('lucide-vue-next/dist/esm/lucide-vue-next.js'),
-      'hls.js': require.resolve('hls.js/dist/hls.mjs')
+      'hls.js': require.resolve('hls.js/dist/hls.mjs'),
+      // Shared desktop CSS must also resolve with only the web dependencies installed.
+      tailwindcss: require.resolve('tailwindcss/index.css')
     },
     dedupe: ['vue']
   },
