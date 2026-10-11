@@ -80,15 +80,17 @@ export function SubtitleSheet({ visible, settings, hasTranscript, onClose, onSav
               trackColor={{ true: tokens.colors.accent }}
             />
           </View>
-          {hasTranscript && onEditWords ? <MenuRow icon="text-outline" title="Caption words" subtitle="Edit wording and timing" onPress={onEditWords} /> : null}
+          {hasTranscript && onEditWords ? (
+            <MenuRow icon="Type" title="Caption words" subtitle="Edit wording and timing" onPress={onEditWords} />
+          ) : null}
           <MenuRow
-            icon="sparkles-outline"
+            icon="Sparkles"
             title="Preset"
             value={CAPTION_PRESETS.find((preset) => preset.id === draft.selectedPresetId)?.name}
             onPress={() => setPage('presets')}
           />
           <MenuRow
-            icon="text-outline"
+            icon="Type"
             title="Style & position"
             subtitle="Font, animation, colors, and placement"
             onPress={() => setPage('style')}

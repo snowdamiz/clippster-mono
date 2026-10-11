@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import * as ImagePicker from 'expo-image-picker'
 import { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, Text, TextInput, View } from 'react-native'
@@ -110,11 +110,11 @@ export function MessageComposer({
       {isEditing ? (
         <View className="mb-2 flex-row items-center justify-between rounded-lg bg-accent/10 px-3 py-1.5">
           <View className="flex-row items-center gap-2">
-            <Ionicons name="pencil" size={14} color={tokens.colors.accent} />
+            <AppIcon name="Pencil" size={14} color={tokens.colors.accent} />
             <Text className="text-xs text-accent">Editing message</Text>
           </View>
           <Pressable onPress={onCancelEdit} className="p-1">
-            <Ionicons name="close" size={18} color={tokens.colors.muted} />
+            <AppIcon name="X" size={18} color={tokens.colors.muted} />
           </Pressable>
         </View>
       ) : null}
@@ -131,7 +131,7 @@ export function MessageComposer({
             {uploading ? (
               <ActivityIndicator size="small" color={tokens.colors.accent} />
             ) : (
-              <Ionicons name="image-outline" size={20} color={tokens.colors.accent} />
+              <AppIcon name="Image" size={20} color={tokens.colors.accent} />
             )}
           </Pressable>
         ) : null}
@@ -159,8 +159,8 @@ export function MessageComposer({
           {sending || submitting ? (
             <ActivityIndicator size="small" color="#fff" />
           ) : (
-            <Ionicons
-              name={isEditing ? 'checkmark' : 'send'}
+            <AppIcon
+              name={isEditing ? 'Check' : 'Send'}
               size={18}
               color={text.trim() ? tokens.colors.primaryForeground : tokens.colors.muted}
             />

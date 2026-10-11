@@ -5,7 +5,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native'
 import { ThumbnailRow } from '@/components/navigation/ThumbnailRow'
 import { EditorChoices } from '@/editor/panels/EditorSheet'
-import { AppHeader } from '@/components/AppHeader'
+import { ScreenHeader } from '@/components/ScreenHeader'
 import { CampaignAccessGate } from '@/components/campaign/CampaignAccessGate'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { Button } from '@/components/ui/button'
@@ -131,7 +131,7 @@ function CampaignSubmitContent() {
   if (!loading && loadError)
     return (
       <View className="flex-1 bg-background">
-        <AppHeader title="Submit clip" showBack />
+        <ScreenHeader title="Submit clip" showBack />
         <EmptyState
           title="Could not load submission"
           subtitle="Check your connection and try again."
@@ -160,7 +160,7 @@ function CampaignSubmitContent() {
 
   return (
     <View className="flex-1 bg-background">
-      <AppHeader title="Submit clip" showBack />
+      <ScreenHeader title="Submit clip" showBack />
       <ScrollView contentContainerClassName="gap-[17px] px-5 py-4 pb-10">
         <Card className="gap-3">
           <Text className="font-semibold text-foreground">Select export</Text>

@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import type { MediaPlatform, VodListItem } from '@clippster/shared-types'
 import { useEffect, useMemo, useState } from 'react'
 import { Image, Pressable, Switch, Text, View } from 'react-native'
@@ -87,7 +87,7 @@ export function DownloadOptionsSheet({
       onClose={onClose}
       variant="page"
       title="Download options"
-      headerIcon="download-outline"
+      headerIcon="Download"
       dismissOnBackdrop={!starting}
       primaryAction={{
         title: starting ? 'Starting…' : 'Start download',
@@ -110,7 +110,7 @@ export function DownloadOptionsSheet({
           />
         ) : (
           <View className="h-[58px] w-[72px] items-center justify-center rounded-md bg-surfaceMuted">
-            <Ionicons name="videocam-outline" size={28} color={tokens.colors.muted} />
+            <AppIcon name="Video" size={28} color={tokens.colors.muted} />
           </View>
         )}
         <View className="flex-1 gap-1">
@@ -156,7 +156,7 @@ export function DownloadOptionsSheet({
         ) : null}
         {!fullStream ? (
           <Pressable onPress={resetToFullStream} className="min-h-11 flex-row items-center gap-1 self-start">
-            <Ionicons name="refresh" size={14} color={tokens.colors.accent} />
+            <AppIcon name="RefreshCw" size={14} color={tokens.colors.accent} />
             <Text className="text-xs font-medium text-accent">Reset to full stream</Text>
           </Pressable>
         ) : null}

@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import { useState } from 'react'
 import { BottomSheet } from '@/components/ui/BottomSheet'
 import { Pressable, Text, View } from 'react-native'
@@ -44,18 +44,47 @@ export function PlanTierCard({ tier, interval, current, gateMode, busy, onSelect
       <Pressable
         accessibilityRole="button"
         onPress={() => setDetailsOpen(true)}
-        className="min-h-[76px] flex-row items-center gap-3 border-b border-border py-4"
+        className="gap-3 rounded-[18px] border border-border bg-surface p-4"
       >
-        <View className="flex-1 gap-1">
-          <Text className="text-[15px] font-semibold text-foreground">
-            {tier.name} · ${displayPrice(tier, interval)} {period}
-          </Text>
-          <Text className="text-xs leading-[18px] text-muted">
-            {tier.id === 'basic' ? 'Editing & social posting' : creditsLabel(tier, interval)}
-            {current ? ' · Current plan' : popular ? ' · Popular' : ''}
-          </Text>
+        <View className="flex-row items-center gap-3">
+          <View className="h-11 w-11 items-center justify-center rounded-[14px] bg-surfaceMuted">
+            <AppIcon
+              name={tier.id === 'creator' || tier.id === 'pro' ? 'Sparkles' : 'UserRound'}
+              size={25}
+              color={tokens.colors.foreground}
+            />
+          </View>
+          <View className="flex-1 gap-1">
+            <Text className="text-[17px] font-semibold text-foreground">{tier.name}</Text>
+            <Text className="text-xs text-muted">
+              ${displayPrice(tier, interval)}
+              {period}
+            </Text>
+          </View>
+          {current || popular ? (
+            <View className={`rounded-full px-3 py-1 ${current ? 'bg-success/15' : 'bg-accent/15'}`}>
+              <Text className={`text-xs ${current ? 'text-success' : 'text-accent'}`}>
+                {current ? 'Current plan' : 'Popular'}
+              </Text>
+            </View>
+          ) : null}
         </View>
-        <Ionicons name="chevron-forward" size={20} color={tokens.colors.muted} />
+        {[
+          creditsLabel(tier, interval),
+          ...features
+            .filter((feature) => feature.included && !feature.note)
+            .slice(1, 3)
+            .map((feature) => feature.label)
+        ].map((label) => (
+          <View key={label} className="flex-row items-center gap-2">
+            <AppIcon name="Check" size={17} color={tokens.colors.foreground} />
+            <Text className="flex-1 text-xs leading-5 text-muted">{label}</Text>
+          </View>
+        ))}
+        <View className="min-h-11 flex-row items-center justify-between rounded-[14px] border border-border bg-surfaceMuted px-3">
+          <Text className="text-sm text-foreground">View plan details</Text>
+          <AppIcon name="ChevronRight" size={20} color={tokens.colors.muted} />
+        </View>
       </Pressable>
       <BottomSheet
         visible={detailsOpen}
@@ -91,14 +120,8 @@ export function PlanTierCard({ tier, interval, current, gateMode, busy, onSelect
         </View>
         {features.map((feature) => (
           <View key={feature.label} className="min-h-[60px] flex-row items-center gap-3 border-b border-border py-3">
-            <Ionicons
-              name={
-                feature.included && !feature.note
-                  ? 'checkmark-circle-outline'
-                  : feature.note
-                    ? 'information-circle-outline'
-                    : 'close-circle-outline'
-              }
+            <AppIcon
+              name={feature.included && !feature.note ? 'CircleCheck' : feature.note ? 'Info' : 'CircleX'}
               size={22}
               color={feature.included ? tokens.colors.accent : tokens.colors.muted}
             />

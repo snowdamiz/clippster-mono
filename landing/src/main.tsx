@@ -41,6 +41,7 @@ const OrgPublicProfilePage = lazy(() => import('./pages/OrgPublicProfilePage').t
 const AccountLayout = lazy(() => import('./layouts/AccountLayout').then(m => ({ default: m.AccountLayout })))
 const AccountHome = lazy(() => import('./pages/account/AccountHome').then(m => ({ default: m.AccountHome })))
 const AccountBilling = lazy(() => import('./pages/account/AccountBilling').then(m => ({ default: m.AccountBilling })))
+const AccountWorkspace = lazy(() => import('./pages/account/AccountWorkspace').then(m => ({ default: m.AccountWorkspace })))
 const AccountProfile = lazy(() => import('./pages/account/AccountProfile').then(m => ({ default: m.AccountProfile })))
 const AccountSocial = lazy(() => import('./pages/account/AccountSocial').then(m => ({ default: m.AccountSocial })))
 const AccountPosts = lazy(() => import('./pages/account/AccountPosts').then(m => ({ default: m.AccountPosts })))
@@ -190,6 +191,12 @@ createRoot(document.getElementById('root')!).render(
                   <Route path="posts" element={<AccountPosts />} />
                   <Route path="settings" element={<AccountSettings />} />
                   <Route path="billing" element={<AccountBilling />} />
+                  <Route path="videos" element={<AccountWorkspace />} />
+                  <Route path="downloads" element={<AccountWorkspace />} />
+                  <Route path="creators" element={<AccountWorkspace />} />
+                  <Route path="campaigns" element={<AccountWorkspace />} />
+                  <Route path="prompts" element={<AccountWorkspace />} />
+                  <Route path="calendar" element={<AccountWorkspace />} />
                 </Route>
 
                 <Route

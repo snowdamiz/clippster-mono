@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react'
-import { Text } from 'react-native'
+import { Text, View } from 'react-native'
 
 import { EditorChoices, EditorSheet } from './EditorSheet'
 import { SeekBar } from '@/components/ui/seek-bar'
@@ -27,14 +27,14 @@ export function PropertySliderSheet({ config, onClose }: { config: PropertySlide
       title={config?.title ?? ''}
       onClose={onClose}
       action={{
-        title: `Apply ${config?.title.split(' ').pop()?.toLowerCase() ?? 'change'}`,
+        title: 'Apply',
         onPress: () => {
           config?.apply(value)
           onClose()
         }
       }}
     >
-      <Text className="text-right text-sm font-semibold text-foreground">{config?.formatValue(value)}</Text>
+      <Text className="py-3 text-center text-[32px] font-bold text-foreground">{config?.formatValue(value)}</Text>
       {config ? (
         <SeekBar
           minimumValue={config.minimumValue}
@@ -43,6 +43,12 @@ export function PropertySliderSheet({ config, onClose }: { config: PropertySlide
           value={value}
           onValueChange={setValue}
         />
+      ) : null}
+      {config ? (
+        <View className="flex-row justify-between">
+          <Text className="text-xs text-muted">{config.formatValue(config.minimumValue)}</Text>
+          <Text className="text-xs text-muted">{config.formatValue(config.maximumValue)}</Text>
+        </View>
       ) : null}
       {config?.title.toLowerCase().includes('speed') ? (
         <>

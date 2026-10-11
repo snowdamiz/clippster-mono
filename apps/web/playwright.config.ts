@@ -2,6 +2,8 @@ import { defineConfig } from '@playwright/test'
 export default defineConfig({
   testDir: './tests',
   testMatch: '**/*.spec.ts',
+  testIgnore: '**/account-integration.spec.ts',
+  outputDir: './test-results/standalone',
   workers: 1,
   timeout: 120_000,
   use: {

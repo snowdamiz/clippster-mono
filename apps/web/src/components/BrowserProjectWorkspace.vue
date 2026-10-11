@@ -13,12 +13,13 @@
         class="shrink-0 border-b border-red-500/20 bg-red-500/10 px-5 py-3 text-sm text-red-300"
       >
         {{ error }}
+        <a v-if="billingUrl && /plan|credit|limit/i.test(error)" :href="billingUrl" target="_top" class="ml-3 underline">Manage plan</a>
       </div>
       <div v-if="activeJob" role="status" class="shrink-0 border-b border-white/10 px-5 py-3">
         <div class="mb-2 flex justify-between text-xs">
           <span>{{ activeJob.message }}</span>
           <button
-            v-if="activeJob.kind !== 'detect' || activeJob.status === 'queued'"
+            v-if="!['detect', 'transcribe'].includes(activeJob.kind) || activeJob.status === 'queued'"
             @click="$emit('cancel', activeJob.id)"
           >
             Cancel
@@ -55,6 +56,11 @@
               :aspect-ratio="aspect"
               :current-time="playback.time.value"
               :subtitle-settings="subtitleSettings"
+              :manual-framing-config="draft?.framingConfig || undefined"
+              :framing-regions="activeRegions"
+              :resolve-media-src="(id: string) => framingAssetPath(project.id, id)"
+              :clip-text-box-state="draft?.textBox || undefined"
+              :clip-absolute-start="playback.time.value - clipTime"
               :transcript-words="project.words"
               @video-element-ready="playback.ready"
               @time-update="playback.update"
@@ -119,18 +125,38 @@
           </div>
         </section>
         <aside class="min-h-0 overflow-y-auto border-l border-white/10 bg-black/15">
-          <form class="grid gap-3 border-b border-white/10 p-4" @submit.prevent="detect">
+          <div class="sticky top-0 z-10 flex gap-2 border-b border-white/10 bg-zinc-950 p-3" role="tablist" aria-label="Project panels">
+            <button v-for="tab in ['clips', 'transcript']" :key="tab" role="tab" :aria-selected="panel === tab" class="button-secondary capitalize" @click="panel = tab">{{ tab }}</button>
+          </div>
+          <section v-if="panel === 'transcript'" class="grid gap-3 p-4">
+            <h3 class="text-sm font-semibold">Transcript</h3>
+            <p v-if="!project.words.length" class="text-sm text-zinc-400">Generate a transcript to create clips by selecting words. Uses your AI credits.</p>
+            <button class="button-secondary" :disabled="busy || !project.hasAudio" @click="$emit('transcribe')">{{ project.words.length ? 'Regenerate transcript' : 'Transcribe video' }}</button>
+            <template v-if="project.words.length">
+              <input v-model="transcriptSearch" class="field" aria-label="Search transcript" placeholder="Search transcript…" />
+              <p class="text-xs text-zinc-400">Click a word to seek. Shift-click another word to select a range.</p>
+              <button class="button-primary" :disabled="busy || !transcriptRange" @click="clipFromTranscript">Create clip from selection</button>
+              <div class="leading-8">
+                <button v-for="(word, index) in project.words" :key="index" :title="`${word.start.toFixed(1)}s`" class="mr-1 rounded px-1 text-left text-sm hover:bg-white/10" :class="{ 'bg-cyan-400/25': transcriptRange && index >= transcriptRange[0] && index <= transcriptRange[1], 'text-yellow-300': transcriptSearch && word.word.toLowerCase().includes(transcriptSearch.toLowerCase()) }" @click="selectWord(index, $event.shiftKey)">{{ word.word }}</button>
+              </div>
+            </template>
+          </section>
+          <form v-show="panel === 'clips'" class="grid gap-3 border-b border-white/10 p-4" @submit.prevent="detect">
             <h3 class="flex items-center gap-2 text-sm font-semibold">
               <Sparkles :size="16" class="text-sky-400" />
               AI clip maker
             </h3>
             <label for="clip-prompt" class="text-xs text-zinc-400">What moments are you looking for?</label>
+            <select class="field" aria-label="Detection prompt template" @change="choosePrompt(($event.target as HTMLSelectElement).value)">
+              <option value="">Choose a saved prompt…</option>
+              <option v-for="item in savedPrompts" :key="item.id" :value="item.id">{{ item.name }}</option>
+            </select>
             <textarea
               id="clip-prompt"
               v-model="prompt"
               class="field resize-y"
               rows="3"
-              maxlength="4000"
+              maxlength="32000"
               required
               :disabled="busy"
             />
@@ -142,7 +168,7 @@
               Uses your Clippster AI credits. Review the clips before building.
             </p>
           </form>
-          <section class="p-4">
+          <section v-show="panel === 'clips'" class="p-4">
             <div class="mb-3 flex justify-between text-sm">
               <h3 class="font-semibold">Clips</h3>
               <span class="text-zinc-500">{{ project.clips.length }}</span>
@@ -172,6 +198,7 @@
             </div>
           </section>
           <ClipInspector
+            v-show="panel === 'clips'"
             v-model="draft"
             :busy="busy"
             :duration="project.duration"
@@ -183,37 +210,46 @@
             @revert="revert"
             @build="build"
             @remove="remove"
+            @framing="showFraming = true"
           />
+          <PublishClip v-if="panel === 'clips' && draft && downloadUrl && !dirty" :key="`${draft.id}-${draft.revision}`" :project-id="project.id" :clip-id="draft.id" />
         </aside>
       </div>
     </div>
+    <ManualPOIEditor v-if="showFraming && draft" :project-id="project.id" :words="project.words" :source="sourcePath(project.id)" :width="project.width" :height="project.height" :ratio="draft.aspectRatio" :segments="draft.segments" :initial-config="draft.framingConfig" @close="showFraming = false" @confirm="draft.framingConfig = $event; showFraming = false" />
   </dialog>
 </template>
 <script setup lang="ts">
   import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
   import { Play, Plus, Sparkles } from 'lucide-vue-next'
-  import { createDefaultSubtitleSettings } from '@clippster/shared-types'
+  import { createDefaultSubtitleSettings, SYSTEM_DETECTION_PROMPTS } from '@clippster/shared-types'
   import type { WebProject, WebClip, WebJob } from '@clippster/shared-types'
   import ProjectWorkspaceHeader from '@/components/ProjectWorkspaceHeader.vue'
   import VideoPlayer from '@/components/VideoPlayer.vue'
   import VideoControls from '@/components/VideoControls.vue'
   import ImportSource from './ImportSource.vue'
   import ClipInspector from './ClipInspector.vue'
+  import PublishClip from './PublishClip.vue'
+  import ManualPOIEditor from './ManualPOIEditor.vue'
+  import { framingAssetPath } from '../api'
   import { usePlayback } from '../usePlayback'
-  import { sourcePath, downloadPath } from '../api'
+  import { sourcePath, downloadPath, workspaceClient as client } from '../api'
   const props = defineProps<{
     project: WebProject
     busy: boolean
     error: string
     activeJob?: WebJob
     uploadProgress: number | null
+    billingUrl?: string
   }>()
   const emit = defineEmits<{
     close: []
     import: [url: string]
     upload: [file: File]
     detect: [prompt: string]
+    transcribe: []
     manual: [time: number]
+    transcriptClip: [start: number, end: number]
     save: [clip: WebClip, build: boolean]
     build: [id: string]
     remove: [id: string]
@@ -227,8 +263,44 @@
   const prompt = ref(
     'Find engaging, self-contained highlights between 15 and 60 seconds. Keep the original context and include a strong opening.'
   )
+  const savedPrompts = ref<Array<{ id: string; name: string; content: string }>>([...SYSTEM_DETECTION_PROMPTS])
+  function choosePrompt(id: string) { const selected = savedPrompts.value.find(item => item.id === id); if (selected) prompt.value = selected.content }
+  onMounted(async () => {
+    try { savedPrompts.value.push(...(await client.get<{ prompts: Array<{ id: string; name: string; content: string }> }>('/web/prompts')).prompts) }
+    catch { /* System templates remain available when custom prompts are not entitled. */ }
+  })
   const selectedId = ref<string | null>(null)
+  const panel = ref('clips'), transcriptSearch = ref('')
+  const anchorWord = ref<number | null>(null), rangeEnd = ref<number | null>(null)
+  const transcriptRange = computed(() => anchorWord.value === null ? null : [Math.min(anchorWord.value, rangeEnd.value ?? anchorWord.value), Math.max(anchorWord.value, rangeEnd.value ?? anchorWord.value)])
+  function selectWord(index: number, extend: boolean) {
+    if (!extend || anchorWord.value === null) anchorWord.value = index
+    rangeEnd.value = index
+    playback.seek(props.project.words[index].start)
+  }
+  function clipFromTranscript() {
+    if (!transcriptRange.value) return
+    const [start, end] = transcriptRange.value
+    emit('transcriptClip', props.project.words[start].start, props.project.words[end].end)
+    panel.value = 'clips'
+  }
   const draft = ref<WebClip | null>(null)
+  const showFraming = ref(false)
+  const clipTime = computed(() => {
+    let offset = 0
+    for (const segment of draft.value?.segments || []) {
+      if (playback.time.value >= segment.start_time && playback.time.value <= segment.end_time) {
+        return offset + playback.time.value - segment.start_time
+      }
+      offset += segment.end_time - segment.start_time
+    }
+    return offset
+  })
+  const activeRegions = computed(() => {
+    const config = draft.value?.framingConfig
+    const base = config?.segmentConfigs?.find(part => clipTime.value >= part.startTime && clipTime.value < part.endTime)?.regions || config?.regions || []
+    return [...base, ...(config?.brollConfigs?.filter(part => clipTime.value >= part.startTime && clipTime.value < part.endTime).map(part => ({ ...part.region, mediaSourceOffset: (part.region.mediaSourceOffset || 0) - part.startTime })) || [])]
+  })
   const original = ref('')
   const pendingSave = ref<{ id: string; revision: number } | null>(null)
   const dirty = computed(() => !!draft.value && JSON.stringify(draft.value) !== original.value)
@@ -238,9 +310,10 @@
   })
   const subtitleSettings = computed(() => ({
     ...createDefaultSubtitleSettings(),
+    ...draft.value?.subtitleSettings,
     enabled: !!draft.value?.captions,
-    animationStyle: 'single-word' as const,
-    fontFamily: 'DejaVu Sans, sans-serif'
+    animationStyle: draft.value?.subtitleSettings?.animationStyle || 'single-word' as const,
+    fontFamily: draft.value?.subtitleSettings?.fontFamily || 'DejaVu Sans, sans-serif'
   }))
   const downloadUrl = computed(() =>
     draft.value?.builtRevision === draft.value?.revision && draft.value

@@ -1,5 +1,5 @@
 import { startFixture } from './fixtures'
-const fixture = await startFixture({ port: 8091, origin: 'http://127.0.0.1:8091' })
+const fixture = await startFixture({ port: 8091, origin: 'http://127.0.0.1:8091', user: { subscription: { status: 'active', tier: 'creator' } } })
 console.log('Browser fixture is ready; authentication and AI responses are test fixtures.')
 process.on('SIGTERM', async () => {
   await fixture.dispose()

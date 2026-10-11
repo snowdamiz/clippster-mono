@@ -24,6 +24,7 @@ services:
       HOST: 0.0.0.0
       PORT: 8090
       WEB_ORIGIN: http://localhost:5175
+      ACCOUNT_ORIGIN: http://localhost:5173
       CLIPPSTER_API_URL: ${WEB_DOCKER_API_URL:-http://host.docker.internal:4000/api}
       WEB_DATA_DIR: /data
       FFMPEG_PATH: ffmpeg

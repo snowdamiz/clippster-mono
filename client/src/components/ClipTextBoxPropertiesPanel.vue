@@ -261,8 +261,7 @@
 <script setup lang="ts">
   import { computed, onUnmounted, ref } from 'vue';
   import { ChevronLeft, Trash2 } from 'lucide-vue-next';
-  import type { ClipTextBoxState } from '@/utils/clipTextBox';
-  import type { TextOverlayStyle } from '@/types';
+  import type { ClipTextBoxState, TextOverlayStyle } from '@clippster/shared-types';
 
   const props = withDefaults(
     defineProps<{

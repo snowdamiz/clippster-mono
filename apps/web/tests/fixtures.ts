@@ -6,14 +6,22 @@ import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
 import { readConfig } from '../server/config'
 import { createWebApp } from '../server/app'
+import type { AuthUser, PlanAccount } from '@clippster/shared-types'
 /** Test-only upstream. Exercises the real web service/FFmpeg without billing accounts. */
 export async function startFixture(
-  options: { port?: number; origin?: string; directory?: string } = {}
+  options: { port?: number; origin?: string; accountOrigin?: string; directory?: string;
+    restrictions?: { restricted?: boolean; restrictions?: { allow_custom_prompts?: boolean; allow_personal_social?: boolean; require_clip_approval?: boolean; restricting_org_id?: number } };
+    campaignsEnabled?: boolean;
+    user?: Omit<Partial<AuthUser>, 'subscription'> & PlanAccount } = {}
 ) {
   const directory = options.directory || (await mkdtemp(join(tmpdir(), 'clippster-web-')))
   const oauth = new Map<string, { origin: string; client_state: string; code_challenge: string }>()
   const pendingEmails = new Set<string>()
   let detectionCalls = 0
+  let publishCalls = 0
+  const fixtureUser = (id: number, email = 'test@example.com') => ({
+    id, email, has_selected_plan: true, subscription: { status: 'active' }, ...options.user
+  })
   const upstream = createServer(async (req, res) => {
     res.setHeader('Content-Type', 'application/json')
     const chunks: Buffer[] = []
@@ -57,7 +65,7 @@ export async function startFixture(
           JSON.stringify({
             success: true,
             token: 'fixture-token-1',
-            user: { id: 1, email: input.email }
+            user: fixtureUser(1, input.email)
           })
         )
       }
@@ -88,7 +96,7 @@ export async function startFixture(
         JSON.stringify({
           success: true,
           token: `fixture-token-${id}`,
-          user: { id, email: input.email }
+          user: fixtureUser(id, input.email)
         })
       )
     } else if (req.url === '/api/auth/me') {
@@ -100,11 +108,39 @@ export async function startFixture(
         res.end(
           JSON.stringify({
             success: true,
-            user: { id: token === 'fixture-token-1' ? 1 : 2, email: 'test@example.com' }
+            user: fixtureUser(token === 'fixture-token-1' ? 1 : 2)
           })
         )
-    } else if (req.url === '/api/clips/detect') {
-      detectionCalls++
+    } else if (req.url === '/api/user/restrictions') {
+      res.end(JSON.stringify({ success: true, restricted: false, ...options.restrictions }))
+    } else if (req.url === '/api/app-settings/feature-flags') {
+      res.end(JSON.stringify({ success: true, feature_flags: { campaigns_enabled: options.campaignsEnabled === true } }))
+    } else if (req.url === '/api/app-settings/free-tier-branding') {
+      res.end(JSON.stringify({ success: true, branding: null }))
+    } else if (req.url === '/api/user/branding') {
+      res.end(JSON.stringify({ success: true, profiles: [], assets: [] }))
+    } else if (req.url === '/api/campaigns') {
+      res.end(JSON.stringify({ success: true, campaigns: [] }))
+    } else if (req.url === '/api/organizations') {
+      res.end(JSON.stringify({ success: true, organizations: options.restrictions?.restrictions?.require_clip_approval ? [{ id: 7, role: 'member' }] : [] }))
+    } else if (['/api/organizations/7/social-accounts', '/api/organizations/7/my-social-accounts'].includes(req.url || '')) {
+      res.end(JSON.stringify({ success: true, accounts: [{ id: 70, platform: 'youtube', username: 'Assigned organization channel', is_active: true }] }))
+    } else if (req.url === '/api/organizations/7/subscription') {
+      res.end(JSON.stringify({ success: true, subscription: { status: 'active' } }))
+    } else if (req.url === '/api/organizations/7/posts/upload-media') {
+      res.end(JSON.stringify({ success: true, media_url: 'https://media.example.test/organization.mp4' }))
+    } else if (req.url === '/api/organizations/7/posts/publish') {
+      publishCalls++
+      res.end(JSON.stringify({ success: true, post: { id: publishCalls, status: 'awaiting_approval' } }))
+    } else if (req.url === '/api/user/social-accounts') {
+      res.end(JSON.stringify({ success: true, social_accounts: [{ id: 10, platform: 'youtube', username: 'Fixture channel', is_active: true }] }))
+    } else if (req.url === '/api/user/posts/upload-media') {
+      res.end(JSON.stringify({ success: true, media_url: 'https://media.example.test/fixture.mp4' }))
+    } else if (req.url === '/api/user/youtube/publish' || req.url === '/api/social/schedule' && req.method === 'POST') {
+      publishCalls++
+      res.end(JSON.stringify({ success: true, post: { id: publishCalls } }))
+    } else if (req.url === '/api/clips/detect' || req.url === '/api/clips/transcribe') {
+      if (req.url === '/api/clips/detect') detectionCalls++
       const body = Buffer.concat(chunks).toString('latin1')
       if (!body.includes('name="audio"') || !body.includes('name="duration"')) {
         res.statusCode = 400
@@ -144,6 +180,7 @@ export async function startFixture(
     CLIPPSTER_API_URL: `http://127.0.0.1:${upstreamPort}/api`,
     WEB_DATA_DIR: directory,
     WEB_ORIGIN: options.origin || 'http://localhost:5175',
+    ACCOUNT_ORIGIN: options.accountOrigin,
     SESSION_SECRET: 'fixture-only-secret-not-valid-for-production',
     NODE_ENV: 'test',
     FFMPEG_PATH: process.env.FFMPEG_PATH,
@@ -194,6 +231,7 @@ export async function startFixture(
     directory,
     login,
     detectionCalls: () => detectionCalls,
+    publishCalls: () => publishCalls,
     dispose: async () => {
       await web.close()
       await Promise.all(

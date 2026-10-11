@@ -8,7 +8,7 @@ export function DesktopRequiredBanner() {
   return (
     <div className="shrink-0 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 px-4 py-3 border-b border-zinc-800 bg-zinc-900/60">
       <p className="text-sm text-zinc-300 m-0 leading-relaxed">
-        This is your online account dashboard. Download Clippster to clip, edit, and publish.
+        Create and publish clips on the web. Get Clippster Desktop for the full video editor, image editor, and live-stream tools.
       </p>
       {isLoading ? (
         <span className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-zinc-800 text-zinc-400 text-sm font-medium">

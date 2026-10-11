@@ -1,6 +1,6 @@
 import type { UserSocialAccount } from '@clippster/api-client'
 import { getSocialPlatformLabel, isTokenExpired, isTokenExpiringSoon } from '@clippster/api-client'
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import { useState } from 'react'
 import { Image, Pressable, Text, View } from 'react-native'
 import { BottomSheet } from '@/components/ui/BottomSheet'
@@ -35,7 +35,7 @@ export function SocialAccountCard({ account, onDisconnect, onReconnect }: Social
             {account.platform === 'tokend' ? (
               <TokendLogo size={32} />
             ) : platformConfig ? (
-              <Ionicons name={platformConfig.icon} size={22} color={tokens.colors.foreground} />
+              <AppIcon name={platformConfig.icon} size={22} color={tokens.colors.foreground} />
             ) : null}
           </View>
         )}
@@ -53,7 +53,7 @@ export function SocialAccountCard({ account, onDisconnect, onReconnect }: Social
             <Text className="mt-0.5 text-xs text-success">Active</Text>
           ) : null}
         </View>
-        <Ionicons name="chevron-forward" size={18} color={tokens.colors.muted} />
+        <AppIcon name="ChevronRight" size={18} color={tokens.colors.muted} />
       </Pressable>
       <BottomSheet
         visible={showDetails}
@@ -80,7 +80,7 @@ export function SocialAccountCard({ account, onDisconnect, onReconnect }: Social
       >
         <View className="items-center gap-3 py-8">
           <View className="h-16 w-16 items-center justify-center rounded-2xl bg-surfaceMuted">
-            <Ionicons name="link-outline" size={30} color={tokens.colors.accent} />
+            <AppIcon name="Link" size={30} color={tokens.colors.accent} />
           </View>
           <Text className="text-center text-[28px] font-bold text-foreground">@{account.username}</Text>
           <Text className="text-center text-sm text-muted">

@@ -816,7 +816,7 @@
     const src = props.videoSrc;
     const isHls = !!src?.includes('.m3u8');
     if (use169 && src && !isHls) return false;
-    return regions > 0 || (use169 && isHls && !!src);
+    return regions > 0 || (['scale', 'use16x9'].includes(props.manualFramingConfig?.sourceFrameMode || '') && !!src) || (use169 && isHls && !!src);
   });
 
   const hideVideoForComposition = computed(() => showFramingCanvas.value || showUse169GpuStack.value);
@@ -1060,10 +1060,7 @@
 
     const fc = props.manualFramingConfig;
     const hasRegions = !!regions && regions.length > 0;
-    const use169 =
-      !hasRegions &&
-      fc?.sourceFrameMode === 'use16x9' &&
-      props.aspectRatio.width / props.aspectRatio.height < 0.95;
+    const use169 = fc?.sourceFrameMode === 'use16x9';
 
     if (use169) {
       const now = performance.now();
@@ -1080,12 +1077,10 @@
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, cw, ch);
 
-      if (blurPx > 0) {
-        ctx.save();
-        ctx.filter = `blur(${blurPx}px)`;
-        drawVideoCover(ctx, video, cw, ch);
-        ctx.restore();
-      }
+      ctx.save();
+      if (blurPx > 0) ctx.filter = `blur(${blurPx}px)`;
+      drawVideoCover(ctx, video, cw, ch);
+      ctx.restore();
 
       const st = fc!.sourceTransform ?? { scale: 1, x: 0, y: 0 };
       const baseWidth = cw;
@@ -1097,24 +1092,28 @@
 
       ctx.drawImage(video, 0, 0, vw, vh, left, top, boxW, boxH);
 
-      framingAnimationId = video.paused ? null : requestAnimationFrame(renderFramingFrame);
-      return;
+      if (!hasRegions) {
+        framingAnimationId = video.paused ? null : requestAnimationFrame(renderFramingFrame);
+        return;
+      }
     }
 
-    if (!regions || regions.length === 0) {
+    if ((!regions || regions.length === 0) && fc?.sourceFrameMode !== 'scale') {
       framingAnimationId = null;
       return;
     }
 
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, cw, ch);
+    if (!use169) {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, cw, ch);
+    }
 
     if (fc?.sourceFrameMode === 'scale') {
       drawTransformedSourceFrame(ctx, video, cw, ch, vw, vh, fc);
     }
 
     // Draw each region: source rect from video → output rect on canvas
-    for (const region of regions) {
+    for (const region of regions || []) {
       const dx = region.output.x * cw;
       const dy = region.output.y * ch;
       const dw = region.output.width * cw;
@@ -1136,7 +1135,8 @@
         const media = getRegionVideo(region.mediaAssetId);
         if (media) {
           if (Number.isFinite(video.currentTime) && media.duration) {
-            const targetTime = video.currentTime % media.duration;
+            const elapsed = video.currentTime - (props.clipAbsoluteStart || 0) + (region.mediaSourceOffset || 0);
+            const targetTime = Math.max(0, elapsed) % media.duration;
             if (Math.abs(media.currentTime - targetTime) > 0.12) {
               media.currentTime = targetTime;
             }

@@ -1,4 +1,5 @@
 import { getDatabase } from './index';
+import { freeUsageDay as getTodayDateString } from '@clippster/shared-types';
 
 const TABLE_NAME = 'free_tier_usage';
 
@@ -101,21 +102,4 @@ export async function getAllUsageCounts(
     counts[row.action_type] = row.count;
   }
   return counts;
-}
-
-/**
- * Gets today's date string in YYYY-MM-DD format (Eastern Time).
- * Uses America/New_York timezone which automatically handles EST/EDT transitions.
- * Resets at midnight Eastern Time.
- */
-function getTodayDateString(): string {
-  const now = new Date();
-  const formatter = new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/New_York',
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  });
-  // en-CA locale formats as YYYY-MM-DD
-  return formatter.format(now);
 }

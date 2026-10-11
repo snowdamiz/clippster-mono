@@ -53,7 +53,11 @@ defmodule ClippsterServerWeb.UserCreatorProfileController do
       {:error, changeset} ->
         conn
         |> put_status(422)
-        |> json(%{success: false, error: "Validation failed", details: changeset_errors(changeset)})
+        |> json(%{
+          success: false,
+          error: "Validation failed",
+          details: changeset_errors(changeset)
+        })
     end
   end
 
@@ -130,6 +134,7 @@ defmodule ClippsterServerWeb.UserCreatorProfileController do
       id: profile.id,
       user_id: profile.user_id,
       client_id: profile.client_id,
+      platform_links: profile.platform_links || [],
       name: profile.name,
       description: profile.description,
       profile_image_url:

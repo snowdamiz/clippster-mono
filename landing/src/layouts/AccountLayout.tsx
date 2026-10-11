@@ -12,27 +12,40 @@ import {
   Settings,
   User,
   X,
+  Video,
+  Download,
+  Users,
+  Megaphone,
+  CalendarDays,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { DesktopRequiredBanner } from '@/components/account/DesktopRequiredBanner'
 import { useAuth } from '@/hooks/useAuth'
 import { getOrgDashboardPath, needsPlanSelection } from '@/lib/accountRouting'
+import { api } from '@/lib/api'
 
 interface NavItem {
   label: string
   path: string
   icon: LucideIcon
   end?: boolean
+  section?: string
 }
 
 const NAV_ITEMS: NavItem[] = [
   { label: 'Home', path: '/account', icon: Home, end: true },
-  { label: 'Messages', path: '/account/messages', icon: MessageSquare },
-  { label: 'Profile', path: '/account/profile', icon: User },
-  { label: 'Social', path: '/account/social', icon: Globe },
-  { label: 'Posts', path: '/account/posts', icon: FileText },
-  { label: 'Settings', path: '/account/settings', icon: Settings },
-  { label: 'Billing', path: '/account/billing', icon: CreditCard },
+  { label: 'My Creators', path: '/account/creators', icon: Users, section: 'Browse' },
+  { label: 'Download Video', path: '/account/downloads', icon: Download, section: 'Browse' },
+  { label: 'Messages', path: '/account/messages', icon: MessageSquare, section: 'Browse' },
+  { label: 'Campaigns', path: '/account/campaigns', icon: Megaphone, section: 'Browse' },
+  { label: 'Video Library', path: '/account/videos', icon: Video, section: 'Library' },
+  { label: 'Prompts', path: '/account/prompts', icon: MessageSquare, section: 'Manage' },
+  { label: 'Calendar', path: '/account/calendar', icon: CalendarDays, section: 'Manage' },
+  { label: 'Profile', path: '/account/profile', icon: User, section: 'Manage' },
+  { label: 'Social', path: '/account/social', icon: Globe, section: 'Manage' },
+  { label: 'Posts', path: '/account/posts', icon: FileText, section: 'Manage' },
+  { label: 'Settings', path: '/account/settings', icon: Settings, section: 'Manage' },
+  { label: 'Billing', path: '/account/billing', icon: CreditCard, section: 'Manage' },
 ]
 
 export function AccountLayout() {
@@ -44,6 +57,15 @@ export function AccountLayout() {
   const gateMode = needsPlanSelection(user)
   const onBilling = location.pathname.startsWith('/account/billing')
   const orgPath = getOrgDashboardPath(user)
+  const [featureAccess, setFeatureAccess] = useState({ campaigns: false, restricted: false, prompts: true, loaded: false })
+  useEffect(() => {
+    let disposed = false
+    setFeatureAccess({ campaigns: false, restricted: false, prompts: true, loaded: false })
+    Promise.all([api.get('/app-settings/feature-flags'), api.get('/user/restrictions')]).then(([flags, permissions]) => {
+      if (!disposed && flags.success && permissions.success) setFeatureAccess({ campaigns: !!flags.feature_flags?.campaigns_enabled, restricted: !!permissions.restricted, prompts: permissions.restrictions?.allow_custom_prompts !== false, loaded: true })
+    }).catch(() => {})
+    return () => { disposed = true }
+  }, [user?.id])
 
   useEffect(() => {
     setMobileMenuOpen(false)
@@ -63,7 +85,8 @@ export function AccountLayout() {
     )
   }
 
-  function handleSignOut() {
+  async function handleSignOut() {
+    await fetch('/workspace/api/auth/logout', { method: 'POST', signal: AbortSignal.timeout(5000) }).catch(() => {})
     logout()
     navigate('/')
   }
@@ -75,6 +98,10 @@ export function AccountLayout() {
         : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
     }`
 
+  const visibleItems = NAV_ITEMS.filter(item => {
+    if (item.path === '/account/campaigns' && !(featureAccess.campaigns || user?.is_admin || user?.campaigns_enabled)) return false
+    return !(['/account/creators', '/account/calendar', '/account/prompts'].includes(item.path) && (!featureAccess.loaded || featureAccess.restricted && !(item.path === '/account/prompts' && featureAccess.prompts)))
+  })
   const sidebar = (
     <aside className="flex flex-col h-full w-60 shrink-0 border-r border-zinc-800 bg-[#0a0a0b]">
       <div className="flex items-center gap-2.5 px-4 py-4 border-b border-zinc-800">
@@ -85,7 +112,7 @@ export function AccountLayout() {
       </div>
 
       <nav className="flex-1 overflow-y-auto p-3 flex flex-col gap-0.5">
-        {NAV_ITEMS.map((item) => {
+        {visibleItems.map((item, index) => {
           const Icon = item.icon
           if (gateMode && item.path !== '/account/billing') {
             return (
@@ -100,10 +127,13 @@ export function AccountLayout() {
             )
           }
           return (
-            <NavLink key={item.path} to={item.path} end={item.end} className={navLinkClass}>
+            <div key={item.path}>
+            {item.section && item.section !== visibleItems[index - 1]?.section && <p className="px-3 pt-4 pb-2 text-xs font-semibold uppercase tracking-wider text-zinc-500">{item.section}</p>}
+            <NavLink to={item.path} end={item.end} className={navLinkClass}>
               <Icon className="w-4 h-4" />
               {item.label}
             </NavLink>
+            </div>
           )
         })}
       </nav>

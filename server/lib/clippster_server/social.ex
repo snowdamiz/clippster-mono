@@ -412,6 +412,7 @@ defmodule ClippsterServer.Social do
         |> Map.put(:organization_id, organization_id)
         |> Map.put(:submitted_by_user_id, user.id)
       )
+      |> ClippsterServer.Social.PostApproval.apply_policy(user)
       |> Repo.insert()
     else
       {:error, :unauthorized}
@@ -555,6 +556,7 @@ defmodule ClippsterServer.Social do
   def schedule_post(attrs, %User{} = user) do
     %PostSubmission{}
     |> PostSubmission.schedule_changeset(Map.put(attrs, :submitted_by_user_id, user.id))
+    |> ClippsterServer.Social.PostApproval.apply_policy(user)
     |> Repo.insert()
   end
 
@@ -564,6 +566,7 @@ defmodule ClippsterServer.Social do
   def create_immediate_post(attrs, %User{} = user) do
     %PostSubmission{}
     |> PostSubmission.create_changeset(Map.put(attrs, :submitted_by_user_id, user.id))
+    |> ClippsterServer.Social.PostApproval.apply_policy(user)
     |> Repo.insert()
   end
 
@@ -571,28 +574,33 @@ defmodule ClippsterServer.Social do
   Updates a scheduled post (before it's locked).
   """
   def update_scheduled_post(%PostSubmission{} = post, attrs, %User{} = user) do
-    # Verify the user can edit this post
-    if can_user_edit_post?(post, user) do
-      post
-      |> PostSubmission.update_scheduled_changeset(attrs)
-      |> Repo.update()
-    else
-      {:error, :unauthorized}
-    end
+    update_post_under_lock(post, user, attrs, &PostSubmission.update_scheduled_changeset/2)
   end
 
   @doc """
   Updates media URLs for a scheduled post after background upload completes.
   """
   def update_scheduled_post_media(%PostSubmission{} = post, attrs, %User{} = user) do
-    # Verify the user owns this post
-    if post.submitted_by_user_id == user.id do
-      post
-      |> PostSubmission.update_media_changeset(attrs)
-      |> Repo.update()
-    else
-      {:error, :unauthorized}
-    end
+    update_post_under_lock(post, user, attrs, &PostSubmission.update_media_changeset/2)
+  end
+
+  defp update_post_under_lock(post, user, attrs, changeset) do
+    Repo.transaction(fn ->
+      current = Repo.one(from p in PostSubmission, where: p.id == ^post.id, lock: "FOR UPDATE")
+
+      if is_nil(current) or not can_user_edit_post?(current, user),
+        do: Repo.rollback(:unauthorized)
+
+      submitter = Repo.get!(User, current.submitted_by_user_id)
+
+      case current
+           |> changeset.(attrs)
+           |> ClippsterServer.Social.PostApproval.apply_policy(submitter)
+           |> Repo.update() do
+        {:ok, updated} -> updated
+        {:error, error} -> Repo.rollback(error)
+      end
+    end)
   end
 
   @doc """

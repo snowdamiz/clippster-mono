@@ -8,6 +8,7 @@ const TARGETS = {
     cwd: '.',
     config: 'apps/web/fly.toml',
     dockerfile: 'apps/web/Dockerfile',
+    ignorefile: 'apps/web/Dockerfile.dockerignore',
     tokenKey: 'FLY_WEB_TOKEN',
     label: 'web app',
     appName: 'clippster-web',
@@ -24,6 +25,7 @@ const TARGETS = {
     cwd: '.',
     config: 'landing/fly.toml',
     dockerfile: 'landing/Dockerfile',
+    ignorefile: 'landing/Dockerfile.dockerignore',
     tokenKey: 'FLY_LANDING_TOKEN',
     label: 'landing page',
     appName: 'clippster-landing'
@@ -63,14 +65,9 @@ function parseEnvFile(fileContent) {
   return values;
 }
 
-function runDeploy({ cwd, tokenKey, label, appName, config, dockerfile, extraArgs = [] }) {
+function runDeploy({ cwd, tokenKey, label, appName, config, dockerfile, ignorefile, extraArgs = [] }) {
   const envValues = fs.existsSync(ENV_FILE) ? parseEnvFile(fs.readFileSync(ENV_FILE, 'utf8')) : new Map();
-  const flyApiToken = process.env[tokenKey] || process.env.FLY_API_TOKEN || envValues.get(tokenKey);
-
-  if (!flyApiToken) {
-    console.error(`Error: ${tokenKey} not found in ${ENV_FILE}`);
-    process.exit(1);
-  }
+  const flyApiToken = process.env.FLY_USE_LOGIN === '1' ? null : process.env[tokenKey] || process.env.FLY_API_TOKEN || envValues.get(tokenKey);
 
   const targetCwd = path.join(REPO_ROOT, cwd);
   console.log(`Deploying ${label} to fly.io (${appName})...`);
@@ -81,14 +78,15 @@ function runDeploy({ cwd, tokenKey, label, appName, config, dockerfile, extraArg
     args.push('--config', config);
   }
   if (dockerfile) {
-    args.push('--dockerfile', dockerfile);
+    args.push('--dockerfile', path.join(REPO_ROOT, dockerfile));
   }
+  if (ignorefile) args.push('--ignorefile', path.join(REPO_ROOT, ignorefile));
 
   const child = spawn('flyctl', args, {
     cwd: targetCwd,
     env: {
       ...process.env,
-      FLY_API_TOKEN: flyApiToken
+      ...(flyApiToken ? { FLY_API_TOKEN: flyApiToken } : {})
     },
     stdio: 'inherit'
   });

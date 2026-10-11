@@ -16,6 +16,7 @@ export interface ManualRegion {
   mediaAssetId?: string;
   mediaType?: 'video-crop' | 'image' | 'video';
   aspectRatioLocked?: boolean;
+  mediaSourceOffset?: number;
 }
 
 export interface SegmentRegionConfig {
@@ -27,12 +28,21 @@ export interface SegmentRegionConfig {
 
 export type ManualSourceFrameMode = 'none' | 'scale' | 'use16x9';
 
+export interface BrollRegionConfig {
+  brollId: string;
+  startTime: number;
+  endTime: number;
+  region: ManualRegion;
+  suggestionId?: string;
+}
+
 export interface ManualFramingConfig {
   mode: 'manual';
   regions: ManualRegion[];
   targetAspectRatio: string;
   sourceAspectRatio?: string;
   segmentConfigs?: SegmentRegionConfig[];
+  brollConfigs?: BrollRegionConfig[];
   sourceFrameMode?: ManualSourceFrameMode;
   blurEnabled?: boolean;
   blurAmount?: number;

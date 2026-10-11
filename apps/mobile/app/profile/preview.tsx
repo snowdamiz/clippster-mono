@@ -1,7 +1,7 @@
 import { router, useLocalSearchParams } from 'expo-router'
 import { useEffect, useState } from 'react'
 import { ActivityIndicator, ScrollView, Text, View } from 'react-native'
-import { AppHeader } from '@/components/AppHeader'
+import { ScreenHeader } from '@/components/ScreenHeader'
 import * as WebBrowser from 'expo-web-browser'
 import { MenuRow } from '@/components/navigation/MenuRow'
 import { EmptyState } from '@/components/ui/EmptyState'
@@ -47,17 +47,17 @@ export default function ProfilePreviewScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <AppHeader title="Public preview" showBack />
+      <ScreenHeader title="Public preview" showBack />
       <ScrollView contentContainerClassName="gap-[17px] px-5 py-4">
         <EmptyState
-          icon="person-outline"
+          icon="UserRound"
           title={name || 'Profile unavailable'}
           subtitle={bio || 'Your public creator profile'}
         />
         {tags.length > 0 ? <Text className="text-center text-sm text-muted">{tags.join(' · ')}</Text> : null}
         {slug && name ? (
           <MenuRow
-            icon="open-outline"
+            icon="ExternalLink"
             title="Public profile link"
             subtitle={`clippster.app/clippers/${slug}`}
             onPress={() =>

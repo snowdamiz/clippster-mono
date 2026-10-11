@@ -79,7 +79,7 @@ export function CaptionWordsSheet({
         words.map((word) => (
           <MenuRow
             key={word.id}
-            icon="text-outline"
+            icon="Type"
             title={word.word}
             subtitle={`${ticksToSeconds(word.start).toFixed(2)}–${ticksToSeconds(word.end).toFixed(2)} sec`}
             onPress={() => {
@@ -91,7 +91,7 @@ export function CaptionWordsSheet({
         ))
       ) : (
         <EmptyState
-          icon="chatbox-outline"
+          icon="MessageSquare"
           title="No transcript yet"
           subtitle="Transcribe the source clip to edit timed caption words."
         />

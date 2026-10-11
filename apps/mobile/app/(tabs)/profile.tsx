@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
 import { Image, Pressable, ScrollView, Text, View } from 'react-native'
@@ -21,8 +21,11 @@ import { useFeatureFlags } from '@/context/FeatureFlagsContext'
 import { clipperProfilesApi } from '@/services/api'
 
 import { tokens } from '@/theme/tokens'
+import { CreatorToolsSheet } from '@/components/me/CreatorToolsSheet'
+import { SectionCard } from '@/components/ui/SectionCard'
+import { WorkspaceActions } from '@/components/navigation/WorkspaceActions'
 
-type MeSheet = 'clipper' | 'branding' | 'billing' | 'accounts' | 'posts' | 'cloud' | null
+type MeSheet = 'creator' | 'clipper' | 'branding' | 'billing' | 'accounts' | 'posts' | 'cloud' | null
 
 export default function ProfileScreen() {
   const { sheet: sheetParam } = useLocalSearchParams<{ sheet?: string }>()
@@ -54,9 +57,8 @@ export default function ProfileScreen() {
   }, [loadClipperProfile])
 
   useEffect(() => {
-    if (sheetParam === 'posts') setOpenSheet('posts')
-    else if (sheetParam === 'accounts') setOpenSheet('accounts')
-    else if (sheetParam === 'billing') setOpenSheet('billing')
+    if (sheetParam && ['creator', 'clipper', 'branding', 'billing', 'accounts', 'posts', 'cloud'].includes(sheetParam))
+      setOpenSheet(sheetParam as MeSheet)
   }, [sheetParam])
 
   const shownName = displayName ?? user?.name ?? 'Clippster'
@@ -69,7 +71,7 @@ export default function ProfileScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <ScreenHeader title="Me" />
+      <ScreenHeader title="Me" rightAction={<WorkspaceActions />} />
 
       <ScrollView contentContainerClassName="gap-4 px-5 py-3 pb-10">
         <Pressable onPress={() => setOpenSheet('clipper')} className="overflow-hidden">
@@ -78,7 +80,7 @@ export default function ProfileScreen() {
               <Image source={{ uri: avatarUrl }} className="h-14 w-14 rounded-full" />
             ) : (
               <View className="h-14 w-14 items-center justify-center rounded-full bg-surfaceMuted">
-                <Ionicons name="person" size={28} color={tokens.colors.muted} />
+                <AppIcon name="UserRound" size={28} color={tokens.colors.muted} />
               </View>
             )}
             <View className="flex-1">
@@ -88,68 +90,71 @@ export default function ProfileScreen() {
               <Text className="text-sm text-muted">{user?.email ?? ''}</Text>
               {profileSlug ? <PublicProfileLinkRow slug={profileSlug} /> : null}
             </View>
-            <Ionicons name="chevron-forward" size={20} color={tokens.colors.muted} />
+            <AppIcon name="ChevronRight" size={20} color={tokens.colors.muted} />
           </View>
         </Pressable>
 
         <MenuRow
-          icon="card-outline"
+          icon="CreditCard"
           title="Your plan & AI credits"
           subtitle={`${tierLabel} · ${creditsLabel} AI credits`}
           onPress={() => setOpenSheet('billing')}
         />
-        <View>
+        <SectionCard title="Workspace">
           <MenuRow
-            icon="person-outline"
-            title="Clipper profile"
-            subtitle="Portfolio and public presence"
-            onPress={() => setOpenSheet('clipper')}
+            icon="Palette"
+            title="Creator tools"
+            subtitle="Profile, accounts, branding & shared work"
+            onPress={() => setOpenSheet('creator')}
           />
           <MenuRow
-            icon="link-outline"
-            title="Connected accounts"
-            subtitle="Personal and organization channels"
-            onPress={() => setOpenSheet('accounts')}
-          />
-          <MenuRow
-            icon="calendar-outline"
+            icon="Calendar"
             title="Posts"
             subtitle="Scheduled, published, and failed"
             onPress={() => setOpenSheet('posts')}
           />
           <MenuRow
-            icon="color-palette-outline"
-            title="Creator branding"
-            subtitle="Profiles, intros, outros, watermarks"
-            onPress={() => setOpenSheet('branding')}
-          />
-          <MenuRow
-            icon="cloud-outline"
-            title="Cloud & shared work"
-            subtitle="Sync conflicts and shared clips"
-            onPress={() => setOpenSheet('cloud')}
+            icon="MessagesSquare"
+            title="Messages"
+            subtitle="Conversations and team channels"
+            onPress={() => router.push('/(tabs)/messages')}
           />
           {canAccessCampaigns ? (
             <MenuRow
-              icon="trophy-outline"
+              icon="Megaphone"
               title="Campaigns"
               subtitle="Opportunities and submissions"
               onPress={() => router.push('/(tabs)/campaigns')}
             />
           ) : null}
           <MenuRow
-            icon="settings-outline"
+            icon="Settings"
             title="Settings"
             subtitle="Security, preferences, and about"
             onPress={() => router.push('/(tabs)/settings')}
           />
-        </View>
+        </SectionCard>
       </ScrollView>
 
       <ClipperProfileSheet
         visible={openSheet === 'clipper'}
         onClose={closeSheet}
         onProfileUpdated={() => void loadClipperProfile()}
+      />
+      <CreatorToolsSheet
+        visible={openSheet === 'creator'}
+        onClose={closeSheet}
+        name={shownName}
+        avatarUrl={avatarUrl}
+        onPreview={() => {
+          if (!profileSlug) {
+            setOpenSheet('clipper')
+            return
+          }
+          closeSheet()
+          router.push({ pathname: '/profile/preview', params: { slug: profileSlug } })
+        }}
+        onSelect={setOpenSheet}
       />
       <BrandingSheet visible={openSheet === 'branding'} onClose={closeSheet} />
       <BillingSheet visible={openSheet === 'billing'} onClose={closeSheet} />

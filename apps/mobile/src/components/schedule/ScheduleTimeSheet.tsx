@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react'
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import { Pressable, Text, View } from 'react-native'
 import { getMinScheduleTime, isValidScheduleTime } from '@clippster/api-client'
 import { BottomSheet } from '@/components/ui/BottomSheet'
@@ -84,7 +84,7 @@ export function ScheduleTimeSheet({ visible, value, onClose, onConfirm }: Schedu
           onPress={() => setMonth(new Date(month.getFullYear(), month.getMonth() - 1, 1))}
           className="min-h-11 min-w-11 items-center justify-center"
         >
-          <Ionicons name="chevron-back" size={20} color={tokens.colors.muted} />
+          <AppIcon name="ChevronLeft" size={20} color={tokens.colors.muted} />
         </Pressable>
         <Text className="text-[17px] font-semibold text-foreground">
           {month.toLocaleDateString(undefined, { month: 'long', year: 'numeric' })}
@@ -95,7 +95,7 @@ export function ScheduleTimeSheet({ visible, value, onClose, onConfirm }: Schedu
           onPress={() => setMonth(new Date(month.getFullYear(), month.getMonth() + 1, 1))}
           className="min-h-11 min-w-11 items-center justify-center"
         >
-          <Ionicons name="chevron-forward" size={20} color={tokens.colors.muted} />
+          <AppIcon name="ChevronRight" size={20} color={tokens.colors.muted} />
         </Pressable>
       </View>
       <View className="flex-row">

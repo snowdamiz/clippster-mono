@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import { useState } from 'react'
 import { Image, Pressable, Text, View } from 'react-native'
 import type { ProjectClipRow } from '@/services/database'
@@ -28,7 +28,7 @@ export function ClipListCard({ clip, index, fallbackThumbnail, onPress, onDelete
 
   return (
     <>
-      <View className="flex-row items-center border-b border-border py-[13px]">
+      <View className="flex-row items-center rounded-[14px] border border-border bg-surface p-3">
         <Pressable
           accessibilityRole="button"
           accessibilityLabel={`Open ${title}`}
@@ -39,7 +39,7 @@ export function ClipListCard({ clip, index, fallbackThumbnail, onPress, onDelete
             {thumbUri ? (
               <Image source={{ uri: thumbUri }} className="h-full w-full" resizeMode="cover" />
             ) : (
-              <Ionicons name="videocam-outline" size={22} color={tokens.colors.muted} />
+              <AppIcon name="Video" size={22} color={tokens.colors.muted} />
             )}
           </View>
           <View className="min-w-0 flex-1 gap-1">
@@ -50,7 +50,7 @@ export function ClipListCard({ clip, index, fallbackThumbnail, onPress, onDelete
               {formatDurationLabel(duration)} · {formatClock(start)} – {formatClock(end)}
             </Text>
           </View>
-          <Ionicons name="chevron-forward" size={18} color={tokens.colors.muted} />
+          <AppIcon name="ChevronRight" size={18} color={tokens.colors.muted} />
         </Pressable>
         <Pressable
           accessibilityRole="button"
@@ -58,7 +58,7 @@ export function ClipListCard({ clip, index, fallbackThumbnail, onPress, onDelete
           onPress={() => setOptionsVisible(true)}
           className="min-h-11 min-w-11 items-center justify-center"
         >
-          <Ionicons name="ellipsis-horizontal" size={20} color={tokens.colors.muted} />
+          <AppIcon name="EllipsisVertical" size={20} color={tokens.colors.muted} />
         </Pressable>
       </View>
       <BottomSheet visible={optionsVisible} onClose={() => setOptionsVisible(false)} title={title}>
@@ -75,7 +75,7 @@ export function ClipListCard({ clip, index, fallbackThumbnail, onPress, onDelete
           <Text className="text-sm leading-[21px] text-muted">{clip.detection_reason}</Text>
         ) : null}
         <MenuRow
-          icon="play-outline"
+          icon="Play"
           title="Open clip"
           onPress={() => {
             setOptionsVisible(false)
@@ -83,7 +83,7 @@ export function ClipListCard({ clip, index, fallbackThumbnail, onPress, onDelete
           }}
         />
         <MenuRow
-          icon="trash-outline"
+          icon="Trash2"
           title="Delete clip"
           destructive
           onPress={() => {

@@ -1,26 +1,20 @@
-import { router } from 'expo-router';
-import type { ReactNode } from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { Ionicons } from '@expo/vector-icons';
-import { SafeAreaView } from 'react-native-safe-area-context';
-import { ClippsterLogo } from '@/components/ClippsterLogo';
-import { tokens } from '@/theme/tokens';
+import { router } from 'expo-router'
+import type { ReactNode } from 'react'
+import { Pressable, Text, View } from 'react-native'
+import { AppIcon } from '@/components/AppIcon'
+import { SafeAreaView } from 'react-native-safe-area-context'
+import { ClippsterLogo } from '@/components/ClippsterLogo'
+import { tokens } from '@/theme/tokens'
 
 interface ScreenHeaderProps {
-  title?: string;
-  subtitle?: string;
-  showBack?: boolean;
-  showLogo?: boolean;
-  rightAction?: ReactNode;
+  title?: string
+  subtitle?: string
+  showBack?: boolean
+  showLogo?: boolean
+  rightAction?: ReactNode
 }
 
-export function ScreenHeader({
-  title,
-  subtitle,
-  showBack,
-  showLogo,
-  rightAction,
-}: ScreenHeaderProps) {
+export function ScreenHeader({ title, subtitle, showBack, showLogo, rightAction }: ScreenHeaderProps) {
   return (
     <SafeAreaView edges={['top']} className="bg-background">
       <View>
@@ -34,7 +28,7 @@ export function ScreenHeader({
                   onPress={() => router.back()}
                   className="mr-1 min-h-11 min-w-11 items-center justify-center rounded-xl active:bg-white/5"
                 >
-                  <Ionicons name="chevron-back" size={24} color={tokens.colors.foreground} />
+                  <AppIcon name="ChevronLeft" size={24} color={tokens.colors.foreground} />
                 </Pressable>
               ) : null}
               {showLogo ? (
@@ -44,9 +38,7 @@ export function ScreenHeader({
                   <Text className="text-xl font-bold tracking-tight text-foreground" numberOfLines={2}>
                     {title}
                   </Text>
-                  {subtitle ? (
-                    <Text className="text-[13px] text-muted">{subtitle}</Text>
-                  ) : null}
+                  {subtitle ? <Text className="text-[13px] text-muted">{subtitle}</Text> : null}
                 </View>
               ) : null}
             </View>
@@ -55,5 +47,5 @@ export function ScreenHeader({
         </View>
       </View>
     </SafeAreaView>
-  );
+  )
 }

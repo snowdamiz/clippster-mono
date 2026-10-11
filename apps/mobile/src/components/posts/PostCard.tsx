@@ -1,6 +1,6 @@
 import type { ScheduledPost } from '@clippster/api-client'
 import { getSocialPlatformLabel } from '@clippster/api-client'
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import { Image, Pressable, Text, View } from 'react-native'
 import { tokens } from '@/theme/tokens'
 import { PostStatusBadge } from './PostStatusBadge'
@@ -21,7 +21,7 @@ export function PostCard({ post, onPress }: PostCardProps) {
           {post.thumbnail_url ? (
             <Image source={{ uri: post.thumbnail_url }} className="h-full w-full" resizeMode="cover" />
           ) : (
-            <Ionicons name="videocam-outline" size={22} color={tokens.colors.muted} />
+            <AppIcon name="Video" size={22} color={tokens.colors.muted} />
           )}
         </View>
         <View className="min-w-0 flex-1 gap-1">
@@ -48,7 +48,7 @@ export function PostCard({ post, onPress }: PostCardProps) {
             </Text>
           ) : null}
         </View>
-        <Ionicons name="chevron-forward" size={18} color={tokens.colors.muted} />
+        <AppIcon name="ChevronRight" size={18} color={tokens.colors.muted} />
       </View>
     </Pressable>
   )

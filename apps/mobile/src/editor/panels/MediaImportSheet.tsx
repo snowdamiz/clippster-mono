@@ -1,4 +1,4 @@
-import type { Ionicons } from '@expo/vector-icons'
+import type { AppIconName } from '@/components/AppIcon'
 import { View } from 'react-native'
 import { MenuRow } from '@/components/navigation/MenuRow'
 import { EditorSheet } from './EditorSheet'
@@ -9,25 +9,25 @@ const OPTIONS: {
   kind: MediaKind
   title: string
   description: string
-  icon: keyof typeof Ionicons.glyphMap
+  icon: AppIconName
 }[] = [
   {
     kind: 'video',
     title: 'Add video',
     description: 'Choose a video for the primary timeline',
-    icon: 'videocam-outline'
+    icon: 'Video'
   },
   {
     kind: 'image',
     title: 'Add image',
     description: 'Place an image overlay at the playhead',
-    icon: 'image-outline'
+    icon: 'Image'
   },
   {
     kind: 'audio',
     title: 'Add audio',
     description: 'Add music, sound, or voice audio',
-    icon: 'musical-notes-outline'
+    icon: 'Music2'
   }
 ]
 

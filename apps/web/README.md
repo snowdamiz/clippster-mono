@@ -4,6 +4,10 @@ A browser version of the desktop project workspace. It uses the existing Clippst
 
 ## Local development
 
+The main website account dashboard now includes **Download Video** and **Video Library** at `http://localhost:5173/account`. Existing account pages and the Organization button remain in the same navigation. Selecting either video page automatically establishes a private workspace session from the website login. New users choose Free or a paid plan in the existing Billing page first. `ACCOUNT_ORIGIN` must match the website origin exactly; Docker development uses `http://localhost:5173`.
+
+The website proxies `/workspace/api` to the media service and `/workspace` assets to Vite in development. In production its Node server streams `/workspace/*` to `WORKSPACE_URL`. The standalone preview on port 5175 remains available. The embedded view hides duplicate workspace navigation and uses the account site's session, billing and navigation.
+
 The default development path uses Docker Desktop (or Docker Engine) with Compose 2.24+. The web container includes Node 24, FFmpeg with captions support, Python, and yt-dlp; no host media tools are needed.
 
 ```sh
@@ -44,11 +48,13 @@ Host mode reads `CLIPPSTER_API_URL` from `apps/web/.env`. For email/AI testing a
 
 1. Create a project and download a public, completed YouTube, Twitch, Kick, Vimeo, Rumble, or X video, or upload a video file.
 2. Select **Find clips** to use the existing AI service and account credits. Existing manually edited clips are preserved when detecting again.
-3. Select a clip, preview its segments, adjust times, choose vertical or landscape, and enable captions when transcription is available. Changes save explicitly; Revert restores the saved version.
-4. Build the clip, then download its H.264/AAC MP4. Changing settings invalidates the download until rebuilt. A browser refresh preserves projects and finished media.
+3. Select a clip, preview its segments, adjust times, choose vertical or landscape, and style captions when transcription is available. Use manual framing for source/output regions and timed layouts, add a text overlay, and select synced personal branding. The Transcript tab can transcribe independently and create clips from a word range. Changes save explicitly; Revert restores the saved version.
+4. Build the clip, then download its H.264/AAC MP4 or publish/schedule it to a connected personal or organization account. Changing settings invalidates the build until rebuilt. A browser refresh preserves projects and finished media. Approval-required organizations are blocked from direct publishing because the existing approval submission workflow is not implemented.
 5. Delete a clip or project to free storage. Project deletion removes its source and built clips.
 
-This intentionally excludes the full multitrack editor, live recording, social publishing, organization administration, and desktop-local project synchronization. Browser projects live on the web service. Native media paths and arbitrary commands are never exposed to the browser.
+The website account navigation also includes My Creators, gated Campaigns, Prompts, and Calendar, alongside the existing profile, social accounts, posts, messages, billing, and organization dashboard. Custom web prompts are private to the account; system prompt templates are shared with desktop. Creator platform links require the `20261009000001_add_personal_creator_platform_links` database migration.
+
+This excludes Live Streams, watching/recording streams, the full video/image editors, and desktop-local project synchronization. Manual framing supports source scaling/blur, locked regions, rounded corners, uploaded image/video regions, timed layouts, timed B-roll, AI B-roll planning and stock search, social safe zones, and undo/redo. Subtitle and text controls reuse the desktop panels; subtitle exports reuse the desktop rasterizer and bundled fonts. Organization members requiring approval submit clips to Organization → Posts, where owners/admins can review and approve or reject. Browser projects live on the web service. Native media paths and arbitrary commands are never exposed to the browser.
 
 Limits: 20 projects/account; 2 GB and 2 hours/source; 100 clips/project; 20 non-overlapping segments and 10 minutes/clip; 10 GB/account. One media job executes at a time, with a bounded queue and two uploads globally. Audio is compressed to mono MP3 for the existing `/clips/detect` contract. Private, age-gated, DRM, live, deleted, and provider-blocked sources are not supported; upload is the fallback. External platform availability must be checked from the deployment region.
 

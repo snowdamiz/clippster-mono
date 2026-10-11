@@ -1,31 +1,27 @@
-import { Ionicons } from '@expo/vector-icons';
-import type { MessagingConversation } from '@clippster/api-client';
-import { Image, Pressable, Text, View } from 'react-native';
-import { tokens } from '@/theme/tokens';
-import {
-  conversationDisplayName,
-  conversationSubtitle,
-  formatMessageTime,
-} from './conversationUtils';
+import { AppIcon, type AppIconName } from '@/components/AppIcon'
+import type { MessagingConversation } from '@clippster/api-client'
+import { Image, Pressable, Text, View } from 'react-native'
+import { tokens } from '@/theme/tokens'
+import { conversationDisplayName, conversationSubtitle, formatMessageTime } from './conversationUtils'
 
 interface ConversationRowProps {
-  conversation: MessagingConversation;
-  currentUserId: number | null | undefined;
-  unreadCount?: number;
-  onPress: () => void;
-  pinned?: boolean;
+  conversation: MessagingConversation
+  currentUserId: number | null | undefined
+  unreadCount?: number
+  onPress: () => void
+  pinned?: boolean
 }
 
-function typeIcon(type: MessagingConversation['type']): keyof typeof Ionicons.glyphMap {
+function typeIcon(type: MessagingConversation['type']): AppIconName {
   switch (type) {
     case 'support':
-      return 'headset-outline';
+      return 'Headphones'
     case 'group':
-      return 'people-outline';
+      return 'Users'
     case 'announcement':
-      return 'megaphone-outline';
+      return 'Megaphone'
     default:
-      return 'person-outline';
+      return 'UserRound'
   }
 }
 
@@ -34,13 +30,13 @@ export function ConversationRow({
   currentUserId,
   unreadCount = 0,
   onPress,
-  pinned,
+  pinned
 }: ConversationRowProps) {
-  const title = conversationDisplayName(conversation, currentUserId);
-  const other = conversation.participants.find((p) => p.userId !== currentUserId);
-  const avatarUrl = other?.user?.avatarUrl;
-  const preview = conversation.lastMessagePreview?.trim() || conversationSubtitle(conversation);
-  const unread = unreadCount > 0;
+  const title = conversationDisplayName(conversation, currentUserId)
+  const other = conversation.participants.find((p) => p.userId !== currentUserId)
+  const avatarUrl = other?.user?.avatarUrl
+  const preview = conversation.lastMessagePreview?.trim() || conversationSubtitle(conversation)
+  const unread = unreadCount > 0
 
   return (
     <Pressable
@@ -53,7 +49,7 @@ export function ConversationRow({
         {avatarUrl && conversation.type === 'direct' ? (
           <Image source={{ uri: avatarUrl }} className="h-10 w-10" />
         ) : (
-          <Ionicons name={typeIcon(conversation.type)} size={22} color={tokens.colors.accent} />
+          <AppIcon name={typeIcon(conversation.type)} size={22} color={tokens.colors.accent} />
         )}
       </View>
 
@@ -65,9 +61,7 @@ export function ConversationRow({
           >
             {title}
           </Text>
-          <Text className="text-xs text-muted">
-            {formatMessageTime(conversation.lastMessageAt)}
-          </Text>
+          <Text className="text-xs text-muted">{formatMessageTime(conversation.lastMessageAt)}</Text>
         </View>
         <View className="mt-0.5 flex-row items-center gap-2">
           <Text
@@ -87,5 +81,5 @@ export function ConversationRow({
         </View>
       </View>
     </Pressable>
-  );
+  )
 }

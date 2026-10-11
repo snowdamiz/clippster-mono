@@ -184,16 +184,20 @@ defmodule ClippsterServerWeb.PostSubmissionController do
           platform: account.platform
         })
 
-        Task.start(fn ->
-          dispatch_publish(submission, account, params)
-        end)
+        if submission.status != "awaiting_approval" do
+          Task.start(fn -> dispatch_publish(submission, account, params) end)
+        end
 
         conn
         |> put_status(202)
         |> json(%{
           success: true,
           post: serialize_post(submission),
-          message: "Post is being published"
+          message:
+            if(submission.status == "awaiting_approval",
+              do: "Clip submitted for organization approval",
+              else: "Post is being published"
+            )
         })
 
       {:error, changeset} when is_struct(changeset, Ecto.Changeset) ->
@@ -205,6 +209,37 @@ defmodule ClippsterServerWeb.PostSubmissionController do
         conn
         |> put_status(400)
         |> json(%{success: false, error: to_string(reason)})
+    end
+  end
+
+  def approve(conn, params), do: review(conn, params, :approve)
+  def reject(conn, params), do: review(conn, params, :reject)
+
+  defp review(conn, %{"organization_id" => org_id, "id" => post_id} = params, action) do
+    case ClippsterServer.Social.PostApproval.review(
+           org_id,
+           post_id,
+           conn.assigns.current_user,
+           action,
+           Map.get(params, "notes", "")
+         ) do
+      {:ok, post} ->
+        json(conn, %{
+          success: true,
+          post: serialize_post(Social.get_post_submission(org_id, post.id))
+        })
+
+      {:error, reason} ->
+        {status, message} =
+          case reason do
+            :unauthorized -> {403, "Only organization owners and admins can review clips"}
+            :not_found -> {404, "Post not found"}
+            :already_reviewed -> {409, "This clip has already been reviewed"}
+            :invalid_notes -> {400, "Review notes must be at most 2000 characters"}
+            _ -> {422, "Unable to review this clip"}
+          end
+
+        conn |> put_status(status) |> json(%{success: false, error: message})
     end
   end
 
@@ -630,10 +665,14 @@ defmodule ClippsterServerWeb.PostSubmissionController do
       post_url: post.post_url,
       media_type: post.media_type,
       caption: post.caption,
-      media_url: post.media_url,
+      media_url: preview_media_url(post.media_url),
       thumbnail_url: post.thumbnail_url,
       status: post.status,
       error_message: post.error_message,
+      reviewed_at: post.reviewed_at,
+      reviewed_by_user_id: post.reviewed_by_user_id,
+      review_notes: post.review_notes,
+      scheduled_at: post.scheduled_at,
       posted_at: post.posted_at,
       last_synced_at: post.last_synced_at,
       manual_override: post.manual_override,
@@ -653,6 +692,18 @@ defmodule ClippsterServerWeb.PostSubmissionController do
     }
   end
 
+  defp preview_media_url(url) when is_binary(url) do
+    if String.contains?(url, ".r2.cloudflarestorage.com") do
+      case ClippsterServer.Storage.presigned_url(url, expires_in: 3600) do
+        {:ok, signed} -> signed
+        _ -> nil
+      end
+    else
+      url
+    end
+  end
+
+  defp preview_media_url(_), do: nil
   defp serialize_social_account(nil), do: nil
   defp serialize_social_account(%Ecto.Association.NotLoaded{}), do: nil
 

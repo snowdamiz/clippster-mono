@@ -5,6 +5,8 @@ import { createRequire } from 'node:module'
 const resolve = (path: string) => fileURLToPath(new URL(path, import.meta.url))
 const require = createRequire(import.meta.url)
 export default defineConfig({
+  base: '/workspace/',
+  publicDir: '../../client/public',
   plugins: [vue()],
   resolve: {
     alias: {

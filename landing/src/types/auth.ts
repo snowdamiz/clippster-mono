@@ -8,6 +8,7 @@ export interface AuthUser {
   owned_organization_id?: number | null
   created_by_organization_id?: number | null
   is_admin?: boolean
+  campaigns_enabled?: boolean
   is_moderator?: boolean
   has_selected_plan?: boolean
   subscription?: {

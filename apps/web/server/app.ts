@@ -19,11 +19,12 @@ export async function createWebApp(config: Config) {
     res.set({
       'X-Content-Type-Options': 'nosniff',
       'Referrer-Policy': 'same-origin',
-      'X-Frame-Options': 'DENY',
+      'X-Frame-Options': 'SAMEORIGIN',
       'Content-Security-Policy':
-        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+        "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"
     })
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) && req.headers.origin !== config.origin) {
+    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
+        ![config.origin, config.accountOrigin].includes(req.headers.origin || '')) {
       next(new HttpError(403, 'Request origin is not allowed.'))
       return
     }
@@ -37,6 +38,7 @@ export async function createWebApp(config: Config) {
   app.use('/api/auth', auth.router)
   app.use('/api/web', workspaceRoutes(store, config, auth, jobs))
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }))
+  app.use('/workspace', express.static(resolve('dist/public'), { index: false, maxAge: '1h' }))
   app.use(express.static(resolve('dist/public'), { index: false, maxAge: '1h' }))
   app.get('/{*path}', (_req, res) =>
     res.sendFile(resolve('dist/public/index.html'), { headers: { 'Cache-Control': 'no-cache' } })

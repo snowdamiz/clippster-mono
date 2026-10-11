@@ -1,5 +1,6 @@
 import { useEffect, useState, useRef } from 'react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
+import { OrgClipReview } from '@/components/dashboard/OrgClipReview'
 import { useOrganization } from '@/hooks/useOrganization'
 
 import { Skeleton } from '@/components/ui/Skeleton'
@@ -191,6 +192,8 @@ const statusOptions = [
   { value: '', label: 'All Status' },
   { value: 'published', label: 'Published', dot: 'bg-emerald-500' },
   { value: 'pending', label: 'Pending', dot: 'bg-amber-500' },
+  { value: 'awaiting_approval', label: 'Awaiting approval', dot: 'bg-amber-500' },
+  { value: 'rejected', label: 'Rejected', dot: 'bg-red-500' },
   { value: 'publishing', label: 'Publishing', dot: 'bg-blue-500' },
   { value: 'failed', label: 'Failed', dot: 'bg-red-500' }
 ]
@@ -204,7 +207,7 @@ const platformOptions = [
 ]
 
 export function OrgPosts() {
-  const { loadOrganization, organizationId, loadCreatorProfiles, profilesLoaded } = useOrganization()
+  const { loadOrganization, organizationId, loadCreatorProfiles, profilesLoaded, role } = useOrganization()
   const [posts, setPosts] = useState<UnifiedPost[]>([])
   const [total, setTotal] = useState(0)
   const [page, setPage] = useState(1)
@@ -450,6 +453,7 @@ export function OrgPosts() {
       }
     >
       <div className="p-6 flex flex-col gap-8 max-w-[1400px] mx-auto w-full">
+        {organizationId && <OrgClipReview organizationId={organizationId} canReview={['owner', 'admin'].includes(role)} onReviewed={() => loadPosts(page)} />}
         {/* Page Heading */}
         <div className="mb-2">
           <h1 className="text-2xl font-bold text-white tracking-[-0.02em] mb-1.5">Post Analytics</h1>

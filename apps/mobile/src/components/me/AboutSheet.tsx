@@ -28,16 +28,10 @@ export function AboutSheet({ visible, onClose }: { visible: boolean; onClose: ()
   }, [visible])
   return (
     <BottomSheet visible={visible} onClose={onClose} variant="page" title="About Clippster">
-      <EmptyState icon="film-outline" title="Clippster" subtitle="Your mobile creative workspace." />
+      <EmptyState icon="Film" title="Clippster" subtitle="Your mobile creative workspace." />
+      <MenuRow icon="Info" title="App version" value={getAppVersion()} onPress={() => {}} trailing={<View />} />
       <MenuRow
-        icon="information-circle-outline"
-        title="App version"
-        value={getAppVersion()}
-        onPress={() => {}}
-        trailing={<View />}
-      />
-      <MenuRow
-        icon="cloud-download-outline"
+        icon="CloudDownload"
         title={checking ? 'Checking for updates…' : 'Check for updates'}
         subtitle={getUpdateDebugLabel()}
         onPress={() => {
@@ -47,7 +41,7 @@ export function AboutSheet({ visible, onClose }: { visible: boolean; onClose: ()
         }}
       />
       <MenuRow
-        icon="document-text-outline"
+        icon="FileText"
         title="FFmpeg · LGPL"
         subtitle={ffmpegVersion}
         onPress={() => void Linking.openURL('https://ffmpeg.org/legal.html')}
@@ -56,12 +50,12 @@ export function AboutSheet({ visible, onClose }: { visible: boolean; onClose: ()
         This app uses FFmpeg licensed under LGPL. Open FFmpeg for source and license notices.
       </Text>
       <MenuRow
-        icon="shield-checkmark-outline"
+        icon="ShieldCheck"
         title="Privacy Policy"
         onPress={() => void Linking.openURL('https://clippster.app/privacy')}
       />
       <MenuRow
-        icon="document-outline"
+        icon="File"
         title="Terms of Service"
         onPress={() => void Linking.openURL('https://clippster.app/terms')}
       />

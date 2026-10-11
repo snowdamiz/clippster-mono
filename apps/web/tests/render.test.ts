@@ -6,7 +6,7 @@ import { execFileSync } from 'node:child_process'
 import { renderClip, probe } from '../server/media'
 import { readConfig } from '../server/config'
 import { buildSubtitleAssContent } from '@clippster/clip-export'
-import { createDefaultSubtitleSettings } from '@clippster/shared-types'
+import { createDefaultSubtitleSettings, createDefaultClipTextBoxState } from '@clippster/shared-types'
 import type { WebProject, WebClip } from '@clippster/shared-types'
 it('renders both segments of a silent landscape clip and uses the actual caption canvas', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'clippster-silent-'))
@@ -56,6 +56,10 @@ it('renders both segments of a silent landscape clip and uses the actual caption
       createdAt: 0,
       updatedAt: 0
     }
+    clip.textBox = createDefaultClipTextBoxState(2)
+    clip.textBox.text = 'A real text overlay'
+    clip.textBox.style.fontFamily = 'DejaVu Sans'
+    clip.textBox.style.backgroundEnabled = false
     await renderClip(project, clip, directory, work, config, signal)
     const metadata = await probe(join(directory, 'silent.mp4'), config, signal)
     expect(metadata.duration).toBeCloseTo(2, 0)

@@ -1,6 +1,14 @@
 # Deploy Clippster web to app.clippster.app
 
-This rollout adds **clippster-web**. The landing page stays on **clippster-landing** at **clippster.app**, and the API stays at **api.clippster.app**. No landing-page deployment or apex DNS change is required. These are deployment instructions, not a record of a production deployment.
+This rollout adds **clippster-web** and integrates its video workspace into the account dashboard on **clippster-landing** at **clippster.app**. The API stays at **api.clippster.app**. Deploy both the web service and updated landing site; no apex DNS change is required.
+
+Production rollout completed October 9, 2026: API migrations for creator platform links and organization clip review applied; the API, workspace and account website deployed. Verified the public workspace health endpoint, HTML, JavaScript, CSS, font delivery and unauthenticated project rejection. Use **https://clippster.app** and its existing account login. The optional **app.clippster.app** DNS/certificate setup below has not been applied. Live Google consent, paid AI charges and real social provider delivery still require designated account acceptance tests; automated provider fixtures do not verify those external services.
+
+The workspace listens on `HOST=::` so the landing proxy can reach Fly's IPv6 private network. To deploy with the authenticated Fly CLI instead of saved scoped tokens, set `FLY_USE_LOGIN=1` before running `scripts/deploy-fly.mjs`.
+
+The landing service streams `/workspace/*` to `WORKSPACE_URL=http://clippster-web.internal:8080` on Fly's private network. The web service sets `ACCOUNT_ORIGIN=https://clippster.app`; cookie sessions, uploads, playback ranges, and downloads use the website's origin. Sign-in establishes a workspace session using the website's existing account token in an authenticated POST, never an iframe URL. The iframe supplies video tools while the account dashboard retains Home, Messages, Profile, Social, Posts, Settings, Billing and Organization navigation.
+
+Deploy and verify the web service before deploying the updated landing site. `/workspace/api/health` on the website checks the integration. `/account/videos` and `/account/downloads` require website authentication and completed plan selection. Free accounts receive 2 VOD downloads and 5 clip builds daily, resetting at midnight Eastern Time. AI detection uses the existing account API and credits. Browser quotas are durable in the web service; desktop usage counters and desktop projects remain local and separate.
 
 ## Build and verify locally
 

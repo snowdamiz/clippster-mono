@@ -4,12 +4,14 @@ kill_signal = "SIGTERM"
 kill_timeout = "30s"
 
 [build]
-  dockerfile = "apps/web/Dockerfile"
+  # The deployment helper supplies the absolute Dockerfile and ignore-file paths.
 
 [env]
   NODE_ENV = "production"
+  HOST = "::"
   PORT = "8080"
   WEB_ORIGIN = "https://app.clippster.app"
+  ACCOUNT_ORIGIN = "https://clippster.app"
   CLIPPSTER_API_URL = "https://api.clippster.app/api"
   WEB_DATA_DIR = "/data"
 

@@ -2,7 +2,7 @@ import { DatabaseSync } from 'node:sqlite'
 import { mkdirSync } from 'node:fs'
 import { join } from 'node:path'
 import { randomUUID } from 'node:crypto'
-import type { WebProject, WebJob } from '@clippster/shared-types'
+import { FREE_TIER_LIMITS, freeUsageDay, type FreeTierAction, type WebProject, type WebJob } from '@clippster/shared-types'
 import { HttpError } from './errors'
 export interface StoredJob extends WebJob {
   owner: string
@@ -22,12 +22,26 @@ export class Store {
     this.db = new DatabaseSync(join(directory, 'workspace.sqlite'))
     this.db.exec(`PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;
       CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, owner TEXT NOT NULL, data TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS prompts (id TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL, content TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS framing_assets (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, owner TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS publications (id TEXT PRIMARY KEY, owner TEXT NOT NULL, fingerprint TEXT NOT NULL, status TEXT NOT NULL, result TEXT);
       CREATE INDEX IF NOT EXISTS projects_owner ON projects(owner);
       CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         owner TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
       CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, owner TEXT NOT NULL, token TEXT NOT NULL, expires INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS oauth_attempts (id TEXT PRIMARY KEY, state TEXT NOT NULL, verifier TEXT NOT NULL, expires INTEGER NOT NULL);`)
+      CREATE TABLE IF NOT EXISTS oauth_attempts (id TEXT PRIMARY KEY, state TEXT NOT NULL, verifier TEXT NOT NULL, expires INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS daily_usage (owner TEXT NOT NULL, action TEXT NOT NULL, day TEXT NOT NULL,
+        count INTEGER NOT NULL, PRIMARY KEY(owner, action, day));`)
+  }
+  consumeFreeUsage(owner: string, action: FreeTierAction) {
+    const day = freeUsageDay()
+    const limit = FREE_TIER_LIMITS[action]
+    const row = this.db.prepare(`INSERT INTO daily_usage VALUES (?, ?, ?, 1)
+      ON CONFLICT(owner, action, day) DO UPDATE SET count = count + 1 WHERE count < ?
+      RETURNING count`).get(owner, action, day, limit)
+    if (!row) throw new HttpError(403,
+      `Free plan daily limit reached (${limit} ${action === 'vod_download' ? 'VOD downloads' : 'clip builds'}). Upgrade your plan or try again tomorrow.`)
   }
   saveOAuthAttempt(id: string, state: string, verifier: string) {
     this.db.prepare('DELETE FROM oauth_attempts WHERE expires <= ?').run(Date.now())

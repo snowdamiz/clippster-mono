@@ -1,5 +1,5 @@
 import type { TargetAspectRatio } from '@clippster/shared-types'
-import * as MediaLibrary from 'expo-media-library'
+import * as MediaLibrary from 'expo-media-library/legacy'
 import * as Sharing from 'expo-sharing'
 import { router } from 'expo-router'
 import { useState } from 'react'
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button'
 import { ExportPreview } from './ExportPreview'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { BottomSheet } from '@/components/ui/BottomSheet'
+import { tokens } from '@/theme/tokens'
 
 import type { EditorExportProgress as ClipBuildProgress } from '@/editor/export/exportProgress'
 import { cancelFfmpeg } from '@/services/ffmpeg'
@@ -156,7 +157,7 @@ export function ExportSheet({
           ) : building ? (
             <>
               <EmptyState
-                icon="film-outline"
+                icon="Film"
                 title="Making your clip"
                 subtitle="Keep Clippster open until the export finishes."
               />
@@ -182,14 +183,24 @@ export function ExportSheet({
                 </Text>
               ) : null}
               <Text className="text-[17px] font-semibold text-foreground">Choose formats</Text>
-              <View className="rounded-[18px] bg-surfaceMuted px-4">
+              <View className="rounded-[18px] border border-border bg-surface px-4">
                 <View className="min-h-[60px] flex-row items-center justify-between border-b border-border">
                   <Text className="text-sm text-foreground">9:16 · Portrait</Text>
-                  <Switch accessibilityLabel="Export portrait format" value={ratio916} onValueChange={setRatio916} />
+                  <Switch
+                    accessibilityLabel="Export portrait format"
+                    trackColor={{ true: tokens.colors.accent }}
+                    value={ratio916}
+                    onValueChange={setRatio916}
+                  />
                 </View>
                 <View className="min-h-[60px] flex-row items-center justify-between">
                   <Text className="text-sm text-foreground">16:9 · Landscape</Text>
-                  <Switch accessibilityLabel="Export landscape format" value={ratio169} onValueChange={setRatio169} />
+                  <Switch
+                    accessibilityLabel="Export landscape format"
+                    trackColor={{ true: tokens.colors.accent }}
+                    value={ratio169}
+                    onValueChange={setRatio169}
+                  />
                 </View>
               </View>
               {showRemux ? (

@@ -9,7 +9,7 @@ import {
   type SocialPlatform,
   type UserSocialAccount
 } from '@clippster/api-client'
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import { router } from 'expo-router'
 import * as FileSystem from 'expo-file-system/legacy'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -383,7 +383,7 @@ export function PostSheet({ visible, buildId, onClose }: PostSheetProps) {
         variant="page"
         title={['Post destinations', 'Caption & timing', 'Review post'][step]}
         subtitle={subtitleParts.length > 0 ? subtitleParts.join(' • ') : undefined}
-        headerIcon="rocket-outline"
+        headerIcon="Rocket"
         headerAccessory={
           build?.thumbnail_path ? (
             <Image
@@ -557,7 +557,7 @@ export function PostSheet({ visible, buildId, onClose }: PostSheetProps) {
                             active ? 'border-accent bg-accent/10' : 'border-border bg-white/5'
                           }`}
                         >
-                          <Ionicons
+                          <AppIcon
                             name={p.icon}
                             size={16}
                             color={active ? tokens.colors.accent : tokens.colors.foreground}
@@ -608,7 +608,7 @@ export function PostSheet({ visible, buildId, onClose }: PostSheetProps) {
                 </View>
 
                 <MenuRow
-                  icon="link-outline"
+                  icon="Link"
                   title="Connected accounts"
                   subtitle="Add or reconnect a destination"
                   onPress={() => setShowAccountsSheet(true)}
@@ -651,7 +651,7 @@ export function PostSheet({ visible, buildId, onClose }: PostSheetProps) {
                       <Text className="text-sm text-foreground">
                         {scheduledAt ? formatScheduleLabel(scheduledAt) : 'Select date and time'}
                       </Text>
-                      <Ionicons name="calendar-outline" size={18} color={tokens.colors.accent} />
+                      <AppIcon name="Calendar" size={18} color={tokens.colors.accent} />
                     </Pressable>
                   </View>
                 ) : null}
@@ -674,7 +674,7 @@ export function PostSheet({ visible, buildId, onClose }: PostSheetProps) {
                   {postNow ? 'Ready to publish' : 'Ready to schedule'}
                 </Text>
                 <MenuRow
-                  icon="person-outline"
+                  icon="UserRound"
                   title="Posting as"
                   subtitle={
                     postingContext === 'personal'
@@ -684,13 +684,13 @@ export function PostSheet({ visible, buildId, onClose }: PostSheetProps) {
                   onPress={() => setStep(0)}
                 />
                 <MenuRow
-                  icon="send-outline"
+                  icon="Send"
                   title="Destination"
                   subtitle={`${selectedPlatform?.name ?? platform} · @${platformAccounts.find((account) => account.id === accountId)?.username ?? ''}`}
                   onPress={() => setStep(0)}
                 />
                 <MenuRow
-                  icon="calendar-outline"
+                  icon="Calendar"
                   title="Scheduled for"
                   subtitle={postNow ? 'Publishing now' : formatScheduleLabel(scheduledAt)}
                   onPress={() => setStep(1)}

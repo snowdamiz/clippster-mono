@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import type { ReactNode } from 'react'
 import { Image, Pressable, Text, View } from 'react-native'
 import { tokens } from '@/theme/tokens'
@@ -29,7 +29,7 @@ export function ThumbnailRow({ title, subtitle, image, onPress, children, select
         />
       ) : (
         <View className="h-[58px] w-[72px] items-center justify-center rounded-[10px] bg-surfaceMuted">
-          <Ionicons name="videocam-outline" size={24} color={tokens.colors.muted} />
+          <AppIcon name="Video" size={24} color={tokens.colors.muted} />
         </View>
       )}
       <View className="min-w-0 flex-1 gap-1">
@@ -40,8 +40,8 @@ export function ThumbnailRow({ title, subtitle, image, onPress, children, select
         {children}
       </View>
       {onPress ? (
-        <Ionicons
-          name={selected ? 'checkmark-circle' : 'chevron-forward'}
+        <AppIcon
+          name={selected ? 'CircleCheck' : 'ChevronRight'}
           size={20}
           color={selected ? tokens.colors.accent : tokens.colors.muted}
         />

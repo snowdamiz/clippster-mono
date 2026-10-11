@@ -287,10 +287,10 @@ function getPhoenixDevPort() {
   return process.env.PORT || '4000';
 }
 
-function setupAndroidPortReverse(port, reason) {
+function setupAndroidPortReverse(port, reason, hostPort = port) {
   try {
-    runAdb(['reverse', `tcp:${port}`, `tcp:${port}`], { stdio: 'ignore' });
-    console.log(`adb reverse tcp:${port} tcp:${port} (${reason})`);
+    runAdb(['reverse', `tcp:${port}`, `tcp:${hostPort}`], { stdio: 'ignore' });
+    console.log(`adb reverse tcp:${port} tcp:${hostPort} (${reason})`);
   } catch {
     console.warn(`Could not run adb reverse for port ${port}`);
   }
@@ -343,6 +343,10 @@ if (!adb) {
 if (launchAndroid) {
   setupAndroidPortReverse(getPhoenixDevPort(), 'emulator localhost → host Phoenix for Google OAuth');
   setupAndroidPortReverse(port, 'emulator localhost → host Metro');
+  if (port !== 8081) {
+    // A directly opened debug build falls back to React Native's default port.
+    setupAndroidPortReverse(8081, 'debug build default → active Metro', port);
+  }
   console.log(`Android device detected (${androidDevices[0]}) — launching app`);
 } else {
   console.log('No Android device detected — Metro only (start an emulator or run yarn mobile:android)');

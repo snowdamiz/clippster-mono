@@ -4,13 +4,8 @@ import { getUsageCount, recordUsage, getAllUsageCounts } from '@/services/databa
 import { useSubscription } from '@/composables/useSubscription';
 
 /** Daily action limits for free tier users */
-export const FREE_TIER_LIMITS = {
-  clip_build: 5,
-  editor_export: 1,
-  vod_download: 2,
-} as const;
-
-export type FreeTierAction = keyof typeof FREE_TIER_LIMITS;
+import { FREE_TIER_LIMITS, type FreeTierAction } from '@clippster/shared-types';
+export { FREE_TIER_LIMITS, type FreeTierAction } from '@clippster/shared-types';
 
 /** Tier hierarchy for access checks */
 const TIER_HIERARCHY: Record<string, number> = {

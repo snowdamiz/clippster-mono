@@ -1,5 +1,5 @@
 import type { ScheduledPost, ScheduledPostStatus } from '@clippster/api-client'
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, Pressable, Text, View } from 'react-native'
 import { PostAnalyticsSheet } from '@/components/posts/PostAnalyticsSheet'
@@ -142,7 +142,7 @@ export function PostsSheet({ visible, onClose, embedded = false }: PostsSheetPro
         variant="page"
         title={embedded ? undefined : 'Posts'}
         subtitle={embedded ? undefined : 'Scheduled, published, and failed'}
-        headerIcon={embedded ? undefined : 'calendar-outline'}
+        headerIcon={embedded ? undefined : 'Calendar'}
         scrollable
         maxHeightClassName="max-h-[92%]"
         headerAccessory={
@@ -157,7 +157,7 @@ export function PostsSheet({ visible, onClose, embedded = false }: PostsSheetPro
             {refreshing ? (
               <ActivityIndicator size="small" color={tokens.colors.accent} />
             ) : (
-              <Ionicons name="refresh-outline" size={22} color={tokens.colors.muted} />
+              <AppIcon name="RefreshCw" size={22} color={tokens.colors.muted} />
             )}
           </Pressable>
         }
@@ -177,11 +177,7 @@ export function PostsSheet({ visible, onClose, embedded = false }: PostsSheetPro
             <ActivityIndicator color={tokens.colors.accent} />
           </View>
         ) : posts.length === 0 ? (
-          <EmptyState
-            icon="calendar-outline"
-            title="No posts yet"
-            subtitle="Export a clip and schedule it to get started."
-          />
+          <EmptyState icon="Calendar" title="No posts yet" subtitle="Export a clip and schedule it to get started." />
         ) : (
           <View className="gap-3">
             {posts.map((item) => (

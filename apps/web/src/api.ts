@@ -1,8 +1,9 @@
 import { ref } from 'vue'
 import { createApiClient, createAuthApi, createWebProjectsApi } from '@clippster/api-client'
 export const sessionExpired = ref(false)
+const apiPrefix = new URLSearchParams(location.search).has('embedded') ? '/workspace/api' : '/api'
 export const client = createApiClient({
-  baseUrl: `${location.origin}/api`,
+  baseUrl: `${location.origin}${apiPrefix}`,
   platform: 'web',
   getToken: async () => null,
   onUnauthorized: () => {
@@ -11,9 +12,23 @@ export const client = createApiClient({
 })
 export const auth = createAuthApi(client)
 export const projects = createWebProjectsApi(client)
-export const sourcePath = (id: string) => `/api/web/projects/${id}/source`
+async function workspaceRequest<T>(path: string, method: string, body?: unknown): Promise<T> {
+  const response = await client.requestWithStatus<T & { error?: string; success?: boolean }>(path, { method, body })
+  if (response.status >= 400 || response.data?.success === false)
+    throw new Error(response.data?.error || 'The request failed. Please try again.')
+  return response.data
+}
+export const workspaceClient = {
+  get: <T = unknown>(path: string) => workspaceRequest<T>(path, 'GET'),
+  post: <T = unknown>(path: string, body?: unknown) => workspaceRequest<T>(path, 'POST', body),
+  put: <T = unknown>(path: string, body?: unknown) => workspaceRequest<T>(path, 'PUT', body),
+  patch: <T = unknown>(path: string, body?: unknown) => workspaceRequest<T>(path, 'PATCH', body),
+  delete: <T = unknown>(path: string) => workspaceRequest<T>(path, 'DELETE'),
+}
+export const sourcePath = (id: string) => `${apiPrefix}/web/projects/${id}/source`
 export const downloadPath = (id: string, clipId: string) =>
-  `/api/web/projects/${id}/clips/${clipId}/download`
+  `${apiPrefix}/web/projects/${id}/clips/${clipId}/download`
+export const framingAssetPath = (projectId: string, id?: string) => `${apiPrefix}/web/projects/${projectId}/framing-assets${id ? `/${id}` : ''}`
 export async function upload(
   id: string,
   file: File,

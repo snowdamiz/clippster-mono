@@ -3,7 +3,7 @@ import { useNavigate, useSearchParams } from 'react-router-dom'
 import { AlertCircle, Check, Loader2, Zap } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/lib/api'
-import { needsPlanSelection } from '@/lib/accountRouting'
+import { needsPlanSelection, subscriptionCoversAccess } from '@/lib/accountRouting'
 
 interface SubscriptionTier {
   id: string
@@ -15,6 +15,7 @@ interface SubscriptionTier {
 type BillingInterval = 'monthly' | 'yearly'
 
 const FREE_FEATURES = [
+  'Web workspace access',
   'Mobile app access',
   '5 clip builds/day',
   '1 editor export/day',
@@ -35,9 +36,7 @@ export function AccountBilling() {
   const isNewUserFlow = searchParams.get('new_user') === 'true'
   const gateMode = isNewUserFlow || needsPlanSelection(user)
   const currentTier = user?.subscription?.tier || null
-  const hasActiveSubscription =
-    user?.subscription?.status === 'active' ||
-    (user?.subscription?.status === 'cancelled' && (user.subscription.days_remaining ?? 0) > 0)
+  const hasActiveSubscription = subscriptionCoversAccess(user?.subscription)
 
   useEffect(() => {
     let cancelled = false

@@ -17,3 +17,17 @@ landing
 server
 package
 .gitnexus
+**/*.apk
+**/*.aab
+**/*.zip
+**/*.pem
+**/.aws
+.codex
+.claude
+.agents
+.github
+docs
+scripts
+packages/app-tour
+packages/ui
+packages/core

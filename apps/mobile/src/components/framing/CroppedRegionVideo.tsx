@@ -1,51 +1,90 @@
-import type { ManualRegion } from '@clippster/shared-types';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import { useEffect } from 'react';
-import { View } from 'react-native';
+import type { ManualRegion } from '@clippster/shared-types'
+import { useVideoPlayer, VideoView } from 'expo-video'
+import { useEffect } from 'react'
+import { Image, View } from 'react-native'
 
-import { configurePreviewPlayer } from '@/lib/configurePreviewPlayer';
-import { toVideoSource } from '@/lib/playbackVideo';
+import { configurePreviewPlayer } from '@/lib/configurePreviewPlayer'
+import { toVideoSource } from '@/lib/playbackVideo'
 
 interface CroppedRegionVideoProps {
-  region: ManualRegion;
-  videoPath: string;
-  currentTime: number;
-  playing: boolean;
-  canvasWidth: number;
-  canvasHeight: number;
+  region: ManualRegion
+  videoPath: string
+  currentTime: number
+  playing: boolean
+  canvasWidth: number
+  canvasHeight: number
+  mediaTime?: number
 }
 
-export function CroppedRegionVideo({
+export function CroppedRegionVideo(props: CroppedRegionVideoProps) {
+  const { region, canvasWidth, canvasHeight } = props
+  if (region.mediaAssetId && region.mediaType === 'image')
+    return (
+      <View
+        pointerEvents="none"
+        style={{
+          position: 'absolute',
+          left: region.output.x * canvasWidth,
+          top: region.output.y * canvasHeight,
+          width: region.output.width * canvasWidth,
+          height: region.output.height * canvasHeight,
+          overflow: 'hidden',
+          borderRadius: region.cornerRadiusEnabled ? ((region.cornerRadiusPx ?? 12) * canvasWidth) / 1080 : 0
+        }}
+      >
+        <Image
+          source={{ uri: region.mediaAssetId }}
+          resizeMode="stretch"
+          style={{
+            position: 'absolute',
+            left: (-region.source.x * region.output.width * canvasWidth) / region.source.width,
+            top: (-region.source.y * region.output.height * canvasHeight) / region.source.height,
+            width: (region.output.width * canvasWidth) / region.source.width,
+            height: (region.output.height * canvasHeight) / region.source.height
+          }}
+        />
+      </View>
+    )
+  return (
+    <SourceRegionVideo
+      {...props}
+      videoPath={region.mediaAssetId ?? props.videoPath}
+      currentTime={
+        region.mediaAssetId ? Math.max(0, (props.mediaTime ?? 0) + (region.mediaSourceOffset ?? 0)) : props.currentTime
+      }
+    />
+  )
+}
+
+function SourceRegionVideo({
   region,
   videoPath,
   currentTime,
   playing,
   canvasWidth,
-  canvasHeight,
+  canvasHeight
 }: CroppedRegionVideoProps) {
-  const player = useVideoPlayer(toVideoSource(videoPath), configurePreviewPlayer);
+  const player = useVideoPlayer(toVideoSource(videoPath), configurePreviewPlayer)
 
   useEffect(() => {
-    player.muted = true;
-    player.volume = 0;
-    const drift = Math.abs(player.currentTime - currentTime);
+    player.muted = true
+    player.volume = 0
+    const drift = Math.abs(player.currentTime - currentTime)
     if (!playing || !player.playing || drift > 0.75) {
-      player.currentTime = currentTime;
+      player.currentTime = currentTime
     }
-    if (playing && !player.playing) player.play();
-    if (!playing && player.playing) player.pause();
-  }, [currentTime, player, playing]);
+    if (playing && !player.playing) player.play()
+    if (!playing && player.playing) player.pause()
+  }, [currentTime, player, playing])
 
-  const outputWidth = Math.max(1, region.output.width * canvasWidth);
-  const outputHeight = Math.max(1, region.output.height * canvasHeight);
-  const sourceWidth = Math.max(0.0001, region.source.width);
-  const sourceHeight = Math.max(0.0001, region.source.height);
-  const renderedWidth = outputWidth / sourceWidth;
-  const renderedHeight = outputHeight / sourceHeight;
+  const outputWidth = Math.max(1, region.output.width * canvasWidth)
+  const outputHeight = Math.max(1, region.output.height * canvasHeight)
+  const sourceWidth = Math.max(0.0001, region.source.width)
+  const sourceHeight = Math.max(0.0001, region.source.height)
+  const renderedWidth = outputWidth / sourceWidth
+  const renderedHeight = outputHeight / sourceHeight
   const cornerRadius =
-    region.cornerRadiusEnabled && region.cornerRadiusPx
-      ? Math.max(1, (region.cornerRadiusPx * outputWidth) / 1080)
-      : 0;
+    region.cornerRadiusEnabled && region.cornerRadiusPx ? Math.max(1, (region.cornerRadiusPx * canvasWidth) / 1080) : 0
 
   return (
     <View
@@ -57,7 +96,7 @@ export function CroppedRegionVideo({
         width: outputWidth,
         height: outputHeight,
         borderRadius: cornerRadius,
-        overflow: 'hidden',
+        overflow: 'hidden'
       }}
     >
       <VideoView
@@ -67,12 +106,12 @@ export function CroppedRegionVideo({
           left: -region.source.x * renderedWidth,
           top: -region.source.y * renderedHeight,
           width: renderedWidth,
-          height: renderedHeight,
+          height: renderedHeight
         }}
         nativeControls={false}
         contentFit="fill"
         surfaceType="textureView"
       />
     </View>
-  );
+  )
 }

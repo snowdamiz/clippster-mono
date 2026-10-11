@@ -106,6 +106,18 @@ export function createAuth(store: Store, config: Config) {
     'forgot-password',
     'reset-password'
   ])
+  router.get('/config', (_req, res) => res.json({ accountOrigin: config.accountOrigin }))
+  // The account dashboard calls this through its same-origin workspace proxy.
+  // The existing account token stays out of iframe URLs and is encrypted at rest.
+  router.post('/session', async (req, res) => {
+    requireValue(req.headers.origin === config.accountOrigin, 403, 'Request origin is not allowed.')
+    const bearer = req.headers.authorization?.match(/^Bearer (.+)$/)?.[1]
+    requireValue(bearer, 401, 'Sign in to continue.')
+    const me = await createAuthApi(upstream(bearer)).me()
+    requireValue(me.success && me.user, 401, 'Your session expired. Please sign in again.')
+    establish(req, res, bearer, String(me.user.id))
+    res.json({ success: true, user: me.user })
+  })
   router.post('/google/start', async (req, res) => {
     const state = randomBytes(32).toString('base64url')
     const verifier = randomBytes(32).toString('base64url')

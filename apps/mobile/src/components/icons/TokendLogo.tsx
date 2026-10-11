@@ -42,7 +42,7 @@ export function TokendLogo({ size = 24, color }: TokendLogoProps) {
   );
 }
 
-/** White Tokend glyph for platform rows alongside Ionicons. */
+/** White Tokend glyph for platform rows alongside the shared outline icons. */
 export function TokendPlatformIcon({ size = 22 }: { size?: number }) {
   return <TokendLogo size={size} color={tokens.colors.foreground} />;
 }

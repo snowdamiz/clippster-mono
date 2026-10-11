@@ -108,7 +108,7 @@ export function SecuritySheet({ visible, onClose }: SecuritySheetProps) {
       }}
       variant="page"
       title={otpRequired ? 'Verify new email' : 'Email & password'}
-      headerIcon="shield-checkmark-outline"
+      headerIcon="ShieldCheck"
       scrollable
       keyboardAvoiding
       maxHeightClassName="max-h-[92%]"
@@ -116,7 +116,7 @@ export function SecuritySheet({ visible, onClose }: SecuritySheetProps) {
       {otpRequired ? (
         <View className="gap-[17px]">
           <EmptyState
-            icon="mail-outline"
+            icon="Mail"
             title="Verify your new email"
             subtitle={`Enter the code sent to ${newEmail.trim()}.`}
           />

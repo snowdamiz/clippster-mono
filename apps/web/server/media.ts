@@ -1,6 +1,7 @@
 import { join } from 'node:path'
 import { readdir, readFile, writeFile, rename, stat } from 'node:fs/promises'
 import { buildClipExportPlan } from '@clippster/clip-export'
+import { renderSubtitleRaster, renderTextRaster } from './rasterOverlays'
 import {
   createDefaultSubtitleSettings,
   createDefaultManualFramingConfig
@@ -212,27 +213,37 @@ export async function renderClip(
   directory: string,
   work: string,
   config: Config,
-  signal: AbortSignal
+  signal: AbortSignal,
+  publishOutput = true,
+  mediaAssets: Array<{ id: string; type: 'image' | 'video'; path: string }> = []
 ) {
-  const settings = createDefaultSubtitleSettings()
+  const settings = { ...createDefaultSubtitleSettings(), ...clip.subtitleSettings }
   settings.enabled = clip.captions
-  settings.animationStyle = 'none'
-  settings.fontFamily = 'DejaVu Sans'
+  settings.animationStyle = clip.subtitleSettings?.animationStyle || 'single-word'
+  settings.fontFamily = clip.subtitleSettings?.fontFamily || 'DejaVu Sans'
+  const words = clipWords(project.words, clip.segments)
+  const duration = clip.segments.reduce((sum, segment) => sum + segment.end_time - segment.start_time, 0)
+  const subtitleRasterPath = settings.enabled && words.length ? await renderSubtitleRaster(settings, words, duration, clip.aspectRatio, work, config, signal) : undefined
+  const textRasterPath = clip.textBox?.enabled && clip.textBox.text ? await renderTextRaster(clip.textBox, clip.aspectRatio, work) : undefined
   const plan = buildClipExportPlan({
     videoPath: join(directory, 'source.mp4'),
     outputPath: join(work, 'clip.mp4'),
     segments: clip.segments,
     targetRatio: clip.aspectRatio,
-    framingConfig: createDefaultManualFramingConfig(clip.aspectRatio),
+    framingConfig: clip.framingConfig || null,
     hasAudio: project.hasAudio,
     fit: 'cover',
     subtitleSettings: settings,
-    subtitleWords: clipWords(project.words, clip.segments),
-    assPath: join(work, 'captions.ass')
+    textBox: clip.textBox,
+    textRasterPath,
+    subtitleWords: words,
+    subtitleRasterPath,
+    assPath: join(work, 'captions.ass'),
+    mediaAssets
   })
   if (plan.assContent) await writeFile(join(work, 'captions.ass'), plan.assContent)
   // Every input is generated locally. Decoder networking and external playlists are disabled.
-  const args = plan.ffmpegArgs.flatMap((arg) => (arg === '-i' ? [...LOCAL_INPUT, '-i'] : [arg]))
+  const args = plan.ffmpegArgs.flatMap((arg, index, all) => arg === '-i' ? [...(all[index + 1].endsWith('.png') ? ['-protocol_whitelist', 'file,pipe', '-format_whitelist', 'png_pipe'] : LOCAL_INPUT), '-i'] : [arg])
   args.splice(
     args.length - 2,
     0,
@@ -247,7 +258,7 @@ export async function renderClip(
   const output = await probe(join(work, 'clip.mp4'), config, signal)
   if (Math.abs(output.duration - plan.totalDuration) > 0.5)
     throw new Error('Rendered duration did not match the clip. Please retry with a shorter clip.')
-  await rename(join(work, 'clip.mp4'), join(directory, `${clip.id}.mp4`))
+  if (publishOutput) await rename(join(work, 'clip.mp4'), join(directory, `${clip.id}.mp4`))
 }
 export async function audioForDetection(
   directory: string,

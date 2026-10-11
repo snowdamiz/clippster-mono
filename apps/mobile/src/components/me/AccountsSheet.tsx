@@ -233,13 +233,13 @@ export function AccountsSheet({ visible, onClose }: AccountsSheetProps) {
           </View>
         ) : orgMode && !organizations.length ? (
           <EmptyState
-            icon="business-outline"
+            icon="Building2"
             title="No organization yet"
             subtitle="Organization channels appear here when you join a workspace."
           />
         ) : !displayedAccounts.length ? (
           <EmptyState
-            icon="link-outline"
+            icon="Link"
             title="Connect your channels"
             subtitle={
               orgMode

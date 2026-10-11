@@ -1,27 +1,28 @@
-import type { BrandingConfig } from '@clippster/api-client';
-import type { TargetAspectRatio } from '@clippster/shared-types';
-import * as FileSystem from 'expo-file-system/legacy';
+import type { BrandingConfig } from '@clippster/api-client'
+import type { TargetAspectRatio } from '@clippster/shared-types'
+import * as FileSystem from 'expo-file-system/legacy'
 
-import { validateExportMetadata } from '@/lib/exportValidation';
-import { probeMediaMetadata } from '@/services/ffmpeg';
-import { getAllCachedAssets, resolveBrandingForAspect } from '@/services/orgAssetCache';
-import { getProjectVodPresetConfig } from '@/services/database/vod-presets';
-import { generateBuildThumbnail } from '@/services/clipThumbnailGeneration';
+import { validateExportMetadata } from '@/lib/exportValidation'
+import { probeMediaMetadata } from '@/services/ffmpeg'
+import { getAllCachedAssets, resolveBrandingForAspect } from '@/services/orgAssetCache'
+import { getProjectVodPresetConfig } from '@/services/database/vod-presets'
+import { generateBuildThumbnail } from '@/services/clipThumbnailGeneration'
 import {
   completeClipBuild,
   createClipBuild,
-  updateClipBuildProgress,
-} from '@/services/database/clips';
-import { addManualClip, updateClipBuiltThumbnail } from '@/services/database/workspace';
+  updateClipBuildProgress
+} from '@/services/database/clips'
+import { addManualClip, updateClipBuiltThumbnail } from '@/services/database/workspace'
 import {
   createMobileEditorEngine,
-  NativeMobileEditorEngine,
-} from '../engine/NativeMobileEditorEngine';
-import type { MobileEditProjectV3 } from '../model/schema';
-import { ticksToSeconds } from '../model/schema';
-import { getVideoTrack } from '../model/timeline';
-import type { EditorExportProgress as ClipBuildProgress } from './exportProgress';
-import { applyVodFramingForExport } from './applyVodFraming';
+  NativeMobileEditorEngine
+} from '../engine/NativeMobileEditorEngine'
+import type { MobileEditProjectV3 } from '../model/schema'
+import { ticksToSeconds } from '../model/schema'
+import { getVideoTrack } from '../model/timeline'
+import type { EditorExportProgress as ClipBuildProgress } from './exportProgress'
+import { applyVodFramingForExport } from './applyVodFraming'
+import { needsManualFraming, prepareManualFraming } from './prepareManualFraming'
 
 /**
  * Validation + native export orchestration + DB bookkeeping.
@@ -31,141 +32,150 @@ export async function exportEditorProject(
   document: MobileEditProjectV3,
   ratios: TargetAspectRatio[],
   onProgress: (progress: ClipBuildProgress) => void,
-  onMaterializedClip?: (clipId: string) => void,
+  onMaterializedClip?: (clipId: string) => void
 ): Promise<string[]> {
-  if (ratios.length === 0) throw new Error('Choose at least one export ratio');
+  if (ratios.length === 0) throw new Error('Choose at least one export ratio')
   if (!NativeMobileEditorEngine.isAvailable()) {
     throw new Error(
-      'Native editor export requires a rebuilt dev client with @clippster/editor-native.',
-    );
+      'Native editor export requires a rebuilt dev client with @clippster/editor-native.'
+    )
   }
 
-  const exportDir = `${FileSystem.documentDirectory}exports/`;
-  await FileSystem.makeDirectoryAsync(exportDir, { intermediates: true });
-  const outputs: string[] = [];
-  const buildIds: string[] = [];
-  const vodConfig = document.projectId
-    ? await getProjectVodPresetConfig(document.projectId)
-    : null;
+  const exportDir = `${FileSystem.documentDirectory}exports/`
+  await FileSystem.makeDirectoryAsync(exportDir, { intermediates: true })
+  const outputs: string[] = []
+  const buildIds: string[] = []
+  const vodConfig = document.projectId ? await getProjectVodPresetConfig(document.projectId) : null
   const brandingConfig =
-    (vodConfig?.orgBranding?.brandingConfig as BrandingConfig | undefined) ?? null;
-  const brandingAssets = brandingConfig ? await getAllCachedAssets() : [];
-  let linkedClipId =
-    document.linkedClipId ?? (document.kind === 'clip' ? document.targetId : null);
+    (vodConfig?.orgBranding?.brandingConfig as BrandingConfig | undefined) ?? null
+  const brandingAssets = brandingConfig ? await getAllCachedAssets() : []
+  let linkedClipId = document.linkedClipId ?? (document.kind === 'clip' ? document.targetId : null)
   if (!linkedClipId && document.projectId) {
-    const firstVideo = getVideoTrack(document).items[0];
-    const source = firstVideo ? document.assets[firstVideo.assetId] : null;
-    if (!firstVideo || !source) throw new Error('Add a video before exporting');
+    const firstVideo = getVideoTrack(document).items[0]
+    const source = firstVideo ? document.assets[firstVideo.assetId] : null
+    if (!firstVideo || !source) throw new Error('Add a video before exporting')
     linkedClipId = await addManualClip(
       document.projectId,
       source.sourceUri,
       ticksToSeconds(firstVideo.sourceStart),
       ticksToSeconds(firstVideo.sourceEnd),
-      'Editor project',
-    );
-    onMaterializedClip?.(linkedClipId);
+      'Editor project'
+    )
+    onMaterializedClip?.(linkedClipId)
   }
 
-  const brandingRequired = Boolean(
-    document.branding && document.branding.watermarkMode !== 'none',
-  );
+  const brandingRequired = Boolean(document.branding && document.branding.watermarkMode !== 'none')
   for (const ratio of ratios) {
-    if (!brandingRequired) continue;
+    if (!brandingRequired) continue
     const branding = brandingConfig
       ? await resolveBrandingForAspect(brandingConfig, ratio, brandingAssets)
-      : null;
+      : null
     if (!branding) {
-      throw new Error(`Required branding assets are unavailable for ${ratio}`);
+      throw new Error(`Required branding assets are unavailable for ${ratio}`)
     }
   }
 
-  const engine = createMobileEditorEngine();
+  const engine = createMobileEditorEngine()
+  const cleanups: (() => Promise<void>)[] = []
   const removeProgress = engine.onExportProgress((progress, message) => {
     onProgress({
       state: 'building',
       progress,
-      message: message ?? 'Exporting…',
-    });
-  });
+      message: message ?? 'Exporting…'
+    })
+  })
 
   try {
     for (let ratioIndex = 0; ratioIndex < ratios.length; ratioIndex += 1) {
-      const ratio = ratios[ratioIndex];
-      await engine.load(
-        applyVodFramingForExport(document, ratio, vodConfig?.framingConfig),
-      );
-      const stamp = Date.now();
-      const outputPath = `${exportDir}${document.targetId}_${ratio.replace(':', 'x')}_${stamp}.mp4`;
-      const canvas = document.canvas.outputByRatio[ratio];
-      const clipId = linkedClipId;
+      const ratio = ratios[ratioIndex]
+      let exportDocument = applyVodFramingForExport(document, ratio, vodConfig?.framingConfig)
+      if (ratio === '9:16' && needsManualFraming(vodConfig?.framingConfig)) {
+        onProgress({ state: 'building', progress: 0, message: 'Composing portrait framing…' })
+        const prepared = await prepareManualFraming(
+          engine,
+          document,
+          vodConfig.framingConfig,
+          exportDir
+        )
+        cleanups.push(prepared.cleanup)
+        exportDocument = prepared.document
+      }
+      await engine.load(exportDocument)
+      const stamp = Date.now()
+      const outputPath = `${exportDir}${document.targetId}_${ratio.replace(':', 'x')}_${stamp}.mp4`
+      const canvas = document.canvas.outputByRatio[ratio]
+      const clipId = linkedClipId
       const build = clipId
         ? await createClipBuild({
             clipId,
             filePath: outputPath,
             aspectRatios: [ratio],
-            includeSubtitles: Boolean(document.captionDocument?.enabled),
+            includeSubtitles: Boolean(document.captionDocument?.enabled)
           })
-        : null;
+        : null
       try {
         onProgress({
           state: 'building',
           progress: ratioIndex / ratios.length,
-          message: `Preparing ${ratio} export…`,
-        });
+          message: `Preparing ${ratio} export…`
+        })
         const job = await engine.export({
           ratios: [ratio],
-          outputDirectory: exportDir,
-        });
+          outputDirectory: exportDir
+        })
         const produced =
           job.outputPaths.find((path) => path.includes(ratio.replace(':', 'x'))) ??
           job.outputPaths[0] ??
-          outputPath;
-        const metadata = await probeMediaMetadata(produced);
+          outputPath
+        const metadata = await probeMediaMetadata(produced)
         validateExportMetadata(metadata, {
           width: canvas.width,
           height: canvas.height,
           duration: ticksToSeconds(
             Math.max(
               0,
-              ...document.tracks.flatMap((track) =>
-                track.items.map((item) => item.timelineEnd),
-              ),
-            ),
+              ...document.tracks.flatMap((track) => track.items.map((item) => item.timelineEnd))
+            )
           ),
-          frameTolerance: 1 / canvas.fps,
-        });
-        outputs.push(produced);
+          frameTolerance: 1 / canvas.fps
+        })
+        outputs.push(produced)
         if (build) {
-          const info = await FileSystem.getInfoAsync(produced);
-          const thumbAt = Math.min(1, Math.max(0.1, (metadata.duration ?? 2) * 0.1));
-          const thumbnailPath = await generateBuildThumbnail(produced, build.id, thumbAt);
+          const info = await FileSystem.getInfoAsync(produced)
+          const thumbAt = Math.min(1, Math.max(0.1, (metadata.duration ?? 2) * 0.1))
+          const thumbnailPath = await generateBuildThumbnail(produced, build.id, thumbAt)
           await completeClipBuild(
             build.id,
             produced,
             info.exists && 'size' in info ? info.size : undefined,
             metadata.duration,
-            thumbnailPath ?? undefined,
-          );
+            thumbnailPath ?? undefined
+          )
           if (thumbnailPath && clipId) {
             try {
-              await updateClipBuiltThumbnail(clipId, thumbnailPath);
+              await updateClipBuiltThumbnail(clipId, thumbnailPath)
             } catch {
               // Non-fatal — build thumbnail is already stored on the build row.
             }
           }
-          buildIds.push(build.id);
+          buildIds.push(build.id)
         }
       } catch (error) {
         if (build) {
-          const message = error instanceof Error ? error.message : String(error);
-          await updateClipBuildProgress(build.id, 0, 'failed', message);
+          const message = error instanceof Error ? error.message : String(error)
+          await updateClipBuildProgress(build.id, 0, 'failed', message)
         }
-        throw error;
+        throw error
       }
     }
   } finally {
-    removeProgress();
-    await engine.dispose();
+    removeProgress()
+    await engine.dispose()
+    await Promise.all(
+      cleanups.map((cleanup) =>
+        cleanup().catch((error) => console.warn('Could not remove temporary framing media', error))
+      )
+    )
   }
 
   onProgress({
@@ -173,7 +183,7 @@ export async function exportEditorProject(
     progress: 1,
     message: 'Export complete',
     outputPaths: outputs,
-    buildIds,
-  });
-  return outputs;
+    buildIds
+  })
+  return outputs
 }

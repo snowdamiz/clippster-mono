@@ -60,10 +60,10 @@
             <button
               class="admin-users__export-btn"
               :disabled="!users.some((user) => Boolean(user.email))"
-              @click="exportUserEmailsCsv"
+              @click="exportUsersCsv"
             >
               <Download class="admin-users__export-icon" />
-              Export Emails CSV
+              Export Users CSV
             </button>
             <span class="admin-users__stats-count">{{ filteredAndSortedUsers.length }} user{{ filteredAndSortedUsers.length !== 1 ? 's' : '' }}</span>
           </div>
@@ -795,7 +795,7 @@
   import { ref, computed, onMounted, onUnmounted } from 'vue';
   import { useRouter } from 'vue-router';
   import { formatDate as formatDateOnly, formatDateTime } from '@/utils/dateTimeUtils';
-  import { downloadEmailsCsv } from '@/utils/downloadEmailsCsv';
+  import { downloadRecordsCsv } from '@/utils/downloadRecordsCsv';
   import {
     Users,
     RefreshCw,
@@ -1047,17 +1047,16 @@
     }
   };
 
-  const exportUserEmailsCsv = async () => {
-    const emails = users.value.map((user) => user.email).filter(Boolean);
-    if (!emails.length) {
-      showErrorToast('Export failed', 'No user emails to export');
+  const exportUsersCsv = async () => {
+    if (!users.value.length) {
+      showErrorToast('Export failed', 'No users to export');
       return;
     }
     try {
-      await downloadEmailsCsv(emails, 'user-emails.csv');
+      await downloadRecordsCsv(users.value, 'users.csv');
     } catch (err) {
-      console.error('Failed to export user emails:', err);
-      showErrorToast('Export failed', err instanceof Error ? err.message : 'Failed to export emails CSV');
+      console.error('Failed to export users:', err);
+      showErrorToast('Export failed', err instanceof Error ? err.message : 'Failed to export users CSV');
     }
   };
 

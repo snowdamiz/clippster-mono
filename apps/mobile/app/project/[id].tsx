@@ -1,23 +1,17 @@
-import { Ionicons } from '@expo/vector-icons';
-import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router';
-import { useCallback, useEffect, useRef, useState } from 'react';
-import {
-  ActivityIndicator,
-  Pressable,
-  ScrollView,
-  Text,
-  View,
-} from 'react-native';
-import { ClipDetectionSheet, type ClipDetectionPlan } from '@/components/editor/ClipDetectionSheet';
-import { ClipListCard } from '@/components/workspace/ClipListCard';
-import { VodPreview } from '@/components/workspace/VodPreview';
-import { BottomSheet } from '@/components/ui/BottomSheet';
-import { VodTimeRangePicker } from '@/components/download/VodTimeRangePicker';
-import { EmptyState } from '@/components/ui/EmptyState';
-import { ScreenHeader } from '@/components/ScreenHeader';
-import { Button } from '@/components/ui/button';
-import type { Project } from '@clippster/shared-types';
-import { AiPipeline, type AiPipelineProgress } from '@/services/aiPipeline';
+import { AppIcon } from '@/components/AppIcon'
+import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
+import { useCallback, useEffect, useRef, useState } from 'react'
+import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native'
+import { ClipDetectionSheet, type ClipDetectionPlan } from '@/components/editor/ClipDetectionSheet'
+import { ClipListCard } from '@/components/workspace/ClipListCard'
+import { VodPreview } from '@/components/workspace/VodPreview'
+import { BottomSheet } from '@/components/ui/BottomSheet'
+import { VodTimeRangePicker } from '@/components/download/VodTimeRangePicker'
+import { EmptyState } from '@/components/ui/EmptyState'
+import { ScreenHeader } from '@/components/ScreenHeader'
+import { Button } from '@/components/ui/button'
+import type { Project } from '@clippster/shared-types'
+import { AiPipeline, type AiPipelineProgress } from '@/services/aiPipeline'
 import {
   addManualClip,
   deleteClip,
@@ -29,221 +23,225 @@ import {
   updateClipBuiltThumbnail,
   updateClipSubtitleSettings,
   updateRawVideoFilePath,
-  type ProjectClipRow,
-} from '@/services/database';
-import { generateMissingClipThumbnails } from '@/services/clipThumbnailGeneration';
-import { ensurePlayableVideo } from '@/services/ensurePlayableVideo';
-import { useAccount } from '@/context/AccountContext';
-import { settingsFromPresetId } from '@/lib/captionPresets';
-import { tokens } from '@/theme/tokens';
-import { appAlert } from '@/lib/appAlert';
+  type ProjectClipRow
+} from '@/services/database'
+import { generateMissingClipThumbnails } from '@/services/clipThumbnailGeneration'
+import { ensurePlayableVideo } from '@/services/ensurePlayableVideo'
+import { useAccount } from '@/context/AccountContext'
+import { settingsFromPresetId } from '@/lib/captionPresets'
+import { tokens } from '@/theme/tokens'
+import { appAlert } from '@/lib/appAlert'
 
 export default function ProjectDetailScreen() {
-  const router = useRouter();
-  const { requireSubscription } = useAccount();
-  const { id, detect } = useLocalSearchParams<{ id: string; detect?: string }>();
-  const [project, setProject] = useState<Project | null>(null);
-  const [videoPath, setVideoPath] = useState<string | null>(null);
-  const [videoDuration, setVideoDuration] = useState(0);
-  const [projectThumbnail, setProjectThumbnail] = useState<string | null>(null);
-  const [clips, setClips] = useState<ProjectClipRow[]>([]);
-  const [hasTranscript, setHasTranscript] = useState(false);
-  const [loading, setLoading] = useState(true);
-  const [aiProgress, setAiProgress] = useState<AiPipelineProgress | null>(null);
-  const [aiBusy, setAiBusy] = useState(false);
-  const [showDetectSheet, setShowDetectSheet] = useState(false);
-  const [playheadTime, setPlayheadTime] = useState(0);
-  const aiPipelineRef = useRef<AiPipeline | null>(null);
-  const openedDetectRef = useRef(false);
-  const thumbGenRef = useRef(false);
+  const router = useRouter()
+  const { requireSubscription } = useAccount()
+  const { id, detect } = useLocalSearchParams<{ id: string; detect?: string }>()
+  const [project, setProject] = useState<Project | null>(null)
+  const [videoPath, setVideoPath] = useState<string | null>(null)
+  const [videoDuration, setVideoDuration] = useState(0)
+  const [projectThumbnail, setProjectThumbnail] = useState<string | null>(null)
+  const [clips, setClips] = useState<ProjectClipRow[]>([])
+  const [hasTranscript, setHasTranscript] = useState(false)
+  const [loading, setLoading] = useState(true)
+  const [aiProgress, setAiProgress] = useState<AiPipelineProgress | null>(null)
+  const [aiBusy, setAiBusy] = useState(false)
+  const [showDetectSheet, setShowDetectSheet] = useState(false)
+  const [playheadTime, setPlayheadTime] = useState(0)
+  const aiPipelineRef = useRef<AiPipeline | null>(null)
+  const openedDetectRef = useRef(false)
+  const thumbGenRef = useRef(false)
 
-  const loadWorkspace = useCallback(async (options?: { silent?: boolean }) => {
-    if (!id) return;
-    if (!options?.silent) setLoading(true);
-    try {
-      const [projectRow, rawVideo, transcript] = await Promise.all([
-        getProject(id),
-        getRawVideoByProjectId(id),
-        getTranscriptByProjectId(id),
-      ]);
-      let clipRows: ProjectClipRow[] = [];
+  const loadWorkspace = useCallback(
+    async (options?: { silent?: boolean }) => {
+      if (!id) return
+      if (!options?.silent) setLoading(true)
       try {
-        clipRows = await getProjectClipRows(id);
-      } catch (error) {
-        console.warn('[Project] getProjectClipRows failed, falling back', error);
-        const fallback = await getClipsByProjectId(id);
-        clipRows = fallback.map((clip) => ({
-          id: clip.id,
-          name: clip.name,
-          start_time: clip.start_time,
-          end_time: clip.end_time,
-          duration: clip.duration,
-          virality_score: null,
-          confidence_score: null,
-          detection_reason: null,
-          built_thumbnail_path: null,
-          thumbnail_path: null,
-        }));
-      }
-      let vodPath = rawVideo?.file_path ?? null;
-      if (vodPath && !vodPath.startsWith('pending://')) {
-        const playable = await ensurePlayableVideo(vodPath);
-        if (playable !== vodPath) {
-          await updateRawVideoFilePath(id, playable);
-          vodPath = playable;
+        const [projectRow, rawVideo, transcript] = await Promise.all([
+          getProject(id),
+          getRawVideoByProjectId(id),
+          getTranscriptByProjectId(id)
+        ])
+        let clipRows: ProjectClipRow[] = []
+        try {
+          clipRows = await getProjectClipRows(id)
+        } catch (error) {
+          console.warn('[Project] getProjectClipRows failed, falling back', error)
+          const fallback = await getClipsByProjectId(id)
+          clipRows = fallback.map((clip) => ({
+            id: clip.id,
+            name: clip.name,
+            start_time: clip.start_time,
+            end_time: clip.end_time,
+            duration: clip.duration,
+            virality_score: null,
+            confidence_score: null,
+            detection_reason: null,
+            built_thumbnail_path: null,
+            thumbnail_path: null
+          }))
         }
-      }
-      setProject(projectRow);
-      setVideoPath(vodPath);
-      setVideoDuration(rawVideo?.duration ?? 0);
-      setProjectThumbnail(rawVideo?.thumbnail_path ?? projectRow?.thumbnail_path ?? null);
-      setHasTranscript(!!transcript);
-      setClips(clipRows);
-
-      if (vodPath && !vodPath.startsWith('pending://') && clipRows.some((c) => !c.built_thumbnail_path)) {
-        // Defer until after VodPreview mounts and claims the decode gate, so
-        // thumbnail FFmpeg/expo-video work does not race the first seconds of playback.
-        void (async () => {
-          if (thumbGenRef.current) return;
-          thumbGenRef.current = true;
-          try {
-            await new Promise((r) => setTimeout(r, 750));
-            const saved = await generateMissingClipThumbnails(vodPath, clipRows, async (clipId, path) => {
-              await updateClipBuiltThumbnail(clipId, path);
-            });
-            if (saved > 0) {
-              const refreshed = await getProjectClipRows(id);
-              setClips(refreshed);
-            }
-          } finally {
-            thumbGenRef.current = false;
+        let vodPath = rawVideo?.file_path ?? null
+        if (vodPath && !vodPath.startsWith('pending://')) {
+          const playable = await ensurePlayableVideo(vodPath)
+          if (playable !== vodPath) {
+            await updateRawVideoFilePath(id, playable)
+            vodPath = playable
           }
-        })();
+        }
+        setProject(projectRow)
+        setVideoPath(vodPath)
+        setVideoDuration(rawVideo?.duration ?? 0)
+        setProjectThumbnail(rawVideo?.thumbnail_path ?? projectRow?.thumbnail_path ?? null)
+        setHasTranscript(!!transcript)
+        setClips(clipRows)
+
+        if (vodPath && !vodPath.startsWith('pending://') && clipRows.some((c) => !c.built_thumbnail_path)) {
+          // Defer until after VodPreview mounts and claims the decode gate, so
+          // thumbnail FFmpeg/expo-video work does not race the first seconds of playback.
+          void (async () => {
+            if (thumbGenRef.current) return
+            thumbGenRef.current = true
+            try {
+              await new Promise((r) => setTimeout(r, 750))
+              const saved = await generateMissingClipThumbnails(vodPath, clipRows, async (clipId, path) => {
+                await updateClipBuiltThumbnail(clipId, path)
+              })
+              if (saved > 0) {
+                const refreshed = await getProjectClipRows(id)
+                setClips(refreshed)
+              }
+            } finally {
+              thumbGenRef.current = false
+            }
+          })()
+        }
+      } catch (error) {
+        console.warn('[Project] failed to load workspace', error)
+      } finally {
+        setLoading(false)
       }
-    } catch (error) {
-      console.warn('[Project] failed to load workspace', error);
-    } finally {
-      setLoading(false);
-    }
-  }, [id]);
+    },
+    [id]
+  )
 
   useFocusEffect(
     useCallback(() => {
-      void loadWorkspace({ silent: true });
-    }, [loadWorkspace]),
-  );
+      void loadWorkspace({ silent: true })
+    }, [loadWorkspace])
+  )
 
   const openDetectSheet = useCallback(async () => {
-    if (aiBusy) return;
+    if (aiBusy) return
     const allowed = await requireSubscription({
       context: 'Detect clips with AI',
       type: 'ai',
-      aiOnly: true,
-    });
-    if (!allowed) return;
-    setShowDetectSheet(true);
-  }, [aiBusy, requireSubscription]);
+      aiOnly: true
+    })
+    if (!allowed) return
+    setShowDetectSheet(true)
+  }, [aiBusy, requireSubscription])
 
   useEffect(() => {
-    if (detect !== '1' || openedDetectRef.current || loading || !videoPath) return;
-    openedDetectRef.current = true;
-    void openDetectSheet();
-  }, [detect, loading, openDetectSheet, videoPath]);
+    if (detect !== '1' || openedDetectRef.current || loading || !videoPath) return
+    openedDetectRef.current = true
+    void openDetectSheet()
+  }, [detect, loading, openDetectSheet, videoPath])
 
   async function confirmDetect(plan: ClipDetectionPlan) {
-    if (!id) return;
-    setShowDetectSheet(false);
-    setAiBusy(true);
+    if (!id) return
+    setShowDetectSheet(false)
+    setAiBusy(true)
     setAiProgress({
       stage: 'checking_credits',
       progress: 0,
-      message: 'Starting clip detection…',
-    });
+      message: 'Starting clip detection…'
+    })
 
     const allowed = await requireSubscription({
       context: 'Detect clips with AI',
       type: 'ai',
-      aiOnly: true,
-    });
+      aiOnly: true
+    })
     if (!allowed) {
-      setAiBusy(false);
-      setAiProgress(null);
-      return;
+      setAiBusy(false)
+      setAiProgress(null)
+      return
     }
 
-    const pipeline = new AiPipeline(setAiProgress);
-    aiPipelineRef.current = pipeline;
+    const pipeline = new AiPipeline(setAiProgress)
+    aiPipelineRef.current = pipeline
     try {
       if (!hasTranscript) {
-        await pipeline.transcribeProject(id);
-        await loadWorkspace({ silent: true });
+        await pipeline.transcribeProject(id)
+        await loadWorkspace({ silent: true })
       }
       const found = await pipeline.detectClips(id, {
         prompt: plan.prompt.content,
         startTime: plan.startTime,
-        endTime: plan.endTime,
-      });
-      await loadWorkspace({ silent: true });
+        endTime: plan.endTime
+      })
+      await loadWorkspace({ silent: true })
 
       if (plan.subtitlesEnabled) {
-        const detected = await getProjectClipRows(id);
-        const settings = settingsFromPresetId(plan.subtitlePresetId);
-        settings.enabled = true;
+        const detected = await getProjectClipRows(id)
+        const settings = settingsFromPresetId(plan.subtitlePresetId)
+        settings.enabled = true
         await Promise.all(
-          detected.map((clip) =>
-            updateClipSubtitleSettings(clip.id, true, plan.subtitlePresetId, settings),
-          ),
-        );
+          detected.map((clip) => updateClipSubtitleSettings(clip.id, true, plan.subtitlePresetId, settings))
+        )
       }
       if (found === 0) {
-        appAlert('No clips found', 'Try a different prompt or a wider time range.');
+        appAlert('No clips found', 'Try a different prompt or a wider time range.')
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
+      const message = error instanceof Error ? error.message : String(error)
       if (message === 'Cancelled') {
-        setAiProgress({ stage: 'idle', progress: 0, message: 'Cancelled' });
+        setAiProgress({ stage: 'idle', progress: 0, message: 'Cancelled' })
       } else {
         setAiProgress({
           stage: 'error',
           progress: 0,
           message: 'Detection failed',
-          error: message,
-        });
-        appAlert('Detection failed', message);
+          error: message
+        })
+        appAlert('Detection failed', message)
       }
     } finally {
-      aiPipelineRef.current = null;
-      setAiBusy(false);
+      aiPipelineRef.current = null
+      setAiBusy(false)
     }
   }
 
   function cancelAi() {
-    aiPipelineRef.current?.cancel();
-    setAiProgress({ stage: 'idle', progress: 0, message: 'Cancelling…' });
+    aiPipelineRef.current?.cancel()
+    setAiProgress({ stage: 'idle', progress: 0, message: 'Cancelling…' })
   }
 
-  const [manualRange, setManualRange] = useState<{startTime:number;endTime:number} | null>(null);
-  function openManualClip() { const startTime = Math.max(0, Math.min(playheadTime, Math.max(0, videoDuration-1))); setManualRange({startTime,endTime:Math.min(videoDuration,startTime+30)}); }
+  const [manualRange, setManualRange] = useState<{ startTime: number; endTime: number } | null>(null)
+  function openManualClip() {
+    const startTime = Math.max(0, Math.min(playheadTime, Math.max(0, videoDuration - 1)))
+    setManualRange({ startTime, endTime: Math.min(videoDuration, startTime + 30) })
+  }
 
   async function createClip() {
-    if (!id || !videoPath) return;
-    const duration = videoDuration > 0 ? videoDuration : playheadTime + 30;
-    const start = manualRange?.startTime ?? Math.max(0, playheadTime);
-    const end = manualRange?.endTime ?? Math.min(duration, start + 30);
+    if (!id || !videoPath) return
+    const duration = videoDuration > 0 ? videoDuration : playheadTime + 30
+    const start = manualRange?.startTime ?? Math.max(0, playheadTime)
+    const end = manualRange?.endTime ?? Math.min(duration, start + 30)
     try {
-      const clipId = await addManualClip(id, videoPath, start, end > start ? end : start + 30);
-      const { queueProjectSync } = await import('@/services/cloudSync');
-      void queueProjectSync(id);
-      await loadWorkspace({ silent: true });
-      setManualRange(null);
-      router.push({ pathname: '/clip/[id]', params: { id: clipId } });
+      const clipId = await addManualClip(id, videoPath, start, end > start ? end : start + 30)
+      const { queueProjectSync } = await import('@/services/cloudSync')
+      void queueProjectSync(id)
+      await loadWorkspace({ silent: true })
+      setManualRange(null)
+      router.push({ pathname: '/clip/[id]', params: { id: clipId } })
     } catch (error) {
-      appAlert('Could not create clip', error instanceof Error ? error.message : String(error));
+      appAlert('Could not create clip', error instanceof Error ? error.message : String(error))
     }
   }
 
   function openClip(clipId: string) {
-    router.push({ pathname: '/clip/[id]', params: { id: clipId } });
+    router.push({ pathname: '/clip/[id]', params: { id: clipId } })
   }
 
   function handleDeleteClip(clip: ProjectClipRow) {
@@ -254,17 +252,17 @@ export default function ProjectDetailScreen() {
         style: 'destructive',
         onPress: () => {
           void (async () => {
-            await deleteClip(clip.id);
-            const { queueProjectSync } = await import('@/services/cloudSync');
-            if (id) void queueProjectSync(id);
-            await loadWorkspace({ silent: true });
-          })();
-        },
-      },
-    ]);
+            await deleteClip(clip.id)
+            const { queueProjectSync } = await import('@/services/cloudSync')
+            if (id) void queueProjectSync(id)
+            await loadWorkspace({ silent: true })
+          })()
+        }
+      }
+    ])
   }
 
-  const detecting = aiBusy && clips.length === 0;
+  const detecting = aiBusy && clips.length === 0
 
   return (
     <>
@@ -277,16 +275,19 @@ export default function ProjectDetailScreen() {
           </View>
         ) : !videoPath || !project || !id ? (
           <View className="flex-1 items-center justify-center px-6">
-            <EmptyState icon="document-outline" title="Video isn’t on this device" subtitle="Check its download or import the original video again." action={<Button title="View downloads" onPress={() => router.replace("/(tabs)/projects")} />} />
+            <EmptyState
+              icon="File"
+              title="Video isn’t on this device"
+              subtitle="Check its download or import the original video again."
+              action={<Button title="View downloads" onPress={() => router.replace('/(tabs)/projects')} />}
+            />
           </View>
         ) : (
           <>
             <ScreenHeader
               title={project.name}
               subtitle={
-                clips.length > 0
-                  ? `${clips.length} clip${clips.length === 1 ? '' : 's'} detected`
-                  : 'No clips yet'
+                clips.length > 0 ? `${clips.length} clip${clips.length === 1 ? '' : 's'} detected` : 'No clips yet'
               }
               showBack
             />
@@ -295,9 +296,20 @@ export default function ProjectDetailScreen() {
               videoPath={videoPath}
               onTimeChange={setPlayheadTime}
               onDurationChange={(seconds) => {
-                if (seconds > 0) setVideoDuration(seconds);
+                if (seconds > 0) setVideoDuration(seconds)
               }}
             />
+            <View className="gap-2 px-5 py-3">
+              <Text className="text-xs text-muted">
+                Source video · {Math.floor(videoDuration / 60)}:
+                {String(Math.floor(videoDuration % 60)).padStart(2, '0')} · On device
+              </Text>
+              <Button
+                title="Edit project"
+                variant="outline"
+                onPress={() => router.push({ pathname: '/edit/[kind]/[id]', params: { kind: 'project', id } })}
+              />
+            </View>
 
             {aiProgress && !detecting ? (
               <View className="flex-row items-center gap-3 border-b border-border px-4 py-2">
@@ -326,9 +338,7 @@ export default function ProjectDetailScreen() {
                 <View className="mb-4 h-10 w-10 items-center justify-center rounded-full border border-border bg-surface">
                   <ActivityIndicator color={tokens.colors.accent} />
                 </View>
-                <Text className="text-xs font-semibold uppercase tracking-wide text-foreground">
-                  Detecting clips
-                </Text>
+                <Text className="text-xs font-semibold uppercase tracking-wide text-foreground">Detecting clips</Text>
                 <Text className="mt-2 max-w-[240px] text-center text-xs text-muted">
                   {aiProgress?.message ?? 'Analyzing your video…'}
                 </Text>
@@ -338,11 +348,8 @@ export default function ProjectDetailScreen() {
                     style={{ width: `${Math.max(aiProgress?.progress ?? 0, 5)}%` }}
                   />
                 </View>
-                <Pressable
-                  onPress={cancelAi}
-                  className="mt-4 flex-row items-center gap-1.5 rounded-md px-2.5 py-1.5"
-                >
-                  <Ionicons name="stop-circle-outline" size={14} color={tokens.colors.muted} />
+                <Pressable onPress={cancelAi} className="mt-4 flex-row items-center gap-1.5 rounded-md px-2.5 py-1.5">
+                  <AppIcon name="CircleStop" size={14} color={tokens.colors.muted} />
                   <Text className="text-[11px] font-medium text-muted">Cancel</Text>
                 </Pressable>
               </View>
@@ -353,7 +360,12 @@ export default function ProjectDetailScreen() {
                 showsVerticalScrollIndicator={false}
               >
                 <Text className="text-[17px] font-semibold text-foreground">Clips · {clips.length}</Text>
-                <Button title="Find clips with AI" variant="accent" onPress={() => void openDetectSheet()} disabled={aiBusy} />
+                <Button
+                  title="Find clips with AI"
+                  variant="accent"
+                  onPress={() => void openDetectSheet()}
+                  disabled={aiBusy}
+                />
                 {clips.map((clip, index) => (
                   <ClipListCard
                     key={clip.id}
@@ -369,7 +381,7 @@ export default function ProjectDetailScreen() {
             ) : (
               <View className="flex-1 items-center justify-center px-6">
                 <View className="mb-6 h-16 w-16 items-center justify-center rounded-xl border border-accent/25 bg-accent/15">
-                  <Ionicons name="videocam-outline" size={28} color={tokens.colors.accent} />
+                  <AppIcon name="Video" size={28} color={tokens.colors.accent} />
                 </View>
                 <Text className="text-sm font-semibold text-foreground">No Clips Yet</Text>
                 <Text className="mt-2 max-w-[220px] text-center text-xs leading-relaxed text-muted">
@@ -377,7 +389,8 @@ export default function ProjectDetailScreen() {
                 </Text>
                 <View className="mt-6 gap-2">
                   <Button
-                    title="Find clips with AI" variant="accent"
+                    title="Find clips with AI"
+                    variant="accent"
                     onPress={() => void openDetectSheet()}
                     disabled={aiBusy}
                   />
@@ -386,16 +399,33 @@ export default function ProjectDetailScreen() {
               </View>
             )}
 
-            <BottomSheet visible={manualRange != null} onClose={() => setManualRange(null)} variant="page" title="Add a clip" primaryAction={{title:'Create clip',disabled:!manualRange || manualRange.endTime<=manualRange.startTime,onPress:()=>void createClip()}}>
+            <BottomSheet
+              visible={manualRange != null}
+              onClose={() => setManualRange(null)}
+              variant="page"
+              title="Add a clip"
+              primaryAction={{
+                title: 'Create clip',
+                disabled: !manualRange || manualRange.endTime <= manualRange.startTime,
+                onPress: () => void createClip()
+              }}
+            >
               <Text className="text-sm text-muted">Choose the moment you want to keep. Fine-tune its range next.</Text>
-              {manualRange ? <VodTimeRangePicker totalDuration={videoDuration} minSelectionSeconds={1} value={manualRange} onChange={setManualRange} /> : null}
+              {manualRange ? (
+                <VodTimeRangePicker
+                  totalDuration={videoDuration}
+                  minSelectionSeconds={1}
+                  value={manualRange}
+                  onChange={setManualRange}
+                />
+              ) : null}
             </BottomSheet>
             <ClipDetectionSheet
               visible={showDetectSheet}
               videoDuration={videoDuration}
               starting={aiBusy}
               onClose={() => {
-                if (!aiBusy) setShowDetectSheet(false);
+                if (!aiBusy) setShowDetectSheet(false)
               }}
               onConfirm={(plan) => void confirmDetect(plan)}
             />
@@ -403,5 +433,5 @@ export default function ProjectDetailScreen() {
         )}
       </View>
     </>
-  );
+  )
 }

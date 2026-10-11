@@ -65,7 +65,8 @@ export async function detect(
   directory: string,
   work: string,
   config: Config,
-  signal: AbortSignal
+  signal: AbortSignal,
+  transcriptionOnly = false
 ) {
   if (!project.hasAudio)
     throw new Error('AI clipping needs a source with audio. You can still create clips manually.')
@@ -75,7 +76,7 @@ export async function detect(
   form.append('project_id', project.id)
   form.append('prompt', prompt)
   form.append('duration', String(project.duration))
-  const response = await fetch(`${config.apiUrl}/clips/detect`, {
+  const response = await fetch(`${config.apiUrl}/clips/${transcriptionOnly ? 'transcribe' : 'detect'}`, {
     method: 'POST',
     headers: { Authorization: `Bearer ${token}`, 'X-Client-Platform': 'web' },
     body: form,
@@ -84,5 +85,5 @@ export async function detect(
   const result = (await response.json()) as DetectionResponse
   if (!response.ok || !result.success)
     throw new Error(result.details || result.error || 'AI detection failed.')
-  return normalizeDetection(result, project)
+  return normalizeDetection(transcriptionOnly ? { ...result, clips: [] } : result, project)
 }

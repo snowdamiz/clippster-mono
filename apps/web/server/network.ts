@@ -2,6 +2,10 @@ import { createServer, request as httpRequest } from 'node:http'
 import { lookup } from 'node:dns/promises'
 import { connect } from 'node:net'
 import ipaddr from 'ipaddr.js'
+import { request as httpsRequest } from 'node:https'
+import { createWriteStream } from 'node:fs'
+import { Transform } from 'node:stream'
+import { pipeline } from 'node:stream/promises'
 /** Downloaders may follow redirects and CDN URLs. Validate and pin every connection,
  * including CONNECT tunnels, rather than trusting only the initial video URL. */
 export function isPublicAddress(address: string): boolean {
@@ -16,6 +20,23 @@ async function publicAddress(host: string) {
   if (!answers.length || answers.some((answer) => !isPublicAddress(answer.address)))
     throw new Error('Private network destinations are blocked.')
   return answers[0].address
+}
+
+/** Download authorized media assets with a pinned public address and a byte limit. */
+export async function downloadAsset(raw: string, destination: string, signal: AbortSignal, maxBytes = 128 * 1024 ** 2, redirects = 0): Promise<void> {
+  const url = new URL(raw)
+  if (url.protocol !== 'https:' || url.username || url.password || url.port && url.port !== '443' || redirects > 3) throw new Error('Unsupported branding asset URL.')
+  const address = await publicAddress(url.hostname)
+  const response = await new Promise<import('node:http').IncomingMessage>((resolve, reject) => {
+    const request = httpsRequest({ hostname: address, servername: url.hostname, headers: { Host: url.host }, path: url.pathname + url.search, port: 443, signal, timeout: 30_000 }, resolve)
+    request.on('error', reject); request.on('timeout', () => request.destroy(new Error('Asset download timed out.'))); request.end()
+  })
+  if ([301, 302, 303, 307, 308].includes(response.statusCode || 0) && response.headers.location) {
+    response.destroy(); return downloadAsset(new URL(response.headers.location, url).href, destination, signal, maxBytes, redirects + 1)
+  }
+  if (response.statusCode !== 200) { response.destroy(); throw new Error('Unable to download branding asset.') }
+  let bytes = 0
+  await pipeline(response, new Transform({ transform(chunk, _encoding, callback) { bytes += chunk.length; callback(bytes > maxBytes ? new Error('Branding asset is too large.') : null, chunk) } }), createWriteStream(destination, { flags: 'wx', mode: 0o600 }), { signal })
 }
 export async function downloadProxy() {
   const sockets = new Set<import('node:net').Socket>()

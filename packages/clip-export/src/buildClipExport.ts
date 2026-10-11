@@ -10,7 +10,7 @@ import { TARGET_DIMENSIONS } from '@clippster/shared-types';
 
 import { buildFramingFilterGraph } from './buildFramingFilter';
 import { buildSegmentConcatArgs } from './buildSegmentConcat';
-import { buildSubtitleAssContent } from './buildSubtitleAss';
+import { buildSubtitleAssContent, buildSubtitleBurnInArgs } from './buildSubtitleAss';
 import { buildTextOverlayFilterArgs, mergeTextBoxForRatio } from './buildTextOverlay';
 
 export interface ClipExportInput {
@@ -21,13 +21,16 @@ export interface ClipExportInput {
   framingConfig?: ManualFramingConfig | null;
   subtitleSettings?: SubtitleSettings | null;
   subtitleWords?: WordInfo[];
+  subtitleRasterPath?: string;
   textBox?: ClipTextBoxState | null;
   assPath?: string;
   textOverlayPngPath?: string;
+  textRasterPath?: string;
   remuxOnly?: boolean;
   /** False for silent source videos; defaults to true for existing callers. */
   hasAudio?: boolean;
   fit?: 'cover' | 'contain';
+  mediaAssets?: Array<{ id: string; path: string; type: 'image' | 'video' }>;
 }
 
 export interface ClipExportPlan {
@@ -60,6 +63,7 @@ export function buildClipExportPlan(input: ClipExportInput): ClipExportPlan {
     framingConfig: input.framingConfig ?? null,
     targetRatio: input.targetRatio,
     fit: input.fit,
+    mediaSources: Object.fromEntries((input.mediaAssets || []).map((asset, index) => [asset.id, input.segments.length + (input.textOverlayPngPath ? 1 : 0) + index])),
   });
 
   const sorted = [...input.segments].sort((a, b) => a.start_time - b.start_time);
@@ -105,7 +109,7 @@ export function buildClipExportPlan(input: ClipExportInput): ClipExportPlan {
   }
 
   let assContent: string | undefined;
-  if (input.subtitleSettings?.enabled && input.subtitleWords && input.subtitleWords.length > 0) {
+  if (!input.subtitleRasterPath && input.subtitleSettings?.enabled && input.subtitleWords && input.subtitleWords.length > 0) {
     assContent = buildSubtitleAssContent({
       settings: input.subtitleSettings,
       words: input.subtitleWords,
@@ -114,7 +118,7 @@ export function buildClipExportPlan(input: ClipExportInput): ClipExportPlan {
       outputPath: input.assPath ?? '',
     });
     if (input.assPath) {
-      filterParts.push(`[${videoLabel}]ass='${input.assPath.replace(/'/g, "'\\''")}'[subbed]`);
+      filterParts.push(buildSubtitleBurnInArgs(videoLabel, input.assPath));
       videoLabel = 'subbed';
     }
   }
@@ -153,6 +157,19 @@ export function buildClipExportPlan(input: ClipExportInput): ClipExportPlan {
 
   if (effectiveTextBox && input.textOverlayPngPath) {
     inputs.push('-i', input.textOverlayPngPath);
+  }
+  for (const asset of input.mediaAssets || []) inputs.push(...(asset.type === 'image' ? ['-loop', '1'] : ['-stream_loop', '-1']), '-i', asset.path);
+  if (input.subtitleRasterPath) {
+    const index = sorted.length + (effectiveTextBox && input.textOverlayPngPath ? 1 : 0) + (input.mediaAssets?.length || 0);
+    inputs.push('-i', input.subtitleRasterPath);
+    filterParts.push(`[${videoLabel}][${index}:v]overlay=0:0:eof_action=pass[subtitles_raster]`);
+    videoLabel = 'subtitles_raster';
+  }
+  if (input.textRasterPath && effectiveTextBox) {
+    const index = sorted.length + (input.textOverlayPngPath ? 1 : 0) + (input.mediaAssets?.length || 0) + (input.subtitleRasterPath ? 1 : 0);
+    inputs.push('-loop', '1', '-i', input.textRasterPath);
+    filterParts.push(`[${videoLabel}][${index}:v]overlay=0:0:shortest=1:enable='gte(t,${effectiveTextBox.startTime})*lt(t,${effectiveTextBox.endTime})'[text_raster]`);
+    videoLabel = 'text_raster';
   }
 
   const filterComplex = filterParts.join(';');

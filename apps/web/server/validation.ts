@@ -1,5 +1,6 @@
 import type { WebClipInput, ClipSegment, TargetAspectRatio } from '@clippster/shared-types'
 import { HttpError, requireValue } from './errors'
+import { validateClipSettings } from './clipSettings'
 export function textField(value: unknown, name: string, max: number): string {
   requireValue(
     typeof value === 'string' && value.trim().length > 0 && value.length <= max,
@@ -97,6 +98,7 @@ export function clipInput(
   )
   return {
     name,
+    ...validateClipSettings(input),
     segments,
     aspectRatio: input.aspectRatio as TargetAspectRatio,
     captions: input.captions

@@ -17,7 +17,7 @@ defmodule ClippsterServer.Social.PostSubmission do
     instagram facebook x twitter tiktok tiktok_business youtube linkedin threads pinterest bluesky tokend
   )
   @media_types ~w(image video carousel reel story)
-  @statuses ~w(pending scheduled publishing published failed canceled)
+  @statuses ~w(pending scheduled publishing published failed canceled awaiting_approval rejected)
   @owner_types ~w(org user)
 
   schema "post_submissions" do
@@ -47,6 +47,9 @@ defmodule ClippsterServer.Social.PostSubmission do
     field :status, :string, default: "pending"
     field :error_message, :string
     field :content_hash, :string
+    field :reviewed_by_user_id, :integer
+    field :reviewed_at, :utc_datetime
+    field :review_notes, :string
 
     # Scheduling fields
     field :scheduled_at, :utc_datetime
@@ -160,7 +163,8 @@ defmodule ClippsterServer.Social.PostSubmission do
   Changeset for updating a scheduled post (before it's locked for publishing).
   """
   def update_scheduled_changeset(submission, attrs) do
-    if submission.status in ["scheduled", "pending"] and is_nil(submission.locked_at) do
+    if submission.status in ["scheduled", "pending", "awaiting_approval"] and
+         is_nil(submission.locked_at) do
       submission
       |> cast(attrs, [
         :organization_social_account_id,
@@ -183,11 +187,12 @@ defmodule ClippsterServer.Social.PostSubmission do
   Allows updating media_url, thumbnail_url, and status for scheduled/pending posts.
   """
   def update_media_changeset(submission, attrs) do
-    if submission.status in ["scheduled", "pending"] and is_nil(submission.locked_at) do
+    if submission.status in ["scheduled", "pending", "awaiting_approval"] and
+         is_nil(submission.locked_at) do
       submission
       |> cast(attrs, [:media_url, :thumbnail_url, :status])
       |> validate_required([:media_url])
-      |> validate_inclusion(:status, ["scheduled", "pending"])
+      |> validate_inclusion(:status, ["scheduled", "pending", "awaiting_approval"])
     else
       submission
       |> change()
@@ -199,7 +204,14 @@ defmodule ClippsterServer.Social.PostSubmission do
   Changeset for canceling a scheduled post.
   """
   def cancel_changeset(submission) do
-    if submission.status in ["scheduled", "pending", "publishing", "failed"] do
+    if submission.status in [
+         "scheduled",
+         "pending",
+         "publishing",
+         "failed",
+         "awaiting_approval",
+         "rejected"
+       ] do
       submission
       |> change(status: "canceled")
     else
@@ -394,7 +406,7 @@ defmodule ClippsterServer.Social.PostSubmission do
   Checks if a post can be edited (not locked or published).
   """
   def can_edit?(%__MODULE__{status: status, locked_at: locked_at}) do
-    status in ["pending", "scheduled"] and is_nil(locked_at)
+    status in ["pending", "scheduled", "awaiting_approval"] and is_nil(locked_at)
   end
 
   @doc """
@@ -407,7 +419,15 @@ defmodule ClippsterServer.Social.PostSubmission do
   More permissive than can_cancel? - allows failed and publishing posts.
   """
   def can_cancel_or_delete?(%__MODULE__{status: status}) do
-    status in ["pending", "scheduled", "publishing", "failed", "canceled"]
+    status in [
+      "pending",
+      "scheduled",
+      "publishing",
+      "failed",
+      "canceled",
+      "awaiting_approval",
+      "rejected"
+    ]
   end
 
   @doc """

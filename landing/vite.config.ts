@@ -19,4 +19,13 @@ export default defineConfig({
       '@clippster/app-tour': path.resolve(__dirname, '../packages/app-tour/src/index.ts'),
     },
   },
+  server: {
+    proxy: {
+      '/workspace/api': {
+        target: 'http://127.0.0.1:8090',
+        rewrite: (url) => url.replace(/^\/workspace/, ''),
+      },
+      '/workspace': { target: 'http://127.0.0.1:5175', ws: true },
+    },
+  },
 })

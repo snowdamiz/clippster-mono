@@ -3,6 +3,7 @@ import base from './vite.config'
 export default mergeConfig(
   base,
   defineConfig({
+    base: '/',
     test: {
       include: [
         'tests/**/*.test.ts',

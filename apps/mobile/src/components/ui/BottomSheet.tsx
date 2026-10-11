@@ -1,4 +1,4 @@
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon, type AppIconName } from '@/components/AppIcon'
 import type { ReactNode } from 'react'
 import { KeyboardAvoidingView, Modal, Platform, Pressable, ScrollView, Text, View } from 'react-native'
 import { useSafeAreaInsets } from 'react-native-safe-area-context'
@@ -28,7 +28,7 @@ export interface BottomSheetProps {
   showHandle?: boolean
   closeMode?: 'icon' | 'text' | 'none'
   /** Icon well above title (dialog/sheet headers). */
-  headerIcon?: keyof typeof Ionicons.glyphMap
+  headerIcon?: AppIconName
   headerAccessory?: ReactNode
   children?: ReactNode
   primaryAction?: BottomSheetAction
@@ -122,7 +122,7 @@ export function BottomSheet({
       <View className={cn('relative', !handle && !accentBar ? 'pt-1' : '')}>
         {close === 'icon' && isDialog ? (
           <Pressable onPress={onClose} className="absolute right-3 top-3 z-10 rounded-md p-1" hitSlop={8}>
-            <Ionicons name="close" size={22} color={tokens.colors.muted} />
+            <AppIcon name="X" size={22} color={tokens.colors.muted} />
           </Pressable>
         ) : null}
 
@@ -141,7 +141,7 @@ export function BottomSheet({
                 onPress={onClose}
                 className="min-h-11 min-w-11 items-center justify-center"
               >
-                <Ionicons name="chevron-back" size={24} color={tokens.colors.foreground} />
+                <AppIcon name="ChevronLeft" size={24} color={tokens.colors.foreground} />
               </Pressable>
             ) : null}
             {headerIcon && !isPage ? (
@@ -151,7 +151,7 @@ export function BottomSheet({
                   isDialog ? 'mb-1 h-12 w-12' : 'h-10 w-10'
                 )}
               >
-                <Ionicons name={headerIcon} size={isDialog ? 24 : 20} color={tokens.colors.accent} />
+                <AppIcon name={headerIcon} size={isDialog ? 24 : 20} color={tokens.colors.accent} />
               </View>
             ) : null}
 
@@ -177,7 +177,7 @@ export function BottomSheet({
             {headerAccessory}
             {close === 'icon' && !isDialog ? (
               <Pressable onPress={onClose} className="rounded-md p-1" hitSlop={8}>
-                <Ionicons name="close" size={22} color={tokens.colors.muted} />
+                <AppIcon name="X" size={22} color={tokens.colors.muted} />
               </Pressable>
             ) : null}
             {close === 'text' ? (

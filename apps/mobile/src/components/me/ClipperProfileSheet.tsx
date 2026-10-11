@@ -9,7 +9,7 @@ import {
   SPECIALTY_TAGS,
   getPlatformLabel
 } from '@clippster/api-client'
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import * as DocumentPicker from 'expo-document-picker'
 import { router } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
@@ -260,7 +260,7 @@ export function ClipperProfileSheet({ visible, onClose, onProfileUpdated }: Clip
           portfolio: 'Portfolio'
         }[tab]
       }
-      headerIcon="briefcase-outline"
+      headerIcon="Briefcase"
       maxHeightClassName="max-h-[92%]"
       scrollable
       keyboardAvoiding
@@ -272,7 +272,7 @@ export function ClipperProfileSheet({ visible, onClose, onProfileUpdated }: Clip
       ) : !profile ? (
         <Card className="items-center gap-3 py-6">
           <View className="h-16 w-16 items-center justify-center rounded-full bg-surfaceMuted">
-            <Ionicons name="person" size={28} color={tokens.colors.muted} />
+            <AppIcon name="UserRound" size={28} color={tokens.colors.muted} />
           </View>
           <Text className="text-center text-lg font-semibold text-foreground">Create your clipper profile</Text>
           <Text className="text-center text-muted">
@@ -291,7 +291,7 @@ export function ClipperProfileSheet({ visible, onClose, onProfileUpdated }: Clip
                       <Image source={{ uri: profile.avatar_url }} className="h-16 w-16 rounded-full" />
                     ) : (
                       <View className="h-16 w-16 items-center justify-center rounded-full bg-surfaceMuted">
-                        <Ionicons name="person" size={28} color={tokens.colors.muted} />
+                        <AppIcon name="UserRound" size={28} color={tokens.colors.muted} />
                       </View>
                     )}
                   </Pressable>
@@ -311,8 +311,8 @@ export function ClipperProfileSheet({ visible, onClose, onProfileUpdated }: Clip
                 value={isPublic}
                 onValueChange={(value) => void saveVisibility(value)}
                 icon={
-                  <Ionicons
-                    name={isPublic ? 'globe-outline' : 'lock-closed-outline'}
+                  <AppIcon
+                    name={isPublic ? 'Globe' : 'Lock'}
                     size={20}
                     color={isPublic ? tokens.colors.accent : tokens.colors.muted}
                   />
@@ -329,26 +329,21 @@ export function ClipperProfileSheet({ visible, onClose, onProfileUpdated }: Clip
                   <Text className="text-xs text-muted">Endorsements</Text>
                 </View>
               </View>
+              <MenuRow icon="UserRound" title="About you" subtitle="Name, bio, avatar" onPress={() => setTab('edit')} />
               <MenuRow
-                icon="person-outline"
-                title="About you"
-                subtitle="Name, bio, avatar"
-                onPress={() => setTab('edit')}
-              />
-              <MenuRow
-                icon="sparkles-outline"
+                icon="Sparkles"
                 title="Skills & preferences"
                 subtitle="Experience, languages, timezone"
                 onPress={() => setTab('skills')}
               />
               <MenuRow
-                icon="link-outline"
+                icon="Link"
                 title="Channel links"
                 subtitle="Your public social profiles"
                 onPress={() => setTab('channels')}
               />
               <MenuRow
-                icon="film-outline"
+                icon="Film"
                 title="Portfolio"
                 subtitle="Show your best work"
                 onPress={() => setTab('portfolio')}
@@ -460,7 +455,7 @@ export function ClipperProfileSheet({ visible, onClose, onProfileUpdated }: Clip
                   description="Show organizations that you're open to new campaigns."
                   value={lookingForWork}
                   onValueChange={setLookingForWork}
-                  icon={<Ionicons name="briefcase-outline" size={20} color={tokens.colors.primary} />}
+                  icon={<AppIcon name="Briefcase" size={20} color={tokens.colors.primary} />}
                 />
                 <Button
                   title={saving ? 'Saving...' : 'Save profile'}
@@ -483,7 +478,7 @@ export function ClipperProfileSheet({ visible, onClose, onProfileUpdated }: Clip
                     </Text>
                   </View>
                   <Pressable onPress={() => deleteLink(link.id)}>
-                    <Ionicons name="trash-outline" size={20} color={tokens.colors.destructive} />
+                    <AppIcon name="Trash2" size={20} color={tokens.colors.destructive} />
                   </Pressable>
                 </View>
               ))}
@@ -509,20 +504,35 @@ export function ClipperProfileSheet({ visible, onClose, onProfileUpdated }: Clip
           {tab === 'portfolio' ? (
             <Card className="gap-4">
               <View className="flex-row flex-wrap gap-3">
-              {portfolioClips.map((clip) => (
-                <View key={clip.id} className="w-[48%] gap-2 overflow-hidden rounded-[18px] bg-surfaceMuted p-3">
-                  <Pressable onPress={() => profile.slug && router.push(`/profile/preview?slug=${profile.slug}`)}>
-                    {clip.thumbnail_url ? <Image source={{uri: clip.thumbnail_url}} className="aspect-video w-full rounded-[10px]" /> : <View className="aspect-video w-full items-center justify-center rounded-[10px] bg-background"><Ionicons name="film-outline" size={28} color={tokens.colors.muted}/></View>}
-                  </Pressable>
-                  <View className="flex-1">
-                    <Text className="font-medium text-foreground">{clip.title ?? `Clip #${clip.id}`}</Text>
-                    {clip.duration ? <Text className="text-sm text-muted">{Math.round(clip.duration)}s</Text> : null}
+                {portfolioClips.map((clip) => (
+                  <View key={clip.id} className="w-[48%] gap-2 overflow-hidden rounded-[18px] bg-surfaceMuted p-3">
+                    <Pressable onPress={() => profile.slug && router.push(`/profile/preview?slug=${profile.slug}`)}>
+                      {clip.thumbnail_url ? (
+                        <Image source={{ uri: clip.thumbnail_url }} className="aspect-video w-full rounded-[10px]" />
+                      ) : (
+                        <View className="aspect-video w-full items-center justify-center rounded-[10px] bg-background">
+                          <AppIcon name="Film" size={28} color={tokens.colors.muted} />
+                        </View>
+                      )}
+                    </Pressable>
+                    <View className="flex-1">
+                      <Text className="font-medium text-foreground">{clip.title ?? `Clip #${clip.id}`}</Text>
+                      {clip.duration ? <Text className="text-sm text-muted">{Math.round(clip.duration)}s</Text> : null}
+                    </View>
+                    <Pressable
+                      accessibilityLabel="Remove portfolio clip"
+                      className="min-h-11 min-w-11 items-center justify-center self-end"
+                      onPress={() =>
+                        appAlert('Remove portfolio clip?', 'This removes the clip from your public portfolio.', [
+                          { text: 'Cancel', style: 'cancel' },
+                          { text: 'Remove', style: 'destructive', onPress: () => void deletePortfolio(clip.id) }
+                        ])
+                      }
+                    >
+                      <AppIcon name="Trash2" size={20} color={tokens.colors.destructive} />
+                    </Pressable>
                   </View>
-                  <Pressable accessibilityLabel="Remove portfolio clip" className="min-h-11 min-w-11 items-center justify-center self-end" onPress={() => appAlert("Remove portfolio clip?", "This removes the clip from your public portfolio.", [{text:"Cancel",style:"cancel"},{text:"Remove",style:"destructive",onPress:()=>void deletePortfolio(clip.id)}])}>
-                    <Ionicons name="trash-outline" size={20} color={tokens.colors.destructive} />
-                  </Pressable>
-                </View>
-              ))}
+                ))}
               </View>
               <Button title="Upload from camera roll" variant="outline" onPress={uploadPortfolioFromDevice} />
               <Button title="Add from latest export" variant="outline" onPress={addPortfolioFromExport} />

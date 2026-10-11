@@ -1,6 +1,6 @@
 import type { PostAnalytics, ScheduledPost } from '@clippster/api-client'
 import { formatMetricCount, getSocialPlatformLabel, isValidScheduleTime } from '@clippster/api-client'
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon, type AppIconName } from '@/components/AppIcon'
 import * as WebBrowser from 'expo-web-browser'
 import { useEffect, useState } from 'react'
 import { Image, Text, View } from 'react-native'
@@ -26,14 +26,14 @@ interface PostAnalyticsSheetProps {
 interface MetricRowProps {
   label: string
   value: number
-  icon: keyof typeof Ionicons.glyphMap
+  icon: AppIconName
 }
 
 function MetricRow({ label, value, icon }: MetricRowProps) {
   return (
     <View className="min-h-[60px] flex-row items-center justify-between border-b border-border py-[13px]">
       <View className="flex-row items-center gap-2">
-        <Ionicons name={icon} size={18} color={tokens.colors.muted} />
+        <AppIcon name={icon} size={18} color={tokens.colors.muted} />
         <Text className="text-sm text-muted">{label}</Text>
       </View>
       <Text className="text-base font-semibold text-foreground">{formatMetricCount(value)}</Text>
@@ -60,12 +60,12 @@ function AnalyticsGrid({ analytics }: { analytics: PostAnalytics }) {
 
   return (
     <View className="rounded-[18px] bg-surface px-4">
-      <MetricRow label="Views" value={analytics.view_count} icon="eye-outline" />
-      <MetricRow label="Likes" value={analytics.like_count} icon="heart-outline" />
-      <MetricRow label="Comments" value={analytics.comment_count} icon="chatbubble-outline" />
-      <MetricRow label="Saves" value={analytics.save_count} icon="bookmark-outline" />
-      <MetricRow label="Reach" value={analytics.reach_count} icon="people-outline" />
-      <MetricRow label="Impressions" value={analytics.impressions_count} icon="stats-chart-outline" />
+      <MetricRow label="Views" value={analytics.view_count} icon="Eye" />
+      <MetricRow label="Likes" value={analytics.like_count} icon="Heart" />
+      <MetricRow label="Comments" value={analytics.comment_count} icon="MessageSquare" />
+      <MetricRow label="Saves" value={analytics.save_count} icon="Bookmark" />
+      <MetricRow label="Reach" value={analytics.reach_count} icon="Users" />
+      <MetricRow label="Impressions" value={analytics.impressions_count} icon="ChartNoAxesColumn" />
     </View>
   )
 }
@@ -210,7 +210,7 @@ export function PostAnalyticsSheet({ visible, post, onClose, onCancel, onRetry, 
               <Text className="text-right text-xs text-muted">{caption.length} / 2,200</Text>
             </View>
             <MenuRow
-              icon="calendar-outline"
+              icon="Calendar"
               title="Schedule time"
               subtitle={scheduledAt ? formatScheduleLabel(scheduledAt) : 'Choose a time'}
               onPress={() => {

@@ -1,5 +1,5 @@
 import { useEventListener } from 'expo'
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import { Stack, useFocusEffect, useLocalSearchParams, useRouter } from 'expo-router'
 import { useVideoPlayer, VideoView } from 'expo-video'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
@@ -469,13 +469,13 @@ function ClipAdjustWorkspace({
               }}
               className="min-h-11 min-w-11 items-center justify-center"
             >
-              <Ionicons name={player.playing ? 'pause' : 'play'} size={28} color={tokens.colors.foreground} />
+              <AppIcon name={player.playing ? 'Pause' : 'Play'} size={28} color={tokens.colors.foreground} />
             </Pressable>
           </View>
 
           <View className="mx-5">
             <MenuRow
-              icon="cut-outline"
+              icon="Scissors"
               title="Clip range"
               subtitle={`${formatClock(selectStart)} – ${formatClock(selectEnd)}`}
               onPress={() => {
@@ -486,7 +486,7 @@ function ClipAdjustWorkspace({
           </View>
           <View className="mx-5">
             <MenuRow
-              icon="chatbubble-ellipses-outline"
+              icon="Captions"
               title="Captions"
               subtitle={
                 aiBusy
@@ -505,7 +505,7 @@ function ClipAdjustWorkspace({
             />
             {clip.project_id ? (
               <MenuRow
-                icon="phone-portrait-outline"
+                icon="Smartphone"
                 title="Portrait framing"
                 subtitle={hasVisibleFraming(framingConfig) ? 'Configured · 9:16' : 'Choose what stays in frame'}
                 onPress={() =>

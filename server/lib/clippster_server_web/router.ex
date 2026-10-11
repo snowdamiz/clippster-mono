@@ -922,6 +922,8 @@ defmodule ClippsterServerWeb.Router do
     )
 
     post("/organizations/:organization_id/posts/publish", PostSubmissionController, :publish)
+    post("/organizations/:organization_id/posts/:id/approve", PostSubmissionController, :approve)
+    post("/organizations/:organization_id/posts/:id/reject", PostSubmissionController, :reject)
     put("/organizations/:organization_id/posts/:id", PostSubmissionController, :update)
 
     post(

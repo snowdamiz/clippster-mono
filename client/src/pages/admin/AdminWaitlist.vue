@@ -136,9 +136,9 @@
             <Copy class="admin-waitlist__copy-all-icon" />
             Copy All Emails
           </button>
-          <button v-if="waitlistEntries.length > 0" class="admin-waitlist__copy-all-btn" @click="exportWaitlistEmailsCsv">
+          <button v-if="waitlistEntries.length > 0" class="admin-waitlist__copy-all-btn" @click="exportWaitlistCsv">
             <Download class="admin-waitlist__copy-all-icon" />
-            Export Emails CSV
+            Export Waitlist CSV
           </button>
           <span class="admin-waitlist__count">
             {{ waitlistEntries.length }} email{{ waitlistEntries.length !== 1 ? 's' : '' }}
@@ -290,7 +290,7 @@
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
   import { formatDateTime } from '@/utils/dateTimeUtils';
-  import { downloadEmailsCsv } from '@/utils/downloadEmailsCsv';
+  import { downloadRecordsCsv } from '@/utils/downloadRecordsCsv';
   import { UserPlus, Users, Activity, RefreshCw, Loader2, Copy, Download, AlertTriangle, RefreshCcw } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import api from '@/services/api';
@@ -371,17 +371,16 @@
     }
   };
 
-  const exportWaitlistEmailsCsv = async () => {
-    const emails = waitlistEntries.value.map((entry) => entry.email).filter(Boolean);
-    if (!emails.length) {
-      showErrorToast('Export failed', 'No emails to export');
+  const exportWaitlistCsv = async () => {
+    if (!waitlistEntries.value.length) {
+      showErrorToast('Export failed', 'No waitlist entries to export');
       return;
     }
     try {
-      await downloadEmailsCsv(emails, 'waitlist-emails.csv');
+      await downloadRecordsCsv(waitlistEntries.value, 'waitlist.csv');
     } catch (err) {
-      console.error('Failed to export waitlist emails:', err);
-      showErrorToast('Export failed', err instanceof Error ? err.message : 'Failed to export emails CSV');
+      console.error('Failed to export waitlist:', err);
+      showErrorToast('Export failed', err instanceof Error ? err.message : 'Failed to export waitlist CSV');
     }
   };
 

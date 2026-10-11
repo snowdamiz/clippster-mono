@@ -1,4 +1,4 @@
-import type { SubtitleSettings } from '@/types';
+import type { SubtitleSettings } from '@clippster/shared-types';
 
 /** Panel default `wordSpacing` is 0.35 (historical). Map to ~0.22em of font for natural gaps in preview + export. */
 const SUBTITLE_WORD_SPACING_DEFAULT = 0.35;

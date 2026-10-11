@@ -25,6 +25,7 @@ export interface ServerUserCreatorProfile {
   id: number;
   user_id: number;
   client_id: string | null;
+  platform_links?: Array<{ platform: string; platform_id: string; is_primary?: boolean }>;
   name: string;
   description: string | null;
   profile_image_url: string | null;

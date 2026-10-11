@@ -2,7 +2,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { useState } from 'react'
 import { Text, View } from 'react-native'
 import { AuthScreen } from '@/components/auth/AuthScreen'
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import { tokens } from '@/theme/tokens'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
@@ -27,7 +27,7 @@ export default function VerifyOtpScreen() {
     <AuthScreen title="Verify email">
       <View className="items-center gap-[18px] px-3 py-[50px]">
         <View className="h-[70px] w-[70px] items-center justify-center rounded-[23px] bg-surfaceMuted">
-          <Ionicons name="mail-outline" size={30} color={tokens.colors.accent} />
+          <AppIcon name="Mail" size={30} color={tokens.colors.accent} />
         </View>
         <Text className="text-3xl font-bold text-foreground">Check your inbox</Text>
         <Text className="text-center text-sm leading-5 text-muted">Enter the code sent to {email || 'your email'}</Text>

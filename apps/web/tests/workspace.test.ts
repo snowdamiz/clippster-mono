@@ -89,6 +89,25 @@ describe('private browser workspace with real FFmpeg', () => {
       (await request(`/projects/${workspace.project.id}/source`, 'GET', undefined, second)).status
     ).toBe(404)
   })
+  it('transcribes independently without adding detected clips', async () => {
+    expect((await request(`/projects/${workspace.project.id}/transcribe`, 'POST')).status).toBe(202)
+    workspace = await waitForJob(fixture.url, cookie, workspace.project.id)
+    expect(workspace.jobs[0].status, workspace.jobs[0].message).toBe('completed')
+    expect(workspace.project.words).toHaveLength(2)
+    expect(workspace.project.clips).toHaveLength(0)
+    expect(fixture.detectionCalls()).toBe(0)
+  })
+  it('ingests framing images privately and rejects arbitrary stock URLs', async () => {
+    const file = join(fixture.directory, 'framing.png')
+    execFileSync(fixture.config.ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'color=c=green:s=64x64', '-frames:v', '1', '-y', file])
+    const path = `/projects/${workspace.project.id}/framing-assets`
+    const response = await fetch(fixture.url + '/api/web' + path + '?type=image&name=Overlay', { method: 'POST', headers: { Cookie: cookie, Origin: fixture.config.origin, 'Content-Type': 'application/octet-stream' }, body: await readFile(file) })
+    expect(response.status).toBe(201)
+    const { asset } = await response.json()
+    expect((await request(`${path}/${asset.id}`)).status).toBe(200)
+    expect((await request(`${path}/${asset.id}`, 'GET', undefined, second)).status).toBe(404)
+    expect((await request(path + '?type=video&url=https%3A%2F%2Fexample.com%2Ffile.mp4', 'POST')).status).toBe(400)
+  })
   it('sends real extracted audio to the existing AI contract and preserves segment times', async () => {
     expect(
       (

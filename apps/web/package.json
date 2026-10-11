@@ -14,9 +14,11 @@
     "start": "node --env-file-if-exists=.env dist/server.mjs",
     "typecheck": "vue-tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:account": "playwright test --config playwright.account.config.ts"
   },
   "dependencies": {
+    "@napi-rs/canvas": "^1.0.10",
     "express": "^5.1.0",
     "express-rate-limit": "^8.1.0",
     "hls.js": "^1.6.15",

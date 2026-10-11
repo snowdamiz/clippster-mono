@@ -20,20 +20,8 @@ export interface SubscriptionStatus {
   days_remaining: number;
 }
 
-export function subscriptionStillCoversAccess(
-  subscription?: { status?: string; end_date?: string | null; days_remaining?: number } | null,
-): boolean {
-  if (!subscription?.status) return false;
-  if (subscription.status === 'active') {
-    if (subscription.end_date) return new Date(subscription.end_date).getTime() > Date.now();
-    return true;
-  }
-  if (subscription.status === 'cancelled') {
-    if (subscription.end_date) return new Date(subscription.end_date).getTime() > Date.now();
-    return (subscription.days_remaining ?? 0) > 0;
-  }
-  return false;
-}
+import { subscriptionCoversAccess as subscriptionStillCoversAccess } from '@clippster/shared-types';
+export { subscriptionCoversAccess as subscriptionStillCoversAccess } from '@clippster/shared-types';
 
 export function useSubscription() {
   const authStore = useAuthStore();

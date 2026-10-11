@@ -1,5 +1,7 @@
 import { ClippsterEditorPreview, isNativePreviewAvailable } from '@clippster/editor-native'
-import { useMemo } from 'react'
+import { AppIcon } from '@/components/AppIcon'
+import { tokens } from '@/theme/tokens'
+import { useMemo, useState } from 'react'
 import { Pressable, Text, useWindowDimensions, View } from 'react-native'
 import { Gesture, GestureDetector } from 'react-native-gesture-handler'
 import Animated, { runOnJS, useAnimatedStyle, useSharedValue } from 'react-native-reanimated'
@@ -43,10 +45,11 @@ export function EditorCanvas({
   onTransformItem: (itemId: string, transform: Transform) => void
 }) {
   const { width: windowWidth, height: windowHeight } = useWindowDimensions()
+  const [availableHeight, setAvailableHeight] = useState(windowHeight * 0.5)
   const ratio = document.canvas.activeRatio
   const aspectRatio = ratio === '9:16' ? 9 / 16 : 16 / 9
   const maxWidth = windowWidth - 40
-  const maxHeight = Math.min(windowHeight * 0.5, 480)
+  const maxHeight = Math.max(80, availableHeight - 76)
   const width = Math.min(maxWidth, maxHeight * aspectRatio)
   const height = width / aspectRatio
   const activeVideo = resolveVideoAtTick(document, playheadTick)
@@ -72,14 +75,15 @@ export function EditorCanvas({
   }, [document])
 
   return (
-    <View className="min-h-[240px] flex-1 items-center justify-center bg-background px-5">
-      <View className="w-full flex-row items-center justify-between">
-        <View className="rounded-[7px] bg-surfaceMuted px-2 py-[5px]">
-          <Text className="text-[11px] text-muted">{saveStatus}</Text>
-        </View>
+    <View
+      onLayout={(event) => setAvailableHeight(event.nativeEvent.layout.height)}
+      className="flex-1 items-center justify-center gap-2 bg-background px-5 py-2"
+    >
+      <View className="absolute left-5 right-5 top-2 z-10">
         <CanvasControls
           activeRatio={ratio}
           safeAreaVisible={document.canvas.safeAreaVisible}
+          canvasInset={Math.max(0, (maxWidth - width) / 2 + 6)}
           onRatioChange={onRatioChange}
           onToggleSafeArea={onToggleSafeArea}
         />
@@ -177,6 +181,10 @@ export function EditorCanvas({
         />
         {document.canvas.safeAreaVisible ? <SafeAreaGuide ratio={ratio} /> : null}
       </Pressable>
+      <View className="flex-row items-center gap-1.5">
+        {saveStatus.startsWith('Saved') ? <AppIcon name="CircleCheck" size={12} color={tokens.colors.success} /> : null}
+        <Text className="text-[11px] text-muted">{saveStatus}</Text>
+      </View>
     </View>
   )
 }

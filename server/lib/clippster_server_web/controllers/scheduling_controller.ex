@@ -1661,6 +1661,8 @@ defmodule ClippsterServerWeb.SchedulingController do
       post_id: post.post_id,
       post_url: post.post_url,
       error_message: post.error_message,
+      reviewed_at: post.reviewed_at,
+      review_notes: post.review_notes,
       attempts: post.attempts,
       max_attempts: post.max_attempts,
       can_edit: PostSubmission.can_edit?(post),

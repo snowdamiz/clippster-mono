@@ -228,7 +228,7 @@ export function MobileEditorShell({
         />
         <View className="flex-1 justify-center px-5">
           <EmptyState
-            icon="film-outline"
+            icon="Film"
             title="Your ideas, in motion."
             subtitle="Add a video to start creating. Your edits save on this device."
           />
@@ -306,6 +306,7 @@ export function MobileEditorShell({
           }}
         />
         <ContextualToolBar
+          onClearSelection={() => updateSelection(null)}
           selectionKind={state.session.selection?.kind ?? null}
           visibleCapabilityIds={visibleCapabilities}
           onToolPress={handleTool}

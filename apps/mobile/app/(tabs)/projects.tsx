@@ -1,8 +1,10 @@
-import { Ionicons } from '@expo/vector-icons'
+import { AppIcon } from '@/components/AppIcon'
 import { router, useFocusEffect } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
-import { ActivityIndicator, Image, Pressable, ScrollView, Text, useWindowDimensions, View } from 'react-native'
+import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'react-native'
 import { ScreenHeader } from '@/components/ScreenHeader'
+import { WorkspaceActions } from '@/components/navigation/WorkspaceActions'
+import { QuickAction } from '@/components/navigation/QuickAction'
 import { DownloadProgressCard } from '@/components/DownloadProgressCard'
 import { BottomSheet } from '@/components/ui/BottomSheet'
 import { Button } from '@/components/ui/button'
@@ -51,8 +53,6 @@ function formatDuration(seconds: number | null | undefined): string {
 
 export default function ProjectsScreen() {
   const { requireSubscription } = useAccount()
-  const { width: windowWidth } = useWindowDimensions()
-  const cardWidth = (windowWidth - 40 - 12) / 2
   const [libraryTab, setLibraryTab] = useState('projects')
   const [projects, setProjects] = useState<ProjectRow[]>([])
   const [loading, setLoading] = useState(true)
@@ -208,14 +208,27 @@ export default function ProjectsScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <ScreenHeader title="Home" />
+      <ScreenHeader showLogo rightAction={<WorkspaceActions />} />
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 24, gap: 17 }}>
-        <View>
-          <Text className="mb-2 text-[11px] font-semibold tracking-widest text-muted">YOUR WORKSPACE</Text>
-          <Text className="mb-2 text-[28px] font-bold tracking-tight text-foreground">Make your next move.</Text>
+        <View className="rounded-[18px] border border-border bg-surface p-5">
+          <Text className="mb-2 text-xl font-bold tracking-tight text-foreground">Make your next move.</Text>
           <Text className="text-sm leading-5 text-muted">Pick up an edit or start with a new video.</Text>
         </View>
-        <Button title="＋ New project" variant="accent" onPress={() => setShowCreate(true)} />
+        <Text className="text-sm font-semibold text-foreground">Quick actions</Text>
+        <View className="flex-row gap-2">
+          <QuickAction icon="Plus" title="New project" onPress={() => setShowCreate(true)} />
+          <QuickAction icon="Link" title="Find video" onPress={() => router.push('/(tabs)/download')} />
+          <QuickAction
+            icon="Sparkles"
+            title="AI clips"
+            onPress={() => {
+              const project = projects[0]
+              if (project) router.push(`/project/${project.id}?detect=1`)
+              else appAlert('Add a video first', 'Download or import a video to find clips with AI.')
+            }}
+          />
+          <QuickAction icon="Users" title="Shared clips" onPress={() => router.push('/(tabs)/inbox')} />
+        </View>
         <DownloadProgressCard
           jobs={jobs}
           onOpenProject={(id) => router.push(`/project/${id}`)}
@@ -236,13 +249,13 @@ export default function ProjectsScreen() {
                   onPress={() =>
                     router.push({ pathname: '/edit/[kind]/[id]', params: { kind: 'project', id: project.id } })
                   }
-                  className="min-h-[72px] flex-row items-center gap-3"
+                  className="min-h-[86px] flex-row items-center gap-3 rounded-[18px] border border-border bg-surface p-3"
                 >
                   <View className="h-[58px] w-[72px] items-center justify-center overflow-hidden rounded-[10px] bg-surfaceMuted">
                     {project.thumbnailUri ? (
                       <Image source={{ uri: project.thumbnailUri }} style={{ width: 72, height: 58 }} />
                     ) : (
-                      <Ionicons name="film-outline" size={24} color={tokens.colors.muted} />
+                      <AppIcon name="Film" size={24} color={tokens.colors.muted} />
                     )}
                   </View>
                   <View className="flex-1 gap-1">
@@ -251,7 +264,7 @@ export default function ProjectsScreen() {
                     </Text>
                     <Text className="text-xs text-muted">Draft · Saved on this device</Text>
                   </View>
-                  <Ionicons name="chevron-forward" size={20} color={tokens.colors.muted} />
+                  <AppIcon name="ChevronRight" size={20} color={tokens.colors.muted} />
                 </Pressable>
               ))}
           </View>
@@ -275,9 +288,7 @@ export default function ProjectsScreen() {
                 ? 'Your projects will appear here. Start with a new video.'
                 : 'Videos downloaded from a URL will appear here.'
             }
-            list={libraryTab === 'downloads'}
             items={libraryTab === 'projects' ? editorProjects : downloads}
-            cardWidth={cardWidth}
             onOpen={(project) =>
               project.hasEditorDraft
                 ? router.push({ pathname: '/edit/[kind]/[id]', params: { kind: 'project', id: project.id } })
@@ -287,7 +298,7 @@ export default function ProjectsScreen() {
           />
         )}
         <MenuRow
-          icon="file-tray-outline"
+          icon="Share2"
           title="Shared clips"
           subtitle="Clips from your organizations"
           onPress={() => router.push('/(tabs)/inbox')}
@@ -301,14 +312,14 @@ export default function ProjectsScreen() {
         subtitle={menuProject?.name}
         secondaryAction={{ title: 'Cancel', onPress: () => setMenuProject(null), variant: 'ghost' }}
       >
-        <MenuRow icon="film-outline" title="Open in editor" subtitle="Resume your draft" onPress={handleEditProject} />
+        <MenuRow icon="Film" title="Open in editor" subtitle="Resume your draft" onPress={handleEditProject} />
         <MenuRow
-          icon="sparkles-outline"
+          icon="Sparkles"
           title="Detect clips"
           subtitle="Find moments with AI"
           onPress={() => void handleDetectClips()}
         />
-        <MenuRow icon="trash-outline" title="Delete project" destructive onPress={handleDeleteProject} />
+        <MenuRow icon="Trash2" title="Delete project" destructive onPress={handleDeleteProject} />
       </BottomSheet>
 
       <BottomSheet
@@ -340,13 +351,13 @@ export default function ProjectsScreen() {
 
         <View pointerEvents={importing ? 'none' : 'auto'}>
           <MenuRow
-            icon="folder-open-outline"
+            icon="FolderOpen"
             title={importing ? 'Importing…' : 'Import from device'}
             subtitle="Choose a video from Files"
             onPress={() => void handleImportVideo()}
           />
           <MenuRow
-            icon="film-outline"
+            icon="Film"
             title="Start in editor"
             subtitle="Build a project with your own media"
             onPress={() => {
@@ -361,19 +372,15 @@ export default function ProjectsScreen() {
 }
 
 function ProjectCategory({
-  list = false,
   title,
   emptyMessage,
   items,
-  cardWidth,
   onOpen,
   onMenu
 }: {
-  list?: boolean
   title: string
   emptyMessage: string
   items: ProjectRow[]
-  cardWidth: number
   onOpen: (project: ProjectRow) => void
   onMenu: (project: ProjectRow) => void
 }) {
@@ -384,10 +391,13 @@ function ProjectCategory({
         <View className="items-center rounded-xl border border-dashed border-border px-5 py-7">
           <Text className="text-center text-sm text-muted">{emptyMessage}</Text>
         </View>
-      ) : list ? (
+      ) : (
         <View>
           {items.map((item) => (
-            <View key={item.id} className="flex-row items-center border-b border-border py-[13px]">
+            <View
+              key={item.id}
+              className="mb-2 flex-row items-center rounded-[14px] border border-border bg-surface p-2"
+            >
               <Pressable
                 accessibilityRole="button"
                 onPress={() => onOpen(item)}
@@ -397,7 +407,7 @@ function ProjectCategory({
                   {item.thumbnailUri ? (
                     <Image source={{ uri: item.thumbnailUri }} style={{ width: 72, height: 58 }} />
                   ) : (
-                    <Ionicons name="film-outline" size={22} color={tokens.colors.muted} />
+                    <AppIcon name="Film" size={22} color={tokens.colors.muted} />
                   )}
                 </View>
                 <View className="min-w-0 flex-1 gap-1">
@@ -408,7 +418,7 @@ function ProjectCategory({
                     {[item.platform, formatDuration(item.duration), 'On device'].filter(Boolean).join(' · ')}
                   </Text>
                 </View>
-                <Ionicons name="chevron-forward" size={18} color={tokens.colors.muted} />
+                <AppIcon name="ChevronRight" size={18} color={tokens.colors.muted} />
               </Pressable>
               <Pressable
                 accessibilityRole="button"
@@ -416,51 +426,9 @@ function ProjectCategory({
                 onPress={() => onMenu(item)}
                 className="min-h-11 min-w-11 items-center justify-center"
               >
-                <Ionicons name="ellipsis-horizontal" size={18} color={tokens.colors.muted} />
+                <AppIcon name="EllipsisVertical" size={18} color={tokens.colors.muted} />
               </Pressable>
             </View>
-          ))}
-        </View>
-      ) : (
-        <View className="flex-row flex-wrap gap-3">
-          {items.map((item) => (
-            <Pressable
-              key={item.id}
-              style={{ width: cardWidth }}
-              className="overflow-hidden rounded-2xl bg-surface"
-              onPress={() => onOpen(item)}
-            >
-              <View
-                className="items-center justify-center bg-surfaceMuted"
-                style={{ width: cardWidth, aspectRatio: 16 / 9 }}
-              >
-                {item.thumbnailUri ? (
-                  <Image
-                    source={{ uri: item.thumbnailUri }}
-                    style={{ width: cardWidth, aspectRatio: 16 / 9 }}
-                    resizeMode="cover"
-                  />
-                ) : (
-                  <Ionicons name="play-circle-outline" size={28} color={tokens.colors.muted} />
-                )}
-                <Pressable
-                  onPress={() => onMenu(item)}
-                  hitSlop={8}
-                  className="absolute right-1.5 top-1.5 h-8 w-8 items-center justify-center rounded-full bg-black/60"
-                >
-                  <Ionicons name="ellipsis-horizontal" size={16} color="#ffffff" />
-                </Pressable>
-              </View>
-              <View className="gap-0.5 p-2">
-                <Text className="text-sm font-semibold text-foreground" numberOfLines={2}>
-                  {item.name}
-                </Text>
-                <Text className="text-xs text-muted">
-                  {item.platform && item.platform !== 'manual' ? item.platform : 'Local'}
-                  {item.duration != null ? ` · ${formatDuration(item.duration)}` : ''}
-                </Text>
-              </View>
-            </Pressable>
           ))}
         </View>
       )}

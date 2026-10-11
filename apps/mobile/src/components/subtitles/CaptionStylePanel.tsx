@@ -91,12 +91,12 @@ export function CaptionStylePanel({ enabled, settings, onChange }: CaptionStyleP
             />
           </View>
           <MenuRow
-            icon="sparkles-outline"
+            icon="Sparkles"
             title="Animation"
             value={CAPTION_ANIMATION_STYLES.find((style) => style.id === settings.animationStyle)?.name}
             onPress={() => setPage('animation')}
           />
-          <MenuRow icon="text-outline" title="Font" value={settings.fontFamily} onPress={() => setPage('font')} />
+          <MenuRow icon="Type" title="Font" value={settings.fontFamily} onPress={() => setPage('font')} />
         </>
       )}
 
@@ -210,9 +210,9 @@ export function CaptionStylePanel({ enabled, settings, onChange }: CaptionStyleP
             />
           </Section>
 
-          <MenuRow icon="layers-outline" title="Outline & background" onPress={() => setPage('outline')} />
+          <MenuRow icon="Layers" title="Outline & background" onPress={() => setPage('outline')} />
           <MenuRow
-            icon="move-outline"
+            icon="Move"
             title="Position"
             value={`${Math.round(settings.positionPercentage)}%`}
             onPress={() => setPage('position')}

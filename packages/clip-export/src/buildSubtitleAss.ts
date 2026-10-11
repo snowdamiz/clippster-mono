@@ -87,5 +87,6 @@ export function buildSubtitleBurnInArgs(
   assPath: string,
   outputLabel = 'subbed',
 ): string {
-  return `[${videoInputLabel}]ass='${assPath.replace(/'/g, "'\\''")}'[${outputLabel}]`;
+  const filterPath = assPath.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "'\\''");
+  return `[${videoInputLabel}]ass='${filterPath}'[${outputLabel}]`;
 }

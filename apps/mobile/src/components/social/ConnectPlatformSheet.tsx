@@ -1,30 +1,27 @@
-import { Ionicons } from '@expo/vector-icons';
-import type { SocialPlatform } from '@clippster/api-client';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
-import {
-  getDistributionPlatforms,
-  type DistributionPlatformConfig,
-} from '@/config/distributionPlatforms';
-import { TokendPlatformIcon } from '@/components/icons/TokendLogo';
-import { BottomSheet } from '@/components/ui/BottomSheet';
-import { tokens } from '@/theme/tokens';
+import { AppIcon } from '@/components/AppIcon'
+import type { SocialPlatform } from '@clippster/api-client'
+import { ActivityIndicator, Pressable, Text, View } from 'react-native'
+import { getDistributionPlatforms, type DistributionPlatformConfig } from '@/config/distributionPlatforms'
+import { TokendPlatformIcon } from '@/components/icons/TokendLogo'
+import { BottomSheet } from '@/components/ui/BottomSheet'
+import { tokens } from '@/theme/tokens'
 
 interface ConnectPlatformSheetProps {
-  visible: boolean;
-  connectingPlatform: SocialPlatform | null;
-  includeTokend?: boolean;
-  onClose: () => void;
-  onConnect: (platform: SocialPlatform) => void;
+  visible: boolean
+  connectingPlatform: SocialPlatform | null
+  includeTokend?: boolean
+  onClose: () => void
+  onConnect: (platform: SocialPlatform) => void
 }
 
 function PlatformOption({
   platform,
   connecting,
-  onPress,
+  onPress
 }: {
-  platform: DistributionPlatformConfig;
-  connecting: boolean;
-  onPress: () => void;
+  platform: DistributionPlatformConfig
+  connecting: boolean
+  onPress: () => void
 }) {
   return (
     <Pressable
@@ -36,7 +33,7 @@ function PlatformOption({
         {platform.id === 'tokend' ? (
           <TokendPlatformIcon size={22} />
         ) : (
-          <Ionicons name={platform.icon} size={22} color={tokens.colors.foreground} />
+          <AppIcon name={platform.icon} size={22} color={tokens.colors.foreground} />
         )}
       </View>
       <View className="flex-1">
@@ -46,10 +43,10 @@ function PlatformOption({
       {connecting ? (
         <ActivityIndicator size="small" color={tokens.colors.accent} />
       ) : (
-        <Ionicons name="chevron-forward" size={18} color={tokens.colors.muted} />
+        <AppIcon name="ChevronRight" size={18} color={tokens.colors.muted} />
       )}
     </Pressable>
-  );
+  )
 }
 
 export function ConnectPlatformSheet({
@@ -57,9 +54,9 @@ export function ConnectPlatformSheet({
   connectingPlatform,
   includeTokend = false,
   onClose,
-  onConnect,
+  onConnect
 }: ConnectPlatformSheetProps) {
-  const platforms = getDistributionPlatforms({ includeTokend });
+  const platforms = getDistributionPlatforms({ includeTokend })
 
   return (
     <BottomSheet
@@ -68,12 +65,12 @@ export function ConnectPlatformSheet({
       variant="page"
       title="Connect an account"
       subtitle="Choose a platform. A secure browser opens for authorization."
-      headerIcon="share-social-outline"
+      headerIcon="Share2"
       dismissOnBackdrop={!connectingPlatform}
       secondaryAction={{
         title: 'Cancel',
         onPress: onClose,
-        disabled: !!connectingPlatform,
+        disabled: !!connectingPlatform
       }}
     >
       <View className="gap-2">
@@ -87,5 +84,5 @@ export function ConnectPlatformSheet({
         ))}
       </View>
     </BottomSheet>
-  );
+  )
 }

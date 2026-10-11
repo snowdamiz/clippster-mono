@@ -14,10 +14,19 @@ import type { Jobs } from './jobs'
 import { requireValue, HttpError } from './errors'
 import { textField, sourceUrl, clipInput } from './validation'
 import { checkStorage, projectDirectory } from './storage'
+import { needsPlanSelection, isFreePlan } from '@clippster/shared-types'
+import { promptRoutes } from './promptRoutes'
+import { accountRoutes } from './accountRoutes'
+import { publishRoutes } from './publishRoutes'
+import { framingAssetRoutes } from './framingAssets'
 export function workspaceRoutes(store: Store, config: Config, auth: Auth, jobs: Jobs) {
   const router = Router()
   const uploads = new Map<string, string>()
   router.use(auth.requireSession)
+  router.use((_req, res, next) => {
+    requireValue(!needsPlanSelection(res.locals.user), 403, 'Choose Free or a paid plan in Billing to continue.')
+    next()
+  })
   router.use(
     rateLimit({
       windowMs: 60_000,
@@ -36,6 +45,9 @@ export function workspaceRoutes(store: Store, config: Config, auth: Auth, jobs: 
     project: store.get(id, owner),
     jobs: store.jobs(id, owner).map(publicJob)
   })
+  router.use('/prompts', promptRoutes(store, auth))
+  router.use('/account', accountRoutes(auth))
+  router.use(publishRoutes(store, auth, config, jobs))
   function idle(id: string, owner: string) {
     jobs.assertIdle(id, owner)
     requireValue(
@@ -44,6 +56,7 @@ export function workspaceRoutes(store: Store, config: Config, auth: Auth, jobs: 
       'Wait for the current upload to finish.'
     )
   }
+  router.use(framingAssetRoutes(store, config, uploads, idle))
   router.get('/projects', (_req, res) =>
     res.json({ projects: store.list(res.locals.session.owner) })
   )
@@ -60,6 +73,18 @@ export function workspaceRoutes(store: Store, config: Config, auth: Auth, jobs: 
   router.get('/projects/:id', (req, res) =>
     res.json(workspace(String(req.params.id), res.locals.session.owner))
   )
+  router.patch('/projects/:id', (req, res) => {
+    const owner = res.locals.session.owner
+    const project = store.get(String(req.params.id), owner)
+    idle(project.id, owner)
+    if (req.body?.name !== undefined) project.name = textField(req.body.name, 'Project name', 120)
+    if (req.body?.folder !== undefined) {
+      requireValue(typeof req.body.folder === 'string' && req.body.folder.length <= 120, 400, 'Folder must be at most 120 characters.')
+      project.folder = req.body.folder.trim()
+    }
+    store.save(project, owner)
+    res.json(workspace(project.id, owner))
+  })
   router.delete('/projects/:id', async (req, res) => {
     const owner = res.locals.session.owner
     const project = store.get(String(req.params.id), owner)
@@ -79,6 +104,7 @@ export function workspaceRoutes(store: Store, config: Config, auth: Auth, jobs: 
     idle(project.id, session.owner)
     requireValue(project.status !== 'ready', 409, 'Create a new project to import another source.')
     const url = sourceUrl(req.body?.url)
+    if (isFreePlan(res.locals.user)) store.consumeFreeUsage(session.owner, 'vod_download')
     res.status(202).json(publicJob(jobs.enqueue(project.id, session, 'import', { url })))
   })
   router.put('/projects/:id/source', async (req, res) => {
@@ -151,10 +177,17 @@ export function workspaceRoutes(store: Store, config: Config, auth: Auth, jobs: 
       .json(
         publicJob(
           jobs.enqueue(project.id, session, 'detect', {
-            prompt: textField(req.body?.prompt, 'Prompt', 4000)
+            prompt: textField(req.body?.prompt, 'Prompt', 32000)
           })
         )
       )
+  })
+  router.post('/projects/:id/transcribe', (req, res) => {
+    const session = res.locals.session as Session
+    const project = store.get(String(req.params.id), session.owner)
+    idle(project.id, session.owner)
+    requireValue(project.status === 'ready' && project.hasAudio, 409, 'Import a source with audio first.')
+    res.status(202).json(publicJob(jobs.enqueue(project.id, session, 'transcribe', {})))
   })
   router.post('/projects/:id/clips', (req, res) => {
     const owner = res.locals.session.owner
@@ -203,6 +236,7 @@ export function workspaceRoutes(store: Store, config: Config, auth: Auth, jobs: 
     idle(project.id, session.owner)
     const clip = project.clips.find((clip) => clip.id === req.params.clipId)
     requireValue(clip, 404, 'Clip not found.')
+    if (isFreePlan(res.locals.user)) store.consumeFreeUsage(session.owner, 'clip_build')
     res.status(202).json(publicJob(jobs.enqueue(project.id, session, 'build', { clipId: clip.id })))
   })
   router.get('/projects/:id/clips/:clipId/download', (req, res) => {

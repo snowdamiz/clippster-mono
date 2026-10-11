@@ -9,6 +9,9 @@ import { requireValue } from './errors'
 import { checkStorage, projectDirectory, resetWorkDirectory } from './storage'
 import { downloadSource, normalizeSource, renderClip } from './media'
 import { detect } from './detection'
+import { createAuthApi } from '@clippster/api-client'
+import { needsPlanSelection } from '@clippster/shared-types'
+import { applyBranding } from './branding'
 export class Jobs {
   private running: { job: StoredJob; abort: AbortController; promise: Promise<void> } | null = null
   private stopped = false
@@ -93,7 +96,7 @@ export class Jobs {
     const job = this.store.job(id, owner)
     if (!['queued', 'running'].includes(job.status)) return
     requireValue(
-      !(job.kind === 'detect' && job.status === 'running'),
+      !(['detect', 'transcribe'].includes(job.kind) && job.status === 'running'),
       409,
       'AI analysis is already running. Wait for it to finish to avoid an uncertain credit charge.'
     )
@@ -137,6 +140,9 @@ export class Jobs {
       const project = this.store.get(job.projectId, job.owner)
       const session = this.store.session(job.sessionId)
       requireValue(session, 401, 'Your session expired. Sign in and retry the job.')
+      const me = await createAuthApi(this.auth.upstream(this.auth.token(session))).me()
+      requireValue(me.success && me.user && String(me.user.id) === job.owner, 401, 'Sign in and retry the job.')
+      requireValue(!needsPlanSelection(me.user), 403, 'Choose a plan in Billing before continuing.')
       await checkStorage(this.store, this.config, job.owner)
       await mkdir(directory, { recursive: true })
       const work = await resetWorkDirectory(directory)
@@ -153,7 +159,7 @@ export class Jobs {
         signal.throwIfAborted()
         await rename(join(work, 'source.mp4'), join(directory, 'source.mp4'))
         Object.assign(project, metadata, { status: 'ready', sourceUrl: job.payload.url || null })
-      } else if (job.kind === 'detect') {
+      } else if (job.kind === 'detect' || job.kind === 'transcribe') {
         progress(10, 'Analyzing audio with Clippster AI…')
         const result = await detect(
           project,
@@ -162,7 +168,8 @@ export class Jobs {
           directory,
           work,
           this.config,
-          signal
+          signal,
+          job.kind === 'transcribe'
         )
         signal.throwIfAborted()
         requireValue(
@@ -179,8 +186,16 @@ export class Jobs {
         const clip = project.clips.find((clip) => clip.id === job.payload.clipId)
         requireValue(clip, 404, 'Clip not found.')
         progress(20, 'Building your clip…')
-        await renderClip(project, clip, directory, work, this.config, signal)
+        const regions = [...(clip.framingConfig?.regions || []), ...(clip.framingConfig?.segmentConfigs?.flatMap(part => part.regions) || []), ...(clip.framingConfig?.brollConfigs?.map(part => part.region) || [])]
+        const assets = [...new Set(regions.flatMap(region => region.mediaAssetId ? [region.mediaAssetId] : []))].map(id => {
+          const asset = this.store.db.prepare('SELECT id,type FROM framing_assets WHERE id = ? AND project_id = ? AND owner = ?').get(id, project.id, job.owner) as { id: string; type: 'image' | 'video' } | undefined
+          requireValue(asset, 404, 'Uploaded framing media is no longer available.')
+          return { ...asset, path: join(directory, 'assets', `${asset.id}.${asset.type === 'image' ? 'png' : 'mp4'}`) }
+        })
+        await renderClip(project, clip, directory, work, this.config, signal, false, assets)
+        await applyBranding(clip, join(work, 'clip.mp4'), work, this.config, signal, this.auth.upstream(this.auth.token(session)), me.user)
         signal.throwIfAborted()
+        await rename(join(work, 'clip.mp4'), join(directory, `${clip.id}.mp4`))
         clip.builtRevision = clip.revision
       }
       this.store.save(project, job.owner)

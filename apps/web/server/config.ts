@@ -3,6 +3,7 @@ export interface Config {
   port: number
   host: string
   origin: string
+  accountOrigin: string
   apiUrl: string
   dataDir: string
   sessionSecret: string
@@ -27,6 +28,7 @@ export function readConfig(env = process.env): Config {
     port: Number(env.PORT || 8090),
     host: env.HOST || (production ? '0.0.0.0' : '127.0.0.1'),
     origin,
+    accountOrigin: env.ACCOUNT_ORIGIN || (production ? 'https://clippster.app' : 'http://localhost:5173'),
     apiUrl: (env.CLIPPSTER_API_URL || 'http://127.0.0.1:4000/api').replace(/\/$/, ''),
     dataDir: resolve(env.WEB_DATA_DIR || 'data'),
     sessionSecret: env.SESSION_SECRET || 'local-development-only-clippster-web-secret',

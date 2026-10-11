@@ -20,6 +20,26 @@ defmodule ClippsterServerWeb.UserPostsController do
   alias ClippsterServer.Social.Providers.PostForMe
   alias ClippsterServer.Tokend.Publisher
 
+  plug :enforce_clip_approval
+       when action in [
+              :publish,
+              :publish_twitter,
+              :publish_tiktok,
+              :publish_youtube,
+              :publish_tokend
+            ]
+
+  defp enforce_clip_approval(conn, _opts) do
+    if ClippsterServer.Social.PostApproval.personal_restricted?(conn.assigns.current_user.id) do
+      conn
+      |> put_status(403)
+      |> json(%{success: false, error: "Submit this clip to your organization for approval"})
+      |> halt()
+    else
+      conn
+    end
+  end
+
   @doc """
   Publish a post to user's Instagram account.
 

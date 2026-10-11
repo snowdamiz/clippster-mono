@@ -4,7 +4,7 @@ import { router, useLocalSearchParams } from 'expo-router'
 import { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Image, ScrollView, Text, View } from 'react-native'
 import { EmptyState } from '@/components/ui/EmptyState'
-import { AppHeader } from '@/components/AppHeader'
+import { ScreenHeader } from '@/components/ScreenHeader'
 import { Button } from '@/components/ui/button'
 import { Card } from '@/components/ui/card'
 import { sharedClipsApi } from '@/services/api'
@@ -71,7 +71,7 @@ export default function SharedClipDetailScreen() {
   if (!loading && !clip)
     return (
       <View className="flex-1 bg-background">
-        <AppHeader title="Shared clip" showBack />
+        <ScreenHeader title="Shared clip" showBack />
         <EmptyState
           title="Clip unavailable"
           subtitle="This shared clip may have expired or could not be loaded."
@@ -99,7 +99,7 @@ export default function SharedClipDetailScreen() {
 
   return (
     <View className="flex-1 bg-background">
-      <AppHeader title={clip.name} showBack />
+      <ScreenHeader title={clip.name} showBack />
       <ScrollView contentContainerClassName="gap-[17px] px-5 py-4 pb-10">
         {clip.thumbnail_url ? (
           <Image source={{ uri: clip.thumbnail_url }} className="h-[320px] w-full rounded-[18px]" />
