@@ -11,22 +11,30 @@ import {
 import type { ImageAsset } from "@/services/database/types";
 import {
 	Image as ImageIcon,
+	ImageOff,
 	Plus,
 	Trash2,
-	Search,
-	Grid,
+	LayoutGrid,
 	List,
 	Pencil,
 	Download,
 	Upload,
 	Check,
-	X,
 	Share2,
 } from "lucide-vue-next";
 import PageLayout from "@/components/PageLayout.vue";
 import CustomDropdown from "@/components/CustomDropdown.vue";
 import ConfirmationModal from "@/components/ConfirmationModal.vue";
 import SimplifiedPublishDialog from "@/components/SimplifiedPublishDialog.vue";
+import { MediaTile } from "@/components/ui/media-tile";
+import { SelectionBar } from "@/components/ui/selection-bar";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SearchField } from "@/components/ui/search-field";
+import { SectionHeader } from "@/components/ui/section-header";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
 import { formatDate } from "@/utils/dateTimeUtils";
 import { useToast } from "@/composables/useToast";
 
@@ -52,7 +60,7 @@ const showPublishDialog = ref(false);
 const publishingImage = ref<ImageAsset | null>(null);
 
 const filterOptions = [
-	{ value: "all", label: "All Types" },
+	{ value: "all", label: "All types" },
 	{ value: "thumbnail", label: "Thumbnails" },
 	{ value: "cover", label: "Covers" },
 	{ value: "watermark", label: "Watermarks" },
@@ -60,16 +68,21 @@ const filterOptions = [
 	{ value: "overlay", label: "Overlays" },
 	{ value: "social", label: "Social" },
 	{ value: "custom", label: "Custom" },
-	{ value: "source:ai_generated", label: "AI Generated" },
+	{ value: "source:ai_generated", label: "AI generated" },
 	{ value: "source:upload", label: "Uploads" },
-	{ value: "source:editor", label: "Editor Exports" },
+	{ value: "source:editor", label: "Editor exports" },
+];
+
+const viewOptions: SegmentedOption<"grid" | "list">[] = [
+	{ value: "grid", icon: LayoutGrid, title: "Grid view" },
+	{ value: "list", icon: List, title: "List view" },
 ];
 
 const sortOptions = [
-	{ label: "Created: Newest", value: "created-desc" },
-	{ label: "Created: Oldest", value: "created-asc" },
-	{ label: "Name: A-Z", value: "name-asc" },
-	{ label: "Name: Z-A", value: "name-desc" },
+	{ label: "Newest first", value: "created-desc" },
+	{ label: "Oldest first", value: "created-asc" },
+	{ label: "Name A–Z", value: "name-asc" },
+	{ label: "Name Z–A", value: "name-desc" },
 ];
 
 const filteredImages = computed(() => {
@@ -456,6 +469,22 @@ function formatSize(bytes: number | null): string {
 	return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
+function typeLabel(type: string | null | undefined): string {
+	if (!type) return "";
+	return type.charAt(0).toUpperCase() + type.slice(1);
+}
+
+function tileFit(img: ImageAsset): "cover" | "contain" {
+	return img.image_type === "logo" || img.image_type === "watermark" ? "contain" : "cover";
+}
+
+const isFiltered = computed(() => searchQuery.value.trim() !== "" || filterType.value !== "all");
+
+function resetFilters() {
+	searchQuery.value = "";
+	filterType.value = "all";
+}
+
 function formatDimensions(w: number | null, h: number | null): string {
 	if (!w || !h) return "—";
 	return `${w}×${h}`;
@@ -463,304 +492,231 @@ function formatDimensions(w: number | null, h: number | null): string {
 </script>
 
 <template>
-	<div class="projects">
+	<div class="h-full">
 		<PageLayout
-			title="Image Library"
+			title="Image library"
 			description="Manage your uploaded images and design exports"
 			:show-header="true"
 			:icon="ImageIcon"
 		>
 			<template #actions>
-				<div class="projects-header-actions">
-					<template v-if="hasSelection">
-						<div class="projects-bulk-actions">
-							<span class="projects-bulk-actions__count">{{ selectedIds.size }} selected</span>
-							<button type="button" class="projects-bulk-actions__btn" :disabled="isBatchExporting" @click="batchExport">
-								<Download :size="16" />
-								{{ isBatchExporting ? "Exporting..." : "Export" }}
-							</button>
-							<button type="button" class="projects-bulk-actions__btn projects-bulk-actions__btn--danger" @click="confirmBulkDelete">
-								<Trash2 :size="16" />
-								Delete
-							</button>
-							<button type="button" class="projects-bulk-actions__btn" @click="clearSelection">
-								<X :size="16" />
-								Clear
-							</button>
-						</div>
-					</template>
-					<template v-else>
-						<div class="projects-header__search">
-							<Search class="projects-header__search-icon" />
-							<input
-								v-model="searchQuery"
-								type="text"
-								placeholder="Search images..."
-								class="projects-header__search-input"
-							/>
-						</div>
-
-						<CustomDropdown
-							v-model="filterType"
-							:options="filterOptions"
-							placeholder="Type"
-							class="projects-header__filter"
-							trigger-class="projects-header__dropdown-trigger"
-						/>
-
-						<CustomDropdown
-							v-model="sortBy"
-							:options="sortOptions"
-							placeholder="Sort By"
-							class="projects-header__sort"
-							trigger-class="projects-header__dropdown-trigger"
-						/>
-
-						<div class="projects-header__view-toggle">
-							<button
-								type="button"
-								class="projects-header__view-btn"
-								:class="{ 'projects-header__view-btn--active': viewMode === 'grid' }"
-								title="Grid View"
-								@click="viewMode = 'grid'"
-							>
-								<Grid class="projects-header__view-icon" />
-							</button>
-							<button
-								type="button"
-								class="projects-header__view-btn"
-								:class="{ 'projects-header__view-btn--active': viewMode === 'list' }"
-								title="List View"
-								@click="viewMode = 'list'"
-							>
-								<List class="projects-header__view-icon" />
-							</button>
-						</div>
-
-						<button
-							v-if="filteredImages.length > 0"
-							type="button"
-							class="projects-bulk-actions__btn"
-							@click="selectAll"
-						>
-							<Check :size="16" />
-							Select All
-						</button>
-
-						<button type="button" class="projects-create-btn" :disabled="isUploading" @click="uploadImages">
-							<Upload class="projects-create-btn__icon" />
-							{{ isUploading ? "Uploading..." : "Upload" }}
-						</button>
-
-						<button type="button" class="projects-create-btn" @click="createNew">
-							<Plus class="projects-create-btn__icon" />
-							New Design
-						</button>
-					</template>
-				</div>
+				<Button variant="secondary" :loading="isUploading" @click="uploadImages">
+					<Upload v-if="!isUploading" />
+					{{ isUploading ? "Uploading…" : "Upload" }}
+				</Button>
+				<Button variant="primary" @click="createNew"><Plus /> New design</Button>
 			</template>
 
-			<div
-				class="projects__content"
-				:class="{ 'projects__content--empty': !isLoading && filteredImages.length === 0 }"
-			>
-				<div v-if="images.length > 0 || isLoading" class="projects__heading">
-					<h1 class="projects__title">Image Library</h1>
-					<p class="projects__subtitle">Manage your uploaded images and design exports</p>
-				</div>
-
-				<div v-if="isLoading" class="projects__loading">
-					<div class="projects__grid">
-						<div v-for="i in 6" :key="`skeleton-${i}`" class="project-card project-card--skeleton">
-							<div class="project-card__skeleton-bg"></div>
-							<div class="project-card__bottom">
-								<div class="projects-skeleton__card-title"></div>
-								<div class="projects-skeleton__card-meta"></div>
-							</div>
-						</div>
+			<template v-if="images.length > 0" #toolbar>
+				<SelectionBar
+					v-if="hasSelection"
+					:count="selectedIds.size"
+					:total="filteredImages.length"
+					@clear="clearSelection"
+					@select-all="selectAll"
+				>
+					<Button variant="secondary" size="sm" :loading="isBatchExporting" @click="batchExport">
+						<Download v-if="!isBatchExporting" />
+						{{ isBatchExporting ? "Exporting…" : "Export" }}
+					</Button>
+					<Button variant="destructive-soft" size="sm" @click="confirmBulkDelete"><Trash2 /> Delete</Button>
+				</SelectionBar>
+				<template v-else>
+					<SearchField v-model="searchQuery" placeholder="Search images…" class="min-w-[120px] max-w-64 flex-1" />
+					<div class="w-32 shrink-0">
+						<CustomDropdown v-model="filterType" :options="filterOptions" placeholder="Type" />
 					</div>
-				</div>
-
-				<div v-else-if="filteredImages.length > 0" class="projects__main">
-					<div v-if="viewMode === 'grid'" class="projects__section">
-						<div v-for="group in groupedImages" :key="group.dateLabel" class="projects__date-group">
-							<h3 class="projects__section-header">{{ group.dateLabel }}</h3>
-							<div class="projects__grid">
-								<div
-									v-for="img in group.images"
-									:key="img.id"
-									class="project-card"
-									:class="{ 'project-card--selected': selectedIds.has(img.id) }"
-									@click="openInEditor(img)"
-								>
-									<div
-										class="project-card__checkbox"
-										:class="{ 'project-card__checkbox--visible': selectedIds.has(img.id) }"
-										@click.stop="toggleSelect(img.id)"
-									>
-										<div
-											class="project-card__checkbox-inner"
-											:class="{ 'project-card__checkbox-inner--checked': selectedIds.has(img.id) }"
-										>
-											<Check v-if="selectedIds.has(img.id)" class="project-card__checkbox-icon" />
-										</div>
-									</div>
-
-									<div v-if="isPublished(img)" class="project-card__published">
-										<Check class="project-card__published-icon" />
-										Published
-									</div>
-
-									<div
-										v-if="thumbnailCache.get(img.id)"
-										class="project-card__thumbnail"
-										:style="{ backgroundImage: `url(${thumbnailCache.get(img.id)})` }"
-									></div>
-									<div v-else class="project-card__thumbnail project-card__thumbnail--empty">
-										<div class="project-card__empty-icon">
-											<ImageIcon class="project-card__folder-icon" />
-										</div>
-									</div>
-									<div class="project-card__thumbnail-gradient"></div>
-
-									<div class="project-card__bottom">
-										<h3 class="project-card__title">{{ img.name }}</h3>
-										<div class="project-card__meta">
-											<span v-if="img.image_type" class="project-card__info">{{ img.image_type }}</span>
-											<span v-if="img.image_type" class="project-card__dot"></span>
-											<span class="project-card__info">{{ formatDimensions(img.width, img.height) }}</span>
-											<span class="project-card__dot"></span>
-											<span class="project-card__info">{{ formatDisplayDate(img.created_at) }}</span>
-										</div>
-									</div>
-
-									<div class="project-card__hover-actions">
-										<button
-											type="button"
-											class="project-card__action-btn"
-											title="Edit"
-											@click.stop="openInEditor(img)"
-										>
-											<Pencil class="project-card__action-icon" />
-										</button>
-										<button
-											type="button"
-											class="project-card__action-btn"
-											title="Download"
-											@click.stop="downloadImage(img)"
-										>
-											<Download class="project-card__action-icon" />
-										</button>
-										<button
-											type="button"
-											class="project-card__action-btn project-card__action-btn--publish"
-											title="Publish"
-											@click.stop="initiatePublish(img)"
-										>
-											<Share2 class="project-card__action-icon" />
-										</button>
-										<button
-											type="button"
-											class="project-card__action-btn project-card__action-btn--danger"
-											title="Delete"
-											@click.stop="confirmDeleteOne(img)"
-										>
-											<Trash2 class="project-card__action-icon" />
-										</button>
-									</div>
-								</div>
-							</div>
-						</div>
+					<div class="w-36 shrink-0">
+						<CustomDropdown v-model="sortBy" :options="sortOptions" placeholder="Sort by" />
 					</div>
+					<SegmentedControl v-model="viewMode" :options="viewOptions" class="ml-auto" />
+				</template>
+			</template>
 
-					<div v-else class="projects__section">
-						<div v-for="group in groupedImages" :key="group.dateLabel" class="projects__date-group">
-							<h3 class="projects__section-header">{{ group.dateLabel }}</h3>
-							<div class="image-list">
-								<div
-									v-for="img in group.images"
-									:key="img.id"
-									class="image-list__row"
-									:class="{ 'image-list__row--selected': selectedIds.has(img.id) }"
-									@click="openInEditor(img)"
-								>
-									<div class="image-list__check" @click.stop="toggleSelect(img.id)">
-										<div
-											class="project-card__checkbox-inner"
-											:class="{ 'project-card__checkbox-inner--checked': selectedIds.has(img.id) }"
-										>
-											<Check v-if="selectedIds.has(img.id)" class="project-card__checkbox-icon" />
-										</div>
-									</div>
-
-									<div class="image-list__thumb">
-										<img
-											v-if="thumbnailCache.get(img.id)"
-											:src="thumbnailCache.get(img.id)"
-											:alt="img.name"
-										/>
-										<ImageIcon v-else class="image-list__thumb-icon" />
-									</div>
-
-									<div class="image-list__info">
-										<div class="image-list__name">
-											{{ img.name }}
-											<span v-if="isPublished(img)" class="image-list__published">Published</span>
-										</div>
-										<div class="image-list__meta">
-											<span v-if="img.image_type">{{ img.image_type }}</span>
-											<span>{{ formatDimensions(img.width, img.height) }}</span>
-											<span>{{ formatSize(img.file_size) }}</span>
-											<span>{{ formatDisplayDate(img.created_at) }}</span>
-										</div>
-									</div>
-
-									<div class="image-list__actions">
-										<button type="button" class="image-list__action" title="Edit" @click.stop="openInEditor(img)">
-											<Pencil :size="14" />
-										</button>
-										<button type="button" class="image-list__action" title="Download" @click.stop="downloadImage(img)">
-											<Download :size="14" />
-										</button>
-										<button type="button" class="image-list__action" title="Publish" @click.stop="initiatePublish(img)">
-											<Share2 :size="14" />
-										</button>
-										<button
-											type="button"
-											class="image-list__action image-list__action--danger"
-											title="Delete"
-											@click.stop="confirmDeleteOne(img)"
-										>
-											<Trash2 :size="14" />
-										</button>
-									</div>
-								</div>
-							</div>
-						</div>
+			<!-- Loading (first load only; reloads after upload/delete keep the grid) -->
+			<div v-if="isLoading && !images.length" class="skeleton-group px-5 py-4" aria-busy="true">
+				<div class="skeleton mb-3 h-4 w-20" />
+				<div class="card-grid">
+					<div v-for="i in 6" :key="`skeleton-${i}`" class="flex flex-col gap-2">
+						<div class="skeleton aspect-video rounded-xl" />
+						<div class="skeleton h-3.5 w-2/3" />
+						<div class="skeleton h-3 w-1/2" />
 					</div>
-				</div>
-
-				<div v-else class="projects__empty">
-					<div class="projects__empty-icon-wrapper">
-						<ImageIcon class="projects__empty-icon" />
-					</div>
-					<h3 class="projects__empty-title">No images yet</h3>
-					<p class="projects__empty-description">Upload images or export from the Image Editor</p>
-					<button type="button" class="projects-create-btn" @click="createNew">
-						<Plus class="projects-create-btn__icon" />
-						Create Design
-					</button>
 				</div>
 			</div>
+
+			<!-- Images -->
+			<div v-else-if="filteredImages.length > 0" :key="viewMode" class="flex animate-enter flex-col gap-6 px-5 py-4">
+				<section v-for="group in groupedImages" :key="group.dateLabel">
+					<SectionHeader :title="group.dateLabel" :count="group.images.length" class="mb-3" />
+
+					<div v-if="viewMode === 'grid'" class="card-grid">
+						<MediaTile
+							v-for="img in group.images"
+							:key="img.id"
+							:title="img.name"
+							:thumbnail="thumbnailCache.get(img.id)"
+							:fit="tileFit(img)"
+							:meta="[typeLabel(img.image_type), formatDimensions(img.width, img.height), formatDisplayDate(img.created_at)]"
+							selectable
+							:selected="selectedIds.has(img.id)"
+							@open="openInEditor(img)"
+							@toggle-select="toggleSelect(img.id)"
+						>
+							<template v-if="isPublished(img)" #badges>
+								<Badge variant="success" class="bg-surface-raised"><Check /> Published</Badge>
+							</template>
+							<template #actions>
+								<Button variant="secondary" size="icon-xs" title="Edit" aria-label="Edit" @click.stop="openInEditor(img)">
+									<Pencil />
+								</Button>
+								<Button
+									variant="secondary"
+									size="icon-xs"
+									title="Download"
+									aria-label="Download"
+									@click.stop="downloadImage(img)"
+								>
+									<Download />
+								</Button>
+								<Button
+									variant="secondary"
+									size="icon-xs"
+									title="Publish"
+									aria-label="Publish"
+									@click.stop="initiatePublish(img)"
+								>
+									<Share2 />
+								</Button>
+								<Button
+									variant="secondary"
+									size="icon-xs"
+									class="hover:text-danger"
+									title="Delete"
+									aria-label="Delete"
+									@click.stop="confirmDeleteOne(img)"
+								>
+									<Trash2 />
+								</Button>
+							</template>
+						</MediaTile>
+					</div>
+
+					<div
+						v-else
+						class="divide-y divide-line-subtle overflow-hidden rounded-xl border border-line-subtle bg-surface"
+					>
+						<div
+							v-for="img in group.images"
+							:key="img.id"
+							class="group flex cursor-pointer items-center gap-3 px-3 py-1.5 transition-colors hover:bg-surface-hover"
+							:class="{ 'bg-brand-soft hover:bg-brand-soft': selectedIds.has(img.id) }"
+							@click="openInEditor(img)"
+						>
+							<Checkbox
+								:model-value="selectedIds.has(img.id)"
+								:aria-label="`Select ${img.name}`"
+								@click.stop
+								@update:model-value="toggleSelect(img.id)"
+							/>
+
+							<div class="grid h-8 w-14 shrink-0 place-items-center overflow-hidden rounded-md bg-surface-sunken">
+								<img
+									v-if="thumbnailCache.get(img.id)"
+									:src="thumbnailCache.get(img.id)"
+									:alt="img.name"
+									class="size-full"
+									:class="tileFit(img) === 'contain' ? 'object-contain p-1' : 'object-cover'"
+								/>
+								<ImageIcon v-else class="size-4 text-fg-subtle" />
+							</div>
+
+							<div class="min-w-0 flex-1">
+								<div class="flex min-w-0 items-center gap-2">
+									<span class="truncate text-sm font-medium text-fg">{{ img.name }}</span>
+									<Badge v-if="isPublished(img)" variant="success"><Check /> Published</Badge>
+								</div>
+								<div class="flex min-w-0 items-center gap-1.5 whitespace-nowrap text-xs text-fg-subtle">
+									<template v-if="img.image_type">
+										<span class="shrink-0">{{ typeLabel(img.image_type) }}</span>
+										<span aria-hidden="true" class="text-fg-disabled">·</span>
+									</template>
+									<span class="tabular shrink-0">{{ formatDimensions(img.width, img.height) }}</span>
+									<span aria-hidden="true" class="text-fg-disabled">·</span>
+									<span class="tabular shrink-0">{{ formatSize(img.file_size) }}</span>
+									<span aria-hidden="true" class="text-fg-disabled">·</span>
+									<span class="truncate">{{ formatDisplayDate(img.created_at) }}</span>
+								</div>
+							</div>
+
+							<div
+								class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100"
+							>
+								<Button variant="ghost" size="icon-sm" title="Edit" aria-label="Edit" @click.stop="openInEditor(img)">
+									<Pencil />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									title="Download"
+									aria-label="Download"
+									@click.stop="downloadImage(img)"
+								>
+									<Download />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									title="Publish"
+									aria-label="Publish"
+									@click.stop="initiatePublish(img)"
+								>
+									<Share2 />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon-sm"
+									class="hover:text-danger"
+									title="Delete"
+									aria-label="Delete"
+									@click.stop="confirmDeleteOne(img)"
+								>
+									<Trash2 />
+								</Button>
+							</div>
+						</div>
+					</div>
+				</section>
+			</div>
+
+			<!-- No matches -->
+			<EmptyState
+				v-else-if="images.length > 0 && isFiltered"
+				:icon="ImageOff"
+				title="No matching images"
+				description="Try a different search or type filter."
+			>
+				<Button variant="secondary" @click="resetFilters">Clear filters</Button>
+			</EmptyState>
+
+			<!-- Empty -->
+			<EmptyState
+				v-else
+				:icon="ImageIcon"
+				title="No images yet"
+				description="Upload images or export from the Image Editor"
+			>
+				<Button variant="secondary" @click="createNew"><Plus /> Create design</Button>
+			</EmptyState>
 		</PageLayout>
 
 		<ConfirmationModal
 			:show="showDeleteDialog"
-			title="Delete Image"
+			title="Delete image"
 			message="Are you sure you want to delete"
 			:item-name="imageToDelete ? imageToDelete.name : 'this image'"
 			suffix="? The image file will be permanently removed."
-			confirm-text="Delete Image"
+			confirm-text="Delete image"
 			variant="destructive"
 			@close="showDeleteDialog = false; imageToDelete = null"
 			@confirm="deleteOneConfirmed"
@@ -768,11 +724,10 @@ function formatDimensions(w: number | null, h: number | null): string {
 
 		<ConfirmationModal
 			:show="showBulkDeleteDialog"
-			:title="`Delete ${selectedIds.size} Image${selectedIds.size !== 1 ? 's' : ''}`"
-			message="Are you sure you want to delete"
-			:item-name="`${selectedIds.size} image${selectedIds.size !== 1 ? 's' : ''}`"
-			suffix="? The image files will be permanently removed."
-			:confirm-text="`Delete ${selectedIds.size} Image${selectedIds.size !== 1 ? 's' : ''}`"
+			:title="`Delete ${selectedIds.size} image${selectedIds.size !== 1 ? 's' : ''}`"
+			:message="`Delete ${selectedIds.size} image${selectedIds.size !== 1 ? 's' : ''}? The image files will be permanently removed.`"
+			suffix=""
+			:confirm-text="`Delete ${selectedIds.size} image${selectedIds.size !== 1 ? 's' : ''}`"
 			variant="destructive"
 			@close="showBulkDeleteDialog = false"
 			@confirm="bulkDeleteConfirmed"
@@ -791,687 +746,3 @@ function formatDimensions(w: number | null, h: number | null): string {
 		/>
 	</div>
 </template>
-
-<style scoped>
-.projects {
-	display: flex;
-	flex-direction: column;
-	height: 100%;
-	width: 100%;
-	overflow: hidden;
-}
-
-.projects-header-actions {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-}
-
-.projects-header__search {
-	position: relative;
-	width: 200px;
-}
-
-.projects-header__search-icon {
-	position: absolute;
-	left: 0.625rem;
-	top: 50%;
-	transform: translateY(-50%);
-	width: 14px;
-	height: 14px;
-	color: var(--sidebar-text-muted);
-	pointer-events: none;
-}
-
-.projects-header__search-input {
-	width: 100%;
-	padding-left: 2rem;
-	height: 32px;
-	background-color: var(--sidebar-surface);
-	border: 1px solid var(--sidebar-border);
-	border-radius: 6px;
-	font-size: 0.75rem;
-	color: var(--sidebar-text);
-}
-
-.projects-header__search-input:focus {
-	border-color: var(--sidebar-accent);
-	outline: none;
-}
-
-.projects-header__filter {
-	width: 140px;
-}
-
-.projects-header__sort {
-	width: 160px;
-}
-
-:deep(.projects-header__dropdown-trigger) {
-	height: 32px;
-	background-color: var(--sidebar-surface);
-	border: 1px solid var(--sidebar-border);
-	border-radius: 6px;
-	font-size: 0.75rem;
-}
-
-.projects-header__view-toggle {
-	display: flex;
-	align-items: center;
-	background-color: var(--sidebar-surface);
-	border: 1px solid var(--sidebar-border);
-	border-radius: 6px;
-	overflow: hidden;
-}
-
-.projects-header__view-btn {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 32px;
-	height: 30px;
-	background: transparent;
-	border: none;
-	color: var(--sidebar-text-muted);
-	cursor: pointer;
-}
-
-.projects-header__view-btn:hover {
-	color: var(--sidebar-text);
-}
-
-.projects-header__view-btn--active {
-	background-color: var(--sidebar-hover);
-	color: var(--sidebar-accent);
-}
-
-.projects-header__view-icon {
-	width: 14px;
-	height: 14px;
-}
-
-.projects-create-btn {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	height: 32px;
-	padding: 0 0.875rem;
-	background-color: var(--sidebar-accent);
-	color: var(--sidebar-bg);
-	border: none;
-	border-radius: 6px;
-	font-size: 0.75rem;
-	font-weight: 600;
-	cursor: pointer;
-	transition: all 150ms ease;
-}
-
-.projects-create-btn:hover:not(:disabled) {
-	opacity: 0.9;
-}
-
-.projects-create-btn:disabled {
-	opacity: 0.5;
-	cursor: not-allowed;
-}
-
-.projects-create-btn__icon {
-	width: 14px;
-	height: 14px;
-}
-
-.projects-bulk-actions {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-}
-
-.projects-bulk-actions__count {
-	font-size: 0.75rem;
-	font-weight: 600;
-	color: var(--sidebar-text);
-	margin-right: 0.25rem;
-}
-
-.projects-bulk-actions__btn {
-	display: flex;
-	align-items: center;
-	gap: 0.375rem;
-	height: 32px;
-	padding: 0 0.75rem;
-	background: var(--sidebar-surface);
-	border: 1px solid var(--sidebar-border);
-	border-radius: 6px;
-	color: var(--sidebar-text);
-	font-size: 0.75rem;
-	font-weight: 500;
-	cursor: pointer;
-	transition: all 150ms ease;
-}
-
-.projects-bulk-actions__btn:hover:not(:disabled) {
-	border-color: var(--sidebar-accent);
-	color: var(--sidebar-accent);
-}
-
-.projects-bulk-actions__btn--danger:hover:not(:disabled) {
-	border-color: #ef4444;
-	color: #ef4444;
-}
-
-.projects-bulk-actions__btn:disabled {
-	opacity: 0.5;
-	cursor: not-allowed;
-}
-
-.projects__content {
-	display: flex;
-	flex-direction: column;
-	gap: 1.5rem;
-	padding: 1.5rem;
-	width: 100%;
-	flex: 1;
-	overflow: auto;
-}
-
-.projects__content--empty {
-	justify-content: center;
-	align-items: center;
-}
-
-.projects__heading {
-	margin-bottom: 0.5rem;
-}
-
-.projects__title {
-	font-size: 1.5rem;
-	font-weight: 700;
-	color: var(--sidebar-text);
-	margin: 0;
-}
-
-.projects__subtitle {
-	font-size: 0.875rem;
-	color: var(--sidebar-text-muted);
-	margin: 0.25rem 0 0;
-}
-
-.projects__main {
-	display: flex;
-	flex-direction: column;
-	gap: 1.5rem;
-}
-
-.projects__section {
-	display: flex;
-	flex-direction: column;
-	gap: 1.25rem;
-}
-
-.projects__date-group {
-	display: flex;
-	flex-direction: column;
-	gap: 1rem;
-}
-
-.projects__section-header {
-	font-size: 0.875rem;
-	font-weight: 500;
-	color: var(--sidebar-text-muted);
-	margin: 0;
-	padding-bottom: 0.1rem;
-}
-
-.projects__loading {
-	width: 100%;
-}
-
-.projects__grid {
-	display: grid;
-	grid-template-columns: repeat(1, 1fr);
-	gap: 1.25rem;
-}
-
-@media (min-width: 1024px) {
-	.projects__grid {
-		grid-template-columns: repeat(2, 1fr);
-	}
-}
-
-@media (min-width: 1400px) {
-	.projects__grid {
-		grid-template-columns: repeat(3, 1fr);
-	}
-}
-
-@media (min-width: 1800px) {
-	.projects__grid {
-		grid-template-columns: repeat(4, 1fr);
-	}
-}
-
-.project-card {
-	position: relative;
-	background-color: var(--sidebar-surface);
-	border: 1px solid var(--sidebar-border);
-	border-radius: 10px;
-	overflow: hidden;
-	cursor: pointer;
-	transition: all 200ms ease;
-	aspect-ratio: 16 / 9;
-}
-
-.project-card:hover {
-	border-color: rgba(255, 255, 255, 0.15);
-	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-	transform: scale(1.02);
-}
-
-.project-card--selected {
-	border-color: var(--sidebar-accent);
-	box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
-}
-
-.project-card--skeleton {
-	pointer-events: none;
-}
-
-.project-card__skeleton-bg {
-	position: absolute;
-	inset: 0;
-	background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-surface) 50%, var(--sidebar-hover) 75%);
-	background-size: 200% 100%;
-	animation: shimmer 1.5s infinite;
-}
-
-@keyframes shimmer {
-	0% {
-		background-position: 200% 0;
-	}
-	100% {
-		background-position: -200% 0;
-	}
-}
-
-.projects-skeleton__card-title,
-.projects-skeleton__card-meta {
-	height: 12px;
-	border-radius: 4px;
-	background: rgba(255, 255, 255, 0.12);
-}
-
-.projects-skeleton__card-title {
-	width: 60%;
-	margin-bottom: 0.5rem;
-}
-
-.projects-skeleton__card-meta {
-	width: 40%;
-}
-
-.project-card__thumbnail {
-	position: absolute;
-	inset: 0;
-	background-size: cover;
-	background-position: center;
-	z-index: 0;
-}
-
-.project-card__thumbnail--empty {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	background: var(--sidebar-hover);
-}
-
-.project-card__empty-icon {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	opacity: 0.35;
-}
-
-.project-card__folder-icon {
-	width: 40px;
-	height: 40px;
-	color: var(--sidebar-text-muted);
-}
-
-.project-card__thumbnail-gradient {
-	position: absolute;
-	inset: 0;
-	z-index: 1;
-	background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 35%, transparent 60%);
-	pointer-events: none;
-}
-
-.project-card__published {
-	position: absolute;
-	top: 1rem;
-	left: 1rem;
-	z-index: 20;
-	display: flex;
-	align-items: center;
-	gap: 0.25rem;
-	padding: 0.25rem 0.5rem;
-	border-radius: 6px;
-	background: rgba(34, 197, 94, 0.3);
-	border: 1px solid rgba(34, 197, 94, 0.4);
-	color: #86efac;
-	font-size: 0.6875rem;
-	font-weight: 600;
-}
-
-.project-card__published-icon {
-	width: 10px;
-	height: 10px;
-}
-
-.project-card__bottom {
-	position: absolute;
-	bottom: 0;
-	left: 0;
-	right: 0;
-	z-index: 5;
-	padding: 1rem;
-	display: flex;
-	flex-direction: column;
-	gap: 0.375rem;
-}
-
-.project-card__title {
-	font-size: 1rem;
-	font-weight: 700;
-	color: white;
-	margin: 0;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-	line-height: 1.3;
-}
-
-.project-card__meta {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	font-size: 0.75rem;
-	font-weight: 500;
-	color: rgba(255, 255, 255, 0.7);
-	flex-wrap: wrap;
-}
-
-.project-card__info {
-	color: rgba(255, 255, 255, 0.7);
-}
-
-.project-card__dot {
-	width: 3px;
-	height: 3px;
-	border-radius: 50%;
-	background-color: rgba(255, 255, 255, 0.4);
-	flex-shrink: 0;
-}
-
-.project-card__checkbox {
-	position: absolute;
-	top: 1rem;
-	right: 1rem;
-	z-index: 30;
-	opacity: 0;
-	transition: opacity 150ms ease;
-}
-
-.project-card:hover .project-card__checkbox,
-.project-card__checkbox--visible {
-	opacity: 1;
-}
-
-.project-card__checkbox-inner {
-	width: 24px;
-	height: 24px;
-	border-radius: 6px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	background-color: rgba(0, 0, 0, 0.6);
-	border: 1px solid rgba(255, 255, 255, 0.45);
-	color: white;
-	cursor: pointer;
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-	transition: all 150ms ease;
-}
-
-.project-card__checkbox-inner--checked {
-	background-color: var(--sidebar-accent);
-	border-color: var(--sidebar-accent);
-	color: var(--sidebar-bg);
-}
-
-.project-card__checkbox-icon {
-	width: 16px;
-	height: 16px;
-}
-
-.project-card__hover-actions {
-	position: absolute;
-	inset: 0;
-	z-index: 10;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.75rem;
-	background-color: rgba(0, 0, 0, 0.4);
-	opacity: 0;
-	transition: opacity 200ms ease;
-}
-
-.project-card:hover .project-card__hover-actions {
-	opacity: 1;
-}
-
-.project-card__action-btn {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	padding: 0.5rem;
-	background-color: rgba(255, 255, 255, 0.9);
-	border: none;
-	border-radius: 9999px;
-	color: #1f2937;
-	cursor: pointer;
-	transition: all 150ms ease;
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-}
-
-.project-card__action-btn:hover {
-	background-color: white;
-	transform: scale(1.1);
-}
-
-.project-card__action-btn--publish {
-	background: linear-gradient(to bottom right, #06b6d4, #3b82f6);
-	color: white;
-}
-
-.project-card__action-btn--publish:hover {
-	background: linear-gradient(to bottom right, #22d3ee, #60a5fa);
-}
-
-.project-card__action-btn--danger:hover {
-	background-color: #fecaca;
-	color: #dc2626;
-}
-
-.project-card__action-icon {
-	width: 20px;
-	height: 20px;
-}
-
-.projects__empty {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	text-align: center;
-	gap: 0.75rem;
-}
-
-.projects__empty-icon-wrapper {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 72px;
-	height: 72px;
-	background-color: var(--sidebar-hover);
-	border-radius: 16px;
-	margin-bottom: 0.5rem;
-}
-
-.projects__empty-icon {
-	width: 32px;
-	height: 32px;
-	color: var(--sidebar-text-muted);
-}
-
-.projects__empty-title {
-	font-size: 1.125rem;
-	font-weight: 600;
-	color: var(--sidebar-text);
-	margin: 0;
-}
-
-.projects__empty-description {
-	font-size: 0.875rem;
-	color: var(--sidebar-text-muted);
-	margin: 0 0 0.5rem;
-}
-
-.image-list {
-	display: flex;
-	flex-direction: column;
-	gap: 0.375rem;
-}
-
-.image-list__row {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	padding: 0.625rem 0.75rem;
-	border: 1px solid var(--sidebar-border);
-	border-radius: 8px;
-	background: var(--sidebar-surface);
-	cursor: pointer;
-	transition: all 150ms ease;
-}
-
-.image-list__row:hover {
-	border-color: rgba(255, 255, 255, 0.15);
-	background: var(--sidebar-hover);
-}
-
-.image-list__row--selected {
-	border-color: var(--sidebar-accent);
-	box-shadow: inset 0 0 0 1px var(--sidebar-accent);
-}
-
-.image-list__check {
-	flex-shrink: 0;
-}
-
-.image-list__thumb {
-	width: 48px;
-	height: 48px;
-	border-radius: 6px;
-	overflow: hidden;
-	background: var(--sidebar-hover);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	flex-shrink: 0;
-}
-
-.image-list__thumb img {
-	width: 100%;
-	height: 100%;
-	object-fit: cover;
-}
-
-.image-list__thumb-icon {
-	width: 18px;
-	height: 18px;
-	color: var(--sidebar-text-muted);
-	opacity: 0.5;
-}
-
-.image-list__info {
-	min-width: 0;
-	flex: 1;
-}
-
-.image-list__name {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	font-size: 0.8125rem;
-	font-weight: 600;
-	color: var(--sidebar-text);
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.image-list__published {
-	flex-shrink: 0;
-	padding: 0.125rem 0.375rem;
-	border-radius: 4px;
-	background: rgba(34, 197, 94, 0.2);
-	border: 1px solid rgba(34, 197, 94, 0.35);
-	color: #86efac;
-	font-size: 0.625rem;
-	font-weight: 600;
-}
-
-.image-list__meta {
-	display: flex;
-	flex-wrap: wrap;
-	gap: 0.5rem;
-	margin-top: 0.2rem;
-	font-size: 0.6875rem;
-	color: var(--sidebar-text-muted);
-}
-
-.image-list__actions {
-	display: flex;
-	align-items: center;
-	gap: 0.25rem;
-	opacity: 0;
-	transition: opacity 150ms ease;
-}
-
-.image-list__row:hover .image-list__actions {
-	opacity: 1;
-}
-
-.image-list__action {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 28px;
-	height: 28px;
-	border: none;
-	border-radius: 6px;
-	background: transparent;
-	color: var(--sidebar-text-muted);
-	cursor: pointer;
-}
-
-.image-list__action:hover {
-	background: rgba(255, 255, 255, 0.08);
-	color: var(--sidebar-text);
-}
-
-.image-list__action--danger:hover {
-	color: #ef4444;
-}
-</style>

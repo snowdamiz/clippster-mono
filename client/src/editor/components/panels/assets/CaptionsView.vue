@@ -12,7 +12,10 @@ import {
 	transcribeTimelineSpeechElements,
 } from "../../../lib/transcribe-timeline-audio";
 import { Button } from "@/components/ui/button";
-import { Loader2, Captions } from "lucide-vue-next";
+import { EmptyState } from "@/components/ui/empty-state";
+import { Captions, SearchX, Trash2 } from "lucide-vue-next";
+import AssetGrid from "../shared/AssetGrid.vue";
+import AssetTile from "../shared/AssetTile.vue";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor } = useEditor({ subscribe: false });
@@ -316,84 +319,93 @@ function handleRemoveCaptions() {
 
 <template>
 	<div class="flex h-full flex-col overflow-hidden">
-		<PanelSearchBar v-model="searchQuery" placeholder="Search presets..." />
+		<PanelSearchBar v-model="searchQuery" placeholder="Search caption styles…" />
 
 		<!-- Scrollable preset grid -->
-		<div class="min-h-0 flex-1 overflow-y-auto">
-			<div class="p-2">
-				<div class="grid grid-cols-2 gap-1.5">
-					<button
-						v-for="preset in filteredPresets"
-						:key="preset.id"
-						class="group relative overflow-hidden rounded-lg border transition-all active:scale-[0.97]"
-						:class="selectedPresetId === preset.id
-							? 'border-white/20 bg-white/[0.06]'
-							: 'border-white/[0.06] bg-zinc-950 hover:border-white/15'"
-						@click="applyPreset(preset)"
-					>
-						<!-- Preview area -->
-						<div class="flex aspect-[4/3] w-full items-center justify-center bg-zinc-950 px-2">
-							<div class="flex items-center gap-1">
-								<span :style="getHighlightStyle(preset)" class="select-none whitespace-nowrap leading-tight">
-									{{ preset.maxWordsPerLine === 1 ? "Word" : "Hello" }}
-								</span>
-								<span v-if="preset.maxWordsPerLine > 1" :style="getPreviewStyle(preset)" class="select-none whitespace-nowrap leading-tight">
-									World
-								</span>
-							</div>
+		<div class="min-h-0 flex-1 overflow-y-auto p-3">
+			<EmptyState
+				v-if="filteredPresets.length === 0"
+				size="sm"
+				:icon="SearchX"
+				title="No styles found"
+				description="Try a different search term."
+			/>
+
+			<AssetGrid v-else :min="88">
+				<AssetTile
+					v-for="preset in filteredPresets"
+					:key="preset.id"
+					:label="preset.name"
+					:selected="selectedPresetId === preset.id"
+					aspect="16/10"
+					class="active:scale-[0.98]"
+					@click="applyPreset(preset)"
+				>
+					<!-- Preview (user-content rendering of the preset) -->
+					<div class="flex size-full items-center justify-center px-2">
+						<div class="flex items-center gap-1">
+							<span :style="getHighlightStyle(preset)" class="select-none whitespace-nowrap leading-tight">
+								{{ preset.maxWordsPerLine === 1 ? "Word" : "Hello" }}
+							</span>
+							<span v-if="preset.maxWordsPerLine > 1" :style="getPreviewStyle(preset)" class="select-none whitespace-nowrap leading-tight">
+								World
+							</span>
 						</div>
-						<!-- Label overlay -->
-						<div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-4">
-							<p class="truncate text-[10px] font-medium leading-tight group-hover:text-white"
-								:class="selectedPresetId === preset.id ? 'text-white' : 'text-zinc-200'">
-								{{ preset.name }}
-							</p>
-						</div>
-					</button>
-				</div>
-			</div>
+					</div>
+				</AssetTile>
+			</AssetGrid>
 		</div>
 
 		<!-- Pinned bottom bar: Generate / Add / Remove -->
-		<div class="shrink-0 border-t border-white/10">
+		<div class="shrink-0 space-y-2 border-t border-line-subtle p-3">
 			<!-- Error -->
-			<div v-if="error" class="mx-3 mt-3 rounded-md border border-red-500/20 bg-red-500/10 p-3">
-				<p class="text-xs leading-relaxed text-red-400">{{ error }}</p>
-			</div>
+			<p
+				v-if="error"
+				class="rounded-md border border-[var(--danger-line)] bg-danger-soft px-2.5 py-2 text-xs leading-relaxed text-danger"
+			>
+				{{ error }}
+			</p>
 
 			<!-- Add from existing transcript -->
-			<div v-if="hasTranscriptWords && !hasCaptionTrack" class="p-3">
-				<button
-					class="flex w-full items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/20"
-					@click="handleAddFromTranscript"
-				>
-					<Captions class="size-4 shrink-0" />
-					<span class="truncate">Add Subtitles</span>
-				</button>
-			</div>
+			<Button
+				v-if="hasTranscriptWords && !hasCaptionTrack"
+				variant="primary"
+				size="sm"
+				block
+				@click="handleAddFromTranscript"
+			>
+				<Captions />
+				<span class="min-w-0 truncate">Add subtitles</span>
+			</Button>
 
 			<!-- Generate section (fresh transcription) — keep visible while generating across tab switches -->
-			<div v-if="isProcessing || (!hasTranscriptWords && !hasCaptionTrack)" class="p-3">
-				<button
-					class="flex w-full items-center justify-center gap-2 rounded-md border border-primary/30 bg-primary/10 px-3 py-2.5 text-sm font-medium text-primary transition-colors hover:bg-primary/20 disabled:opacity-50"
-					:disabled="isProcessing"
+			<template v-if="isProcessing || (!hasTranscriptWords && !hasCaptionTrack)">
+				<Button
+					variant="primary"
+					size="sm"
+					block
+					:loading="isProcessing"
 					@click="handleGenerateSubtitles"
 				>
-					<Loader2 v-if="isProcessing" class="size-4 shrink-0 animate-spin" />
-					<Captions v-else class="size-4 shrink-0" />
-					<span class="truncate">{{ isProcessing ? (processingStep || "Generating…") : "Generate Subtitles" }}</span>
-				</button>
-				<p v-if="!isProcessing" class="mt-1.5 text-[10px] leading-relaxed text-zinc-500">
-					Transcribes speech from video and audio tracks.
+					<Captions v-if="!isProcessing" />
+					<span class="min-w-0 truncate">{{ isProcessing ? (processingStep || "Generating…") : "Generate subtitles" }}</span>
+				</Button>
+				<p v-if="!isProcessing" class="text-2xs leading-relaxed text-fg-subtle">
+					Transcribes speech from the timeline audio.
 				</p>
-			</div>
+			</template>
 
 			<!-- Remove captions -->
-			<div v-if="hasCaptionTrack" class="p-3">
-				<Button class="w-full" variant="destructive" size="sm" @click="handleRemoveCaptions">
-					Remove all captions
-				</Button>
-			</div>
+			<Button
+				v-if="hasCaptionTrack"
+				variant="destructive-soft"
+				size="sm"
+				block
+				@click="handleRemoveCaptions"
+			>
+				<Trash2 />
+				Remove all captions
+			</Button>
 		</div>
 	</div>
 </template>

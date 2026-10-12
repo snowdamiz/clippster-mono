@@ -2,7 +2,7 @@
   <dialog
     ref="dialog"
     aria-label="Project workspace"
-    class="m-auto h-[94dvh] max-h-[1100px] w-[96vw] max-w-[1800px] overflow-hidden rounded-2xl border border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] p-0 text-[var(--sidebar-text)] shadow-2xl backdrop:bg-black/80"
+    class="m-auto h-[94dvh] max-h-[1100px] w-[96vw] max-w-[1800px] overflow-hidden rounded-2xl border border-line bg-surface p-0 text-fg shadow-[var(--shadow-lg)] backdrop:bg-[var(--overlay)]"
     @cancel.prevent="close"
   >
     <div class="flex h-full flex-col">
@@ -10,12 +10,12 @@
       <div
         v-if="error"
         role="alert"
-        class="shrink-0 border-b border-red-500/20 bg-red-500/10 px-5 py-3 text-sm text-red-300"
+        class="shrink-0 border-b border-[var(--danger-line)] bg-danger-soft px-5 py-3 text-sm text-danger"
       >
         {{ error }}
         <a v-if="billingUrl && /plan|credit|limit/i.test(error)" :href="billingUrl" target="_top" class="ml-3 underline">Manage plan</a>
       </div>
-      <div v-if="activeJob" role="status" class="shrink-0 border-b border-white/10 px-5 py-3">
+      <div v-if="activeJob" role="status" class="shrink-0 border-b border-line px-5 py-3">
         <div class="mb-2 flex justify-between text-xs">
           <span>{{ activeJob.message }}</span>
           <button
@@ -25,7 +25,7 @@
             Cancel
           </button>
         </div>
-        <progress class="h-1.5 w-full accent-sky-400" :value="activeJob.progress" max="100" />
+        <progress class="h-1.5 w-full accent-[var(--brand)]" :value="activeJob.progress" max="100" />
       </div>
       <div v-if="project.status !== 'ready'" class="min-h-0 flex-1 overflow-y-auto">
         <ImportSource
@@ -40,7 +40,7 @@
         class="grid min-h-0 flex-1 grid-cols-1 overflow-y-auto lg:grid-cols-[minmax(0,1fr)_340px] lg:overflow-hidden"
       >
         <section class="flex min-h-[430px] min-w-0 flex-col gap-3 p-4 lg:min-h-0">
-          <div class="flex items-center justify-between text-xs text-zinc-500">
+          <div class="flex items-center justify-between text-xs text-fg-subtle">
             <span>Source preview</span>
             <span>{{ draft?.aspectRatio || '16:9' }} · {{ project.width }} × {{ project.height }}</span>
           </div>
@@ -86,25 +86,25 @@
             @update-volume="playback.setVolume"
             @toggle-fullscreen="fullscreen"
           />
-          <div class="rounded-lg border border-white/10 bg-black/20 p-3">
+          <div class="rounded-lg border border-line bg-surface-sunken p-3">
             <input
               type="range"
               aria-label="Video playhead"
-              class="w-full accent-sky-400"
+              class="w-full accent-[var(--brand)]"
               min="0"
               :max="project.duration"
               step="0.01"
               :value="playback.time.value"
               @input="playback.seek(Number(($event.target as HTMLInputElement).value))"
             />
-            <div class="relative mt-2 h-5 rounded bg-white/5">
+            <div class="relative mt-2 h-5 rounded bg-surface-hover">
               <button
                 v-for="clip in project.clips"
                 :key="clip.id"
                 :aria-label="`Select ${clip.name}`"
                 :title="clip.name"
-                class="absolute h-5 min-w-1 rounded border border-sky-400/50 bg-sky-500/30"
-                :class="{ 'bg-sky-400/70': selectedId === clip.id }"
+                class="absolute h-5 min-w-1 rounded border border-brand-line bg-brand-soft"
+                :class="{ 'bg-brand/60': selectedId === clip.id }"
                 :style="{
                   left: `${(clip.segments[0].start_time / project.duration) * 100}%`,
                   width: `${((clip.segments.at(-1)!.end_time - clip.segments[0].start_time) / project.duration) * 100}%`
@@ -124,29 +124,29 @@
             </button>
           </div>
         </section>
-        <aside class="min-h-0 overflow-y-auto border-l border-white/10 bg-black/15">
-          <div class="sticky top-0 z-10 flex gap-2 border-b border-white/10 bg-zinc-950 p-3" role="tablist" aria-label="Project panels">
-            <button v-for="tab in ['clips', 'transcript']" :key="tab" role="tab" :aria-selected="panel === tab" class="button-secondary capitalize" @click="panel = tab">{{ tab }}</button>
+        <aside class="min-h-0 overflow-y-auto border-l border-line bg-surface-sunken">
+          <div class="sticky top-0 z-10 flex gap-2 border-b border-line bg-surface p-3" role="tablist" aria-label="Project panels">
+            <button v-for="tab in ['clips', 'transcript']" :key="tab" role="tab" :aria-selected="panel === tab" class="button-secondary capitalize aria-selected:border-line-strong aria-selected:bg-surface-active" @click="panel = tab">{{ tab }}</button>
           </div>
           <section v-if="panel === 'transcript'" class="grid gap-3 p-4">
             <h3 class="text-sm font-semibold">Transcript</h3>
-            <p v-if="!project.words.length" class="text-sm text-zinc-400">Generate a transcript to create clips by selecting words. Uses your AI credits.</p>
+            <p v-if="!project.words.length" class="text-sm text-fg-muted">Generate a transcript to create clips by selecting words. Uses your AI credits.</p>
             <button class="button-secondary" :disabled="busy || !project.hasAudio" @click="$emit('transcribe')">{{ project.words.length ? 'Regenerate transcript' : 'Transcribe video' }}</button>
             <template v-if="project.words.length">
               <input v-model="transcriptSearch" class="field" aria-label="Search transcript" placeholder="Search transcript…" />
-              <p class="text-xs text-zinc-400">Click a word to seek. Shift-click another word to select a range.</p>
+              <p class="text-xs text-fg-muted">Click a word to seek. Shift-click another word to select a range.</p>
               <button class="button-primary" :disabled="busy || !transcriptRange" @click="clipFromTranscript">Create clip from selection</button>
               <div class="leading-8">
-                <button v-for="(word, index) in project.words" :key="index" :title="`${word.start.toFixed(1)}s`" class="mr-1 rounded px-1 text-left text-sm hover:bg-white/10" :class="{ 'bg-cyan-400/25': transcriptRange && index >= transcriptRange[0] && index <= transcriptRange[1], 'text-yellow-300': transcriptSearch && word.word.toLowerCase().includes(transcriptSearch.toLowerCase()) }" @click="selectWord(index, $event.shiftKey)">{{ word.word }}</button>
+                <button v-for="(word, index) in project.words" :key="index" :title="`${word.start.toFixed(1)}s`" class="mr-1 rounded px-1 text-left text-sm hover:bg-surface-active" :class="{ 'bg-brand-soft': transcriptRange && index >= transcriptRange[0] && index <= transcriptRange[1], 'text-warning': transcriptSearch && word.word.toLowerCase().includes(transcriptSearch.toLowerCase()) }" @click="selectWord(index, $event.shiftKey)">{{ word.word }}</button>
               </div>
             </template>
           </section>
-          <form v-show="panel === 'clips'" class="grid gap-3 border-b border-white/10 p-4" @submit.prevent="detect">
+          <form v-show="panel === 'clips'" class="grid gap-3 border-b border-line p-4" @submit.prevent="detect">
             <h3 class="flex items-center gap-2 text-sm font-semibold">
-              <Sparkles :size="16" class="text-sky-400" />
+              <Sparkles :size="16" class="text-brand" />
               AI clip maker
             </h3>
-            <label for="clip-prompt" class="text-xs text-zinc-400">What moments are you looking for?</label>
+            <label for="clip-prompt" class="text-xs text-fg-muted">What moments are you looking for?</label>
             <select class="field" aria-label="Detection prompt template" @change="choosePrompt(($event.target as HTMLSelectElement).value)">
               <option value="">Choose a saved prompt…</option>
               <option v-for="item in savedPrompts" :key="item.id" :value="item.id">{{ item.name }}</option>
@@ -164,16 +164,16 @@
               <Sparkles :size="15" />
               Find clips
             </button>
-            <p class="text-[11px] leading-relaxed text-zinc-500">
+            <p class="text-[11px] leading-relaxed text-fg-subtle">
               Uses your Clippster AI credits. Review the clips before building.
             </p>
           </form>
           <section v-show="panel === 'clips'" class="p-4">
             <div class="mb-3 flex justify-between text-sm">
               <h3 class="font-semibold">Clips</h3>
-              <span class="text-zinc-500">{{ project.clips.length }}</span>
+              <span class="text-fg-subtle">{{ project.clips.length }}</span>
             </div>
-            <p v-if="!project.clips.length" class="py-4 text-center text-xs leading-relaxed text-zinc-500">
+            <p v-if="!project.clips.length" class="py-4 text-center text-xs leading-relaxed text-fg-subtle">
               Find moments with AI or create a clip at the playhead.
             </p>
             <div class="grid gap-2">
@@ -183,16 +183,16 @@
                 class="rounded-lg border p-3 text-left"
                 :class="
                   selectedId === clip.id
-                    ? 'border-sky-500/50 bg-sky-500/10'
-                    : 'border-white/5 bg-white/[.02] hover:bg-white/5'
+                    ? 'border-brand-line bg-brand-soft'
+                    : 'border-line-subtle bg-surface hover:bg-surface-hover'
                 "
                 @click="select(clip)"
               >
                 <span class="block truncate text-sm">{{ clip.name }}</span>
-                <span class="mt-1 block text-xs text-zinc-500">
+                <span class="mt-1 block text-xs text-fg-subtle">
                   {{ clip.segments.reduce((sum, part) => sum + part.end_time - part.start_time, 0).toFixed(1) }}s ·
                   {{ clip.aspectRatio }}
-                  <span v-if="clip.builtRevision === clip.revision" class="text-emerald-400">· Built</span>
+                  <span v-if="clip.builtRevision === clip.revision" class="text-success">· Built</span>
                 </span>
               </button>
             </div>

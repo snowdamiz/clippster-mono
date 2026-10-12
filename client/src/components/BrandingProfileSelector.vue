@@ -1,15 +1,9 @@
 <script setup lang="ts">
-import { ref, computed } from 'vue';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { ref, computed, watch } from 'vue';
 import { Button } from '@/components/ui/button';
 import { Badge } from '@/components/ui/badge';
+import { Modal } from '@/components/ui/modal';
+import { SectionHeader } from '@/components/ui/section-header';
 import {
   useBrandingProfileSelection,
   type ApplicableProfile,
@@ -22,7 +16,6 @@ import {
   Image,
   Film,
   Check,
-  X,
 } from 'lucide-vue-next';
 
 const { showSelector, applicableProfiles, completeBrandingSelection } =
@@ -52,6 +45,11 @@ function onOpen() {
     selectedProfileId.value = applicableProfiles.value[0].profile.id;
   }
 }
+
+// Pre-select when the selector is opened (it is opened programmatically).
+watch(showSelector, (open) => {
+  if (open) onOpen();
+});
 
 function confirm() {
   const selected = applicableProfiles.value.find(
@@ -89,246 +87,71 @@ function hasAsset(profile: ApplicableProfile, asset: 'watermark' | 'intro' | 'ou
 </script>
 
 <template>
-  <Dialog v-model:open="showSelector" @update:open="(v: boolean) => { if (v) onOpen(); }">
-    <DialogContent class="branding-selector">
-      <DialogHeader>
-        <DialogTitle class="branding-selector__title">
-          <Paintbrush class="branding-selector__title-icon" />
-          Select Branding Profile
-        </DialogTitle>
-        <DialogDescription class="branding-selector__desc">
-          Multiple branding profiles are available for this project. Choose which one to apply.
-        </DialogDescription>
-      </DialogHeader>
+  <Modal
+    v-model:open="showSelector"
+    size="md"
+    :icon="Paintbrush"
+    title="Select branding profile"
+    description="Multiple branding profiles are available for this project. Choose which one to apply."
+  >
+    <div class="flex flex-col gap-4">
+      <section v-for="(profiles, groupLabel) in groupedProfiles" :key="groupLabel" class="flex flex-col gap-1.5">
+        <SectionHeader :title="String(groupLabel)" variant="eyebrow" :icon="sourceIcon(groupLabel as string)" />
 
-      <div class="branding-selector__groups">
-        <div
-          v-for="(profiles, groupLabel) in groupedProfiles"
-          :key="groupLabel"
-          class="branding-selector__group"
+        <button
+          v-for="ap in profiles"
+          :key="ap.profile.id"
+          type="button"
+          class="flex w-full flex-col gap-1.5 rounded-lg border px-3 py-2.5 text-left transition-colors focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
+          :class="
+            selectedProfileId === ap.profile.id
+              ? 'border-brand-line bg-brand-soft'
+              : 'border-line bg-surface hover:border-line-strong hover:bg-surface-hover'
+          "
+          :aria-pressed="selectedProfileId === ap.profile.id"
+          @click="selectedProfileId = ap.profile.id"
         >
-          <div class="branding-selector__group-header">
-            <component :is="sourceIcon(groupLabel as string)" class="branding-selector__group-icon" />
-            <span class="branding-selector__group-label">{{ groupLabel }}</span>
-          </div>
-
-          <div class="branding-selector__cards">
-            <button
-              v-for="ap in profiles"
-              :key="ap.profile.id"
-              class="branding-selector__card"
-              :class="{
-                'branding-selector__card--selected': selectedProfileId === ap.profile.id,
-                'branding-selector__card--required': ap.required,
-              }"
-              @click="selectedProfileId = ap.profile.id"
+          <div class="flex items-center gap-2">
+            <span class="min-w-0 flex-1 truncate text-sm font-medium text-fg">{{ ap.profile.name }}</span>
+            <Badge v-if="ap.required" variant="warning">Required</Badge>
+            <span
+              class="grid size-4 shrink-0 place-items-center rounded-full border transition-colors"
+              :class="
+                selectedProfileId === ap.profile.id
+                  ? 'border-brand bg-brand text-brand-fg'
+                  : 'border-line-strong text-transparent'
+              "
             >
-              <div class="branding-selector__card-header">
-                <span class="branding-selector__card-name">{{ ap.profile.name }}</span>
-                <Badge v-if="ap.required" variant="destructive" class="branding-selector__badge">
-                  Required
-                </Badge>
-                <Check
-                  v-if="selectedProfileId === ap.profile.id"
-                  class="branding-selector__check"
-                />
-              </div>
-
-              <p v-if="ap.profile.description" class="branding-selector__card-desc">
-                {{ ap.profile.description }}
-              </p>
-
-              <div class="branding-selector__assets">
-                <span
-                  class="branding-selector__asset"
-                  :class="{ 'branding-selector__asset--active': hasAsset(ap, 'watermark') }"
-                >
-                  <Image :size="12" />
-                  Watermark
-                </span>
-                <span
-                  class="branding-selector__asset"
-                  :class="{ 'branding-selector__asset--active': hasAsset(ap, 'intro') }"
-                >
-                  <Film :size="12" />
-                  Intro
-                </span>
-                <span
-                  class="branding-selector__asset"
-                  :class="{ 'branding-selector__asset--active': hasAsset(ap, 'outro') }"
-                >
-                  <Film :size="12" />
-                  Outro
-                </span>
-              </div>
-            </button>
+              <Check class="size-2.5" :stroke-width="3.5" />
+            </span>
           </div>
-        </div>
-      </div>
 
-      <DialogFooter class="branding-selector__footer">
-        <Button variant="ghost" size="sm" @click="skip">
-          <X :size="14" />
-          No Branding
-        </Button>
-        <Button size="sm" :disabled="!selectedProfileId" @click="confirm">
-          <Check :size="14" />
-          Apply Selected
-        </Button>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
+          <p v-if="ap.profile.description" class="text-xs text-fg-muted">{{ ap.profile.description }}</p>
+
+          <div class="flex flex-wrap gap-1">
+            <Badge :variant="hasAsset(ap, 'watermark') ? 'success' : 'outline'" :class="!hasAsset(ap, 'watermark') && 'opacity-60'">
+              <Image />
+              Watermark
+            </Badge>
+            <Badge :variant="hasAsset(ap, 'intro') ? 'success' : 'outline'" :class="!hasAsset(ap, 'intro') && 'opacity-60'">
+              <Film />
+              Intro
+            </Badge>
+            <Badge :variant="hasAsset(ap, 'outro') ? 'success' : 'outline'" :class="!hasAsset(ap, 'outro') && 'opacity-60'">
+              <Film />
+              Outro
+            </Badge>
+          </div>
+        </button>
+      </section>
+    </div>
+
+    <template #footer>
+      <Button variant="ghost" @click="skip">No branding</Button>
+      <Button variant="primary" :disabled="!selectedProfileId" @click="confirm">
+        <Check />
+        Apply selected
+      </Button>
+    </template>
+  </Modal>
 </template>
-
-<style scoped>
-.branding-selector {
-  max-width: 540px;
-}
-
-.branding-selector__title {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--color-text-primary, #e2e8f0);
-}
-
-.branding-selector__title-icon {
-  width: 18px;
-  height: 18px;
-  color: var(--color-accent, #8b5cf6);
-}
-
-.branding-selector__desc {
-  font-size: 13px;
-  color: var(--color-text-secondary, #94a3b8);
-  margin-top: 2px;
-}
-
-.branding-selector__groups {
-  display: flex;
-  flex-direction: column;
-  gap: 16px;
-  max-height: 400px;
-  overflow-y: auto;
-  padding: 4px 0;
-}
-
-.branding-selector__group-header {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  margin-bottom: 8px;
-}
-
-.branding-selector__group-icon {
-  width: 14px;
-  height: 14px;
-  color: var(--color-text-secondary, #94a3b8);
-}
-
-.branding-selector__group-label {
-  font-size: 11px;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  color: var(--color-text-secondary, #94a3b8);
-}
-
-.branding-selector__cards {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-
-.branding-selector__card {
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-  padding: 10px 12px;
-  border-radius: 8px;
-  border: 1px solid var(--color-border, rgba(255, 255, 255, 0.08));
-  background: var(--color-bg-secondary, rgba(255, 255, 255, 0.03));
-  cursor: pointer;
-  text-align: left;
-  transition: all 0.15s ease;
-  width: 100%;
-}
-
-.branding-selector__card:hover {
-  border-color: var(--color-border-hover, rgba(255, 255, 255, 0.15));
-  background: var(--color-bg-hover, rgba(255, 255, 255, 0.05));
-}
-
-.branding-selector__card--selected {
-  border-color: var(--color-accent, #8b5cf6);
-  background: rgba(139, 92, 246, 0.08);
-}
-
-.branding-selector__card--selected:hover {
-  border-color: var(--color-accent, #8b5cf6);
-}
-
-.branding-selector__card--required {
-  border-color: rgba(239, 68, 68, 0.4);
-}
-
-.branding-selector__card-header {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-.branding-selector__card-name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--color-text-primary, #e2e8f0);
-  flex: 1;
-}
-
-.branding-selector__badge {
-  font-size: 10px;
-  padding: 1px 6px;
-}
-
-.branding-selector__check {
-  width: 16px;
-  height: 16px;
-  color: var(--color-accent, #8b5cf6);
-  flex-shrink: 0;
-}
-
-.branding-selector__card-desc {
-  font-size: 12px;
-  color: var(--color-text-secondary, #94a3b8);
-  margin: 0;
-  line-height: 1.4;
-}
-
-.branding-selector__assets {
-  display: flex;
-  gap: 8px;
-}
-
-.branding-selector__asset {
-  display: flex;
-  align-items: center;
-  gap: 3px;
-  font-size: 11px;
-  color: var(--color-text-muted, #64748b);
-  opacity: 0.5;
-}
-
-.branding-selector__asset--active {
-  color: var(--color-success, #22c55e);
-  opacity: 1;
-}
-
-.branding-selector__footer {
-  display: flex;
-  justify-content: flex-end;
-  gap: 8px;
-  padding-top: 8px;
-}
-</style>

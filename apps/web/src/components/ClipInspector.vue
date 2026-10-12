@@ -1,15 +1,15 @@
 <template>
-  <section v-if="draft" class="grid gap-4 border-t border-white/10 p-4">
+  <section v-if="draft" class="grid gap-4 border-t border-line p-4">
     <div class="flex items-center justify-between">
       <h3 class="text-sm font-semibold">Clip settings</h3>
-      <span v-if="dirty" class="text-xs text-amber-300">Unsaved changes</span>
+      <span v-if="dirty" class="text-xs text-warning">Unsaved changes</span>
     </div>
-    <label class="grid gap-1.5 text-xs text-zinc-400">
+    <label class="grid gap-1.5 text-xs text-fg-muted">
       Name
       <input v-model="draft.name" class="field" maxlength="120" :disabled="busy" />
     </label>
     <div v-for="(segment, index) in draft.segments" :key="index" class="grid grid-cols-[1fr_1fr_auto] items-end gap-2">
-      <label class="grid gap-1.5 text-xs text-zinc-400">
+      <label class="grid gap-1.5 text-xs text-fg-muted">
         Start (seconds)
         <input
           v-model.number="segment.start_time"
@@ -21,7 +21,7 @@
           :disabled="busy"
         />
       </label>
-      <label class="grid gap-1.5 text-xs text-zinc-400">
+      <label class="grid gap-1.5 text-xs text-fg-muted">
         End (seconds)
         <input
           v-model.number="segment.end_time"
@@ -50,7 +50,7 @@
       <Plus :size="14" />
       Add segment at playhead
     </button>
-    <label class="grid gap-1.5 text-xs text-zinc-400">
+    <label class="grid gap-1.5 text-xs text-fg-muted">
       Aspect ratio
       <select v-model="draft.aspectRatio" class="field" :disabled="busy">
         <option value="9:16">9:16 · Vertical</option>
@@ -66,7 +66,7 @@
       <legend class="mb-2 text-sm">Subtitle styling</legend>
       <SubtitlePropertiesPanel :settings="settings" :segments="[]" variant="embedded" @update-settings="updateSubtitles" @delete="draft.captions = false" />
     </fieldset>
-    <p v-if="!hasWords" class="text-xs text-zinc-500">Run AI detection to generate captions.</p>
+    <p v-if="!hasWords" class="text-xs text-fg-subtle">Run AI detection to generate captions.</p>
     <fieldset v-if="brandingAssets.length || creatorProfiles.length" class="grid gap-3" :disabled="busy">
       <legend class="mb-2">Creator branding</legend>
       <label class="text-xs">Creator preset<select :value="draft.branding?.creatorId || ''" class="field" @change="setBranding('creatorId', ($event.target as HTMLSelectElement).value)"><option value="">None</option><option v-for="profile in creatorProfiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option></select></label>
@@ -76,7 +76,7 @@
         <label class="text-xs">Watermark horizontal position<input v-model.number="draft.branding.watermarkX" type="range" min="0" max="1" step="0.01" class="w-full" /></label>
         <label class="text-xs">Watermark vertical position<input v-model.number="draft.branding.watermarkY" type="range" min="0" max="1" step="0.01" class="w-full" /></label>
       </template>
-      <p class="text-xs text-zinc-400">Branding is applied when building. Review the built MP4 before publishing. Free plan branding is applied automatically.</p>
+      <p class="text-xs text-fg-muted">Branding is applied when building. Review the built MP4 before publishing. Free plan branding is applied automatically.</p>
     </fieldset>
     <button v-if="!draft.textBox" class="button-secondary" :disabled="busy" @click="addText">Add text overlay</button>
     <fieldset v-else class="grid gap-3" :disabled="busy">
@@ -102,7 +102,7 @@
       <Download :size="16" />
       Download MP4
     </a>
-    <button class="text-xs text-red-300" :disabled="busy" @click="$emit('remove')">Delete clip</button>
+    <button class="text-xs text-danger" :disabled="busy" @click="$emit('remove')">Delete clip</button>
   </section>
 </template>
 <script setup lang="ts">

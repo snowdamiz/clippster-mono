@@ -26,18 +26,14 @@ export function useWindowClose() {
     try {
       // Cancel all active downloads and clean up partial files
       await invoke<string[]>('cancel_all_downloads');
-
-      // Close the window
-      const window = getCurrentWebviewWindow();
-      await window.close();
-
-      return true;
-    } catch (error) {
+    } catch {
       // Still close the window even if cleanup failed
-      const window = getCurrentWebviewWindow();
-      await window.close();
-      return true;
     }
+    // Let the next close request through: otherwise anything still running (clip
+    // detection, recordings, unsaved edits) would reopen this dialog.
+    await invoke('confirm_app_close').catch(() => {});
+    await getCurrentWebviewWindow().close();
+    return true;
   }
 
   function cancelClose() {

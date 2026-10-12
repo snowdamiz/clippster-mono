@@ -102,8 +102,7 @@ onUnmounted(() => {
 .remotion-player-mount {
   width: 100%;
   height: 100%;
-  background: var(--background);
-  border-radius: 12px;
+  background: var(--surface-sunken);
   overflow: hidden;
 }
 </style>

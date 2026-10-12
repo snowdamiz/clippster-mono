@@ -1,70 +1,66 @@
 <template>
-  <section class="ref-card" aria-label="Reference video analysis">
-    <header class="ref-card__header">
-      <Palette :size="14" />
+  <section class="animate-enter overflow-hidden rounded-xl border border-line-subtle bg-surface" aria-label="Reference video analysis">
+    <header class="flex items-center gap-1.5 border-b border-line-subtle px-3 py-2 text-xs font-semibold text-fg">
+      <Palette class="size-3.5 text-fg-muted" />
       <span>Reference edit recipe</span>
-      <span v-if="analysis" class="ref-card__version">v{{ analysis.schemaVersion }}</span>
+      <Badge v-if="analysis" class="ml-auto">v{{ analysis.schemaVersion }}</Badge>
     </header>
 
-    <div v-if="isAnalyzing" class="ref-card__progress" role="status">
-      <div class="ref-card__progress-label">
-        <span>{{ progress?.message || 'Analyzing the full timeline…' }}</span>
-        <span>{{ progress?.progress || 0 }}%</span>
+    <div v-if="isAnalyzing" class="flex flex-col gap-2 px-3 py-2.5" role="status">
+      <div class="flex items-center justify-between gap-2 text-xs text-fg-muted">
+        <span class="min-w-0 truncate">{{ progress?.message || 'Analyzing the full timeline…' }}</span>
+        <span class="tabular shrink-0">{{ progress?.progress || 0 }}%</span>
       </div>
-      <div class="ref-card__track"><div :style="{ width: `${progress?.progress || 0}%` }" /></div>
-      <button type="button" @click="$emit('cancel')">Cancel</button>
+      <div class="h-1 overflow-hidden rounded-full bg-surface-active">
+        <div class="h-full rounded-full bg-brand transition-[width]" :style="{ width: `${progress?.progress || 0}%` }" />
+      </div>
+      <Button variant="ghost" size="xs" class="self-end" @click="$emit('cancel')">Cancel</Button>
     </div>
 
-    <div v-else-if="analysis" class="ref-card__body">
-      <p>{{ analysis.summary }}</p>
-      <dl>
-        <div>
-          <dt>Pacing</dt>
-          <dd>{{ analysis.pacing.description }}</dd>
-        </div>
-        <div>
-          <dt>Captions</dt>
-          <dd>{{ analysis.captions.detected ? analysis.captions.treatment : 'None detected' }}</dd>
-        </div>
-        <div>
-          <dt>Motion</dt>
-          <dd>{{ analysis.motion.intensity }} · {{ analysis.motion.cameraBehaviors.join(', ') }}</dd>
-        </div>
-        <div>
-          <dt>Transitions</dt>
-          <dd>{{ analysis.transitions.families.join(', ') || 'Cuts only' }}</dd>
-        </div>
-        <div>
-          <dt>Layout</dt>
-          <dd>{{ analysis.layout.patterns.join(', ') }}</dd>
-        </div>
+    <div v-else-if="analysis" class="flex flex-col gap-2.5 px-3 py-2.5">
+      <p class="text-xs text-fg">{{ analysis.summary }}</p>
+      <dl class="flex flex-col gap-1.5">
+        <ChatPlanRow label="Pacing" :value="analysis.pacing.description" />
+        <ChatPlanRow
+          label="Captions"
+          :value="analysis.captions.detected ? analysis.captions.treatment : 'None detected'"
+        />
+        <ChatPlanRow
+          label="Motion"
+          :value="`${analysis.motion.intensity} · ${analysis.motion.cameraBehaviors.join(', ')}`"
+        />
+        <ChatPlanRow label="Transitions" :value="analysis.transitions.families.join(', ') || 'Cuts only'" />
+        <ChatPlanRow label="Layout" :value="analysis.layout.patterns.join(', ')" />
+        <ChatPlanRow
+          v-if="analysis.colorGrade.palette.length"
+          label="Colors"
+          :colors="analysis.colorGrade.palette"
+          aria-label="Detected color palette"
+        />
       </dl>
-      <div class="ref-card__swatches" aria-label="Detected color palette">
-        <span v-for="color in analysis.colorGrade.palette" :key="color" :style="{ background: color }" :title="color" />
-      </div>
-      <p v-if="analysis.unsupported.length" class="ref-card__fallback">
+      <p v-if="analysis.unsupported.length" class="text-2xs text-fg-subtle">
         {{ analysis.unsupported.length }} unsupported technique{{ analysis.unsupported.length === 1 ? '' : 's' }} will
         use declared fallbacks.
       </p>
-      <div class="ref-card__actions">
-        <button type="button" @click="$emit('replace')">Replace</button>
-        <button type="button" @click="$emit('remove')">
-          <X :size="11" />
-          Remove
-        </button>
+      <div class="flex justify-end gap-1">
+        <Button variant="ghost" size="xs" @click="$emit('replace')">Replace</Button>
+        <Button variant="ghost" size="xs" class="hover:text-danger" @click="$emit('remove')"><X /> Remove</Button>
       </div>
     </div>
 
-    <div v-else-if="error" class="ref-card__error" role="alert">
-      <AlertCircle :size="13" />
-      <span>{{ error }}</span>
-      <button type="button" @click="$emit('retry')">Retry</button>
+    <div v-else-if="error" class="flex items-start gap-2 px-3 py-2.5 text-xs text-fg" role="alert">
+      <AlertCircle class="mt-px size-3.5 shrink-0 text-danger" />
+      <span class="min-w-0 flex-1 break-words">{{ error }}</span>
+      <Button variant="secondary" size="xs" @click="$emit('retry')">Retry</Button>
     </div>
   </section>
 </template>
 
 <script setup lang="ts">
   import { Palette, X, AlertCircle } from 'lucide-vue-next';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import ChatPlanRow from '@/components/create/chat/ChatPlanRow.vue';
   import type { ReferenceAnalysisProgress, ReferenceEditRecipe } from '@/types/ai-video';
 
   defineProps<{
@@ -76,111 +72,3 @@
 
   defineEmits<{ remove: []; cancel: []; replace: []; retry: [] }>();
 </script>
-
-<style scoped>
-  .ref-card {
-    margin: 6px 0;
-    overflow: hidden;
-    border: 1px solid rgba(59, 130, 246, 0.2);
-    border-radius: 10px;
-    background: rgba(59, 130, 246, 0.06);
-    color: rgba(255, 255, 255, 0.78);
-  }
-  .ref-card__header {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 10px;
-    border-bottom: 1px solid rgba(59, 130, 246, 0.12);
-    color: #60a5fa;
-    font-size: 12px;
-    font-weight: 650;
-  }
-  .ref-card__version {
-    margin-left: auto;
-    color: rgba(255, 255, 255, 0.35);
-    font-size: 10px;
-  }
-  .ref-card__progress,
-  .ref-card__body,
-  .ref-card__error {
-    padding: 10px;
-    font-size: 11px;
-  }
-  .ref-card__progress-label {
-    display: flex;
-    justify-content: space-between;
-    gap: 8px;
-  }
-  .ref-card__track {
-    height: 4px;
-    margin: 8px 0;
-    overflow: hidden;
-    border-radius: 3px;
-    background: rgba(255, 255, 255, 0.1);
-  }
-  .ref-card__track div {
-    height: 100%;
-    background: #3b82f6;
-    transition: width 0.2s ease;
-  }
-  .ref-card button {
-    display: inline-flex;
-    align-items: center;
-    gap: 3px;
-    border: 0;
-    background: transparent;
-    color: #93c5fd;
-    cursor: pointer;
-    font-size: 10px;
-  }
-  .ref-card__body > p {
-    margin: 0 0 7px;
-    line-height: 1.4;
-  }
-  .ref-card dl {
-    display: grid;
-    gap: 5px;
-    margin: 0;
-  }
-  .ref-card dl div {
-    display: grid;
-    grid-template-columns: 64px 1fr;
-    gap: 6px;
-  }
-  .ref-card dt {
-    color: rgba(255, 255, 255, 0.4);
-  }
-  .ref-card dd {
-    margin: 0;
-  }
-  .ref-card__swatches {
-    display: flex;
-    gap: 4px;
-    margin-top: 8px;
-  }
-  .ref-card__swatches span {
-    width: 17px;
-    height: 17px;
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 4px;
-  }
-  .ref-card__fallback {
-    color: #fbbf24;
-  }
-  .ref-card__actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 8px;
-    margin-top: 8px;
-  }
-  .ref-card__error {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    color: #f87171;
-  }
-  .ref-card__error button {
-    margin-left: auto;
-  }
-</style>

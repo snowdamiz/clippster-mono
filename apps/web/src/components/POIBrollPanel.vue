@@ -1,5 +1,5 @@
 <template>
-  <details class="mb-4 rounded-lg border border-white/10 p-3">
+  <details class="mb-4 rounded-lg border border-line p-3">
     <summary class="cursor-pointer text-sm font-semibold">B-roll · {{ config.brollConfigs?.length || 0 }} insertions</summary>
     <div class="mt-3 flex flex-wrap items-end gap-3">
       <label class="text-xs">Uploaded media<select v-model="assetId" class="field"><option value="">Choose media</option><option v-for="asset in assets" :key="asset.id" :value="asset.id">{{ asset.name }}</option></select></label>
@@ -13,8 +13,8 @@
     </div>
     <div v-for="item in suggestions" :key="item.id" class="mt-3 flex items-center gap-3 text-xs"><span>{{ item.startTime.toFixed(1) }}–{{ item.endTime.toFixed(1) }}s · {{ item.reason }}</span><button class="button-secondary" @click="query = item.visualQuery; placement = item; search()">Find {{ item.visualQuery }}</button></div>
     <div class="mt-4 flex gap-3"><input v-model="query" class="field" placeholder="Search stock media" aria-label="Search stock media" @keydown.enter.prevent="search" /><select v-model="mediaType" class="field w-auto" aria-label="Stock media type"><option>video</option><option>image</option><option>all</option></select><button class="button-secondary" :disabled="busy || !query.trim()" @click="search">Search</button></div>
-    <p v-if="error" role="alert" class="mt-2 text-sm text-red-300">{{ error }}</p>
-    <div class="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4"><button v-for="candidate in candidates" :key="candidate.id" class="rounded-lg border border-white/10 p-2 text-left text-xs" :disabled="busy || uploading" @click="apply(candidate)"><img :src="candidate.previewUrl" class="mb-2 h-24 w-full object-cover" referrerpolicy="no-referrer" />{{ candidate.attribution }} · {{ candidate.license }}<span class="mt-1 block text-cyan-300">Import and add B-roll</span></button></div>
+    <p v-if="error" role="alert" class="mt-2 text-sm text-danger">{{ error }}</p>
+    <div class="mt-3 grid grid-cols-2 gap-3 md:grid-cols-4"><button v-for="candidate in candidates" :key="candidate.id" class="rounded-lg border border-line p-2 text-left text-xs" :disabled="busy || uploading" @click="apply(candidate)"><img :src="candidate.previewUrl" class="mb-2 h-24 w-full object-cover" referrerpolicy="no-referrer" />{{ candidate.attribution }} · {{ candidate.license }}<span class="mt-1 block text-brand">Import and add B-roll</span></button></div>
   </details>
 </template>
 <script setup lang="ts">

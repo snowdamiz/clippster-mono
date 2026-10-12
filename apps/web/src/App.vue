@@ -1,53 +1,56 @@
 <template>
-  <div v-if="booting" class="flex min-h-screen items-center justify-center text-sm text-zinc-500" role="status">
+  <div v-if="booting" class="flex min-h-screen items-center justify-center gap-2 text-sm text-fg-muted" role="status">
+    <Loader2 :size="16" class="animate-spin text-fg-subtle" />
     Opening your workspace…
   </div>
-  <div v-else-if="!user && embedded" class="flex min-h-screen flex-col items-center justify-center gap-4 p-6">
-    <p>Your session expired. Sign in to continue.</p>
-    <a href="/login" target="_top" class="rounded-lg bg-cyan-400 px-5 py-3 text-black">Sign in</a>
+  <div v-else-if="!user && embedded" class="flex min-h-screen items-center justify-center p-6">
+    <div class="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl bg-surface p-6 text-center shadow-[var(--shadow-lg)]">
+      <p class="text-sm text-fg-muted">Your session expired. Sign in to continue.</p>
+      <a href="/login" target="_top" class="button-primary">Sign in</a>
+    </div>
   </div>
   <AuthScreen v-else-if="!user" @authenticated="signedIn" />
-  <div v-else-if="needsPlanSelection(user)" class="flex min-h-screen flex-col items-center justify-center gap-4 p-6">
-    <AppBrand />
-    <h1 class="text-xl font-semibold">Choose a plan to continue</h1>
-    <p class="text-sm text-zinc-400">Select Free or a paid plan using your Clippster account.</p>
-    <a :href="accountBilling" target="_top" class="rounded-lg bg-cyan-400 px-5 py-3 text-black">Choose your plan</a>
-  </div>
-  <div v-else class="flex h-screen flex-col overflow-hidden">
-    <header v-if="!embedded" class="flex h-8 shrink-0 items-center justify-center border-b border-[var(--sidebar-border)] bg-[#0a0a0b]">
+  <div v-else-if="needsPlanSelection(user)" class="flex min-h-screen items-center justify-center p-6">
+    <div class="flex w-full max-w-sm flex-col items-center gap-4 rounded-2xl bg-surface p-6 text-center shadow-[var(--shadow-lg)]">
       <AppBrand />
+      <div>
+        <h1 class="text-base font-semibold text-fg">Choose a plan to continue</h1>
+        <p class="mt-1 text-sm text-fg-muted">Select Free or a paid plan with your Clippster account.</p>
+      </div>
+      <a :href="accountBilling" target="_top" class="button-primary">Choose a plan</a>
+    </div>
+  </div>
+  <div v-else class="flex h-screen flex-col overflow-hidden bg-canvas">
+    <header v-if="!embedded" class="flex h-9 shrink-0 items-center justify-center">
+      <AppBrand class="opacity-80" />
     </header>
     <div class="flex min-h-0 flex-1">
-      <aside v-if="!embedded" class="flex w-12 shrink-0 flex-col border-r border-[var(--sidebar-border)] bg-[var(--sidebar-bg)] md:w-60">
-        <nav class="flex-1 p-1.5 md:p-3" aria-label="Main navigation">
-          <p
-            class="mb-1 hidden px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-[var(--sidebar-text-muted)] opacity-70 md:block"
-          >
-            Browse
-          </p>
-          <SidebarNavigationItem
-            name="Download Video"
-            href="#new-project"
-            :icon="Video"
-            :collapsed="compact"
-            @click.prevent="creating = true"
-          />
-          <p
-            class="mb-1 mt-4 hidden px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-[var(--sidebar-text-muted)] opacity-70 md:block"
-          >
-            Library
-          </p>
-          <SidebarNavigationItem
-            name="Video"
-            href="#projects"
-            :icon="Folder"
-            :collapsed="compact"
-            active
-            @click.prevent="creating = false"
-          />
+      <aside v-if="!embedded" class="flex w-[var(--sidebar-width-collapsed)] shrink-0 flex-col md:w-[var(--sidebar-width)]">
+        <nav class="flex flex-1 flex-col gap-3 px-2 pt-1 md:px-2.5" aria-label="Main navigation">
+          <div>
+            <p class="hidden px-2.5 pb-1 pt-1 text-2xs font-medium text-fg-subtle md:block">Browse</p>
+            <SidebarNavigationItem
+              name="Download Video"
+              href="#new-project"
+              :icon="Video"
+              :collapsed="compact"
+              @click.prevent="creating = true"
+            />
+          </div>
+          <div>
+            <p class="hidden px-2.5 pb-1 pt-1 text-2xs font-medium text-fg-subtle md:block">Library</p>
+            <SidebarNavigationItem
+              name="Video"
+              href="#projects"
+              :icon="Folder"
+              :collapsed="compact"
+              active
+              @click.prevent="creating = false"
+            />
+          </div>
         </nav>
-        <div class="border-t border-[var(--sidebar-border)] p-1.5 md:p-3">
-          <p class="mb-2 hidden truncate px-3 text-xs text-[var(--sidebar-text-muted)] md:block">{{ user.email }}</p>
+        <div class="p-2">
+          <p class="mb-1 hidden truncate px-2.5 text-xs text-fg-subtle md:block">{{ user.email }}</p>
           <SidebarNavigationItem
             name="Sign out"
             href="#sign-out"
@@ -57,56 +60,92 @@
           />
         </div>
       </aside>
-      <main class="min-w-0 flex-1">
+      <main
+        class="min-w-0 flex-1 overflow-hidden"
+        :class="embedded ? 'bg-panel' : 'mb-[var(--panel-inset)] mr-[var(--panel-inset)] rounded-xl border border-line-subtle bg-panel'"
+      >
         <AccountTools v-if="toolView" :view="toolView" :billing-url="accountBilling" />
-        <PageLayout v-else
-          title="Video Library"
-          description="Manage and organize your video projects"
-          :show-header="true"
-          :icon="Folder"
-        >
+        <PageLayout v-else title="Video Library" description="Manage and organize your video projects" :show-header="true" :icon="Folder">
           <template #actions>
-            <div class="flex flex-wrap items-center gap-2">
-            <input v-model="searchQuery" class="field max-w-48" aria-label="Search projects" placeholder="Search projects…" />
-            <select v-model="statusFilter" class="field w-auto" aria-label="Project status"><option value="all">All projects</option><option value="ready">Ready</option><option value="has_clips">Has clips</option><option value="error">Failed</option><option value="empty">Empty</option></select>
-            <select v-model="sortBy" class="field w-auto" aria-label="Sort projects"><option value="newest">Newest</option><option value="oldest">Oldest</option><option value="name">Name</option></select>
-            <select v-model="viewMode" class="field w-auto" aria-label="Library view"><option value="folders">Folders</option><option value="grid">Grid</option><option value="list">List</option></select>
-            <button class="projects-create-btn" @click="creating = true">
-              <Plus class="projects-create-btn__icon" />
-              New Project
+            <button class="button-primary" @click="creating = true">
+              <Plus :size="16" />
+              New project
             </button>
+          </template>
+          <template #toolbar>
+            <label class="relative flex w-56 min-w-0 items-center">
+              <Search :size="14" class="pointer-events-none absolute left-2.5 text-fg-subtle" />
+              <input v-model="searchQuery" class="field pl-8" aria-label="Search projects" placeholder="Search projects…" />
+            </label>
+            <div class="ml-auto flex items-center gap-2">
+              <select v-model="statusFilter" class="field w-auto" aria-label="Project status">
+                <option value="all">All projects</option>
+                <option value="ready">Ready</option>
+                <option value="has_clips">Has clips</option>
+                <option value="error">Failed</option>
+                <option value="empty">Empty</option>
+              </select>
+              <select v-model="sortBy" class="field w-auto" aria-label="Sort projects">
+                <option value="newest">Newest</option>
+                <option value="oldest">Oldest</option>
+                <option value="name">Name</option>
+              </select>
+              <select v-model="viewMode" class="field w-auto" aria-label="Library view">
+                <option value="folders">Folders</option>
+                <option value="grid">Grid</option>
+                <option value="list">List</option>
+              </select>
             </div>
           </template>
-          <div
-            class="projects__content"
-            :class="{ 'projects__content--empty': !items.length && !creating && !loading }"
-          >
-            <div v-if="items.length || loading || creating" class="projects__heading">
-              <h1 class="projects__title">Video Library</h1>
-              <p class="projects__subtitle">Manage and organize your downloaded videos and detect clips</p>
-            </div>
+          <div class="flex flex-1 flex-col px-5 py-4">
             <p
               v-if="error && !creating"
               role="alert"
-              class="mb-5 rounded-lg border border-red-500/20 bg-red-500/10 p-3 text-sm text-red-300"
+              class="mb-4 rounded-lg border border-[var(--danger-line)] bg-danger-soft px-3 py-2.5 text-sm text-danger"
             >
               {{ error }}
             </p>
-            <div v-if="loading" role="status" class="projects__loading">Loading projects…</div>
-            <div v-else-if="!items.length" class="projects__empty">
-              <div class="projects__empty-icon-wrapper"><Folder class="projects__empty-icon" /></div>
-              <h3 class="projects__empty-title">No projects found</h3>
-              <p class="projects__empty-description">Create a new project to get started</p>
+            <div v-if="loading" role="status" class="flex flex-1 items-center justify-center gap-2 text-sm text-fg-muted">
+              <Loader2 :size="16" class="animate-spin text-fg-subtle" />
+              Loading projects…
             </div>
-            <div v-else class="projects__main">
-              <div class="mb-4 flex flex-wrap items-center gap-3">
-                <label class="flex items-center gap-2 text-sm"><input type="checkbox" :checked="visibleProjects.length > 0 && visibleProjects.every(p => selectedProjects.includes(p.id))" @change="selectedProjects = ($event.target as HTMLInputElement).checked ? visibleProjects.map(p => p.id) : []" />Select visible</label>
-                <template v-if="selectedProjects.length"><span>{{ selectedProjects.length }} selected</span><button class="button-secondary" :disabled="working" @click="moveSelected">Move to folder</button><button class="button-secondary" :disabled="working" @click="deleteSelected">Delete selected</button></template>
+            <div v-else-if="!items.length" class="flex flex-1 flex-col items-center justify-center gap-3 py-12 text-center">
+              <span class="grid size-12 place-items-center rounded-xl border border-line bg-surface-hover text-fg-muted">
+                <Folder :size="22" />
+              </span>
+              <div>
+                <h3 class="text-base font-semibold text-fg">No projects yet</h3>
+                <p class="mt-1 text-sm text-fg-muted">Download a video or upload a file to start clipping.</p>
               </div>
-              <p v-if="!visibleProjects.length" class="p-8 text-zinc-400">No projects match your filters.</p>
-              <div v-for="group in groups" :key="group.label" class="projects__date-group">
-                <h3 class="projects__section-header">{{ group.label }}</h3>
-                <div :class="viewMode === 'list' ? 'grid grid-cols-1 gap-3' : 'projects__grid'">
+              <button class="button-primary mt-1" @click="creating = true">
+                <Plus :size="16" />
+                New project
+              </button>
+            </div>
+            <div v-else class="flex flex-col gap-5">
+              <div class="flex min-h-7 flex-wrap items-center gap-3 text-sm text-fg-muted">
+                <label class="flex items-center gap-2">
+                  <input
+                    type="checkbox"
+                    class="size-4 accent-[var(--brand)]"
+                    :checked="visibleProjects.length > 0 && visibleProjects.every(p => selectedProjects.includes(p.id))"
+                    @change="selectedProjects = ($event.target as HTMLInputElement).checked ? visibleProjects.map(p => p.id) : []"
+                  />
+                  Select visible
+                </label>
+                <template v-if="selectedProjects.length">
+                  <span class="tabular font-medium text-fg">{{ selectedProjects.length }} selected</span>
+                  <button class="button-secondary" :disabled="working" @click="moveSelected">Move to folder</button>
+                  <button class="button-secondary !text-danger" :disabled="working" @click="deleteSelected">Delete</button>
+                </template>
+              </div>
+              <p v-if="!visibleProjects.length" class="py-10 text-center text-sm text-fg-muted">No projects match your filters.</p>
+              <section v-for="group in groups" :key="group.label" class="flex flex-col gap-2.5">
+                <h3 class="text-sm font-semibold text-fg">
+                  {{ group.label }}
+                  <span class="tabular ml-1 font-normal text-fg-subtle">{{ group.projects.length }}</span>
+                </h3>
+                <div :class="viewMode === 'list' ? 'flex flex-col gap-2' : 'grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-3'">
                   <LibraryProjectCard
                     v-for="project in group.projects"
                     :key="project.id"
@@ -115,76 +154,83 @@
                     :selected="selectedProjects.includes(project.id)"
                     @open="open(project.id)"
                   >
-                    <template #badges><input v-model="selectedProjects" type="checkbox" :value="project.id" :aria-label="`Select ${project.name}`" class="absolute left-3 top-3 z-20" @click.stop /></template>
-                    <template v-if="project.status === 'ready'" #thumbnail>
-                      <video
-                        :src="sourcePath(project.id) + '#t=0.1'"
-                        preload="metadata"
-                        muted
-                        class="h-full w-full object-cover"
+                    <template #badges>
+                      <input
+                        v-model="selectedProjects"
+                        type="checkbox"
+                        :value="project.id"
+                        :aria-label="`Select ${project.name}`"
+                        class="size-4 shrink-0 accent-[var(--brand)]"
+                        :class="viewMode === 'list' ? '' : 'absolute left-2.5 top-2.5 z-20'"
+                        @click.stop
                       />
                     </template>
+                    <template v-if="project.status === 'ready'" #thumbnail>
+                      <video :src="sourcePath(project.id) + '#t=0.1'" preload="metadata" muted class="h-full w-full object-cover" />
+                    </template>
                     <template #meta>
-                      <span class="project-card__meta-text">
-                        {{ new Date(project.updatedAt).toLocaleDateString() }}
+                      <span class="flex items-center gap-1.5 text-xs text-fg-muted">
+                        <span>{{ new Date(project.updatedAt).toLocaleDateString() }}</span>
+                        <span class="text-fg-disabled">·</span>
+                        <span class="tabular">{{ project.status === 'ready' ? `${Math.ceil(project.duration / 60)} min` : project.status }}</span>
+                        <span class="text-fg-disabled">·</span>
+                        <span class="tabular">{{ project.clips.length }} clips</span>
                       </span>
-                      <span class="project-card__dot"></span>
-                      <span class="project-card__meta-text">
-                        {{ project.status === 'ready' ? `${Math.ceil(project.duration / 60)} min` : project.status }}
-                      </span>
-                      <span class="project-card__dot"></span>
-                      <span class="project-card__meta-text">{{ project.clips.length }} clips</span>
                     </template>
                     <template #actions>
-                      <button class="project-card__action-btn" title="Rename project" :aria-label="`Rename ${project.name}`" @click.stop="renameProject(project)"><Pencil class="project-card__action-icon" /></button>
                       <button
-                        class="project-card__action-btn"
+                        class="grid size-7 place-items-center rounded-md text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+                        title="Rename project"
+                        :aria-label="`Rename ${project.name}`"
+                        @click.stop="renameProject(project)"
+                      >
+                        <Pencil :size="14" />
+                      </button>
+                      <button
+                        class="grid size-7 place-items-center rounded-md text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
                         :aria-label="`Open workspace: ${project.name}`"
                         title="Open workspace"
                         @click.stop="open(project.id)"
                       >
-                        <Edit class="project-card__action-icon" />
+                        <Edit :size="14" />
                       </button>
                       <button
-                        class="project-card__action-btn"
+                        class="grid size-7 place-items-center rounded-md text-fg-muted transition-colors hover:bg-danger-soft hover:text-danger"
                         :aria-label="`Delete ${project.name}`"
                         title="Delete project"
                         :disabled="working"
                         @click.stop="removeProject(project.id, project.name)"
                       >
-                        <Trash2 class="project-card__action-icon" />
+                        <Trash2 :size="14" />
                       </button>
                     </template>
                   </LibraryProjectCard>
                 </div>
-              </div>
+              </section>
             </div>
           </div>
         </PageLayout>
       </main>
     </div>
     <ProjectDialogFrame :model-value="creating" :loading="working" @close="creating = false" @submit="create">
-      <form class="project-content" @submit.prevent="create">
-        <div class="project-section">
-          <h3 class="project-section__title">Project Details</h3>
-          <div class="project-field">
-            <label for="web-project-name" class="project-field__label">
-              Project name
-              <span class="project-field__required">*</span>
-            </label>
-            <input
-              id="web-project-name"
-              ref="nameInput"
-              v-model="projectName"
-              class="project-field__input"
-              required
-              minlength="2"
-              maxlength="120"
-              placeholder="Enter project name"
-            />
-          </div>
+      <form class="flex flex-col gap-4" @submit.prevent="create">
+        <div class="flex flex-col gap-1.5">
+          <label for="web-project-name" class="text-xs font-medium text-fg-muted">
+            Project name
+            <span class="text-danger">*</span>
+          </label>
+          <input
+            id="web-project-name"
+            ref="nameInput"
+            v-model="projectName"
+            class="field"
+            required
+            minlength="2"
+            maxlength="120"
+            placeholder="Enter a project name"
+          />
         </div>
-        <p v-if="error" role="alert" class="project-field__error">{{ error }}</p>
+        <p v-if="error" role="alert" class="text-xs text-danger">{{ error }}</p>
       </form>
     </ProjectDialogFrame>
     <BrowserProjectWorkspace
@@ -212,7 +258,7 @@
 </template>
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick, defineAsyncComponent } from 'vue'
-  import { Folder, Plus, Video, Edit, Trash2, LogOut, Pencil } from 'lucide-vue-next'
+  import { Folder, Plus, Video, Edit, Trash2, LogOut, Pencil, Search, Loader2 } from 'lucide-vue-next'
   import type { AuthUser, WebProject, WebClip } from '@clippster/shared-types'
   import { needsPlanSelection } from '@clippster/shared-types'
   import AppBrand from '../../../client/src/components/AppBrand.vue'
@@ -396,5 +442,3 @@
     }
   })
 </script>
-
-<style scoped src="../../../client/src/styles/projectForm.css"></style>

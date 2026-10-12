@@ -1,15 +1,15 @@
 <template>
-  <section class="grid gap-3 border-t border-white/10 p-4">
+  <section class="grid gap-3 border-t border-line p-4">
     <h3 class="font-semibold">Publish clip</h3>
-    <p class="text-xs text-zinc-400">Publish the built version to a connected account, or schedule it for later. Organization clips requiring approval are submitted for review before they can publish.</p>
-    <p v-if="!accounts.length" class="text-sm"><a href="/account/social" target="_top" class="text-cyan-400">Connect a social account</a> to publish.</p>
+    <p class="text-xs text-fg-muted">Publish the built version to a connected account, or schedule it for later. Organization clips requiring approval are submitted for review before they can publish.</p>
+    <p v-if="!accounts.length" class="text-sm"><a href="/account/social" target="_top" class="text-brand">Connect a social account</a> to publish.</p>
     <form v-else class="grid gap-3" @submit.prevent="publish">
       <label class="text-xs">Account<select v-model="accountKey" required class="field mt-2"><option v-for="account in accounts" :key="`${account.organizationId || 'personal'}:${account.id}`" :value="`${account.organizationId || 'personal'}:${account.id}`">{{ account.organizationId ? 'Organization' : 'Personal' }} · {{ account.platform }} · {{ account.username || account.display_name }}</option></select></label>
       <label class="text-xs">Caption<textarea v-model="caption" class="field mt-2" maxlength="5000" rows="3" /></label>
       <label class="text-xs">Schedule (optional, at least five minutes ahead)<input v-model="scheduledAt" type="datetime-local" class="field mt-2" /></label>
       <button class="button-primary" :disabled="saving || submitted">{{ saving ? 'Submitting…' : submitted ? 'Submitted' : requiresReview ? 'Submit for approval' : scheduledAt ? 'Schedule post' : 'Publish now' }}</button>
     </form>
-    <p v-if="message" role="status" class="text-sm text-cyan-300">{{ message }}</p>
+    <p v-if="message" role="status" class="text-sm text-brand">{{ message }}</p>
   </section>
 </template>
 <script setup lang="ts">

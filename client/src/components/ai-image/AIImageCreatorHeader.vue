@@ -1,23 +1,12 @@
 <template>
-  <header
-    class="relative z-10 flex h-[3.2rem] shrink-0 items-center justify-between gap-2 border-b border-white/10 bg-[#0e0e10] px-3 pr-4"
-  >
-    <div class="flex min-w-0 items-center gap-2">
-      <button
-        type="button"
-        class="flex items-center justify-center rounded-md p-1.5 text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
-        aria-label="Back to projects"
-        @click="$emit('back')"
-      >
-        <ArrowLeft class="size-4" />
-      </button>
-
+  <SessionHeader :title="title" back-label="Back to projects" @back="$emit('back')">
+    <template #title>
       <input
         v-if="isRenaming"
         ref="titleInputRef"
         v-model="renameDraft"
         type="text"
-        class="h-7 min-w-24 max-w-72 rounded border border-white/10 bg-white/5 px-2 text-[0.85rem] text-zinc-100 outline-none focus:border-blue-400/70 focus:bg-white/10"
+        class="h-7 w-56 min-w-0 max-w-full rounded-md border border-brand-line bg-surface-raised px-2 text-sm font-semibold text-fg shadow-[0_0_0_3px_var(--brand-soft)] outline-none"
         aria-label="Project name"
         @blur="commitRename"
         @keydown.enter.prevent="commitRename"
@@ -26,124 +15,72 @@
       <button
         v-else
         type="button"
-        class="max-w-72 truncate rounded px-1.5 py-1 text-left text-[0.85rem] text-zinc-200 transition-colors hover:bg-white/5 hover:text-zinc-50 focus:outline-none focus:ring-1 focus:ring-blue-400/60"
+        class="min-w-0 truncate rounded-md px-1.5 py-1 text-left text-sm font-semibold text-fg transition-colors hover:bg-surface-hover focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
         :title="`Rename ${title}`"
         @click="startRename"
       >
         {{ title }}
       </button>
+    </template>
 
-      <span
-        v-if="statusLabel"
-        class="hidden rounded px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide sm:inline"
-        :class="statusClass"
-      >
-        {{ statusLabel }}
-      </span>
-    </div>
+    <template v-if="statusLabel" #badge>
+      <Badge :variant="statusVariant || 'neutral'" :class="['hidden sm:inline-flex', statusClass]">{{ statusLabel }}</Badge>
+    </template>
 
-    <div
-      class="pointer-events-auto absolute left-1/2 top-1/2 z-20 flex -translate-x-1/2 -translate-y-1/2 items-center"
-    >
-      <div class="flex rounded-lg border border-white/10 bg-zinc-900/80 p-0.5">
-        <button
-          type="button"
-          class="rounded-md px-3 py-1.5 text-xs font-semibold transition-colors"
-          :class="mode === 'image' ? 'bg-sky-600 text-white' : 'text-zinc-400 hover:text-zinc-200'"
-          @click="$emit('change-mode', 'image')"
-        >
-          Create Image
-        </button>
-        <button
-          type="button"
-          class="rounded-md px-3 py-1.5 text-xs font-semibold transition-colors"
-          :class="mode === 'thumbnail' ? 'bg-sky-600 text-white' : 'text-zinc-400 hover:text-zinc-200'"
-          @click="$emit('change-mode', 'thumbnail')"
-        >
-          Create Thumbnail
-        </button>
-      </div>
-    </div>
+    <template #center>
+      <SegmentedControl
+        :model-value="mode"
+        :options="modeOptions"
+        @update:model-value="(value) => $emit('change-mode', value)"
+      />
+    </template>
 
-    <nav class="flex shrink-0 items-center gap-1.5 sm:gap-2">
+    <template #actions>
       <slot name="actions-before" />
 
-      <div class="relative">
-        <button
-          type="button"
-          class="flex items-center gap-1.5 rounded-md px-[0.12rem] py-[0.12rem] text-white disabled:cursor-not-allowed disabled:opacity-50"
-          :disabled="!canExport || busy"
-          @click="showExportMenu = !showExportMenu"
-        >
-          <div
-            class="relative flex items-center gap-1.5 rounded-md bg-[var(--sidebar-accent,#0ea5e9)] px-3 py-1.5 shadow-[0_1px_3px_0px_rgba(0,0,0,0.45)] transition-colors hover:bg-[#0284c7]"
-          >
-            <Loader2 v-if="busy" class="size-4 animate-spin" />
-            <Download v-else class="size-4" />
-            <span class="text-[0.875rem] font-medium">Export</span>
-            <ChevronDown class="size-3.5 opacity-80" />
-          </div>
-        </button>
-
-        <div
-          v-if="showExportMenu"
-          class="absolute right-0 top-full z-50 mt-1 w-56 rounded-md border border-white/10 bg-[#1e1e22] py-1 shadow-md"
-        >
-          <button
-            type="button"
-            class="flex w-full items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-white/5 disabled:opacity-40"
-            :disabled="!canExport || busy"
-            @click="run('export')"
-          >
-            <Download class="size-3.5" />
-            Export image
-          </button>
-          <button
-            type="button"
-            class="flex w-full items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-white/5 disabled:opacity-40"
-            :disabled="!canExport || busy"
-            @click="run('save-local')"
-          >
-            <HardDrive class="size-3.5" />
-            Save locally
-          </button>
-          <button
-            type="button"
-            class="flex w-full items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-white/5 disabled:opacity-40"
-            :disabled="!canExport || busy"
-            @click="run('save-workable')"
-          >
-            <FileStack class="size-3.5" />
-            Save workable file
-          </button>
-          <div class="my-1 border-t border-white/10" />
-          <button
-            type="button"
-            class="flex w-full items-center gap-2 px-3 py-2 text-xs text-zinc-200 hover:bg-white/5 disabled:opacity-40"
-            :disabled="!canExport || busy"
-            @click="run('open-editor')"
-          >
-            <ExternalLink class="size-3.5" />
-            Open in Image Editor
-          </button>
-        </div>
-        <div v-if="showExportMenu" class="fixed inset-0 z-40" @click="showExportMenu = false" />
-      </div>
-    </nav>
-  </header>
+      <DropdownMenu>
+        <DropdownMenuTrigger as-child>
+          <Button variant="primary" size="sm" :disabled="!canExport" :loading="busy">
+            <Download v-if="!busy" />
+            Export
+            <ChevronDown class="-mr-0.5 opacity-70" />
+          </Button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="end" class="w-52">
+          <DropdownMenuItem :disabled="!canExport || busy" @click="run('export')"><Download /> Export image</DropdownMenuItem>
+          <DropdownMenuItem :disabled="!canExport || busy" @click="run('save-local')"><HardDrive /> Save locally</DropdownMenuItem>
+          <DropdownMenuItem :disabled="!canExport || busy" @click="run('save-workable')">
+            <FileStack /> Save workable file
+          </DropdownMenuItem>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem :disabled="!canExport || busy" @click="run('open-editor')">
+            <ExternalLink /> Open in Image Editor
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+    </template>
+  </SessionHeader>
 </template>
 
 <script setup lang="ts">
+  /**
+   * Header for the full-screen AI Image and AI Thumbnail sessions: back,
+   * inline rename, status badge, Image/Thumbnail mode switch and Export menu.
+   * Built on the shared SessionHeader.
+   */
   import { nextTick, ref, watch } from 'vue';
+  import { ChevronDown, Download, ExternalLink, FileStack, HardDrive } from 'lucide-vue-next';
+  import SessionHeader from '@/components/create/SessionHeader.vue';
+  import { Badge, type BadgeVariants } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
   import {
-    ArrowLeft,
-    ChevronDown,
-    Download,
-    ExternalLink,
-    FileStack,
-    HardDrive,
-    Loader2,
-  } from 'lucide-vue-next';
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
+  import { SegmentedControl } from '@/components/ui/segmented-control';
 
   export type AIImageCreatorMode = 'image' | 'thumbnail';
   export type AIImageExportAction = 'export' | 'save-local' | 'save-workable' | 'open-editor';
@@ -154,7 +91,9 @@
     canExport?: boolean;
     busy?: boolean;
     statusLabel?: string;
+    /** Extra classes for the status badge (prefer `statusVariant`). */
     statusClass?: string;
+    statusVariant?: BadgeVariants['variant'];
   }>();
 
   const emit = defineEmits<{
@@ -164,10 +103,14 @@
     export: [action: AIImageExportAction];
   }>();
 
+  const modeOptions: { value: AIImageCreatorMode; label: string }[] = [
+    { value: 'image', label: 'Create image' },
+    { value: 'thumbnail', label: 'Create thumbnail' },
+  ];
+
   const isRenaming = ref(false);
   const renameDraft = ref(props.title);
   const titleInputRef = ref<HTMLInputElement | null>(null);
-  const showExportMenu = ref(false);
 
   watch(
     () => props.title,
@@ -197,7 +140,6 @@
   }
 
   function run(action: AIImageExportAction) {
-    showExportMenu.value = false;
     emit('export', action);
   }
 </script>

@@ -20,7 +20,16 @@ import {
 	ChevronRight,
 	Layers,
 	Copy,
+	Group,
+	Ungroup,
 } from "lucide-vue-next";
+import PanelHeader from "../chrome/PanelHeader.vue";
+import ToolbarButton from "../chrome/ToolbarButton.vue";
+import InspectorSelect from "./shared/InspectorSelect.vue";
+import NumberBox from "./shared/NumberBox.vue";
+import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
+import { EmptyState } from "@/components/ui/empty-state";
 
 const { editor, version } = useEditor();
 const { selectedElements, selectElement } = useElementSelection();
@@ -40,6 +49,11 @@ const BLEND_MODES: BlendMode[] = [
 	"difference",
 	"exclusion",
 ];
+
+const BLEND_MODE_OPTIONS = BLEND_MODES.map((mode) => ({
+	value: mode,
+	label: mode.charAt(0).toUpperCase() + mode.slice(1).replace("-", " "),
+}));
 
 const renamingId = ref<string | null>(null);
 const renameValue = ref("");
@@ -210,6 +224,8 @@ function displayTrackLayers(layers: LayerRow[]) {
 }
 
 const selectedLayer = computed(() => allElements.value.find((el) => el.selected) ?? null);
+const canGroup = computed(() => allElements.value.filter((el) => el.selected).length >= 2);
+const canUngroup = computed(() => allElements.value.some((el) => el.selected && el.groupId));
 
 function getTypeIcon(type: string) {
 	switch (type) {
@@ -231,17 +247,14 @@ function getTypeIcon(type: string) {
 function getTypeColor(type: string) {
 	switch (type) {
 		case "text":
-			return "text-blue-400";
+			return "text-[var(--track-text)]";
 		case "image":
-			return "text-emerald-400";
 		case "video":
-			return "text-purple-400";
+			return "text-[var(--track-video)]";
 		case "sticker":
-			return "text-amber-400";
-		case "effect":
-			return "text-pink-400";
+			return "text-[var(--track-sticker)]";
 		default:
-			return "text-zinc-400";
+			return "text-fg-subtle";
 	}
 }
 
@@ -341,6 +354,13 @@ function setOpacity(trackId: string, elementId: string, type: string, opacity: n
 	}
 }
 
+/** Opacity box commit (blur / Enter): only writes when the value changed, like a native `change`. */
+function commitSelectedOpacity(raw: string) {
+	const layer = selectedLayer.value;
+	if (!layer || raw === String(Math.round(layer.opacity * 100))) return;
+	setOpacity(layer.trackId, layer.elementId, layer.type, Math.min(1, Math.max(0, Number(raw) / 100)));
+}
+
 function setBlendMode(trackId: string, elementId: string, type: string, blendMode: BlendMode) {
 	if (type === "text") {
 		editor.timeline.updateTextElement({
@@ -359,204 +379,187 @@ function setBlendMode(trackId: string, elementId: string, type: string, blendMod
 </script>
 
 <template>
-	<div class="flex h-full flex-col bg-[#1e1e1e]">
-		<div class="flex h-7 shrink-0 items-center justify-between border-b border-black/40 bg-[#2a2a2a] px-2">
-			<span class="text-[11px] text-zinc-300">Layers</span>
-			<div class="flex items-center gap-0.5">
-				<button
-					type="button"
-					class="rounded px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
-					title="Group selected layers"
-					@click="createGroupFromSelection"
-				>
-					Group
-				</button>
-				<button
-					type="button"
-					class="rounded px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-white/5 hover:text-zinc-200"
-					title="Ungroup selected layers"
-					@click="ungroupSelection"
-				>
-					Ungroup
-				</button>
-			</div>
-		</div>
+	<div class="flex h-full min-h-0 flex-col">
+		<PanelHeader title="Layers">
+			<ToolbarButton label="Group selected layers" :disabled="!canGroup" @click="createGroupFromSelection">
+				<Group />
+			</ToolbarButton>
+			<ToolbarButton label="Ungroup selected layers" :disabled="!canUngroup" @click="ungroupSelection">
+				<Ungroup />
+			</ToolbarButton>
+		</PanelHeader>
 
+		<!-- Selected layer: blend mode + opacity -->
 		<div
 			v-if="selectedLayer"
-			class="flex shrink-0 items-center gap-2 border-b border-black/40 bg-[#252525] px-2 py-1.5"
+			class="flex shrink-0 items-center gap-2 border-b border-line-subtle px-2 py-2"
 		>
-			<select
-				class="min-w-0 flex-1 rounded-sm border border-white/10 bg-[#1a1a1a] px-1.5 py-0.5 text-[10px] text-zinc-300 outline-none"
-				:value="selectedLayer.blendMode"
+			<InspectorSelect
+				:model-value="selectedLayer.blendMode"
+				:options="BLEND_MODE_OPTIONS"
+				aria-label="Blend mode"
 				title="Blend mode"
-				@change="setBlendMode(selectedLayer.trackId, selectedLayer.elementId, selectedLayer.type, ($event.target as HTMLSelectElement).value as BlendMode)"
-			>
-				<option v-for="mode in BLEND_MODES" :key="mode" :value="mode">
-					{{ mode }}
-				</option>
-			</select>
-			<label class="flex shrink-0 items-center gap-1 text-[10px] text-zinc-500">
-				Opacity
-				<input
-					type="number"
-					min="0"
-					max="100"
-					class="box-border h-5 w-11 rounded-sm border border-white/10 bg-[#1a1a1a] px-1 text-center text-[10px] tabular-nums text-zinc-200 outline-none"
-					:value="Math.round(selectedLayer.opacity * 100)"
-					@change="setOpacity(selectedLayer.trackId, selectedLayer.elementId, selectedLayer.type, Math.min(1, Math.max(0, Number(($event.target as HTMLInputElement).value) / 100)))"
-				/>
-			</label>
+				class="flex-1"
+				@update:model-value="(v) => setBlendMode(selectedLayer!.trackId, selectedLayer!.elementId, selectedLayer!.type, v as BlendMode)"
+			/>
+			<NumberBox
+				prefix="Opacity"
+				suffix="%"
+				:value="Math.round(selectedLayer.opacity * 100)"
+				:min="0"
+				:max="100"
+				aria-label="Layer opacity"
+				class="w-[116px] shrink-0"
+				@commit="commitSelectedOpacity"
+			/>
 		</div>
 
-		<div class="flex-1 overflow-y-auto">
-			<div v-if="allElements.length === 0" class="flex flex-col items-center justify-center px-4 py-10">
-				<Layers class="mb-2 size-7 text-zinc-700" :stroke-width="1" />
-				<p class="text-center text-[11px] text-zinc-500">No layers</p>
-				<p class="mt-0.5 text-center text-[10px] text-zinc-600">Use the Type, Shape, or Place tools</p>
-			</div>
+		<div class="min-h-0 flex-1 overflow-y-auto">
+			<EmptyState
+				v-if="allElements.length === 0"
+				size="sm"
+				:icon="Layers"
+				title="No layers"
+				description="Use the Type, Shape, or Place tools"
+			/>
 
-			<div v-else class="py-0.5">
+			<div v-else class="p-1">
 				<div v-for="group in displayLayerGroups" :key="group.trackId">
 					<div
 						v-if="group.trackName"
-						class="flex items-center gap-1 px-2 py-1 text-[9px] uppercase tracking-wider text-zinc-600"
+						class="flex h-7 items-center gap-1.5 pl-2 pr-0.5"
 					>
-						<span class="truncate">{{ group.trackName }}</span>
-						<span
-							v-if="group.layers.some((l) => l.groupId)"
-							class="rounded bg-blue-500/20 px-1 text-[8px] text-blue-300"
-						>G</span>
-						<button
-							type="button"
-							class="ml-auto rounded p-0.5 hover:text-zinc-300"
+						<span class="eyebrow truncate">{{ group.trackName }}</span>
+						<Badge v-if="group.layers.some((l) => l.groupId)" variant="neutral">Grouped</Badge>
+						<Button
+							variant="ghost"
+							size="icon-xs"
+							class="ml-auto"
 							:title="group.locked ? 'Unlock group' : 'Lock group'"
+							:aria-label="group.locked ? 'Unlock group' : 'Lock group'"
 							@click="handleToggleLock(group.trackId)"
 						>
-							<Lock v-if="group.locked" class="size-2.5" />
-							<Unlock v-else class="size-2.5" />
-						</button>
+							<Lock v-if="group.locked" />
+							<Unlock v-else />
+						</Button>
 					</div>
 					<template v-for="item in displayTrackLayers(group.layers)" :key="item.kind === 'layer' ? item.layer.elementId : `hdr-${item.groupId}`">
 						<button
 							v-if="item.kind === 'group-header'"
 							type="button"
-							class="flex w-full items-center gap-1 px-2 py-1 text-left text-[10px] text-blue-300/90 hover:bg-white/[0.03]"
+							class="flex h-7 w-full items-center gap-1.5 rounded-md px-2 text-left text-xs text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg"
+							:aria-expanded="!isGroupCollapsed(item.groupId)"
 							@click="toggleLayerGroupCollapse(item.groupId)"
 						>
-							<ChevronRight v-if="isGroupCollapsed(item.groupId)" class="size-3 shrink-0" />
-							<ChevronDown v-else class="size-3 shrink-0" />
+							<ChevronRight v-if="isGroupCollapsed(item.groupId)" class="size-3.5 shrink-0 text-fg-subtle" />
+							<ChevronDown v-else class="size-3.5 shrink-0 text-fg-subtle" />
+							<Group class="size-3.5 shrink-0 text-fg-subtle" />
 							<span class="truncate">Group · {{ item.count }} layers</span>
 						</button>
 						<div
 							v-else
 							:class="[
-								'group flex w-full items-center gap-1 px-1.5 py-[3px] text-left',
-								item.layer.selected
-									? 'bg-[#4693e0] text-white'
-									: 'hover:bg-white/[0.04]',
-								item.layer.hidden ? 'opacity-45' : '',
+								'group/row flex h-8 w-full items-center gap-0.5 rounded-md pl-0.5 pr-1 transition-colors',
+								item.layer.selected ? 'bg-brand-soft' : 'hover:bg-surface-hover',
+								item.layer.hidden ? 'opacity-50' : '',
 							]"
 						>
-					<button
-						type="button"
-						:class="[
-							'shrink-0 rounded p-0.5',
-							item.layer.selected ? 'text-white/80 hover:text-white' : 'text-zinc-500 hover:text-zinc-200',
-						]"
-						:title="item.layer.hidden ? 'Show' : 'Hide'"
-						@click.stop="handleToggleVisibility(item.layer.trackId, item.layer.elementId)"
-					>
-						<EyeOff v-if="item.layer.hidden" class="size-3" />
-						<Eye v-else class="size-3" />
-					</button>
-					<button
-						type="button"
-						:class="[
-							'shrink-0 rounded p-0.5',
-							item.layer.selected ? 'text-white/80 hover:text-white' : 'text-zinc-500 hover:text-zinc-200',
-						]"
-						:title="item.layer.locked ? 'Unlock' : 'Lock'"
-						@click.stop="handleToggleElementLock(item.layer.trackId, item.layer.elementId, item.layer.type, item.layer.locked)"
-					>
-						<Lock v-if="item.layer.locked" class="size-3" />
-						<Unlock v-else class="size-3" />
-					</button>
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								:title="item.layer.hidden ? 'Show' : 'Hide'"
+								:aria-label="item.layer.hidden ? 'Show layer' : 'Hide layer'"
+								@click.stop="handleToggleVisibility(item.layer.trackId, item.layer.elementId)"
+							>
+								<EyeOff v-if="item.layer.hidden" />
+								<Eye v-else />
+							</Button>
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								:class="item.layer.locked && 'text-fg'"
+								:title="item.layer.locked ? 'Unlock' : 'Lock'"
+								:aria-label="item.layer.locked ? 'Unlock layer' : 'Lock layer'"
+								@click.stop="handleToggleElementLock(item.layer.trackId, item.layer.elementId, item.layer.type, item.layer.locked)"
+							>
+								<Lock v-if="item.layer.locked" />
+								<Unlock v-else />
+							</Button>
 
-					<button
-						type="button"
-						class="flex min-w-0 flex-1 items-center gap-1.5"
-						@click="handleSelect(item.layer.trackId, item.layer.elementId)"
-						@dblclick="startRename(item.layer)"
-					>
-						<component
-							:is="getTypeIcon(item.layer.type)"
-							:class="['size-3.5 shrink-0', item.layer.selected ? 'text-white' : getTypeColor(item.layer.type)]"
-						/>
-						<input
-							v-if="renamingId === item.layer.elementId"
-							v-model="renameValue"
-							class="min-w-0 flex-1 rounded bg-zinc-800 px-1 text-[11px] text-zinc-100 outline-none"
-							@click.stop
-							@keydown.enter="commitRename(item.layer.trackId, item.layer.elementId, item.layer.type)"
-							@keydown.escape="renamingId = null"
-							@blur="commitRename(item.layer.trackId, item.layer.elementId, item.layer.type)"
-						/>
-						<span
-							v-else
-							:class="[
-								'min-w-0 flex-1 truncate text-[11px]',
-								item.layer.selected ? 'text-white' : 'text-zinc-300',
-							]"
-						>
-							{{ item.layer.name }}
-						</span>
-					</button>
+							<button
+								type="button"
+								class="flex h-full min-w-0 flex-1 items-center gap-2 pl-1 text-left focus-visible:outline-none"
+								@click="handleSelect(item.layer.trackId, item.layer.elementId)"
+								@dblclick="startRename(item.layer)"
+							>
+								<component
+									:is="getTypeIcon(item.layer.type)"
+									:class="['size-3.5 shrink-0', item.layer.selected ? 'text-brand' : getTypeColor(item.layer.type)]"
+								/>
+								<input
+									v-if="renamingId === item.layer.elementId"
+									v-model="renameValue"
+									aria-label="Layer name"
+									class="h-6 min-w-0 flex-1 rounded border border-brand-line bg-surface-raised px-1.5 text-xs text-fg outline-none"
+									@click.stop
+									@keydown.enter="commitRename(item.layer.trackId, item.layer.elementId, item.layer.type)"
+									@keydown.escape="renamingId = null"
+									@blur="commitRename(item.layer.trackId, item.layer.elementId, item.layer.type)"
+								/>
+								<span
+									v-else
+									:class="[
+										'min-w-0 flex-1 truncate text-xs',
+										item.layer.selected ? 'font-medium text-brand' : 'text-fg',
+									]"
+								>
+									{{ item.layer.name }}
+								</span>
+							</button>
 
-					<div
-						:class="[
-							'hidden shrink-0 items-center gap-0.5 group-hover:flex',
-							item.layer.selected ? 'text-white/80' : 'text-zinc-500',
-						]"
-					>
-						<button
-							type="button"
-							class="rounded p-0.5 hover:text-white"
-							title="Move up"
-							@click.stop="handleMove(item.layer.trackId, 'up', item.layer.elementId)"
-						>
-							<ChevronUp class="size-3" />
-						</button>
-						<button
-							type="button"
-							class="rounded p-0.5 hover:text-white"
-							title="Move down"
-							@click.stop="handleMove(item.layer.trackId, 'down', item.layer.elementId)"
-						>
-							<ChevronDown class="size-3" />
-						</button>
-						<button
-							type="button"
-							class="rounded p-0.5 hover:text-white"
-							title="Duplicate"
-							@click.stop="handleDuplicate(item.layer.trackId, item.layer.elementId)"
-						>
-							<Copy class="size-3" />
-						</button>
-						<button
-							type="button"
-							class="rounded p-0.5 hover:text-red-300"
-							title="Delete"
-							@click.stop="handleDelete(item.layer.trackId, item.layer.elementId)"
-						>
-							<Trash2 class="size-3" />
-						</button>
+							<div class="hidden shrink-0 items-center group-hover/row:flex group-focus-within/row:flex">
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									title="Move up"
+									aria-label="Move layer up"
+									@click.stop="handleMove(item.layer.trackId, 'up', item.layer.elementId)"
+								>
+									<ChevronUp />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									title="Move down"
+									aria-label="Move layer down"
+									@click.stop="handleMove(item.layer.trackId, 'down', item.layer.elementId)"
+								>
+									<ChevronDown />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									title="Duplicate"
+									aria-label="Duplicate layer"
+									@click.stop="handleDuplicate(item.layer.trackId, item.layer.elementId)"
+								>
+									<Copy />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									class="hover:bg-danger-soft hover:text-danger"
+									title="Delete"
+									aria-label="Delete layer"
+									@click.stop="handleDelete(item.layer.trackId, item.layer.elementId)"
+								>
+									<Trash2 />
+								</Button>
+							</div>
 						</div>
-					</div>
 					</template>
 				</div>
 			</div>
 		</div>
-
 	</div>
 </template>

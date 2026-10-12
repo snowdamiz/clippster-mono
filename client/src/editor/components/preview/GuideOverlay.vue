@@ -54,7 +54,7 @@ function guideToScreenPx(axis: GuideAxis, position: number): number {
 function guideColor(mode: string): string {
 	if (mode === "thirds") return "#a78bfa"; // violet
 	if (mode === "safe") return "#f59e0b";   // amber
-	return "#22d3ee";                         // cyan for custom
+	return "var(--brand)";                    // brand for custom guides
 }
 
 // ── Drag handling ──────────────────────────────────────────────────────────
@@ -124,7 +124,7 @@ function onOverlayClick(event: MouseEvent) {
 					:y1="canvasScreenRect.top"
 					:x2="guideToScreenPx('x', guide.position)"
 					:y2="canvasScreenRect.top + canvasScreenRect.height"
-					:stroke="guideColor(guide.mode)"
+					:style="{ stroke: guideColor(guide.mode) }"
 					stroke-width="1"
 					opacity="0.75"
 					stroke-dasharray="4 3"
@@ -136,7 +136,7 @@ function onOverlayClick(event: MouseEvent) {
 					:y1="guideToScreenPx('y', guide.position)"
 					:x2="canvasScreenRect.left + canvasScreenRect.width"
 					:y2="guideToScreenPx('y', guide.position)"
-					:stroke="guideColor(guide.mode)"
+					:style="{ stroke: guideColor(guide.mode) }"
 					stroke-width="1"
 					opacity="0.75"
 					stroke-dasharray="4 3"
@@ -162,15 +162,15 @@ function onOverlayClick(event: MouseEvent) {
 		<!-- Guide legend (top-right corner) — showing only when modes are active -->
 		<div
 			v-if="showThirds || showSafeMargins"
-			class="pointer-events-none absolute right-2 top-2 flex flex-col gap-0.5 rounded bg-black/60 px-2 py-1.5"
+			class="pointer-events-none absolute right-2 top-2 flex flex-col gap-0.5 rounded-md bg-black/70 px-2 py-1.5"
 		>
 			<div v-if="showThirds" class="flex items-center gap-1.5">
 				<span class="inline-block h-0.5 w-4 bg-violet-400" />
-				<span class="text-[9px] text-zinc-400">Thirds</span>
+				<span class="text-[10px] text-white/70">Thirds</span>
 			</div>
 			<div v-if="showSafeMargins" class="flex items-center gap-1.5">
 				<span class="inline-block h-0.5 w-4 bg-amber-400" />
-				<span class="text-[9px] text-zinc-400">Safe margins</span>
+				<span class="text-[10px] text-white/70">Safe margins</span>
 			</div>
 		</div>
 	</div>

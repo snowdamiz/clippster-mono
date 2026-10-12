@@ -1,381 +1,242 @@
 <template>
-  <Teleport to="body">
-  <Transition name="modal">
-    <div v-if="show" class="fixed inset-0 z-[10002] flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/70 backdrop-blur-[4px]" @click="$emit('close')"></div>
-      <Transition name="dialog" appear>
+  <Modal
+    :open="show"
+    title="Watermark position"
+    description="Place the watermark for each output aspect ratio."
+    :icon="Move"
+    size="xl"
+    @close="$emit('close')"
+  >
+    <!-- Ratio + enable -->
+    <div class="mb-3 flex flex-wrap items-center gap-3">
+      <RatioTabs
+        :model-value="currentAspectRatio"
+        :options="aspectRatios"
+        :marked="enabledRatios"
+        @update:model-value="selectAspectRatio"
+      />
+      <label class="ml-auto flex items-center gap-2 text-xs text-fg-muted" :class="{ 'opacity-50': readOnly }">
+        {{ enabledRatios[currentAspectRatio] ? 'Enabled' : 'Disabled' }}
+        <Switch
+          :model-value="enabledRatios[currentAspectRatio]"
+          :disabled="readOnly"
+          @update:model-value="!readOnly && toggleCurrentRatio()"
+        />
+      </label>
+    </div>
+
+    <!-- Watermark selection + full-frame -->
+    <div v-if="enabledRatios[currentAspectRatio]" class="mb-3 flex items-center gap-2">
+      <DropdownMenu
+        :open="showWatermarkDropdown"
+        @update:open="(open: boolean) => (showWatermarkDropdown = !readOnly && open)"
+      >
+        <DropdownMenuTrigger as-child :disabled="readOnly">
+          <button
+            type="button"
+            class="flex h-[var(--control-md)] min-w-0 flex-1 items-center gap-2 rounded-[var(--radius-control)] border border-line bg-surface-raised pl-1 pr-2.5 text-left text-sm text-fg transition-colors hover:border-line-strong disabled:opacity-50 data-[state=open]:border-line-strong"
+          >
+            <span
+              class="transparency-checkerboard grid size-6 shrink-0 place-items-center overflow-hidden rounded border border-line-subtle"
+            >
+              <img
+                v-if="currentRatioWatermarkUrl"
+                :src="currentRatioWatermarkUrl"
+                :alt="currentRatioWatermark?.name || 'Default'"
+                class="max-h-full max-w-full object-contain"
+              />
+              <ImageIcon v-else class="size-3 text-fg-muted" />
+            </span>
+            <span class="min-w-0 flex-1 truncate">{{ currentRatioWatermark?.name || 'Default watermark' }}</span>
+            <ChevronDown class="size-3.5 shrink-0 text-fg-subtle" />
+          </button>
+        </DropdownMenuTrigger>
+        <DropdownMenuContent align="start" class="max-h-64 w-[var(--reka-dropdown-menu-trigger-width)] overflow-y-auto">
+          <DropdownMenuItem @select="selectWatermarkForRatio(null)">
+            <span class="grid size-6 shrink-0 place-items-center rounded border border-line-subtle bg-surface-hover">
+              <ImageIcon class="size-3 text-fg-muted" />
+            </span>
+            <span class="flex-1">Default watermark</span>
+            <Check v-if="!ratioWatermarkIds[currentAspectRatio]" class="!text-brand" />
+          </DropdownMenuItem>
+          <DropdownMenuItem v-for="wm in watermarks" :key="wm.id" @select="selectWatermarkForRatio(wm)">
+            <span
+              class="transparency-checkerboard grid size-6 shrink-0 place-items-center overflow-hidden rounded border border-line-subtle"
+            >
+              <img
+                v-if="watermarkThumbnailCache.get(wm.id)"
+                :src="watermarkThumbnailCache.get(wm.id)"
+                :alt="wm.name"
+                class="max-h-full max-w-full object-contain"
+              />
+              <ImageIcon v-else class="size-3 text-fg-muted" />
+            </span>
+            <span class="min-w-0 flex-1 truncate">{{ wm.name }}</span>
+            <Check v-if="ratioWatermarkIds[currentAspectRatio] === wm.id" class="!text-brand" />
+          </DropdownMenuItem>
+          <div v-if="loadingWatermarks" class="skeleton-group px-2 py-2 text-center text-xs text-fg-muted">Loading…</div>
+          <DropdownMenuSeparator />
+          <DropdownMenuItem :disabled="uploadingWatermark" @select="uploadNewWatermark">
+            <Loader2 v-if="uploadingWatermark" class="animate-spin" />
+            <Upload v-else />
+            {{ uploadingWatermark ? 'Uploading…' : 'Upload new' }}
+          </DropdownMenuItem>
+        </DropdownMenuContent>
+      </DropdownMenu>
+
+      <label
+        class="flex h-[var(--control-md)] shrink-0 items-center gap-2 rounded-[var(--radius-control)] border border-line bg-surface-raised px-2.5 text-xs text-fg"
+        :class="readOnly ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-line-strong'"
+      >
+        <Checkbox
+          :model-value="fullFrameOverlayRatios[currentAspectRatio]"
+          :disabled="readOnly"
+          @update:model-value="toggleFullFrameOverlay()"
+        />
+        Full-frame
+      </label>
+    </div>
+
+    <!-- Preview -->
+    <div class="mb-4 flex justify-center rounded-lg border border-line-subtle bg-surface-sunken p-4">
+      <div
+        ref="previewContainer"
+        class="transparency-checkerboard relative select-none overflow-hidden rounded-md border border-line transition-all duration-300"
+        :class="enabledRatios[currentAspectRatio] ? 'cursor-crosshair' : 'cursor-not-allowed opacity-50'"
+        :style="previewContainerStyle"
+        @mousedown.prevent="!readOnly && enabledRatios[currentAspectRatio] && startDrag($event)"
+        @mousemove="!readOnly && enabledRatios[currentAspectRatio] && handleDrag($event)"
+        @mouseup="endDrag"
+        @mouseleave="endDrag"
+      >
+        <!-- Rule-of-thirds guides -->
+        <div class="pointer-events-none absolute inset-0">
+          <div class="absolute bottom-0 left-1/3 top-0 w-px bg-white/10"></div>
+          <div class="absolute bottom-0 left-2/3 top-0 w-px bg-white/10"></div>
+          <div class="absolute left-0 right-0 top-1/3 h-px bg-white/10"></div>
+          <div class="absolute left-0 right-0 top-2/3 h-px bg-white/10"></div>
+        </div>
+
+        <div class="absolute left-1.5 top-1.5 z-10 rounded bg-black/60 px-1.5 py-0.5 text-2xs text-white/80">
+          {{ currentAspectRatioLabel }}
+        </div>
+
+        <div class="absolute inset-0 flex items-center justify-center text-fg-muted">
+          <Video class="size-8 opacity-20" />
+        </div>
+
+        <div v-if="loadingWatermark" class="absolute inset-0 z-20 flex items-center justify-center bg-black/30">
+          <Loader2 class="size-4 animate-spin text-fg-muted" />
+        </div>
+
+        <!-- Overlays preview (rendered behind watermark) -->
+        <template v-if="overlays && overlays.length > 0">
+          <div
+            v-for="ovl in overlays"
+            v-show="ovl.perRatioSettings?.[currentAspectRatio]"
+            :key="ovl.id"
+            class="pointer-events-none absolute"
+            :style="getOverlayStyle(ovl)"
+          >
+            <MediaPreview
+              :src="overlayPreviews?.[ovl.id] || ''"
+              class-name="drop-shadow-lg select-none max-w-full max-h-full object-contain"
+              :style="{ opacity: (ovl.perRatioSettings?.[currentAspectRatio]?.opacity ?? 100) / 100 }"
+            />
+          </div>
+        </template>
+
+        <!-- Watermark preview -->
         <div
-          class="relative flex flex-col w-full max-w-2xl mx-3 overflow-hidden bg-[var(--sidebar-surface)] border border-[var(--sidebar-border)] rounded-xl max-h-[90vh] shadow-[0_20px_60px_rgba(0,0,0,0.4)]"
+          v-if="watermarkDataUrl && enabledRatios[currentAspectRatio]"
+          class="group absolute"
+          :class="{
+            'pointer-events-none': !enabledRatios[currentAspectRatio],
+            'transition-all duration-75': !watermarkResizeState.isResizing && !justFinishedResize,
+          }"
+          :style="watermarkStyle"
         >
-          <!-- Accent bar -->
-          <div class="h-[3px] w-full flex-shrink-0 bg-gradient-to-r from-[var(--sidebar-accent)] to-[#06b6d4]/50"></div>
-          <!-- Header -->
+          <MediaPreview
+            :src="watermarkDataUrl"
+            :class-name="[
+              'drop-shadow-lg select-none',
+              fullFrameOverlayRatios[currentAspectRatio] || isFullFrameWatermark
+                ? 'w-full h-full object-cover'
+                : 'max-w-full max-h-full object-contain',
+            ]"
+            :style="{ opacity: currentSettings.opacity / 100 }"
+            @error="handleImageError"
+          />
+          <!-- Resize handles -->
           <div
-            class="flex items-center justify-between px-4 py-3 border-b border-[var(--sidebar-border)] flex-shrink-0"
+            v-if="!readOnly && !fullFrameOverlayRatios[currentAspectRatio] && enabledRatios[currentAspectRatio]"
+            class="pointer-events-none absolute inset-0"
           >
-            <div class="flex items-center gap-2.5">
-              <div
-                class="w-8 h-8 rounded-lg bg-[rgba(6,182,212,0.15)] flex items-center justify-center"
-              >
-                <Move class="h-4 w-4 text-[var(--sidebar-accent)]" />
-              </div>
-              <div>
-                <h2 class="text-base font-semibold text-[var(--sidebar-text)]">Watermark Position</h2>
-              </div>
-            </div>
-            <button
-              @click="$emit('close')"
-              class="p-1.5 rounded-lg text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] transition-colors"
-            >
-              <X class="w-4 h-4" />
-            </button>
-          </div>
-
-          <!-- Content -->
-          <div class="flex-1 overflow-y-auto p-4">
-            <!-- Aspect Ratio Tabs -->
-            <div class="flex items-center gap-1.5 mb-3">
-              <button
-                v-for="ar in aspectRatios"
-                :key="ar.id"
-                @click="selectAspectRatio(ar.id)"
-                class="px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1 relative"
-                :class="[
-                  currentAspectRatio === ar.id
-                    ? 'bg-[rgba(6,182,212,0.15)] text-[var(--sidebar-accent)] border border-[rgba(6,182,212,0.2)]'
-                    : enabledRatios[ar.id]
-                      ? 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text)] hover:bg-[var(--sidebar-active)] border border-[var(--sidebar-border)]'
-                      : 'bg-transparent text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)]',
-                ]"
-              >
-                <component :is="ar.icon" class="w-3 h-3" />
-                {{ ar.label }}
-                <span
-                  v-if="enabledRatios[ar.id]"
-                  class="w-1.5 h-1.5 rounded-full bg-green-500 absolute -top-0.5 -right-0.5"
-                ></span>
-              </button>
-
-              <!-- Enable Toggle -->
-              <div class="ml-auto flex items-center gap-2">
-                <span class="text-[10px] text-[var(--sidebar-text-muted)]">
-                  {{ enabledRatios[currentAspectRatio] ? 'Enabled' : 'Disabled' }}
-                </span>
-                <button
-                  @click="!readOnly && toggleCurrentRatio()"
-                  class="relative w-9 h-5 rounded-full transition-colors border border-[var(--sidebar-border)]"
-                  :class="[enabledRatios[currentAspectRatio] ? 'bg-[var(--sidebar-accent)]' : 'bg-[var(--sidebar-hover)]', readOnly ? 'opacity-50 cursor-not-allowed' : '']"
-                >
-                  <span
-                    class="absolute top-0.5 left-0.5 w-3.5 h-3.5 bg-white rounded-full shadow transition-transform"
-                    :class="enabledRatios[currentAspectRatio] ? 'translate-x-[18px]' : 'translate-x-0'"
-                  ></span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Settings Row (Watermark Selection + Full-frame toggle) -->
-            <div v-if="enabledRatios[currentAspectRatio]" class="flex gap-3 mb-3">
-              <!-- Watermark Selection -->
-              <div class="flex-1 relative">
-                <button
-                  @click.stop="!readOnly && (showWatermarkDropdown = !showWatermarkDropdown)"
-                  class="w-full px-2.5 py-2 bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)] rounded-lg text-left flex items-center justify-between hover:border-[var(--sidebar-text-muted)] transition-all text-xs text-[var(--sidebar-text)]"
-                >
-                  <div class="flex items-center gap-2">
-                    <div
-                      v-if="currentRatioWatermarkUrl"
-                      class="w-6 h-6 rounded bg-[var(--sidebar-surface)] border border-[var(--sidebar-border)] flex items-center justify-center overflow-hidden flex-shrink-0"
-                    >
-                      <img
-                        :src="currentRatioWatermarkUrl"
-                        :alt="currentRatioWatermark?.name || 'Default'"
-                        class="max-w-full max-h-full object-contain"
-                      />
-                    </div>
-                    <div
-                      v-else
-                      class="w-6 h-6 rounded bg-[var(--sidebar-surface)] border border-[var(--sidebar-border)] flex items-center justify-center flex-shrink-0"
-                    >
-                      <ImageIcon class="w-3 h-3 text-[var(--sidebar-text-muted)]" />
-                    </div>
-                    <span class="truncate">
-                      {{ currentRatioWatermark?.name || 'Default watermark' }}
-                    </span>
-                  </div>
-                  <ChevronDown
-                    class="h-3.5 w-3.5 text-[var(--sidebar-text-muted)] transition-transform flex-shrink-0 ml-1"
-                    :class="{ 'rotate-180': showWatermarkDropdown }"
-                  />
-                </button>
-
-                <!-- Watermark Dropdown -->
-                <div
-                  v-if="showWatermarkDropdown"
-                  class="absolute top-full left-0 right-0 mt-1 bg-[var(--sidebar-surface)] border border-[var(--sidebar-border)] rounded-lg shadow-xl z-50 overflow-y-auto max-h-40 custom-scrollbar"
-                  @click.stop
-                >
-                  <!-- Use default option -->
-                  <button
-                    @click="selectWatermarkForRatio(null)"
-                    class="w-full text-left px-2.5 py-2 hover:bg-[var(--sidebar-hover)] transition-colors text-xs flex items-center gap-2 border-b border-[var(--sidebar-border)]"
-                    :class="{ 'bg-[rgba(6,182,212,0.15)] text-[var(--sidebar-accent)]': !ratioWatermarkIds[currentAspectRatio] }"
-                  >
-                    <div class="w-6 h-6 rounded bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)] flex items-center justify-center">
-                      <ImageIcon class="w-3 h-3 text-[var(--sidebar-text-muted)]" />
-                    </div>
-                    <span class="text-[var(--sidebar-text)]">Default watermark</span>
-                  </button>
-
-                  <!-- Watermark options -->
-                  <button
-                    v-for="wm in watermarks"
-                    :key="wm.id"
-                    @click="selectWatermarkForRatio(wm)"
-                    class="w-full text-left px-2.5 py-2 hover:bg-[var(--sidebar-hover)] transition-colors text-xs flex items-center gap-2"
-                    :class="{ 'bg-[rgba(6,182,212,0.15)] text-[var(--sidebar-accent)]': ratioWatermarkIds[currentAspectRatio] === wm.id }"
-                  >
-                    <div
-                      class="w-6 h-6 rounded bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)] flex items-center justify-center overflow-hidden"
-                    >
-                      <img
-                        v-if="watermarkThumbnailCache.get(wm.id)"
-                        :src="watermarkThumbnailCache.get(wm.id)"
-                        :alt="wm.name"
-                        class="max-w-full max-h-full object-contain"
-                      />
-                      <ImageIcon v-else class="w-3 h-3 text-[var(--sidebar-text-muted)]" />
-                    </div>
-                    <span class="truncate text-[var(--sidebar-text)]">{{ wm.name }}</span>
-                  </button>
-
-                  <div v-if="loadingWatermarks" class="px-2.5 py-3 text-xs text-center text-[var(--sidebar-text-muted)]">Loading...</div>
-
-                  <!-- Upload new watermark button -->
-                  <button
-                    @click="uploadNewWatermark"
-                    :disabled="uploadingWatermark"
-                    class="w-full text-left px-2.5 py-2 hover:bg-[var(--sidebar-hover)] transition-colors text-xs flex items-center gap-2 border-t border-[var(--sidebar-border)] text-[var(--sidebar-accent)] hover:text-[var(--sidebar-primary)]"
-                  >
-                    <div
-                      class="w-6 h-6 rounded bg-[rgba(6,182,212,0.15)] flex items-center justify-center"
-                    >
-                      <Upload v-if="!uploadingWatermark" class="w-3 h-3 text-[var(--sidebar-accent)]" />
-                      <Loader2 v-else class="w-3 h-3 text-[var(--sidebar-accent)] animate-spin" />
-                    </div>
-                    <span>{{ uploadingWatermark ? 'Uploading...' : 'Upload new' }}</span>
-                  </button>
-                </div>
-              </div>
-
-              <!-- Full-Frame Overlay Toggle -->
-              <label
-                class="flex items-center gap-2 px-2.5 py-2 bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)] rounded-lg transition-all flex-shrink-0"
-                :class="readOnly ? 'cursor-not-allowed opacity-50' : 'cursor-pointer hover:border-[var(--sidebar-text-muted)]'"
-              >
-                <input
-                  type="checkbox"
-                  :checked="fullFrameOverlayRatios[currentAspectRatio]"
-                  :disabled="readOnly"
-                  @change="toggleFullFrameOverlay"
-                  class="w-3.5 h-3.5 rounded border-[var(--sidebar-border)] bg-[var(--sidebar-surface)] text-[var(--sidebar-accent)] focus:ring-[var(--sidebar-accent)] focus:ring-offset-[var(--sidebar-surface)]"
-                />
-                <span class="text-xs text-[var(--sidebar-text)] whitespace-nowrap">Full-frame</span>
-              </label>
-            </div>
-
-            <!-- Preview Area with dynamic aspect ratio -->
-            <div class="flex justify-center mb-3">
-              <div
-                ref="previewContainer"
-                class="relative transparency-checkerboard rounded-lg overflow-hidden border transition-all duration-300 select-none"
-                :class="[
-                  enabledRatios[currentAspectRatio]
-                    ? 'cursor-crosshair border-[var(--sidebar-border)]'
-                    : 'cursor-not-allowed border-[var(--sidebar-border)] opacity-50',
-                ]"
-                :style="previewContainerStyle"
-                @mousedown.prevent="!readOnly && enabledRatios[currentAspectRatio] && startDrag($event)"
-                @mousemove="!readOnly && enabledRatios[currentAspectRatio] && handleDrag($event)"
-                @mouseup="endDrag"
-                @mouseleave="endDrag"
-              >
-                <!-- Grid lines for guidance -->
-                <div class="absolute inset-0 pointer-events-none">
-                  <div class="absolute left-1/3 top-0 bottom-0 w-px bg-[var(--sidebar-border)]"></div>
-                  <div class="absolute left-2/3 top-0 bottom-0 w-px bg-[var(--sidebar-border)]"></div>
-                  <div class="absolute top-1/3 left-0 right-0 h-px bg-[var(--sidebar-border)]"></div>
-                  <div class="absolute top-2/3 left-0 right-0 h-px bg-[var(--sidebar-border)]"></div>
-                </div>
-
-                <!-- Aspect ratio label -->
-                <div class="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-black/50 rounded text-[10px] text-white/70 z-10">
-                  {{ currentAspectRatioLabel }}
-                </div>
-
-                <!-- Sample video content indicator -->
-                <div class="absolute inset-0 flex items-center justify-center text-[var(--sidebar-text-muted)]">
-                  <Video class="w-8 h-8 opacity-20" />
-                </div>
-
-                <!-- Loading indicator -->
-                <div v-if="loadingWatermark" class="absolute inset-0 flex items-center justify-center bg-black/30 z-20">
-                  <div class="text-[var(--sidebar-accent)] text-xs">Loading...</div>
-                </div>
-
-                <!-- Overlays preview (rendered behind watermark) -->
-                <template v-if="overlays && overlays.length > 0">
-                  <div
-                    v-for="ovl in overlays"
-                    :key="ovl.id"
-                    v-show="ovl.perRatioSettings?.[currentAspectRatio]"
-                    class="absolute pointer-events-none"
-                    :style="getOverlayStyle(ovl)"
-                  >
-                    <MediaPreview
-                      :src="overlayPreviews?.[ovl.id] || ''"
-                      class-name="drop-shadow-lg select-none max-w-full max-h-full object-contain"
-                      :style="{ opacity: (ovl.perRatioSettings?.[currentAspectRatio]?.opacity ?? 100) / 100 }"
-                    />
-                  </div>
-                </template>
-
-                <!-- Watermark preview -->
-                <div
-                  v-if="watermarkDataUrl && enabledRatios[currentAspectRatio]"
-                  class="absolute group"
-                  :class="{
-                    'pointer-events-none': !enabledRatios[currentAspectRatio],
-                    'transition-all duration-75': !watermarkResizeState.isResizing && !justFinishedResize
-                  }"
-                  :style="watermarkStyle"
-                >
-                  <MediaPreview
-                    :src="watermarkDataUrl"
-                    :class-name="[
-                      'drop-shadow-lg select-none',
-                      fullFrameOverlayRatios[currentAspectRatio] || isFullFrameWatermark
-                        ? 'w-full h-full object-cover'
-                        : 'max-w-full max-h-full object-contain',
-                    ]"
-                    :style="{ opacity: currentSettings.opacity / 100 }"
-                    @error="handleImageError"
-                  />
-                  <!-- Resize Handles -->
-                  <div
-                    v-if="!readOnly && !fullFrameOverlayRatios[currentAspectRatio] && enabledRatios[currentAspectRatio]"
-                    class="absolute inset-0 pointer-events-none"
-                  >
-                    <!-- Top Left -->
-                    <div
-                      class="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-[var(--sidebar-accent)] rounded-full cursor-nwse-resize pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity"
-                      @mousedown.stop.prevent="startWatermarkResize($event, 'tl')"
-                    ></div>
-                    <!-- Top Right -->
-                    <div
-                      class="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-[var(--sidebar-accent)] rounded-full cursor-nesw-resize pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity"
-                      @mousedown.stop.prevent="startWatermarkResize($event, 'tr')"
-                    ></div>
-                    <!-- Bottom Left -->
-                    <div
-                      class="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-[var(--sidebar-accent)] rounded-full cursor-nesw-resize pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity"
-                      @mousedown.stop.prevent="startWatermarkResize($event, 'bl')"
-                    ></div>
-                    <!-- Bottom Right -->
-                    <div
-                      class="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-[var(--sidebar-accent)] rounded-full cursor-nwse-resize pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity"
-                      @mousedown.stop.prevent="startWatermarkResize($event, 'br')"
-                    ></div>
-                    <!-- Border on hover -->
-                    <div class="absolute inset-0 border border-[var(--sidebar-accent)] opacity-0 group-hover:opacity-40 pointer-events-none"></div>
-                  </div>
-                </div>
-
-                <!-- Disabled overlay -->
-                <div
-                  v-if="!enabledRatios[currentAspectRatio]"
-                  class="absolute inset-0 flex items-center justify-center bg-black/10 backdrop-blur-[1px]"
-                >
-                  <span class="text-[var(--sidebar-text-muted)] text-xs">Disabled</span>
-                </div>
-
-                <!-- Position indicator -->
-                <div
-                  v-if="enabledRatios[currentAspectRatio] && !fullFrameOverlayRatios[currentAspectRatio]"
-                  class="absolute w-2.5 h-2.5 bg-[var(--sidebar-accent)] rounded-full border-2 border-white shadow-lg pointer-events-none transform -translate-x-1/2 -translate-y-1/2 transition-all duration-75"
-                  :style="{ left: `${currentSettings.x}%`, top: `${currentSettings.y}%` }"
-                ></div>
-              </div>
-            </div>
-
-            <!-- Controls Row -->
-            <div :class="{ 'opacity-50 pointer-events-none': !enabledRatios[currentAspectRatio] || readOnly }">
-              <div class="flex items-center gap-6 flex-wrap">
-                <!-- Quick positions -->
-                <div
-                  class="flex items-center gap-1.5"
-                  :class="{ 'opacity-50 pointer-events-none': fullFrameOverlayRatios[currentAspectRatio] }"
-                >
-                  <span class="text-[10px] text-[var(--sidebar-text-muted)] mr-1">Position:</span>
-                  <div class="flex items-center gap-1">
-                    <button
-                      v-for="preset in presets"
-                      :key="preset.name"
-                      @click="applyPreset(preset)"
-                      :disabled="!enabledRatios[currentAspectRatio] || fullFrameOverlayRatios[currentAspectRatio]"
-                      class="px-2 py-1 text-[10px] font-medium rounded transition-all whitespace-nowrap"
-                      :class="
-                        isPresetActive(preset)
-                          ? 'bg-[rgba(6,182,212,0.15)] text-[var(--sidebar-accent)]'
-                          : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)]'
-                      "
-                    >
-                      {{ preset.name }}
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Opacity Slider -->
-                <div class="flex items-center gap-2 flex-1 min-w-[200px] max-w-[280px]">
-                  <label class="text-[10px] text-[var(--sidebar-text-muted)] whitespace-nowrap">Opacity</label>
-                  <input
-                    type="range"
-                    :value="currentSettings.opacity"
-                    @input="updateOpacity(Number(($event.target as HTMLInputElement).value))"
-                    min="10"
-                    max="100"
-                    :disabled="!enabledRatios[currentAspectRatio]"
-                    class="flex-1 h-1 bg-[var(--sidebar-border)] rounded-lg appearance-none cursor-pointer accent-[var(--sidebar-accent)]"
-                  />
-                  <span class="text-[10px] text-[var(--sidebar-text-muted)] whitespace-nowrap min-w-[32px] text-right">{{ currentSettings.opacity }}%</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Footer -->
-          <div
-            class="flex items-center justify-end gap-2 px-4 py-3 border-t border-[var(--sidebar-border)] flex-shrink-0"
-          >
-            <button
-              @click="$emit('close')"
-              class="px-4 py-2 bg-[var(--sidebar-hover)] hover:bg-[var(--sidebar-active)] text-[var(--sidebar-text)] hover:text-[var(--sidebar-text)] rounded-lg transition-all text-sm font-medium border border-[var(--sidebar-border)]"
-            >
-              Cancel
-            </button>
-            <button
-              v-if="!readOnly"
-              @click="savePosition"
-              class="px-4 py-2 bg-gradient-to-br from-[var(--sidebar-accent)] to-[#0891b2] hover:opacity-90 text-white rounded-lg font-medium transition-all text-sm"
-            >
-              Save
-            </button>
+            <div
+              v-for="corner in resizeCorners"
+              :key="corner.id"
+              class="pointer-events-auto absolute size-3 rounded-full border border-brand bg-white opacity-0 transition-opacity group-hover:opacity-100"
+              :class="corner.class"
+              @mousedown.stop.prevent="startWatermarkResize($event, corner.id)"
+            ></div>
+            <div class="pointer-events-none absolute inset-0 border border-brand opacity-0 group-hover:opacity-40"></div>
           </div>
         </div>
-      </Transition>
+
+        <div
+          v-if="!enabledRatios[currentAspectRatio]"
+          class="absolute inset-0 flex items-center justify-center bg-black/20"
+        >
+          <span class="text-xs text-fg-muted">Disabled</span>
+        </div>
+
+        <!-- Position indicator -->
+        <div
+          v-if="enabledRatios[currentAspectRatio] && !fullFrameOverlayRatios[currentAspectRatio]"
+          class="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-brand shadow-lg transition-all duration-75"
+          :style="{ left: `${currentSettings.x}%`, top: `${currentSettings.y}%` }"
+        ></div>
+      </div>
     </div>
-  </Transition>
-  </Teleport>
+
+    <!-- Controls -->
+    <div
+      class="flex flex-col gap-3"
+      :class="{ 'pointer-events-none opacity-50': !enabledRatios[currentAspectRatio] || readOnly }"
+    >
+      <div
+        class="flex flex-wrap items-center gap-1.5"
+        :class="{ 'pointer-events-none opacity-50': fullFrameOverlayRatios[currentAspectRatio] }"
+      >
+        <span class="w-14 shrink-0 text-xs text-fg-muted">Position</span>
+        <Button
+          v-for="preset in presets"
+          :key="preset.name"
+          size="xs"
+          :variant="isPresetActive(preset) ? 'secondary' : 'ghost'"
+          :class="isPresetActive(preset) && 'border-brand-line text-brand'"
+          :disabled="!enabledRatios[currentAspectRatio] || fullFrameOverlayRatios[currentAspectRatio]"
+          @click="applyPreset(preset)"
+        >
+          {{ preset.name }}
+        </Button>
+      </div>
+      <RangeField
+        label="Opacity"
+        :model-value="currentSettings.opacity"
+        :min="10"
+        :max="100"
+        :disabled="!enabledRatios[currentAspectRatio]"
+        class="max-w-sm"
+        @update:model-value="updateOpacity"
+      />
+    </div>
+
+    <template #footer>
+      <Button variant="ghost" @click="$emit('close')">Cancel</Button>
+      <Button v-if="!readOnly" variant="primary" @click="savePosition">Save</Button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
@@ -391,10 +252,24 @@
     Square,
     RectangleVertical,
     ChevronDown,
+    Check,
     Image as ImageIcon,
     Upload,
     Loader2,
   } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
+  import { Checkbox } from '@/components/ui/checkbox';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
+  import { Modal } from '@/components/ui/modal';
+  import { Switch } from '@/components/ui/switch';
+  import RatioTabs from '@/components/branding/RatioTabs.vue';
+  import RangeField from '@/components/branding/RangeField.vue';
   import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
   import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import MediaPreview from '@/components/MediaPreview.vue';
@@ -487,6 +362,13 @@
     { id: '1:1' as AspectRatioId, label: '1:1', icon: Square, width: 1, height: 1 },
     { id: '4:5' as AspectRatioId, label: '4:5', icon: RectangleVertical, width: 4, height: 5 },
   ];
+
+  const resizeCorners = [
+    { id: 'tl', class: '-left-1.5 -top-1.5 cursor-nwse-resize' },
+    { id: 'tr', class: '-right-1.5 -top-1.5 cursor-nesw-resize' },
+    { id: 'bl', class: '-bottom-1.5 -left-1.5 cursor-nesw-resize' },
+    { id: 'br', class: '-bottom-1.5 -right-1.5 cursor-nwse-resize' },
+  ] as const;
 
   const previewContainer = ref<HTMLElement | null>(null);
   const isDragging = ref(false);
@@ -1269,58 +1151,3 @@
     emit('close');
   }
 </script>
-
-<style scoped>
-  /* Modal backdrop transition */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 0.3s ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  /* Dialog transition */
-  .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 0.2s ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* Range slider styling */
-  input[type='range']::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--sidebar-accent);
-    cursor: pointer;
-    border: 2px solid white;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
-
-  input[type='range']::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: var(--sidebar-accent);
-    cursor: pointer;
-    border: 2px solid white;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
-</style>

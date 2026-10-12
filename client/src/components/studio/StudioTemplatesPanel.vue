@@ -1,18 +1,20 @@
 <template>
-  <div class="studio-panel">
-    <h3 class="studio-panel__title">Templates</h3>
-
-    <div class="studio-panel__templates">
+  <StudioPanel title="Templates">
+    <div class="flex flex-wrap gap-1.5">
       <div
         v-for="template in templates"
         :key="template.id"
-        class="studio-panel__template-item"
-        :class="{ 'studio-panel__template-item--active': activeTemplateId === template.id }"
+        class="group flex h-[var(--control-sm)] max-w-full items-center rounded-[var(--radius-control)] border text-xs font-medium transition-colors"
+        :class="
+          activeTemplateId === template.id
+            ? 'border-brand-line bg-brand-soft text-brand'
+            : 'border-line bg-surface-raised text-fg hover:border-line-strong'
+        "
       >
         <button
           type="button"
-          class="studio-panel__template-btn"
-          :class="{ 'studio-panel__template-btn--active': activeTemplateId === template.id }"
+          class="h-full min-w-0 truncate rounded-[var(--radius-control)] px-2.5 focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
+          :aria-pressed="activeTemplateId === template.id"
           @click="emit('apply', template)"
         >
           {{ template.name }}
@@ -20,28 +22,32 @@
         <button
           v-if="!isDefaultStudioTemplate(template.id)"
           type="button"
-          class="studio-panel__template-delete"
+          class="-ml-1 mr-1 grid size-5 shrink-0 place-items-center rounded text-fg-subtle transition-colors hover:bg-surface-hover hover:text-danger"
           title="Delete template"
+          aria-label="Delete template"
           @click.stop="emit('delete', template.id)"
         >
-          <X :size="12" />
+          <X class="size-3" />
         </button>
       </div>
     </div>
 
-    <Button type="button" size="sm" class="studio-panel__upload-template" @click="emit('upload-template')">
-      <Upload :size="14" />
-      Upload template overlay
-    </Button>
-    <p class="studio-panel__hint">
-      Choose a PNG or image overlay. It will fill the full canvas and be saved as a reusable template.
-    </p>
-  </div>
+    <div class="flex flex-col gap-1.5">
+      <Button variant="secondary" size="sm" block @click="emit('upload-template')">
+        <Upload />
+        Upload template overlay
+      </Button>
+      <p class="text-xs text-fg-subtle">
+        Choose a PNG or image overlay. It fills the full canvas and is saved as a reusable template.
+      </p>
+    </div>
+  </StudioPanel>
 </template>
 
 <script setup lang="ts">
   import { Upload, X } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
+  import StudioPanel from './StudioPanel.vue';
   import { isDefaultStudioTemplate } from '@/composables/studio/useStudioTemplates';
   import type { StudioTemplate } from '@/types/studio';
 
@@ -56,97 +62,3 @@
     (e: 'upload-template'): void;
   }>();
 </script>
-
-<style scoped>
-  .studio-panel {
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .studio-panel__title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .studio-panel__templates {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .studio-panel__template-item {
-    display: inline-flex;
-    align-items: stretch;
-    border-radius: 6px;
-    border: 1px solid var(--sidebar-border);
-    background: rgba(255, 255, 255, 0.03);
-    overflow: hidden;
-    transition: all 150ms ease;
-  }
-
-  .studio-panel__template-item:hover {
-    border-color: var(--sidebar-accent);
-  }
-
-  .studio-panel__template-item--active {
-    border-color: var(--sidebar-accent);
-    background: rgba(6, 182, 212, 0.1);
-  }
-
-  .studio-panel__template-btn {
-    padding: 0.4rem 0.65rem;
-    font-size: 0.75rem;
-    border: none;
-    background: transparent;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: color 150ms ease;
-  }
-
-  .studio-panel__template-btn:hover,
-  .studio-panel__template-item:hover .studio-panel__template-btn {
-    color: var(--sidebar-text);
-  }
-
-  .studio-panel__template-btn--active {
-    color: var(--sidebar-accent);
-  }
-
-  .studio-panel__template-delete {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    flex-shrink: 0;
-    border: none;
-    border-left: 1px solid var(--sidebar-border);
-    background: transparent;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .studio-panel__template-delete:hover {
-    color: #f87171;
-    background: rgba(239, 68, 68, 0.12);
-    border-left-color: rgba(239, 68, 68, 0.35);
-  }
-
-  .studio-panel__upload-template {
-    width: 100%;
-  }
-
-  .studio-panel__hint {
-    margin: 0;
-    color: var(--sidebar-text-muted);
-    font-size: 0.6875rem;
-    line-height: 1.35;
-  }
-</style>

@@ -207,9 +207,10 @@ function resetColors() {
 </script>
 
 <template>
-	<div class="relative flex w-10 shrink-0 flex-col items-center border-r border-black/50 bg-[#1e1e1e] py-1.5">
+	<div class="relative flex h-full w-11 shrink-0 flex-col items-center border-r border-line-subtle bg-panel">
+		<div class="flex min-h-0 w-full flex-1 flex-col items-center gap-0.5 overflow-y-auto overflow-x-hidden py-1.5">
 		<template v-for="(section, index) in sectionedSlots" :key="section.section">
-			<div v-if="index > 0" class="my-1 h-px w-6 bg-white/10" />
+			<div v-if="index > 0" class="my-1 h-px w-5 shrink-0 bg-line" />
 			<div
 				v-for="slot in section.slots"
 				:key="slot.id"
@@ -225,10 +226,10 @@ function resetColors() {
 					:aria-haspopup="slot.tools.length > 1 ? 'menu' : undefined"
 					:aria-expanded="openFlyoutId === slot.id"
 					:class="[
-						'relative flex size-8 items-center justify-center rounded-sm transition-colors',
+						'relative flex size-7 items-center justify-center rounded-md transition-colors',
 						slotIsActive(slot)
-							? 'bg-[#4693e0] text-white'
-							: 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100',
+							? 'bg-brand-soft text-brand'
+							: 'text-fg-muted hover:bg-surface-hover hover:text-fg',
 					]"
 					@pointerdown="onSlotPointerDown($event, slot)"
 					@pointerup="onSlotPointerUp"
@@ -247,24 +248,25 @@ function resetColors() {
 			</div>
 		</template>
 
-		<div class="my-1 h-px w-6 bg-white/10" />
+		<div class="my-1 h-px w-5 shrink-0 bg-line" />
 		<button
 			type="button"
 			title="Upload images (Media)"
 			aria-label="Open media panel"
 			:aria-pressed="isPlaceOpen"
 			:class="[
-				'flex size-8 items-center justify-center rounded-sm transition-colors',
+				'flex size-7 shrink-0 items-center justify-center rounded-md transition-colors',
 				isPlaceOpen
-					? 'bg-[#4693e0] text-white'
-					: 'text-zinc-400 hover:bg-white/[0.06] hover:text-zinc-100',
+					? 'bg-brand-soft text-brand'
+					: 'text-fg-muted hover:bg-surface-hover hover:text-fg',
 			]"
 			@click="setImageDockTab?.(isPlaceOpen ? 'properties' : 'media')"
 		>
 			<ImagePlus class="size-3.5" />
 		</button>
+		</div>
 
-		<div class="mt-auto flex flex-col items-center gap-1 pb-2">
+		<div class="flex shrink-0 flex-col items-center gap-1 border-t border-line-subtle pb-2 pt-2">
 			<div class="relative size-8">
 				<button
 					type="button"
@@ -282,7 +284,7 @@ function resetColors() {
 			</div>
 			<button
 				type="button"
-				class="text-[8px] leading-none text-zinc-600 hover:text-zinc-400"
+				class="text-[9px] font-semibold leading-none text-fg-subtle hover:text-fg"
 				title="Reset to black and white"
 				@click="resetColors"
 			>
@@ -290,7 +292,7 @@ function resetColors() {
 			</button>
 			<button
 				type="button"
-				class="text-zinc-600 hover:text-zinc-300"
+				class="text-fg-subtle hover:text-fg"
 				title="Swap fill and stroke (X)"
 				@click="swapColors"
 			>
@@ -303,7 +305,7 @@ function resetColors() {
 			<div
 				v-if="openSlot && flyoutAnchor"
 				data-tool-flyout
-				class="fixed z-[9999] min-w-[220px] overflow-hidden rounded border border-white/15 bg-[#2a2a2e] py-1 shadow-xl shadow-black/50"
+				class="fixed z-[10060] min-w-[220px] overflow-hidden rounded-lg bg-surface-raised p-1 shadow-[var(--shadow-md)]"
 				:style="{ top: `${flyoutAnchor.top}px`, left: `${flyoutAnchor.left}px` }"
 				role="menu"
 				@pointerenter="clearTimers()"
@@ -315,16 +317,16 @@ function resetColors() {
 					type="button"
 					role="menuitem"
 					:class="[
-						'flex w-full items-center gap-2 px-2.5 py-1.5 text-left text-[12px] transition-colors',
+						'flex h-8 w-full items-center gap-2 rounded-md px-2 text-left text-sm transition-colors',
 						activeTool === tool.id
-							? 'bg-[#4693e0] text-white'
-							: 'text-zinc-200 hover:bg-white/10',
+							? 'bg-brand-soft text-brand'
+							: 'text-fg hover:bg-surface-active',
 					]"
 					@click="onFlyoutSelect(tool)"
 				>
 					<component :is="ICONS[tool.id] || MousePointer2" class="size-3.5 shrink-0 opacity-90" />
 					<span class="min-w-0 flex-1 truncate">{{ tool.label }}</span>
-					<span class="shrink-0 text-[10px] opacity-60">{{ tool.shortcut }}</span>
+					<span class="shrink-0 font-mono text-2xs text-fg-subtle">{{ tool.shortcut }}</span>
 				</button>
 			</div>
 		</Teleport>

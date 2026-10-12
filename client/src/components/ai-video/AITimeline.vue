@@ -1,104 +1,83 @@
 <template>
-  <div class="ai-timeline">
-    <div class="ai-timeline__container">
-      <!-- Time Ruler -->
-      <div class="ai-timeline__ruler">
-        <div class="ai-timeline__ruler-labels">
+  <div class="ai-timeline flex h-full min-h-0 flex-col">
+    <!-- Time ruler (offset by the track header column) -->
+    <div class="relative h-5 shrink-0 border-b border-line-subtle bg-surface pl-[var(--track-header)] pr-4">
+      <div class="relative h-full">
+        <div
+          v-for="mark in timeMarks"
+          :key="mark"
+          class="absolute top-0 flex h-full items-center border-l border-line pl-1"
+          :style="{ left: `${(mark / duration) * 100}%` }"
+        >
+          <span class="tabular text-2xs text-fg-subtle">{{ formatTime(mark) }}</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Tracks -->
+    <div class="relative min-h-0 flex-1 overflow-y-auto">
+      <div
+        v-for="track in sortedTracks"
+        :key="track.id"
+        class="flex min-h-8 border-b border-line-subtle last:border-b-0"
+      >
+        <div
+          class="flex w-[var(--track-header)] shrink-0 items-center gap-1.5 border-r border-line-subtle bg-panel px-2 py-1.5"
+        >
+          <component :is="getTrackIcon(track.type)" class="size-3.5 shrink-0 text-fg-subtle" />
+          <span class="min-w-0 flex-1 truncate text-xs text-fg" :title="track.name">{{ track.name }}</span>
+          <span
+            class="size-2 shrink-0 rounded-full"
+            :style="{ background: trackColor(track.type) }"
+            :title="track.type"
+            :aria-label="track.type"
+          />
+        </div>
+
+        <div class="relative min-w-0 flex-1 bg-surface py-1 pr-4">
+          <!-- Effect tracks: individual effects -->
+          <template v-if="track.type === 'cameraMotion' || track.type === 'impactFX'">
+            <div
+              v-for="(effect, idx) in getTrackEffects(track)"
+              :key="`${track.id}-effect-${idx}`"
+              class="ai-timeline__segment"
+              :style="segmentStyle(track.type, effect.startTime, effect.endTime - effect.startTime)"
+              :title="effect.type"
+            >
+              <span class="truncate">{{ effect.type }}</span>
+            </div>
+          </template>
+
+          <!-- Transition tracks: individual transitions -->
+          <template v-else-if="track.type === 'transition'">
+            <div
+              v-for="(transition, idx) in getTrackTransitions(track)"
+              :key="`${track.id}-transition-${idx}`"
+              class="ai-timeline__segment"
+              :style="segmentStyle(track.type, transition.time, transition.duration)"
+              :title="transition.type"
+            >
+              <span class="truncate">{{ transition.type }}</span>
+            </div>
+          </template>
+
+          <!-- Everything else: one segment for the track span -->
           <div
-            v-for="mark in timeMarks"
-            :key="mark"
-            class="ai-timeline__ruler-mark"
-            :style="{ left: `${(mark / duration) * 100}%` }"
+            v-else
+            class="ai-timeline__segment"
+            :style="segmentStyle(track.type, track.startTime, track.endTime - track.startTime)"
           >
-            <span class="ai-timeline__ruler-label">{{ formatTime(mark) }}</span>
+            <span class="tabular truncate">{{ formatTime(track.endTime - track.startTime) }}</span>
           </div>
         </div>
       </div>
 
-      <!-- Tracks Container -->
-      <div class="ai-timeline__tracks-wrapper">
-        <div class="ai-timeline__tracks">
-          <div
-            v-for="track in sortedTracks"
-            :key="track.id"
-            class="ai-timeline__track"
-          >
-            <div class="ai-timeline__track-header">
-              <div class="ai-timeline__track-info">
-                <component :is="getTrackIcon(track.type)" :size="14" class="ai-timeline__track-icon" />
-                <span class="ai-timeline__track-name">{{ track.name }}</span>
-              </div>
-              <span class="ai-timeline__track-badge" :class="`ai-timeline__track-badge--${track.type}`">
-                {{ track.type }}
-              </span>
-            </div>
-            
-            <div class="ai-timeline__track-content">
-              <!-- Show individual effects/transitions for effect tracks -->
-              <template v-if="track.type === 'cameraMotion' || track.type === 'impactFX'">
-                <div
-                  v-for="(effect, idx) in getTrackEffects(track)"
-                  :key="`${track.id}-effect-${idx}`"
-                  class="ai-timeline__segment ai-timeline__segment--effect"
-                  :style="{
-                    left: `${(effect.startTime / duration) * 100}%`,
-                    width: `${((effect.endTime - effect.startTime) / duration) * 100}%`,
-                  }"
-                  :class="`ai-timeline__segment--${track.type}`"
-                  :title="effect.type"
-                >
-                  <div class="ai-timeline__segment-content">
-                    <span class="ai-timeline__segment-label">{{ effect.type }}</span>
-                  </div>
-                </div>
-              </template>
-              
-              <!-- Show individual transitions -->
-              <template v-else-if="track.type === 'transition'">
-                <div
-                  v-for="(transition, idx) in getTrackTransitions(track)"
-                  :key="`${track.id}-transition-${idx}`"
-                  class="ai-timeline__segment ai-timeline__segment--transition"
-                  :style="{
-                    left: `${(transition.time / duration) * 100}%`,
-                    width: `${(transition.duration / duration) * 100}%`,
-                  }"
-                  :class="`ai-timeline__segment--${track.type}`"
-                  :title="transition.type"
-                >
-                  <div class="ai-timeline__segment-content">
-                    <span class="ai-timeline__segment-label">{{ transition.type }}</span>
-                  </div>
-                </div>
-              </template>
-              
-              <!-- Show full track segment for other types -->
-              <template v-else>
-                <div
-                  class="ai-timeline__segment"
-                  :style="{
-                    left: `${(track.startTime / duration) * 100}%`,
-                    width: `${((track.endTime - track.startTime) / duration) * 100}%`,
-                  }"
-                  :class="`ai-timeline__segment--${track.type}`"
-                >
-                  <div class="ai-timeline__segment-content">
-                    <span class="ai-timeline__segment-label">{{ formatTime(track.endTime - track.startTime) }}</span>
-                  </div>
-                </div>
-              </template>
-            </div>
-          </div>
-        </div>
-
-        <!-- Playhead -->
-        <div 
-          class="ai-timeline__playhead"
-          :style="{ left: `calc(140px + (100% - 140px) * ${playheadPosition / 100})` }"
-        >
-          <div class="ai-timeline__playhead-line"></div>
-          <div class="ai-timeline__playhead-handle"></div>
-        </div>
+      <!-- Playhead -->
+      <div
+        class="pointer-events-none absolute inset-y-0 z-10 w-px bg-brand transition-[left] duration-100 ease-linear"
+        :style="{ left: `calc(var(--track-header) + (100% - var(--track-header) - 1rem) * ${playheadPosition / 100})` }"
+      >
+        <span class="absolute -left-[3.5px] -top-px size-2 rounded-full bg-brand" />
       </div>
     </div>
   </div>
@@ -170,6 +149,31 @@ function getTrackIcon(type: string) {
   }
 }
 
+// Track colors are data colors (the shared --track-* palette).
+const TRACK_COLORS: Record<string, string> = {
+  video: 'var(--track-video)',
+  image: 'var(--track-video)',
+  audio: 'var(--track-audio)',
+  text: 'var(--track-text)',
+  shape: 'var(--track-sticker)',
+  cameraMotion: 'var(--track-intro)',
+  impactFX: 'var(--danger)',
+  transition: 'var(--track-watermark)',
+};
+
+function trackColor(type: string) {
+  return TRACK_COLORS[type] || 'var(--track-video)';
+}
+
+function segmentStyle(type: string, start: number, length: number) {
+  const dur = duration.value || 1;
+  return {
+    left: `${(start / dur) * 100}%`,
+    width: `${(length / dur) * 100}%`,
+    '--segment-color': trackColor(type),
+  };
+}
+
 function getTrackEffects(track: any) {
   const effects = track.properties?.effects || [];
   return effects.map((effect: any) => ({
@@ -191,236 +195,28 @@ function formatTime(seconds: number): string {
 </script>
 
 <style scoped>
-.ai-timeline {
-  margin-top: 0.75rem;
-  background: var(--sidebar-bg);
-  border: 1px solid var(--border);
-  border-radius: 6px;
-  overflow: hidden;
-  padding-right: 1rem; /* Add right padding to container */
-}
+  .ai-timeline {
+    --track-header: 140px;
+  }
 
-.ai-timeline__container {
-  position: relative;
-}
-
-/* Ruler */
-.ai-timeline__ruler {
-  height: 20px;
-  background: var(--sidebar-surface);
-  border-bottom: 1px solid var(--border);
-  position: relative;
-  padding-right: 1rem; /* Add right padding to match tracks */
-}
-
-.ai-timeline__ruler-labels {
-  position: relative;
-  height: 100%;
-}
-
-.ai-timeline__ruler-mark {
-  position: absolute;
-  top: 0;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  padding-left: 4px;
-}
-
-.ai-timeline__ruler-mark::before {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 0;
-  bottom: 0;
-  width: 1px;
-  background: var(--border);
-}
-
-.ai-timeline__ruler-label {
-  font-size: 0.625rem;
-  font-weight: 500;
-  color: var(--muted-foreground);
-  font-variant-numeric: tabular-nums;
-}
-
-/* Tracks Wrapper */
-.ai-timeline__tracks-wrapper {
-  position: relative;
-  overflow-y: auto;
-  max-height: 180px;
-}
-
-.ai-timeline__tracks {
-  position: relative;
-}
-
-/* Track */
-.ai-timeline__track {
-  display: flex;
-  border-bottom: 1px solid var(--border);
-  min-height: 32px;
-}
-
-.ai-timeline__track:last-child {
-  border-bottom: none;
-}
-
-.ai-timeline__track-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.375rem;
-  padding: 0.375rem 0.5rem;
-  width: 140px;
-  flex-shrink: 0;
-  background: var(--sidebar-bg);
-  border-right: 1px solid var(--border);
-}
-
-.ai-timeline__track-info {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  flex: 1;
-  min-width: 0;
-}
-
-.ai-timeline__track-icon {
-  flex-shrink: 0;
-  color: var(--muted-foreground);
-}
-
-.ai-timeline__track-name {
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--foreground);
-  overflow: hidden;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.ai-timeline__track-badge {
-  font-size: 0.5625rem;
-  font-weight: 600;
-  padding: 0.0625rem 0.25rem;
-  border-radius: 3px;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  flex-shrink: 0;
-}
-
-.ai-timeline__track-badge--video { background: var(--sidebar-active); color: var(--sidebar-accent); }
-.ai-timeline__track-badge--audio { background: hsl(var(--chart-2) / 0.12); color: hsl(var(--chart-2)); }
-.ai-timeline__track-badge--text { background: hsl(var(--chart-3) / 0.12); color: hsl(var(--chart-3)); }
-.ai-timeline__track-badge--shape { background: hsl(var(--chart-4) / 0.12); color: hsl(var(--chart-4)); }
-.ai-timeline__track-badge--cameraMotion { background: hsl(var(--chart-1) / 0.12); color: hsl(var(--chart-1)); }
-.ai-timeline__track-badge--impactFX { background: var(--destructive); color: var(--destructive-foreground); }
-
-/* Track Content */
-.ai-timeline__track-content {
-  position: relative;
-  flex: 1;
-  padding: 0.25rem 1rem 0.25rem 0; /* Add right padding */
-  background: var(--sidebar-surface);
-}
-
-/* Segment */
-.ai-timeline__segment {
-  position: absolute;
-  top: 50%;
-  transform: translateY(-50%);
-  height: 24px;
-  border-radius: 4px;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  overflow: hidden;
-}
-
-.ai-timeline__segment::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background: linear-gradient(180deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0) 100%);
-  pointer-events: none;
-}
-
-.ai-timeline__segment:hover {
-  transform: translateY(-50%) translateY(-1px);
-  filter: brightness(1.1);
-}
-
-.ai-timeline__segment--video {
-  background: var(--sidebar-accent);
-}
-
-.ai-timeline__segment--audio {
-  background: hsl(var(--chart-2));
-}
-
-.ai-timeline__segment--text {
-  background: hsl(var(--chart-3));
-}
-
-.ai-timeline__segment--shape {
-  background: hsl(var(--chart-4));
-}
-
-.ai-timeline__segment--cameraMotion {
-  background: hsl(var(--chart-1));
-}
-
-.ai-timeline__segment--impactFX {
-  background: var(--destructive);
-}
-
-.ai-timeline__segment-content {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 100%;
-  padding: 0 0.375rem;
-}
-
-.ai-timeline__segment-label {
-  font-size: 0.625rem;
-  font-weight: 600;
-  color: white;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
-  white-space: nowrap;
-}
-
-/* Playhead */
-.ai-timeline__playhead {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  width: 2px;
-  pointer-events: none;
-  z-index: 100;
-  transition: left 0.1s linear;
-}
-
-.ai-timeline__playhead-line {
-  position: absolute;
-  top: 0;
-  bottom: 0;
-  left: 0;
-  width: 1px;
-  background: var(--sidebar-accent);
-  box-shadow: 0 0 4px var(--sidebar-active);
-}
-
-.ai-timeline__playhead-handle {
-  position: absolute;
-  top: -3px;
-  left: 50%;
-  transform: translateX(-50%);
-  width: 8px;
-  height: 8px;
-  background: var(--sidebar-accent);
-  border: 1.5px solid var(--background);
-  border-radius: 50%;
-  box-shadow: 0 1px 4px var(--sidebar-active);
-}
+  /* Timeline clip: tinted fill + colored edge in the track's data color */
+  .ai-timeline__segment {
+    position: absolute;
+    top: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    height: 22px;
+    min-width: 4px;
+    padding: 0 6px;
+    transform: translateY(-50%);
+    overflow: hidden;
+    border-radius: 4px;
+    border: 1px solid color-mix(in srgb, var(--segment-color) 60%, transparent);
+    background: color-mix(in srgb, var(--segment-color) 28%, var(--surface));
+    color: var(--fg);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    white-space: nowrap;
+  }
 </style>

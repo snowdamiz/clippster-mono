@@ -1,425 +1,278 @@
 <template>
   <PageLayout
-    title="Organization Assets"
+    title="Assets"
     description="Upload intros, outros, watermarks, and other assets for your team"
-    :show-header="true"
     :icon="FolderOpen"
-    :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Assets' }]"
+    :breadcrumbs="[{ label: 'Organization' }, { label: 'Assets' }]"
   >
     <template #firstBreadcrumb>
       <OrganizationBreadcrumb />
     </template>
     <template #actions>
-      <button v-if="isAdmin" class="org-assets__action-btn" @click="openUploadDialog">
-        <Upload class="org-assets__action-icon" />
-        Upload Asset
-      </button>
+      <Button v-if="isAdmin" variant="primary" size="sm" @click="openUploadDialog">
+        <Upload />
+        Upload asset
+      </Button>
+    </template>
+    <template v-if="orgAssets.length > 0" #toolbar>
+      <div class="min-w-0 overflow-x-auto">
+        <SegmentedControl v-model="typeFilter" :options="filterOptions" />
+      </div>
     </template>
 
-    <div class="org-assets">
-      <!-- Page Heading -->
-      <div class="org-assets__heading">
-        <h1 class="org-assets__title">Asset Library</h1>
-        <p class="org-assets__subtitle">
-          Manage intros, outros, watermarks, audio files, and images for your organization
-        </p>
-      </div>
-
-      <!-- Loading State -->
-      <div v-if="assetsLoading" class="org-assets__loading">
-        <div class="org-assets__loading-spinner"></div>
-        <span>Loading assets...</span>
-      </div>
-
-      <!-- Assets Sections -->
-      <template v-else-if="orgAssets.length > 0">
-        <section v-for="group in groupedAssets" :key="group.type" class="org-assets__section">
-          <div class="org-assets__section-header">
-            <button @click="toggleAssetGroup(group.type)" class="org-assets__section-header-btn">
-              <div class="org-assets__section-header-icon" :class="getAssetTypeIconClass(group.type)">
-                <component :is="getAssetTypeIcon(group.type)" />
-              </div>
-              <div class="org-assets__section-header-text">
-                <h2 class="org-assets__section-title">{{ getAssetTypeLabel(group.type) }}s</h2>
-                <p class="org-assets__section-subtitle">{{ getAssetTypeDescription(group.type) }}</p>
-              </div>
-              <span class="org-assets__section-badge" :class="getAssetTypeBadgeClass(group.type)">
-                {{ group.assets.length }}
-              </span>
-              <ChevronDown
-                class="org-assets__section-chevron"
-                :class="{ 'org-assets__section-chevron--collapsed': collapsedGroups.has(group.type) }"
-              />
-            </button>
+    <div class="flex flex-col px-5 py-4">
+      <!-- Loading (first load only) -->
+      <div
+        v-if="assetsLoading && orgAssets.length === 0"
+        class="skeleton-group grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3"
+        aria-busy="true"
+      >
+        <div v-for="i in 6" :key="i" class="overflow-hidden rounded-xl border border-line-subtle bg-surface">
+          <div class="skeleton aspect-video rounded-none" />
+          <div class="flex flex-col gap-1.5 p-3">
+            <div class="skeleton h-3.5 w-2/3" />
+            <div class="skeleton h-3 w-1/3" />
           </div>
+        </div>
+      </div>
 
-          <div v-if="!collapsedGroups.has(group.type)" class="org-assets__grid">
-            <div
+      <!-- Asset groups: keyed by the type filter so each switch eases in -->
+      <div v-else-if="orgAssets.length > 0" :key="typeFilter" class="flex animate-enter flex-col gap-6">
+        <section v-for="group in visibleGroups" :key="group.type" class="flex flex-col gap-2.5">
+          <SectionHeader
+            :title="getAssetTypePlural(group.type)"
+            :count="group.assets.length"
+            :icon="getAssetTypeIcon(group.type)"
+            :description="getAssetTypeDescription(group.type)"
+          />
+          <div class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+            <article
               v-for="asset in group.assets"
               :key="asset.id"
-              class="org-assets__card"
-              :class="{
-                'org-assets__card--playing': isAudioPlaying(asset.id),
-                [`org-assets__card--${asset.asset_type}`]: true,
-              }"
+              class="group/asset flex min-w-0 flex-col overflow-hidden rounded-xl border bg-surface transition-colors"
+              :class="isAudioPlaying(asset.id) ? 'border-brand-line' : 'border-line-subtle hover:border-line'"
             >
-              <div class="org-assets__card-indicator" :class="`org-assets__card-indicator--${asset.asset_type}`"></div>
+              <!-- Preview -->
+              <button
+                type="button"
+                class="relative block aspect-video w-full overflow-hidden focus-visible:outline-none focus-visible:shadow-[inset_0_0_0_2px_var(--brand)]"
+                :class="['image', 'watermark'].includes(asset.asset_type) ? 'transparency-checkerboard' : 'bg-surface-sunken'"
+                :aria-label="asset.asset_type === 'audio' ? (isAudioPlaying(asset.id) ? 'Pause' : 'Play') : 'Preview'"
+                @click="handleAssetClick(asset)"
+              >
+                <img
+                  v-if="asset.asset_type !== 'audio' && (asset.thumbnail_url || (asset.url && ['image', 'watermark'].includes(asset.asset_type)))"
+                  :src="asset.thumbnail_url || asset.url"
+                  :alt="asset.name"
+                  class="size-full"
+                  :class="['image', 'watermark'].includes(asset.asset_type) ? 'object-contain p-3' : 'object-cover'"
+                />
+                <span v-else class="grid size-full place-items-center text-fg-subtle">
+                  <component :is="getAssetTypeIcon(asset.asset_type)" class="size-7" />
+                </span>
 
-              <div class="org-assets__card-content">
-                <div class="org-assets__card-row">
-                  <!-- Thumbnail -->
-                  <div
-                    class="org-assets__thumbnail"
-                    :class="{ 'org-assets__thumbnail--clickable': isPlayableAsset(asset) }"
-                    @click="handleAssetClick(asset)"
-                  >
-                    <img
-                      v-if="asset.asset_type === 'audio'"
-                      :src="AUDIO_THUMBNAIL"
-                      :alt="asset.name"
-                      class="org-assets__thumbnail-img"
-                    />
-                    <img
-                      v-else-if="
-                        asset.thumbnail_url || (asset.url && ['image', 'watermark'].includes(asset.asset_type))
-                      "
-                      :src="asset.thumbnail_url || asset.url"
-                      :alt="asset.name"
-                      class="org-assets__thumbnail-img"
-                    />
-                    <div v-else class="org-assets__thumbnail-fallback">
-                      <component :is="getAssetTypeIcon(asset.asset_type)" class="org-assets__thumbnail-icon" />
-                    </div>
-
-                    <div
-                      v-if="isPlayableAsset(asset)"
-                      class="org-assets__thumbnail-overlay"
-                      :class="{ 'org-assets__thumbnail-overlay--visible': isAudioPlaying(asset.id) }"
-                    >
-                      <Pause
-                        v-if="asset.asset_type === 'audio' && isAudioPlaying(asset.id)"
-                        class="org-assets__thumbnail-play"
-                      />
-                      <Play v-else class="org-assets__thumbnail-play" />
-                    </div>
-                  </div>
-
-                  <!-- Info -->
-                  <div class="org-assets__info">
-                    <div class="org-assets__name" :title="asset.name">{{ asset.name }}</div>
-                    <div class="org-assets__meta">
-                      <span v-if="asset.duration" class="org-assets__meta-item">
-                        <Clock class="org-assets__meta-icon" />
-                        {{ formatDuration(asset.duration) }}
-                      </span>
-                      <span v-if="asset.width && asset.height" class="org-assets__meta-item">
-                        <Maximize2 class="org-assets__meta-icon" />
-                        {{ asset.width }}×{{ asset.height }}
-                      </span>
-                    </div>
-                  </div>
-
-                  <!-- Type Badge -->
-                  <span class="org-assets__type-badge" :class="`org-assets__type-badge--${asset.asset_type}`">
-                    <component :is="getAssetTypeIcon(asset.asset_type)" class="org-assets__type-badge-icon" />
-                    {{ asset.asset_type }}
+                <span
+                  class="absolute inset-0 grid place-items-center bg-black/40 opacity-0 transition-opacity group-hover/asset:opacity-100"
+                  :class="{ 'opacity-100': isAudioPlaying(asset.id) }"
+                >
+                  <span class="grid size-9 place-items-center rounded-full bg-black/60 text-white backdrop-blur-sm">
+                    <Pause v-if="asset.asset_type === 'audio' && isAudioPlaying(asset.id)" class="size-4" />
+                    <Maximize2 v-else-if="['image', 'watermark'].includes(asset.asset_type)" class="size-4" />
+                    <Play v-else class="size-4 translate-x-px" />
                   </span>
+                </span>
 
-                  <!-- Campaign Badge -->
+                <span
+                  v-if="asset.duration"
+                  class="tabular absolute bottom-1.5 right-1.5 rounded bg-black/70 px-1 py-px text-2xs font-medium text-white"
+                >
+                  {{ formatDuration(asset.duration) }}
+                </span>
+              </button>
+
+              <!-- Info -->
+              <div class="flex items-start gap-2 p-3">
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm font-medium text-fg" :title="asset.name">{{ asset.name }}</p>
+                  <p class="flex min-w-0 items-center gap-1.5 truncate text-xs text-fg-subtle">
+                    <span v-if="asset.width && asset.height" class="tabular">{{ asset.width }}×{{ asset.height }}</span>
+                    <span v-if="asset.width && asset.height && asset.file_size" aria-hidden="true">·</span>
+                    <span v-if="asset.file_size" class="tabular">{{ formatFileSize(asset.file_size) }}</span>
+                    <span v-if="!(asset.width && asset.height) && !asset.file_size" class="capitalize">
+                      {{ getAssetTypeLabel(asset.asset_type) }}
+                    </span>
+                  </p>
                   <button
                     v-if="getAttachedCampaign(asset)"
-                    class="org-assets__campaign-badge"
+                    type="button"
+                    class="mt-1.5"
                     :title="`Used in campaign: ${getAttachedCampaign(asset)?.title}`"
                     @click.stop="viewAttachedCampaign(asset)"
                   >
-                    <Megaphone class="org-assets__campaign-badge-icon" />
-                    <span class="org-assets__campaign-badge-text">Campaign</span>
+                    <Badge variant="brand"><Megaphone />Campaign</Badge>
                   </button>
-
-                  <!-- Actions Menu -->
-                  <div class="org-assets__actions">
-                    <button
-                      v-if="isPlayableAsset(asset)"
-                      @click="handleAssetClick(asset)"
-                      class="org-assets__action-item"
-                      :title="asset.asset_type === 'audio' ? (isAudioPlaying(asset.id) ? 'Pause' : 'Play') : 'Preview'"
-                    >
-                      <Pause
-                        v-if="asset.asset_type === 'audio' && isAudioPlaying(asset.id)"
-                        class="org-assets__action-item-icon"
-                      />
-                      <Play v-else class="org-assets__action-item-icon" />
-                    </button>
-                    <button
-                      v-if="isAdmin"
-                      :ref="(el) => setAssetMenuButtonRef(el, asset.id)"
-                      class="org-assets__menu-btn"
-                      :class="{ 'org-assets__menu-btn--active': openAssetMenuId === asset.id }"
-                      title="Asset actions"
-                      @click.stop="toggleAssetMenu(asset.id)"
-                    >
-                      <MoreVertical class="org-assets__menu-icon" />
-                    </button>
-
-                    <Teleport to="body">
-                      <div
-                        v-if="openAssetMenuId === asset.id"
-                        class="org-assets__dropdown"
-                        :style="getAssetMenuPosition(asset.id)"
-                        @click.stop
-                      >
-                        <button
-                          v-if="isPlayableAsset(asset)"
-                          class="org-assets__dropdown-item"
-                          @click.stop="
-                            handleAssetClick(asset);
-                            closeAssetMenu();
-                          "
-                        >
-                          <Play class="org-assets__dropdown-icon" />
-                          <span>{{ asset.asset_type === 'audio' ? 'Play Audio' : 'Preview' }}</span>
-                        </button>
-                        <div v-if="isPlayableAsset(asset)" class="org-assets__dropdown-divider"></div>
-                        <template v-if="getAttachedCampaign(asset)">
-                          <button
-                            class="org-assets__dropdown-item"
-                            @click.stop="
-                              viewAttachedCampaign(asset);
-                              closeAssetMenu();
-                            "
-                          >
-                            <Megaphone class="org-assets__dropdown-icon" />
-                            <span>View attached campaign</span>
-                          </button>
-                          <div class="org-assets__dropdown-divider"></div>
-                        </template>
-                        <button
-                          class="org-assets__dropdown-item"
-                          :class="{
-                            'org-assets__dropdown-item--danger': !isAttachedToActiveCampaign(asset),
-                            'org-assets__dropdown-item--disabled': isAttachedToActiveCampaign(asset),
-                          }"
-                          :disabled="isAttachedToActiveCampaign(asset)"
-                          @click.stop="
-                            !isAttachedToActiveCampaign(asset) && (confirmDeleteAsset(asset), closeAssetMenu())
-                          "
-                        >
-                          <Trash2 class="org-assets__dropdown-icon" />
-                          <span v-if="isAttachedToActiveCampaign(asset)">In use by campaign</span>
-                          <span v-else>Delete Asset</span>
-                        </button>
-                      </div>
-                    </Teleport>
-                  </div>
                 </div>
+
+                <DropdownMenu v-if="isAdmin">
+                  <DropdownMenuTrigger as-child>
+                    <Button variant="ghost" size="icon-xs" class="-mr-1" title="Asset actions" aria-label="Asset actions">
+                      <MoreHorizontal />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent align="end" class="w-52">
+                    <DropdownMenuItem v-if="isPlayableAsset(asset)" @select="handleAssetClick(asset)">
+                      <Play />
+                      {{ asset.asset_type === 'audio' ? 'Play audio' : 'Preview' }}
+                    </DropdownMenuItem>
+                    <DropdownMenuItem v-if="getAttachedCampaign(asset)" @select="viewAttachedCampaign(asset)">
+                      <Megaphone />
+                      View attached campaign
+                    </DropdownMenuItem>
+                    <DropdownMenuSeparator />
+                    <DropdownMenuItem
+                      :disabled="isAttachedToActiveCampaign(asset)"
+                      class="text-danger focus:bg-danger-soft [&>svg]:!text-danger"
+                      @select="confirmDeleteAsset(asset)"
+                    >
+                      <Trash2 />
+                      {{ isAttachedToActiveCampaign(asset) ? 'In use by campaign' : 'Delete asset' }}
+                    </DropdownMenuItem>
+                  </DropdownMenuContent>
+                </DropdownMenu>
               </div>
-            </div>
+            </article>
           </div>
         </section>
-      </template>
-
-      <!-- Empty State -->
-      <div v-else class="org-assets__empty">
-        <div class="org-assets__empty-icon-wrapper">
-          <Package class="org-assets__empty-icon" />
-        </div>
-        <h3 class="org-assets__empty-title">No assets uploaded yet</h3>
-        <p class="org-assets__empty-text">
-          Upload intros, outros, watermarks, or audio files to build your asset library.
-        </p>
-        <button v-if="isAdmin" @click="openUploadDialog" class="org-assets__empty-btn">
-          <Upload class="org-assets__empty-btn-icon" />
-          Upload First Asset
-        </button>
       </div>
+
+      <!-- Empty -->
+      <EmptyState
+        v-else
+        :icon="Package"
+        title="No assets yet"
+        description="Upload intros, outros, watermarks or audio files to build your team's asset library."
+      >
+        <Button v-if="isAdmin" variant="secondary" size="sm" @click="openUploadDialog">
+          <Upload />
+          Upload first asset
+        </Button>
+      </EmptyState>
     </div>
 
     <!-- Upload Asset Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showUploadDialog" class="org-dialog__overlay" @click.self="closeUploadDialog">
-          <Transition name="dialog" appear>
-            <div class="org-dialog org-dialog--cyan">
-              <div class="org-dialog__accent org-dialog__accent--cyan"></div>
-              <div class="org-dialog__header">
-                <button class="org-dialog__close" @click="closeUploadDialog" title="Close" :disabled="uploadingAsset">
-                  <X :size="18" />
-                </button>
-                <div class="org-dialog__icon org-dialog__icon--cyan">
-                  <Upload :size="24" />
-                </div>
-                <h2 class="org-dialog__title">Upload Asset</h2>
-                <p class="org-dialog__subtitle">
-                  {{ uploadDialogFile ? 'Configure your asset' : 'Select a file to upload' }}
-                </p>
-              </div>
+    <Modal
+      :open="showUploadDialog"
+      title="Upload asset"
+      :description="uploadDialogFile ? 'Choose how this file is used.' : 'Select a video, image or audio file.'"
+      :icon="Upload"
+      :dismissible="!uploadingAsset"
+      @close="closeUploadDialog"
+    >
+      <!-- Pick a file -->
+      <Dropzone
+        v-if="!uploadDialogFile"
+        :icon="FolderOpen"
+        title="Click to browse files"
+        hint="MP4, MOV, PNG, JPG, GIF, WebP, MP3, WAV…"
+        @select="selectFileForUpload"
+      />
 
-              <div class="org-dialog__content">
-                <!-- File Selection State -->
-                <div v-if="!uploadDialogFile" class="org-dialog__dropzone-wrapper">
-                  <button @click="selectFileForUpload" class="org-dialog__dropzone">
-                    <div class="org-dialog__dropzone-inner">
-                      <FolderOpen class="org-dialog__dropzone-icon" />
-                      <p class="org-dialog__dropzone-title">Click to browse files</p>
-                      <p class="org-dialog__dropzone-hint">Video, image, or audio files</p>
-                    </div>
-                  </button>
-                </div>
+      <!-- File selected -->
+      <div v-else class="flex flex-col gap-4">
+        <FileRow
+          :name="uploadDialogFile.name"
+          :meta="`${formatFileSize(uploadDialogFile.size)} · ${uploadDialogFileType.toUpperCase()}`"
+          :icon="getFileTypeIcon(uploadDialogFileType)"
+          @remove="clearUploadFile"
+        />
 
-                <!-- File Selected State -->
-                <template v-else>
-                  <div class="org-dialog__file-card">
-                    <div class="org-dialog__file-icon" :class="getFileTypeIconBg(uploadDialogFileType)">
-                      <component :is="getFileTypeIcon(uploadDialogFileType)" class="org-dialog__file-icon-svg" />
-                    </div>
-                    <div class="org-dialog__file-info">
-                      <p class="org-dialog__file-name" :title="uploadDialogFile.name">
-                        {{ uploadDialogFile.name }}
-                      </p>
-                      <p class="org-dialog__file-meta">
-                        {{ formatFileSize(uploadDialogFile.size) }} • {{ uploadDialogFileType.toUpperCase() }}
-                      </p>
-                    </div>
-                    <button @click="clearUploadFile" class="org-dialog__file-clear" title="Remove file">
-                      <X class="org-dialog__file-clear-icon" />
-                    </button>
-                  </div>
+        <Field label="Asset type">
+          <div class="grid grid-cols-2 gap-2" role="radiogroup">
+            <button
+              v-for="option in uploadDialogAssetOptions"
+              :key="option.value"
+              type="button"
+              role="radio"
+              :aria-checked="uploadDialogSelectedType === option.value"
+              class="flex items-center gap-2 rounded-lg border px-3 py-2.5 text-left text-sm transition-colors focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
+              :class="
+                uploadDialogSelectedType === option.value
+                  ? 'border-brand-line bg-brand-soft text-fg'
+                  : 'border-line bg-surface text-fg-muted hover:border-line-strong hover:text-fg'
+              "
+              @click="uploadDialogSelectedType = option.value"
+            >
+              <component
+                :is="option.icon"
+                class="size-4 shrink-0"
+                :class="uploadDialogSelectedType === option.value ? 'text-brand' : 'text-fg-subtle'"
+              />
+              <span class="flex-1 truncate font-medium">{{ option.label }}</span>
+              <Badge v-if="option.recommended">Suggested</Badge>
+            </button>
+          </div>
+        </Field>
 
-                  <div class="org-dialog__field">
-                    <label class="org-dialog__label">Asset Type</label>
-                    <div class="org-dialog__type-grid">
-                      <button
-                        v-for="option in uploadDialogAssetOptions"
-                        :key="option.value"
-                        @click="uploadDialogSelectedType = option.value"
-                        class="org-dialog__type-option"
-                        :class="{ 'org-dialog__type-option--selected': uploadDialogSelectedType === option.value }"
-                      >
-                        <component :is="option.icon" class="org-dialog__type-option-icon" />
-                        <span class="org-dialog__type-option-label">{{ option.label }}</span>
-                        <span v-if="option.recommended" class="org-dialog__type-option-badge">likely</span>
-                      </button>
-                    </div>
-                  </div>
+        <Field label="Name" hint="Optional — defaults to the file name." for="org-asset-name">
+          <Input id="org-asset-name" v-model="uploadDialogAssetName" type="text" :placeholder="uploadDialogFile.name" />
+        </Field>
+      </div>
 
-                  <div class="org-dialog__field">
-                    <label class="org-dialog__label">
-                      Name
-                      <span class="org-dialog__label-hint">(optional)</span>
-                    </label>
-                    <input
-                      v-model="uploadDialogAssetName"
-                      type="text"
-                      :placeholder="uploadDialogFile.name"
-                      class="org-dialog__input"
-                    />
-                  </div>
-                </template>
-              </div>
-
-              <div class="org-dialog__footer">
-                <button
-                  class="org-dialog__btn org-dialog__btn--secondary"
-                  @click="closeUploadDialog"
-                  :disabled="uploadingAsset"
-                >
-                  Cancel
-                </button>
-                <button
-                  v-if="uploadDialogFile"
-                  class="org-dialog__btn org-dialog__btn--primary"
-                  @click="executeAssetUpload"
-                  :disabled="uploadingAsset || !uploadDialogSelectedType"
-                >
-                  <Loader2 v-if="uploadingAsset" class="org-dialog__btn-spinner" />
-                  {{ uploadingAsset ? 'Uploading...' : 'Upload Asset' }}
-                </button>
-              </div>
-            </div>
-          </Transition>
-        </div>
-      </Transition>
-    </Teleport>
+      <template #footer>
+        <Button variant="ghost" :disabled="uploadingAsset" @click="closeUploadDialog">Cancel</Button>
+        <Button
+          v-if="uploadDialogFile"
+          variant="primary"
+          :loading="uploadingAsset"
+          :disabled="uploadingAsset || !uploadDialogSelectedType"
+          @click="executeAssetUpload"
+        >
+          {{ uploadingAsset ? 'Uploading…' : 'Upload asset' }}
+        </Button>
+      </template>
+    </Modal>
 
     <!-- Delete Asset Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showDeleteDialog" class="org-dialog__overlay" @click.self="closeDeleteDialog">
-          <Transition name="dialog" appear>
-            <div class="org-dialog org-dialog--red">
-              <div class="org-dialog__accent org-dialog__accent--red"></div>
-              <div class="org-dialog__header">
-                <button class="org-dialog__close" @click="closeDeleteDialog" title="Close" :disabled="deleteProcessing">
-                  <X :size="18" />
-                </button>
-                <div class="org-dialog__icon org-dialog__icon--red">
-                  <Trash2 :size="24" />
-                </div>
-                <h2 class="org-dialog__title">Delete Asset</h2>
-                <p class="org-dialog__subtitle">This action cannot be undone</p>
-              </div>
-
-              <div class="org-dialog__content">
-                <div class="org-dialog__asset-card">
-                  <div class="org-dialog__asset-thumb">
-                    <img
-                      v-if="deleteDialogAsset?.asset_type === 'audio'"
-                      :src="AUDIO_THUMBNAIL"
-                      :alt="deleteDialogAsset?.name"
-                      class="org-dialog__asset-thumb-img"
-                    />
-                    <img
-                      v-else-if="
-                        deleteDialogAsset?.thumbnail_url ||
-                        (deleteDialogAsset?.url && ['image', 'watermark'].includes(deleteDialogAsset?.asset_type))
-                      "
-                      :src="deleteDialogAsset?.thumbnail_url || deleteDialogAsset?.url"
-                      :alt="deleteDialogAsset?.name"
-                      class="org-dialog__asset-thumb-img"
-                    />
-                    <component
-                      v-else
-                      :is="getAssetTypeIcon(deleteDialogAsset?.asset_type || '')"
-                      class="org-dialog__asset-thumb-icon"
-                    />
-                  </div>
-                  <div class="org-dialog__asset-info">
-                    <div class="org-dialog__asset-name">{{ deleteDialogAsset?.name }}</div>
-                    <div class="org-dialog__asset-type">{{ deleteDialogAsset?.asset_type }}</div>
-                  </div>
-                </div>
-
-                <div class="org-dialog__warning">
-                  <p class="org-dialog__warning-text">
-                    Are you sure you want to delete
-                    <strong>"{{ deleteDialogAsset?.name }}"</strong>
-                    ? This will permanently remove the asset from your organization.
-                  </p>
-                </div>
-              </div>
-
-              <div class="org-dialog__footer">
-                <button
-                  class="org-dialog__btn org-dialog__btn--secondary"
-                  @click="closeDeleteDialog"
-                  :disabled="deleteProcessing"
-                >
-                  Cancel
-                </button>
-                <button
-                  class="org-dialog__btn org-dialog__btn--danger"
-                  @click="executeDeleteAsset"
-                  :disabled="deleteProcessing"
-                >
-                  <Loader2 v-if="deleteProcessing" class="org-dialog__btn-spinner" />
-                  {{ deleteProcessing ? 'Deleting...' : 'Delete Asset' }}
-                </button>
-              </div>
-            </div>
-          </Transition>
+    <Modal
+      :open="showDeleteDialog"
+      title="Delete asset"
+      description="This action cannot be undone."
+      :icon="Trash2"
+      tone="danger"
+      size="sm"
+      :dismissible="!deleteProcessing"
+      @close="closeDeleteDialog"
+    >
+      <div class="flex items-center gap-3">
+        <span class="grid h-9 w-16 shrink-0 place-items-center overflow-hidden rounded-md bg-surface-sunken text-fg-subtle">
+          <img
+            v-if="
+              deleteDialogAsset?.asset_type !== 'audio' &&
+              (deleteDialogAsset?.thumbnail_url ||
+                (deleteDialogAsset?.url && ['image', 'watermark'].includes(deleteDialogAsset?.asset_type)))
+            "
+            :src="deleteDialogAsset?.thumbnail_url || deleteDialogAsset?.url"
+            :alt="deleteDialogAsset?.name"
+            class="size-full object-cover"
+          />
+          <component :is="getAssetTypeIcon(deleteDialogAsset?.asset_type || '')" v-else class="size-4" />
+        </span>
+        <div class="min-w-0">
+          <p class="truncate text-sm font-medium text-fg">{{ deleteDialogAsset?.name }}</p>
+          <p class="text-xs capitalize text-fg-subtle">{{ getAssetTypeLabel(deleteDialogAsset?.asset_type || '') }}</p>
         </div>
-      </Transition>
-    </Teleport>
+      </div>
+      <p class="mt-3 text-sm text-fg-muted">
+        Are you sure you want to delete <span class="font-medium text-fg">"{{ deleteDialogAsset?.name }}"</span>? It will
+        be permanently removed from your organization.
+      </p>
+      <template #footer>
+        <Button variant="ghost" :disabled="deleteProcessing" @click="closeDeleteDialog">Cancel</Button>
+        <Button variant="destructive" :loading="deleteProcessing" @click="executeDeleteAsset">
+          {{ deleteProcessing ? 'Deleting…' : 'Delete asset' }}
+        </Button>
+      </template>
+    </Modal>
 
     <!-- Video Player Dialog -->
     <VideoPlayerDialog
@@ -430,41 +283,31 @@
       @close="closeVideoPlayer"
     />
 
-    <!-- Image Preview Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div
-          v-if="showImagePreview && imageToPreview"
-          class="org-assets__image-backdrop"
-          @click.self="closeImagePreview"
-        >
-          <div class="org-assets__image-container">
-            <button @click="closeImagePreview" class="org-assets__image-close">
-              <X class="org-assets__image-close-icon" />
-            </button>
-            <img :src="imageToPreview.url" :alt="imageToPreview.name" class="org-assets__image-preview" />
-            <div class="org-assets__image-info">
-              <p class="org-assets__image-name">{{ imageToPreview.name }}</p>
-              <p class="org-assets__image-meta">
-                <span v-if="imageToPreview.width && imageToPreview.height">
-                  {{ imageToPreview.width }}×{{ imageToPreview.height }}
-                </span>
-              </p>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <!-- Image Preview -->
+    <Modal
+      :open="showImagePreview && !!imageToPreview"
+      :title="imageToPreview?.name"
+      :description="imageToPreview?.width && imageToPreview?.height ? `${imageToPreview.width}×${imageToPreview.height}` : undefined"
+      size="xl"
+      @close="closeImagePreview"
+    >
+      <div class="transparency-checkerboard grid place-items-center overflow-hidden rounded-lg">
+        <img
+          v-if="imageToPreview"
+          :src="imageToPreview.url"
+          :alt="imageToPreview.name"
+          class="max-h-[65vh] w-auto max-w-full object-contain"
+        />
+      </div>
+    </Modal>
   </PageLayout>
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, onUnmounted } from 'vue';
+  import { ref, computed, onMounted, onUnmounted, markRaw } from 'vue';
   import { useRouter } from 'vue-router';
   import {
     Upload,
-    Loader2,
-    ChevronDown,
     Play,
     Pause,
     Trash2,
@@ -473,14 +316,29 @@
     Image as ImageIcon,
     Music,
     FolderOpen,
-    X,
-    MoreVertical,
-    Clock,
+    MoreHorizontal,
     Maximize2,
     Megaphone,
+    LayoutGrid,
   } from 'lucide-vue-next';
   import { invoke } from '@tauri-apps/api/core';
   import PageLayout from '@/components/PageLayout.vue';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { Dropzone, FileRow } from '@/components/ui/dropzone';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
+  import { Modal } from '@/components/ui/modal';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
   import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import {
@@ -501,12 +359,9 @@
   const campaigns = ref<Campaign[]>([]);
   const campaignsLoaded = ref(false);
 
-  // Audio waveform thumbnail
-  const AUDIO_THUMBNAIL =
-    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiB2aWV3Qm94PSIwIDAgMjAwIDEyMCIgZmlsbD0ibm9uZSI+CjxyZWN0IHdpZHRoPSIyMDAiIGhlaWdodD0iMTIwIiBmaWxsPSIjMDY0RTNCIi8+CjxyZWN0IHg9IjMwIiB5PSI0NSIgd2lkdGg9IjgiIGhlaWdodD0iMzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjQ1IiB5PSIzNSIgd2lkdGg9IjgiIGhlaWdodD0iNTAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjYwIiB5PSIyNSIgd2lkdGg9IjgiIGhlaWdodD0iNzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9Ijc1IiB5PSI0MCIgd2lkdGg9IjgiIGhlaWdodD0iNDAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjkwIiB5PSIzMCIgd2lkdGg9IjgiIGhlaWdodD0iNjAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjEwNSIgeT0iMjAiIHdpZHRoPSI4IiBoZWlnaHQ9IjgwIiByeD0iMiIgZmlsbD0iIzEwQjk4MSIvPgo8cmVjdCB4PSIxMjAiIHk9IjM1IiB3aWR0aD0iOCIgaGVpZ2h0PSI1MCIgcng9IjIiIGZpbGw9IiMxMEI5ODEiLz4KPHJlY3QgeD0iMTM1IiB5PSI0NSIgd2lkdGg9IjgiIGhlaWdodD0iMzAiIHJ4PSIyIiBmaWxsPSIjMTBCOTgxIi8+CjxyZWN0IHg9IjE1MCIgeT0iMzAiIHdpZHRoPSI4IiBoZWlnaHQ9IjYwIiByeD0iMiIgZmlsbD0iIzEwQjk4MSIvPgo8cmVjdCB4PSIxNjUiIHk9IjQwIiB3aWR0aD0iOCIgaGVpZ2h0PSI0MCIgcng9IjIiIGZpbGw9IiMxMEI5ODEiLz4KPC9zdmc+';
-
   // Local state
-  const collapsedGroups = ref<Set<string>>(new Set());
+  // Type filter shown in the toolbar ('all' or an asset type)
+  const typeFilter = ref<string>('all');
   const showUploadDialog = ref(false);
   const uploadDialogFile = ref<{ name: string; size: number; path: string; blob: Blob } | null>(null);
   const uploadDialogFileType = ref('');
@@ -526,10 +381,6 @@
   const showDeleteDialog = ref(false);
   const deleteDialogAsset = ref<ServerOrganizationAsset | null>(null);
   const deleteProcessing = ref(false);
-
-  // Asset menu state
-  const openAssetMenuId = ref<number | null>(null);
-  const assetMenuButtonRefs = ref<Map<number, HTMLElement>>(new Map());
 
   // Video/Audio/Image playback state
   const showVideoPlayer = ref(false);
@@ -554,12 +405,17 @@
     return groups;
   });
 
-  function toggleAssetGroup(type: string) {
-    if (collapsedGroups.value.has(type)) {
-      collapsedGroups.value.delete(type);
-    } else {
-      collapsedGroups.value.add(type);
-    }
+  const visibleGroups = computed(() =>
+    typeFilter.value === 'all' ? groupedAssets.value : groupedAssets.value.filter((g) => g.type === typeFilter.value)
+  );
+
+  const filterOptions = computed<SegmentedOption<string>[]>(() => [
+    { value: 'all', label: 'All', icon: markRaw(LayoutGrid), count: orgAssets.value.length },
+    ...groupedAssets.value.map((g) => ({ value: g.type, label: getAssetTypePlural(g.type), count: g.assets.length })),
+  ]);
+
+  function getAssetTypePlural(type: string): string {
+    return type === 'audio' ? 'Audio' : `${getAssetTypeLabel(type)}s`;
   }
 
   function getAssetTypeLabel(type: string): string {
@@ -599,40 +455,6 @@
     }
   }
 
-  function getAssetTypeIconClass(type: string): string {
-    switch (type) {
-      case 'intro':
-        return 'org-assets__section-header-icon--intro';
-      case 'outro':
-        return 'org-assets__section-header-icon--outro';
-      case 'watermark':
-        return 'org-assets__section-header-icon--watermark';
-      case 'audio':
-        return 'org-assets__section-header-icon--audio';
-      case 'image':
-        return 'org-assets__section-header-icon--image';
-      default:
-        return '';
-    }
-  }
-
-  function getAssetTypeBadgeClass(type: string): string {
-    switch (type) {
-      case 'intro':
-        return 'org-assets__section-badge--intro';
-      case 'outro':
-        return 'org-assets__section-badge--outro';
-      case 'watermark':
-        return 'org-assets__section-badge--watermark';
-      case 'audio':
-        return 'org-assets__section-badge--audio';
-      case 'image':
-        return 'org-assets__section-badge--image';
-      default:
-        return '';
-    }
-  }
-
   function isPlayableAsset(asset: ServerOrganizationAsset): boolean {
     return ['intro', 'outro', 'audio', 'image', 'watermark'].includes(asset.asset_type);
   }
@@ -641,54 +463,6 @@
     const mins = Math.floor(seconds / 60);
     const secs = Math.floor(seconds % 60);
     return `${mins}:${String(secs).padStart(2, '0')}`;
-  }
-
-  // Asset menu functions
-  function setAssetMenuButtonRef(el: any, assetId: number) {
-    if (el) {
-      assetMenuButtonRefs.value.set(assetId, el);
-    } else {
-      assetMenuButtonRefs.value.delete(assetId);
-    }
-  }
-
-  function toggleAssetMenu(assetId: number) {
-    openAssetMenuId.value = openAssetMenuId.value === assetId ? null : assetId;
-  }
-
-  function closeAssetMenu() {
-    openAssetMenuId.value = null;
-  }
-
-  function getAssetMenuPosition(assetId: number): Record<string, string> {
-    const button = assetMenuButtonRefs.value.get(assetId);
-    if (!button) return { top: '0px', left: '0px' };
-
-    const rect = button.getBoundingClientRect();
-    const menuWidth = 210;
-    const menuMaxHeight = 120;
-    const padding = 8;
-
-    let top = rect.bottom + padding;
-    let left = rect.right - menuWidth;
-
-    if (top + menuMaxHeight > window.innerHeight - padding) {
-      top = rect.top - menuMaxHeight - padding;
-    }
-    if (left < padding) left = padding;
-    if (left + menuWidth > window.innerWidth - padding) {
-      left = window.innerWidth - menuWidth - padding;
-    }
-
-    return { top: `${top}px`, left: `${left}px` };
-  }
-
-  function handleAssetMenuClickOutside(event: MouseEvent) {
-    if (openAssetMenuId.value !== null) {
-      const button = assetMenuButtonRefs.value.get(openAssetMenuId.value);
-      if (button && button.contains(event.target as Node)) return;
-      openAssetMenuId.value = null;
-    }
   }
 
   // Upload dialog functions
@@ -752,17 +526,6 @@
     if (imageExtensions.includes(ext)) return ImageIcon;
     if (audioExtensions.includes(ext)) return Music;
     return Package;
-  }
-
-  function getFileTypeIconBg(ext: string): string {
-    const videoExtensions = ['mp4', 'mov', 'avi', 'mkv', 'webm'];
-    const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp'];
-    const audioExtensions = ['mp3', 'wav', 'aac', 'm4a', 'ogg'];
-
-    if (videoExtensions.includes(ext)) return 'org-dialog__file-icon--video';
-    if (imageExtensions.includes(ext)) return 'org-dialog__file-icon--image';
-    if (audioExtensions.includes(ext)) return 'org-dialog__file-icon--audio';
-    return '';
   }
 
   function formatFileSize(bytes: number): string {
@@ -940,7 +703,7 @@
         currentlyPlayingAudio.value = null;
       };
       audioElement.value.onerror = () => {
-        showError('Playback Error', 'Failed to play audio file');
+        showError('Playback error', 'Failed to play audio file');
         currentlyPlayingAudio.value = null;
       };
       audioElement.value.play();
@@ -1016,7 +779,6 @@
       loadOrgAssets();
     }
     loadCampaigns();
-    document.addEventListener('click', handleAssetMenuClickOutside);
   });
 
   onUnmounted(() => {
@@ -1024,1288 +786,6 @@
       audioElement.value.pause();
       audioElement.value = null;
     }
-    document.removeEventListener('click', handleAssetMenuClickOutside);
   });
 </script>
 
-<style scoped>
-  /* ===== Page Container ===== */
-  .org-assets {
-    width: 100%;
-    display: flex;
-    flex-direction: column;
-    gap: 2rem;
-    padding: 1.5rem;
-    max-width: 1400px;
-    margin: 0 auto;
-  }
-
-  /* ===== Action Button ===== */
-  .org-assets__action-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    height: 32px;
-    padding: 0 0.875rem;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border: none;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-assets__action-btn:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .org-assets__action-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .org-assets__action-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* ===== Page Heading ===== */
-  .org-assets__heading {
-    margin-bottom: 0.5rem;
-  }
-
-  .org-assets__title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
-    letter-spacing: -0.02em;
-  }
-
-  .org-assets__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  /* ===== Loading State ===== */
-  .org-assets__loading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    padding: 4rem;
-    color: var(--sidebar-text-muted);
-    font-size: 0.875rem;
-  }
-
-  .org-assets__loading-spinner {
-    width: 32px;
-    height: 32px;
-    border: 2px solid var(--sidebar-border);
-    border-top-color: var(--sidebar-accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  /* ===== Section ===== */
-  .org-assets__section {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .org-assets__section-header {
-    display: flex;
-  }
-
-  .org-assets__section-header-btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    padding: 0;
-    text-align: left;
-  }
-
-  .org-assets__section-header-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-assets__section-header-icon svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .org-assets__section-header-icon--intro {
-    background-color: rgba(59, 130, 246, 0.15);
-    color: #3b82f6;
-  }
-
-  .org-assets__section-header-icon--outro {
-    background-color: rgba(168, 85, 247, 0.15);
-    color: #a855f7;
-  }
-
-  .org-assets__section-header-icon--watermark {
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #f59e0b;
-  }
-
-  .org-assets__section-header-icon--audio {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
-
-  .org-assets__section-header-icon--image {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: #06b6d4;
-  }
-
-  .org-assets__section-header-text {
-    flex: 1;
-  }
-
-  .org-assets__section-title {
-    font-size: 1.0625rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .org-assets__section-subtitle {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-  }
-
-  .org-assets__section-badge {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 24px;
-    height: 24px;
-    padding: 0 0.5rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    background-color: var(--sidebar-hover);
-    border-radius: 9999px;
-  }
-
-  .org-assets__section-badge--intro {
-    color: #3b82f6;
-    background-color: rgba(59, 130, 246, 0.15);
-  }
-
-  .org-assets__section-badge--outro {
-    color: #a855f7;
-    background-color: rgba(168, 85, 247, 0.15);
-  }
-
-  .org-assets__section-badge--watermark {
-    color: #f59e0b;
-    background-color: rgba(245, 158, 11, 0.15);
-  }
-
-  .org-assets__section-badge--audio {
-    color: #10b981;
-    background-color: rgba(16, 185, 129, 0.15);
-  }
-
-  .org-assets__section-badge--image {
-    color: #06b6d4;
-    background-color: rgba(6, 182, 212, 0.15);
-  }
-
-  .org-assets__section-chevron {
-    width: 18px;
-    height: 18px;
-    color: var(--sidebar-text-muted);
-    transition: transform 200ms ease;
-  }
-
-  .org-assets__section-chevron--collapsed {
-    transform: rotate(-90deg);
-  }
-
-  /* ===== Grid ===== */
-  .org-assets__grid {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  /* ===== Asset Card ===== */
-  .org-assets__card {
-    position: relative;
-    display: flex;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    overflow: hidden;
-    transition: all 200ms ease;
-  }
-
-  .org-assets__card:hover {
-    border-color: rgba(255, 255, 255, 0.12);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  }
-
-  .org-assets__card--playing {
-    border-color: rgba(16, 185, 129, 0.3);
-    background-color: rgba(16, 185, 129, 0.03);
-  }
-
-  .org-assets__card-indicator {
-    width: 3px;
-    flex-shrink: 0;
-    background-color: var(--sidebar-border);
-  }
-
-  .org-assets__card-indicator--intro {
-    background: linear-gradient(to bottom, #3b82f6 0%, #2563eb 100%);
-  }
-
-  .org-assets__card-indicator--outro {
-    background: linear-gradient(to bottom, #a855f7 0%, #9333ea 100%);
-  }
-
-  .org-assets__card-indicator--watermark {
-    background: linear-gradient(to bottom, #f59e0b 0%, #d97706 100%);
-  }
-
-  .org-assets__card-indicator--audio {
-    background: linear-gradient(to bottom, #10b981 0%, #059669 100%);
-  }
-
-  .org-assets__card-indicator--image {
-    background: linear-gradient(to bottom, #06b6d4 0%, #0891b2 100%);
-  }
-
-  .org-assets__card-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    padding: 0.875rem 1rem;
-  }
-
-  .org-assets__card-row {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  /* ===== Thumbnail ===== */
-  .org-assets__thumbnail {
-    width: 48px;
-    height: 48px;
-    border-radius: 8px;
-    flex-shrink: 0;
-    overflow: hidden;
-    background-color: var(--sidebar-hover);
-    border: 2px solid var(--sidebar-border);
-    position: relative;
-  }
-
-  .org-assets__thumbnail--clickable {
-    cursor: pointer;
-  }
-
-  .org-assets__thumbnail-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .org-assets__thumbnail-fallback {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, var(--sidebar-hover) 100%);
-  }
-
-  .org-assets__thumbnail-icon {
-    width: 20px;
-    height: 20px;
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  .org-assets__thumbnail-overlay {
-    position: absolute;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.5);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transition: opacity 150ms ease;
-  }
-
-  .org-assets__thumbnail--clickable:hover .org-assets__thumbnail-overlay,
-  .org-assets__thumbnail-overlay--visible {
-    opacity: 1;
-  }
-
-  .org-assets__thumbnail-play {
-    width: 18px;
-    height: 18px;
-    color: white;
-  }
-
-  /* ===== Info ===== */
-  .org-assets__info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .org-assets__name {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    line-height: 1.3;
-  }
-
-  .org-assets__meta {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-top: 0.25rem;
-  }
-
-  .org-assets__meta-item {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-assets__meta-icon {
-    width: 12px;
-    height: 12px;
-  }
-
-  /* ===== Type Badge ===== */
-  .org-assets__type-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.3125rem 0.625rem;
-    border-radius: 6px;
-    font-size: 0.625rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    flex-shrink: 0;
-  }
-
-  .org-assets__type-badge-icon {
-    width: 11px;
-    height: 11px;
-  }
-
-  .org-assets__type-badge--intro {
-    background-color: rgba(59, 130, 246, 0.15);
-    color: #60a5fa;
-  }
-
-  .org-assets__type-badge--outro {
-    background-color: rgba(168, 85, 247, 0.15);
-    color: #c084fc;
-  }
-
-  .org-assets__type-badge--watermark {
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-  }
-
-  .org-assets__type-badge--audio {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #34d399;
-  }
-
-  .org-assets__type-badge--image {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: #22d3ee;
-  }
-
-  @media (max-width: 640px) {
-    .org-assets__type-badge {
-      display: none;
-    }
-  }
-
-  /* ===== Campaign Badge ===== */
-  .org-assets__campaign-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.3125rem 0.625rem;
-    border-radius: 6px;
-    font-size: 0.625rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-    flex-shrink: 0;
-    border: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-assets__campaign-badge:hover {
-    background-color: rgba(245, 158, 11, 0.25);
-    transform: translateY(-1px);
-  }
-
-  .org-assets__campaign-badge-icon {
-    width: 11px;
-    height: 11px;
-  }
-
-  .org-assets__campaign-badge-text {
-    font-size: 0.625rem;
-  }
-
-  @media (max-width: 640px) {
-    .org-assets__campaign-badge {
-      display: none;
-    }
-  }
-
-  /* ===== Actions ===== */
-  .org-assets__actions {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    flex-shrink: 0;
-  }
-
-  .org-assets__action-item {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-assets__action-item:hover {
-    background-color: var(--sidebar-hover);
-    border-color: var(--sidebar-border);
-    color: var(--sidebar-text);
-  }
-
-  .org-assets__action-item-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  .org-assets__menu-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-assets__menu-btn:hover,
-  .org-assets__menu-btn--active {
-    background-color: var(--sidebar-hover);
-    border-color: var(--sidebar-border);
-    color: var(--sidebar-text);
-  }
-
-  .org-assets__menu-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  /* ===== Dropdown Menu ===== */
-  .org-assets__dropdown {
-    position: fixed;
-    z-index: 9999;
-    width: 210px;
-    background-color: var(--sidebar-surface);
-    backdrop-filter: blur(12px);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-    padding: 0.5rem;
-  }
-
-  .org-assets__dropdown-item {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.625rem 0.75rem;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-    text-align: left;
-  }
-
-  .org-assets__dropdown-item:hover {
-    background-color: rgba(6, 182, 212, 0.1);
-    color: var(--sidebar-accent);
-  }
-
-  .org-assets__dropdown-item--danger {
-    color: #f87171;
-  }
-
-  .org-assets__dropdown-item--danger:hover {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: #f87171;
-  }
-
-  .org-assets__dropdown-item--disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-assets__dropdown-item--disabled:hover {
-    background-color: transparent;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-assets__dropdown-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  .org-assets__dropdown-divider {
-    margin: 0.5rem 0;
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  /* ===== Empty State ===== */
-  .org-assets__empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 1rem;
-    text-align: center;
-    background-color: var(--sidebar-surface);
-    border: 1px dashed var(--sidebar-border);
-    border-radius: 12px;
-  }
-
-  .org-assets__empty-icon-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 72px;
-    height: 72px;
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, var(--sidebar-hover) 100%);
-    border-radius: 20px;
-    margin-bottom: 1.5rem;
-  }
-
-  .org-assets__empty-icon {
-    width: 32px;
-    height: 32px;
-    color: var(--sidebar-accent);
-  }
-
-  .org-assets__empty-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
-  }
-
-  .org-assets__empty-text {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 1.5rem;
-    max-width: 320px;
-  }
-
-  .org-assets__empty-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.5rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
-    border: none;
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-assets__empty-btn:hover {
-    opacity: 0.9;
-    transform: translateY(-2px);
-  }
-
-  .org-assets__empty-btn-icon {
-    width: 18px;
-    height: 18px;
-  }
-
-  /* ===== Dialog Overlay ===== */
-  .org-dialog__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 60;
-  }
-
-  /* ===== Dialog Container ===== */
-  .org-dialog {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 440px;
-    margin: 1rem;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  }
-
-  /* ===== Dialog Accent Bar ===== */
-  .org-dialog__accent {
-    height: 3px;
-    flex-shrink: 0;
-  }
-
-  .org-dialog__accent--cyan {
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
-  }
-
-  .org-dialog__accent--red {
-    background: linear-gradient(90deg, #ef4444, rgba(239, 68, 68, 0.5));
-  }
-
-  /* ===== Dialog Header ===== */
-  .org-dialog__header {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1.5rem 1.5rem 1rem;
-    text-align: center;
-  }
-
-  .org-dialog__close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__close:hover:not(:disabled) {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .org-dialog__close:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .org-dialog__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 12px;
-    margin-bottom: 0.875rem;
-  }
-
-  .org-dialog__icon--cyan {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-  }
-
-  .org-dialog__icon--red {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-  }
-
-  .org-dialog__title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.02em;
-  }
-
-  .org-dialog__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  /* ===== Dialog Content ===== */
-  .org-dialog__content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0 1.5rem;
-  }
-
-  .org-dialog__content::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .org-dialog__content::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .org-dialog__content::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  /* ===== Dialog Footer ===== */
-  .org-dialog__footer {
-    display: flex;
-    gap: 0.625rem;
-    padding: 1.25rem 1.5rem;
-    border-top: 1px solid var(--sidebar-border);
-    margin-top: 1rem;
-  }
-
-  /* ===== Dialog Buttons ===== */
-  .org-dialog__btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .org-dialog__btn--secondary {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-    border: 1px solid var(--sidebar-border);
-  }
-
-  .org-dialog__btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .org-dialog__btn--primary {
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
-  }
-
-  .org-dialog__btn--primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .org-dialog__btn--danger {
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-    color: white;
-  }
-
-  .org-dialog__btn--danger:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .org-dialog__btn-spinner {
-    animation: spin 0.8s linear infinite;
-  }
-
-  /* ===== Dialog Dropzone ===== */
-  .org-dialog__dropzone-wrapper {
-    margin-bottom: 1rem;
-  }
-
-  .org-dialog__dropzone {
-    width: 100%;
-    padding: 2rem;
-    border: 2px dashed var(--sidebar-border);
-    border-radius: 12px;
-    background: transparent;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__dropzone:hover {
-    border-color: rgba(6, 182, 212, 0.5);
-    background-color: rgba(6, 182, 212, 0.05);
-  }
-
-  .org-dialog__dropzone-inner {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .org-dialog__dropzone-icon {
-    width: 28px;
-    height: 28px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-dialog__dropzone:hover .org-dialog__dropzone-icon {
-    color: var(--sidebar-accent);
-  }
-
-  .org-dialog__dropzone-title {
-    font-weight: 500;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .org-dialog__dropzone-hint {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  /* ===== Dialog File Card ===== */
-  .org-dialog__file-card {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 10px;
-    border: 1px solid var(--sidebar-border);
-    margin-bottom: 1rem;
-  }
-
-  .org-dialog__file-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    background-color: var(--sidebar-surface);
-  }
-
-  .org-dialog__file-icon--video {
-    background-color: rgba(59, 130, 246, 0.15);
-  }
-
-  .org-dialog__file-icon--image {
-    background-color: rgba(245, 158, 11, 0.15);
-  }
-
-  .org-dialog__file-icon--audio {
-    background-color: rgba(16, 185, 129, 0.15);
-  }
-
-  .org-dialog__file-icon-svg {
-    width: 20px;
-    height: 20px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-dialog__file-icon--video .org-dialog__file-icon-svg {
-    color: #60a5fa;
-  }
-
-  .org-dialog__file-icon--image .org-dialog__file-icon-svg {
-    color: #fbbf24;
-  }
-
-  .org-dialog__file-icon--audio .org-dialog__file-icon-svg {
-    color: #34d399;
-  }
-
-  .org-dialog__file-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .org-dialog__file-name {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    margin: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .org-dialog__file-meta {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  .org-dialog__file-clear {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__file-clear:hover {
-    background-color: var(--sidebar-surface);
-    color: var(--sidebar-text);
-  }
-
-  .org-dialog__file-clear-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  /* ===== Dialog Form Field ===== */
-  .org-dialog__field {
-    margin-bottom: 1rem;
-  }
-
-  .org-dialog__label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    margin-bottom: 0.5rem;
-  }
-
-  .org-dialog__label-hint {
-    color: var(--sidebar-text-muted);
-    font-weight: 400;
-    font-size: 0.8125rem;
-  }
-
-  .org-dialog__input {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__input::placeholder {
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  .org-dialog__input:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
-  }
-
-  /* ===== Dialog Type Grid ===== */
-  .org-dialog__type-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.5rem;
-  }
-
-  .org-dialog__type-option {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    border-radius: 10px;
-    border: 1px solid var(--sidebar-border);
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-    text-align: left;
-  }
-
-  .org-dialog__type-option:hover {
-    border-color: rgba(255, 255, 255, 0.1);
-    color: var(--sidebar-text);
-  }
-
-  .org-dialog__type-option--selected {
-    background-color: rgba(6, 182, 212, 0.15);
-    border-color: rgba(6, 182, 212, 0.4);
-    color: var(--sidebar-accent);
-  }
-
-  .org-dialog__type-option-icon {
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-  }
-
-  .org-dialog__type-option-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-  }
-
-  .org-dialog__type-option-badge {
-    margin-left: auto;
-    font-size: 0.625rem;
-    padding: 0.125rem 0.375rem;
-    border-radius: 4px;
-    background-color: rgba(6, 182, 212, 0.2);
-    color: var(--sidebar-accent);
-  }
-
-  /* ===== Dialog Asset Card (Delete) ===== */
-  .org-dialog__asset-card {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 1rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 8px;
-    margin-bottom: 1rem;
-  }
-
-  .org-dialog__asset-thumb {
-    width: 44px;
-    height: 44px;
-    border-radius: 8px;
-    background-color: var(--sidebar-surface);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    flex-shrink: 0;
-  }
-
-  .org-dialog__asset-thumb-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .org-dialog__asset-thumb-icon {
-    width: 20px;
-    height: 20px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-dialog__asset-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .org-dialog__asset-name {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .org-dialog__asset-type {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    text-transform: capitalize;
-    margin-top: 0.125rem;
-  }
-
-  /* ===== Dialog Warning ===== */
-  .org-dialog__warning {
-    padding: 1rem;
-    background-color: rgba(239, 68, 68, 0.08);
-    border: 1px solid rgba(239, 68, 68, 0.15);
-    border-radius: 8px;
-  }
-
-  .org-dialog__warning-text {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    line-height: 1.6;
-    margin: 0;
-  }
-
-  .org-dialog__warning-text strong {
-    color: var(--sidebar-text);
-  }
-
-  /* ===== Image Preview ===== */
-  .org-assets__image-backdrop {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.9);
-    backdrop-filter: blur(8px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 60;
-  }
-
-  .org-assets__image-container {
-    position: relative;
-    max-width: 90vw;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .org-assets__image-close {
-    position: absolute;
-    top: -40px;
-    right: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: transparent;
-    border: none;
-    border-radius: 50%;
-    color: rgba(255, 255, 255, 0.7);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-assets__image-close:hover {
-    color: white;
-    background-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .org-assets__image-close-icon {
-    width: 24px;
-    height: 24px;
-  }
-
-  .org-assets__image-preview {
-    max-width: 85vw;
-    max-height: 80vh;
-    object-fit: contain;
-    border-radius: 12px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-
-  .org-assets__image-info {
-    margin-top: 1rem;
-    text-align: center;
-  }
-
-  .org-assets__image-name {
-    font-weight: 500;
-    color: white;
-    margin: 0;
-  }
-
-  .org-assets__image-meta {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  /* ===== Transitions ===== */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  .dialog-enter-active {
-    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 150ms ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.96) translateY(8px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-</style>

@@ -166,31 +166,31 @@ onUnmounted(() => {
 
 <template>
 	<div
-		class="timeline-hscroll-bar flex min-h-[32px] shrink-0 items-center gap-2 border-t border-white/15 bg-[#141416] px-2"
+		class="timeline-hscroll-bar flex h-6 shrink-0 items-center gap-2 border-t border-line-subtle bg-panel pr-2"
 		role="scrollbar"
 		aria-orientation="horizontal"
 		aria-label="Timeline horizontal scroll"
 		:data-overflow="hasOverflow ? 'true' : 'false'"
 	>
 		<!-- Spacer matching track labels width -->
-		<div class="shrink-0 border-r border-white/10" :style="{ width: `${trackLabelsWidth}px` }" />
+		<div class="h-full shrink-0 border-r border-line-subtle" :style="{ width: `${trackLabelsWidth}px` }" />
 
 		<!-- Scrollbar track: always visible; thumb fills width when no overflow -->
 		<div
 			ref="trackRef"
-			class="relative h-3 min-h-[12px] flex-1 rounded-md bg-zinc-700/80"
+			class="relative h-2 flex-1 rounded-full bg-surface-active"
 			:class="hasOverflow ? 'cursor-pointer' : 'cursor-default'"
 			@mousedown="onTrackClick"
 		>
 			<div
 				ref="thumbRef"
-				class="absolute top-0 h-full rounded-md shadow-sm transition-[background-color] duration-150"
+				class="absolute top-0 h-full rounded-full transition-[background-color] duration-150"
 				:class="[
 					!hasOverflow
-						? 'bg-zinc-500/50'
+						? 'bg-line-strong'
 						: isDragging
-							? 'bg-zinc-200'
-							: 'bg-zinc-400 hover:bg-zinc-300',
+							? 'bg-fg-muted'
+							: 'bg-fg-subtle hover:bg-fg-muted',
 				]"
 				:style="{
 					width: `${thumbWidth}px`,

@@ -16,6 +16,6 @@
 <template>
   <Separator
     v-bind="delegatedProps"
-    :class="cn('shrink-0 bg-border', props.orientation === 'horizontal' ? 'h-px w-full' : 'w-px h-full', props.class)"
+    :class="cn('shrink-0 bg-line-subtle', props.orientation === 'horizontal' ? 'h-px w-full' : 'w-px h-full', props.class)"
   />
 </template>

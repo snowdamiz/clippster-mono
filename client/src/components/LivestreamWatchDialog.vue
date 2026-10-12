@@ -1,129 +1,127 @@
 <template>
   <Teleport to="body">
-    <Transition name="modal">
+    <Transition
+      enter-active-class="transition-opacity duration-200"
+      enter-from-class="opacity-0"
+      leave-active-class="transition-opacity duration-200"
+      leave-to-class="opacity-0"
+    >
       <!-- Keep component alive during PiP mode to maintain video element -->
       <div
         v-if="modelValue || isInPipMode || props.isPipModeExternal"
         :class="[
-          'fixed inset-0 bg-black/90 backdrop-blur-md flex items-center justify-center z-50',
+          'fixed inset-0 z-[10040] flex items-center justify-center bg-[var(--overlay)] backdrop-blur-sm outline-none',
           // Hide dialog visually when in PiP mode but keep video element alive
-          (isInPipMode || props.isPipModeExternal) && !modelValue ? 'opacity-0 pointer-events-none' : '',
+          (isInPipMode || props.isPipModeExternal) && !modelValue ? 'pointer-events-none opacity-0' : '',
         ]"
         @keydown="handleKeydown"
         tabindex="0"
         ref="dialogRef"
       >
-        <Transition name="dialog" appear>
+        <Transition
+          appear
+          enter-active-class="transition duration-200 ease-out"
+          enter-from-class="scale-[0.97] opacity-0"
+          leave-active-class="transition duration-150"
+          leave-to-class="scale-[0.97] opacity-0"
+        >
           <div
             ref="containerRef"
             :class="[
-              'relative bg-zinc-950 overflow-hidden transition-all duration-300',
+              'relative overflow-hidden bg-black transition-all duration-300',
               isFullscreen
-                ? 'w-screen h-screen rounded-none'
-                : 'rounded-2xl max-w-6xl w-full mx-4 border border-white/10 max-h-[90vh]',
+                ? 'h-screen w-screen rounded-none'
+                : 'mx-4 max-h-[90vh] w-full max-w-6xl rounded-[var(--radius-modal)] shadow-[var(--shadow-lg)]',
             ]"
           >
-            <!-- Header Bar (hidden in fullscreen unless hovered) -->
+            <!-- Header bar (auto-hides with the controls) -->
             <div
               :class="[
-                'absolute top-0 left-0 right-0 z-30 transition-all duration-300 ease-in-out',
-                showControls ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-full pointer-events-none',
+                'absolute top-0 right-0 left-0 z-30 transition-all duration-300 ease-in-out',
+                showControls ? 'translate-y-0 opacity-100' : 'pointer-events-none -translate-y-full opacity-0',
               ]"
               @click.stop
             >
-              <div class="bg-gradient-to-b from-black/80 to-transparent p-4">
-                <div class="flex items-center justify-between">
-                  <!-- Streamer Info -->
-                  <div class="flex items-center gap-3">
-                    <div class="relative">
-                      <img
-                        v-if="streamerInfo.profileImageUrl"
+              <div class="bg-gradient-to-b from-black/80 to-transparent px-4 pt-3.5 pb-8">
+                <div class="flex items-center justify-between gap-3">
+                  <!-- Streamer info -->
+                  <div class="flex min-w-0 items-center gap-3">
+                    <div class="relative shrink-0">
+                      <Avatar
                         :src="streamerInfo.profileImageUrl"
-                        :alt="streamerInfo.displayName"
-                        class="w-10 h-10 rounded-full object-cover border-2 border-red-500"
+                        :name="streamerInfo.displayName"
+                        size="md"
+                        class="ring-2 ring-live"
                       />
-                      <div
-                        v-else
-                        class="w-10 h-10 rounded-full bg-gradient-to-br from-[var(--sidebar-accent)] to-[#0891b2] flex items-center justify-center text-white font-bold border-2 border-red-500"
-                      >
-                        {{ streamerInfo.displayName?.charAt(0)?.toUpperCase() || '?' }}
-                      </div>
-                      <!-- Live indicator -->
-                      <div
+                      <span
                         v-if="viewer.isLive.value"
-                        class="absolute -bottom-1 -right-1 w-4 h-4 bg-red-500 rounded-full border-2 border-zinc-950 animate-pulse"
+                        class="absolute -right-0.5 -bottom-0.5 size-3 animate-pulse rounded-full border-2 border-black bg-live"
                       />
                     </div>
-                    <div>
-                      <h3 class="text-white font-semibold">{{ streamerInfo.displayName }}</h3>
-                      <div class="flex items-center gap-2 text-xs text-zinc-400">
-                        <span class="flex items-center gap-1">
-                          <Users class="w-3 h-3" />
-                          {{ viewer.state.value.viewerCount }}
-                        </span>
+                    <div class="min-w-0">
+                      <h3 class="truncate text-sm font-semibold text-white">{{ streamerInfo.displayName }}</h3>
+                      <div class="flex items-center gap-1 text-xs text-white/60">
+                        <Users class="size-3" />
+                        <span class="tabular">{{ viewer.state.value.viewerCount }}</span>
                       </div>
                     </div>
                   </div>
 
                   <!-- Right side actions -->
-                  <div class="flex items-center gap-2">
-                    <!-- Quality Badge -->
+                  <div class="flex shrink-0 items-center gap-1.5">
                     <button
                       v-if="viewer.state.value.streamQuality"
+                      type="button"
+                      :class="mediaChipClass"
+                      title="Stream stats"
                       @click="showStatsPopup = !showStatsPopup"
-                      class="px-2 py-1 rounded bg-zinc-800/80 text-xs text-zinc-300 hover:bg-zinc-700 transition-colors flex items-center gap-1"
                     >
-                      <Signal class="w-3 h-3" :class="connectionQualityColor" />
+                      <Signal class="size-3" :class="connectionQualityColor" />
                       {{ viewer.state.value.streamQuality }}
                     </button>
-
-                    <!-- Close button -->
-                    <button
-                      @click="handleClose"
-                      class="p-2 rounded-lg bg-zinc-800/80 text-zinc-400 hover:text-white hover:bg-zinc-700 transition-colors"
-                    >
-                      <X class="w-5 h-5" />
+                    <button type="button" :class="mediaIconButtonClass" title="Close" aria-label="Close" @click="handleClose">
+                      <X class="size-[18px]" />
                     </button>
                   </div>
                 </div>
               </div>
 
-              <!-- Stats Popup -->
+              <!-- Stats popup -->
               <div
                 v-if="showStatsPopup"
-                class="absolute top-16 right-4 bg-zinc-900 border border-zinc-700 rounded-lg p-4 text-sm space-y-2 min-w-[200px]"
+                class="absolute top-14 right-4 flex min-w-[220px] flex-col gap-1.5 rounded-lg bg-surface-raised p-3 text-xs shadow-[var(--shadow-md)]"
               >
-                <div class="flex justify-between">
-                  <span class="text-zinc-400">Resolution</span>
-                  <span class="text-white">{{ viewer.state.value.streamQuality || 'Unknown' }}</span>
+                <div class="flex justify-between gap-4">
+                  <span class="text-fg-muted">Resolution</span>
+                  <span class="text-fg">{{ viewer.state.value.streamQuality || 'Unknown' }}</span>
                 </div>
-                <div class="flex justify-between">
-                  <span class="text-zinc-400">Playback Mode</span>
-                  <span :class="viewer.state.value.playbackMode === 'webrtc' ? 'text-green-400' : 'text-white'">
+                <div class="flex justify-between gap-4">
+                  <span class="text-fg-muted">Playback mode</span>
+                  <span :class="viewer.state.value.playbackMode === 'webrtc' ? 'text-success' : 'text-fg'">
                     {{ playbackModeDisplay }}
                   </span>
                 </div>
-                <div class="flex justify-between">
-                  <span class="text-zinc-400">Connection</span>
+                <div class="flex justify-between gap-4">
+                  <span class="text-fg-muted">Connection</span>
                   <span :class="connectionStatusTextColor">{{ connectionStatusText }}</span>
                 </div>
-                <div class="flex justify-between">
-                  <span class="text-zinc-400">Recorded</span>
-                  <span class="text-white">{{ formatTime(viewer.state.value.totalRecordedDuration) }}</span>
+                <div class="flex justify-between gap-4">
+                  <span class="text-fg-muted">Recorded</span>
+                  <span class="tabular text-fg">{{ formatTime(viewer.state.value.totalRecordedDuration) }}</span>
                 </div>
-                <div class="flex justify-between">
-                  <span class="text-zinc-400">At Live Edge</span>
-                  <span :class="viewer.state.value.isAtLiveEdge ? 'text-green-400' : 'text-yellow-400'">
+                <div class="flex justify-between gap-4">
+                  <span class="text-fg-muted">At live edge</span>
+                  <span :class="viewer.state.value.isAtLiveEdge ? 'text-success' : 'text-warning'">
                     {{ viewer.state.value.isAtLiveEdge ? 'Yes' : 'No' }}
                   </span>
                 </div>
               </div>
             </div>
 
-            <!-- Video Container -->
+            <!-- Video container -->
             <div
               ref="videoContainerRef"
-              class="relative bg-black aspect-video w-full"
+              class="relative aspect-video w-full bg-black"
               @mousemove="handleMouseMove"
               @mouseleave="handleMouseLeave"
               @click="handleVideoClick"
@@ -131,7 +129,7 @@
               <!-- HLS Video Playback (always visible - HLS-only mode) -->
               <video
                 ref="hlsVideoRef"
-                class="w-full h-full object-contain"
+                class="h-full w-full object-contain"
                 playsinline
                 :muted="viewer.state.value.isMuted"
               />
@@ -142,21 +140,21 @@
               <!-- Watermark Overlay -->
               <div
                 v-if="showWatermark && watermarkUrl"
-                class="absolute inset-0 pointer-events-none z-10"
+                class="pointer-events-none absolute inset-0 z-10"
                 :style="watermarkStyle"
               >
-                <img :src="watermarkUrl" alt="Watermark" class="w-full h-full object-contain" />
+                <img :src="watermarkUrl" alt="Watermark" class="h-full w-full object-contain" />
               </div>
 
               <!-- Buffering Indicator (HLS loading or buffering) -->
               <div
                 v-if="viewer.state.value.isBuffering && viewer.state.value.connectionState === 'connected'"
-                class="absolute inset-0 flex items-center justify-center bg-black/60 z-20"
+                class="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
               >
                 <div class="flex flex-col items-center gap-3">
-                  <Loader2 class="w-12 h-12 text-[var(--sidebar-accent)] animate-spin" />
-                  <span class="text-white text-sm font-medium">
-                    {{ viewer.state.value.totalRecordedDuration < 12 ? 'Building buffer...' : 'Buffering...' }}
+                  <Loader2 class="size-10 animate-spin text-white/80" />
+                  <span class="text-sm font-medium text-white">
+                    {{ viewer.state.value.totalRecordedDuration < 12 ? 'Building buffer…' : 'Buffering…' }}
                   </span>
                 </div>
               </div>
@@ -164,22 +162,22 @@
               <!-- Connection Status Overlays -->
               <div
                 v-if="viewer.state.value.connectionState === 'connecting'"
-                class="absolute inset-0 flex items-center justify-center bg-black/80 z-20"
+                class="absolute inset-0 z-20 flex items-center justify-center bg-black/80"
               >
-                <div class="flex flex-col items-center gap-3">
-                  <Loader2 class="w-12 h-12 text-[var(--sidebar-accent)] animate-spin" />
-                  <span class="text-white text-sm font-medium">Connecting to stream...</span>
-                  <span class="text-zinc-400 text-xs">{{ props.displayName }}</span>
+                <div class="flex flex-col items-center gap-2">
+                  <Loader2 class="mb-1 size-10 animate-spin text-white/80" />
+                  <span class="text-sm font-medium text-white">Connecting to stream…</span>
+                  <span class="text-xs text-white/60">{{ props.displayName }}</span>
                 </div>
               </div>
 
               <div
                 v-if="viewer.state.value.connectionState === 'reconnecting'"
-                class="absolute inset-0 flex items-center justify-center bg-black/60 z-20"
+                class="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
               >
                 <div class="flex flex-col items-center gap-3">
-                  <WifiOff class="w-12 h-12 text-yellow-500 animate-pulse" />
-                  <span class="text-white text-sm">Reconnecting...</span>
+                  <WifiOff class="size-10 animate-pulse text-warning" />
+                  <span class="text-sm text-white">Reconnecting…</span>
                 </div>
               </div>
 
@@ -187,19 +185,14 @@
               <!-- If DVR content exists, user can continue watching the recorded stream -->
               <div
                 v-if="viewer.state.value.connectionState === 'failed' && viewer.state.value.availableSegments.length === 0"
-                class="absolute inset-0 flex items-center justify-center bg-black/60 z-20"
+                class="absolute inset-0 z-20 flex items-center justify-center bg-black/60"
               >
                 <div class="flex flex-col items-center gap-3">
-                  <AlertCircle class="w-12 h-12 text-red-500" />
-                  <span class="text-white text-sm text-center max-w-xs">
+                  <AlertCircle class="size-10 text-danger" />
+                  <span class="max-w-xs text-center text-sm text-white">
                     {{ viewer.state.value.connectionError || 'Connection failed' }}
                   </span>
-                  <button
-                    @click="reconnect"
-                    class="px-4 py-2 bg-[var(--sidebar-accent)] hover:opacity-90 text-white rounded-lg transition-colors"
-                  >
-                    Retry
-                  </button>
+                  <Button variant="primary" size="sm" @click="reconnect">Retry</Button>
                 </div>
               </div>
 
@@ -210,25 +203,25 @@
                   viewer.state.value.connectionState === 'connected' &&
                   !viewer.state.value.isBuffering
                 "
-                class="absolute inset-0 flex items-center justify-center bg-black/40 z-15 cursor-pointer"
+                class="absolute inset-0 z-[15] flex cursor-pointer items-center justify-center bg-black/40"
                 @click.stop="viewer.play"
               >
-                <div class="w-20 h-20 rounded-full bg-white/20 backdrop-blur-sm flex items-center justify-center">
-                  <Play class="w-10 h-10 text-white ml-1" />
+                <div class="grid size-16 place-items-center rounded-full bg-white/15 backdrop-blur-sm">
+                  <Play class="ml-1 size-8 text-white" />
                 </div>
               </div>
 
               <!-- Controls Overlay -->
               <div
                 :class="[
-                  'absolute bottom-0 left-0 right-0 z-30 transition-all duration-300 ease-in-out',
+                  'absolute right-0 bottom-0 left-0 z-30 transition-all duration-300 ease-in-out',
                   showControls || !viewer.state.value.isPlaying
-                    ? 'opacity-100 translate-y-0'
-                    : 'opacity-0 translate-y-full pointer-events-none',
+                    ? 'translate-y-0 opacity-100'
+                    : 'pointer-events-none translate-y-full opacity-0',
                 ]"
                 @click.stop
               >
-                <div class="bg-gradient-to-t from-black/90 via-black/60 to-transparent pt-16 pb-4 px-4">
+                <div class="bg-gradient-to-t from-black/90 via-black/60 to-transparent px-4 pt-14 pb-3">
                   <!-- Seek Bar -->
                   <LivestreamSeekBar
                     :current-time="viewer.state.value.playbackPosition"
@@ -241,61 +234,55 @@
                   />
 
                   <!-- Control Bar -->
-                  <div class="flex items-center justify-between mt-3">
+                  <div class="mt-2.5 flex items-center justify-between">
                     <!-- Left Controls -->
-                    <div class="flex items-center gap-3">
-                      <!-- Play/Pause -->
+                    <div class="flex items-center gap-1">
                       <button
+                        type="button"
+                        :class="mediaIconButtonClass"
+                        :title="viewer.state.value.isPlaying ? 'Pause' : 'Play'"
                         @click="viewer.togglePlayPause"
-                        class="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
                       >
-                        <Pause v-if="viewer.state.value.isPlaying" class="w-6 h-6" />
-                        <Play v-else class="w-6 h-6" />
+                        <Pause v-if="viewer.state.value.isPlaying" class="size-5" />
+                        <Play v-else class="size-5" />
                       </button>
 
                       <!-- Volume -->
-                      <div class="flex items-center gap-2 group">
+                      <div class="group flex items-center gap-1.5">
                         <button
+                          type="button"
+                          :class="mediaIconButtonClass"
+                          :title="viewer.state.value.isMuted ? 'Unmute' : 'Mute'"
                           @click="viewer.toggleMute"
-                          class="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
                         >
                           <VolumeX
                             v-if="viewer.state.value.isMuted || viewer.state.value.volume === 0"
-                            class="w-5 h-5"
+                            class="size-[18px]"
                           />
-                          <Volume1 v-else-if="viewer.state.value.volume < 0.5" class="w-5 h-5" />
-                          <Volume2 v-else class="w-5 h-5" />
+                          <Volume1 v-else-if="viewer.state.value.volume < 0.5" class="size-[18px]" />
+                          <Volume2 v-else class="size-[18px]" />
                         </button>
-                        <div class="w-0 overflow-hidden group-hover:w-24 transition-all duration-200">
-                          <input
-                            type="range"
-                            min="0"
-                            max="1"
-                            step="0.01"
+                        <div class="w-0 overflow-hidden transition-all duration-200 group-hover:w-24">
+                          <MediaVolumeSlider
                             :value="viewer.state.value.volume"
+                            step="0.01"
+                            class="w-24"
                             @input="handleVolumeChange"
-                            :style="volumeGradient"
-                            class="w-24 h-1 bg-zinc-600 rounded-full appearance-none cursor-pointer accent-transparent [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-3 [&::-webkit-slider-thumb]:h-3 [&::-webkit-slider-thumb]:bg-white [&::-webkit-slider-thumb]:rounded-full"
                           />
                         </div>
                       </div>
                     </div>
 
                     <!-- Right Controls -->
-                    <div class="flex items-center gap-2">
-                      <!-- Clip Button -->
-                      <button
-                        @click="openClipModal"
+                    <div class="flex items-center gap-1">
+                      <Button
+                        variant="primary"
+                        size="sm"
+                        class="mr-1"
                         :disabled="
                           viewer.state.value.totalRecordedDuration < 180 ||
                           viewer.state.value.availableSegments.length === 0
                         "
-                        :class="[
-                          'px-3 py-2 bg-gradient-to-r from-[var(--sidebar-accent)] to-[#0891b2] text-white text-sm font-medium rounded-lg transition-all flex items-center gap-2',
-                          viewer.state.value.totalRecordedDuration >= 180 && viewer.state.value.availableSegments.length > 0
-                            ? 'hover:opacity-90 cursor-pointer'
-                            : 'opacity-50 cursor-not-allowed'
-                        ]"
                         :title="
                           viewer.state.value.availableSegments.length === 0
                             ? 'Waiting for segments to load...'
@@ -303,29 +290,30 @@
                               ? `DVR buffer building... ${formatTime(180 - viewer.state.value.totalRecordedDuration)} remaining`
                               : 'Create clip (C)'
                         "
+                        @click="openClipModal"
                       >
-                        <Scissors class="w-4 h-4" />
+                        <Scissors />
                         Clip
-                      </button>
+                      </Button>
 
-                      <!-- PiP Button -->
                       <button
                         v-if="isPipSupported"
+                        type="button"
+                        :class="mediaIconButtonClass"
+                        title="Picture-in-picture (P)"
                         @click="togglePip"
-                        class="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
-                        title="Picture-in-Picture (P)"
                       >
-                        <PictureInPicture2 class="w-5 h-5" />
+                        <PictureInPicture2 class="size-[18px]" />
                       </button>
 
-                      <!-- Fullscreen Button -->
                       <button
+                        type="button"
+                        :class="mediaIconButtonClass"
+                        :title="isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'"
                         @click="toggleFullscreen"
-                        class="p-2 rounded-lg text-white hover:bg-white/20 transition-colors"
-                        title="Fullscreen (F)"
                       >
-                        <Minimize v-if="isFullscreen" class="w-5 h-5" />
-                        <Maximize v-else class="w-5 h-5" />
+                        <Minimize v-if="isFullscreen" class="size-[18px]" />
+                        <Maximize v-else class="size-[18px]" />
                       </button>
                     </div>
                   </div>
@@ -406,6 +394,9 @@
   import { useLivestreamViewer } from '@/composables/useLivestreamViewer';
   import { useToast } from '@/composables/useToast';
   import LivestreamSeekBar from './LivestreamSeekBar.vue';
+  import MediaVolumeSlider from './streams/MediaVolumeSlider.vue';
+  import { Avatar } from '@/components/ui/avatar';
+  import { Button } from '@/components/ui/button';
   import LivestreamClipSelector from './LivestreamClipSelector.vue';
   import QuickPublishWizard from './QuickPublishWizard.vue';
   import { createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
@@ -516,20 +507,20 @@
   const connectionStatusTextColor = computed(() => {
     const state = viewer.state.value.connectionState;
     return state === 'connected'
-      ? 'text-green-400'
+      ? 'text-success'
       : state === 'reconnecting'
-        ? 'text-yellow-400'
+        ? 'text-warning'
         : state === 'failed'
-          ? 'text-red-400'
-          : 'text-zinc-400';
+          ? 'text-danger'
+          : 'text-fg-muted';
   });
 
   const connectionQualityColor = computed(() => {
     const latency = viewer.state.value.latencyMs;
-    if (!latency) return 'text-zinc-400';
-    if (latency < 1000) return 'text-green-400';
-    if (latency < 2000) return 'text-yellow-400';
-    return 'text-red-400';
+    if (!latency) return 'text-white/60';
+    if (latency < 1000) return 'text-success';
+    if (latency < 2000) return 'text-warning';
+    return 'text-danger';
   });
 
   const showWatermark = computed(() => {
@@ -606,13 +597,11 @@
     return viewer.state.value.isAtLiveEdge ? 'Live' : 'DVR';
   });
 
-  const volumeGradient = computed(() => {
-    const pct = Math.min(100, Math.max(0, viewer.state.value.volume * 100));
-    // Set CSS variable for the track gradient
-    return {
-      '--value': `${pct}%`,
-    } as Record<string, string>;
-  });
+  // Translucent controls drawn over the video.
+  const mediaIconButtonClass =
+    'grid size-9 place-items-center rounded-lg text-white/90 transition-colors hover:bg-white/15 hover:text-white focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]';
+  const mediaChipClass =
+    'inline-flex h-7 items-center gap-1.5 rounded-md bg-white/10 px-2 text-xs font-medium text-white/90 transition-colors hover:bg-white/20';
 
   // Load watermark image
   async function loadWatermark() {
@@ -1483,77 +1472,3 @@
     }
   );
 </script>
-
-<style scoped>
-  /* Transitions */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition:
-      opacity 0.2s ease,
-      backdrop-filter 0.2s ease;
-  }
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  .dialog-enter-active,
-  .dialog-leave-active {
-    transition:
-      transform 0.3s ease,
-      opacity 0.2s ease;
-  }
-  .dialog-enter-from {
-    transform: scale(0.95);
-    opacity: 0;
-  }
-  .dialog-leave-to {
-    transform: scale(0.95);
-    opacity: 0;
-  }
-
-
-  /* Volume slider styling */
-  input[type='range'] {
-    -webkit-appearance: none;
-    appearance: none;
-    background: transparent;
-  }
-
-  input[type='range']::-webkit-slider-runnable-track {
-    height: 4px;
-    background: linear-gradient(
-      to right,
-      var(--sidebar-accent) 0%,
-      var(--sidebar-accent) var(--value, 50%),
-      #52525b var(--value, 50%),
-      #52525b 100%
-    );
-    border-radius: 2px;
-  }
-
-  input[type='range']::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    width: 12px;
-    height: 12px;
-    background: white;
-    border-radius: 50%;
-    margin-top: -4px;
-    cursor: pointer;
-  }
-
-  input[type='range']::-moz-range-track {
-    height: 4px;
-    background: #52525b;
-    border-radius: 2px;
-  }
-
-  input[type='range']::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
-    background: white;
-    border-radius: 50%;
-    border: none;
-    cursor: pointer;
-  }
-</style>

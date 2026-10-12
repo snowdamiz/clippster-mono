@@ -31,8 +31,8 @@ import {
 	Crosshair,
 	Maximize2,
 } from "lucide-vue-next";
-import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import { Button } from "@/components/ui/button";
+import ToolbarButton from "../chrome/ToolbarButton.vue";
+import ToolbarSeparator from "../chrome/ToolbarSeparator.vue";
 
 const props = defineProps<{
 	zoomLevel: number;
@@ -137,311 +137,144 @@ function handleAction(action: string, event?: MouseEvent) {
 </script>
 
 <template>
-	<div class="flex h-10 items-center justify-between gap-2 overflow-x-auto border-b border-white/10 bg-[#18181b] px-2 py-1 scrollbar-hidden">
-		<!-- Left section: playback + editing tools -->
-		<div class="flex shrink-0 items-center gap-1">
-			<TooltipProvider :delay-duration="500">
-				<!-- Play/Pause -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" :aria-label="isPlaying ? 'Pause playback' : 'Play'" @click="handleAction('toggle-play', $event)">
-							<Pause v-if="isPlaying" class="size-4" />
-							<Play v-else class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>{{ isPlaying ? 'Pause' : 'Play' }} (Space, K)</TooltipContent>
-				</Tooltip>
+	<div class="flex h-9 items-center justify-between gap-2 overflow-x-auto border-b border-line-subtle bg-panel px-1.5">
+		<!-- Left: playback + editing tools -->
+		<div class="flex shrink-0 items-center gap-0.5">
+			<ToolbarButton
+				:label="isPlaying ? 'Pause' : 'Play'"
+				shortcut="Space"
+				:disabled="!hasTimelineContent"
+				@click="handleAction('toggle-play', $event)"
+			>
+				<Pause v-if="isPlaying" />
+				<Play v-else />
+			</ToolbarButton>
+			<ToolbarButton label="Go to start" shortcut="Home" :disabled="!hasTimelineContent" @click="handleAction('goto-start', $event)">
+				<SkipBack />
+			</ToolbarButton>
 
-				<!-- Go to start -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" aria-label="Go to timeline start" @click="handleAction('goto-start', $event)">
-							<SkipBack class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Go to start (Home)</TooltipContent>
-				</Tooltip>
+			<!-- Timecode -->
+			<div class="flex items-center gap-1.5 px-2 font-mono text-xs tabular">
+				<span class="text-fg">{{ formatTimeCode({ timeInSeconds: currentTime, format: "HH:MM:SS:FF", fps }) }}</span>
+				<span class="text-fg-disabled">/</span>
+				<span class="text-fg-subtle">{{ formatTimeCode({ timeInSeconds: totalDuration, format: "HH:MM:SS:FF", fps }) }}</span>
+			</div>
 
-				<div class="mx-1 h-6 w-px bg-white/10" />
+			<ToolbarSeparator />
 
-				<!-- Time display -->
-				<div class="flex flex-row items-center justify-center px-2">
-					<div class="text-zinc-200 text-center font-mono text-xs">
-						{{ formatTimeCode({ timeInSeconds: currentTime, format: "HH:MM:SS:FF", fps }) }}
-					</div>
-					<div class="text-zinc-500 px-2 font-mono text-xs">/</div>
-					<div class="text-zinc-500 text-center font-mono text-xs">
-						{{ formatTimeCode({ timeInSeconds: totalDuration, format: "HH:MM:SS:FF", fps }) }}
-					</div>
-				</div>
+			<ToolbarButton label="Split element" shortcut="S" :disabled="!hasTimelineContent" @click="handleAction('split', $event)">
+				<Scissors />
+			</ToolbarButton>
+			<ToolbarButton class="hidden lg:inline-flex" label="Split and remove left" shortcut="Q" :disabled="!hasTimelineContent" @click="handleAction('split-left', $event)">
+				<AlignLeft />
+			</ToolbarButton>
+			<ToolbarButton class="hidden lg:inline-flex" label="Split and remove right" shortcut="W" :disabled="!hasTimelineContent" @click="handleAction('split-right', $event)">
+				<AlignRight />
+			</ToolbarButton>
+			<ToolbarButton label="Duplicate element" shortcut="Ctrl+D" :disabled="!hasTimelineContent" @click="handleAction('duplicate-selected', $event)">
+				<Copy />
+			</ToolbarButton>
+			<ToolbarButton label="Delete element" shortcut="Delete" :disabled="!hasTimelineContent" @click="handleAction('delete-selected', $event)">
+				<Trash2 />
+			</ToolbarButton>
+			<ToolbarButton
+				label="Crop video/image"
+				shortcut="C"
+				toggle
+				:active="isCropMode"
+				:disabled="!hasVideoOrImageSelected"
+				@click="toggleCropMode(selectedVideoOrImage?.crop)"
+			>
+				<Crop />
+			</ToolbarButton>
+			<ToolbarButton class="hidden lg:inline-flex" label="Freeze frame" shortcut="Shift+F" :disabled="!hasTimelineContent" @click="handleAction('freeze-frame', $event)">
+				<Snowflake />
+			</ToolbarButton>
 
-				<div class="mx-1 h-6 w-px bg-white/10" />
+			<ToolbarSeparator class="hidden lg:block" />
 
-				<!-- Undo -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" :disabled="!canUndo" aria-label="Undo" @click="handleAction('undo', $event)">
-							<Undo2 class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Undo (Ctrl+Z)</TooltipContent>
-				</Tooltip>
+			<ToolbarButton class="hidden lg:inline-flex" label="Toggle bookmark" shortcut="B" :disabled="!hasTimelineContent" @click="handleAction('toggle-bookmark', $event)">
+				<Bookmark />
+			</ToolbarButton>
 
-				<!-- Redo -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" :disabled="!canRedo" aria-label="Redo" @click="handleAction('redo', $event)">
-							<Redo2 class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Redo (Ctrl+Shift+Z)</TooltipContent>
-				</Tooltip>
+			<ToolbarSeparator />
 
-				<div class="mx-1 h-6 w-px bg-white/10" />
-
-				<!-- Split -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" aria-label="Split at playhead" @click="handleAction('split', $event)">
-							<Scissors class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Split element (S)</TooltipContent>
-				</Tooltip>
-
-				<!-- Split left -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" aria-label="Split and remove left" @click="handleAction('split-left', $event)">
-							<AlignLeft class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Split and remove left (Q)</TooltipContent>
-				</Tooltip>
-
-				<!-- Split right -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" aria-label="Split and remove right" @click="handleAction('split-right', $event)">
-							<AlignRight class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Split and remove right (W)</TooltipContent>
-				</Tooltip>
-
-				<!-- Duplicate -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" aria-label="Duplicate selected element" @click="handleAction('duplicate-selected', $event)">
-							<Copy class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Duplicate element (Ctrl+D)</TooltipContent>
-				</Tooltip>
-
-				<!-- Delete -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" aria-label="Delete selected element" @click="handleAction('delete-selected', $event)">
-							<Trash2 class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Delete element (Delete)</TooltipContent>
-				</Tooltip>
-
-				<!-- Crop -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button
-							variant="ghost"
-							size="icon"
-							:disabled="!hasVideoOrImageSelected"
-							class="relative overflow-visible"
-							:class="{ 'text-cyan-400': isCropMode }"
-							aria-label="Toggle crop mode"
-							:aria-pressed="isCropMode"
-							@click="toggleCropMode(selectedVideoOrImage?.crop)"
-						>
-							<span v-if="isCropMode" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
-							<Crop class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Crop video/image (C)</TooltipContent>
-				</Tooltip>
-
-				<!-- Freeze Frame -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" aria-label="Freeze frame at playhead" @click="handleAction('freeze-frame', $event)">
-							<Snowflake class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Freeze frame (Shift+F)</TooltipContent>
-				</Tooltip>
-
-				<div class="mx-1 h-6 w-px bg-white/10" />
-
-				<!-- Bookmark -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" aria-label="Toggle bookmark at playhead" @click="handleAction('toggle-bookmark', $event)">
-							<Bookmark class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Toggle bookmark (B)</TooltipContent>
-				</Tooltip>
-
-				<div class="mx-1 h-6 w-px bg-white/10" />
-
-				<!-- Razor mode -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button
-							variant="ghost"
-							size="icon"
-							:disabled="!hasTimelineContent"
-							class="relative overflow-visible"
-							:class="{ 'text-cyan-400': razorMode }"
-							aria-label="Toggle razor tool"
-							:aria-pressed="Boolean(razorMode)"
-							@click="emit('toggleRazorMode')"
-						>
-							<span v-if="razorMode" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
-							<MousePointerClick class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Razor tool (click to cut)</TooltipContent>
-				</Tooltip>
-
-				<!-- Auto-follow -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button
-							variant="ghost"
-							size="icon"
-							:disabled="!hasTimelineContent"
-							class="relative overflow-visible"
-							:class="{ 'text-cyan-400': autoFollow }"
-							aria-label="Toggle auto-follow playhead"
-							:aria-pressed="Boolean(autoFollow)"
-							@click="emit('toggleAutoFollow')"
-						>
-							<span v-if="autoFollow" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
-							<Navigation2 class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Auto-follow playhead</TooltipContent>
-				</Tooltip>
-			</TooltipProvider>
+			<ToolbarButton
+				label="Razor tool (click to cut)"
+				toggle
+				:active="razorMode"
+				:disabled="!hasTimelineContent"
+				@click="emit('toggleRazorMode')"
+			>
+				<MousePointerClick />
+			</ToolbarButton>
+			<ToolbarButton
+				label="Auto-follow playhead"
+				toggle
+				:active="autoFollow"
+				:disabled="!hasTimelineContent"
+				@click="emit('toggleAutoFollow')"
+			>
+				<Navigation2 />
+			</ToolbarButton>
 		</div>
 
-		<!-- Right section: timeline tools + zoom controls -->
-		<div class="flex shrink-0 items-center gap-1">
-			<TooltipProvider :delay-duration="500">
-				<!-- Main Track Magnet -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button
-							variant="ghost"
-							size="icon"
-							:disabled="!hasTimelineContent"
-							class="relative overflow-visible"
-							:class="{ 'text-cyan-400': mainTrackMagnet }"
-							aria-label="Toggle main track magnet"
-							:aria-pressed="Boolean(mainTrackMagnet)"
-							@click="emit('toggleMainTrackMagnet')"
-						>
-							<span v-if="mainTrackMagnet" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
-							<Magnet class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Main track magnet</TooltipContent>
-				</Tooltip>
+		<!-- Right: timeline behaviour + zoom -->
+		<div class="flex shrink-0 items-center gap-0.5">
+			<ToolbarButton
+				label="Main track magnet"
+				toggle
+				:active="mainTrackMagnet"
+				:disabled="!hasTimelineContent"
+				@click="emit('toggleMainTrackMagnet')"
+			>
+				<Magnet />
+			</ToolbarButton>
+			<ToolbarButton
+				label="Auto snapping"
+				shortcut="N"
+				toggle
+				:active="autoSnapping"
+				:disabled="!hasTimelineContent"
+				@click="emit('toggleAutoSnapping')"
+			>
+				<SplitSquareHorizontal />
+			</ToolbarButton>
+			<ToolbarButton
+				label="Linked clip movement"
+				toggle
+				:active="linkage"
+				:disabled="!hasTimelineContent"
+				@click="emit('toggleLinkage')"
+			>
+				<Link />
+			</ToolbarButton>
 
-				<!-- Auto Snapping -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button
-							variant="ghost"
-							size="icon"
-							:disabled="!hasTimelineContent"
-							class="relative overflow-visible"
-							:class="{ 'text-cyan-400': autoSnapping }"
-							aria-label="Toggle timeline snapping"
-							:aria-pressed="Boolean(autoSnapping)"
-							@click="emit('toggleAutoSnapping')"
-						>
-							<span v-if="autoSnapping" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
-							<SplitSquareHorizontal class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Auto snapping (N)</TooltipContent>
-				</Tooltip>
+			<ToolbarSeparator />
 
-				<!-- Linkage -->
-				<Tooltip>
-					<TooltipTrigger as-child>
-						<Button
-							variant="ghost"
-							size="icon"
-							:disabled="!hasTimelineContent"
-							class="relative overflow-visible"
-							:class="{ 'text-cyan-400': linkage }"
-							aria-label="Toggle linked clip movement"
-							:aria-pressed="Boolean(linkage)"
-							@click="emit('toggleLinkage')"
-						>
-							<span v-if="linkage" class="pointer-events-none absolute top-0 left-1/2 block h-0 w-0 -translate-x-1/2 border-l-[4px] border-r-[4px] border-t-[5px] border-l-transparent border-r-transparent border-t-cyan-400" />
-							<Link class="size-4" />
-						</Button>
-					</TooltipTrigger>
-					<TooltipContent>Linkage</TooltipContent>
-				</Tooltip>
-			</TooltipProvider>
-
-			<div class="mx-1 h-6 w-px bg-white/10" />
-
-			<div class="flex items-center gap-1">
-				<TooltipProvider :delay-duration="500">
-					<!-- Scroll to playhead -->
-					<Tooltip>
-						<TooltipTrigger as-child>
-							<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" aria-label="Scroll timeline to playhead" @click="emit('scrollToPlayhead')">
-								<Crosshair class="size-4" />
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent>Scroll to playhead</TooltipContent>
-					</Tooltip>
-
-					<!-- Zoom to fit -->
-					<Tooltip>
-						<TooltipTrigger as-child>
-							<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" aria-label="Zoom timeline to fit" @click="emit('zoomToFit')">
-								<Maximize2 class="size-4" />
-							</Button>
-						</TooltipTrigger>
-						<TooltipContent>Zoom to fit</TooltipContent>
-					</Tooltip>
-				</TooltipProvider>
-
-				<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" aria-label="Zoom timeline out" @click="handleZoom('out')">
-					<ZoomOut class="size-4" />
-				</Button>
-				<input
-					type="range"
-					class="w-28 accent-primary"
-					aria-label="Timeline zoom"
-					:disabled="!hasTimelineContent"
-					:value="sliderValue"
-					min="0"
-					max="1"
-					step="0.005"
-					@input="handleSliderInput"
-				/>
-				<Button variant="ghost" size="icon" :disabled="!hasTimelineContent" aria-label="Zoom timeline in" @click="handleZoom('in')">
-					<ZoomIn class="size-4" />
-				</Button>
-			</div>
+			<ToolbarButton class="hidden lg:inline-flex" label="Scroll to playhead" :disabled="!hasTimelineContent" @click="emit('scrollToPlayhead')">
+				<Crosshair />
+			</ToolbarButton>
+			<ToolbarButton class="hidden lg:inline-flex" label="Zoom to fit" :disabled="!hasTimelineContent" @click="emit('zoomToFit')">
+				<Maximize2 />
+			</ToolbarButton>
+			<ToolbarButton label="Zoom out" :disabled="!hasTimelineContent" @click="handleZoom('out')">
+				<ZoomOut />
+			</ToolbarButton>
+			<input
+				type="range"
+				class="mx-1 hidden w-24 disabled:cursor-not-allowed disabled:opacity-40 lg:block"
+				aria-label="Timeline zoom"
+				:disabled="!hasTimelineContent"
+				:value="sliderValue"
+				min="0"
+				max="1"
+				step="0.005"
+				@input="handleSliderInput"
+			/>
+			<ToolbarButton label="Zoom in" :disabled="!hasTimelineContent" @click="handleZoom('in')">
+				<ZoomIn />
+			</ToolbarButton>
 		</div>
 	</div>
 </template>

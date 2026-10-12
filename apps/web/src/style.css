@@ -1,18 +1,31 @@
 @import 'tailwindcss';
 @import '../../../client/src/styles/theme.css';
+@import '../../../client/src/styles/tailwind-theme.css';
 @import '../../../client/src/fonts.css';
 @custom-variant dark (&:is(.dark *));
 @source './**/*.{vue,ts}';
+/* Desktop components rendered by the web workspace (Tailwind must scan them too). */
+@source '../../../client/src/components/AppBrand.vue';
+@source '../../../client/src/components/PageLayout.vue';
+@source '../../../client/src/components/SidebarNavigationItem.vue';
+@source '../../../client/src/components/LibraryProjectCard.vue';
+@source '../../../client/src/components/ProjectDialogFrame.vue';
+@source '../../../client/src/components/SharedAuthDialog.vue';
+@source '../../../client/src/components/ProjectWorkspaceHeader.vue';
 @source '../../../client/src/components/VideoPlayer.vue';
 @source '../../../client/src/components/VideoControls.vue';
-@source '../../../client/src/components/ProjectWorkspaceHeader.vue';
+@source '../../../client/src/components/SubtitlePropertiesPanel.vue';
+@source '../../../client/src/components/ClipTextBoxPropertiesPanel.vue';
+@source '../../../client/src/components/poi/POIRegion.vue';
 @layer base {
   body {
     margin: 0;
     min-width: 360px;
-    background: var(--sidebar-bg);
-    color: var(--sidebar-text);
-    font-family: Inter, system-ui, sans-serif;
+    background: var(--canvas);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    -webkit-font-smoothing: antialiased;
   }
   button,
   a,
@@ -30,18 +43,22 @@
     cursor: not-allowed;
   }
   :focus-visible {
-    outline: 2px solid var(--editor-accent);
-    outline-offset: 3px;
+    outline: 2px solid var(--brand-line);
+    outline-offset: 1px;
   }
 }
 @layer components {
+  /* Mirrors the desktop Input / Button primitives (components/ui) without their dependencies. */
   .field {
-    @apply w-full rounded-lg border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-sky-500 focus:outline-none;
+    @apply h-[var(--control-md)] w-full rounded-[var(--radius-control)] border border-line bg-surface-raised px-2.5 text-sm text-fg transition-[border-color,box-shadow] placeholder:text-fg-subtle hover:border-line-strong focus:border-brand-line focus:shadow-[0_0_0_3px_var(--brand-soft)] focus:outline-none;
+  }
+  textarea.field {
+    @apply h-auto py-2;
   }
   .button-primary {
-    @apply inline-flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-400 disabled:hover:bg-sky-500;
+    @apply inline-flex h-[var(--control-md)] items-center justify-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--primary-bg)] px-3 text-sm font-medium text-[var(--fg-on-light)] shadow-[var(--shadow-sm)] transition-colors hover:bg-[var(--primary-bg-hover)];
   }
   .button-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/10;
+    @apply inline-flex h-[var(--control-md)] items-center justify-center gap-1.5 rounded-[var(--radius-control)] border border-line bg-surface-raised px-3 text-sm font-medium text-fg transition-colors hover:border-line-strong hover:bg-[#20242c];
   }
 }

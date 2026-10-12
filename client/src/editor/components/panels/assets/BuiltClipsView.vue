@@ -6,7 +6,11 @@ import { getCompletedBuildEntries } from "@/services/database/clip-build";
 import { searchTranscriptSegmentsByClipIds } from "@/services/database";
 import type { Clip, ClipBuild } from "@/services/database/types";
 import type { MediaAsset } from "../../../types/assets";
-import { Film, Plus, Loader2, Check, Search, Briefcase, Building2 } from "lucide-vue-next";
+import { Film, Loader2, SearchX, Briefcase, Building2 } from "lucide-vue-next";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SearchField } from "@/components/ui/search-field";
+import AssetGrid from "../shared/AssetGrid.vue";
+import ImportMediaTile from "./ImportMediaTile.vue";
 import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { buildVideoElement } from "../../../lib/timeline/element-utils";
 import { hydrateVideoFileFromLocalUrl } from "../../../lib/media/hydrate-video-file-from-url";
@@ -311,136 +315,87 @@ onUnmounted(() => {
 
 <template>
 	<div class="flex h-full flex-col overflow-hidden">
-		<!-- Search -->
-		<div class="border-b border-white/10 px-3 py-2">
-			<div class="relative">
-				<Search class="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
-				<input
-					v-model="searchQuery"
-					type="text"
-					placeholder="Search by name or transcript..."
-					class="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-7 pr-3 text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:border-blue-500/50"
-				/>
-			</div>
+		<!-- Toolbar -->
+		<div class="flex h-12 shrink-0 items-center gap-3 px-5">
+			<p class="tabular min-w-0 flex-1 truncate text-xs text-fg-muted">
+				<template v-if="!loading">
+					{{ searchQuery.trim() ? `${filteredBuilds.length} of ${allBuilds.length}` : allBuilds.length }}
+					{{ allBuilds.length === 1 ? "built clip" : "built clips" }}
+				</template>
+			</p>
+			<SearchField
+				v-model="searchQuery"
+				size="sm"
+				input-class="text-xs"
+				placeholder="Search by name or transcript…"
+				class="w-64"
+			/>
 		</div>
 
 		<!-- Content -->
-		<div class="flex-1 overflow-y-auto p-3">
-			<!-- Loading -->
+		<div class="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
 			<div v-if="loading" class="flex h-full items-center justify-center">
-				<Loader2 class="size-6 animate-spin text-zinc-500" />
+				<Loader2 class="size-5 animate-spin text-fg-subtle" />
 			</div>
 
-			<!-- Empty -->
-			<div
+			<EmptyState
 				v-else-if="filteredBuilds.length === 0"
-				class="flex h-full flex-col items-center justify-center gap-2 text-center"
-			>
-				<Film class="size-8 text-zinc-600" />
-				<p class="text-sm text-zinc-500">
-					{{ searchQuery ? "No matching built clips" : "No built clips yet" }}
-				</p>
-				<p class="text-xs text-zinc-600">
-					Build clips from your projects to see them here
-				</p>
-			</div>
+				size="sm"
+				class="h-full"
+				:icon="searchQuery ? SearchX : Film"
+				:title="searchQuery ? 'No matching built clips' : 'No built clips yet'"
+				:description="
+					searchQuery ? 'Try a different name or a phrase from the transcript.' : 'Build clips from your projects to see them here.'
+				"
+			/>
 
-			<!-- Builds grid -->
-			<div
-				v-else
-				class="grid gap-2"
-				style="grid-template-columns: repeat(3, 1fr)"
-			>
-				<div
+			<AssetGrid v-else :min="176">
+				<ImportMediaTile
 					v-for="entry in filteredBuilds"
 					:key="entry.key"
-					class="group relative cursor-pointer overflow-hidden rounded-lg border border-white/10 transition-colors hover:border-white/20"
-					:class="{ 'ring-1 ring-green-500/30': isAlreadyAdded(entry) }"
+					:label="getClipName(entry.clip)"
+					:sublabel="entry.clip.project_name || undefined"
+					:src="getCachedThumbnail(entry.build.id, entry.clip.id)"
+					:icon="Film"
+					:tag="entry.build.aspect_ratios ? JSON.parse(entry.build.aspect_ratios).join(', ') : undefined"
+					:duration="formatDuration(entry.build.duration || entry.clip.duration) || undefined"
+					:added="isAlreadyAdded(entry)"
+					:busy="addingIds.has(entry.build.id)"
+					:action="isAlreadyAdded(entry) ? 'Add to timeline' : 'Add to media'"
+					:title="
+						isAlreadyAdded(entry)
+							? `Click to add ${getClipName(entry.clip)} at the playhead, or drag it to the timeline`
+							: `Add ${getClipName(entry.clip)} to this edit's media`
+					"
 					@click="handleBuildClick(entry)"
 					@dblclick="addToTimeline(entry)"
+					@keydown.enter="handleBuildClick(entry)"
 					@pointerdown="(e: PointerEvent) => handlePointerDown(e, entry)"
 					@dragstart.prevent
 				>
-					<!-- Thumbnail -->
-					<div class="relative aspect-video bg-zinc-800">
-						<img
-							v-if="getCachedThumbnail(entry.build.id, entry.clip.id)"
-							:src="getCachedThumbnail(entry.build.id, entry.clip.id)!"
-							:alt="getClipName(entry.clip)"
-							class="size-full object-cover"
-							draggable="false"
-							@error="($event.target as HTMLImageElement).style.display = 'none'"
-						/>
-						<div v-else class="flex size-full items-center justify-center">
-							<Film class="size-6 text-zinc-500" />
-						</div>
-						<!-- Org/Campaign badge -->
-						<div
+					<template #badges>
+						<span
 							v-if="entry.build.branding_type === 'campaign' && entry.build.campaign_name"
-							class="absolute left-1 top-1 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-white"
-							style="background-color: rgba(249, 115, 22, 0.9);"
+							class="inline-flex h-4 min-w-0 items-center gap-1 rounded bg-black/60 px-1 text-2xs leading-4 text-white"
 							:title="`Campaign: ${entry.build.campaign_name}`"
 						>
-							<Briefcase class="size-2.5" />
-							<span class="max-w-[60px] truncate">{{ entry.build.campaign_name }}</span>
-						</div>
-						<div
+							<Briefcase class="size-2.5 shrink-0" />
+							<span class="truncate">{{ entry.build.campaign_name }}</span>
+						</span>
+						<span
 							v-else-if="entry.build.branding_type === 'org' && entry.build.organization_name"
-							class="absolute left-1 top-1 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-white"
-							:style="{ backgroundColor: getOrgColor(entry.build.organization_id) + 'E6' }"
+							class="inline-flex h-4 min-w-0 items-center gap-1 rounded bg-black/60 px-1 text-2xs leading-4 text-white"
 							:title="entry.build.organization_name"
 						>
-							<Building2 class="size-2.5" />
-							<span class="max-w-[60px] truncate">{{ entry.build.organization_name }}</span>
-						</div>
-						<!-- Aspect ratio badge -->
-						<div
-							v-if="entry.build.aspect_ratios"
-							class="absolute right-1 top-1 rounded bg-black/70 px-1 text-[9px] text-white"
-						>
-							{{ JSON.parse(entry.build.aspect_ratios).join(', ') }}
-						</div>
-						<!-- Duration badge -->
-						<div
-							v-if="entry.build.duration || entry.clip.duration"
-							class="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-xs text-white"
-						>
-							{{ formatDuration(entry.build.duration || entry.clip.duration) }}
-						</div>
-						<!-- Status overlay -->
-						<div
-							v-if="addingIds.has(entry.build.id)"
-							class="absolute inset-0 flex items-center justify-center bg-black/50"
-						>
-							<Loader2 class="size-4 animate-spin text-white" />
-						</div>
-						<div
-							v-else-if="isAlreadyAdded(entry)"
-							class="absolute inset-0 flex items-center justify-center bg-black/50"
-						>
-							<Check class="size-4 text-green-400" />
-						</div>
-						<!-- Add button on hover -->
-						<div
-							v-else
-							class="absolute inset-0 hidden items-center justify-center bg-black/40 group-hover:flex"
-						>
-							<Plus class="size-5 text-white" />
-						</div>
-					</div>
-					<!-- Name -->
-					<div class="truncate px-2 py-1 text-xs text-zinc-300">
-						{{ getClipName(entry.clip) }}
-					</div>
-					<!-- Project name -->
-					<div
-						v-if="entry.clip.project_name"
-						class="truncate px-2 pb-1 text-[10px] text-zinc-500"
-					>
-						{{ entry.clip.project_name }}
-					</div>
-				</div>
-			</div>
+							<Building2
+								class="size-2.5 shrink-0"
+								:style="{ color: getOrgColor(entry.build.organization_id) }"
+							/>
+							<span class="truncate">{{ entry.build.organization_name }}</span>
+						</span>
+					</template>
+				</ImportMediaTile>
+			</AssetGrid>
 		</div>
 	</div>
 </template>

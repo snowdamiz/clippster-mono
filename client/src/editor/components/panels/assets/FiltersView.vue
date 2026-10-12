@@ -4,7 +4,10 @@ import { FILTER_PRESETS } from "../../../constants/filter-constants";
 import type { FilterPreset } from "../../../types/filters";
 import { useEditor } from "../../../composables/useEditor";
 import { useElementSelection } from "../../../composables/timeline/element/useElementSelection";
-import { Palette, Check } from "lucide-vue-next";
+import { Palette, Check, Ban, SearchX } from "lucide-vue-next";
+import AssetGrid from "../shared/AssetGrid.vue";
+import AssetTile from "../shared/AssetTile.vue";
+import { EmptyState } from "@/components/ui/empty-state";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor } = useEditor({ subscribe: false });
@@ -115,68 +118,56 @@ function getFilterPreviewStyle(preset: FilterPreset) {
 
 <template>
 	<div class="flex h-full flex-col">
-		<PanelSearchBar v-model="searchQuery" placeholder="Search filters..." />
+		<PanelSearchBar v-model="searchQuery" placeholder="Search filters…" />
 
-		<div class="flex-1 overflow-y-auto p-2">
+		<div class="flex flex-1 flex-col overflow-y-auto p-3">
 			<!-- No element selected hint -->
-			<div v-if="!selectedElement" class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center">
-				<Palette class="size-8 text-zinc-600" :stroke-width="1" />
-				<p class="text-xs text-zinc-500">Select an image layer to apply a filter</p>
-			</div>
+			<EmptyState
+				v-if="!selectedElement"
+				size="sm"
+				:icon="Palette"
+				title="No layer selected"
+				description="Select an image layer to apply a filter."
+				class="flex-1"
+			/>
 
 			<template v-else>
-				<div v-if="filteredPresets.length === 0" class="flex items-center justify-center py-8">
-					<p class="text-xs text-zinc-500">No filters found</p>
-				</div>
+				<EmptyState
+					v-if="filteredPresets.length === 0"
+					size="sm"
+					:icon="SearchX"
+					title="No filters found"
+					description="Try a different search term."
+				/>
 
-				<div v-else class="grid grid-cols-2 gap-1.5">
+				<AssetGrid v-else :min="88">
 					<!-- None / Reset option -->
-					<button
-						class="group relative cursor-pointer overflow-hidden rounded-lg border transition-all"
-						:class="!activeFilterId
-							? 'border-white/20 bg-white/[0.06]'
-							: 'border-white/[0.06] bg-zinc-950 hover:border-white/15'"
+					<AssetTile
+						label="None"
+						:selected="!activeFilterId"
 						@click="applyFilter({ id: '__none__', label: 'None', description: '', category: 'warm', adjustments: { brightness: 0, contrast: 0, saturation: 0, temperature: 0 } })"
 					>
-						<div class="flex aspect-[4/3] w-full items-center justify-center overflow-hidden bg-zinc-900">
-							<span class="text-2xl text-zinc-600">⊘</span>
+						<div class="flex size-full items-center justify-center">
+							<Ban class="size-6 text-fg-disabled" :stroke-width="1.5" />
 						</div>
-						<div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-4">
-							<p class="text-[10px] font-medium leading-tight" :class="!activeFilterId ? 'text-white' : 'text-zinc-200 group-hover:text-white'">None</p>
-						</div>
-						<div v-if="!activeFilterId" class="absolute right-1.5 top-1.5 flex size-4 items-center justify-center rounded-full bg-white/20">
-							<Check class="size-2.5 text-white" />
-						</div>
-					</button>
+					</AssetTile>
 
-					<button
+					<AssetTile
 						v-for="preset in filteredPresets"
 						:key="preset.id"
-						class="group relative cursor-pointer overflow-hidden rounded-lg border transition-all"
-						:class="activeFilterId === preset.id
-							? 'border-white/20 bg-white/[0.06]'
-							: 'border-white/[0.06] bg-zinc-950 hover:border-white/15'"
+						:label="preset.label"
+						:selected="activeFilterId === preset.id"
 						@click="applyFilter(preset)"
 					>
-						<!-- Filter preview -->
-						<div class="aspect-[4/3] w-full overflow-hidden">
-							<img
-								src="/editor/stock/city-sunset.jpg"
-								:alt="preset.label"
-								class="size-full object-cover"
-								:style="{ filter: getFilterPreviewStyle(preset) }"
-							/>
-						</div>
-						<!-- Label overlay -->
-						<div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-4">
-							<p class="text-[10px] font-medium leading-tight" :class="activeFilterId === preset.id ? 'text-white' : 'text-zinc-200 group-hover:text-white'">{{ preset.label }}</p>
-						</div>
-						<!-- Active checkmark -->
-						<div v-if="activeFilterId === preset.id" class="absolute right-1.5 top-1.5 flex size-4 items-center justify-center rounded-full bg-white/20">
-							<Check class="size-2.5 text-white" />
-						</div>
-					</button>
-				</div>
+						<!-- Filter preview (user-content rendering of the preset) -->
+						<img
+							src="/editor/stock/city-sunset.jpg"
+							:alt="preset.label"
+							class="size-full object-cover"
+							:style="{ filter: getFilterPreviewStyle(preset) }"
+						/>
+					</AssetTile>
+				</AssetGrid>
 			</template>
 		</div>
 	</div>

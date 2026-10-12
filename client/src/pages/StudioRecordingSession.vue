@@ -1,146 +1,134 @@
 <template>
-  <div ref="sessionRef" class="studio-session">
-    <header class="studio-session__topbar">
-      <button type="button" class="studio-session__back" @click.stop="handleBack">
-        <ArrowLeft :size="18" />
-        <span>Recordings</span>
-      </button>
-
-      <div class="studio-session__title">
-        <Disc :size="16" />
-        <span>Recording Studio</span>
-      </div>
-
-      <div class="studio-session__header-actions">
-        <button
-          type="button"
-          class="studio-session__fullscreen-btn"
+  <div ref="sessionRef" class="studio-session flex h-full w-full flex-col overflow-hidden bg-panel text-fg">
+    <SessionHeader title="Recording studio" :icon="Disc" back-label="Back to recordings" @back="handleBack">
+      <template v-if="isRecordingActive" #badge>
+        <Badge variant="live"><span class="size-1.5 animate-pulse rounded-full bg-white" /> Rec</Badge>
+      </template>
+      <template #actions>
+        <Button
+          variant="ghost"
+          size="icon-sm"
           :title="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'"
+          :aria-label="isFullscreen ? 'Exit fullscreen' : 'Enter fullscreen'"
           @click="toggleFullscreen"
         >
-          <Minimize2 v-if="isFullscreen" :size="15" />
-          <Maximize2 v-else :size="15" />
-        </button>
-      </div>
-    </header>
+          <Minimize2 v-if="isFullscreen" />
+          <Maximize2 v-else />
+        </Button>
+      </template>
+    </SessionHeader>
 
-    <main class="studio-session__body">
-      <section class="studio-session__preview-shell">
-        <aside class="studio-session__preview-sources">
-          <div class="studio-session__side-panel">
-            <StudioSourcesPanel
-              v-model:mode="recorder.mode.value"
-              v-model:aspect-ratio="recorder.aspectRatio.value"
-              v-model:camera-device-id="recorder.cameraDeviceId.value"
-              v-model:microphone-device-id="recorder.microphoneDeviceId.value"
-              v-model:display-id="recorder.displayId.value"
-              :camera-options="cameraOptions"
-              :mic-options="micOptions"
-              :display-options="displayOptions"
-              :loading-devices="recorder.loadingDevices.value"
-              :is-screen-sharing="!!screenShareStream"
-              :screen-share-label="screenShareLabel"
-              @refresh-devices="recorder.loadDevices"
-              @choose-screen="chooseScreenShare"
-              @stop-screen="() => stopScreenShare()"
-            />
-          </div>
+    <main
+      class="grid min-h-0 flex-1 grid-cols-[clamp(220px,24vw,280px)_minmax(0,1fr)_clamp(220px,24vw,280px)] overflow-hidden"
+    >
+      <!-- Left rail: sources + mixer -->
+      <aside class="flex min-h-0 min-w-0 flex-col divide-y divide-line-subtle overflow-y-auto border-r border-line-subtle bg-surface">
+        <StudioSourcesPanel
+          v-model:mode="recorder.mode.value"
+          v-model:aspect-ratio="recorder.aspectRatio.value"
+          v-model:camera-device-id="recorder.cameraDeviceId.value"
+          v-model:microphone-device-id="recorder.microphoneDeviceId.value"
+          v-model:display-id="recorder.displayId.value"
+          :camera-options="cameraOptions"
+          :mic-options="micOptions"
+          :display-options="displayOptions"
+          :loading-devices="recorder.loadingDevices.value"
+          :is-screen-sharing="!!screenShareStream"
+          :screen-share-label="screenShareLabel"
+          @refresh-devices="recorder.loadDevices"
+          @choose-screen="chooseScreenShare"
+          @stop-screen="() => stopScreenShare()"
+        />
+        <StudioAudioMixerPanel
+          v-model:mic-volume="recorder.micVolume.value"
+          v-model:share-audio-volume="recorder.shareAudioVolume.value"
+          :has-share-audio="hasShareAudio"
+        />
+      </aside>
 
-          <div class="studio-session__side-panel studio-session__side-panel--mixer">
-            <StudioAudioMixerPanel
-              v-model:mic-volume="recorder.micVolume.value"
-              v-model:share-audio-volume="recorder.shareAudioVolume.value"
-              :has-share-audio="hasShareAudio"
-            />
-          </div>
-        </aside>
+      <!-- Preview -->
+      <section class="flex min-h-0 min-w-0 items-center justify-center overflow-hidden bg-surface-sunken p-4">
+        <StudioPreview
+          ref="previewRef"
+          :mode="recorder.mode.value"
+          :aspect-ratio="recorder.aspectRatio.value"
+          :layout="studioLayout.layout.value"
+          :selected-layer-id="studioLayout.selectedLayerId.value"
+          :camera-preview-device-id="selectedCameraPreviewDeviceId"
+          :screen-preview-stream="screenShareStream"
+          :background-source-type="recorder.backgroundSourceType.value"
+          :media-source="recorder.mediaSource.value"
+          @update:layout="onLayoutUpdate"
+          @update:selected-layer-id="(v) => (studioLayout.selectedLayerId.value = v)"
+          @media-ended="onMediaEnded"
+        />
+      </section>
 
-        <div class="studio-session__preview-canvas">
-          <StudioPreview
-            ref="previewRef"
-            :mode="recorder.mode.value"
-            :aspect-ratio="recorder.aspectRatio.value"
-            :layout="studioLayout.layout.value"
-            :selected-layer-id="studioLayout.selectedLayerId.value"
-            :camera-preview-device-id="selectedCameraPreviewDeviceId"
-            :screen-preview-stream="screenShareStream"
-            :background-source-type="recorder.backgroundSourceType.value"
-            :media-source="recorder.mediaSource.value"
-            @update:layout="onLayoutUpdate"
-            @update:selected-layer-id="(v) => (studioLayout.selectedLayerId.value = v)"
-            @media-ended="onMediaEnded"
+      <!-- Right rail: branding, templates, record controls -->
+      <aside class="flex min-h-0 min-w-0 flex-col border-l border-line-subtle bg-surface">
+        <div class="min-h-0 flex-1 divide-y divide-line-subtle overflow-y-auto">
+          <StudioBrandingPanel
+            v-model:selected-profile-id="selectedProfileId"
+            :profiles="personalProfiles"
+            @profile-selected="onProfileSelected"
+          />
+          <StudioTemplatesPanel
+            :templates="templates.templates.value"
+            :active-template-id="activeTemplateId"
+            @apply="applyTemplate"
+            @delete="deleteTemplate"
+            @upload-template="uploadTemplateOverlay"
           />
         </div>
 
-        <aside class="studio-session__preview-right">
-          <div class="studio-session__side-panel">
-            <StudioBrandingPanel
-              v-model:selected-profile-id="selectedProfileId"
-              :profiles="personalProfiles"
-              @profile-selected="onProfileSelected"
-            />
+        <footer class="flex shrink-0 flex-col gap-2.5 border-t border-line-subtle p-4">
+          <div class="flex items-center justify-between gap-2">
+            <span class="tabular flex items-center gap-2 text-lg font-semibold text-fg">
+              <span v-if="isRecordingActive" class="size-2 animate-pulse rounded-full bg-live" aria-hidden="true" />
+              {{ formatDuration(elapsedSeconds) }}
+            </span>
+            <span class="flex items-center gap-1 text-2xs text-fg-subtle" title="Start / stop shortcuts">
+              <kbd class="rounded border border-line bg-surface-raised px-1 py-px">{{ shortcuts.shortcuts.value.start }}</kbd>
+              <kbd class="rounded border border-line bg-surface-raised px-1 py-px">{{ shortcuts.shortcuts.value.stop }}</kbd>
+            </span>
           </div>
 
-          <div class="studio-session__side-panel">
-            <StudioTemplatesPanel
-              :templates="templates.templates.value"
-              :active-template-id="activeTemplateId"
-              @apply="applyTemplate"
-              @delete="deleteTemplate"
-              @upload-template="uploadTemplateOverlay"
+          <p v-if="recorder.error.value" class="break-words text-xs text-danger">{{ recorder.error.value }}</p>
+          <p v-else-if="recorder.finalizing.value" class="text-xs text-fg-muted">Finalizing recording…</p>
+          <p v-else class="text-xs text-fg-muted">Ready to record</p>
+
+          <label v-if="recorder.mode.value !== 'camera'" class="flex cursor-pointer items-center gap-2 text-xs text-fg-muted">
+            <Checkbox
+              :model-value="recorder.hideCursor.value"
+              :disabled="isRecordingActive"
+              @update:model-value="(value) => (recorder.hideCursor.value = value === true)"
             />
-          </div>
+            Hide cursor in recording
+          </label>
+          <p
+            v-if="recorder.hideCursor.value && recorder.mode.value !== 'camera' && screenShareSurface === 'window'"
+            class="text-2xs text-fg-subtle"
+          >
+            Window shares may still show the cursor. Choose Entire Screen to hide it.
+          </p>
 
-          <footer class="studio-session__controls">
-            <div class="studio-session__control-status">
-              <div class="studio-session__control-timer">
-                <span v-if="isRecordingActive" class="studio-session__recording-dot" />
-                {{ formatDuration(elapsedSeconds) }}
-              </div>
-              <p v-if="recorder.error.value" class="studio-session__error">{{ recorder.error.value }}</p>
-              <p v-else-if="recorder.finalizing.value" class="studio-session__status">Finalizing recording...</p>
-              <p v-else class="studio-session__status">Ready to record</p>
-              <span class="studio-session__shortcut-value">
-                {{ shortcuts.shortcuts.value.start }} / {{ shortcuts.shortcuts.value.stop }}
-              </span>
-            </div>
-
-            <label
-              v-if="recorder.mode.value !== 'camera'"
-              class="studio-session__hide-cursor"
-            >
-              <input
-                v-model="recorder.hideCursor.value"
-                type="checkbox"
-                class="studio-session__hide-cursor-input"
-                :disabled="isRecordingActive"
-              />
-              <span>Hide cursor in recording</span>
-            </label>
-            <p
-              v-if="recorder.hideCursor.value && recorder.mode.value !== 'camera' && screenShareSurface === 'window'"
-              class="studio-session__cursor-hint"
-            >
-              Window shares may still show the cursor. Choose Entire Screen to hide it.
-            </p>
-
-            <button
-              v-if="!isRecordingActive"
-              type="button"
-              class="studio-session__record-btn"
-              :disabled="recorder.finalizing.value"
-              @click="handleStart"
-            >
-              <Circle :size="18" />
-              Start Recording
-            </button>
-            <button v-else type="button" class="studio-session__stop-btn" @click="handleStop">
-              <Square :size="18" />
-              Stop Recording
-            </button>
-          </footer>
-        </aside>
-      </section>
+          <Button
+            v-if="!isRecordingActive"
+            variant="primary"
+            size="lg"
+            block
+            :disabled="recorder.finalizing.value"
+            @click="handleStart"
+          >
+            <Circle class="fill-live text-live" />
+            Start recording
+          </Button>
+          <Button v-else variant="destructive" size="lg" block @click="handleStop">
+            <Square class="fill-current" />
+            Stop recording
+          </Button>
+        </footer>
+      </aside>
     </main>
 
     <RecordingSaveDialog
@@ -160,10 +148,15 @@
 </template>
 
 <script setup lang="ts">
+  import { promptDialog } from '@/composables/useDialogs';
   import { computed, onMounted, onUnmounted, ref, watch } from 'vue';
   import { useRouter } from 'vue-router';
   import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
-  import { ArrowLeft, Circle, Disc, Maximize2, Minimize2, Square } from 'lucide-vue-next';
+  import { Circle, Disc, Maximize2, Minimize2, Square } from 'lucide-vue-next';
+  import SessionHeader from '@/components/create/SessionHeader.vue';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { Checkbox } from '@/components/ui/checkbox';
   import { convertFileSrc, invoke } from '@tauri-apps/api/core';
   import StudioPreview from '@/components/studio/StudioPreview.vue';
   import StudioSourcesPanel from '@/components/studio/StudioSourcesPanel.vue';
@@ -360,7 +353,7 @@
       if (!selected || typeof selected !== 'string') return;
 
       const defaultName = selected.split(/[/\\]/).pop()?.replace(/\.[^.]+$/, '') || 'Overlay Template';
-      const templateName = prompt('Template name', defaultName);
+      const templateName = await promptDialog({ title: 'Save overlay template', label: 'Template name', defaultValue: defaultName, confirmText: 'Save' });
       if (!templateName?.trim()) return;
 
       const overlayLayer = {
@@ -826,358 +819,3 @@
     recorder.clearMediaSource();
   });
 </script>
-
-<style scoped>
-  .studio-session {
-    position: fixed;
-    top: 32px;
-    right: 0;
-    bottom: 0;
-    left: 0;
-    overflow: hidden;
-    background: #08080a;
-    color: var(--sidebar-text);
-    display: flex;
-    flex-direction: column;
-    z-index: 1;
-  }
-
-  .studio-session__topbar {
-    height: 34px;
-    flex-shrink: 0;
-    display: grid;
-    grid-template-columns: 1fr auto 1fr;
-    align-items: center;
-    padding: 0 1rem;
-    border-bottom: 1px solid var(--sidebar-border);
-    background: rgba(12, 12, 14, 0.96);
-  }
-
-  .studio-session__back,
-  .studio-session__title,
-  .studio-session__timer,
-  .studio-session__header-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .studio-session__back {
-    position: relative;
-    z-index: 2;
-    justify-self: start;
-    color: var(--sidebar-text-muted);
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    padding: 0.25rem 0.45rem;
-    cursor: pointer;
-    -webkit-app-region: no-drag;
-  }
-
-  .studio-session__back:hover {
-    color: var(--sidebar-text);
-    background: var(--sidebar-hover);
-  }
-
-  .studio-session__title {
-    color: var(--sidebar-text);
-    font-size: 0.875rem;
-    font-weight: 600;
-  }
-
-  .studio-session__timer {
-    font-size: 0.95rem;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .studio-session__header-actions {
-    justify-self: end;
-  }
-
-  .studio-session__fullscreen-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    background: transparent;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-  }
-
-  .studio-session__fullscreen-btn:hover {
-    color: var(--sidebar-text);
-    background: var(--sidebar-hover);
-    border-color: var(--sidebar-border);
-  }
-
-  .studio-session__recording-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 999px;
-    background: #ef4444;
-    animation: pulse 1.2s ease infinite;
-  }
-
-  .studio-session__body {
-    flex: 1;
-    min-height: 0;
-    display: grid;
-    grid-template-rows: minmax(0, 1fr);
-    overflow: hidden;
-    gap: 0.375rem;
-    padding: 0.375rem;
-  }
-
-  .studio-session__preview-shell {
-    min-height: 0;
-    display: grid;
-    grid-template-columns: 280px minmax(0, 1fr) 280px;
-    gap: 0.5rem;
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    padding: 0;
-    overflow: hidden;
-  }
-
-  .studio-session__preview-sources {
-    min-height: 0;
-    min-width: 0;
-    display: grid;
-    grid-template-rows: minmax(0, 1.25fr) minmax(120px, 0.75fr);
-    gap: 0.5rem;
-    overflow: hidden;
-  }
-
-  .studio-session__preview-right {
-    min-height: 0;
-    min-width: 0;
-    display: grid;
-    grid-template-rows: minmax(0, 1fr) minmax(0, 1fr) auto;
-    gap: 0.5rem;
-    overflow: hidden;
-  }
-
-  .studio-session__side-panel {
-    min-height: 0;
-    min-width: 0;
-    overflow: hidden;
-  }
-
-  .studio-session__side-panel :deep(.studio-panel) {
-    height: 100%;
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    padding: 0.65rem 0.75rem;
-    overflow-y: auto;
-    overflow-x: hidden;
-  }
-
-  .studio-session__preview-canvas {
-    min-width: 0;
-    min-height: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-  }
-
-  .studio-session__dock {
-    display: block;
-    height: 118px;
-    flex-shrink: 0;
-    overflow: hidden;
-  }
-
-  .studio-session__dock-panel,
-  .studio-session__controls {
-    min-width: 0;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  .studio-session__dock-panel :deep(.studio-panel) {
-    height: 100%;
-    border-radius: 6px;
-    overflow-y: auto;
-    overflow-x: hidden;
-  }
-
-  .studio-session__dock-panel :deep(.studio-panel__header) {
-    gap: 0.5rem;
-  }
-
-  .studio-session__dock-panel :deep(.studio-panel__title) {
-    font-size: 0.8125rem;
-  }
-
-  .studio-session__dock-panel :deep(.studio-panel__refresh) {
-    padding: 0.25rem 0.45rem;
-    font-size: 0.6875rem;
-  }
-
-  .studio-session__dock-panel :deep(.studio-panel__field) {
-    gap: 0.3rem;
-  }
-
-  .studio-session__dock-panel :deep(.studio-panel__label) {
-    font-size: 0.6875rem;
-  }
-
-  .studio-session__dock-panel :deep(.studio-panel__hint) {
-    font-size: 0.625rem;
-  }
-
-  .studio-session__dock-panel :deep(.studio-panel__dropdown-trigger) {
-    min-height: 30px;
-    font-size: 0.75rem;
-  }
-
-  .studio-session__dock-panel :deep(.studio-mixer__header) {
-    font-size: 0.6875rem;
-  }
-
-  .studio-session__dock-panel :deep(.studio-mixer__row) {
-    gap: 0.3rem;
-  }
-
-  .studio-session__controls {
-    display: flex;
-    flex-direction: column;
-    align-items: stretch;
-    justify-content: space-between;
-    gap: 0.65rem;
-    padding: 0.65rem 0.75rem;
-    background: transparent;
-    border: none;
-    border-radius: 0;
-    overflow: hidden;
-  }
-
-  .studio-session__control-status {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    min-width: 0;
-  }
-
-  .studio-session__control-timer {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    color: var(--sidebar-text);
-    font-size: 1rem;
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .studio-session__hide-cursor {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    color: var(--sidebar-text-muted);
-    font-size: 0.6875rem;
-    line-height: 1.2;
-    user-select: none;
-    cursor: pointer;
-  }
-
-  .studio-session__hide-cursor-input {
-    width: 14px;
-    height: 14px;
-    margin: 0;
-    accent-color: var(--sidebar-accent);
-    cursor: pointer;
-  }
-
-  .studio-session__hide-cursor-input:disabled {
-    cursor: not-allowed;
-    opacity: 0.6;
-  }
-
-  .studio-session__cursor-hint {
-    margin: 0;
-    color: var(--sidebar-text-muted);
-    font-size: 0.625rem;
-    line-height: 1.35;
-  }
-
-  .studio-session__record-btn,
-  .studio-session__stop-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.4rem;
-    width: 100%;
-    padding: 0.65rem 0.85rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 700;
-    cursor: pointer;
-  }
-
-  .studio-session__record-btn {
-    color: white;
-    border: none;
-    background: var(--sidebar-accent);
-  }
-
-  .studio-session__stop-btn {
-    color: #f87171;
-    border: 1px solid rgba(239, 68, 68, 0.35);
-    background: rgba(239, 68, 68, 0.14);
-  }
-
-  .studio-session__record-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .studio-session__status,
-  .studio-session__error {
-    font-size: 0.75rem;
-    line-height: 1.3;
-    margin: 0;
-  }
-
-  .studio-session__status {
-    color: var(--sidebar-text-muted);
-  }
-
-  .studio-session__error {
-    color: #f87171;
-  }
-
-  .studio-session__shortcut-value {
-    color: var(--sidebar-text-muted);
-    font-size: 0.6875rem;
-    font-family: monospace;
-  }
-
-  @media (max-width: 760px) {
-    .studio-session__dock {
-      grid-template-columns: repeat(2, 1fr);
-      height: 260px;
-    }
-
-    .studio-session__dock-panel--sources {
-      grid-column: 1 / -1;
-    }
-  }
-
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.4;
-    }
-  }
-</style>

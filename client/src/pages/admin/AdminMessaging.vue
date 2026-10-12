@@ -2,419 +2,209 @@
   <PageLayout
     title="Messaging"
     description="Send emails to waitlist members, all users, or individual users"
-    :show-header="true"
     :icon="Mail"
     :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Messaging' }]"
   >
     <template #actions>
-      <button class="msg-action-btn" :disabled="loadingHistory" @click="fetchHistory">
-        <RefreshCw class="msg-action-icon" :class="{ 'msg-spin': loadingHistory }" />
-        Refresh
-      </button>
+      <Button variant="ghost" size="icon-sm" title="Refresh campaign history" :disabled="loadingHistory" @click="fetchHistory">
+        <RefreshCw :class="{ 'animate-spin': loadingHistory }" />
+      </Button>
     </template>
 
-    <div class="admin-msg">
-      <!-- Heading -->
-      <div class="admin-msg__heading">
-        <h1 class="admin-msg__title">Email Campaigns</h1>
-        <p class="admin-msg__subtitle">Send targeted emails to your users, waitlist, or individual recipients</p>
-      </div>
+    <div class="flex flex-col gap-4 px-5 py-4">
+      <!-- Compose -->
+      <SectionCard
+        title="Compose email"
+        description="Preview, test and send a styled campaign"
+        :icon="Send"
+        flush
+      >
+        <template #actions>
+          <Button variant="ghost" size="sm" @click="applyOpenBetaTemplate">
+            <FileText />
+            Open beta template
+          </Button>
+        </template>
 
-      <!-- Compose Card -->
-      <div class="admin-msg__compose-card">
-        <div class="admin-msg__compose-header">
-          <div class="admin-msg__compose-icon-wrap">
-            <Send class="admin-msg__compose-icon-svg" />
-          </div>
-          <div>
-            <h2 class="admin-msg__compose-title">Compose Email</h2>
-            <p class="admin-msg__compose-desc">Preview, test, and send a styled campaign</p>
-          </div>
-          <button class="admin-msg__template-btn" @click="applyOpenBetaTemplate">
-            <Mail class="admin-msg__template-icon" />
-            Use open beta template
-          </button>
-        </div>
-
-        <div class="admin-msg__compose-body">
-          <!-- Row 1: audience + subject -->
-          <div class="admin-msg__top-row">
-            <div class="admin-msg__field">
-              <label class="admin-msg__label">Audience</label>
-              <div class="admin-msg__audience-grid">
-                <button
-                  v-for="opt in audienceOptions"
-                  :key="opt.value"
-                  class="admin-msg__audience-btn"
-                  :class="{ 'admin-msg__audience-btn--active': form.audience === opt.value }"
-                  @click="form.audience = opt.value"
-                >
-                  <component :is="opt.icon" class="admin-msg__audience-icon" />
-                  <span class="admin-msg__audience-label">{{ opt.label }}</span>
-                  <span class="admin-msg__audience-desc">{{ opt.desc }}</span>
-                </button>
-              </div>
-              <div class="admin-msg__audience-meta">
-                <span v-if="previewError" class="admin-msg__audience-error">{{ previewError }}</span>
-                <span v-else class="admin-msg__audience-count">
-                  {{ recipientPreview.recipient_count }} deliverable
-                  <span v-if="recipientPreview.suppressed_count > 0">
+        <div class="flex flex-col gap-4 px-4 py-4">
+          <!-- Audience -->
+          <Field label="Audience">
+            <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+              <SegmentedControl v-model="form.audience" :options="audienceSegments" />
+              <span class="flex min-w-0 items-center gap-1 text-xs">
+                <span v-if="previewError" class="text-danger">{{ previewError }}</span>
+                <span v-else class="tabular text-fg-muted">
+                  {{ audienceDescription }} ·
+                  <span class="text-fg">{{ recipientPreview.recipient_count }}</span> deliverable
+                  <span v-if="recipientPreview.suppressed_count > 0" class="text-fg-subtle">
                     · {{ recipientPreview.suppressed_count }} suppressed
                   </span>
                 </span>
-                <button class="admin-msg__count-btn" :disabled="loadingPreview" @click="fetchPreview">
-                  <RefreshCw class="admin-msg__count-icon" :class="{ 'msg-spin': loadingPreview }" />
-                </button>
-              </div>
+                <Button
+                  variant="ghost"
+                  size="icon-xs"
+                  title="Recount recipients"
+                  aria-label="Recount recipients"
+                  :disabled="loadingPreview"
+                  @click="fetchPreview"
+                >
+                  <RefreshCw :class="{ 'animate-spin': loadingPreview }" />
+                </Button>
+              </span>
             </div>
+          </Field>
 
-            <div class="admin-msg__subject-col">
-              <div v-if="form.audience === 'individual'" class="admin-msg__field">
-                <label class="admin-msg__label">Recipient Email</label>
-                <input
-                  v-model="form.targetEmail"
-                  type="email"
-                  placeholder="user@example.com"
-                  class="admin-msg__input"
-                />
-              </div>
-              <div class="admin-msg__field">
-                <label class="admin-msg__label">Subject</label>
-                <input
-                  v-model="form.subject"
-                  type="text"
-                  placeholder="Enter email subject..."
-                  class="admin-msg__input"
-                />
-              </div>
-              <div class="admin-msg__field">
-                <label class="admin-msg__label">Preheader</label>
-                <input
-                  v-model="form.preheader"
-                  type="text"
-                  placeholder="Short inbox preview text..."
-                  class="admin-msg__input"
-                />
-              </div>
-            </div>
+          <div class="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-3">
+            <Field v-if="form.audience === 'individual'" label="Recipient email" for="msg-target" class="col-span-full">
+              <Input id="msg-target" v-model="form.targetEmail" type="email" placeholder="user@example.com" />
+            </Field>
+            <Field label="Subject" for="msg-subject">
+              <Input id="msg-subject" v-model="form.subject" placeholder="Enter email subject…" />
+            </Field>
+            <Field label="Preheader" for="msg-preheader">
+              <Input id="msg-preheader" v-model="form.preheader" placeholder="Short inbox preview text…" />
+            </Field>
           </div>
 
-          <!-- Row 2: full-width body editor -->
-          <div class="admin-msg__field">
-            <label class="admin-msg__label">Body</label>
-            <div class="admin-msg__editor-tabs">
-              <button
-                class="admin-msg__editor-tab"
-                :class="{ 'admin-msg__editor-tab--active': editorMode === 'visual' }"
-                @click="switchMode('visual')"
-              >
-                <Type class="admin-msg__tab-icon" />
-                Visual
-              </button>
-              <button
-                class="admin-msg__editor-tab"
-                :class="{ 'admin-msg__editor-tab--active': editorMode === 'html' }"
-                @click="switchMode('html')"
-              >
-                <Code class="admin-msg__tab-icon" />
-                HTML
-              </button>
-              <button
-                class="admin-msg__editor-tab"
-                :class="{ 'admin-msg__editor-tab--active': editorMode === 'preview' }"
-                @click="editorMode = 'preview'"
-              >
-                <Eye class="admin-msg__tab-icon" />
-                Preview
-              </button>
-            </div>
-
-            <div v-if="editorMode === 'visual'" class="admin-msg__tiptap-wrapper">
-              <div class="admin-msg__toolbar">
-                <button
-                  class="admin-msg__toolbar-btn"
-                  :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('bold') }"
-                  @click="editor?.chain().focus().toggleBold().run()"
-                >
-                  <Bold class="admin-msg__toolbar-icon" />
-                </button>
-                <button
-                  class="admin-msg__toolbar-btn"
-                  :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('italic') }"
-                  @click="editor?.chain().focus().toggleItalic().run()"
-                >
-                  <Italic class="admin-msg__toolbar-icon" />
-                </button>
-                <button
-                  class="admin-msg__toolbar-btn"
-                  :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('underline') }"
-                  @click="editor?.chain().focus().toggleUnderline().run()"
-                >
-                  <UnderlineIcon class="admin-msg__toolbar-icon" />
-                </button>
-                <div class="admin-msg__toolbar-divider" />
-                <button
-                  class="admin-msg__toolbar-btn"
-                  :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('heading', { level: 2 }) }"
-                  @click="editor?.chain().focus().toggleHeading({ level: 2 }).run()"
-                >
-                  <Heading2 class="admin-msg__toolbar-icon" />
-                </button>
-                <button
-                  class="admin-msg__toolbar-btn"
-                  :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('bulletList') }"
-                  @click="editor?.chain().focus().toggleBulletList().run()"
-                >
-                  <List class="admin-msg__toolbar-icon" />
-                </button>
-                <button
-                  class="admin-msg__toolbar-btn"
-                  :class="{ 'admin-msg__toolbar-btn--active': editor?.isActive('orderedList') }"
-                  @click="editor?.chain().focus().toggleOrderedList().run()"
-                >
-                  <ListOrdered class="admin-msg__toolbar-icon" />
-                </button>
-                <div class="admin-msg__toolbar-divider" />
-                <button class="admin-msg__toolbar-btn" @click="setLink">
-                  <LinkIcon class="admin-msg__toolbar-icon" />
-                </button>
-              </div>
-              <editor-content :editor="editor" class="admin-msg__editor-content" />
-            </div>
-
-            <textarea
-              v-else-if="editorMode === 'html'"
+          <!-- Body editor -->
+          <Field label="Body">
+            <RichTextEditor
               v-model="form.body"
-              class="admin-msg__html-textarea"
+              default-mode="html"
               placeholder="<p>Enter your HTML email body here...</p>"
-              spellcheck="false"
+              :min-height="360"
+              preserve-inline-styles
+            >
+              <template #preview>
+                <iframe class="block min-h-[620px] w-full border-0" title="Email preview" :srcdoc="emailPreviewHtml" />
+              </template>
+            </RichTextEditor>
+          </Field>
+        </div>
+
+        <!-- Send row -->
+        <div class="flex flex-wrap items-center gap-2 border-t border-line-subtle px-4 py-3">
+          <div class="flex min-w-0 flex-1 items-center gap-2">
+            <Input
+              v-model="form.testEmail"
+              type="email"
+              placeholder="Send a test to…"
+              class="h-[var(--control-sm)] max-w-[260px] text-xs"
+              aria-label="Test email address"
             />
-
-            <div v-else class="admin-msg__preview-wrapper">
-              <iframe
-                v-if="form.body"
-                class="admin-msg__preview-frame"
-                title="Email preview"
-                :srcdoc="emailPreviewHtml"
-              />
-              <div v-else class="admin-msg__preview-empty">
-                <Eye class="admin-msg__preview-empty-icon" />
-                <p>No content to preview</p>
-              </div>
-            </div>
+            <Button variant="secondary" size="sm" :loading="testing" :disabled="!canSendTest || testing" @click="sendTestCampaign">
+              <Mail v-if="!testing" />
+              {{ testing ? 'Sending test…' : 'Send test' }}
+            </Button>
           </div>
+          <Button variant="primary" :loading="sending" :disabled="!canSend || sending" @click="confirmSend">
+            <Send v-if="!sending" />
+            {{ sending ? 'Sending…' : 'Send campaign' }}
+          </Button>
         </div>
+      </SectionCard>
 
-        <div class="admin-msg__compose-footer">
-          <div class="admin-msg__test">
-            <input v-model="form.testEmail" type="email" placeholder="Send test to..." class="admin-msg__test-input" />
-            <button class="admin-msg__test-btn" :disabled="!canSendTest || testing" @click="sendTestCampaign">
-              <Loader2 v-if="testing" class="admin-msg__send-icon msg-spin" />
-              <Mail v-else class="admin-msg__send-icon" />
-              {{ testing ? 'Sending test...' : 'Send test' }}
-            </button>
-          </div>
-          <button class="admin-msg__send-btn" :disabled="!canSend || sending" @click="confirmSend">
-            <Loader2 v-if="sending" class="admin-msg__send-icon msg-spin" />
-            <Send v-else class="admin-msg__send-icon" />
-            {{ sending ? 'Sending...' : 'Send Campaign' }}
-          </button>
-        </div>
-      </div>
-
-      <!-- Campaign History Table -->
-      <div class="admin-msg__history-card">
-        <div class="admin-msg__history-header">
-          <div class="admin-msg__history-header-left">
-            <div class="admin-msg__history-icon-wrap">
-              <Mail class="admin-msg__history-icon-svg" />
-            </div>
-            <div>
-              <h2 class="admin-msg__history-title">Campaign History</h2>
-              <p class="admin-msg__history-desc">Previously sent email campaigns</p>
-            </div>
-          </div>
-        </div>
-
-        <div v-if="loadingHistory" class="admin-msg__loading">
-          <Loader2 class="admin-msg__loading-icon msg-spin" />
-          <p class="admin-msg__loading-text">Loading campaigns...</p>
-        </div>
-
-        <div v-else-if="campaigns.length === 0" class="admin-msg__empty">
-          <div class="admin-msg__empty-icon-wrap"><Mail class="admin-msg__empty-icon-svg" /></div>
-          <p class="admin-msg__empty-text">No campaigns sent yet</p>
-        </div>
-
-        <div v-else class="admin-msg__table-scroll">
-          <table class="admin-msg__table">
-            <thead class="admin-msg__thead">
-              <tr>
-                <th class="admin-msg__th">Subject</th>
-                <th class="admin-msg__th">Audience</th>
-                <th class="admin-msg__th">Recipients</th>
-                <th class="admin-msg__th">Status</th>
-                <th class="admin-msg__th">Sent</th>
-                <th class="admin-msg__th">Actions</th>
-              </tr>
-            </thead>
-            <tbody class="admin-msg__tbody">
-              <tr v-for="campaign in campaigns" :key="campaign.id" class="admin-msg__row">
-                <td class="admin-msg__td admin-msg__td--subject">{{ campaign.subject }}</td>
-                <td class="admin-msg__td">
-                  <span class="admin-msg__chip">{{ audienceLabel(campaign.audience) }}</span>
-                </td>
-                <td class="admin-msg__td admin-msg__td--muted">
-                  <div class="admin-msg__recipient-count">
-                    <span>{{ campaign.recipient_count }} total</span>
-                    <span>{{ campaign.sent_count }} sent · {{ campaign.failed_count }} failed</span>
-                  </div>
-                </td>
-                <td class="admin-msg__td">
-                  <span class="admin-msg__status" :class="`admin-msg__status--${campaign.status}`">
-                    {{ campaign.status }}
-                  </span>
-                </td>
-                <td class="admin-msg__td admin-msg__td--muted">{{ formatDate(campaign.sent_at) }}</td>
-                <td class="admin-msg__td">
-                  <button
-                    v-if="campaign.failed_count > 0 && campaign.status !== 'sending'"
-                    class="admin-msg__retry-btn"
-                    :disabled="retryingCampaignId === campaign.id"
-                    @click="retryFailedCampaign(campaign)"
-                  >
-                    <RefreshCw
-                      class="admin-msg__retry-icon"
-                      :class="{ 'msg-spin': retryingCampaignId === campaign.id }"
-                    />
-                    Retry failed
-                  </button>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <!-- History -->
+      <SectionCard title="Campaign history" :count="campaigns.length" :icon="History" flush>
+        <DataTable
+          bare
+          :columns="historyColumns"
+          :rows="campaigns"
+          row-key="id"
+          :loading="loadingHistory"
+          :skeleton-rows="3"
+          :empty-icon="Mail"
+          empty-title="No campaigns sent yet"
+        >
+          <template #cell-subject="{ row: campaign }">
+            <span class="block truncate font-medium text-fg" :title="campaign.subject">{{ campaign.subject }}</span>
+          </template>
+          <template #cell-audience="{ row: campaign }">
+            <Badge variant="neutral">{{ audienceLabel(campaign.audience) }}</Badge>
+          </template>
+          <template #cell-recipients="{ row: campaign }">
+            <span class="tabular block text-fg">{{ campaign.recipient_count }} total</span>
+            <span class="tabular block text-xs text-fg-subtle">
+              {{ campaign.sent_count }} sent ·
+              <span :class="campaign.failed_count > 0 ? 'text-danger' : ''">{{ campaign.failed_count }} failed</span>
+            </span>
+          </template>
+          <template #cell-status="{ row: campaign }">
+            <Badge :variant="campaignStatusVariant(campaign.status)">{{ formatStatus(campaign.status) }}</Badge>
+          </template>
+          <template #cell-sent="{ row: campaign }">
+            <template v-if="campaign.sent_at">
+              <span class="tabular block truncate text-fg">{{ formatDay(campaign.sent_at) }}</span>
+              <span class="tabular block truncate text-xs text-fg-subtle">{{ formatClock(campaign.sent_at) }}</span>
+            </template>
+            <span v-else class="text-fg-subtle">—</span>
+          </template>
+          <template #actions="{ row: campaign }">
+            <AdminRowActions
+              v-if="campaign.failed_count > 0 && campaign.status !== 'sending'"
+              :label="`Actions for ${campaign.subject}`"
+              :loading="retryingCampaignId === campaign.id"
+            >
+              <AdminActionItem :icon="RotateCcw" @select="retryFailedCampaign(campaign)">
+                Retry {{ campaign.failed_count }} failed
+              </AdminActionItem>
+            </AdminRowActions>
+          </template>
+        </DataTable>
+      </SectionCard>
     </div>
 
-    <!-- Confirm Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div
-          v-if="showConfirm"
-          class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]"
-          @click.self="showConfirm = false"
-        >
-          <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-4 border border-white/10 overflow-hidden"
-          >
-            <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-indigo-500" />
-            <div class="p-6">
-              <div class="flex items-center gap-3 mb-4">
-                <div class="p-2 rounded-lg bg-violet-500/10 border border-violet-500/20">
-                  <Send class="h-5 w-5 text-violet-400" />
-                </div>
-                <div>
-                  <h3 class="text-base font-semibold text-white">Send Campaign?</h3>
-                  <p class="text-xs text-zinc-400 mt-0.5">This will send emails to {{ confirmRecipientText }}</p>
-                </div>
-              </div>
-              <p class="text-sm text-zinc-400 mb-5">
-                Subject:
-                <span class="text-white font-medium">{{ form.subject }}</span>
-              </p>
-              <p v-if="recipientPreview.suppressed_count > 0" class="text-xs text-zinc-500 mb-5">
-                {{ recipientPreview.suppressed_count }} suppressed email{{
-                  recipientPreview.suppressed_count === 1 ? '' : 's'
-                }}
-                will be skipped.
-              </p>
-              <div class="flex gap-3">
-                <button
-                  class="flex-1 px-4 py-2.5 bg-gradient-to-r from-violet-600 to-purple-600 text-white rounded-xl font-semibold text-sm hover:opacity-90 transition-all"
-                  @click="sendCampaign"
-                >
-                  Send Now
-                </button>
-                <button
-                  class="px-4 py-2.5 bg-zinc-800 text-zinc-300 rounded-xl font-semibold text-sm hover:bg-zinc-700 transition-all"
-                  @click="showConfirm = false"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <!-- Confirm send -->
+    <Modal
+      v-model:open="showConfirm"
+      title="Send campaign?"
+      :description="`This will send emails to ${confirmRecipientText}`"
+      :icon="Send"
+      size="sm"
+      body-class="flex flex-col gap-3"
+    >
+      <div class="rounded-lg border border-line-subtle bg-surface-sunken px-3 py-2.5">
+        <p class="text-xs text-fg-muted">Subject</p>
+        <p class="mt-0.5 text-sm font-medium text-fg">{{ form.subject }}</p>
+      </div>
+      <p v-if="recipientPreview.suppressed_count > 0" class="text-xs text-fg-subtle">
+        {{ recipientPreview.suppressed_count }} suppressed email{{ recipientPreview.suppressed_count === 1 ? '' : 's' }}
+        will be skipped.
+      </p>
+      <template #footer>
+        <Button variant="ghost" @click="showConfirm = false">Cancel</Button>
+        <Button variant="primary" @click="sendCampaign">Send now</Button>
+      </template>
+    </Modal>
   </PageLayout>
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, onMounted, onBeforeUnmount, watch } from 'vue';
-  import { formatDateTime } from '@/utils/dateTimeUtils';
-  import {
-    Mail,
-    Send,
-    Users,
-    User,
-    UserPlus,
-    RefreshCw,
-    Loader2,
-    Bold,
-    Italic,
-    List,
-    ListOrdered,
-    LinkIcon,
-    Eye,
-    Code,
-    Type,
-    Heading2,
-  } from 'lucide-vue-next';
-  import { Extension } from '@tiptap/core';
-  import { useEditor, EditorContent } from '@tiptap/vue-3';
-  import StarterKit from '@tiptap/starter-kit';
-  import Underline from '@tiptap/extension-underline';
-  import Link from '@tiptap/extension-link';
+  import { ref, computed, onMounted, watch } from 'vue';
+  import { formatDateTime, formatDate as formatDay, formatTime as formatClock } from '@/utils/dateTimeUtils';
+  import { Mail, Send, Users, User, UserPlus, RefreshCw, FileText, History, RotateCcw } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import { Badge } from '@/components/ui/badge';
+  import type { BadgeVariants } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
+  import { Modal } from '@/components/ui/modal';
+  import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
+  import {
+    AdminActionItem,
+    AdminRowActions,
+    formatStatus,
+    statusVariant,
+  } from '@/components/admin/shared';
+  import RichTextEditor from '@/components/admin/shared/RichTextEditor.vue';
+  import { SectionCard } from '@/components/ui/section-card';
+  import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
   import api from '@/services/api';
   import { useToast } from '@/composables/useToast';
-
-  // Need to import UnderlineIcon separately to avoid name clash with Underline extension
-  import { Underline as UnderlineIcon } from 'lucide-vue-next';
+  import { confirmDialog } from '@/composables/useDialogs';
 
   const { success, error: showError } = useToast();
-
-  /** Keep inline style attrs so email HTML survives Visual-mode round-trips. */
-  const PreserveInlineStyles = Extension.create({
-    name: 'preserveInlineStyles',
-    addGlobalAttributes() {
-      return [
-        {
-          types: [
-            'paragraph',
-            'heading',
-            'bulletList',
-            'orderedList',
-            'listItem',
-            'blockquote',
-            'link',
-          ],
-          attributes: {
-            style: {
-              default: null,
-              parseHTML: (element) => element.getAttribute('style'),
-              renderHTML: (attributes) => {
-                if (!attributes.style) return {};
-                return { style: attributes.style };
-              },
-            },
-          },
-        },
-      ];
-    },
-  });
 
   const OPEN_BETA_TEMPLATE = {
     subject: 'Clippster is now in open beta',
@@ -456,7 +246,6 @@
   }
 
   const form = ref(defaultForm());
-  const editorMode = ref<'visual' | 'html' | 'preview'>('html');
   const sending = ref(false);
   const testing = ref(false);
   const showConfirm = ref(false);
@@ -467,38 +256,35 @@
   const previewError = ref('');
   const recipientPreview = ref({ requested_count: 0, recipient_count: 0, suppressed_count: 0, sample: [] as string[] });
 
-  const editor = useEditor({
-    extensions: [
-      StarterKit,
-      Underline,
-      Link.configure({ openOnClick: false }),
-      PreserveInlineStyles,
-    ],
-    content: OPEN_BETA_TEMPLATE.body,
-    onUpdate({ editor }) {
-      form.value.body = editor.getHTML();
-    },
-  });
-
-  function switchMode(mode: 'visual' | 'html') {
-    if (mode === 'visual' && editorMode.value === 'html') {
-      editor.value?.commands.setContent(form.value.body);
-    }
-    editorMode.value = mode;
-  }
-
-  function setLink() {
-    const url = window.prompt('Enter URL');
-    if (url) editor.value?.chain().focus().setLink({ href: url }).run();
-  }
-
-  onBeforeUnmount(() => editor.value?.destroy());
-
   const audienceOptions = [
-    { value: 'all_users', label: 'All Users', desc: 'Every registered user', icon: Users },
+    { value: 'all_users', label: 'All users', desc: 'Every registered user', icon: Users },
     { value: 'waitlist', label: 'Waitlist', desc: 'Waitlist signups only', icon: UserPlus },
     { value: 'individual', label: 'Individual', desc: 'Single email address', icon: User },
   ];
+
+  const audienceSegments: SegmentedOption<string>[] = audienceOptions.map((option) => ({
+    value: option.value,
+    label: option.label,
+    icon: option.icon,
+  }));
+
+  const audienceDescription = computed(
+    () => audienceOptions.find((option) => option.value === form.value.audience)?.desc ?? ''
+  );
+
+  const historyColumns: DataTableColumn[] = [
+    { key: 'subject', label: 'Subject' },
+    { key: 'audience', label: 'Audience', width: '110px', hideBelow: 'md' },
+    { key: 'recipients', label: 'Recipients', width: '140px' },
+    { key: 'status', label: 'Status', width: '100px' },
+    { key: 'sent', label: 'Sent', width: '120px', hideBelow: 'md' },
+  ];
+
+  function campaignStatusVariant(status: string): NonNullable<BadgeVariants['variant']> {
+    if (status === 'sent') return 'success';
+    if (status === 'sending') return 'brand';
+    return statusVariant(status);
+  }
 
   const canSend = computed(() => {
     if (!form.value.subject.trim() || !form.value.body.trim()) return false;
@@ -525,7 +311,6 @@
     form.value.subject = OPEN_BETA_TEMPLATE.subject;
     form.value.preheader = OPEN_BETA_TEMPLATE.preheader;
     form.value.body = OPEN_BETA_TEMPLATE.body;
-    editor.value?.commands.setContent(OPEN_BETA_TEMPLATE.body);
     void fetchPreview();
   }
 
@@ -556,7 +341,6 @@
       const res = await api.post('/admin/messaging/send', payload);
       success(res.data.message ?? 'Campaign sent successfully');
       form.value = defaultForm();
-      editor.value?.commands.setContent(OPEN_BETA_TEMPLATE.body);
       await fetchHistory();
       await fetchPreview();
     } catch (err: any) {
@@ -586,9 +370,11 @@
   async function retryFailedCampaign(campaign: any) {
     if (campaign.failed_count <= 0 || campaign.status === 'sending') return;
 
-    const confirmed = window.confirm(
-      `Retry ${campaign.failed_count} failed recipient${campaign.failed_count === 1 ? '' : 's'} for "${campaign.subject}"?`
-    );
+    const confirmed = await confirmDialog({
+      title: 'Retry failed recipients?',
+      message: `Resend "${campaign.subject}" to ${campaign.failed_count} failed recipient${campaign.failed_count === 1 ? '' : 's'}.`,
+      confirmText: 'Retry',
+    });
     if (!confirmed) return;
 
     retryingCampaignId.value = campaign.id;
@@ -717,763 +503,3 @@
     await Promise.all([fetchHistory(), fetchPreview()]);
   });
 </script>
-
-<style scoped>
-  .msg-action-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    height: 32px;
-    padding: 0 0.875rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms;
-    border: 1px solid var(--sidebar-border);
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-  .msg-action-btn:hover:not(:disabled) {
-    background: rgba(63, 63, 70, 0.8);
-  }
-  .msg-action-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .msg-action-icon {
-    width: 14px;
-    height: 14px;
-  }
-  .msg-spin {
-    animation: spin 1s linear infinite;
-  }
-
-  .admin-msg {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: 1.5rem;
-    max-width: 1400px;
-    margin: 0 auto;
-    width: 100%;
-  }
-
-  .admin-msg__heading {
-    margin-bottom: 0.5rem;
-  }
-  .admin-msg__title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.2rem;
-    letter-spacing: -0.02em;
-  }
-  .admin-msg__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  /* ── Compose card ── */
-  .admin-msg__compose-card {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    overflow: hidden;
-  }
-  .admin-msg__compose-header {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 1.25rem 1.5rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-  .admin-msg__compose-icon-wrap {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2), rgba(109, 40, 217, 0.2));
-    border: 1px solid rgba(139, 92, 246, 0.3);
-    flex-shrink: 0;
-  }
-  .admin-msg__compose-icon-svg {
-    width: 18px;
-    height: 18px;
-    color: #a78bfa;
-  }
-  .admin-msg__compose-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-  .admin-msg__compose-desc {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-  }
-  .admin-msg__template-btn {
-    margin-left: auto;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.45rem;
-    height: 32px;
-    padding: 0 0.75rem;
-    border-radius: 7px;
-    border: 1px solid rgba(34, 211, 238, 0.35);
-    background: rgba(34, 211, 238, 0.1);
-    color: #67e8f9;
-    font-size: 0.75rem;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 150ms;
-    white-space: nowrap;
-  }
-  .admin-msg__template-btn:hover {
-    background: rgba(34, 211, 238, 0.16);
-    border-color: rgba(34, 211, 238, 0.55);
-  }
-  .admin-msg__template-icon {
-    width: 13px;
-    height: 13px;
-  }
-
-  .admin-msg__compose-body {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-    padding: 1.5rem;
-  }
-  .admin-msg__top-row {
-    display: grid;
-    grid-template-columns: auto 1fr;
-    gap: 1.5rem;
-    align-items: start;
-  }
-  @media (max-width: 700px) {
-    .admin-msg__top-row {
-      grid-template-columns: 1fr;
-    }
-    .admin-msg__compose-header {
-      flex-wrap: wrap;
-    }
-    .admin-msg__template-btn {
-      margin-left: 0;
-    }
-  }
-  .admin-msg__subject-col {
-    display: flex;
-    flex-direction: column;
-    justify-content: flex-end;
-  }
-
-  .admin-msg__compose-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 1rem 1.5rem;
-    border-top: 1px solid var(--sidebar-border);
-    background-color: rgba(24, 24, 27, 0.4);
-    flex-wrap: wrap;
-  }
-
-  /* ── Fields ── */
-  .admin-msg__field {
-    margin-bottom: 1.25rem;
-  }
-  .admin-msg__field--grow {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-  }
-  .admin-msg__label {
-    display: block;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-bottom: 0.5rem;
-  }
-  .admin-msg__input {
-    width: 100%;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    padding: 0.625rem 0.875rem;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    outline: none;
-    transition: border-color 150ms;
-    box-sizing: border-box;
-  }
-  .admin-msg__input:focus {
-    border-color: rgba(139, 92, 246, 0.5);
-    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.15);
-  }
-
-  /* ── Audience ── */
-  .admin-msg__audience-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.5rem;
-  }
-  .admin-msg__audience-btn {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.75rem 0.5rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 150ms;
-    text-align: center;
-  }
-  .admin-msg__audience-btn:hover {
-    border-color: rgba(139, 92, 246, 0.4);
-  }
-  .admin-msg__audience-btn--active {
-    border-color: rgba(139, 92, 246, 0.6);
-    background: rgba(139, 92, 246, 0.1);
-  }
-  .admin-msg__audience-icon {
-    width: 18px;
-    height: 18px;
-    color: var(--sidebar-text-muted);
-  }
-  .admin-msg__audience-btn--active .admin-msg__audience-icon {
-    color: #a78bfa;
-  }
-  .admin-msg__audience-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-  .admin-msg__audience-desc {
-    font-size: 0.625rem;
-    color: var(--sidebar-text-muted);
-  }
-  .admin-msg__audience-meta {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-top: 0.625rem;
-    min-height: 28px;
-    padding: 0.35rem 0.5rem;
-    border: 1px solid rgba(39, 39, 42, 0.85);
-    border-radius: 7px;
-    background: rgba(10, 10, 11, 0.55);
-  }
-  .admin-msg__audience-count {
-    font-size: 0.75rem;
-    color: #a7f3d0;
-  }
-  .admin-msg__audience-error {
-    font-size: 0.75rem;
-    color: #fca5a5;
-  }
-  .admin-msg__count-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    border: none;
-    border-radius: 5px;
-    background: transparent;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-  }
-  .admin-msg__count-btn:hover:not(:disabled) {
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-  .admin-msg__count-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .admin-msg__count-icon {
-    width: 13px;
-    height: 13px;
-  }
-
-  /* ── Editor ── */
-  .admin-msg__editor-tabs {
-    display: flex;
-    gap: 0.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-  .admin-msg__editor-tab {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.875rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    cursor: pointer;
-    transition: all 150ms;
-    margin-bottom: -1px;
-  }
-  .admin-msg__editor-tab:hover {
-    color: var(--sidebar-text);
-  }
-  .admin-msg__editor-tab--active {
-    color: #a78bfa;
-    border-bottom-color: #a78bfa;
-  }
-  .admin-msg__tab-icon {
-    width: 13px;
-    height: 13px;
-  }
-  .admin-msg__tiptap-wrapper {
-    border: 1px solid var(--sidebar-border);
-    border-top: none;
-    border-radius: 0 0 8px 8px;
-    overflow: hidden;
-    flex: 1;
-  }
-  .admin-msg__toolbar {
-    display: flex;
-    align-items: center;
-    gap: 0.125rem;
-    padding: 0.375rem 0.5rem;
-    background: var(--sidebar-bg);
-    border-bottom: 1px solid var(--sidebar-border);
-    flex-wrap: wrap;
-  }
-  .admin-msg__toolbar-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 5px;
-    border: none;
-    background: transparent;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms;
-  }
-  .admin-msg__toolbar-btn:hover {
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-  .admin-msg__toolbar-btn--active {
-    background: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
-  }
-  .admin-msg__toolbar-icon {
-    width: 14px;
-    height: 14px;
-  }
-  .admin-msg__toolbar-divider {
-    width: 1px;
-    height: 18px;
-    background: var(--sidebar-border);
-    margin: 0 0.25rem;
-  }
-  .admin-msg__editor-content {
-    min-height: 360px;
-    background: var(--sidebar-bg);
-  }
-  .admin-msg__editor-content :deep(.ProseMirror) {
-    min-height: 360px;
-    padding: 0.875rem;
-    outline: none;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    line-height: 1.6;
-  }
-  .admin-msg__editor-content :deep(.ProseMirror p) {
-    margin: 0 0 0.5rem;
-  }
-  .admin-msg__editor-content :deep(.ProseMirror ul),
-  .admin-msg__editor-content :deep(.ProseMirror ol) {
-    padding-left: 1.25rem;
-    margin: 0 0 0.5rem;
-  }
-  .admin-msg__editor-content :deep(.ProseMirror h2) {
-    font-size: 1.125rem;
-    font-weight: 600;
-    margin: 0 0 0.5rem;
-    color: var(--sidebar-text);
-  }
-  .admin-msg__editor-content :deep(.ProseMirror a) {
-    color: #a78bfa;
-    text-decoration: underline;
-  }
-  .admin-msg__html-textarea {
-    width: 100%;
-    min-height: 360px;
-    background: var(--sidebar-bg);
-    border: 1px solid var(--sidebar-border);
-    border-top: none;
-    border-radius: 0 0 8px 8px;
-    padding: 0.875rem;
-    font-size: 0.8125rem;
-    font-family: 'Fira Code', 'Consolas', monospace;
-    color: var(--sidebar-text);
-    outline: none;
-    resize: vertical;
-    box-sizing: border-box;
-    line-height: 1.6;
-    flex: 1;
-  }
-  .admin-msg__preview-wrapper {
-    border: 1px solid var(--sidebar-border);
-    border-top: none;
-    border-radius: 0 0 8px 8px;
-    min-height: 360px;
-    background: var(--sidebar-bg);
-    flex: 1;
-  }
-  .admin-msg__preview-body {
-    padding: 1rem;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    line-height: 1.6;
-  }
-  .admin-msg__preview-frame {
-    width: 100%;
-    min-height: 620px;
-    border: 0;
-    display: block;
-    background: #0b0c0f;
-  }
-  .admin-msg__preview-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    min-height: 360px;
-    color: var(--sidebar-text-muted);
-    font-size: 0.875rem;
-  }
-  .admin-msg__preview-empty-icon {
-    width: 28px;
-    height: 28px;
-    opacity: 0.4;
-  }
-
-  /* ── Send button ── */
-  .admin-msg__send-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1.25rem;
-    background: linear-gradient(135deg, #7c3aed, #6d28d9);
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms;
-  }
-  .admin-msg__send-btn:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-  .admin-msg__send-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-  .admin-msg__send-icon {
-    width: 15px;
-    height: 15px;
-  }
-  .admin-msg__test {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    min-width: min(100%, 390px);
-  }
-  .admin-msg__test-input {
-    flex: 1;
-    min-width: 180px;
-    height: 36px;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    padding: 0 0.75rem;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-    outline: none;
-  }
-  .admin-msg__test-input:focus {
-    border-color: rgba(34, 211, 238, 0.5);
-    box-shadow: 0 0 0 2px rgba(34, 211, 238, 0.12);
-  }
-  .admin-msg__test-btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.45rem;
-    height: 36px;
-    padding: 0 0.875rem;
-    border-radius: 8px;
-    border: 1px solid rgba(34, 211, 238, 0.35);
-    background: rgba(34, 211, 238, 0.1);
-    color: #67e8f9;
-    font-size: 0.8125rem;
-    font-weight: 700;
-    cursor: pointer;
-    transition: all 150ms;
-    white-space: nowrap;
-  }
-  .admin-msg__test-btn:hover:not(:disabled) {
-    background: rgba(34, 211, 238, 0.16);
-  }
-  .admin-msg__test-btn:disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-  }
-
-  /* ── History card ── */
-  .admin-msg__history-card {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    overflow: hidden;
-  }
-  .admin-msg__history-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1.25rem 1.5rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-  .admin-msg__history-header-left {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-  }
-  .admin-msg__history-icon-wrap {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.2));
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    flex-shrink: 0;
-  }
-  .admin-msg__history-icon-svg {
-    width: 18px;
-    height: 18px;
-    color: #60a5fa;
-  }
-  .admin-msg__history-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-  .admin-msg__history-desc {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-  }
-
-  /* ── Loading / empty ── */
-  .admin-msg__loading {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem;
-  }
-  .admin-msg__loading-icon {
-    width: 32px;
-    height: 32px;
-    color: #a78bfa;
-    margin-bottom: 1rem;
-  }
-  .admin-msg__loading-text {
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-  .admin-msg__empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 3rem;
-    text-align: center;
-  }
-  .admin-msg__empty-icon-wrap {
-    width: 56px;
-    height: 56px;
-    border-radius: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2), rgba(37, 99, 235, 0.2));
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    margin-bottom: 1rem;
-  }
-  .admin-msg__empty-icon-svg {
-    width: 28px;
-    height: 28px;
-    color: #60a5fa;
-  }
-  .admin-msg__empty-text {
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  /* ── Table ── */
-  .admin-msg__table-scroll {
-    overflow-x: auto;
-  }
-  .admin-msg__table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-  .admin-msg__thead {
-    background-color: rgba(24, 24, 27, 0.8);
-  }
-  .admin-msg__th {
-    padding: 0.875rem 1.25rem;
-    text-align: left;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-  .admin-msg__tbody {
-    border-top: 1px solid var(--sidebar-border);
-  }
-  .admin-msg__row {
-    transition: background-color 150ms;
-  }
-  .admin-msg__row:hover {
-    background-color: rgba(39, 39, 42, 0.3);
-  }
-  .admin-msg__row:not(:last-child) {
-    border-bottom: 1px solid rgba(39, 39, 42, 0.5);
-  }
-  .admin-msg__td {
-    padding: 1rem 1.25rem;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    white-space: nowrap;
-  }
-  .admin-msg__td--subject {
-    font-weight: 500;
-    max-width: 320px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .admin-msg__td--muted {
-    color: var(--sidebar-text-muted);
-    font-size: 0.8125rem;
-  }
-  .admin-msg__recipient-count {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-    line-height: 1.3;
-  }
-  .admin-msg__chip {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.2rem 0.5rem;
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    border: 1px solid var(--sidebar-border);
-  }
-  .admin-msg__status {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.2rem 0.5rem;
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .admin-msg__status--sent {
-    background: rgba(34, 197, 94, 0.15);
-    color: #4ade80;
-    border: 1px solid rgba(34, 197, 94, 0.3);
-  }
-  .admin-msg__status--failed {
-    background: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-    border: 1px solid rgba(239, 68, 68, 0.3);
-  }
-  .admin-msg__status--partial_failed {
-    background: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-    border: 1px solid rgba(245, 158, 11, 0.3);
-  }
-  .admin-msg__status--sending {
-    background: rgba(34, 211, 238, 0.12);
-    color: #67e8f9;
-    border: 1px solid rgba(34, 211, 238, 0.28);
-  }
-  .admin-msg__status--draft {
-    background: rgba(161, 161, 170, 0.1);
-    color: #a1a1aa;
-    border: 1px solid rgba(161, 161, 170, 0.2);
-  }
-  .admin-msg__retry-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.35rem;
-    height: 28px;
-    padding: 0 0.625rem;
-    border-radius: 6px;
-    border: 1px solid rgba(245, 158, 11, 0.35);
-    background: rgba(245, 158, 11, 0.1);
-    color: #fbbf24;
-    font-size: 0.72rem;
-    font-weight: 700;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: all 150ms;
-  }
-  .admin-msg__retry-btn:hover:not(:disabled) {
-    background: rgba(245, 158, 11, 0.16);
-    border-color: rgba(245, 158, 11, 0.55);
-  }
-  .admin-msg__retry-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-  .admin-msg__retry-icon {
-    width: 12px;
-    height: 12px;
-  }
-
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 0.2s ease;
-  }
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-</style>

@@ -1,7 +1,15 @@
 <script setup lang="ts">
   import { ref, computed, watch } from 'vue';
   import { createSharedAudio, type SharedAudio } from '@/services/sharedAudioApi';
-  import { Upload, Loader2, Music, AlertCircle, Share2, X, Users } from 'lucide-vue-next';
+  import { AlertCircle, Music, Share2 } from 'lucide-vue-next';
+  import { Alert, AlertDescription } from '@/components/ui/alert';
+  import { Button } from '@/components/ui/button';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
+  import { Modal } from '@/components/ui/modal';
+  import { Textarea } from '@/components/ui/textarea';
+  import { Dropzone } from '@/components/ui/dropzone';
+  import RecipientsPicker from './shared/RecipientsPicker.vue';
 
   const props = defineProps<{
     organizationId: number | string;
@@ -23,7 +31,6 @@
   const selectedRecipients = ref<number[]>([]);
   const uploading = ref(false);
   const error = ref<string | null>(null);
-  const fileInputRef = ref<HTMLInputElement | null>(null);
 
   const canSubmit = computed(() => file.value && name.value.trim() && !uploading.value);
 
@@ -123,504 +130,71 @@
 </script>
 
 <template>
-  <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="open" class="share-dialog__overlay" @click.self="close" @keydown.esc="close">
-        <Transition name="dialog" appear>
-          <div v-if="open" class="share-dialog" role="dialog" aria-modal="true">
-            <div class="share-dialog__accent share-dialog__accent--audio"></div>
+  <Modal
+    v-model:open="open"
+    title="Share audio"
+    description="Upload music or sound effects for your team to use in clips"
+    :icon="Music"
+    size="md"
+    :dismissible="!uploading"
+    :hide-close="uploading"
+  >
+    <form id="share-audio-form" class="flex flex-col gap-4" @submit.prevent="handleSubmit">
+      <p class="text-xs text-fg-subtle">
+        Members can download shared audio into their local library for use across all projects. Audio expires after 30
+        days.
+      </p>
 
-            <div class="share-dialog__header">
-              <button class="share-dialog__close" @click="close" title="Close" :disabled="uploading">
-                <X :size="18" />
-              </button>
-              <div class="share-dialog__icon share-dialog__icon--audio">
-                <Music :size="24" />
-              </div>
-              <h2 class="share-dialog__title">Share Audio</h2>
-              <p class="share-dialog__subtitle">Upload music or sound effects for your team to use in clips</p>
-            </div>
+      <Field label="Audio file" required>
+        <Dropzone
+          compact
+          accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac"
+          :file="file"
+          :file-icon="Music"
+          title="Choose an audio file"
+          hint="MP3, WAV, M4A, OGG, AAC (max 50MB, 10 minutes)"
+          :file-meta="file ? `${(file.size / (1024 * 1024)).toFixed(1)} MB${duration ? ` · ${formatDuration(duration)}` : ''}` : ''"
+          :disabled="uploading"
+          @change="handleFileSelect"
+        />
+      </Field>
 
-            <div class="share-dialog__content">
-              <form @submit.prevent="handleSubmit" class="share-dialog__form">
-                <p class="share-dialog__description">
-                  Members can download shared audio into their local library for use across all projects.
-                  Audio expires after 30 days.
-                </p>
+      <Field label="Name" for="share-audio-name" required>
+        <Input id="share-audio-name" v-model="name" placeholder="e.g. Campaign background track" :disabled="uploading" />
+      </Field>
 
-                <div class="share-dialog__field">
-                  <label class="share-dialog__label">Audio File *</label>
-                  <div
-                    class="share-dialog__upload-zone"
-                    :class="{ 'share-dialog__upload-zone--has-file': file }"
-                    @click="fileInputRef?.click()"
-                  >
-                    <input
-                      ref="fileInputRef"
-                      type="file"
-                      accept="audio/*,.mp3,.wav,.m4a,.ogg,.aac"
-                      class="share-dialog__file-input"
-                      @change="handleFileSelect"
-                    />
-                    <div v-if="file" class="share-dialog__file-preview">
-                      <Music class="share-dialog__file-icon" />
-                      <div class="share-dialog__file-info">
-                        <span class="share-dialog__file-name">{{ file.name }}</span>
-                        <span class="share-dialog__file-meta">
-                          {{ (file.size / (1024 * 1024)).toFixed(1) }} MB
-                          <template v-if="duration"> • {{ formatDuration(duration) }}</template>
-                        </span>
-                      </div>
-                    </div>
-                    <div v-else class="share-dialog__upload-placeholder">
-                      <Upload class="share-dialog__upload-icon" />
-                      <span class="share-dialog__upload-text">Click to upload audio</span>
-                      <span class="share-dialog__upload-hint">MP3, WAV, M4A, OGG, AAC (max 50MB, 10 minutes)</span>
-                    </div>
-                  </div>
-                </div>
+      <Field label="Description" for="share-audio-description">
+        <Textarea
+          id="share-audio-description"
+          v-model="description"
+          rows="2"
+          class="min-h-[60px] resize-none"
+          placeholder="Optional notes about when or how to use this audio"
+          :disabled="uploading"
+        />
+      </Field>
 
-                <div class="share-dialog__field">
-                  <label class="share-dialog__label">Name *</label>
-                  <input
-                    v-model="name"
-                    type="text"
-                    class="share-dialog__input"
-                    placeholder="e.g. Campaign background track"
-                    :disabled="uploading"
-                  />
-                </div>
+      <Field label="Recipients">
+        <RecipientsPicker
+          v-model:share-with-all="shareWithAll"
+          v-model:selected="selectedRecipients"
+          :members="members"
+          :disabled="uploading"
+        />
+      </Field>
 
-                <div class="share-dialog__field">
-                  <label class="share-dialog__label">Description</label>
-                  <textarea
-                    v-model="description"
-                    class="share-dialog__textarea"
-                    placeholder="Optional notes about when or how to use this audio"
-                    :disabled="uploading"
-                    rows="2"
-                  ></textarea>
-                </div>
+      <Alert v-if="error" variant="destructive">
+        <AlertCircle />
+        <AlertDescription class="text-fg">{{ error }}</AlertDescription>
+      </Alert>
+    </form>
 
-                <div class="share-dialog__section">
-                  <div class="share-dialog__section-header">
-                    <Users :size="16" class="share-dialog__section-icon" />
-                    <span class="share-dialog__section-title">Recipients</span>
-                  </div>
-
-                  <div class="share-dialog__toggle-row">
-                    <span class="share-dialog__toggle-label">Share with all members</span>
-                    <button
-                      type="button"
-                      class="share-dialog__toggle"
-                      :class="{ 'share-dialog__toggle--active': shareWithAll }"
-                      @click="shareWithAll = !shareWithAll"
-                      :disabled="uploading"
-                    >
-                      <span class="share-dialog__toggle-knob"></span>
-                    </button>
-                  </div>
-
-                  <div v-if="!shareWithAll" class="share-dialog__recipients-list">
-                    <label v-for="member in members" :key="member.user_id" class="share-dialog__recipient">
-                      <input
-                        type="checkbox"
-                        :value="member.user_id"
-                        v-model="selectedRecipients"
-                        :disabled="uploading"
-                        class="share-dialog__checkbox"
-                      />
-                      <span class="share-dialog__recipient-name">{{ member.user.name || member.user.email }}</span>
-                    </label>
-                    <p class="share-dialog__recipients-count">
-                      {{ selectedRecipients.length }} member(s) selected
-                    </p>
-                  </div>
-                </div>
-
-                <div v-if="error" class="share-dialog__error">
-                  <AlertCircle :size="16" />
-                  <span>{{ error }}</span>
-                </div>
-              </form>
-            </div>
-
-            <div class="share-dialog__footer">
-              <button
-                type="button"
-                class="share-dialog__btn share-dialog__btn--secondary"
-                @click="close"
-                :disabled="uploading"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                class="share-dialog__btn share-dialog__btn--primary"
-                @click="handleSubmit"
-                :disabled="!canSubmit"
-              >
-                <Loader2 v-if="uploading" class="share-dialog__btn-spinner" />
-                <Share2 v-else :size="16" />
-                {{ uploading ? 'Uploading...' : 'Share Audio' }}
-              </button>
-            </div>
-          </div>
-        </Transition>
-      </div>
-    </Transition>
-  </Teleport>
+    <template #footer>
+      <Button variant="ghost" :disabled="uploading" @click="close">Cancel</Button>
+      <Button variant="primary" type="submit" form="share-audio-form" :disabled="!canSubmit" :loading="uploading">
+        <Share2 v-if="!uploading" />
+        {{ uploading ? 'Uploading...' : 'Share audio' }}
+      </Button>
+    </template>
+  </Modal>
 </template>
-
-<style scoped>
-  .share-dialog__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-  }
-
-  .share-dialog {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 560px;
-    margin: 1rem;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  }
-
-  .share-dialog__accent {
-    height: 3px;
-    flex-shrink: 0;
-  }
-
-  .share-dialog__accent--audio {
-    background: linear-gradient(90deg, #a855f7, rgba(168, 85, 247, 0.5));
-  }
-
-  .share-dialog__header {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1.5rem 1.5rem 1rem;
-    text-align: center;
-  }
-
-  .share-dialog__close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-  }
-
-  .share-dialog__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 12px;
-    margin-bottom: 0.875rem;
-  }
-
-  .share-dialog__icon--audio {
-    background-color: rgba(168, 85, 247, 0.15);
-    color: #a855f7;
-  }
-
-  .share-dialog__title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .share-dialog__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  .share-dialog__content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 1.25rem 1.5rem;
-  }
-
-  .share-dialog__form {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .share-dialog__description {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    padding: 0.75rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 8px;
-  }
-
-  .share-dialog__field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .share-dialog__label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .share-dialog__input,
-  .share-dialog__textarea {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-  }
-
-  .share-dialog__textarea {
-    resize: vertical;
-    min-height: 60px;
-  }
-
-  .share-dialog__upload-zone {
-    border: 2px dashed var(--sidebar-border);
-    border-radius: 10px;
-    padding: 1.5rem;
-    cursor: pointer;
-    text-align: center;
-  }
-
-  .share-dialog__upload-zone--has-file {
-    border-style: solid;
-    border-color: #a855f7;
-    background-color: rgba(168, 85, 247, 0.05);
-  }
-
-  .share-dialog__file-input {
-    display: none;
-  }
-
-  .share-dialog__file-preview {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-  }
-
-  .share-dialog__file-icon {
-    width: 32px;
-    height: 32px;
-    color: #a855f7;
-  }
-
-  .share-dialog__file-name {
-    display: block;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .share-dialog__file-meta {
-    display: block;
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .share-dialog__upload-placeholder {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .share-dialog__upload-icon {
-    width: 40px;
-    height: 40px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .share-dialog__upload-text,
-  .share-dialog__upload-hint {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .share-dialog__section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 1rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .share-dialog__section-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .share-dialog__section-icon {
-    color: #a855f7;
-  }
-
-  .share-dialog__section-title {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .share-dialog__toggle-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .share-dialog__toggle-label {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-  }
-
-  .share-dialog__toggle {
-    position: relative;
-    width: 40px;
-    height: 22px;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 11px;
-    cursor: pointer;
-  }
-
-  .share-dialog__toggle--active {
-    background-color: #a855f7;
-    border-color: #a855f7;
-  }
-
-  .share-dialog__toggle-knob {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 16px;
-    height: 16px;
-    background-color: white;
-    border-radius: 50%;
-    transition: transform 150ms ease;
-  }
-
-  .share-dialog__toggle--active .share-dialog__toggle-knob {
-    transform: translateX(18px);
-  }
-
-  .share-dialog__recipients-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    max-height: 150px;
-    overflow-y: auto;
-    padding: 0.5rem;
-    background-color: var(--sidebar-surface);
-    border-radius: 8px;
-  }
-
-  .share-dialog__recipient {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.5rem;
-    cursor: pointer;
-  }
-
-  .share-dialog__recipient-name {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-  }
-
-  .share-dialog__recipients-count {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.5rem 0 0;
-  }
-
-  .share-dialog__error {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    background-color: rgba(239, 68, 68, 0.1);
-    border-radius: 8px;
-    font-size: 0.8125rem;
-    color: #f87171;
-  }
-
-  .share-dialog__footer {
-    display: flex;
-    gap: 0.625rem;
-    padding: 1.25rem 1.5rem;
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  .share-dialog__btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
-  }
-
-  .share-dialog__btn--secondary {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-    border: 1px solid var(--sidebar-border);
-  }
-
-  .share-dialog__btn--primary {
-    background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
-    color: white;
-  }
-
-  .share-dialog__btn-spinner {
-    width: 16px;
-    height: 16px;
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-</style>

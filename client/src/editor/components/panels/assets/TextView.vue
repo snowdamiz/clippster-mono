@@ -7,8 +7,10 @@ import type { TextPreset } from "../../../constants/text-constants";
 import { buildTextElement } from "../../../lib/timeline/element-utils";
 import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { TextDragData } from "../../../types/drag";
-import { Plus } from "lucide-vue-next";
-import { Button } from "@/components/ui/button";
+import { SearchX, Upload } from "lucide-vue-next";
+import { EmptyState } from "@/components/ui/empty-state";
+import ToolbarButton from "../../chrome/ToolbarButton.vue";
+import AssetListRow from "../shared/AssetListRow.vue";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor } = useEditor({ subscribe: false });
@@ -119,47 +121,58 @@ function getPresetBgStyle(preset: typeof TEXT_PRESETS[number]): Record<string, s
 	return style;
 }
 
+/** Well behind the sample text: glowing presets get the darkest backdrop. */
 function getPresetCardBg(preset: typeof TEXT_PRESETS[number]): string {
 	const el = preset.element;
-	if (el.glow || el.bubbleStyle === "neon-box") return "bg-zinc-950";
-	return "bg-zinc-900/80";
+	if (el.glow || el.bubbleStyle === "neon-box") return "bg-surface-sunken";
+	return "bg-surface";
 }
 </script>
 
 <template>
 	<div class="flex h-full flex-col overflow-hidden">
-		<!-- Search bar -->
-		<PanelSearchBar v-model="searchQuery" placeholder="Search presets...">
-			<Button variant="ghost" size="icon" class="size-6 mr-1" title="Upload custom font" @click="handleUploadFont">
-				<Plus class="size-3" />
-			</Button>
+		<PanelSearchBar v-model="searchQuery" placeholder="Search text presets…">
+			<ToolbarButton label="Upload font" @click="handleUploadFont">
+				<Upload />
+			</ToolbarButton>
 		</PanelSearchBar>
 
-		<!-- Presets list -->
-		<div class="flex-1 overflow-y-auto">
-			<button
-				v-for="preset in filteredPresets"
-				:key="preset.id"
-				type="button"
-				class="group flex w-full cursor-grab items-center gap-3 border-b border-white/[0.05] px-3 py-2 transition-colors hover:bg-white/[0.03] active:cursor-grabbing"
-				@click="!wasDragCompleted && addPreset(preset.id)"
-				@pointerdown="handlePointerDown($event, preset)"
-				@dragstart.prevent
-			>
-				<!-- Styled preview swatch -->
-				<div
-					class="flex h-9 w-24 shrink-0 items-center justify-center overflow-hidden rounded-md"
-					:class="getPresetCardBg(preset)"
+		<div class="flex-1 overflow-y-auto p-3">
+			<EmptyState
+				v-if="filteredPresets.length === 0"
+				size="sm"
+				:icon="SearchX"
+				title="No presets found"
+				description="Try a different search term."
+			/>
+
+			<div v-else class="-mx-1 space-y-px">
+				<AssetListRow
+					v-for="preset in filteredPresets"
+					:key="preset.id"
+					as="button"
+					:title="preset.name"
+					class="cursor-grab active:cursor-grabbing"
+					:aria-label="`${preset.name}. Drag to the timeline or click to add.`"
+					@click="!wasDragCompleted && addPreset(preset.id)"
+					@pointerdown="handlePointerDown($event, preset)"
+					@dragstart.prevent
 				>
-					<div :style="getPresetBgStyle(preset)" class="flex items-center justify-center px-1.5">
-						<span :style="getPresetPreviewStyle(preset)" class="select-none whitespace-nowrap leading-tight">
-							Sample
-						</span>
-					</div>
-				</div>
-				<!-- Name -->
-				<span class="truncate text-xs text-zinc-400 transition-colors group-hover:text-zinc-200">{{ preset.name }}</span>
-			</button>
+					<template #leading>
+						<!-- Styled sample (user-content rendering of the preset) -->
+						<div
+							class="flex h-9 w-24 items-center justify-center overflow-hidden rounded-md border border-line-subtle"
+							:class="getPresetCardBg(preset)"
+						>
+							<div :style="getPresetBgStyle(preset)" class="flex items-center justify-center px-1.5">
+								<span :style="getPresetPreviewStyle(preset)" class="select-none whitespace-nowrap leading-tight">
+									Sample
+								</span>
+							</div>
+						</div>
+					</template>
+				</AssetListRow>
+			</div>
 		</div>
 	</div>
 </template>

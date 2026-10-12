@@ -1,30 +1,35 @@
 import type { TTimelineViewState } from "../types/project";
 import type { TrackType } from "../types/timeline";
 
+/**
+ * Timeline clip chrome per track type (UI only — never used for rendering or
+ * export). Colors come from the `--track-*` tokens in styles/theme.css so the
+ * timeline matches the rest of the app; `border` is used as an inline color.
+ */
 export const TRACK_COLORS: Record<TrackType, { background: string; border: string }> = {
 	video: {
-		background: "bg-[#2a2a2e]",
-		border: "#3f3f46",
+		background: "bg-zinc-800",
+		border: "var(--line-strong)",
 	},
 	text: {
-		background: "bg-[#5DBAA0]/60",
-		border: "#7CCDB8",
+		background: "bg-[var(--track-text)]/45",
+		border: "var(--track-text)",
 	},
 	audio: {
-		background: "bg-[#915DBE]/60",
-		border: "#A87BD4",
+		background: "bg-[var(--track-audio)]/35",
+		border: "var(--track-audio)",
 	},
 	sticker: {
-		background: "bg-amber-500/60",
-		border: "#FBBF24",
+		background: "bg-[var(--track-sticker)]/45",
+		border: "var(--track-sticker)",
 	},
 	effect: {
-		background: "bg-[#E040FB]/60",
+		background: "bg-[#E040FB]/45",
 		border: "#E040FB",
 	},
 	caption: {
-		background: "bg-[#38BDF8]/60",
-		border: "#38BDF8",
+		background: "bg-[var(--track-watermark)]/40",
+		border: "var(--track-watermark)",
 	},
 } as const;
 

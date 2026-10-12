@@ -14,7 +14,17 @@
   import { editorMediaDestinationFilename, playbackFileLabel } from '@/utils/fsNames';
   import { utf8ToBase64Url } from '@/utils/encoding';
   import { hydrateVideoFileFromLocalUrl } from '../../../lib/media/hydrate-video-file-from-url';
-  import { Music, Search, Play, Loader2, ListMusic, ChevronLeft, Plus } from 'lucide-vue-next';
+  import { Music, Loader2, ListMusic, ArrowLeft, ChevronRight, Plus, SearchX } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { SearchField } from '@/components/ui/search-field';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { IconTile } from '@/components/ui/icon-tile';
+  import { Modal } from '@/components/ui/modal';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
+  import { Textarea } from '@/components/ui/textarea';
+  import AssetListRow from '../shared/AssetListRow.vue';
 
   const { editor, version } = useEditor({
     subscribe: {
@@ -224,227 +234,208 @@
 </script>
 
 <template>
-  <div class="flex h-full flex-col bg-transparent">
-    <!-- Header with back button (when in playlist view) -->
-    <div v-if="selectedPlaylist" class="flex items-center gap-2 border-b border-white/10 px-4 py-2 shrink-0">
-      <button
-        @click="backToAudioList"
-        class="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
-      >
-        <ChevronLeft class="size-3.5" />
-        Back
-      </button>
-      <div class="flex-1">
-        <h3 class="text-sm font-medium text-zinc-200">{{ selectedPlaylist.name }}</h3>
-        <p v-if="selectedPlaylist.description" class="text-xs text-zinc-500">{{ selectedPlaylist.description }}</p>
-      </div>
-    </div>
-
-    <!-- Search bar (when not in playlist view) -->
-    <div v-else class="flex items-center gap-2 border-b border-white/10 px-4 py-2 shrink-0">
-      <div class="relative flex-1">
-        <Search class="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500" />
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="Search audio..."
-          class="w-full h-7 pl-8 pr-3 bg-zinc-800/50 border border-white/10 rounded text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-blue-500/50"
-        />
-      </div>
-      <button
-        @click="showCreatePlaylistDialog = true"
-        class="flex items-center gap-1 px-2 py-1 bg-blue-500 hover:bg-blue-600 text-white text-xs rounded transition-colors"
-        title="Create playlist"
-      >
-        <Plus class="size-3.5" />
-        Playlist
-      </button>
+  <div class="flex h-full flex-col overflow-hidden">
+    <!-- Toolbar: breadcrumb inside a playlist, search + new playlist at the root -->
+    <div class="flex h-12 shrink-0 items-center gap-3 px-5">
+      <template v-if="selectedPlaylist">
+        <div class="flex min-w-0 flex-1 items-center gap-1">
+          <Button variant="ghost" size="sm" class="-ml-2.5 shrink-0" @click="backToAudioList">
+            <ArrowLeft />
+            Audio
+          </Button>
+          <ChevronRight class="size-3.5 shrink-0 text-fg-subtle" />
+          <span class="truncate text-sm font-medium text-fg" :title="selectedPlaylist.name">
+            {{ selectedPlaylist.name }}
+          </span>
+          <span v-if="selectedPlaylist.description" class="ml-1 truncate text-xs text-fg-subtle">
+            {{ selectedPlaylist.description }}
+          </span>
+        </div>
+      </template>
+      <template v-else>
+        <p class="tabular min-w-0 flex-1 truncate text-xs text-fg-muted">
+          <template v-if="!isLoading">
+            {{ filteredAudio.length }} {{ filteredAudio.length === 1 ? 'track' : 'tracks' }}
+            <template v-if="playlists.length > 0">
+              · {{ playlists.length }} {{ playlists.length === 1 ? 'playlist' : 'playlists' }}
+            </template>
+          </template>
+        </p>
+        <SearchField v-model="searchQuery" size="sm" input-class="text-xs" placeholder="Search audio…" class="w-64" />
+        <Button variant="secondary" size="sm" @click="showCreatePlaylistDialog = true">
+          <Plus />
+          New playlist
+        </Button>
+      </template>
     </div>
 
     <!-- Loading state -->
-    <div v-if="isLoading" class="flex-1 flex items-center justify-center">
-      <Loader2 class="size-5 animate-spin text-blue-400" />
+    <div v-if="isLoading" class="flex flex-1 items-center justify-center">
+      <Loader2 class="size-5 animate-spin text-fg-subtle" />
     </div>
 
     <!-- Playlist contents view -->
-    <div v-else-if="selectedPlaylist" class="flex-1 overflow-y-auto p-4">
-      <!-- Empty playlist state -->
-      <div
+    <div v-else-if="selectedPlaylist" class="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+      <EmptyState
         v-if="playlistTracks.length === 0"
-        class="flex flex-col items-center justify-center gap-2 px-4 text-center h-full"
-      >
-        <Music class="size-8 text-zinc-500" />
-        <p class="text-sm text-zinc-400">No audio in this playlist</p>
-      </div>
+        size="sm"
+        class="h-full"
+        :icon="Music"
+        title="No audio in this playlist"
+        description="Add tracks to it from the Audio Library page."
+      />
 
-      <!-- Playlist tracks grid -->
-      <div v-else class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr))">
-        <div
+      <div v-else class="-mx-2 space-y-px">
+        <AssetListRow
           v-for="track in playlistTracks"
           :key="track.playlist_item_id"
           :title="track.title"
-          class="group relative overflow-hidden rounded-lg border border-white/10 cursor-pointer hover:border-blue-500/50 transition-colors"
+          :persistent-actions="addingAudioIds.has(track.id)"
+          class="cursor-pointer"
+          role="button"
+          tabindex="0"
+          :aria-label="`Add ${track.title} to media`"
           @click="addLibraryAudioToProjectMedia(track)"
+          @keydown.enter="addLibraryAudioToProjectMedia(track)"
         >
-          <div class="relative aspect-video bg-zinc-800 flex items-center justify-center">
-            <Music class="size-8 text-zinc-600" />
-          </div>
-
-          <!-- Play button overlay -->
-          <div
-            class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40"
-          >
-            <div class="rounded-full bg-blue-500 p-2">
-              <Play class="size-4 text-white fill-white" />
+          <template #leading>
+            <div class="grid size-9 place-items-center overflow-hidden rounded-md bg-surface-sunken">
+              <Music class="size-4 text-fg-subtle" />
             </div>
-          </div>
-
-          <!-- Info -->
-          <div class="px-2 py-1.5 bg-zinc-900/90">
-            <h3 class="text-xs font-medium text-zinc-200 truncate" :title="track.title">
-              {{ track.title }}
-            </h3>
-            <div class="flex items-center gap-1 mt-0.5 text-[10px] text-zinc-500">
-              <span v-if="track.duration">{{ formatDuration(track.duration) }}</span>
-              <span v-if="track.duration && track.file_size" class="text-zinc-700">•</span>
-              <span v-if="track.file_size">{{ formatFileSize(track.file_size) }}</span>
-            </div>
-          </div>
-        </div>
+          </template>
+          <template #meta>
+            <span v-if="track.duration" class="tabular">{{ formatDuration(track.duration) }}</span>
+            <span v-if="track.duration && track.file_size">·</span>
+            <span v-if="track.file_size" class="tabular">{{ formatFileSize(track.file_size) }}</span>
+          </template>
+          <template #trailing>
+            <Loader2 v-if="addingAudioIds.has(track.id)" class="mr-1.5 size-3.5 animate-spin text-fg-subtle" />
+            <Button v-else variant="ghost" size="xs" tabindex="-1" @click.stop="addLibraryAudioToProjectMedia(track)">
+              <Plus />
+              Add
+            </Button>
+          </template>
+        </AssetListRow>
       </div>
     </div>
 
     <!-- Empty state (no playlists or audio) -->
-    <div
+    <EmptyState
       v-else-if="playlists.length === 0 && filteredAudio.length === 0"
-      class="flex-1 flex flex-col items-center justify-center gap-2 px-4 text-center"
+      size="sm"
+      class="flex-1"
+      :icon="searchQuery ? SearchX : Music"
+      :title="searchQuery ? 'No matching audio' : 'No audio files found'"
+      :description="searchQuery ? 'Try a different search term.' : 'Download audio from the Audio Library page.'"
+    />
+
+    <!-- Playlists, then tracks -->
+    <div v-else class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 pb-4">
+      <section v-if="playlists.length > 0">
+        <SectionHeader variant="eyebrow" title="Playlists" class="mb-1" />
+        <div class="-mx-2 grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-px">
+          <AssetListRow
+            v-for="playlist in playlists"
+            :key="'playlist-' + playlist.id"
+            as="button"
+            :title="playlist.name"
+            :meta="playlist.description || undefined"
+            persistent-actions
+            @click="openPlaylist(playlist)"
+          >
+            <template #leading>
+              <IconTile :icon="ListMusic" size="md" />
+            </template>
+            <template #trailing>
+              <ChevronRight class="size-3.5 text-fg-subtle" />
+            </template>
+          </AssetListRow>
+        </div>
+      </section>
+
+      <section>
+        <SectionHeader variant="eyebrow" title="Tracks" class="mb-1" />
+        <EmptyState
+          v-if="filteredAudio.length === 0"
+          size="sm"
+          :icon="searchQuery ? SearchX : Music"
+          :title="searchQuery ? 'No matching audio' : 'No audio files found'"
+          :description="searchQuery ? 'Try a different search term.' : 'Download audio from the Audio Library page.'"
+        />
+        <div v-else class="-mx-2 space-y-px">
+          <AssetListRow
+            v-for="audio in filteredAudio"
+            :key="audio.id"
+            :title="audio.title"
+            :persistent-actions="addingAudioIds.has(audio.id)"
+            class="cursor-pointer"
+            role="button"
+            tabindex="0"
+            :aria-label="`Add ${audio.title} to media`"
+            @click="addLibraryAudioToProjectMedia(audio)"
+            @keydown.enter="addLibraryAudioToProjectMedia(audio)"
+          >
+            <template #leading>
+              <div class="grid size-9 place-items-center overflow-hidden rounded-md bg-surface-sunken">
+                <img
+                  v-if="audio.thumbnail_url"
+                  :src="convertFileSrc(audio.thumbnail_url)"
+                  :alt="audio.title"
+                  class="size-full object-cover"
+                  draggable="false"
+                />
+                <Music v-else class="size-4 text-fg-subtle" />
+              </div>
+            </template>
+            <template #meta>
+              <span v-if="audio.duration" class="tabular">{{ formatDuration(audio.duration) }}</span>
+              <span v-if="audio.duration && audio.file_size">·</span>
+              <span v-if="audio.file_size" class="tabular">{{ formatFileSize(audio.file_size) }}</span>
+            </template>
+            <template #trailing>
+              <Loader2 v-if="addingAudioIds.has(audio.id)" class="mr-1.5 size-3.5 animate-spin text-fg-subtle" />
+              <Button v-else variant="ghost" size="xs" tabindex="-1" @click.stop="addLibraryAudioToProjectMedia(audio)">
+                <Plus />
+                Add
+              </Button>
+            </template>
+          </AssetListRow>
+        </div>
+      </section>
+    </div>
+
+    <!-- Create playlist dialog -->
+    <Modal
+      v-model:open="showCreatePlaylistDialog"
+      title="New playlist"
+      description="Group tracks from your audio library."
+      :icon="ListMusic"
+      size="sm"
     >
-      <Music class="size-8 text-zinc-500" />
-      <p class="text-sm text-zinc-400">No audio files found</p>
-      <p class="text-xs text-zinc-500">Download audio from the Audio Library page</p>
-    </div>
-
-    <!-- Audio list with playlists at top -->
-    <div v-else class="flex-1 overflow-y-auto p-4">
-      <div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr))">
-        <!-- Playlists (shown first) -->
-        <div
-          v-for="playlist in playlists"
-          :key="'playlist-' + playlist.id"
-          class="group relative overflow-hidden rounded-lg border border-white/10 cursor-pointer hover:border-blue-500/50 transition-colors"
-          @click="openPlaylist(playlist)"
-        >
-          <div class="relative aspect-video bg-zinc-800 flex items-center justify-center">
-            <ListMusic class="size-8 text-zinc-600" />
-          </div>
-
-          <!-- Info -->
-          <div class="px-2 py-1.5 bg-zinc-900/90">
-            <h3 class="text-xs font-medium text-zinc-200 truncate" :title="playlist.name">
-              {{ playlist.name }}
-            </h3>
-            <p v-if="playlist.description" class="text-[10px] text-zinc-500 truncate">
-              {{ playlist.description }}
-            </p>
-          </div>
-        </div>
-
-        <!-- Audio files -->
-        <div
-          v-for="audio in filteredAudio"
-          :key="audio.id"
-          :title="audio.title"
-          class="group relative overflow-hidden rounded-lg border border-white/10 cursor-pointer hover:border-blue-500/50 transition-colors"
-          @click="addLibraryAudioToProjectMedia(audio)"
-        >
-          <!-- Thumbnail or Fallback -->
-          <div
-            v-if="audio.thumbnail_url"
-            class="relative aspect-video bg-zinc-800"
-            :style="{
-              backgroundImage: `url(${convertFileSrc(audio.thumbnail_url)})`,
-              backgroundSize: 'cover',
-              backgroundPosition: 'center',
-            }"
-          >
-            <div class="absolute inset-0 bg-gradient-to-t from-black/60 to-transparent"></div>
-          </div>
-          <div v-else class="relative aspect-video bg-zinc-800 flex items-center justify-center">
-            <Music class="size-8 text-zinc-600" />
-          </div>
-
-          <!-- Play button overlay -->
-          <div
-            class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40"
-          >
-            <div class="rounded-full bg-blue-500 p-2">
-              <Play class="size-4 text-white fill-white" />
-            </div>
-          </div>
-
-          <!-- Info -->
-          <div class="px-2 py-1.5 bg-zinc-900/90">
-            <h3 class="text-xs font-medium text-zinc-200 truncate" :title="audio.title">
-              {{ audio.title }}
-            </h3>
-            <div class="flex items-center gap-1 mt-0.5 text-[10px] text-zinc-500">
-              <span v-if="audio.duration">{{ formatDuration(audio.duration) }}</span>
-              <span v-if="audio.duration && audio.file_size" class="text-zinc-700">•</span>
-              <span v-if="audio.file_size">{{ formatFileSize(audio.file_size) }}</span>
-            </div>
-          </div>
-        </div>
+      <div class="flex flex-col gap-3">
+        <Field label="Name" for="new-playlist-name" required>
+          <Input
+            id="new-playlist-name"
+            v-model="newPlaylistName"
+            type="text"
+            placeholder="My playlist"
+            @keyup.enter="createPlaylist"
+          />
+        </Field>
+        <Field label="Description" for="new-playlist-description">
+          <Textarea
+            id="new-playlist-description"
+            v-model="newPlaylistDescription"
+            rows="3"
+            placeholder="Optional"
+            class="resize-none"
+          />
+        </Field>
       </div>
-    </div>
-
-    <!-- Create Playlist Dialog -->
-    <div
-      v-if="showCreatePlaylistDialog"
-      class="fixed inset-0 bg-black/50 flex items-center justify-center z-50"
-      @click.self="showCreatePlaylistDialog = false"
-    >
-      <div class="bg-[#1e1e22] border border-white/10 rounded-lg p-4 w-96" @click.stop>
-        <h3 class="text-sm font-medium text-zinc-200 mb-3">Create Playlist</h3>
-
-        <div class="space-y-3">
-          <div>
-            <label class="text-xs text-zinc-400 mb-1 block">Playlist Name *</label>
-            <input
-              v-model="newPlaylistName"
-              type="text"
-              placeholder="My Playlist"
-              class="w-full px-3 py-2 bg-zinc-800/50 border border-white/10 rounded text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-blue-500/50"
-              @keyup.enter="createPlaylist"
-            />
-          </div>
-
-          <div>
-            <label class="text-xs text-zinc-400 mb-1 block">Description</label>
-            <textarea
-              v-model="newPlaylistDescription"
-              rows="3"
-              placeholder="Optional description"
-              class="w-full px-3 py-2 bg-zinc-800/50 border border-white/10 rounded text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-blue-500/50 resize-none"
-            ></textarea>
-          </div>
-        </div>
-
-        <div class="flex gap-2 mt-4">
-          <button
-            @click="showCreatePlaylistDialog = false"
-            class="flex-1 px-3 py-2 bg-zinc-700 hover:bg-zinc-600 text-zinc-200 text-xs rounded transition-colors"
-          >
-            Cancel
-          </button>
-          <button
-            @click="createPlaylist"
-            :disabled="!newPlaylistName.trim()"
-            class="flex-1 px-3 py-2 bg-blue-500 hover:bg-blue-600 disabled:bg-zinc-700 disabled:text-zinc-500 text-white text-xs rounded transition-colors"
-          >
-            Create
-          </button>
-        </div>
-      </div>
-    </div>
+      <template #footer>
+        <Button variant="ghost" @click="showCreatePlaylistDialog = false">Cancel</Button>
+        <Button variant="primary" :disabled="!newPlaylistName.trim()" @click="createPlaylist">Create playlist</Button>
+      </template>
+    </Modal>
   </div>
 </template>

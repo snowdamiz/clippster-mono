@@ -9,6 +9,10 @@ import { buildEffectElement } from "../../../lib/timeline/element-utils";
 import { usePointerDrag } from "../../../composables/usePointerDrag";
 import type { EffectDragData } from "../../../types/drag";
 import PanelSearchBar from "./PanelSearchBar.vue";
+import AssetGrid from "../shared/AssetGrid.vue";
+import AssetTile from "../shared/AssetTile.vue";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SearchX } from "lucide-vue-next";
 
 const { editor, version } = useEditor({
 	subscribe: {
@@ -102,41 +106,42 @@ function addEffectToTimeline(preset: VideoEffectPreset) {
 
 <template>
 	<div class="flex h-full flex-col">
-		<PanelSearchBar v-model="searchQuery" placeholder="Search effects..." />
+		<PanelSearchBar v-model="searchQuery" placeholder="Search effects…" />
 
-		<div class="flex-1 overflow-y-auto p-2">
-			<div v-if="filteredPresets.length === 0" class="flex h-full items-center justify-center">
-				<p class="text-xs text-zinc-500">No effects found</p>
-			</div>
+		<div class="flex-1 overflow-y-auto p-3">
+			<EmptyState
+				v-if="filteredPresets.length === 0"
+				size="sm"
+				:icon="SearchX"
+				title="No effects found"
+				description="Try a different search term."
+			/>
 
-			<div v-else class="grid grid-cols-2 gap-1.5">
-				<div
+			<AssetGrid v-else :min="88">
+				<AssetTile
 					v-for="preset in filteredPresets"
 					:key="preset.type"
-					class="group relative cursor-grab overflow-hidden rounded-lg border border-white/[0.06] bg-zinc-950 transition-colors hover:border-white/15 active:cursor-grabbing active:scale-[0.97] active:transition-transform"
+					as="div"
+					:label="preset.label"
+					class="cursor-grab active:cursor-grabbing"
+					role="button"
+					tabindex="0"
+					:title="`Drag ${preset.label} to the timeline or click to add`"
 					@click="!wasDragCompleted && addEffectToTimeline(preset)"
+					@keydown.enter="addEffectToTimeline(preset)"
 					@pointerdown="handlePointerDown($event, preset)"
 					@dragstart.prevent
 				>
-					<!-- Thumbnail -->
-					<div class="aspect-[4/3] w-full overflow-hidden">
-						<img
-							v-if="previews[preset.type]"
-							:src="previews[preset.type]"
-							:alt="preset.label"
-							draggable="false"
-							class="size-full object-cover"
-						/>
-						<div v-else class="flex size-full items-center justify-center">
-							<div class="size-4 animate-pulse rounded-full bg-white/10" />
-						</div>
-					</div>
-					<!-- Label overlay -->
-					<div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/80 to-transparent px-2 pb-1.5 pt-4">
-						<p class="text-[10px] font-medium leading-tight text-zinc-200 group-hover:text-white">{{ preset.label }}</p>
-					</div>
-				</div>
-			</div>
+					<img
+						v-if="previews[preset.type]"
+						:src="previews[preset.type]"
+						:alt="preset.label"
+						draggable="false"
+						class="size-full object-cover"
+					/>
+					<div v-else class="skeleton size-full rounded-none" />
+				</AssetTile>
+			</AssetGrid>
 		</div>
 	</div>
 </template>

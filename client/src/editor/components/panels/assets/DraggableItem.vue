@@ -81,14 +81,14 @@ onUnmounted(() => {
 	<div v-if="variant === 'card'" class="group relative size-28">
 		<div
 			:class="[
-				'relative flex h-auto w-full cursor-default flex-col gap-1 p-1',
-				isHighlighted && 'ring-2 ring-primary bg-primary/10 rounded-sm',
+				'relative flex h-auto w-full cursor-default flex-col gap-1 rounded-md p-1',
+				isHighlighted && 'bg-brand-soft ring-2 ring-brand',
 			]"
 		>
 			<div
 				:class="[
-					'bg-zinc-800 relative overflow-hidden',
-					isRounded && 'rounded-sm',
+					'relative overflow-hidden border border-line-subtle bg-surface-sunken',
+					isRounded && 'rounded-md',
 				]"
 				:style="{ aspectRatio: String(aspectRatio) }"
 				:draggable="isDraggable"
@@ -98,16 +98,19 @@ onUnmounted(() => {
 				<slot name="preview" />
 				<Button
 					v-if="!isDragging"
-					size="icon"
-					class="bg-zinc-700 hover:bg-zinc-600 text-zinc-200 absolute right-2 bottom-2 size-5 opacity-0 group-hover:opacity-100"
+					variant="secondary"
+					size="icon-xs"
+					class="absolute bottom-1.5 right-1.5 size-5 opacity-0 transition-opacity group-hover:opacity-100 [&_svg]:size-3"
+					title="Add to timeline"
+					:aria-label="`Add ${name} to timeline`"
 					@click.prevent.stop="handleAddToTimeline"
 				>
-					<Plus class="size-3" />
+					<Plus />
 				</Button>
 			</div>
 			<span
 				v-if="shouldShowLabel"
-				class="text-zinc-500 w-full truncate text-left text-[0.7rem]"
+				class="w-full truncate text-left text-2xs text-fg-muted"
 				:title="name"
 			>
 				{{ name.length > 8 ? `${name.slice(0, 16)}...${name.slice(-3)}` : name }}
@@ -118,19 +121,19 @@ onUnmounted(() => {
 	<!-- Compact variant -->
 	<div
 		v-else
-		:class="['group relative w-full', isHighlighted && 'ring-2 ring-primary bg-primary/10 rounded-sm']"
+		:class="['group relative w-full rounded-md', isHighlighted && 'bg-brand-soft ring-2 ring-brand']"
 	>
 		<button
 			type="button"
-			:class="['flex h-8 w-full cursor-default items-center gap-3 px-1']"
+			class="flex h-8 w-full cursor-default items-center gap-2.5 rounded-md px-1 transition-colors hover:bg-surface-hover"
 			:draggable="isDraggable"
 			@dragstart="isDraggable ? handleDragStart($event) : undefined"
 			@dragend="isDraggable ? handleDragEnd() : undefined"
 		>
-			<div class="size-6 shrink-0 overflow-hidden rounded-[0.35rem]">
+			<div class="size-6 shrink-0 overflow-hidden rounded-md bg-surface-sunken">
 				<slot name="preview" />
 			</div>
-			<span class="w-full flex-1 truncate text-left text-sm">{{ name }}</span>
+			<span class="w-full flex-1 truncate text-left text-xs text-fg">{{ name }}</span>
 		</button>
 	</div>
 
@@ -142,17 +145,20 @@ onUnmounted(() => {
 			:style="{ left: `${dragPosition.x - 40}px`, top: `${dragPosition.y - 40}px` }"
 		>
 			<div class="w-[80px]">
-				<div class="ring-primary relative overflow-hidden rounded-md shadow-2xl ring-[3px]" style="aspect-ratio: 1">
+				<div class="relative overflow-hidden rounded-md bg-surface-sunken shadow-[var(--shadow-lg)] ring-2 ring-brand" style="aspect-ratio: 1">
 					<div class="size-full [&_img]:size-full [&_img]:rounded-none [&_img]:object-cover">
 						<slot name="preview" />
 					</div>
 					<Button
 						v-if="shouldShowPlusOnDrag"
-						size="icon"
-						class="bg-zinc-700 hover:bg-zinc-600 text-zinc-200 absolute right-2 bottom-2 size-5"
+						variant="secondary"
+						size="icon-xs"
+						class="absolute bottom-1.5 right-1.5 size-5 [&_svg]:size-3"
+						title="Add to timeline"
+						:aria-label="`Add ${name} to timeline`"
 						@click.prevent.stop="handleAddToTimeline"
 					>
-						<Plus class="size-3" />
+						<Plus />
 					</Button>
 				</div>
 			</div>

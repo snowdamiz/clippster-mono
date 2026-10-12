@@ -1,22 +1,20 @@
 <template>
   <PageLayout
-    title="Post Submissions"
+    title="Post submissions"
     description="Review and approve member post submissions"
     :show-header="true"
     :icon="FileCheck"
-    :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Post Submissions' }]"
+    :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Post submissions' }]"
   >
     <template #firstBreadcrumb>
       <OrganizationBreadcrumb />
     </template>
-    <div class="org-posts">
-      <PostSubmissionsList
-        :organization-id="organizationId ?? ''"
-        :is-admin="isAdmin"
-        :creator-profiles="creatorProfiles"
-        :members="members"
-      />
-    </div>
+    <PostSubmissionsList
+      :organization-id="organizationId ?? ''"
+      :is-admin="isAdmin"
+      :creator-profiles="creatorProfiles"
+      :members="members"
+    />
   </PageLayout>
 </template>
 
@@ -36,10 +34,3 @@
     }
   });
 </script>
-
-<style scoped>
-  .org-posts {
-    width: 100%;
-    padding: 1.5rem;
-  }
-</style>

@@ -13,7 +13,7 @@
 <template>
   <TabsList
     v-bind="delegatedProps"
-    :class="cn('inline-flex items-center justify-center rounded-md bg-muted p-1 text-muted-foreground', props.class)"
+    :class="cn('inline-flex h-[var(--control-md)] items-center gap-0.5 rounded-[var(--radius-control)] border border-line-subtle bg-surface p-0.5 text-fg-muted', props.class)"
   >
     <slot />
   </TabsList>

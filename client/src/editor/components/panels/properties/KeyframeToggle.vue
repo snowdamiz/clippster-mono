@@ -1,5 +1,4 @@
 <script setup lang="ts">
-import { computed } from "vue";
 import { Diamond } from "lucide-vue-next";
 
 const props = defineProps<{
@@ -15,11 +14,13 @@ const emit = defineEmits<{
 <template>
 	<button
 		type="button"
-		class="flex items-center justify-center rounded p-0.5 transition-colors"
-		:class="active ? 'text-yellow-400 hover:text-yellow-300' : 'text-zinc-600 hover:text-zinc-400'"
+		class="grid size-5 shrink-0 place-items-center rounded transition-colors hover:bg-surface-hover"
+		:class="active ? 'text-warning' : 'text-fg-disabled hover:text-fg-muted'"
 		:title="active ? `Remove ${label ?? ''} keyframe` : `Add ${label ?? ''} keyframe`"
+		:aria-label="active ? `Remove ${label ?? ''} keyframe` : `Add ${label ?? ''} keyframe`"
+		:aria-pressed="active"
 		@click="emit('toggle')"
 	>
-		<Diamond class="size-3" :class="active ? 'fill-yellow-400' : ''" />
+		<Diamond class="size-3" :class="active && 'fill-current'" />
 	</button>
 </template>

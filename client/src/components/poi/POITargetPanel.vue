@@ -1,24 +1,22 @@
 <template>
-  <div class="poi-target-panel flex flex-col h-full">
+  <div class="poi-target-panel @container flex h-full flex-col bg-surface">
     <!-- Header - single row -->
-    <div class="flex items-center gap-2 px-2 py-1.5 border-b border-zinc-700/50">
+    <div class="flex h-10 shrink-0 items-center gap-1 border-b border-line-subtle px-2">
       <!-- Output Preview label + aspect ratio -->
-      <div class="flex items-center gap-1.5 shrink-0">
-        <span class="text-xs font-medium text-zinc-300">Output Preview</span>
-        <span class="text-[10px] text-zinc-500 font-mono">{{ targetAspectRatio }}</span>
+      <div class="mr-1 flex shrink-0 items-baseline gap-1.5">
+        <span class="hidden text-xs font-medium text-fg @md:inline">Output preview</span>
+        <span class="font-mono text-2xs text-fg-subtle">{{ targetAspectRatio }}</span>
       </div>
 
       <!-- Scale 16:9 checkbox (not wrapped in <label> — Reka Checkbox is a button and double-fires inside labels) -->
       <div
-        class="flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium rounded transition-all shrink-0"
-        :class="showSourceFrame
-          ? 'bg-purple-500/20 text-purple-300'
-          : 'text-zinc-400'"
+        class="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-2xs font-medium transition-colors"
+        :class="showSourceFrame ? 'bg-brand-soft text-fg' : 'text-fg-muted'"
       >
         <Checkbox
           :model-value="showSourceFrame"
           aria-label="Enable Scale 16:9"
-          class="h-3.5 w-3.5 rounded border-white/45 bg-white/10 text-white hover:border-purple-300/80 data-[state=checked]:border-purple-300 data-[state=checked]:bg-purple-500 focus-visible:ring-purple-400/50"
+          class="size-3.5"
           @update:model-value="onToggleScale16"
         >
           <CheckIcon class="h-3 w-3" />
@@ -28,15 +26,13 @@
 
       <!-- Use 16:9 checkbox -->
       <div
-        class="flex items-center gap-1.5 px-2 py-1 text-[10px] font-medium rounded transition-all shrink-0"
-        :class="use16x9Mode
-          ? 'bg-cyan-500/20 text-cyan-300'
-          : 'text-zinc-400'"
+        class="flex h-6 shrink-0 items-center gap-1.5 rounded-md px-1.5 text-2xs font-medium transition-colors"
+        :class="use16x9Mode ? 'bg-brand-soft text-fg' : 'text-fg-muted'"
       >
         <Checkbox
           :model-value="use16x9Mode"
           aria-label="Enable Use 16:9"
-          class="h-3.5 w-3.5 rounded border-white/45 bg-white/10 text-white hover:border-cyan-300/80 data-[state=checked]:border-cyan-300 data-[state=checked]:bg-cyan-500 focus-visible:ring-cyan-400/50"
+          class="size-3.5"
           @update:model-value="onToggleUse16x9"
         >
           <CheckIcon class="h-3 w-3" />
@@ -45,48 +41,28 @@
       </div>
 
       <!-- Blur dropdown (when Scale or Use 16:9 is enabled) -->
-      <div
-        v-if="showSourceFrame || use16x9Mode"
-        class="relative shrink-0"
-        ref="blurDropdownRef"
-      >
+      <div v-if="showSourceFrame || use16x9Mode" ref="blurDropdownRef" class="relative shrink-0">
         <button
+          type="button"
+          class="flex h-6 items-center gap-1 rounded-md px-1.5 text-2xs font-medium transition-colors"
+          :class="blurEnabled ? 'bg-brand-soft text-fg' : 'text-fg-muted hover:bg-surface-hover hover:text-fg'"
           @click="showBlurDropdown = !showBlurDropdown"
-          class="flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded transition-all"
-          :class="blurEnabled 
-            ? 'bg-purple-500/20 text-purple-300' 
-            : 'text-zinc-400 hover:text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700/50'"
         >
-          <span>Blur{{ blurEnabled ? `: ${blurAmount}` : '' }}</span>
-          <svg 
-            class="w-3 h-3 transition-transform" 
-            :class="{ 'rotate-180': showBlurDropdown }"
-            fill="none" 
-            stroke="currentColor" 
-            viewBox="0 0 24 24"
-          >
-            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" />
-          </svg>
+          <span class="tabular">Blur{{ blurEnabled ? `: ${blurAmount}` : '' }}</span>
+          <ChevronDownIcon class="size-3 transition-transform" :class="{ 'rotate-180': showBlurDropdown }" />
         </button>
         <!-- Dropdown panel -->
         <div
           v-if="showBlurDropdown"
-          class="absolute top-full left-0 mt-1 p-2 bg-zinc-800 border border-zinc-700 rounded-lg shadow-xl z-50 min-w-[140px]"
+          class="absolute left-0 top-full z-50 mt-1 min-w-40 rounded-lg bg-surface-raised p-2.5 shadow-[var(--shadow-md)]"
           @click.stop
         >
-          <div class="flex items-center justify-between mb-2">
-            <span class="text-[10px] text-zinc-400">Blur</span>
-            <span class="text-[10px] text-zinc-300 font-mono">{{ blurAmount }}</span>
+          <div class="mb-1.5 flex items-center justify-between">
+            <span class="text-xs font-medium text-fg-muted">Blur</span>
+            <span class="tabular font-mono text-2xs text-fg">{{ blurAmount }}</span>
           </div>
-          <input
-            v-model.number="blurAmount"
-            type="range"
-            min="0"
-            max="30"
-            step="1"
-            class="w-full h-1.5 accent-purple-500 cursor-pointer"
-          />
-          <div class="flex justify-between mt-1 text-[9px] text-zinc-500">
+          <input v-model.number="blurAmount" type="range" min="0" max="30" step="1" class="w-full" aria-label="Blur amount" />
+          <div class="mt-0.5 flex justify-between text-2xs text-fg-subtle">
             <span>Off</span>
             <span>Max</span>
           </div>
@@ -97,26 +73,28 @@
       <div class="flex-1"></div>
 
       <!-- Stack button -->
-      <button
-        @click="autoArrangeVertical"
-        class="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-zinc-400 hover:text-zinc-200 bg-zinc-800/50 hover:bg-zinc-700/50 rounded transition-colors shrink-0"
+      <Button
+        variant="ghost"
+        size="xs"
+        class="shrink-0"
         title="Stack regions vertically"
         :disabled="regions.length === 0"
+        @click="autoArrangeVertical"
       >
-        <LayoutGridIcon class="w-3 h-3" />
-        Stack
-      </button>
+        <LayoutGridIcon />
+        <span class="hidden @md:inline">Stack</span>
+      </Button>
     </div>
 
     <!-- Canvas Area -->
-    <div class="flex-1 px-2 py-2 flex items-center justify-center bg-zinc-950/50">
+    <div class="flex flex-1 items-center justify-center bg-surface-sunken p-2">
       <div
         ref="containerRef"
-        class="relative bg-black rounded-lg overflow-hidden shadow-lg border border-zinc-800"
+        class="relative overflow-hidden rounded-lg border border-line-subtle bg-black"
         :style="containerStyle"
       >
         <!-- Background fill -->
-        <div class="absolute inset-0 bg-zinc-900" />
+        <div class="absolute inset-0 bg-surface" />
 
         <!-- Single decoder for all source-video previews in this panel -->
         <video
@@ -151,12 +129,12 @@
           <!-- Vertical center line -->
           <div 
             v-if="showVerticalCenterGuide"
-            class="absolute top-0 bottom-0 left-1/2 -translate-x-1/2 w-[2px] bg-yellow-400/80"
+            class="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-brand"
           />
           <!-- Horizontal center line -->
           <div 
             v-if="showHorizontalCenterGuide"
-            class="absolute left-0 right-0 top-1/2 -translate-y-1/2 h-[2px] bg-yellow-400/80"
+            class="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-brand"
           />
         </div>
 
@@ -184,7 +162,7 @@
         <!-- Use 16:9: sharp letterboxed 16:9 foreground (draggable / resizable) -->
         <div
           v-if="use16x9Mode"
-          class="absolute border-2 border-cyan-400 cursor-move z-[4]"
+          class="absolute z-[4] cursor-move border-2 border-brand"
           :style="sourceFrameStyle"
           @mousedown="startDragSourceFrame"
         >
@@ -200,13 +178,13 @@
             alt=""
             draggable="false"
           />
-          <div class="absolute top-0 left-0 -translate-y-full px-2 py-1 bg-cyan-600 text-white text-[10px] font-medium rounded-t whitespace-nowrap">
+          <div class="absolute left-0 top-0 -translate-y-full whitespace-nowrap rounded-t px-2 py-0.5 text-[10px] font-medium bg-brand text-brand-fg">
             16:9 (sharp) — drag / corners to scale
           </div>
           <div
             v-for="corner in ['nw', 'ne', 'sw', 'se']"
             :key="`u9-${corner}`"
-            class="absolute w-3 h-3 bg-cyan-500 border border-white pointer-events-auto"
+            class="pointer-events-auto absolute size-2.5 border border-white bg-brand"
             :class="{
               'top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize': corner === 'nw',
               'top-0 right-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize': corner === 'ne',
@@ -222,12 +200,12 @@
              Raised above region output handles when the Scaled 16:9 tab is selected. -->
         <div
           v-if="showSourceFrame"
-          class="absolute border-2 border-purple-500"
+          class="absolute border-2 border-brand"
           :class="[
             isScaled16x9Selected
               ? 'z-[15] cursor-move pointer-events-auto'
               : 'z-[5] pointer-events-none',
-            isScaled16x9Selected && isDraggingSourceFrame ? 'ring-2 ring-purple-300' : '',
+            isScaled16x9Selected && isDraggingSourceFrame ? 'ring-2 ring-brand-line' : '',
           ]"
           :style="sourceFrameStyle"
           @mousedown="isScaled16x9Selected ? startDragSourceFrame($event) : undefined"
@@ -249,7 +227,7 @@
           />
           
           <!-- Label -->
-          <div class="absolute top-0 left-0 -translate-y-full px-2 py-1 bg-purple-500 text-white text-[10px] font-medium rounded-t whitespace-nowrap">
+          <div class="absolute left-0 top-0 -translate-y-full whitespace-nowrap rounded-t px-2 py-0.5 text-[10px] font-medium bg-brand text-brand-fg">
             16:9 Source Frame — drag · corners to scale
           </div>
 
@@ -258,7 +236,7 @@
             v-if="isScaled16x9Selected"
             v-for="corner in ['nw', 'ne', 'sw', 'se']"
             :key="corner"
-            class="absolute w-3 h-3 bg-purple-500 border border-white pointer-events-auto"
+            class="pointer-events-auto absolute size-2.5 border border-white bg-brand"
             :class="{
               'top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize': corner === 'nw',
               'top-0 right-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize': corner === 'ne',
@@ -334,7 +312,7 @@
             class="absolute inset-0 flex items-center justify-center"
             :style="{ backgroundColor: region.color + '20' }"
           >
-            <span class="text-[9px] text-zinc-500">{{ regionLabel(region) }}</span>
+            <span class="text-[10px] text-fg-subtle">{{ regionLabel(region) }}</span>
           </div>
         </div>
 
@@ -373,10 +351,10 @@
         >
           <!-- Watermark indicator (simple preview representation) -->
           <div 
-            class="w-full h-full border-2 border-dashed border-amber-500/50 rounded bg-amber-500/10 flex items-center justify-center"
+            class="flex h-full w-full items-center justify-center rounded border border-dashed border-white/40 bg-white/5"
             :style="{ opacity: watermarkPreview.opacity / 100 }"
           >
-            <span class="text-[8px] text-amber-500/80 font-medium">WATERMARK</span>
+            <span class="text-[8px] font-semibold uppercase tracking-wide text-white/70">Watermark</span>
           </div>
         </div>
 
@@ -392,12 +370,12 @@
             :class="[
               subtitlePositioningEnabled
                 ? isDraggingSubtitles
-                  ? 'ring-2 ring-purple-400 cursor-move'
-                  : 'ring-1 ring-purple-500/60 hover:ring-purple-400 cursor-move'
-                : 'ring-1 ring-purple-500/30 cursor-default',
+                  ? 'ring-2 ring-brand cursor-move'
+                  : 'ring-1 ring-brand-line hover:ring-brand cursor-move'
+                : 'ring-1 ring-white/20 cursor-default',
               subtitleSettings?.animationStyle === 'single-word' ? 'overflow-visible' : 'overflow-hidden',
             ]"
-            style="border-radius: 4px; background: rgba(88,28,135,0.15);"
+            style="border-radius: 4px; background: var(--brand-soft)"
             @mousedown.prevent="subtitlePositioningEnabled ? startDragSubtitles($event) : undefined"
           >
             <!-- Actual transcript words (when available) -->
@@ -496,7 +474,7 @@
             v-if="subtitlePositioningEnabled && subtitleSettings?.animationStyle !== 'single-word'"
             v-for="corner in ['nw','ne','sw','se']"
             :key="corner"
-            class="absolute w-2.5 h-2.5 bg-purple-500 border border-white pointer-events-auto z-30"
+            class="pointer-events-auto absolute z-30 size-2.5 border border-white bg-brand"
             :class="{
               'top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize': corner === 'nw',
               'top-0 right-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize': corner === 'ne',
@@ -516,7 +494,7 @@
           <div
             class="inline-flex items-center justify-center select-none overflow-hidden relative"
             :class="[
-              isDraggingClipText || isResizingClipText ? 'ring-2 ring-blue-500' : 'ring-1 ring-blue-500/60 hover:ring-blue-400',
+              isDraggingClipText || isResizingClipText ? 'ring-2 ring-brand' : 'ring-1 ring-brand-line hover:ring-brand',
               clipTextBoxPositioningEnabled ? 'cursor-move' : 'cursor-default',
             ]"
             :style="clipTextPillStyle"
@@ -533,7 +511,7 @@
             <div
               v-for="corner in ['nw', 'ne', 'sw', 'se']"
               :key="`ct-${corner}`"
-              class="absolute w-2.5 h-2.5 bg-blue-500 border border-white pointer-events-auto z-30"
+              class="pointer-events-auto absolute z-30 size-2.5 border border-white bg-brand"
               :class="{
                 'top-0 left-0 -translate-x-1/2 -translate-y-1/2 cursor-nwse-resize': corner === 'nw',
                 'top-0 right-0 translate-x-1/2 -translate-y-1/2 cursor-nesw-resize': corner === 'ne',
@@ -559,9 +537,9 @@
 
         <!-- Empty state -->
         <div v-if="regions.length === 0 && !use16x9Mode" class="absolute inset-0 flex items-center justify-center">
-          <div class="text-center">
-            <LayoutIcon class="w-6 h-6 text-zinc-600 mx-auto mb-1" />
-            <p class="text-[10px] text-zinc-500">Add regions in the source panel</p>
+          <div class="flex flex-col items-center gap-1.5 text-center">
+            <LayoutIcon class="size-5 text-fg-disabled" />
+            <p class="text-2xs text-fg-subtle">Add regions in the source panel</p>
           </div>
         </div>
       </div>
@@ -572,7 +550,8 @@
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
   import { convertFileSrc } from '@tauri-apps/api/core';
-  import { CheckIcon, LayoutGridIcon, LayoutIcon } from 'lucide-vue-next';
+  import { CheckIcon, ChevronDownIcon, LayoutGridIcon, LayoutIcon } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
   import POIRegion from './POIRegion.vue';
   import MediaPreview from '@/components/MediaPreview.vue';
   import SocialOverlay from '@/editor/components/preview/SocialOverlay.vue';
@@ -2020,58 +1999,3 @@
     }
   );
 </script>
-
-<style scoped>
-  .poi-target-panel {
-    background: linear-gradient(to bottom, rgb(24 24 27 / 0.8), rgb(24 24 27 / 0.95));
-  }
-
-  /* Subtitle dragging styles */
-  .subtitle-selection-box {
-    position: relative;
-    border: 2px dashed rgba(147, 51, 234, 0.5);
-    border-radius: 8px;
-    padding: 4px;
-    transition: all 0.2s ease;
-  }
-
-  .subtitle-selection-box:hover {
-    border-color: rgba(147, 51, 234, 0.8);
-    background: rgba(147, 51, 234, 0.05);
-  }
-
-  .subtitle-selection-box.is-active {
-    border-color: rgba(147, 51, 234, 1);
-    background: rgba(147, 51, 234, 0.1);
-  }
-
-  .subtitle-drag-bar {
-    position: absolute;
-    top: -12px;
-    left: 0;
-    right: 0;
-    height: 12px;
-    background: rgba(147, 51, 234, 0.8);
-    border-radius: 4px 4px 0 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: grab;
-  }
-
-  .subtitle-drag-bar:hover {
-    background: rgba(147, 51, 234, 1);
-  }
-
-  .subtitle-drag-label {
-    font-size: 8px;
-    color: white;
-    font-weight: 500;
-    user-select: none;
-  }
-
-  .subtitle-text-container {
-    user-select: none;
-  }
-
-</style>

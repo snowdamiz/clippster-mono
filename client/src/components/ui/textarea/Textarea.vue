@@ -24,7 +24,7 @@
     v-model="modelValue"
     :class="
       cn(
-        'flex min-h-[60px] w-full rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm placeholder:text-muted-foreground focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:cursor-not-allowed disabled:opacity-50',
+        'flex min-h-[72px] w-full rounded-[var(--radius-control)] border border-line bg-surface-raised px-2.5 py-2 text-sm text-fg transition-[border-color,box-shadow] placeholder:text-fg-subtle hover:border-line-strong focus-visible:outline-none focus-visible:border-brand-line focus-visible:shadow-[0_0_0_3px_var(--brand-soft)] disabled:cursor-not-allowed disabled:opacity-50',
         props.class
       )
     "

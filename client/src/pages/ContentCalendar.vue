@@ -1,4 +1,5 @@
 <script setup lang="ts">
+  import { PlatformLogo } from '@/components/ui/platform-logo';
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue';
 import { formatTime } from '@/utils/dateTimeUtils';
 import {
@@ -7,10 +8,6 @@ import {
   ChevronRight,
   Clock,
   Megaphone,
-  Instagram,
-  Twitter,
-  Youtube,
-  Loader2,
   Circle,
   CheckCircle2,
   XCircle,
@@ -18,7 +15,14 @@ import {
   Send,
   Link2,
   Trash2,
+  PanelLeft,
+  X,
 } from 'lucide-vue-next';
+import { Badge } from '@/components/ui/badge';
+import { Button, buttonVariants } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { SegmentedControl } from '@/components/ui/segmented-control';
+import ConfirmationModal from '@/components/ConfirmationModal.vue';
 import { useAuthStore } from '@/stores/auth';
 import PageLayout from '@/components/PageLayout.vue';
 import ClipsSidebar from '@/components/calendar/ClipsSidebar.vue';
@@ -34,6 +38,8 @@ import { useToast } from '@/composables/useToast';
 const authStore = useAuthStore();
 const { error: showErrorToast } = useToast();
 const loading = ref(false);
+// Spinner only until the first load finishes; reloads (after scheduling/canceling) keep the calendar mounted.
+const loaded = ref(false);
 const error = ref<string | null>(null);
 
 const scheduledPosts = ref<ScheduledPost[]>([]);
@@ -210,11 +216,11 @@ const calendarEvents = computed((): CalendarEvent[] => {
       if (!isNaN(date.getTime())) {
         events.push({
           id: `campaign-start-${campaign.id}`,
-          title: `🚀 ${campaign.title}`,
+          title: campaign.title,
           date,
           type: 'campaign-start',
           status: campaign.status,
-          color: 'bg-emerald-500',
+          color: 'bg-success',
           data: campaign,
         });
       }
@@ -226,11 +232,11 @@ const calendarEvents = computed((): CalendarEvent[] => {
       if (!isNaN(date.getTime())) {
         events.push({
           id: `campaign-end-${campaign.id}`,
-          title: `⏰ ${campaign.title} ends`,
+          title: `${campaign.title} ends`,
           date,
           type: 'campaign-end',
           status: campaign.status,
-          color: 'bg-orange-500',
+          color: 'bg-warning',
           data: campaign,
         });
       }
@@ -266,19 +272,19 @@ function isSameDay(a: Date, b: Date): boolean {
 function getPostStatusColor(status: string): string {
   switch (status) {
     case 'published':
-      return 'bg-emerald-500';
+      return 'bg-success';
     case 'scheduled':
-      return 'bg-blue-500';
+      return 'bg-brand';
     case 'pending':
-      return 'bg-yellow-500';
+      return 'bg-warning';
     case 'publishing':
-      return 'bg-sky-500';
+      return 'bg-brand';
     case 'failed':
-      return 'bg-red-500';
+      return 'bg-danger';
     case 'canceled':
-      return 'bg-zinc-500';
+      return 'bg-fg-subtle';
     default:
-      return 'bg-zinc-500';
+      return 'bg-fg-subtle';
   }
 }
 
@@ -301,29 +307,123 @@ function getStatusIcon(status: string) {
   }
 }
 
-function getPlatformIcon(platform: string) {
-  switch (platform) {
-    case 'instagram':
-      return Instagram;
-    case 'twitter':
-      return Twitter;
-    case 'youtube':
-      return Youtube;
+// ── Presentation helpers ──
+
+const viewOptions = [
+  { value: 'month' as const, label: 'Month' },
+  { value: 'week' as const, label: 'Week' },
+];
+
+const weekdayLabels = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+const periodLabel = computed(() => {
+  if (viewMode.value === 'month') return monthName.value;
+  const start = weekDays.value[0];
+  const end = weekDays.value[6];
+  const sameMonth = start.getMonth() === end.getMonth();
+  const startLabel = start.toLocaleDateString('default', { month: 'short', day: 'numeric' });
+  const endLabel = end.toLocaleDateString('default', sameMonth ? { day: 'numeric' } : { month: 'short', day: 'numeric' });
+  return `${startLabel} – ${endLabel}, ${end.getFullYear()}`;
+});
+
+function isWeekend(date: Date): boolean {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}
+
+function isToday(date: Date): boolean {
+  return isSameDay(date, new Date());
+}
+
+/** Platform key for an event's color dot / logo (campaign events have none). */
+function getEventPlatform(event: CalendarEvent): string | null {
+  if (event.type === 'scheduled-post' || event.type === 'external-submission') {
+    return (event.platform || '').toLowerCase() === 'x' ? 'twitter' : (event.platform || '').toLowerCase() || null;
+  }
+  return null;
+}
+
+function getEventDotClass(event: CalendarEvent): string {
+  if (event.type === 'campaign-start') return 'bg-success';
+  if (event.type === 'campaign-end') return 'bg-warning';
+  const platform = getEventPlatform(event);
+  return platform ? `calendar-dot--${platform}` : 'bg-fg-subtle';
+}
+
+function getEventTextClass(event: CalendarEvent): string {
+  if (event.status === 'failed' || event.status === 'rejected') return 'text-danger';
+  if (event.status === 'canceled') return 'text-fg-subtle line-through';
+  return 'text-fg-muted';
+}
+
+function getEventTypeLabel(event: CalendarEvent): string {
+  switch (event.type) {
+    case 'scheduled-post':
+      return 'Scheduled post';
+    case 'external-submission':
+      return 'Link submission';
+    case 'campaign-start':
+      return 'Campaign start';
     default:
-      return Send;
+      return 'Campaign deadline';
   }
 }
+
+function getStatusBadgeVariant(status?: string): 'success' | 'danger' | 'warning' | 'brand' | 'neutral' {
+  switch (status) {
+    case 'published':
+    case 'approved':
+    case 'active':
+      return 'success';
+    case 'failed':
+    case 'rejected':
+      return 'danger';
+    case 'pending':
+      return 'warning';
+    case 'scheduled':
+    case 'publishing':
+    case 'completed':
+      return 'brand';
+    default:
+      return 'neutral';
+  }
+}
+
+function getPlatformName(platform: string): string {
+  switch ((platform || '').toLowerCase()) {
+    case 'instagram':
+      return 'Instagram';
+    case 'twitter':
+    case 'x':
+      return 'X';
+    case 'tiktok':
+      return 'TikTok';
+    case 'youtube':
+      return 'YouTube';
+    default:
+      return platform;
+  }
+}
+
+const legendItems = [
+  { label: 'Instagram', dot: 'calendar-dot--instagram' },
+  { label: 'X', dot: 'calendar-dot--twitter' },
+  { label: 'TikTok', dot: 'calendar-dot--tiktok' },
+  { label: 'YouTube', dot: 'calendar-dot--youtube' },
+  { label: 'Campaign start', dot: 'bg-success' },
+  { label: 'Deadline', dot: 'bg-warning' },
+];
 
 function getExternalStatusColor(status: string): string {
   switch (status) {
     case 'approved':
-      return 'bg-emerald-500';
+      return 'bg-success';
     case 'pending':
-      return 'bg-violet-500';
+      return 'bg-warning';
     case 'rejected':
-      return 'bg-red-500';
+      return 'bg-danger';
     default:
-      return 'bg-violet-500';
+      return 'bg-warning';
   }
 }
 
@@ -396,6 +496,7 @@ async function loadData() {
     }
   } finally {
     loading.value = false;
+    loaded.value = true;
   }
 }
 
@@ -686,11 +787,26 @@ async function toDataUrl(filePath: string | null | undefined): Promise<string | 
 const cancelingPostId = ref<number | null>(null);
 const deletingPostId = ref<number | null>(null);
 
-async function handleCancelScheduledPost(postId: number) {
-  if (!confirm('Cancel this scheduled post? It will remain in your history with "canceled" status.')) {
-    return;
-  }
+// Confirmation for cancel / delete (replaces the native confirm() prompt)
+const pendingPostAction = ref<{ type: 'cancel' | 'delete'; postId: number } | null>(null);
 
+function requestCancelScheduledPost(postId: number) {
+  pendingPostAction.value = { type: 'cancel', postId };
+}
+
+function requestDeleteScheduledPost(postId: number) {
+  pendingPostAction.value = { type: 'delete', postId };
+}
+
+function confirmPendingPostAction() {
+  const action = pendingPostAction.value;
+  pendingPostAction.value = null;
+  if (!action) return;
+  if (action.type === 'cancel') void handleCancelScheduledPost(action.postId);
+  else void handleDeleteScheduledPost(action.postId);
+}
+
+async function handleCancelScheduledPost(postId: number) {
   cancelingPostId.value = postId;
   try {
     const response = await cancelScheduledPost(postId);
@@ -698,21 +814,17 @@ async function handleCancelScheduledPost(postId: number) {
       console.log('[ContentCalendar] Post canceled successfully');
       await loadData();
     } else {
-      alert(response.error || 'Failed to cancel post');
+      showErrorToast(response.error || 'Failed to cancel post');
     }
   } catch (err: any) {
     console.error('[ContentCalendar] Failed to cancel post:', err);
-    alert(err?.response?.data?.error || 'Failed to cancel post');
+    showErrorToast(err?.response?.data?.error || 'Failed to cancel post');
   } finally {
     cancelingPostId.value = null;
   }
 }
 
 async function handleDeleteScheduledPost(postId: number) {
-  if (!confirm('Permanently delete this scheduled post? This cannot be undone.')) {
-    return;
-  }
-
   deletingPostId.value = postId;
   try {
     const response = await deleteScheduledPost(postId);
@@ -720,11 +832,11 @@ async function handleDeleteScheduledPost(postId: number) {
       console.log('[ContentCalendar] Post deleted successfully');
       await loadData();
     } else {
-      alert(response.error || 'Failed to delete post');
+      showErrorToast(response.error || 'Failed to delete post');
     }
   } catch (err: any) {
     console.error('[ContentCalendar] Failed to delete post:', err);
-    alert(err?.response?.data?.error || 'Failed to delete post');
+    showErrorToast(err?.response?.data?.error || 'Failed to delete post');
   } finally {
     deletingPostId.value = null;
   }
@@ -739,112 +851,64 @@ onMounted(() => {
 
 <template>
   <PageLayout
-    title="Content Calendar"
+    title="Content calendar"
     description="Scheduled posts, campaigns & deadlines"
     :show-header="true"
     :icon="CalendarDays"
   >
     <template #actions>
-      <div class="flex items-center gap-2">
-        <!-- View Mode Toggle -->
-        <div class="flex items-center bg-white/5 rounded-lg border border-white/10 p-0.5">
-          <button
-            @click="viewMode = 'month'"
-            :class="[
-              'px-3 py-1 text-xs font-medium rounded-md transition-colors',
-              viewMode === 'month' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300',
-            ]"
-          >
-            Month
-          </button>
-          <button
-            @click="viewMode = 'week'"
-            :class="[
-              'px-3 py-1 text-xs font-medium rounded-md transition-colors',
-              viewMode === 'week' ? 'bg-blue-500/20 text-blue-400' : 'text-zinc-500 hover:text-zinc-300',
-            ]"
-          >
-            Week
-          </button>
-        </div>
+      <Button
+        variant="ghost"
+        size="icon-sm"
+        :title="showClipsSidebar ? 'Hide built clips' : 'Show built clips'"
+        :aria-label="showClipsSidebar ? 'Hide built clips' : 'Show built clips'"
+        :class="showClipsSidebar && 'bg-surface-hover text-fg'"
+        @click="showClipsSidebar = !showClipsSidebar"
+      >
+        <PanelLeft />
+      </Button>
+      <SegmentedControl v-model="viewMode" :options="viewOptions" size="sm" />
+    </template>
+
+    <template #toolbar>
+      <div class="flex min-w-0 items-center gap-1">
+        <Button variant="ghost" size="icon-sm" :title="viewMode === 'month' ? 'Previous month' : 'Previous week'" @click="prevMonth">
+          <ChevronLeft />
+        </Button>
+        <Button variant="ghost" size="icon-sm" :title="viewMode === 'month' ? 'Next month' : 'Next week'" @click="nextMonth">
+          <ChevronRight />
+        </Button>
+        <h2 class="tabular ml-1 truncate text-sm font-semibold text-fg">{{ periodLabel }}</h2>
+        <Button variant="secondary" size="xs" class="ml-2" @click="goToToday">Today</Button>
+      </div>
+      <div class="ml-auto hidden min-w-0 items-center gap-3 text-xs text-fg-muted lg:flex">
+        <span class="tabular"><span class="font-medium text-fg">{{ stats.upcoming }}</span> upcoming</span>
+        <span class="tabular"><span class="font-medium text-fg">{{ stats.published }}</span> published</span>
+        <span class="tabular">
+          <span class="font-medium text-fg">{{ stats.activeCampaigns }}</span>
+          active campaign{{ stats.activeCampaigns !== 1 ? 's' : '' }}
+        </span>
+        <span v-if="stats.linkSubmissions > 0" class="tabular">
+          <span class="font-medium text-fg">{{ stats.linkSubmissions }}</span> link submissions
+        </span>
       </div>
     </template>
 
-    <!-- Stats bar -->
-    <div class="flex items-center gap-4 px-6 py-3 border-b border-white/5">
-      <div class="flex items-center gap-1.5">
-        <div class="w-2 h-2 rounded-full bg-blue-500" />
-        <span class="text-[11px] text-zinc-400">{{ stats.upcoming }} upcoming</span>
-      </div>
-      <div class="flex items-center gap-1.5">
-        <div class="w-2 h-2 rounded-full bg-emerald-500" />
-        <span class="text-[11px] text-zinc-400">{{ stats.published }} published</span>
-      </div>
-      <div class="flex items-center gap-1.5">
-        <div class="w-2 h-2 rounded-full bg-orange-500" />
-        <span class="text-[11px] text-zinc-400">{{ stats.activeCampaigns }} active campaigns</span>
-      </div>
-      <div v-if="stats.linkSubmissions > 0" class="flex items-center gap-1.5">
-        <div class="w-2 h-2 rounded-full bg-violet-500" />
-        <span class="text-[11px] text-zinc-400">{{ stats.linkSubmissions }} link submissions</span>
-      </div>
-      <div class="flex-1" />
-      <span class="text-[11px] text-zinc-500">{{ stats.thisMonthEvents }} events this month</span>
-    </div>
-
-    <!-- Calendar navigation -->
-    <div class="flex items-center justify-between px-6 py-3">
-      <div class="flex items-center gap-2">
-        <button
-          @click="prevMonth"
-          class="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors"
-        >
-          <ChevronLeft class="size-4" />
-        </button>
-        <h2 class="text-sm font-semibold text-zinc-200 min-w-[180px] text-center">
-          {{ monthName }}
-        </h2>
-        <button
-          @click="nextMonth"
-          class="p-1.5 rounded-md text-zinc-500 hover:text-zinc-300 hover:bg-white/5 transition-colors"
-        >
-          <ChevronRight class="size-4" />
-        </button>
-      </div>
-      <button
-        @click="goToToday"
-        class="px-3 py-1 text-xs font-medium text-zinc-400 hover:text-zinc-200 bg-white/5 hover:bg-white/10 rounded-md border border-white/10 transition-colors"
-      >
-        Today
-      </button>
-    </div>
-
-    <!-- Loading -->
-    <div v-if="loading" class="flex-1 flex items-center justify-center">
-      <Loader2 class="size-6 animate-spin text-blue-400" />
+    <!-- Loading (first load only) -->
+    <div v-if="!loaded" class="skeleton-group flex flex-1 items-center justify-center">
+      <span class="size-5 animate-spin rounded-full border-2 border-line-strong border-t-brand" aria-label="Loading" />
     </div>
 
     <!-- Error -->
-    <div v-else-if="error" class="flex-1 flex items-center justify-center px-6">
-      <div class="text-center max-w-sm">
-        <AlertCircle class="size-8 text-red-400 mx-auto mb-3" />
-        <p class="text-sm text-zinc-400">{{ error }}</p>
-        <button
-          @click="loadData"
-          class="mt-3 px-4 py-1.5 text-xs font-medium text-blue-400 bg-blue-500/10 rounded-md border border-blue-500/20 hover:bg-blue-500/20 transition-colors"
-        >
-          Retry
-        </button>
-      </div>
-    </div>
+    <EmptyState v-else-if="error" :icon="AlertCircle" tone="danger" title="Couldn't load the calendar" :description="error">
+      <Button variant="secondary" @click="loadData">Retry</Button>
+    </EmptyState>
 
-    <!-- Calendar content -->
-    <div v-else class="flex-1 flex overflow-hidden">
-      <!-- Clips Sidebar -->
-      <div
-        v-if="showClipsSidebar"
-        class="w-80 flex-shrink-0"
-      >
+    <!-- Calendar -->
+    <div v-else class="flex min-h-0 flex-1 animate-fade-in overflow-hidden">
+      <!-- Built clips -->
+      <!-- (Below xl the day panel takes the sidebar's place so the grid stays readable.) -->
+      <div v-if="showClipsSidebar" class="w-64 shrink-0 xl:block xl:w-72" :class="selectedDay ? 'hidden' : ''">
         <ClipsSidebar
           ref="clipsSidebarRef"
           @schedule-clip="handleScheduleClip"
@@ -853,362 +917,281 @@ onMounted(() => {
           @drag-end="handleSidebarDragEnd"
         />
       </div>
-      <!-- Calendar grid -->
-      <div class="flex-1 flex flex-col overflow-hidden">
-        <!-- Day headers -->
-        <div class="grid grid-cols-7 border-b border-white/10">
+
+      <!-- Grid -->
+      <div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+        <!-- Weekday header -->
+        <div v-if="viewMode === 'month'" class="grid h-9 shrink-0 grid-cols-7 border-b border-line-subtle">
           <div
-            v-for="day in ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']"
+            v-for="(day, index) in weekdayLabels"
             :key="day"
-            class="px-2 py-2 text-[10px] font-semibold text-zinc-500 uppercase tracking-wider text-center"
+            class="flex items-center px-2 text-2xs font-medium uppercase tracking-[0.06em]"
+            :class="index === 0 || index === 6 ? 'text-fg-disabled' : 'text-fg-subtle'"
           >
             {{ day }}
           </div>
         </div>
+        <div v-else class="flex h-9 shrink-0 items-center border-b border-line-subtle px-3 text-2xs font-medium uppercase tracking-[0.06em] text-fg-subtle">
+          Week of {{ weekDays[0].toLocaleDateString('default', { month: 'long', day: 'numeric' }) }}
+        </div>
 
         <!-- Month view -->
-        <div 
-          v-if="viewMode === 'month'" 
-          class="flex-1 grid grid-cols-7 grid-rows-6 overflow-hidden"
+        <div
+          v-if="viewMode === 'month'"
+          :key="`month-${periodLabel}`"
+          class="grid min-h-0 flex-1 animate-fade-in grid-cols-7 grid-rows-6 overflow-hidden"
         >
           <div
             v-for="(day, idx) in calendarDays"
             :key="idx"
             :data-calendar-date="day.date.toISOString()"
-            class="border-b border-r border-white/5 p-1 overflow-hidden cursor-pointer transition-all relative"
-            :class="{
-              'bg-white/[0.02]': day.isCurrentMonth,
-              'bg-transparent': !day.isCurrentMonth,
-              'ring-1 ring-blue-500/40 ring-inset': day.isToday,
-              'bg-blue-500/5': selectedDay && isSameDay(selectedDay, day.date),
-              'ring-2 ring-blue-400/60 bg-blue-500/20 scale-[1.02] z-10': dragOverDay && isSameDay(dragOverDay, day.date),
-            }"
+            class="@container relative flex min-h-0 min-w-0 cursor-pointer flex-col gap-0.5 overflow-hidden border-b border-r border-line-subtle p-1 transition-colors hover:bg-surface-hover"
+            :class="[
+              isWeekend(day.date) || !day.isCurrentMonth ? 'bg-surface-sunken' : '',
+              selectedDay && isSameDay(selectedDay, day.date) ? 'bg-surface-active shadow-[inset_0_0_0_1px_var(--brand-line)]' : '',
+              dragOverDay && isSameDay(dragOverDay, day.date) ? 'bg-brand-soft shadow-[inset_0_0_0_2px_var(--brand)]' : '',
+              (idx + 1) % 7 === 0 ? 'border-r-0' : '',
+            ]"
             @click="selectDay(day.date)"
           >
-            <!-- Day number -->
-            <div class="flex items-center justify-between mb-0.5">
+            <div class="flex shrink-0 items-center justify-between">
               <span
-                class="text-[11px] font-medium leading-none"
-                :class="{
-                  'text-zinc-300': day.isCurrentMonth,
-                  'text-zinc-600': !day.isCurrentMonth,
-                  'text-blue-400 font-bold': day.isToday,
-                }"
+                class="tabular grid h-5 min-w-5 place-items-center rounded-full px-1 text-2xs font-medium"
+                :class="day.isToday ? 'bg-brand text-brand-fg' : day.isCurrentMonth ? 'text-fg-muted' : 'text-fg-disabled'"
               >
                 {{ day.date.getDate() }}
               </span>
-              <span
-                v-if="getEventsForDay(day.date).length > 0"
-                class="text-[9px] text-zinc-500 tabular-nums"
-              >
-                {{ getEventsForDay(day.date).length }}
-              </span>
             </div>
 
-            <!-- Event dots / pills -->
-            <div class="flex flex-col gap-px">
+            <!-- Narrow cells show colored dots only; wider cells show titled chips. -->
+            <div class="flex min-h-0 flex-row flex-wrap items-center gap-1 px-1 @[80px]:flex-col @[80px]:flex-nowrap @[80px]:items-stretch @[80px]:gap-px @[80px]:px-0">
               <div
-                v-for="event in getEventsForDay(day.date).slice(0, 3)"
+                v-for="event in getEventsForDay(day.date).slice(0, getEventsForDay(day.date).length > 3 ? 2 : 3)"
                 :key="event.id"
-                class="flex items-center gap-1 px-1 py-px rounded text-[9px] truncate"
-                :class="[
-                  event.color === 'bg-emerald-500' ? 'bg-emerald-500/10 text-emerald-300' :
-                  event.color === 'bg-blue-500' ? 'bg-blue-500/10 text-blue-300' :
-                  event.color === 'bg-yellow-500' ? 'bg-yellow-500/10 text-yellow-300' :
-                  event.color === 'bg-sky-500' ? 'bg-sky-500/10 text-sky-300' :
-                  event.color === 'bg-red-500' ? 'bg-red-500/10 text-red-300' :
-                  event.color === 'bg-zinc-500' ? 'bg-zinc-500/10 text-zinc-300' :
-                  event.color === 'bg-violet-500' ? 'bg-violet-500/10 text-violet-300' :
-                  event.color === 'bg-orange-500' ? 'bg-orange-500/10 text-orange-300' :
-                  'bg-zinc-500/10 text-zinc-300'
-                ]"
+                class="flex min-w-0 shrink-0 items-center gap-1.5 rounded text-2xs leading-none @[80px]:h-[18px] @[80px]:px-1"
+                :class="[getEventTextClass(event), !day.isCurrentMonth && 'opacity-60']"
                 :title="event.title"
               >
-                <div class="w-1.5 h-1.5 rounded-full shrink-0" :class="event.color" />
-                <span class="truncate">{{ event.title }}</span>
+                <span class="size-1.5 shrink-0 rounded-full" :class="getEventDotClass(event)" />
+                <span class="hidden truncate @[80px]:inline">{{ event.title }}</span>
               </div>
-              <div
-                v-if="getEventsForDay(day.date).length > 3"
-                class="text-[9px] text-zinc-500 px-1"
-              >
-                +{{ getEventsForDay(day.date).length - 3 }} more
+              <div v-if="getEventsForDay(day.date).length > 3" class="text-2xs leading-4 text-fg-subtle @[80px]:h-4 @[80px]:px-1">
+                +{{ getEventsForDay(day.date).length - 2 }}<span class="hidden @[80px]:inline"> more</span>
               </div>
             </div>
           </div>
         </div>
 
         <!-- Week view -->
-        <div v-else class="flex-1 flex flex-col overflow-y-auto">
+        <div v-else :key="`week-${periodLabel}`" class="flex min-h-0 flex-1 animate-fade-in flex-col overflow-y-auto">
           <div
             v-for="day in weekDays"
             :key="day.toISOString()"
             :data-calendar-date="day.toISOString()"
-            class="flex border-b border-white/5 min-h-[80px] relative transition-all"
-            :class="{
-              'bg-blue-500/5': isSameDay(day, new Date()),
-              'ring-2 ring-blue-400/60 bg-blue-500/20 scale-[1.01] z-10': dragOverDay && isSameDay(dragOverDay, day),
-            }"
+            class="relative flex min-h-[72px] flex-[1_0_auto] border-b border-line-subtle transition-colors"
+            :class="[
+              isWeekend(day) ? 'bg-surface-sunken' : '',
+              selectedDay && isSameDay(selectedDay, day) ? 'bg-surface-active shadow-[inset_0_0_0_1px_var(--brand-line)]' : '',
+              dragOverDay && isSameDay(dragOverDay, day) ? 'bg-brand-soft shadow-[inset_0_0_0_2px_var(--brand)]' : '',
+            ]"
           >
-            <!-- Day label -->
-            <div class="w-20 shrink-0 p-2 border-r border-white/5">
-              <div
-                class="text-[10px] font-semibold uppercase"
-                :class="isSameDay(day, new Date()) ? 'text-blue-400' : 'text-zinc-500'"
-              >
+            <button
+              type="button"
+              class="flex w-16 shrink-0 flex-col items-center justify-center gap-0.5 border-r border-line-subtle transition-colors hover:bg-surface-hover"
+              :aria-label="formatDayHeader(day)"
+              @click="selectDay(day)"
+            >
+              <span class="text-2xs font-medium uppercase tracking-[0.06em]" :class="isToday(day) ? 'text-brand' : 'text-fg-subtle'">
                 {{ formatWeekdayShort(day) }}
-              </div>
-              <div
-                class="text-lg font-bold"
-                :class="isSameDay(day, new Date()) ? 'text-blue-400' : 'text-zinc-300'"
+              </span>
+              <span
+                class="tabular grid size-7 place-items-center rounded-full text-sm font-semibold"
+                :class="isToday(day) ? 'bg-brand text-brand-fg' : 'text-fg'"
               >
                 {{ day.getDate() }}
-              </div>
-            </div>
+              </span>
+            </button>
 
-            <!-- Events for this day -->
-            <div class="flex-1 p-2 flex flex-wrap gap-1.5 content-start">
-              <div
+            <div class="flex min-w-0 flex-1 flex-wrap content-center gap-1.5 p-2">
+              <button
                 v-for="event in getEventsForDay(day)"
                 :key="event.id"
-                class="flex items-center gap-1.5 px-2 py-1 rounded-md text-xs border transition-colors hover:bg-white/5 cursor-default"
-                :class="[
-                  event.color === 'bg-emerald-500' ? 'bg-emerald-500/10 border-emerald-500/20 text-emerald-300' :
-                  event.color === 'bg-blue-500' ? 'bg-blue-500/10 border-blue-500/20 text-blue-300' :
-                  event.color === 'bg-yellow-500' ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-300' :
-                  event.color === 'bg-sky-500' ? 'bg-sky-500/10 border-sky-500/20 text-sky-300' :
-                  event.color === 'bg-red-500' ? 'bg-red-500/10 border-red-500/20 text-red-300' :
-                  event.color === 'bg-zinc-500' ? 'bg-zinc-500/10 border-zinc-500/20 text-zinc-300' :
-                  event.color === 'bg-violet-500' ? 'bg-violet-500/10 border-violet-500/20 text-violet-300' :
-                  event.color === 'bg-orange-500' ? 'bg-orange-500/10 border-orange-500/20 text-orange-300' :
-                  'bg-zinc-500/10 border-zinc-500/20 text-zinc-300'
-                ]"
+                type="button"
+                class="flex h-7 max-w-full min-w-0 items-center gap-1.5 rounded-md border border-line-subtle bg-surface px-2 text-xs transition-colors hover:border-line hover:bg-surface-hover"
+                :class="getEventTextClass(event)"
+                :title="event.title"
+                @click="selectDay(day)"
               >
-                <component
-                  :is="event.type === 'scheduled-post' ? getPlatformIcon((event.data as ScheduledPost).platform) : event.type === 'external-submission' ? getPlatformIcon((event.data as ExternalPostSubmission).platform) : Megaphone"
-                  class="size-3 shrink-0"
-                />
-                <span class="truncate max-w-[200px]">{{ event.title }}</span>
-                <span class="text-[10px] opacity-60 tabular-nums">{{ formatEventTime(event.date) }}</span>
-              </div>
-              <div
-                v-if="getEventsForDay(day).length === 0"
-                class="text-[10px] text-zinc-600 italic"
-              >
-                No events
-              </div>
+                <PlatformLogo v-if="getEventPlatform(event)" :platform="getEventPlatform(event)" size="xs" />
+                <Megaphone v-else class="size-3.5 shrink-0" :class="event.type === 'campaign-start' ? 'text-success' : 'text-warning'" />
+                <span class="max-w-[220px] truncate">{{ event.title }}</span>
+                <span class="tabular shrink-0 text-2xs text-fg-subtle">{{ formatEventTime(event.date) }}</span>
+              </button>
+              <span v-if="getEventsForDay(day).length === 0" class="text-xs text-fg-disabled">No events</span>
             </div>
+          </div>
+        </div>
+
+        <!-- Legend -->
+        <div class="flex h-8 shrink-0 items-center gap-3 overflow-hidden border-t border-line-subtle px-3 text-2xs text-fg-subtle">
+          <span class="tabular shrink-0">{{ stats.thisMonthEvents }} events this month</span>
+          <div class="ml-auto flex h-4 min-w-0 flex-wrap justify-end gap-x-3 overflow-hidden">
+            <span v-for="item in legendItems" :key="item.label" class="flex h-4 shrink-0 items-center gap-1.5">
+              <span class="size-1.5 rounded-full" :class="item.dot" />
+              {{ item.label }}
+            </span>
           </div>
         </div>
       </div>
 
-      <!-- Day detail sidebar -->
-      <div
-        v-if="selectedDay"
-        class="w-72 border-l border-white/10 flex flex-col overflow-hidden bg-white/[0.02]"
-      >
-        <div class="px-4 py-3 border-b border-white/10">
-          <h3 class="text-sm font-semibold text-zinc-200">
-            {{ formatDayHeader(selectedDay) }}
-          </h3>
-          <p class="text-[10px] text-zinc-500 mt-0.5">
+      <!-- Day detail -->
+      <aside v-if="selectedDay" class="flex w-64 shrink-0 animate-fade-in flex-col overflow-hidden border-l border-line-subtle xl:w-72">
+        <div class="flex h-9 shrink-0 items-center gap-2 border-b border-line-subtle pr-1.5 pl-3">
+          <h3 class="min-w-0 flex-1 truncate text-xs font-semibold text-fg">{{ formatDayHeader(selectedDay) }}</h3>
+          <span class="tabular shrink-0 text-2xs text-fg-subtle">
             {{ selectedDayEvents.length }} event{{ selectedDayEvents.length !== 1 ? 's' : '' }}
-          </p>
+          </span>
+          <Button variant="ghost" size="icon-xs" title="Close" aria-label="Close day details" @click="selectedDay = null">
+            <X />
+          </Button>
         </div>
 
-        <div class="flex-1 overflow-y-auto p-3 space-y-2">
-          <div
+        <div :key="selectedDay.toISOString()" class="flex min-h-0 flex-1 animate-fade-in flex-col overflow-y-auto">
+          <article
             v-for="event in selectedDayEvents"
             :key="event.id"
-            class="rounded-lg border p-3 space-y-2"
-            :class="[
-              event.type === 'scheduled-post' ? 'bg-blue-500/5 border-blue-500/15' :
-              event.type === 'external-submission' ? 'bg-violet-500/5 border-violet-500/15' :
-              event.type === 'campaign-start' ? 'bg-emerald-500/5 border-emerald-500/15' :
-              event.type === 'campaign-end' ? 'bg-orange-500/5 border-orange-500/15' :
-              'bg-red-500/5 border-red-500/15'
-            ]"
+            class="flex flex-col gap-2 border-b border-line-subtle px-3 py-3"
           >
-            <!-- Event type badge -->
             <div class="flex items-center gap-1.5">
-              <div class="w-2 h-2 rounded-full" :class="event.color" />
-              <span class="text-[10px] font-medium uppercase tracking-wider"
-                :class="[
-                  event.type === 'scheduled-post' ? 'text-blue-400' :
-                  event.type === 'external-submission' ? 'text-violet-400' :
-                  event.type === 'campaign-start' ? 'text-emerald-400' :
-                  event.type === 'campaign-end' ? 'text-orange-400' :
-                  'text-red-400'
-                ]"
-              >
-                {{ event.type === 'scheduled-post' ? 'Scheduled Post' : event.type === 'external-submission' ? 'Link Submission' : event.type === 'campaign-start' ? 'Campaign Start' : 'Campaign Deadline' }}
+              <span class="size-1.5 shrink-0 rounded-full" :class="getEventDotClass(event)" />
+              <span class="eyebrow min-w-0 flex-1 truncate">{{ getEventTypeLabel(event) }}</span>
+              <span class="tabular flex shrink-0 items-center gap-1 text-2xs text-fg-subtle">
+                <Clock class="size-3" />
+                {{ formatEventTime(event.date) }}
               </span>
             </div>
 
-            <!-- Title -->
-            <p class="text-xs text-zinc-200 font-medium">{{ event.title }}</p>
+            <p class="text-sm font-medium text-fg">{{ event.title }}</p>
 
-            <!-- Time -->
-            <div class="flex items-center gap-1 text-[10px] text-zinc-500">
-              <Clock class="size-3" />
-              {{ formatEventTime(event.date) }}
-            </div>
-
-            <!-- Post-specific details -->
+            <!-- Scheduled post -->
             <template v-if="event.type === 'scheduled-post'">
-              <!-- Thumbnail -->
               <div
                 v-if="thumbnailUrls.get((event.data as ScheduledPost).id) || (event.data as ScheduledPost).thumbnail_url"
-                class="relative w-full aspect-video rounded-md overflow-hidden bg-zinc-900/50 border border-white/5"
+                class="aspect-video w-full overflow-hidden rounded-md bg-surface-sunken"
               >
                 <img
                   :src="thumbnailUrls.get((event.data as ScheduledPost).id) || (event.data as ScheduledPost).thumbnail_url!"
                   :alt="(event.data as ScheduledPost).caption ?? 'Post thumbnail'"
-                  class="w-full h-full object-cover"
+                  class="size-full object-cover"
                 />
               </div>
-              
+
               <div class="flex items-center gap-2">
-                <component :is="getPlatformIcon((event.data as ScheduledPost).platform)" class="size-3 text-zinc-400" />
-                <span class="text-[10px] text-zinc-400 capitalize">{{ (event.data as ScheduledPost).platform }}</span>
-                <div class="flex-1" />
-                <component :is="getStatusIcon((event.data as ScheduledPost).status)" class="size-3" :class="[
-                  (event.data as ScheduledPost).status === 'published' ? 'text-emerald-400' :
-                  (event.data as ScheduledPost).status === 'failed' ? 'text-red-400' :
-                  'text-zinc-400'
-                ]" />
-                <span class="text-[10px] capitalize" :class="[
-                  (event.data as ScheduledPost).status === 'published' ? 'text-emerald-400' :
-                  (event.data as ScheduledPost).status === 'failed' ? 'text-red-400' :
-                  'text-zinc-400'
-                ]">{{ (event.data as ScheduledPost).status }}</span>
+                <PlatformLogo :platform="getEventPlatform(event)" size="xs" />
+                <span class="text-xs text-fg-muted">{{ getPlatformName((event.data as ScheduledPost).platform) }}</span>
+                <Badge :variant="getStatusBadgeVariant((event.data as ScheduledPost).status)" class="ml-auto capitalize">
+                  <component :is="getStatusIcon((event.data as ScheduledPost).status)" />
+                  {{ (event.data as ScheduledPost).status }}
+                </Badge>
               </div>
-              <!-- Creator / Org context -->
-              <p
-                v-if="getPostContextLabel(event.data as ScheduledPost)"
-                class="text-[10px] text-cyan-400/80 truncate"
-              >
+              <p v-if="getPostContextLabel(event.data as ScheduledPost)" class="truncate text-xs text-fg-subtle">
                 {{ getPostContextLabel(event.data as ScheduledPost) }}
               </p>
-              <p
-                v-if="(event.data as ScheduledPost).caption"
-                class="text-[10px] text-zinc-500 leading-relaxed line-clamp-3"
-              >
+              <p v-if="(event.data as ScheduledPost).caption" class="line-clamp-3 text-xs leading-relaxed text-fg-muted">
                 {{ (event.data as ScheduledPost).caption }}
               </p>
             </template>
 
-            <!-- External submission details -->
+            <!-- External submission -->
             <template v-if="event.type === 'external-submission'">
               <div class="flex items-center gap-2">
-                <component :is="getPlatformIcon((event.data as ExternalPostSubmission).platform)" class="size-3 text-zinc-400" />
-                <span class="text-[10px] text-zinc-400 capitalize">{{ (event.data as ExternalPostSubmission).platform }}</span>
-                <div class="flex-1" />
-                <span class="text-[10px] capitalize" :class="[
-                  (event.data as ExternalPostSubmission).status === 'approved' ? 'text-emerald-400' :
-                  (event.data as ExternalPostSubmission).status === 'rejected' ? 'text-red-400' :
-                  'text-violet-400'
-                ]">{{ (event.data as ExternalPostSubmission).status }}</span>
+                <PlatformLogo :platform="getEventPlatform(event)" size="xs" />
+                <span class="text-xs text-fg-muted">{{ getPlatformName((event.data as ExternalPostSubmission).platform) }}</span>
+                <Badge :variant="getStatusBadgeVariant((event.data as ExternalPostSubmission).status)" class="ml-auto capitalize">
+                  {{ (event.data as ExternalPostSubmission).status }}
+                </Badge>
               </div>
-              <!-- Creator profile -->
-              <p
-                v-if="(event.data as ExternalPostSubmission).creator_profile?.name"
-                class="text-[10px] text-cyan-400/80 truncate"
-              >
+              <p v-if="(event.data as ExternalPostSubmission).creator_profile?.name" class="truncate text-xs text-fg-subtle">
                 {{ (event.data as ExternalPostSubmission).creator_profile?.name }}
               </p>
-              <!-- Submitted by -->
-              <p
-                v-if="(event.data as ExternalPostSubmission).submitted_by"
-                class="text-[10px] text-zinc-500"
-              >
+              <p v-if="(event.data as ExternalPostSubmission).submitted_by" class="text-xs text-fg-subtle">
                 Submitted by {{ (event.data as ExternalPostSubmission).submitted_by?.name || (event.data as ExternalPostSubmission).submitted_by?.email }}
               </p>
-              <!-- Author username -->
-              <p
-                v-if="(event.data as ExternalPostSubmission).author_username"
-                class="text-[10px] text-zinc-500"
-              >
+              <p v-if="(event.data as ExternalPostSubmission).author_username" class="text-xs text-fg-subtle">
                 @{{ (event.data as ExternalPostSubmission).author_username }}
               </p>
-              <!-- Post URL -->
               <a
                 v-if="(event.data as ExternalPostSubmission).post_url"
                 :href="(event.data as ExternalPostSubmission).post_url"
                 target="_blank"
-                class="flex items-center gap-1 text-[10px] text-blue-400 hover:text-blue-300 transition-colors"
+                :class="buttonVariants({ variant: 'link', size: 'xs' })"
+                class="self-start"
               >
-                <Link2 class="size-3" />
+                <Link2 />
                 View post
               </a>
-              <!-- Caption -->
-              <p
-                v-if="(event.data as ExternalPostSubmission).caption"
-                class="text-[10px] text-zinc-500 leading-relaxed line-clamp-3"
-              >
+              <p v-if="(event.data as ExternalPostSubmission).caption" class="line-clamp-3 text-xs leading-relaxed text-fg-muted">
                 {{ (event.data as ExternalPostSubmission).caption }}
               </p>
             </template>
 
-            <!-- Campaign-specific details -->
+            <!-- Campaign -->
             <template v-if="event.type === 'campaign-start' || event.type === 'campaign-end'">
               <div class="flex items-center gap-2">
-                <Megaphone class="size-3 text-zinc-400" />
-                <span class="text-[10px] capitalize" :class="[
-                  (event.data as Campaign).status === 'active' ? 'text-emerald-400' :
-                  (event.data as Campaign).status === 'completed' ? 'text-blue-400' :
-                  'text-zinc-400'
-                ]">{{ (event.data as Campaign).status }}</span>
+                <Megaphone class="size-3.5 text-fg-subtle" />
+                <Badge :variant="getStatusBadgeVariant((event.data as Campaign).status)" class="capitalize">
+                  {{ (event.data as Campaign).status }}
+                </Badge>
               </div>
-              <p
-                v-if="(event.data as Campaign).description"
-                class="text-[10px] text-zinc-500 leading-relaxed line-clamp-3"
-              >
+              <p v-if="(event.data as Campaign).description" class="line-clamp-3 text-xs leading-relaxed text-fg-muted">
                 {{ (event.data as Campaign).description }}
               </p>
-              <!-- Campaign dates -->
-              <div class="flex flex-col gap-1 text-[10px] text-zinc-500">
-                <div v-if="(event.data as Campaign).starts_at" class="flex items-center gap-1">
-                  <span class="text-emerald-400">Starts:</span>
-                  {{ new Date((event.data as Campaign).starts_at!).toLocaleDateString() }}
-                </div>
-                <div v-if="(event.data as Campaign).ends_at" class="flex items-center gap-1">
-                  <span class="text-red-400">Ends:</span>
-                  {{ new Date((event.data as Campaign).ends_at!).toLocaleDateString() }}
-                </div>
-              </div>
+              <dl class="grid grid-cols-[auto_1fr] gap-x-3 gap-y-0.5 text-xs">
+                <template v-if="(event.data as Campaign).starts_at">
+                  <dt class="text-fg-subtle">Starts</dt>
+                  <dd class="tabular text-fg-muted">{{ new Date((event.data as Campaign).starts_at!).toLocaleDateString() }}</dd>
+                </template>
+                <template v-if="(event.data as Campaign).ends_at">
+                  <dt class="text-fg-subtle">Ends</dt>
+                  <dd class="tabular text-fg-muted">{{ new Date((event.data as Campaign).ends_at!).toLocaleDateString() }}</dd>
+                </template>
+              </dl>
             </template>
 
-            <!-- Cancel/Delete buttons for scheduled posts -->
-            <div v-if="event.type === 'scheduled-post' && (event.data as ScheduledPost).status !== 'published'" class="mt-2 flex gap-2">
-              <!-- Cancel button (keeps record with canceled status) -->
-              <button
+            <!-- Cancel / delete scheduled posts -->
+            <div
+              v-if="event.type === 'scheduled-post' && (event.data as ScheduledPost).status !== 'published'"
+              class="mt-1 flex gap-2"
+            >
+              <Button
                 v-if="(event.data as ScheduledPost).status !== 'canceled'"
-                @click="handleCancelScheduledPost((event.data as ScheduledPost).id)"
-                :disabled="cancelingPostId === (event.data as ScheduledPost).id || deletingPostId === (event.data as ScheduledPost).id"
-                class="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[10px] font-medium text-yellow-400 bg-yellow-500/10 hover:bg-yellow-500/20 rounded border border-yellow-500/20 hover:border-yellow-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                variant="secondary"
+                size="xs"
+                class="flex-1"
+                :loading="cancelingPostId === (event.data as ScheduledPost).id"
+                :disabled="deletingPostId === (event.data as ScheduledPost).id"
+                @click="requestCancelScheduledPost((event.data as ScheduledPost).id)"
               >
-                <XCircle class="size-3" />
-                {{ cancelingPostId === (event.data as ScheduledPost).id ? 'Canceling...' : 'Cancel' }}
-              </button>
-              
-              <!-- Delete button (permanent removal) -->
-              <button
-                @click="handleDeleteScheduledPost((event.data as ScheduledPost).id)"
-                :disabled="deletingPostId === (event.data as ScheduledPost).id || cancelingPostId === (event.data as ScheduledPost).id"
-                class="flex-1 flex items-center justify-center gap-1.5 px-2 py-1.5 text-[10px] font-medium text-red-400 bg-red-500/10 hover:bg-red-500/20 rounded border border-red-500/20 hover:border-red-500/30 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                <XCircle v-if="cancelingPostId !== (event.data as ScheduledPost).id" />
+                {{ cancelingPostId === (event.data as ScheduledPost).id ? 'Canceling…' : 'Cancel' }}
+              </Button>
+              <Button
+                variant="destructive-soft"
+                size="xs"
+                class="flex-1"
+                :loading="deletingPostId === (event.data as ScheduledPost).id"
+                :disabled="cancelingPostId === (event.data as ScheduledPost).id"
+                @click="requestDeleteScheduledPost((event.data as ScheduledPost).id)"
               >
-                <Trash2 class="size-3" />
-                {{ deletingPostId === (event.data as ScheduledPost).id ? 'Deleting...' : 'Delete' }}
-              </button>
+                <Trash2 v-if="deletingPostId !== (event.data as ScheduledPost).id" />
+                {{ deletingPostId === (event.data as ScheduledPost).id ? 'Deleting…' : 'Delete' }}
+              </Button>
             </div>
-          </div>
+          </article>
 
-          <div v-if="selectedDayEvents.length === 0" class="text-center py-6">
-            <CalendarDays class="size-6 text-zinc-600 mx-auto mb-2" />
-            <p class="text-xs text-zinc-500">No events on this day</p>
-          </div>
+          <EmptyState v-if="selectedDayEvents.length === 0" size="sm" :icon="CalendarDays" title="No events on this day" />
         </div>
-      </div>
+      </aside>
     </div>
 
     <!-- Schedule Clip Dialog -->
@@ -1224,31 +1207,43 @@ onMounted(() => {
       @close="closeScheduleDialog"
       @scheduled="handleScheduled"
     />
+
+    <!-- Cancel / delete confirmation -->
+    <ConfirmationModal
+      :show="!!pendingPostAction"
+      :title="pendingPostAction?.type === 'delete' ? 'Delete scheduled post' : 'Cancel scheduled post'"
+      :message="
+        pendingPostAction?.type === 'delete'
+          ? 'Permanently delete this scheduled post'
+          : 'Cancel this scheduled post? It will remain in your history with &quot;canceled&quot; status'
+      "
+      :suffix="pendingPostAction?.type === 'delete' ? '?' : '.'"
+      :confirm-text="pendingPostAction?.type === 'delete' ? 'Delete post' : 'Cancel post'"
+      close-text="Keep post"
+      :show-cannot-undone-text="pendingPostAction?.type === 'delete'"
+      :variant="pendingPostAction?.type === 'delete' ? 'destructive' : 'default'"
+      :icon="XCircle"
+      @close="pendingPostAction = null"
+      @confirm="confirmPendingPostAction"
+    />
   </PageLayout>
 </template>
 
 <style scoped>
-/* Sidebar transition */
-.sidebar-enter-active,
-.sidebar-leave-active {
-  transition: opacity 0.3s ease;
+/* Platform identity colors for event dots (brand colors, not UI chrome). */
+.calendar-dot--instagram {
+  background: #e1306c;
 }
-
-.sidebar-enter-from,
-.sidebar-leave-to {
-  opacity: 0;
+.calendar-dot--twitter {
+  background: #e7e9ea;
 }
-
-.sidebar-enter-active .w-80,
-.sidebar-leave-active .w-80 {
-  transition: transform 0.3s ease;
+.calendar-dot--tiktok {
+  background: #25f4ee;
 }
-
-.sidebar-enter-from .w-80 {
-  transform: translateX(-100%);
+.calendar-dot--youtube {
+  background: #ff3b30;
 }
-
-.sidebar-leave-to .w-80 {
-  transform: translateX(-100%);
+.calendar-dot--tokend {
+  background: #a3a3a3;
 }
 </style>

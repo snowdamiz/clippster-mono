@@ -1,192 +1,129 @@
 <template>
-  <Dialog v-model:open="isOpen">
-    <DialogContent class="flex h-[600px] max-w-2xl flex-col gap-0 border-white/10 bg-[#1e1e22] p-0">
-      <DialogHeader class="shrink-0 px-4 pb-0 pt-4">
-        <DialogTitle class="text-sm font-medium text-zinc-200">Attach Video Context</DialogTitle>
-        <DialogDescription class="text-xs text-zinc-500">
-          Choose a source — we extract keyframes and a transcript for thumbnail generation.
-        </DialogDescription>
-      </DialogHeader>
+  <Modal
+    v-model:open="isOpen"
+    title="Attach video context"
+    description="Choose a source — we extract keyframes and a transcript for thumbnail generation."
+    :icon="Film"
+    size="lg"
+    flush
+    class="h-[min(600px,calc(100vh-3rem))]"
+    body-class="flex min-h-0 flex-col"
+  >
+    <div class="flex shrink-0 items-center gap-2 border-b border-line-subtle px-5 pb-3 pt-2">
+      <SegmentedControl v-model="activeTab" :options="tabOptions" class="max-w-full overflow-x-auto" />
+    </div>
 
-      <!-- Tab bar — matches editor Import Media -->
-      <div class="mt-3 flex shrink-0 items-center overflow-x-auto border-b border-white/10 px-4">
-        <button
-          v-for="tab in tabs"
-          :key="tab.key"
-          type="button"
-          class="flex items-center gap-1 whitespace-nowrap border-b-2 px-2 py-2 text-[11px] font-medium transition-colors"
-          :class="
-            activeTab === tab.key
-              ? 'border-blue-500 text-blue-400'
-              : 'border-transparent text-zinc-500 hover:text-zinc-300'
-          "
-          @click="activeTab = tab.key"
-        >
-          <component :is="tab.icon" class="size-3.5" />
-          {{ tab.label }}
-        </button>
+    <!-- Keyed by tab / preparing state so each switch eases in -->
+    <div :key="prepareProgress ? 'preparing' : activeTab" class="flex min-h-0 flex-1 animate-enter flex-col overflow-hidden">
+      <!-- Preparing -->
+      <div v-if="prepareProgress" class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center" role="status">
+        <Loader2 class="size-6 animate-spin text-brand" />
+        <p class="text-sm text-fg">{{ prepareProgress.message }}</p>
+        <div class="h-1.5 w-48 overflow-hidden rounded-full bg-surface-active">
+          <div class="h-full rounded-full bg-brand transition-[width]" :style="{ width: `${prepareProgress.progress}%` }" />
+        </div>
       </div>
 
-      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-        <!-- Preparing -->
-        <div
-          v-if="prepareProgress"
-          class="flex flex-1 flex-col items-center justify-center gap-3 px-6 text-center"
-        >
-          <Loader2 class="size-8 animate-spin text-blue-400" />
-          <p class="text-sm text-zinc-200">{{ prepareProgress.message }}</p>
-          <div class="h-1.5 w-48 overflow-hidden rounded-full bg-zinc-800">
-            <div
-              class="h-full bg-blue-500 transition-all"
-              :style="{ width: `${prepareProgress.progress}%` }"
-            />
-          </div>
-        </div>
+      <!-- Upload -->
+      <div v-else-if="activeTab === 'upload'" class="flex flex-1 flex-col items-center justify-center gap-3 px-6">
+        <Dropzone
+          :icon="Upload"
+          tone="brand"
+          title="Upload video"
+          hint="MP4, MOV, MKV, WebM — transcribed with Whisper"
+          class="max-w-md"
+          @select="pickUploadFile"
+        />
+      </div>
 
-        <!-- Upload -->
-        <div
-          v-else-if="activeTab === 'upload'"
-          class="flex flex-1 flex-col items-center justify-center gap-3 px-6"
-        >
-          <button
-            type="button"
-            class="flex w-full max-w-md flex-col items-center justify-center gap-3 rounded-lg border border-dashed border-white/15 px-6 py-12 text-center transition-colors hover:border-blue-500/40 hover:bg-white/[0.03]"
-            @click="pickUploadFile"
+      <!-- YouTube -->
+      <div v-else-if="activeTab === 'youtube'" class="flex flex-1 flex-col items-center justify-center gap-4 px-6">
+        <div class="flex w-full max-w-md flex-col gap-3">
+          <Field
+            label="YouTube video URL"
+            hint="Captions when available, otherwise Whisper. Frames are sampled from the video."
           >
-            <div class="flex size-12 items-center justify-center rounded-xl bg-blue-500/15 text-blue-400">
-              <Upload class="size-6" />
-            </div>
-            <div>
-              <p class="text-sm font-medium text-zinc-100">Upload Video</p>
-              <p class="mt-1 text-xs text-zinc-500">MP4, MOV, MKV, WebM — transcribed with Whisper</p>
-            </div>
-          </button>
-        </div>
-
-        <!-- YouTube -->
-        <div
-          v-else-if="activeTab === 'youtube'"
-          class="flex flex-1 flex-col items-center justify-center gap-4 px-6"
-        >
-          <div class="w-full max-w-md space-y-3">
-            <label class="block text-xs font-medium text-zinc-400">YouTube video URL</label>
-            <input
+            <Input
               v-model="youtubeUrl"
               type="url"
               placeholder="https://www.youtube.com/watch?v=…"
-              class="w-full rounded-lg border border-white/10 bg-zinc-900 px-3 py-2.5 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-blue-500"
               @keydown.enter.prevent="attachYouTube"
             />
-            <p class="text-xs text-zinc-500">
-              Captions when available, otherwise Whisper. Frames are sampled from the video.
-            </p>
-            <button
-              type="button"
-              class="flex w-full items-center justify-center gap-2 rounded-lg bg-blue-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-blue-500 disabled:opacity-50"
-              :disabled="!youtubeUrl.trim()"
-              @click="attachYouTube"
-            >
-              <Link2 class="size-4" />
-              Attach YouTube video
-            </button>
-          </div>
+          </Field>
+          <Button variant="primary" block :disabled="!youtubeUrl.trim()" @click="attachYouTube">
+            <Link2 /> Attach YouTube video
+          </Button>
         </div>
-
-        <!-- Library / Clips -->
-        <template v-else>
-          <div class="shrink-0 border-b border-white/10 px-4 py-2">
-            <div class="relative">
-              <Search class="pointer-events-none absolute left-2.5 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
-              <input
-                v-model="searchQuery"
-                type="text"
-                placeholder="Search…"
-                class="w-full rounded-md border border-white/10 bg-zinc-900 py-1.5 pl-8 pr-3 text-xs text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-blue-500"
-              />
-            </div>
-          </div>
-
-          <div class="custom-scrollbar flex-1 overflow-y-auto p-4">
-            <div v-if="isLoadingSources" class="flex flex-col items-center justify-center gap-2 py-16 text-zinc-500">
-              <Loader2 class="size-7 animate-spin text-blue-400" />
-              <p class="text-sm">Loading sources…</p>
-            </div>
-
-            <div v-else-if="pickerError" class="rounded-lg bg-red-500/10 px-4 py-3 text-sm text-red-400">
-              {{ pickerError }}
-            </div>
-
-            <div
-              v-else-if="displayItems.length === 0"
-              class="flex flex-col items-center justify-center gap-2 py-16 text-center text-zinc-500"
-            >
-              <Film class="size-9 text-zinc-700" />
-              <p class="text-sm">
-                No {{ activeTab === 'projects' ? 'projects' : 'built clips' }} found
-              </p>
-            </div>
-
-            <div v-else class="grid grid-cols-2 gap-3 sm:grid-cols-3">
-              <button
-                v-for="item in displayItems"
-                :key="item.key"
-                type="button"
-                class="group overflow-hidden rounded-lg border text-left transition-all"
-                :class="
-                  selectedKey === item.key
-                    ? 'border-blue-500 ring-2 ring-blue-500/30'
-                    : 'border-white/10 hover:border-white/25'
-                "
-                @click="selectLibraryItem(item)"
-              >
-                <div class="relative aspect-video bg-zinc-800">
-                  <img
-                    v-if="item.thumbnailUrl"
-                    :src="item.thumbnailUrl"
-                    :alt="item.name"
-                    class="h-full w-full object-cover"
-                  />
-                  <div v-else class="flex h-full items-center justify-center">
-                    <Film class="size-7 text-zinc-600" />
-                  </div>
-                </div>
-                <div class="p-2.5">
-                  <p class="truncate text-xs font-medium text-zinc-100">{{ item.name }}</p>
-                  <p v-if="item.durationLabel" class="mt-0.5 text-[10px] text-zinc-500">
-                    {{ item.durationLabel }}
-                  </p>
-                </div>
-              </button>
-            </div>
-          </div>
-        </template>
       </div>
 
-      <DialogFooter class="shrink-0 border-t border-white/10 px-4 py-3 sm:justify-between">
-        <p class="text-xs text-zinc-500">
-          {{ prepareProgress ? prepareProgress.message : 'Select a source to attach context' }}
-        </p>
-        <Button variant="outline" size="sm" :disabled="!!prepareProgress" @click="close">
-          Cancel
-        </Button>
-      </DialogFooter>
-    </DialogContent>
-  </Dialog>
+      <!-- Library / Clips -->
+      <template v-else>
+        <div class="shrink-0 px-5 pt-3">
+          <SearchField v-model="searchQuery" size="sm" placeholder="Search…" />
+        </div>
+
+        <div class="flex-1 overflow-y-auto px-5 py-3">
+          <!-- Skeleton only on the first load; reopening keeps the last list while it refreshes -->
+          <div
+            v-if="isLoadingSources && displayItems.length === 0"
+            class="skeleton-group grid grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3"
+          >
+            <div v-for="i in 6" :key="i" class="overflow-hidden rounded-xl border border-line-subtle bg-surface">
+              <div class="skeleton aspect-video rounded-none" />
+              <div class="px-3 py-2.5"><div class="skeleton h-3.5 w-2/3 rounded" /></div>
+            </div>
+          </div>
+
+          <Alert v-else-if="pickerError" variant="destructive">
+            <AlertDescription>{{ pickerError }}</AlertDescription>
+          </Alert>
+
+          <EmptyState
+            v-else-if="displayItems.length === 0"
+            size="sm"
+            :icon="Film"
+            :title="`No ${activeTab === 'projects' ? 'projects' : 'built clips'} found`"
+          />
+
+          <div v-else class="grid animate-fade-in grid-cols-[repeat(auto-fill,minmax(160px,1fr))] gap-3">
+            <MediaTile
+              v-for="item in displayItems"
+              :key="item.key"
+              :title="item.name"
+              :thumbnail="item.thumbnailUrl"
+              :icon="Film"
+              :meta="[item.durationLabel]"
+              :selected="selectedKey === item.key"
+              @open="selectLibraryItem(item)"
+            />
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <template #footer>
+      <p class="mr-auto min-w-0 truncate text-xs text-fg-muted">
+        {{ prepareProgress ? prepareProgress.message : 'Select a source to attach context' }}
+      </p>
+      <Button variant="ghost" :disabled="!!prepareProgress" @click="close">Cancel</Button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { Clapperboard, Film, FolderOpen, Link2, Loader2, Search, Upload } from 'lucide-vue-next';
+import { Clapperboard, Film, FolderOpen, Link2, Loader2, Upload } from 'lucide-vue-next';
 import { open } from '@tauri-apps/plugin-dialog';
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
+import { MediaTile } from '@/components/ui/media-tile';
+import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Button } from '@/components/ui/button';
+import { Dropzone } from '@/components/ui/dropzone';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Modal } from '@/components/ui/modal';
+import { SearchField } from '@/components/ui/search-field';
+import { SegmentedControl } from '@/components/ui/segmented-control';
 import {
   useThumbnailVideoContext,
   type ThumbnailVideoAttachPayload,
@@ -228,11 +165,12 @@ const youtubeUrl = ref('');
 const prepareProgress = ref<ThumbnailPrepareProgress | null>(null);
 
 const tabs = [
-  { key: 'upload' as const, label: 'Upload Video', icon: Upload },
-  { key: 'clips' as const, label: 'Built Clips', icon: Clapperboard },
+  { key: 'upload' as const, label: 'Upload', icon: Upload },
+  { key: 'clips' as const, label: 'Built clips', icon: Clapperboard },
   { key: 'projects' as const, label: 'Projects', icon: FolderOpen },
   { key: 'youtube' as const, label: 'YouTube', icon: Link2 },
 ];
+const tabOptions = tabs.map((tab) => ({ value: tab.key, label: tab.label, icon: tab.icon }));
 
 interface PickerItem {
   key: string;
