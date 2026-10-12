@@ -1,138 +1,131 @@
+/*
+ * Clippster design tokens — the single source of truth for color, type,
+ * radius, elevation and control sizing. The app is dark-only.
+ *
+ * Use these semantic tokens (or the Tailwind utilities generated from them in
+ * style.css: bg-canvas, bg-panel, bg-surface, text-fg-muted, border-line,
+ * bg-brand, text-danger, ...) instead of raw hex values.
+ * See ./DESIGN_SYSTEM.md for usage guidance.
+ */
 :root {
-  --radius: 0.625rem;
-  --background: oklch(1 0 0);
-  --foreground: oklch(0.145 0 0);
-  --card: oklch(1 0 0);
-  --card-foreground: oklch(0.145 0 0);
-  --popover: oklch(1 0 0);
-  --popover-foreground: oklch(0.145 0 0);
-  --primary: oklch(0.205 0 0);
-  --primary-foreground: oklch(0.985 0 0);
-  --secondary: oklch(0.97 0 0);
-  --secondary-foreground: oklch(0.205 0 0);
-  --muted: oklch(0.97 0 0);
-  --muted-foreground: oklch(0.556 0 0);
-  --accent: oklch(0.97 0 0);
-  --accent-foreground: oklch(0.205 0 0);
-  --destructive: oklch(0.577 0.245 27.325);
-  --destructive-foreground: oklch(0.577 0.245 27.325);
-  --border: oklch(0.922 0 0);
-  --input: oklch(0.922 0 0);
-  --ring: oklch(0.708 0 0);
-  --chart-1: oklch(0.646 0.222 41.116);
-  --chart-2: oklch(0.6 0.118 184.704);
-  --chart-3: oklch(0.398 0.07 227.392);
-  --chart-4: oklch(0.828 0.189 84.429);
-  --chart-5: oklch(0.769 0.188 70.08);
-  --sidebar: oklch(0.985 0 0);
-  --sidebar-foreground: oklch(0.145 0 0);
-  --sidebar-primary: oklch(0.205 0 0);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.97 0 0);
-  --sidebar-accent-foreground: oklch(0.205 0 0);
-  --sidebar-border: oklch(0.922 0 0);
-  --sidebar-ring: oklch(0.708 0 0);
+  color-scheme: dark;
 
-  /* Custom sidebar component variables (light mode - fallback) */
-  --sidebar-bg: #fafafa;
-  --sidebar-surface: #f4f4f5;
-  --sidebar-border: #e4e4e7;
-  --sidebar-text: #18181b;
-  --sidebar-text-muted: #71717a;
-  --sidebar-hover: rgba(0, 0, 0, 0.05);
-  --sidebar-active: rgba(14, 165, 233, 0.1);
-  --sidebar-active-hover: rgba(14, 165, 233, 0.15);
-  --sidebar-accent: #0284c7;
+  /* ── Surfaces (back → front) ─────────────────────────────────────── */
+  --canvas: #0a0c10; /* window chrome: title bar + sidebar */
+  --panel: #0e1015; /* main content panel */
+  --surface: #13161c; /* cards, list rows, sections */
+  --surface-raised: #191c23; /* inputs, popovers, menus, modals */
+  --surface-sunken: #0b0d11; /* wells inside cards (code, previews) */
+  --surface-hover: rgba(255, 255, 255, 0.045); /* translucent hover wash */
+  --surface-active: rgba(255, 255, 255, 0.075); /* pressed / selected wash */
+  --overlay: rgba(4, 5, 8, 0.72); /* modal backdrop */
 
-  /* Page layout component variables (light mode) */
-  --page-header-bg: #f4f4f5;
-  --page-header-border: #e4e4e7;
-  --page-header-accent: #0284c7;
-  --page-text: #18181b;
-  --page-text-muted: #71717a;
-  --page-icon-bg: rgba(2, 132, 199, 0.1);
-  --page-icon-border: rgba(2, 132, 199, 0.2);
-}
+  /* ── Lines ────────────────────────────────────────────────────────── */
+  --line-subtle: rgba(255, 255, 255, 0.055);
+  --line: rgba(255, 255, 255, 0.085);
+  --line-strong: rgba(255, 255, 255, 0.14);
 
-.dark {
-  --background: oklch(0.145 0 0);
-  --foreground: oklch(0.985 0 0);
-  --card: oklch(0.145 0 0);
-  --card-foreground: oklch(0.985 0 0);
-  --popover: oklch(0.145 0 0);
-  --popover-foreground: oklch(0.985 0 0);
-  --primary: oklch(0.985 0 0);
-  --primary-foreground: oklch(0.205 0 0);
-  --secondary: oklch(0.269 0 0);
-  --secondary-foreground: oklch(0.985 0 0);
-  --muted: oklch(0.269 0 0);
-  --muted-foreground: oklch(0.708 0 0);
-  --accent: oklch(0.269 0 0);
-  --accent-foreground: oklch(0.985 0 0);
-  --destructive: oklch(0.396 0.141 25.723);
-  --destructive-foreground: oklch(0.637 0.237 25.331);
-  --border: oklch(0.269 0 0);
-  --input: oklch(0.269 0 0);
-  --ring: oklch(0.439 0 0);
-  --chart-1: oklch(0.488 0.243 264.376);
-  --chart-2: oklch(0.696 0.17 162.48);
-  --chart-3: oklch(0.769 0.188 70.08);
-  --chart-4: oklch(0.627 0.265 303.9);
-  --chart-5: oklch(0.645 0.246 16.439);
-  --sidebar: oklch(0.205 0 0);
-  --sidebar-foreground: oklch(0.985 0 0);
-  --sidebar-primary: oklch(0.488 0.243 264.376);
-  --sidebar-primary-foreground: oklch(0.985 0 0);
-  --sidebar-accent: oklch(0.269 0 0);
-  --sidebar-accent-foreground: oklch(0.985 0 0);
-  --sidebar-border: oklch(0.269 0 0);
-  --sidebar-ring: oklch(0.439 0 0);
+  /* ── Text ─────────────────────────────────────────────────────────── */
+  --fg: #eef0f4;
+  --fg-muted: #959dab;
+  --fg-subtle: #697181;
+  --fg-disabled: #4a505c;
+  --fg-on-light: #0b0d11; /* text on light (primary) buttons */
 
-  /* Custom sidebar component variables (dark mode) */
-  --sidebar-bg: #0a0a0b;
-  --sidebar-surface: #141416;
-  --sidebar-border: #1f1f23;
-  --sidebar-text: #fafafa;
-  --sidebar-text-muted: #71717a;
-  --sidebar-hover: rgba(255, 255, 255, 0.05);
-  --sidebar-active: rgba(14, 165, 233, 0.1);
-  --sidebar-active-hover: rgba(14, 165, 233, 0.15);
-  --sidebar-accent: #0ea5e9;
+  /* ── Brand accent (focus, selection, active nav, links, progress) ── */
+  --brand: #38bdf8;
+  --brand-hover: #7dd3fc;
+  --brand-pressed: #0ea5e9;
+  --brand-fg: #04131c; /* text on brand fills */
+  --brand-soft: rgba(56, 189, 248, 0.12);
+  --brand-soft-hover: rgba(56, 189, 248, 0.18);
+  --brand-line: rgba(56, 189, 248, 0.34);
 
-  /* Page layout component variables (dark mode) */
-  --page-header-bg: #141416;
-  --page-header-border: #1f1f23;
-  --page-header-accent: #0ea5e9;
-  --page-text: #fafafa;
-  --page-text-muted: #71717a;
-  --page-icon-bg: rgba(14, 165, 233, 0.1);
-  --page-icon-border: rgba(14, 165, 233, 0.2);
+  /* ── Primary action (light button, mirrors the mobile app) ───────── */
+  --primary-bg: #eef0f4;
+  --primary-bg-hover: #ffffff;
 
-  /* Video Editor theme variables */
-  --editor-bg: #0a0a0b;
-  --editor-surface: #111113;
-  --editor-surface-elevated: #18181b;
-  --editor-border: rgba(255, 255, 255, 0.08);
-  --editor-accent: #0ea5e9;
-  --editor-accent-hover: #38bdf8;
-  --editor-text: #fafafa;
-  --editor-text-muted: #71717a;
+  /* ── Status ───────────────────────────────────────────────────────── */
+  --success: #34d399;
+  --success-soft: rgba(52, 211, 153, 0.12);
+  --success-line: rgba(52, 211, 153, 0.3);
+  --warning: #fbbf24;
+  --warning-soft: rgba(251, 191, 36, 0.12);
+  --warning-line: rgba(251, 191, 36, 0.3);
+  --danger: #f87171;
+  --danger-solid: #ef4444;
+  --danger-soft: rgba(248, 113, 113, 0.12);
+  --danger-line: rgba(248, 113, 113, 0.3);
+  --ai: #a78bfa; /* reserved for AI-powered features */
+  --ai-soft: rgba(167, 139, 250, 0.12);
+  --ai-line: rgba(167, 139, 250, 0.3);
+  --live: #ef4444;
 
-  /* Track type colors (harmonious cyan/blue palette) */
-  --track-video: #0ea5e9; /* sky-500 */
-  --track-audio: #06b6d4; /* cyan-500 */
-  --track-text: #38bdf8; /* sky-400 */
-  --track-sticker: #22d3ee; /* cyan-400 */
-  --track-watermark: #3b82f6; /* blue-500 */
-  --track-intro: #6366f1; /* indigo-500 */
+  /* ── Focus ────────────────────────────────────────────────────────── */
+  --focus-ring: 0 0 0 2px var(--panel), 0 0 0 4px rgba(56, 189, 248, 0.55);
 
-  /* Interactive state colors */
-  --editor-hover: rgba(255, 255, 255, 0.08);
-  --editor-active: rgba(14, 165, 233, 0.15);
-  --editor-focus-ring: rgba(14, 165, 233, 0.4);
+  /* ── Elevation ────────────────────────────────────────────────────── */
+  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.35);
+  --shadow-md: 0 8px 24px -6px rgba(0, 0, 0, 0.55), 0 0 0 1px var(--line);
+  --shadow-lg: 0 24px 64px -12px rgba(0, 0, 0, 0.7), 0 0 0 1px var(--line);
 
-  /* Semantic colors */
-  --editor-success: #22c55e;
-  --editor-warning: #f59e0b;
-  --editor-error: #ef4444;
+  /* ── Radius ───────────────────────────────────────────────────────── */
+  --radius: 0.5rem;
+  --radius-control: 0.5rem; /* buttons, inputs, selects */
+  --radius-card: 0.75rem; /* cards, panels */
+  --radius-modal: 1rem;
+
+  /* ── Control sizing (desktop density) ─────────────────────────────── */
+  --control-xs: 1.5rem; /* 24px */
+  --control-sm: 1.75rem; /* 28px */
+  --control-md: 2rem; /* 32px */
+  --control-lg: 2.25rem; /* 36px */
+
+  /* ── Layout ───────────────────────────────────────────────────────── */
+  --titlebar-height: 2.25rem;
+  --page-header-height: 3.25rem;
+  --sidebar-width: 14.5rem;
+  --sidebar-width-collapsed: 3.25rem;
+  --panel-inset: 0.5rem;
+  --card-grid-min: 13.75rem; /* 220px: collection tiles stay ~230–290px wide at any window size */
+
+  /* ── Motion ───────────────────────────────────────────────────────── */
+  --duration-fast: 120ms; /* hovers, small state changes */
+  --duration-base: 180ms; /* content entering: pages, tab panels, loaded data */
+  --ease-out: cubic-bezier(0.2, 0.8, 0.2, 1);
+  --skeleton-delay: 150ms; /* fast loads finish before a skeleton ever shows */
+
+  /* ── Media ────────────────────────────────────────────────────────── */
+  --track-video: #38bdf8;
+  --track-audio: #2dd4bf;
+  --track-text: #a78bfa;
+  --track-sticker: #f472b6;
+  --track-watermark: #fbbf24;
+  --track-intro: #818cf8;
+
+  /* ── shadcn / reka-ui component contract ──────────────────────────── */
+  --background: var(--panel);
+  --foreground: var(--fg);
+  --card: var(--surface);
+  --card-foreground: var(--fg);
+  --popover: var(--surface-raised);
+  --popover-foreground: var(--fg);
+  --primary: var(--primary-bg);
+  --primary-foreground: var(--fg-on-light);
+  --secondary: var(--surface-raised);
+  --secondary-foreground: var(--fg);
+  --muted: var(--surface-raised);
+  --muted-foreground: var(--fg-muted);
+  --accent: var(--surface-active);
+  --accent-foreground: var(--fg);
+  --destructive: var(--danger-solid);
+  --destructive-foreground: #ffffff;
+  --border: var(--line);
+  --input: var(--line-strong);
+  --ring: var(--brand);
+  --chart-1: #38bdf8;
+  --chart-2: #34d399;
+  --chart-3: #fbbf24;
+  --chart-4: #a78bfa;
+  --chart-5: #f87171;
 }

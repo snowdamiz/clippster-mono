@@ -32,6 +32,6 @@ const height = computed(() => Math.max(0, props.timelineHeight - 8));
 			width: '2px',
 		}"
 	>
-		<div class="bg-primary/40 h-full w-0.5 opacity-80" />
+		<div class="h-full w-px bg-brand" />
 	</div>
 </template>

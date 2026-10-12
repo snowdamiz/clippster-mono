@@ -13,14 +13,26 @@ import {
 	Palette,
 	Image as ImageIcon,
 	User,
-	Plus,
+	Stamp,
 	Loader2,
-	Search,
+	SearchX,
 } from "lucide-vue-next";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconTile } from "@/components/ui/icon-tile";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
+import PanelHeader from "../../chrome/PanelHeader.vue";
+import { AssetGrid, AssetListRow, AssetTile } from "../shared";
+import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor, version } = useEditor();
 
 const activeSubTab = ref<"profiles" | "watermarks" | "logos">("profiles");
+const subTabs: SegmentedOption<"profiles" | "watermarks" | "logos">[] = [
+	{ value: "profiles", label: "Profiles" },
+	{ value: "watermarks", label: "Watermarks" },
+	{ value: "logos", label: "Logos" },
+];
 const profiles = ref<CreatorProfileWithLinks[]>([]);
 const watermarks = ref<WatermarkImage[]>([]);
 const logos = ref<ImageAsset[]>([]);
@@ -126,157 +138,119 @@ function applyProfileColors(profile: CreatorProfileWithLinks) {
 
 <template>
 	<div class="flex h-full flex-col">
-		<!-- Sub-tabs -->
-		<div class="flex items-center border-b border-white/10">
-			<button
-				v-for="tab in ([
-					{ key: 'profiles', label: 'Profiles', icon: User },
-					{ key: 'watermarks', label: 'Watermarks', icon: ImageIcon },
-					{ key: 'logos', label: 'Logos', icon: Palette },
-				] as const)"
-				:key="tab.key"
-				type="button"
-				:class="[
-					'flex items-center gap-1 px-2 py-2 text-[11px] font-medium whitespace-nowrap transition-colors border-b-2',
-					activeSubTab === tab.key
-						? 'border-purple-500 text-purple-400'
-						: 'border-transparent text-zinc-500 hover:text-zinc-300',
-				]"
-				@click="activeSubTab = tab.key"
-			>
-				<component :is="tab.icon" class="size-3.5" />
-				{{ tab.label }}
-			</button>
-		</div>
+		<PanelHeader class="px-1.5">
+			<SegmentedControl v-model="activeSubTab" :options="subTabs" size="sm" block />
+		</PanelHeader>
 
 		<div v-if="isLoading" class="flex flex-1 items-center justify-center">
-			<Loader2 class="size-5 animate-spin text-zinc-500" />
+			<Loader2 class="size-5 animate-spin text-fg-subtle" />
 		</div>
 
 		<!-- Profiles tab -->
-		<div v-else-if="activeSubTab === 'profiles'" class="flex-1 overflow-y-auto p-2 space-y-1">
-			<div v-if="profiles.length === 0" class="flex items-center justify-center h-20 text-zinc-600 text-xs">
-				No creator profiles found
-			</div>
-			<div
-				v-for="profile in profiles"
-				:key="profile.id"
-				class="group flex items-center gap-2 rounded-md p-2 hover:bg-white/5 cursor-pointer border border-white/5"
-			>
-				<div class="size-8 shrink-0 overflow-hidden rounded-full bg-zinc-800 flex items-center justify-center">
-					<User class="size-4 text-zinc-600" />
-				</div>
-				<div class="min-w-0 flex-1">
-					<div class="truncate text-xs text-zinc-200 font-medium">{{ profile.name }}</div>
-					<div class="text-[10px] text-zinc-500">{{ profile.scope }}</div>
-				</div>
-				<div class="hidden group-hover:flex items-center gap-1">
-					<button
-						v-if="profile.watermark_id"
-						type="button"
-						class="rounded bg-purple-600/80 px-1.5 py-0.5 text-[10px] text-white hover:bg-purple-500"
-						title="Add watermark to canvas"
-						@click.stop="() => {
-							const wm = watermarks.find(w => w.id === profile.watermark_id);
-							if (wm?.file_path) addImageToCanvas(wm.file_path, wm.name + ' (watermark)');
-						}"
-					>
-						Watermark
-					</button>
-					<button
-						type="button"
-						class="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-zinc-300 hover:bg-white/20"
-						title="Apply profile colors"
-						@click.stop="applyProfileColors(profile)"
-					>
-						Colors
-					</button>
-				</div>
+		<div v-else-if="activeSubTab === 'profiles'" class="flex-1 overflow-y-auto p-3">
+			<EmptyState
+				v-if="profiles.length === 0"
+				size="sm"
+				:icon="User"
+				title="No creator profiles found"
+				description="Create a creator profile to reuse its watermark here."
+			/>
+			<div v-else class="-mx-1 space-y-px">
+				<AssetListRow v-for="profile in profiles" :key="profile.id" :title="profile.name">
+					<template #leading>
+						<IconTile :icon="User" size="md" />
+					</template>
+					<template #meta>
+						<span class="truncate capitalize">{{ profile.scope }}</span>
+					</template>
+					<template #trailing>
+						<Button
+							v-if="profile.watermark_id"
+							variant="ghost"
+							size="icon-xs"
+							title="Add watermark to canvas"
+							aria-label="Add watermark to canvas"
+							@click.stop="() => {
+								const wm = watermarks.find(w => w.id === profile.watermark_id);
+								if (wm?.file_path) addImageToCanvas(wm.file_path, wm.name + ' (watermark)');
+							}"
+						>
+							<Stamp />
+						</Button>
+						<Button
+							variant="ghost"
+							size="icon-xs"
+							title="Apply profile colors"
+							aria-label="Apply profile colors"
+							@click.stop="applyProfileColors(profile)"
+						>
+							<Palette />
+						</Button>
+					</template>
+				</AssetListRow>
 			</div>
 		</div>
 
 		<!-- Watermarks tab -->
 		<div v-else-if="activeSubTab === 'watermarks'" class="flex flex-1 flex-col overflow-hidden">
-			<div class="flex items-center gap-2 border-b border-white/10 px-3 py-2">
-				<Search class="size-3.5 text-zinc-500" />
-				<input
-					v-model="searchQuery"
-					type="text"
-					placeholder="Search watermarks..."
-					class="flex-1 bg-transparent text-xs text-zinc-200 outline-none placeholder:text-zinc-600"
+			<PanelSearchBar v-model="searchQuery" placeholder="Search watermarks…" />
+			<div class="flex-1 overflow-y-auto p-3">
+				<EmptyState
+					v-if="filteredWatermarks.length === 0"
+					size="sm"
+					:icon="searchQuery.trim() ? SearchX : ImageIcon"
+					title="No watermarks found"
+					:description="searchQuery.trim() ? 'Try a different search term.' : undefined"
 				/>
-			</div>
-			<div class="flex-1 overflow-y-auto p-2">
-				<div v-if="filteredWatermarks.length === 0" class="flex items-center justify-center h-20 text-zinc-600 text-xs">
-					No watermarks found
-				</div>
-				<div
-					v-else
-					class="grid gap-2"
-					style="grid-template-columns: repeat(auto-fill, minmax(80px, 1fr))"
-				>
-					<button
+				<AssetGrid v-else :min="80">
+					<AssetTile
 						v-for="wm in filteredWatermarks"
 						:key="wm.id"
-						type="button"
-						class="group relative overflow-hidden rounded-lg border border-white/10 hover:border-purple-500/50 transition-colors"
+						aspect="1"
+						:label="wm.name"
+						:title="`Add ${wm.name} to canvas`"
 						@click="addImageToCanvas(wm.file_path, wm.name)"
 					>
-						<div class="aspect-square bg-zinc-800/50 flex items-center justify-center p-2">
+						<div class="flex size-full items-center justify-center p-2">
 							<img
 								v-if="thumbnailCache.get(wm.id)"
 								:src="thumbnailCache.get(wm.id)"
 								:alt="wm.name"
 								class="max-h-full max-w-full object-contain"
+								draggable="false"
 							/>
-							<ImageIcon v-else class="size-6 text-zinc-700" />
+							<ImageIcon v-else class="size-6 text-fg-subtle" />
 						</div>
-						<div class="truncate px-1.5 py-1 text-[10px] text-zinc-400">{{ wm.name }}</div>
-						<div class="absolute inset-0 hidden items-center justify-center bg-black/40 group-hover:flex">
-							<Plus class="size-4 text-white" />
-						</div>
-					</button>
-				</div>
+					</AssetTile>
+				</AssetGrid>
 			</div>
 		</div>
 
 		<!-- Logos tab -->
 		<div v-else-if="activeSubTab === 'logos'" class="flex flex-1 flex-col overflow-hidden">
-			<div class="flex items-center gap-2 border-b border-white/10 px-3 py-2">
-				<Search class="size-3.5 text-zinc-500" />
-				<input
-					v-model="searchQuery"
-					type="text"
-					placeholder="Search logos..."
-					class="flex-1 bg-transparent text-xs text-zinc-200 outline-none placeholder:text-zinc-600"
+			<PanelSearchBar v-model="searchQuery" placeholder="Search logos…" />
+			<div class="flex-1 overflow-y-auto p-3">
+				<EmptyState
+					v-if="filteredLogos.length === 0"
+					size="sm"
+					:icon="searchQuery.trim() ? SearchX : Palette"
+					:title="searchQuery.trim() ? 'No logos found' : 'No logos saved yet'"
+					:description="searchQuery.trim() ? 'Try a different search term.' : 'Export images with type &quot;logo&quot; to see them here.'"
 				/>
-			</div>
-			<div class="flex-1 overflow-y-auto p-2">
-				<div v-if="filteredLogos.length === 0" class="flex flex-col items-center justify-center h-20 gap-1 text-zinc-600 text-xs">
-					<p>No logos saved yet</p>
-					<p class="text-[10px]">Export images with type "logo" to see them here</p>
-				</div>
-				<div
-					v-else
-					class="grid gap-2"
-					style="grid-template-columns: repeat(auto-fill, minmax(80px, 1fr))"
-				>
-					<button
+				<AssetGrid v-else :min="80">
+					<AssetTile
 						v-for="logo in filteredLogos"
 						:key="logo.id"
-						type="button"
-						class="group relative overflow-hidden rounded-lg border border-white/10 hover:border-purple-500/50 transition-colors"
+						aspect="1"
+						:label="logo.name"
+						:title="`Add ${logo.name} to canvas`"
 						@click="addImageToCanvas(logo.file_path, logo.name)"
 					>
-						<div class="aspect-square bg-zinc-800/50 flex items-center justify-center">
-							<Palette class="size-6 text-zinc-700" />
+						<div class="flex size-full items-center justify-center">
+							<Palette class="size-6 text-fg-subtle" />
 						</div>
-						<div class="truncate px-1.5 py-1 text-[10px] text-zinc-400">{{ logo.name }}</div>
-						<div class="absolute inset-0 hidden items-center justify-center bg-black/40 group-hover:flex">
-							<Plus class="size-4 text-white" />
-						</div>
-					</button>
-				</div>
+					</AssetTile>
+				</AssetGrid>
 			</div>
 		</div>
 	</div>

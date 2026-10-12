@@ -1,4 +1,6 @@
 <script setup lang="ts">
+import { RotateCcw } from "lucide-vue-next";
+import { Button } from "@/components/ui/button";
 /**
  * Three-way color correction panel (Shadows / Midtones / Highlights).
  * Each wheel adds a directional color cast to that tonal range,
@@ -201,22 +203,23 @@ function resetAll() {
 
 <template>
 	<div class="space-y-3">
-		<div class="grid grid-cols-3 gap-3">
+		<div class="grid grid-cols-3 gap-2">
 			<div
 				v-for="range in (['shadows', 'midtones', 'highlights'] as const)"
 				:key="range"
-				class="flex flex-col items-center gap-2"
+				class="flex min-w-0 flex-col items-center gap-2"
 			>
 				<!-- Label + reset -->
-				<div class="flex w-full items-center justify-between">
-					<span class="text-[10px] font-medium text-zinc-300">{{ RANGE_LABELS[range] }}</span>
+				<div class="flex w-full items-center justify-between gap-1">
+					<span class="truncate text-2xs font-medium text-fg-muted">{{ RANGE_LABELS[range] }}</span>
 					<button
 						type="button"
-						class="text-[9px] text-zinc-600 transition-colors hover:text-zinc-400"
+						class="grid size-4 shrink-0 place-items-center rounded text-fg-subtle transition-colors hover:bg-surface-hover hover:text-fg"
 						:title="`Reset ${RANGE_LABELS[range]}`"
+						:aria-label="`Reset ${RANGE_LABELS[range]}`"
 						@click="resetRange(range)"
 					>
-						↺
+						<RotateCcw class="size-2.5" />
 					</button>
 				</div>
 
@@ -225,16 +228,15 @@ function resetAll() {
 					:ref="(el) => { wheelRefs[range] = el as HTMLCanvasElement | null; redrawAll(); }"
 					:width="WHEEL_SIZE"
 					:height="WHEEL_SIZE"
-					class="cursor-grab rounded-full active:cursor-grabbing"
-					:style="{ width: `${WHEEL_SIZE}px`, height: `${WHEEL_SIZE}px` }"
+					class="aspect-square w-full max-w-[96px] cursor-grab rounded-full active:cursor-grabbing"
 					@mousedown="(e) => startDrag(e, range)"
 				/>
 
 				<!-- Luminance slider -->
-				<div class="w-full space-y-0.5">
+				<div class="w-full">
 					<div class="flex items-center justify-between">
-						<span class="text-[9px] text-zinc-600">Lum</span>
-						<span class="text-[9px] text-zinc-500">{{ (getValues(range).luminance * 100).toFixed(0) }}</span>
+						<span class="text-2xs text-fg-subtle">Lum</span>
+						<span class="tabular text-2xs text-fg-muted">{{ (getValues(range).luminance * 100).toFixed(0) }}</span>
 					</div>
 					<input
 						type="range"
@@ -243,19 +245,14 @@ function resetAll() {
 						max="1"
 						step="0.01"
 						class="w-full"
+						:aria-label="`${RANGE_LABELS[range]} luminance`"
 						@input="(e) => updateLuminance(range, Number((e.target as HTMLInputElement).value))"
 					/>
 				</div>
 			</div>
 		</div>
 
-		<button
-			type="button"
-			class="w-full rounded border border-white/10 bg-white/5 py-1 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
-			@click="resetAll"
-		>
-			Reset all wheels
-		</button>
-		<p class="text-[9px] text-zinc-600">Drag inside a wheel to add color · Hold Shift for finer moves</p>
+		<Button variant="secondary" size="xs" block @click="resetAll">Reset all wheels</Button>
+		<p class="text-2xs text-fg-subtle">Drag inside a wheel to add color · Hold Shift for finer moves</p>
 	</div>
 </template>

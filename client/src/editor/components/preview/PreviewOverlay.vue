@@ -229,11 +229,11 @@ const plateScreenRect = computed(() => {
 });
 
 const plateChromeBorderClass = computed(() =>
-	activeCanvasSourceFraming.value?.mode === "use16x9" ? "border-cyan-400" : "border-purple-500",
+	activeCanvasSourceFraming.value?.mode === "use16x9" ? "border-brand" : "border-fg",
 );
 
 const plateHandleClass = computed(() =>
-	activeCanvasSourceFraming.value?.mode === "use16x9" ? "bg-cyan-500" : "bg-purple-500",
+	activeCanvasSourceFraming.value?.mode === "use16x9" ? "bg-brand" : "bg-fg",
 );
 
 const shouldShowPlateChrome = computed(() => {
@@ -665,7 +665,7 @@ const cursorStyle = computed(() => {
 			<!-- Center alignment guides (CapCut style) -->
 		<svg
 			v-if="showCenterGuideX || showCenterGuideY"
-			class="pointer-events-none absolute inset-0 size-full overflow-visible"
+			class="pointer-events-none absolute inset-0 size-full overflow-visible text-brand"
 		>
 			<!-- Vertical center line (element is centered horizontally, x=0) -->
 			<line
@@ -674,7 +674,7 @@ const cursorStyle = computed(() => {
 				:y1="canvasScreenSize.top"
 				:x2="canvasScreenCenter.x"
 				:y2="canvasScreenSize.top + canvasScreenSize.h"
-				stroke="#22d3ee"
+				stroke="currentColor"
 				stroke-width="1"
 				opacity="0.9"
 			/>
@@ -685,7 +685,7 @@ const cursorStyle = computed(() => {
 				:y1="canvasScreenCenter.y"
 				:x2="canvasScreenSize.left + canvasScreenSize.w"
 				:y2="canvasScreenCenter.y"
-				stroke="#22d3ee"
+				stroke="currentColor"
 				stroke-width="1"
 				opacity="0.9"
 			/>
@@ -701,7 +701,7 @@ const cursorStyle = computed(() => {
 		<!-- Mask outlines for selected element -->
 		<svg
 			v-if="selectedElementMasks.length > 0 && !isCropMode"
-			class="pointer-events-none absolute inset-0 size-full overflow-visible"
+			class="pointer-events-none absolute inset-0 size-full overflow-visible text-brand"
 			:class="maskEditMode ? 'opacity-100' : 'opacity-80'"
 		>
 			<g v-for="mask in selectedElementMasks" :key="mask.id">
@@ -736,7 +736,7 @@ const cursorStyle = computed(() => {
 						width="8"
 						height="8"
 						fill="#fff"
-						stroke="#3b82f6"
+						stroke="currentColor"
 						stroke-width="1"
 						:style="{ cursor: maskEditMode ? h.c : 'default' }"
 						@mousedown="onMaskResizeMouseDown($event, mask, h.id as any)"
@@ -746,7 +746,7 @@ const cursorStyle = computed(() => {
 						:y1="-maskScreenH(mask) / 2"
 						x2="0"
 						:y2="-maskScreenH(mask) / 2 - 16"
-						stroke="#3b82f6"
+						stroke="currentColor"
 						stroke-width="1"
 					/>
 					<circle
@@ -755,7 +755,7 @@ const cursorStyle = computed(() => {
 						:cy="-maskScreenH(mask) / 2 - 16"
 						r="4"
 						fill="#fff"
-						stroke="#3b82f6"
+						stroke="currentColor"
 						stroke-width="1"
 						:style="{ cursor: maskEditMode ? 'crosshair' : 'default' }"
 						@mousedown="onMaskRotateMouseDown($event, mask)"
@@ -792,7 +792,7 @@ const cursorStyle = computed(() => {
 						width="8"
 						height="8"
 						fill="#fff"
-						stroke="#3b82f6"
+						stroke="currentColor"
 						stroke-width="1"
 						:style="{ cursor: maskEditMode ? h.c : 'default' }"
 						@mousedown="onMaskResizeMouseDown($event, mask, h.id as any)"
@@ -802,7 +802,7 @@ const cursorStyle = computed(() => {
 						:y1="-maskScreenH(mask) / 2"
 						x2="0"
 						:y2="-maskScreenH(mask) / 2 - 16"
-						stroke="#3b82f6"
+						stroke="currentColor"
 						stroke-width="1"
 					/>
 					<circle
@@ -811,7 +811,7 @@ const cursorStyle = computed(() => {
 						:cy="-maskScreenH(mask) / 2 - 16"
 						r="4"
 						fill="#fff"
-						stroke="#3b82f6"
+						stroke="currentColor"
 						stroke-width="1"
 						:style="{ cursor: maskEditMode ? 'crosshair' : 'default' }"
 						@mousedown="onMaskRotateMouseDown($event, mask)"
@@ -836,7 +836,7 @@ const cursorStyle = computed(() => {
 						:cy="canvasScreenSize.top + pt.y * canvasScreenSize.h"
 						r="4"
 						fill="#fff"
-						stroke="#3b82f6"
+						stroke="currentColor"
 						stroke-width="1"
 						:style="{ cursor: maskEditMode ? 'move' : 'default' }"
 						@mousedown="onMaskPointMouseDown($event, mask, idx)"
@@ -848,7 +848,7 @@ const cursorStyle = computed(() => {
 		<!-- Selection: multi-select shows one outline per visible clip; single-select adds resize/rotate handles -->
 		<svg
 			v-if="selectedVisibleScreenBoundsList.length > 0 && !isCropMode"
-			class="pointer-events-none absolute inset-0 size-full overflow-visible"
+			class="pointer-events-none absolute inset-0 size-full overflow-visible text-brand"
 		>
 			<g
 				v-for="(item, idx) in selectedVisibleScreenBoundsList"
@@ -861,7 +861,7 @@ const cursorStyle = computed(() => {
 					:width="item.screen.width"
 					:height="item.screen.height"
 					fill="none"
-					:stroke="selectedVisibleScreenBoundsList.length > 1 ? 'rgba(59,130,246,0.95)' : '#3b82f6'"
+					stroke="currentColor"
 					stroke-width="2"
 					:stroke-dasharray="selectedVisibleScreenBoundsList.length > 1 ? '6 4' : 'none'"
 				/>
@@ -882,7 +882,7 @@ const cursorStyle = computed(() => {
 					:height="HANDLE_SIZE"
 					rx="2"
 					fill="white"
-					stroke="#3b82f6"
+					stroke="currentColor"
 					stroke-width="1.5"
 					:style="{ cursor: getHandleCursor(handle) }"
 					@mousedown.stop="onHandleMouseDown($event, handle)"
@@ -893,7 +893,7 @@ const cursorStyle = computed(() => {
 					:y1="-selectedScreenBounds.height / 2"
 					:x2="0"
 					:y2="-selectedScreenBounds.height / 2 - ROTATE_HANDLE_OFFSET"
-					stroke="#3b82f6"
+					stroke="currentColor"
 					stroke-width="1.5"
 				/>
 
@@ -903,7 +903,7 @@ const cursorStyle = computed(() => {
 					:cy="-selectedScreenBounds.height / 2 - ROTATE_HANDLE_OFFSET"
 					r="6"
 					fill="white"
-					stroke="#3b82f6"
+					stroke="currentColor"
 					stroke-width="1.5"
 					style="cursor: crosshair"
 					@mousedown.stop="onHandleMouseDown($event, 'rotate')"

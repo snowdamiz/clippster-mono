@@ -1,6 +1,19 @@
 <script setup lang="ts">
 import { ref, computed, watch, shallowRef, onUnmounted, onMounted } from "vue";
-import { ChevronDown, Link2, Maximize, Minimize, Smartphone } from "lucide-vue-next";
+import { Maximize, Minimize, Minus, Plus, Smartphone } from "lucide-vue-next";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import ToolbarButton from "../chrome/ToolbarButton.vue";
+import ToolbarMenuButton from "../chrome/ToolbarMenuButton.vue";
+import ToolbarSeparator from "../chrome/ToolbarSeparator.vue";
+import CanvasSizeMenu from "./CanvasSizeMenu.vue";
+import CanvasFramingControl from "./CanvasFramingControl.vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useEditor } from "../../composables/useEditor";
 import { useRafLoop } from "../../composables/useRafLoop";
@@ -100,22 +113,8 @@ const paintOverlayRef = ref<HTMLCanvasElement | null>(null);
 
 const containerRef = ref<HTMLDivElement | null>(null);
 
-const aspectPresets = [
-	{ width: 1920, height: 1080, label: "16:9" },
-	{ width: 1080, height: 1920, label: "9:16" },
-	{ width: 1080, height: 1080, label: "1:1" },
-	{ width: 1080, height: 1350, label: "4:5" },
-	{ width: 1280, height: 720, label: "YouTube HD" },
-	{ width: 3840, height: 2160, label: "YouTube 4K" },
-];
-
-const showAspectMenu = ref(false);
 const showSocialMenu = ref(false);
 const showSpeedMenu = ref(false);
-const showCustomSize = ref(false);
-const customWidth = ref(1920);
-const customHeight = ref(1080);
-const linkDimensions = ref(true);
 const isFullscreen = ref(false);
 const SPEED_OPTIONS = [0.25, 0.5, 0.75, 1, 1.25, 1.5, 2, 4];
 
@@ -185,48 +184,6 @@ const currentSpeed = computed(() => {
 function setSpeed(rate: number) {
 	editor.playback.setPlaybackRate({ rate });
 	showSpeedMenu.value = false;
-}
-
-const currentAspectLabel = computed(() => {
-	const w = canvasWidth.value;
-	const h = canvasHeight.value;
-	const match = aspectPresets.find((p) => p.width === w && p.height === h);
-	if (match) return match.label;
-	return `${w}×${h}`;
-});
-
-function setAspectRatio(preset: { width: number; height: number }) {
-	editor.project.updateSettings({ settings: { canvasSize: preset } });
-	showAspectMenu.value = false;
-	showCustomSize.value = false;
-}
-
-function onCustomWidthChange(value: number) {
-	if (linkDimensions.value && customWidth.value > 0) {
-		const aspect = customHeight.value / customWidth.value;
-		customWidth.value = value;
-		customHeight.value = Math.max(1, Math.round(value * aspect));
-	} else {
-		customWidth.value = value;
-	}
-}
-
-function onCustomHeightChange(value: number) {
-	if (linkDimensions.value && customHeight.value > 0) {
-		const aspect = customWidth.value / customHeight.value;
-		customHeight.value = value;
-		customWidth.value = Math.max(1, Math.round(value * aspect));
-	} else {
-		customHeight.value = value;
-	}
-}
-
-function applyCustomSize() {
-	editor.project.updateSettings({
-		settings: { canvasSize: { width: customWidth.value, height: customHeight.value } },
-	});
-	showAspectMenu.value = false;
-	showCustomSize.value = false;
 }
 
 function toggleSocialOverlay(preset: SocialOverlayPreset) {
@@ -317,6 +274,14 @@ const is916 = computed(() => {
 	return canvasWidth.value === 1080 && canvasHeight.value === 1920;
 });
 
+/** "Use 16:9" framing applies when the canvas is not ~16:9 (matches Manual POI target panel). */
+const is169Canvas = computed(() => {
+	const w = canvasWidth.value;
+	const h = canvasHeight.value;
+	if (w <= 0 || h <= 0) return true;
+	return Math.abs(w / h - 16 / 9) < 0.02;
+});
+
 watch(isImageMode, (enabled) => {
 	if (!enabled) return;
 	const project = editor.project.getActiveOrNull();
@@ -337,7 +302,7 @@ watch(isImageMode, (enabled) => {
 }, { immediate: true });
 
 watch(is916, (val) => {
-	if (!val && !isImageMode.value) {
+	if (!val) {
 		activeSocialOverlay.value = null;
 		showSocialMenu.value = false;
 	}
@@ -1421,208 +1386,70 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 <template>
 	<div
 		ref="containerRef"
-		:class="[
-			'relative flex h-full min-h-0 w-full min-w-0 flex-col',
-			isImageMode ? 'bg-[#2b2b2b]' : 'bg-[#0e0e10]',
-		]"
+		class="relative flex h-full min-h-0 w-full min-w-0 flex-col bg-canvas"
 	>
-		<div
-			:class="[
-				'relative flex items-center justify-center px-3 py-1',
-				isImageMode ? 'border-b border-black/30 bg-[#1e1e1e]' : 'border-b border-white/10',
-			]"
-		>
-			<div v-if="!isImageMode" class="absolute left-2 top-1/2 -translate-y-1/2">
-				<button
-					type="button"
-					:class="[
-						'flex items-center gap-0.5 rounded-md px-1.5 py-1 text-xs transition-colors',
-						currentSpeed !== 1
-							? 'bg-primary/15 text-primary'
-							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
-					]"
-					@click="showSpeedMenu = !showSpeedMenu"
-				>
-					{{ currentSpeed }}x
-					<ChevronDown class="size-3" />
-				</button>
-
-				<div
-					v-if="showSpeedMenu"
-					class="absolute left-0 top-full z-50 mt-0.5 rounded-md border border-white/10 bg-[#1e1e22] py-1 shadow-lg"
-				>
-					<button
-						v-for="rate in SPEED_OPTIONS"
-						:key="rate"
-						type="button"
-						:class="[
-							'flex w-full items-center px-4 py-1.5 text-xs transition-colors',
-							currentSpeed === rate
-								? 'text-primary bg-primary/10'
-								: 'text-zinc-300 hover:bg-white/5',
-						]"
-						@click="setSpeed(rate)"
-					>
-						{{ rate }}x
-					</button>
-				</div>
-
-				<div v-if="showSpeedMenu" class="fixed inset-0 z-40" @click="showSpeedMenu = false" />
-			</div>
-
-			<button
-				type="button"
-				class="flex items-center gap-1 rounded-md px-2 py-1 text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
-				@click="showAspectMenu = !showAspectMenu"
-			>
-				{{ currentAspectLabel }}
-				<ChevronDown class="size-3" />
-			</button>
-
-			<!-- Dropdown -->
-			<div
-				v-if="showAspectMenu"
-				class="absolute top-full z-50 mt-0.5 rounded-md border border-white/10 bg-[#1e1e22] py-1 shadow-lg"
-			>
-				<button
-					v-for="preset in aspectPresets"
-					:key="preset.label"
-					type="button"
-					:class="[
-						'flex w-full items-center gap-2 px-4 py-1.5 text-xs transition-colors',
-						canvasWidth === preset.width && canvasHeight === preset.height
-							? 'text-primary bg-primary/10'
-							: 'text-zinc-300 hover:bg-white/5',
-					]"
-					@click="setAspectRatio(preset)"
-				>
-					{{ preset.label }}
-					<span class="text-zinc-500">{{ preset.width }}×{{ preset.height }}</span>
-				</button>
-
-				<!-- Custom size toggle -->
-				<div class="border-t border-white/10 mt-1 pt-1">
-					<button
-						type="button"
-						class="flex w-full items-center gap-2 px-4 py-1.5 text-xs text-zinc-300 hover:bg-white/5 transition-colors"
-						@click="showCustomSize = !showCustomSize; customWidth = canvasWidth; customHeight = canvasHeight"
-					>
-						Custom Size
-					</button>
-				</div>
-
-				<!-- Custom size inputs -->
-				<div v-if="showCustomSize" class="border-t border-white/10 px-3 py-2.5 space-y-2">
-					<div class="flex items-center gap-2">
-						<div class="flex-1">
-							<label class="text-[9px] uppercase tracking-wider text-zinc-600 mb-0.5 block">Width</label>
-							<input
-								type="number"
-								:value="customWidth"
-								min="100"
-								max="7680"
-								class="w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-blue-500/50"
-								@input="onCustomWidthChange(Number(($event.target as HTMLInputElement).value))"
-							/>
-						</div>
-						<button
-							type="button"
-							class="mt-3.5 rounded p-1 transition-colors"
-							:class="linkDimensions ? 'text-blue-400 bg-blue-500/10' : 'text-zinc-600 hover:text-zinc-400'"
-							title="Link dimensions"
-							@click="linkDimensions = !linkDimensions"
+		<!-- Preview toolbar: playback speed · canvas format · overlays -->
+		<div class="grid h-9 shrink-0 grid-cols-[1fr_auto_1fr] items-center gap-1 border-b border-line-subtle bg-panel px-1.5">
+			<div class="flex min-w-0 items-center">
+				<DropdownMenu v-if="!isImageMode" v-model:open="showSpeedMenu">
+					<DropdownMenuTrigger as-child>
+						<ToolbarMenuButton :active="currentSpeed !== 1" title="Playback speed" aria-label="Playback speed">
+							{{ currentSpeed }}×
+						</ToolbarMenuButton>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="start" class="min-w-28">
+						<DropdownMenuItem
+							v-for="rate in SPEED_OPTIONS"
+							:key="rate"
+							:class="currentSpeed === rate && 'bg-brand-soft text-brand focus:bg-brand-soft'"
+							@select="setSpeed(rate)"
 						>
-							<Link2 class="size-3" />
-						</button>
-						<div class="flex-1">
-							<label class="text-[9px] uppercase tracking-wider text-zinc-600 mb-0.5 block">Height</label>
-							<input
-								type="number"
-								:value="customHeight"
-								min="100"
-								max="7680"
-								class="w-full rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200 outline-none focus:border-blue-500/50"
-								@input="onCustomHeightChange(Number(($event.target as HTMLInputElement).value))"
-							/>
-						</div>
-					</div>
-					<button
-						type="button"
-						class="w-full rounded bg-blue-600/80 py-1 text-[10px] font-medium text-white hover:bg-blue-600 transition-colors"
-						@click="applyCustomSize"
-					>
-						Apply
-					</button>
-				</div>
+							<span class="tabular">{{ rate }}×</span>
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
 			</div>
 
-			<!-- Click-away -->
-			<div v-if="showAspectMenu" class="fixed inset-0 z-40" @click="showAspectMenu = false; showCustomSize = false" />
+			<div class="flex items-center gap-1">
+				<CanvasSizeMenu />
+				<CanvasFramingControl v-if="!isImageMode && !is169Canvas" />
+			</div>
 
-			<!-- Right controls: Fullscreen, Social overlay -->
-			<div class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-2">
-				<!-- Fullscreen toggle -->
-				<button
-					type="button"
-					class="flex items-center rounded-md p-1 text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-300"
-					@click="toggleFullscreen"
-				>
-					<Minimize v-if="isFullscreen" class="size-4" />
-					<Maximize v-else class="size-4" />
-				</button>
-
-				<button
-					v-if="is916 && !isImageMode"
-					type="button"
-					:class="[
-						'flex items-center gap-1 rounded-md px-2 py-1 text-xs transition-colors',
-						activeSocialOverlay
-							? 'bg-cyan-500/15 text-cyan-400'
-							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
-					]"
-					@click="showSocialMenu = !showSocialMenu"
-				>
-					<Smartphone class="size-3.5" />
-				</button>
-
-				<div
-					v-if="showSocialMenu"
-					class="absolute right-0 top-full z-50 mt-0.5 w-44 rounded-md border border-white/10 bg-[#1e1e22] py-1 shadow-lg"
-				>
-					<button
-						v-if="activeSocialOverlay"
-						type="button"
-						class="flex w-full items-center gap-2 px-3 py-1.5 text-xs text-zinc-400 hover:bg-white/5"
-						@click="activeSocialOverlay = null; showSocialMenu = false"
-					>
-						Hide Overlay
-					</button>
-					<button
-						v-for="preset in SOCIAL_OVERLAY_PRESETS"
-						:key="preset.platform"
-						type="button"
-						:class="[
-							'flex w-full items-center gap-2 px-3 py-1.5 text-xs transition-colors',
-							activeSocialOverlay?.platform === preset.platform
-								? 'text-cyan-400 bg-cyan-500/10'
-								: 'text-zinc-300 hover:bg-white/5',
-						]"
-						@click="toggleSocialOverlay(preset)"
-					>
-						<span>{{ preset.icon }}</span>
-						<span>{{ preset.label }}</span>
-						<span class="ml-auto text-[10px] text-zinc-500">{{ preset.aspectRatio }}</span>
-					</button>
-				</div>
-
-				<div v-if="showSocialMenu" class="fixed inset-0 z-40" @click="showSocialMenu = false" />
+			<div class="flex min-w-0 items-center justify-end gap-0.5">
+				<DropdownMenu v-if="is916" v-model:open="showSocialMenu">
+					<DropdownMenuTrigger as-child>
+						<ToolbarButton label="Social preview overlay" :active="Boolean(activeSocialOverlay)">
+							<Smartphone />
+						</ToolbarButton>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent align="end" class="w-48">
+						<DropdownMenuItem
+							v-for="preset in SOCIAL_OVERLAY_PRESETS"
+							:key="preset.platform"
+							:class="activeSocialOverlay?.platform === preset.platform && 'bg-brand-soft text-brand focus:bg-brand-soft'"
+							@select="toggleSocialOverlay(preset)"
+						>
+							<span>{{ preset.icon }}</span>
+							<span class="flex-1">{{ preset.label }}</span>
+							<span class="text-xs text-fg-subtle">{{ preset.aspectRatio }}</span>
+						</DropdownMenuItem>
+						<template v-if="activeSocialOverlay">
+							<DropdownMenuSeparator />
+							<DropdownMenuItem @select="activeSocialOverlay = null">Hide overlay</DropdownMenuItem>
+						</template>
+					</DropdownMenuContent>
+				</DropdownMenu>
+				<ToolbarButton :label="isFullscreen ? 'Exit fullscreen' : 'Fullscreen preview'" @click="toggleFullscreen">
+					<Minimize v-if="isFullscreen" />
+					<Maximize v-else />
+				</ToolbarButton>
 			</div>
 		</div>
 
 		<!-- Canvas + Interactive Overlay -->
 		<div
 			:class="[
-				'flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto',
+				'flex min-h-0 min-w-0 flex-1 items-center justify-center overflow-auto bg-canvas',
 				isImageMode ? 'p-8' : 'p-4',
 			]"
 			@mousedown="onPreviewAreaMouseDown"
@@ -1632,8 +1459,8 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					'preview-canvas-wrapper relative',
 					isTransparentCanvas ? 'preview-canvas-wrapper--checkerboard' : '',
 					isImageMode
-						? 'shadow-[0_8px_28px_rgba(0,0,0,0.45)]'
-						: 'rounded border border-white/15 shadow-[0_0_0_1px_rgba(0,0,0,0.5)]',
+						? 'shadow-[var(--shadow-md)]'
+						: 'rounded-sm ring-1 ring-line',
 				]"
 				:style="{
 					aspectRatio: `${projectWidth} / ${projectHeight}`,
@@ -1677,7 +1504,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 					aria-hidden="true"
 				>
 					<div
-						class="absolute rounded border border-dashed border-cyan-400/35"
+						class="absolute rounded border border-dashed border-brand-line"
 						:style="{
 							left: safeAreaInset.horizontal,
 							right: safeAreaInset.horizontal,
@@ -1698,7 +1525,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 				<!-- Marquee selection overlay -->
 				<div
 					v-if="isImageMode && liveMarqueeStyle"
-					class="pointer-events-none absolute z-20 border border-white bg-blue-400/15"
+					class="pointer-events-none absolute z-20 border border-white bg-brand-soft"
 					:style="liveMarqueeStyle"
 				/>
 				<!-- Lasso path overlay -->
@@ -1710,7 +1537,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 				>
 					<path
 						:d="liveLassoPath"
-						fill="rgba(96, 165, 250, 0.15)"
+						:style="{ fill: 'var(--brand-soft)' }"
 						fill-rule="evenodd"
 						stroke="white"
 						stroke-width="0.4"
@@ -1737,7 +1564,7 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 				<!-- Clone / heal source marker -->
 				<div
 					v-if="cloneSourceMarker"
-					class="pointer-events-none absolute z-20 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-cyan-400/80"
+					class="pointer-events-none absolute z-20 size-3 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-brand"
 					:style="cloneSourceMarker"
 					title="Clone source"
 				/>
@@ -1762,53 +1589,52 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 			</div>
 		</div>
 
-		<!-- Preview controls bar: zoom + quality -->
-		<div
-			:class="[
-				'flex h-7 shrink-0 items-center justify-end gap-1 px-2',
-				isImageMode ? 'border-t border-black/30 bg-[#1e1e1e]' : 'h-8 border-t border-white/10 bg-[#18181b]',
-			]"
-		>
-			<span v-if="isImageMode" class="mr-auto pl-1 text-[10px] tabular-nums text-zinc-500">
+		<!-- Preview controls bar: quality + zoom -->
+		<div class="flex h-8 shrink-0 items-center justify-end gap-0.5 border-t border-line-subtle bg-panel px-1.5">
+			<span v-if="isImageMode" class="tabular mr-auto pl-1.5 text-2xs text-fg-subtle">
 				{{ projectWidth }} × {{ projectHeight }}
 			</span>
-			<button
+			<Button
 				v-if="isImageMode"
-				type="button"
-				class="h-6 rounded px-2 text-[11px] transition-colors"
-				:class="showSafeZones ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'"
+				variant="ghost"
+				size="xs"
+				:aria-pressed="showSafeZones"
+				:class="showSafeZones && 'bg-surface-active text-fg'"
 				title="Toggle safe zones"
 				@click="showSafeZones = !showSafeZones"
 			>
 				Guides
-			</button>
-			<div v-if="!isImageMode" class="relative">
-				<button
-					class="preview-quality__input preview-quality__select h-6 px-2 text-[11px]"
-					title="Lowers decoded video and image resolution in the preview (blockier, faster). Timeline layout and overlay positions stay fixed."
-					@click.stop="showQualityDropdown = !showQualityDropdown"
-				>
-					<span class="truncate">Quality: {{ qualityLabel }}</span>
-					<ChevronDown class="h-3.5 w-3.5 transition-transform" :class="{ 'rotate-180': showQualityDropdown }" />
-				</button>
-				<div v-if="showQualityDropdown" class="preview-quality__dropdown">
-					<button
+			</Button>
+			<DropdownMenu v-if="!isImageMode" v-model:open="showQualityDropdown">
+				<DropdownMenuTrigger as-child>
+					<ToolbarMenuButton
+						class="h-6 text-xs"
+						title="Lowers decoded video and image resolution in the preview (blockier, faster). Timeline layout and overlay positions stay fixed."
+					>
+						<span class="hidden lg:inline">Quality:</span> {{ qualityLabel }}
+					</ToolbarMenuButton>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent align="end" side="top" class="min-w-32">
+					<DropdownMenuItem
 						v-for="opt in qualityOptions"
 						:key="opt.label"
-						class="preview-quality__dropdown-item"
-						:class="{ 'preview-quality__dropdown-item--selected': previewQuality === opt.value }"
-						@click.stop="setQuality(opt.value)"
+						:class="previewQuality === opt.value && 'bg-brand-soft text-brand focus:bg-brand-soft'"
+						@select="setQuality(opt.value)"
 					>
 						{{ opt.label }}
-					</button>
-				</div>
-			</div>
-			<div v-if="!isImageMode" class="h-4 w-px bg-white/10" />
+					</DropdownMenuItem>
+				</DropdownMenuContent>
+			</DropdownMenu>
+			<ToolbarSeparator v-if="!isImageMode" />
 			<!-- Zoom controls -->
-			<button class="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200" title="Zoom out (Ctrl+-)" @click="stepZoom(-ZOOM_STEP)">−</button>
-			<button class="h-6 min-w-[42px] rounded bg-white/5 px-1 text-[11px] text-zinc-300 hover:bg-white/10" title="Current zoom">{{ zoomPercent }}</button>
-			<button class="flex h-6 w-6 items-center justify-center rounded text-xs text-zinc-400 hover:bg-white/10 hover:text-zinc-200" title="Zoom in (Ctrl++)" @click="stepZoom(ZOOM_STEP)">+</button>
-			<button class="h-6 rounded bg-white/5 px-2 text-[11px] text-zinc-300 hover:bg-white/10" title="Fit zoom (Ctrl+0)" @click="fitZoom">Fit</button>
+			<ToolbarButton label="Zoom out" shortcut="Ctrl+-" size="icon-xs" @click="stepZoom(-ZOOM_STEP)">
+				<Minus />
+			</ToolbarButton>
+			<span class="tabular min-w-[42px] text-center text-2xs text-fg-muted" title="Current zoom">{{ zoomPercent }}</span>
+			<ToolbarButton label="Zoom in" shortcut="Ctrl++" size="icon-xs" @click="stepZoom(ZOOM_STEP)">
+				<Plus />
+			</ToolbarButton>
+			<Button variant="ghost" size="xs" title="Fit zoom (Ctrl+0)" @click="fitZoom">Fit</Button>
 		</div>
 	</div>
 </template>
@@ -1826,62 +1652,5 @@ function getBrandingOverlayStyle(overlay: { x: number; y: number; scale: number;
 	background-image: repeating-conic-gradient(#c8c8c8 0% 25%, #ffffff 0% 50%);
 	background-size: 16px 16px;
 	background-position: 0 0;
-}
-
-.preview-quality__input {
-	width: 100%;
-	background-color: rgb(255 255 255 / 0.05);
-	border: 1px solid rgb(255 255 255 / 0.1);
-	border-radius: 0.375rem;
-	color: rgb(212 212 216);
-	transition: all 150ms ease;
-}
-
-.preview-quality__select {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 0.375rem;
-	cursor: pointer;
-}
-
-.preview-quality__input:hover {
-	background-color: rgb(255 255 255 / 0.1);
-	border-color: rgb(255 255 255 / 0.16);
-}
-
-.preview-quality__dropdown {
-	position: absolute;
-	bottom: calc(100% + 0.35rem);
-	right: 0;
-	min-width: 110px;
-	background-color: rgb(24 24 27);
-	border: 1px solid rgb(255 255 255 / 0.1);
-	border-radius: 0.45rem;
-	overflow: hidden;
-	z-index: 100;
-	box-shadow: 0 8px 24px rgb(0 0 0 / 0.45);
-}
-
-.preview-quality__dropdown-item {
-	display: block;
-	width: 100%;
-	text-align: left;
-	padding: 0.42rem 0.6rem;
-	font-size: 11px;
-	color: rgb(228 228 231);
-	border: none;
-	background: transparent;
-	cursor: pointer;
-	transition: background-color 150ms ease;
-}
-
-.preview-quality__dropdown-item:hover {
-	background-color: rgb(255 255 255 / 0.08);
-}
-
-.preview-quality__dropdown-item--selected {
-	background-color: rgb(6 182 212 / 0.15);
-	color: rgb(103 232 249);
 }
 </style>

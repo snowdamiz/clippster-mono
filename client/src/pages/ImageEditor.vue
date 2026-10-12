@@ -1,20 +1,27 @@
 <script setup lang="ts">
-import { ref, provide, onMounted, onUnmounted, computed, watch, Transition, nextTick } from "vue";
+import { ref, provide, onMounted, onUnmounted, computed, watch, nextTick } from "vue";
 import { useRoute, useRouter } from "vue-router";
 import {
+	AlertTriangle,
+	ArrowLeft,
 	Loader2,
 	Plus,
 	Trash2,
 	Image as ImageIcon,
 	Paintbrush,
-	Search,
-	Check,
-	Play,
+	Pencil,
+	SearchX,
 	Maximize2,
 } from "lucide-vue-next";
 import PageLayout from "@/components/PageLayout.vue";
-import { Input } from "@/components/ui/input";
 import CustomDropdown from "@/components/CustomDropdown.vue";
+import { MediaChip, MediaTile } from "@/components/ui/media-tile";
+import { SelectionBar } from "@/components/ui/selection-bar";
+import ProjectGrid from "@/components/create/ProjectGrid.vue";
+import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SearchField } from "@/components/ui/search-field";
 import ConfirmationModal from "@/components/ConfirmationModal.vue";
 import AuthModal from "@/components/AuthModal.vue";
 import EditorLayout from "@/editor/components/EditorLayout.vue";
@@ -42,7 +49,8 @@ const { getRelativeTime: formatRelativeTimeFromUnix } = useFormatters();
 const isEditorLoading = ref(true);
 const editorError = ref<string | null>(null);
 const projectManager = useImageEditorProjects();
-const isLoadingProjects = ref(false);
+// Starts true on the landing route so the empty state never flashes before the first load
+const isLoadingProjects = ref(route.name !== "design-studio-edit");
 const isCreatingProject = ref(false);
 const isCoverBootstrapping = ref(false);
 const isSyncing = ref(false);
@@ -70,8 +78,8 @@ const CANVAS_PRESETS = [
 ] as const;
 
 const sortOptions = [
-	{ value: "updated", label: "Last Updated" },
-	{ value: "created", label: "Date Created" },
+	{ value: "updated", label: "Last updated" },
+	{ value: "created", label: "Date created" },
 	{ value: "name", label: "Name" },
 ];
 
@@ -125,37 +133,12 @@ const filteredProjects = computed(() => {
 	return result;
 });
 
-const groupedProjects = computed(() => {
-	const groups: { dateLabel: string; projects: ProjectSummary[] }[] = [];
-	const now = new Date();
-	const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-	const yesterday = new Date(today.getTime() - 24 * 60 * 60 * 1000);
-	const lastWeek = new Date(today.getTime() - 7 * 24 * 60 * 60 * 1000);
-
-	const todayProjects: ProjectSummary[] = [];
-	const yesterdayProjects: ProjectSummary[] = [];
-	const lastWeekProjects: ProjectSummary[] = [];
-	const olderProjects: ProjectSummary[] = [];
-
-	for (const project of filteredProjects.value) {
-		const date = new Date(project.updated_at);
-		if (date >= today) {
-			todayProjects.push(project);
-		} else if (date >= yesterday) {
-			yesterdayProjects.push(project);
-		} else if (date >= lastWeek) {
-			lastWeekProjects.push(project);
-		} else {
-			olderProjects.push(project);
-		}
-	}
-
-	if (todayProjects.length > 0) groups.push({ dateLabel: "Today", projects: todayProjects });
-	if (yesterdayProjects.length > 0) groups.push({ dateLabel: "Yesterday", projects: yesterdayProjects });
-	if (lastWeekProjects.length > 0) groups.push({ dateLabel: "Last 7 Days", projects: lastWeekProjects });
-	if (olderProjects.length > 0) groups.push({ dateLabel: "Older", projects: olderProjects });
-
-	return groups;
+// Date sections follow the active sort (none when sorting by name)
+const groupDate = computed(() => {
+	if (sortBy.value === "name") return undefined;
+	return sortBy.value === "created"
+		? (project: ProjectSummary) => project.inserted_at
+		: (project: ProjectSummary) => project.updated_at;
 });
 
 const deleteMessage = computed(() => {
@@ -744,23 +727,24 @@ function getRelativeTime(dateStr: string): string {
 
 <template>
 	<!-- Editor view -->
-	<div v-if="isEditorView" class="h-screen w-screen overflow-hidden bg-[#0e0e10]">
+	<div v-if="isEditorView" class="h-full w-full overflow-hidden bg-panel">
 		<div v-if="isEditorLoading" class="flex h-full w-full items-center justify-center">
 			<div class="flex flex-col items-center gap-3">
-				<Loader2 class="text-primary size-8 animate-spin" />
-				<p class="text-sm text-zinc-500">Loading Image Editor...</p>
+				<Loader2 class="size-6 animate-spin text-fg-subtle" />
+				<p class="text-sm text-fg-muted">Loading Image Editor…</p>
 			</div>
 		</div>
 
-		<div v-else-if="editorError" class="flex h-full w-full items-center justify-center">
-			<div class="flex flex-col items-center gap-4 text-center">
-				<p class="text-destructive text-lg font-medium">Failed to load editor</p>
-				<p class="text-sm text-zinc-500">{{ editorError }}</p>
-				<button type="button" class="text-primary text-sm underline" @click="backToProjects">
-					Back to Projects
-				</button>
-			</div>
-		</div>
+		<EmptyState
+			v-else-if="editorError"
+			:icon="AlertTriangle"
+			tone="danger"
+			title="Failed to load editor"
+			:description="editorError"
+			class="h-full"
+		>
+			<Button variant="secondary" @click="backToProjects"><ArrowLeft /> Back to projects</Button>
+		</EmptyState>
 
 		<EditorLayout v-else />
 	</div>
@@ -774,189 +758,103 @@ function getRelativeTime(dateStr: string): string {
 		:icon="Paintbrush"
 	>
 		<template #badge>
-			<span class="imageeditor-beta-badge">Beta</span>
+			<Badge variant="brand">Beta</Badge>
 		</template>
 
 		<template #actions>
-			<div class="imageeditor-header-actions">
-				<div class="imageeditor-header__search">
-					<Search class="imageeditor-header__search-icon" />
-					<Input
-						v-model="searchQuery"
-						placeholder="Search projects..."
-						class="imageeditor-header__search-input"
-					/>
-				</div>
-
-				<CustomDropdown
-					v-model="sortBy"
-					:options="sortOptions"
-					placeholder="Sort By"
-					class="imageeditor-header__sort"
-					trigger-class="imageeditor-header__dropdown-trigger"
-				/>
-
-				<button
-					type="button"
-					class="imageeditor-create-btn"
-					:disabled="isCreatingProject"
-					@click="createNewProject"
-				>
-					<Loader2 v-if="isCreatingProject" class="imageeditor-create-btn__icon animate-spin" />
-					<Plus v-else class="imageeditor-create-btn__icon" />
-					New Project
-				</button>
-			</div>
+			<Button variant="primary" :loading="isCreatingProject" @click="createNewProject">
+				<Plus v-if="!isCreatingProject" />
+				New project
+			</Button>
 		</template>
 
-		<div
-			class="imageeditor__content"
-			:class="{ 'imageeditor__content--empty': !isLoadingProjects && projectManager.projects.value.length === 0 }"
+		<template v-if="projectManager.projects.value.length > 0" #toolbar>
+			<SelectionBar
+				v-if="selectedProjects.size > 0"
+				:count="selectedProjects.size"
+				:total="filteredProjects.length"
+				@clear="clearSelection"
+				@select-all="selectAllProjects"
+			>
+				<Button variant="destructive-soft" size="sm" @click="confirmBulkDelete"><Trash2 /> Delete</Button>
+			</SelectionBar>
+			<template v-else>
+				<SearchField v-model="searchQuery" placeholder="Search projects…" class="min-w-[120px] max-w-64 flex-1" />
+				<div class="w-40 shrink-0">
+					<CustomDropdown v-model="sortBy" :options="sortOptions" placeholder="Sort by" />
+				</div>
+			</template>
+		</template>
+
+		<ProjectGrid
+			v-if="(isLoadingProjects && !projectManager.projects.value.length) || filteredProjects.length > 0"
+			:items="filteredProjects"
+			:loading="isLoadingProjects"
+			:item-key="(project) => project.id"
+			:group-date="groupDate"
 		>
-			<div v-if="projectManager.projects.value.length > 0 || isLoadingProjects" class="imageeditor__heading">
-				<h1 class="imageeditor__title">Design Projects</h1>
-				<p class="imageeditor__subtitle">Create thumbnails, banners, and social graphics with canvas presets</p>
-			</div>
+			<template #tile="{ item: project }">
+				<MediaTile
+					:title="project.name || 'Untitled Design'"
+					:thumbnail="project.thumbnail_url"
+					:icon="ImageIcon"
+					:meta="[getRelativeTime(project.updated_at)]"
+					selectable
+					:selected="isProjectSelected(project.id)"
+					@open="openProject(project.id)"
+					@toggle-select="toggleProjectSelection(project.id)"
+				>
+					<template #badges>
+						<MediaChip><Maximize2 /> {{ formatCanvasSize(project) }}</MediaChip>
+					</template>
+					<template #actions>
+						<Button
+							variant="secondary"
+							size="icon-xs"
+							title="Open editor"
+							aria-label="Open editor"
+							@click.stop="openProject(project.id)"
+						>
+							<Pencil />
+						</Button>
+						<Button
+							variant="secondary"
+							size="icon-xs"
+							class="hover:text-danger"
+							title="Delete"
+							aria-label="Delete"
+							@click.stop="confirmDelete(project)"
+						>
+							<Trash2 />
+						</Button>
+					</template>
+				</MediaTile>
+			</template>
+		</ProjectGrid>
 
-			<div v-if="isLoadingProjects" class="imageeditor__loading">
-				<div class="imageeditor__grid">
-					<div v-for="i in 6" :key="`skeleton-${i}`" class="imageeditor-card imageeditor-card--skeleton">
-						<div class="imageeditor-card__skeleton-bg"></div>
-						<div class="imageeditor-card__bottom">
-							<div class="imageeditor-skeleton__card-title"></div>
-							<div class="imageeditor-skeleton__card-meta"></div>
-						</div>
-					</div>
-				</div>
-			</div>
+		<EmptyState
+			v-else-if="projectManager.projects.value.length > 0"
+			:icon="SearchX"
+			title="No matching projects"
+			description="Try a different search."
+		>
+			<Button variant="secondary" @click="searchQuery = ''">Clear search</Button>
+		</EmptyState>
 
-			<div v-else-if="projectManager.projects.value.length > 0" class="imageeditor__main">
-				<Transition name="selection-bar">
-					<div v-if="selectedProjects.size > 0" class="imageeditor__selection-bar">
-						<div class="imageeditor__selection-info">
-							<Check class="imageeditor__selection-icon" />
-							<span>{{ selectedProjects.size }} selected</span>
-							<button
-								v-if="selectedProjects.size < filteredProjects.length"
-								type="button"
-								class="imageeditor__selection-select-all"
-								@click="selectAllProjects"
-							>
-								Select all
-							</button>
-						</div>
-						<div class="imageeditor__selection-actions">
-							<button type="button" class="imageeditor__selection-clear" @click="clearSelection">Clear</button>
-							<button type="button" class="imageeditor__selection-delete" @click="confirmBulkDelete">
-								<Trash2 class="imageeditor__selection-delete-icon" />
-								Delete Selected
-							</button>
-						</div>
-					</div>
-				</Transition>
-
-				<div v-if="filteredProjects.length > 0" class="imageeditor__section">
-					<div v-for="group in groupedProjects" :key="group.dateLabel" class="imageeditor__date-group">
-						<h3 class="imageeditor__section-header">{{ group.dateLabel }}</h3>
-
-						<div class="imageeditor__grid">
-							<div
-								v-for="project in group.projects"
-								:key="project.id"
-								class="imageeditor-card"
-								:class="{ 'imageeditor-card--selected': isProjectSelected(project.id) }"
-								@click="openProject(project.id)"
-							>
-								<div
-									class="imageeditor-card__checkbox"
-									:class="{ 'imageeditor-card__checkbox--visible': isProjectSelected(project.id) }"
-									@click.stop="toggleProjectSelection(project.id)"
-								>
-									<div
-										class="imageeditor-card__checkbox-inner"
-										:class="{ 'imageeditor-card__checkbox-inner--checked': isProjectSelected(project.id) }"
-									>
-										<Check v-if="isProjectSelected(project.id)" class="imageeditor-card__checkbox-icon" />
-									</div>
-								</div>
-
-								<div class="imageeditor-card__badge imageeditor-card__badge--canvas">
-									<Maximize2 class="imageeditor-card__badge-icon" />
-									<span>{{ formatCanvasSize(project) }}</span>
-								</div>
-
-								<div
-									v-if="project.thumbnail_url"
-									class="imageeditor-card__thumbnail"
-									:style="{ backgroundImage: `url(${project.thumbnail_url})` }"
-								>
-									<div class="imageeditor-card__vignette"></div>
-								</div>
-								<div v-else class="imageeditor-card__thumbnail imageeditor-card__thumbnail--empty">
-									<div class="imageeditor-card__thumbnail-gradient"></div>
-									<div class="imageeditor-card__empty-icon">
-										<ImageIcon class="imageeditor-card__folder-icon" />
-									</div>
-								</div>
-
-								<div class="imageeditor-card__bottom">
-									<h3 class="imageeditor-card__title" :title="project.name">
-										{{ project.name || "Untitled Design" }}
-									</h3>
-									<div class="imageeditor-card__meta">
-										<span class="imageeditor-card__meta-text">{{ getRelativeTime(project.updated_at) }}</span>
-									</div>
-								</div>
-
-								<div class="imageeditor-card__hover-actions">
-									<button
-										type="button"
-										class="imageeditor-card__action-btn"
-										title="Open Editor"
-										@click.stop="openProject(project.id)"
-									>
-										<Play class="imageeditor-card__action-icon" />
-									</button>
-									<button
-										type="button"
-										class="imageeditor-card__action-btn"
-										title="Delete"
-										@click.stop="confirmDelete(project)"
-									>
-										<Trash2 class="imageeditor-card__action-icon" />
-									</button>
-								</div>
-							</div>
-						</div>
-					</div>
-				</div>
-
-				<div v-if="filteredProjects.length === 0" class="imageeditor__no-results">
-					<div class="imageeditor__no-results-icon-wrapper">
-						<Search class="imageeditor__no-results-icon" />
-					</div>
-					<h3 class="imageeditor__no-results-title">No projects found</h3>
-					<p class="imageeditor__no-results-description">
-						We couldn't find any projects matching your search. Try adjusting your search query.
-					</p>
-					<button type="button" class="imageeditor__no-results-btn" @click="searchQuery = ''">Clear search</button>
-				</div>
-			</div>
-
-			<div v-else class="imageeditor__empty">
-				<div class="imageeditor__empty-icon-wrapper">
-					<ImageIcon class="imageeditor__empty-icon" />
-				</div>
-				<h3 class="imageeditor__empty-title">No projects found</h3>
-				<p class="imageeditor__empty-description">Create a new project to get started</p>
-			</div>
-		</div>
+		<EmptyState
+			v-else
+			:icon="ImageIcon"
+			title="No designs yet"
+			description="Create thumbnails, banners and social graphics with canvas presets."
+		>
+			<Button variant="secondary" :disabled="isCreatingProject" @click="createNewProject"><Plus /> New project</Button>
+		</EmptyState>
 
 		<ConfirmationModal
 			:show="showDeleteDialog"
-			title="Delete Project"
+			title="Delete project"
 			:message="deleteMessage"
-			suffix="This action cannot be undone."
+			suffix=""
 			confirm-text="Delete"
 			variant="destructive"
 			@close="showDeleteDialog = false"
@@ -966,683 +864,3 @@ function getRelativeTime(dateStr: string): string {
 		<AuthModal v-model="showAuthModal" />
 	</PageLayout>
 </template>
-
-<style scoped>
-.imageeditor-beta-badge {
-	display: inline-flex;
-	align-items: center;
-	padding: 0.2rem 0.5rem;
-	font-size: 0.6875rem;
-	font-weight: 700;
-	line-height: 1;
-	letter-spacing: 0.02em;
-	border-radius: 0.375rem;
-	background-color: var(--sidebar-accent);
-	color: #000;
-	text-transform: uppercase;
-}
-
-.imageeditor__content {
-	display: flex;
-	flex-direction: column;
-	gap: 1.5rem;
-	padding: 1.5rem;
-	width: 100%;
-	flex: 1;
-}
-
-.imageeditor__content--empty {
-	justify-content: center;
-	align-items: center;
-}
-
-.imageeditor__main {
-	display: flex;
-	flex-direction: column;
-	gap: 1.5rem;
-}
-
-.imageeditor__loading {
-	display: flex;
-	flex-direction: column;
-	gap: 1.5rem;
-}
-
-.imageeditor__heading {
-	margin-bottom: 0.5rem;
-}
-
-.imageeditor__title {
-	font-size: 1.5rem;
-	font-weight: 700;
-	color: var(--sidebar-text);
-	margin: 0 0 0.2rem;
-	letter-spacing: -0.02em;
-}
-
-.imageeditor__subtitle {
-	font-size: 0.875rem;
-	color: var(--sidebar-text-muted);
-	margin: 0;
-	line-height: 1.5;
-}
-
-.imageeditor-header-actions {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-}
-
-.imageeditor-header__search {
-	position: relative;
-	width: 200px;
-}
-
-.imageeditor-header__search-icon {
-	position: absolute;
-	left: 0.625rem;
-	top: 50%;
-	transform: translateY(-50%);
-	width: 14px;
-	height: 14px;
-	color: var(--sidebar-text-muted);
-	pointer-events: none;
-}
-
-.imageeditor-header__search-input {
-	width: 100%;
-	padding-left: 2rem;
-	height: 32px;
-	background-color: var(--sidebar-surface);
-	border: 1px solid var(--sidebar-border);
-	border-radius: 6px;
-	font-size: 0.75rem;
-}
-
-.imageeditor-header__search-input:focus {
-	border-color: var(--sidebar-accent);
-	outline: none;
-}
-
-.imageeditor-header__sort {
-	width: 140px;
-	flex-shrink: 0;
-}
-
-:deep(.imageeditor-header__dropdown-trigger) {
-	height: 32px !important;
-	padding: 0 0.625rem !important;
-	background-color: var(--sidebar-surface) !important;
-	border: 1px solid var(--sidebar-border) !important;
-	border-radius: 6px !important;
-	font-size: 0.75rem !important;
-	color: var(--sidebar-text) !important;
-	transition: all 150ms ease !important;
-}
-
-:deep(.imageeditor-header__dropdown-trigger:hover) {
-	border-color: rgba(255, 255, 255, 0.15) !important;
-}
-
-:deep(.imageeditor-header__dropdown-trigger span) {
-	color: var(--sidebar-text) !important;
-}
-
-:deep(.imageeditor-header__dropdown-trigger svg) {
-	width: 12px !important;
-	height: 12px !important;
-	color: var(--sidebar-text-muted) !important;
-}
-
-.imageeditor-create-btn {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	height: 32px;
-	padding: 0 0.875rem;
-	background-color: var(--sidebar-accent);
-	color: var(--sidebar-bg);
-	border: none;
-	border-radius: 6px;
-	font-size: 0.75rem;
-	font-weight: 600;
-	cursor: pointer;
-	transition: all 150ms ease;
-}
-
-.imageeditor-create-btn:hover:not(:disabled) {
-	opacity: 0.9;
-}
-
-.imageeditor-create-btn:disabled {
-	opacity: 0.5;
-	cursor: not-allowed;
-}
-
-.imageeditor-create-btn__icon {
-	width: 14px;
-	height: 14px;
-}
-
-.imageeditor-skeleton__card-title {
-	height: 16px;
-	width: 70%;
-	background: linear-gradient(
-		90deg,
-		rgba(255, 255, 255, 0.1) 25%,
-		rgba(255, 255, 255, 0.2) 50%,
-		rgba(255, 255, 255, 0.1) 75%
-	);
-	background-size: 200% 100%;
-	animation: shimmer 1.5s infinite;
-	border-radius: 4px;
-	margin-bottom: 0.5rem;
-}
-
-.imageeditor-skeleton__card-meta {
-	height: 12px;
-	width: 50%;
-	background: linear-gradient(
-		90deg,
-		rgba(255, 255, 255, 0.1) 25%,
-		rgba(255, 255, 255, 0.2) 50%,
-		rgba(255, 255, 255, 0.1) 75%
-	);
-	background-size: 200% 100%;
-	animation: shimmer 1.5s infinite;
-	animation-delay: 0.15s;
-	border-radius: 4px;
-}
-
-@keyframes shimmer {
-	0% {
-		background-position: 200% 0;
-	}
-	100% {
-		background-position: -200% 0;
-	}
-}
-
-.imageeditor__selection-bar {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 0.75rem 1rem;
-	background-color: var(--sidebar-surface);
-	border: 1px solid var(--sidebar-border);
-	border-radius: 10px;
-}
-
-.imageeditor__selection-info {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	font-size: 0.875rem;
-	color: var(--sidebar-text);
-	font-weight: 500;
-}
-
-.imageeditor__selection-select-all {
-	margin-left: 0.25rem;
-	padding: 0.25rem 0.5rem;
-	font-size: 0.75rem;
-	font-weight: 500;
-	color: var(--sidebar-accent);
-	background: transparent;
-	border: none;
-	border-radius: 4px;
-	cursor: pointer;
-}
-
-.imageeditor__selection-select-all:hover {
-	background-color: var(--sidebar-hover);
-}
-
-.imageeditor__selection-icon {
-	width: 16px;
-	height: 16px;
-	color: var(--sidebar-accent);
-}
-
-.imageeditor__selection-actions {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-}
-
-.imageeditor__selection-clear {
-	padding: 0.375rem 0.75rem;
-	font-size: 0.75rem;
-	font-weight: 500;
-	color: var(--sidebar-text-muted);
-	background: transparent;
-	border: 1px solid var(--sidebar-border);
-	border-radius: 6px;
-	cursor: pointer;
-	transition: all 150ms ease;
-}
-
-.imageeditor__selection-clear:hover {
-	background-color: var(--sidebar-hover);
-	color: var(--sidebar-text);
-}
-
-.imageeditor__selection-delete {
-	display: flex;
-	align-items: center;
-	gap: 0.375rem;
-	padding: 0.375rem 0.75rem;
-	font-size: 0.75rem;
-	font-weight: 600;
-	color: white;
-	background-color: #ef4444;
-	border: none;
-	border-radius: 6px;
-	cursor: pointer;
-	transition: all 150ms ease;
-}
-
-.imageeditor__selection-delete:hover:not(:disabled) {
-	background-color: #dc2626;
-}
-
-.imageeditor__selection-delete-icon {
-	width: 13px;
-	height: 13px;
-}
-
-.selection-bar-enter-active {
-	animation: slideDown 0.2s ease-out;
-}
-
-.selection-bar-leave-active {
-	animation: slideUp 0.15s ease-in;
-}
-
-@keyframes slideDown {
-	from {
-		opacity: 0;
-		transform: translateY(-8px);
-	}
-	to {
-		opacity: 1;
-		transform: translateY(0);
-	}
-}
-
-@keyframes slideUp {
-	from {
-		opacity: 1;
-		transform: translateY(0);
-	}
-	to {
-		opacity: 0;
-		transform: translateY(-8px);
-	}
-}
-
-.imageeditor__section {
-	display: flex;
-	flex-direction: column;
-	gap: 1rem;
-}
-
-.imageeditor__date-group {
-	display: flex;
-	flex-direction: column;
-	gap: 1rem;
-}
-
-.imageeditor__section-header {
-	font-size: 0.875rem;
-	font-weight: 500;
-	color: var(--sidebar-text-muted);
-	margin: 0;
-	padding-bottom: 0.1rem;
-}
-
-.imageeditor__grid {
-	display: grid;
-	grid-template-columns: repeat(1, 1fr);
-	gap: 1.25rem;
-}
-
-@media (min-width: 1024px) {
-	.imageeditor__grid {
-		grid-template-columns: repeat(2, 1fr);
-	}
-}
-
-@media (min-width: 1400px) {
-	.imageeditor__grid {
-		grid-template-columns: repeat(3, 1fr);
-	}
-}
-
-@media (min-width: 1800px) {
-	.imageeditor__grid {
-		grid-template-columns: repeat(4, 1fr);
-	}
-}
-
-.imageeditor-card {
-	position: relative;
-	background-color: var(--sidebar-surface);
-	border: 1px solid var(--sidebar-border);
-	border-radius: 10px;
-	overflow: hidden;
-	cursor: pointer;
-	transition: all 200ms ease;
-	aspect-ratio: 16 / 9;
-}
-
-.imageeditor-card:hover {
-	border-color: rgba(255, 255, 255, 0.15);
-	box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-	transform: scale(1.02);
-}
-
-.imageeditor-card--selected {
-	border-color: var(--sidebar-accent);
-	box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
-}
-
-.imageeditor-card--selected:hover {
-	border-color: var(--sidebar-accent);
-}
-
-.imageeditor-card--skeleton {
-	pointer-events: none;
-	aspect-ratio: 16 / 9;
-}
-
-.imageeditor-card__skeleton-bg {
-	position: absolute;
-	inset: 0;
-	background: linear-gradient(135deg, var(--sidebar-hover) 0%, var(--sidebar-surface) 100%);
-}
-
-.imageeditor-card__checkbox {
-	position: absolute;
-	top: 1rem;
-	right: 1rem;
-	z-index: 30;
-	opacity: 0;
-	transition: opacity 150ms ease;
-}
-
-.imageeditor-card:hover .imageeditor-card__checkbox,
-.imageeditor-card__checkbox--visible {
-	opacity: 1;
-}
-
-.imageeditor-card__checkbox-inner {
-	width: 24px;
-	height: 24px;
-	border-radius: 6px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	background-color: rgba(0, 0, 0, 0.6);
-	border: 1px solid rgba(255, 255, 255, 0.45);
-	color: white;
-	cursor: pointer;
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-	transition: all 150ms ease;
-}
-
-.imageeditor-card__checkbox-inner--checked {
-	background-color: var(--sidebar-accent);
-	border-color: var(--sidebar-accent);
-	color: var(--sidebar-bg);
-}
-
-.imageeditor-card__checkbox-icon {
-	width: 16px;
-	height: 16px;
-}
-
-.imageeditor-card__badge {
-	position: absolute;
-	top: 1rem;
-	left: 1rem;
-	z-index: 20;
-	display: flex;
-	align-items: center;
-	gap: 0.25rem;
-	padding: 0.3125rem 0.5rem;
-	border-radius: 5px;
-	font-size: 0.625rem;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.02em;
-	backdrop-filter: blur(8px);
-	box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-}
-
-.imageeditor-card__badge--canvas {
-	background-color: rgba(59, 130, 246, 0.3);
-	color: #93c5fd;
-}
-
-.imageeditor-card__badge-icon {
-	width: 10px;
-	height: 10px;
-}
-
-.imageeditor-card__thumbnail {
-	position: absolute;
-	inset: 0;
-	z-index: 0;
-	background-size: cover;
-	background-position: center;
-	background-repeat: no-repeat;
-}
-
-.imageeditor-card__vignette {
-	position: absolute;
-	inset: 0;
-	background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 40%, transparent 70%);
-}
-
-.imageeditor-card__thumbnail--empty {
-	background-color: var(--sidebar-hover);
-}
-
-.imageeditor-card__thumbnail-gradient {
-	position: absolute;
-	inset: 0;
-	background: linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.4) 50%, rgba(0, 0, 0, 0.5) 100%);
-}
-
-.imageeditor-card__empty-icon {
-	position: absolute;
-	inset: 0;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	opacity: 0.2;
-}
-
-.imageeditor-card__folder-icon {
-	width: 64px;
-	height: 64px;
-	color: var(--sidebar-text);
-}
-
-.imageeditor-card__bottom {
-	position: absolute;
-	bottom: 0;
-	left: 0;
-	right: 0;
-	z-index: 5;
-	padding: 1rem;
-	padding-top: 7rem;
-	background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 50%, transparent 100%);
-	display: flex;
-	flex-direction: column;
-	gap: 0.375rem;
-}
-
-.imageeditor-card__title {
-	font-size: 1rem;
-	font-weight: 700;
-	color: white;
-	margin: 0;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-	line-height: 1.3;
-}
-
-.imageeditor-card__meta {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	font-size: 0.75rem;
-	font-weight: 500;
-	color: rgba(255, 255, 255, 0.7);
-}
-
-.imageeditor-card__meta-text {
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.imageeditor-card__hover-actions {
-	position: absolute;
-	inset: 0;
-	z-index: 10;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.75rem;
-	background-color: rgba(0, 0, 0, 0.4);
-	opacity: 0;
-	transition: opacity 200ms ease;
-}
-
-.imageeditor-card:hover .imageeditor-card__hover-actions {
-	opacity: 1;
-}
-
-.imageeditor-card__action-btn {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	padding: 0.5rem;
-	background-color: rgba(255, 255, 255, 0.9);
-	border: none;
-	border-radius: 9999px;
-	color: #1f2937;
-	cursor: pointer;
-	transition: all 150ms ease;
-	box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-}
-
-.imageeditor-card__action-btn:hover {
-	background-color: white;
-	transform: scale(1.1);
-	box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-}
-
-.imageeditor-card__action-icon {
-	width: 20px;
-	height: 20px;
-}
-
-.imageeditor__no-results {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	padding: 4rem 1rem;
-	text-align: center;
-}
-
-.imageeditor__no-results-icon-wrapper {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 64px;
-	height: 64px;
-	background-color: var(--sidebar-hover);
-	border-radius: 9999px;
-	margin-bottom: 1rem;
-}
-
-.imageeditor__no-results-icon {
-	width: 32px;
-	height: 32px;
-	color: var(--sidebar-text-muted);
-}
-
-.imageeditor__no-results-title {
-	font-size: 1.125rem;
-	font-weight: 600;
-	color: var(--sidebar-text);
-	margin: 0 0 0.25rem;
-}
-
-.imageeditor__no-results-description {
-	font-size: 0.875rem;
-	color: var(--sidebar-text-muted);
-	margin: 0 0 1rem;
-	max-width: 24rem;
-}
-
-.imageeditor__no-results-btn {
-	font-size: 0.875rem;
-	font-weight: 500;
-	color: var(--sidebar-accent);
-	background: transparent;
-	border: none;
-	cursor: pointer;
-}
-
-.imageeditor__no-results-btn:hover {
-	opacity: 0.8;
-	text-decoration: underline;
-}
-
-.imageeditor__empty {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	text-align: center;
-}
-
-.imageeditor__empty-icon-wrapper {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 72px;
-	height: 72px;
-	background-color: var(--sidebar-hover);
-	border-radius: 16px;
-	margin-bottom: 1.5rem;
-}
-
-.imageeditor__empty-icon {
-	width: 36px;
-	height: 36px;
-	color: var(--sidebar-text-muted);
-}
-
-.imageeditor__empty-title {
-	font-size: 1.125rem;
-	font-weight: 600;
-	color: var(--sidebar-text);
-	margin: 0 0 0.5rem;
-}
-
-.imageeditor__empty-description {
-	font-size: 0.875rem;
-	color: var(--sidebar-text-muted);
-	margin: 0;
-	max-width: 300px;
-}
-</style>

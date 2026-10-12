@@ -12,7 +12,9 @@ import EffectProperties from "./properties/EffectProperties.vue";
 import CaptionProperties from "./properties/CaptionProperties.vue";
 import CaptionMultiProperties from "./properties/CaptionMultiProperties.vue";
 import TransitionProperties from "./properties/TransitionProperties.vue";
-import { Settings } from "lucide-vue-next";
+import { MousePointerClick } from "lucide-vue-next";
+import { EmptyState } from "@/components/ui/empty-state";
+import InspectorSection from "./shared/InspectorSection.vue";
 import { useImageMode } from "../../composables/useImageMode";
 import type { Transition } from "../../types/transitions";
 
@@ -66,12 +68,7 @@ const selectedTransition = computed((): Transition | null => {
 </script>
 
 <template>
-	<div
-		:class="[
-			'flex h-full flex-col overflow-hidden text-zinc-200',
-			isImageMode ? 'bg-[#1e1e1e]' : 'rounded-sm bg-[#18181b]',
-		]"
-	>
+	<div class="flex h-full flex-col overflow-hidden text-fg">
 		<template v-if="selectedElements.length > 0 && !(isImageMode && captionRepresentative)">
 			<!-- Multi-caption selection: render a single representative panel to avoid N-mount flicker -->
 			<div v-if="captionRepresentative" class="min-h-0 flex-1 overflow-hidden">
@@ -136,26 +133,24 @@ const selectedTransition = computed((): Transition | null => {
 		</template>
 
 		<!-- Junction transition selected from timeline badge (not mixed with clip inspector) -->
-		<template v-else-if="!isImageMode && selectedTransition">
-			<div class="flex min-h-0 flex-1 flex-col overflow-hidden">
-				<div class="shrink-0 border-b border-white/10 px-3 py-2">
-					<p class="text-xs font-medium text-zinc-300">Transition</p>
-					<p class="text-[10px] text-zinc-500">Between clips on this track</p>
-				</div>
-				<div class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden p-3">
-					<TransitionProperties :transition="selectedTransition" />
-				</div>
-			</div>
-		</template>
+		<div v-else-if="!isImageMode && selectedTransition" class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
+			<InspectorSection flush>
+				<template #title>Transition</template>
+				<template #meta>
+					<span class="truncate text-2xs font-normal text-fg-subtle">Between clips on this track</span>
+				</template>
+				<TransitionProperties :transition="selectedTransition" />
+			</InspectorSection>
+		</div>
 
 		<!-- Empty state -->
-		<div v-else class="flex h-full flex-col">
-			<div class="flex flex-1 flex-col items-center justify-center gap-2 p-4">
-				<Settings class="size-6 text-zinc-700" :stroke-width="1" />
-				<p class="text-center text-[11px] text-zinc-500">
-					{{ isImageMode ? "Select a layer" : "Select a layer to edit" }}
-				</p>
-			</div>
-		</div>
+		<EmptyState
+			v-else
+			size="sm"
+			:icon="MousePointerClick"
+			:title="isImageMode ? 'Select a layer' : 'Nothing selected'"
+			:description="isImageMode ? undefined : 'Select a clip or layer on the timeline to edit its properties.'"
+			class="flex-1"
+		/>
 	</div>
 </template>

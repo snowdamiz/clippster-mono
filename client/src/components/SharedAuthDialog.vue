@@ -1,257 +1,251 @@
 <template>
+  <!--
+    Shared with the browser app (apps/web), which only ships vue + lucide-vue-next. Keep this file (and any
+    child it imports) free of the desktop UI primitives and their helper libraries: the overlay, panel,
+    buttons and inputs below mirror Modal / Button / Input using token utilities only.
+  -->
   <Teleport to="body">
-    <Transition name="modal">
+    <Transition
+      enter-active-class="transition-opacity duration-150 ease-out"
+      enter-from-class="opacity-0"
+      leave-active-class="transition-opacity duration-100 ease-in"
+      leave-to-class="opacity-0"
+    >
       <div
         v-if="modelValue"
-        class="auth-modal__overlay"
+        class="fixed inset-0 z-[10040] flex items-center justify-center bg-[var(--overlay)] p-4 backdrop-blur-[2px]"
+        tabindex="-1"
         @click.self="!mandatory && close()"
         @keydown.esc="!mandatory && close()"
-        tabindex="-1"
       >
-        <Transition name="dialog" appear>
-          <div v-if="modelValue" class="auth-modal" role="dialog" aria-modal="true" aria-labelledby="auth-modal-title">
-            <!-- Accent bar -->
-            <div class="auth-modal__accent"></div>
-
-            <!-- Close Button (hidden when mandatory) -->
+        <Transition
+          appear
+          enter-active-class="transition duration-200 ease-out"
+          enter-from-class="opacity-0 scale-[0.98]"
+          leave-active-class="transition duration-100 ease-in"
+          leave-to-class="opacity-0 scale-[0.98]"
+        >
+          <div
+            v-if="modelValue"
+            class="relative flex max-h-[calc(100vh-2rem)] w-full max-w-[720px] flex-col overflow-hidden rounded-[var(--radius-modal)] bg-surface-raised text-fg shadow-[var(--shadow-lg)]"
+            role="dialog"
+            aria-modal="true"
+            :aria-labelledby="ids.title"
+          >
             <button
               v-if="!mandatory"
-              @click="close"
+              type="button"
               :disabled="auth.loading"
-              class="auth-modal__close"
+              class="absolute right-3 top-3 z-10 grid size-7 place-items-center rounded-md text-fg-subtle transition-colors hover:bg-surface-hover hover:text-fg focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-45"
               aria-label="Close dialog"
+              @click="close"
             >
-              <X :size="18" />
+              <X class="size-4" />
             </button>
 
-            <!-- Two Column Layout -->
-            <div class="auth-modal__grid">
-              <!-- Left Column - Branding & Value Props -->
-              <div class="auth-modal__branding">
-                <!-- Logo -->
-                <div class="auth-modal__logo">
-                  <img :src="logo" alt="Clippster" />
+            <div class="grid min-h-0 overflow-y-auto md:grid-cols-2">
+              <!-- Branding & value props -->
+              <div class="flex flex-col gap-6 border-b border-line-subtle bg-surface p-6 md:border-b-0 md:border-r md:p-7">
+                <div class="flex items-center gap-2.5">
+                  <img :src="logoIcon" alt="" class="size-7 rounded-lg" />
+                  <img :src="logo" alt="Clippster" class="h-5 w-auto brightness-0 invert" />
                 </div>
 
-                <!-- Value Propositions -->
-                <div class="auth-modal__value-props">
-                  <div class="auth-modal__headline">
-                    <h2 id="auth-modal-title" class="auth-modal__title">Transform Videos into Viral Clips</h2>
-                    <p class="auth-modal__subtitle">Sign in to unlock AI-powered clip creation and editing</p>
-                  </div>
-
-                  <!-- Features List -->
-                  <div class="auth-modal__features">
-                    <div class="auth-modal__feature">
-                      <div class="auth-modal__feature-icon auth-modal__feature-icon--primary">
-                        <Zap :size="18" />
-                      </div>
-                      <div class="auth-modal__feature-content">
-                        <h3 class="auth-modal__feature-title">AI-Powered Detection</h3>
-                        <p class="auth-modal__feature-desc">Automatically find the best moments in your videos</p>
-                      </div>
-                    </div>
-
-                    <div class="auth-modal__feature">
-                      <div class="auth-modal__feature-icon auth-modal__feature-icon--secondary">
-                        <Film :size="18" />
-                      </div>
-                      <div class="auth-modal__feature-content">
-                        <h3 class="auth-modal__feature-title">Professional Editing</h3>
-                        <p class="auth-modal__feature-desc">Timeline editor with multi-platform formatting</p>
-                      </div>
-                    </div>
-
-                    <div class="auth-modal__feature">
-                      <div class="auth-modal__feature-icon auth-modal__feature-icon--tertiary">
-                        <DollarSign :size="18" />
-                      </div>
-                      <div class="auth-modal__feature-content">
-                        <h3 class="auth-modal__feature-title">Credit-Based Pricing</h3>
-                        <p class="auth-modal__feature-desc">Pay only for what you use, no subscriptions</p>
-                      </div>
-                    </div>
-                  </div>
+                <div class="flex flex-col gap-1.5">
+                  <h2 :id="ids.title" class="text-lg font-semibold tracking-[-0.01em] text-fg">
+                    Transform Videos into Viral Clips
+                  </h2>
+                  <p class="text-sm text-fg-muted">Sign in to unlock AI-powered clip creation and editing.</p>
                 </div>
 
-                <!-- Trust Badge -->
-                <div class="auth-modal__trust">
-                  <ShieldCheck :size="14" />
-                  <span>Secure authentication</span>
-                </div>
+                <ul class="hidden flex-col gap-4 md:flex">
+                  <li v-for="feature in features" :key="feature.title" class="flex items-start gap-3">
+                    <span
+                      class="grid size-8 shrink-0 place-items-center rounded-lg border border-line bg-surface-hover text-fg-muted"
+                    >
+                      <component :is="feature.icon" class="size-4" />
+                    </span>
+                    <span class="min-w-0">
+                      <span class="block text-sm font-medium text-fg">{{ feature.title }}</span>
+                      <span class="mt-0.5 block text-xs text-fg-muted">{{ feature.description }}</span>
+                    </span>
+                  </li>
+                </ul>
+
+                <p
+                  class="mt-auto hidden items-center gap-2 border-t border-line-subtle pt-4 text-xs text-fg-subtle md:flex"
+                >
+                  <ShieldCheck class="size-3.5" />
+                  Secure authentication
+                </p>
               </div>
 
-              <!-- Right Column - Auth Actions -->
-              <div class="auth-modal__content">
-                <!-- View: Sign In -->
-                <template v-if="currentView === 'signin'">
-                  <div class="auth-modal__view">
-                    <div class="auth-modal__view-header">
-                      <h3 class="auth-modal__view-title">Sign In</h3>
-                    </div>
+              <!-- Auth actions -->
+              <div class="flex flex-col justify-center p-6 md:p-7">
+                <!-- View: Sign in -->
+                <div v-if="currentView === 'signin'" class="flex animate-enter flex-col gap-5">
+                  <div>
+                    <h3 class="text-base font-semibold text-fg">Sign In</h3>
+                    <p class="mt-0.5 text-xs text-fg-muted">Use your email or continue with Google.</p>
+                  </div>
 
-                    <!-- Email/Password Form -->
-                    <form @submit.prevent="handleEmailLogin" class="auth-modal__form">
-                      <div class="auth-modal__field">
-                        <input
-                          v-model="email"
-                          type="email"
-                          required
-                          placeholder="Email address"
-                          aria-label="Email"
-                          autocomplete="email"
-                          class="auth-modal__input"
-                        />
-                      </div>
-                      <div class="auth-modal__field">
-                        <input
-                          v-model="password"
-                          type="password"
-                          required
-                          placeholder="Password"
-                          aria-label="Password"
-                          autocomplete="current-password"
-                          class="auth-modal__input"
-                        />
-                      </div>
-                      <div class="auth-modal__field-action">
-                        <button type="button" @click="currentView = 'forgot-password'" class="auth-modal__link">
+                  <form class="flex flex-col gap-3.5" @submit.prevent="handleEmailLogin">
+                    <div class="flex flex-col gap-1.5">
+                      <label :for="ids.email" :class="labelClass">Email</label>
+                      <input
+                        :id="ids.email"
+                        v-model="email"
+                        type="email"
+                        required
+                        placeholder="you@example.com"
+                        autocomplete="email"
+                        :class="inputClass"
+                      />
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                      <div class="flex items-center justify-between gap-2">
+                        <label :for="ids.password" :class="labelClass">Password</label>
+                        <button type="button" :class="linkClass" @click="currentView = 'forgot-password'">
                           Forgot password?
                         </button>
                       </div>
-                      <button type="submit" :disabled="auth.loading" class="auth-modal__btn auth-modal__btn--primary">
-                        <Loader2 v-if="auth.loading && authMethod === 'email'" :size="16" class="auth-modal__spinner" />
-                        <Mail v-else :size="16" />
-                        <span>{{ auth.loading && authMethod === 'email' ? 'Signing in...' : 'Sign In' }}</span>
-                      </button>
-                    </form>
-
-                    <p class="auth-modal__switch-text">
-                      Don't have an account?
-                      <button @click="currentView = 'signup'" class="auth-modal__link">Sign up</button>
-                    </p>
-
-                    <!-- OR Divider -->
-                    <div class="auth-modal__divider">
-                      <span>OR</span>
+                      <input
+                        :id="ids.password"
+                        v-model="password"
+                        type="password"
+                        required
+                        placeholder="Your password"
+                        autocomplete="current-password"
+                        :class="inputClass"
+                      />
                     </div>
+                    <button type="submit" :disabled="auth.loading" :class="[primaryButtonClass, 'mt-1']">
+                      <Loader2 v-if="auth.loading && authMethod === 'email'" class="animate-spin" />
+                      <Mail v-else />
+                      {{ auth.loading && authMethod === 'email' ? 'Signing in...' : 'Sign In' }}
+                    </button>
+                  </form>
 
-                    <!-- Social Auth Buttons -->
-                    <div class="auth-modal__social">
-                      <button @click="authenticateWithGoogle" :disabled="auth.loading" class="auth-modal__social-btn">
-                        <svg
-                          v-if="!auth.loading || authMethod !== 'google'"
-                          class="auth-modal__social-icon"
-                          viewBox="0 0 24 24"
-                        >
-                          <path
-                            fill="#4285F4"
-                            d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                          />
-                          <path
-                            fill="#34A853"
-                            d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                          />
-                          <path
-                            fill="#FBBC05"
-                            d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                          />
-                          <path
-                            fill="#EA4335"
-                            d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                          />
-                        </svg>
-                        <Loader2 v-else :size="16" class="auth-modal__spinner" />
-                        <span>Google</span>
-                      </button>
-                    </div>
+                  <div class="flex items-center gap-3 text-2xs font-medium uppercase tracking-[0.06em] text-fg-subtle">
+                    <span class="h-px flex-1 bg-line" />
+                    or
+                    <span class="h-px flex-1 bg-line" />
                   </div>
-                </template>
 
-                <!-- View: Sign Up -->
-                <template v-else-if="currentView === 'signup'">
-                  <div class="auth-modal__view">
-                    <div class="auth-modal__view-header">
-                      <h3 class="auth-modal__view-title">Create Account</h3>
-                    </div>
+                  <button
+                    type="button"
+                    :disabled="auth.loading"
+                    :class="secondaryButtonClass"
+                    @click="authenticateWithGoogle"
+                  >
+                    <svg v-if="!auth.loading || authMethod !== 'google'" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        fill="#4285F4"
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                      />
+                      <path
+                        fill="#34A853"
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                      />
+                      <path
+                        fill="#FBBC05"
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                      />
+                      <path
+                        fill="#EA4335"
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                      />
+                    </svg>
+                    <Loader2 v-else class="animate-spin" />
+                    Google
+                  </button>
 
-                    <form @submit.prevent="handleEmailRegister" class="auth-modal__form">
-                      <div class="auth-modal__field">
-                        <input
-                          v-model="email"
-                          type="email"
-                          required
-                          placeholder="Email address"
-                          aria-label="Email"
-                          autocomplete="email"
-                          class="auth-modal__input"
-                        />
-                      </div>
-                      <div class="auth-modal__field">
-                        <input
-                          v-model="password"
-                          type="password"
-                          required
-                          minlength="8"
-                          placeholder="Password (min 8 characters)"
-                          aria-label="Password"
-                          autocomplete="new-password"
-                          class="auth-modal__input"
-                        />
-                      </div>
-                      <div class="auth-modal__field">
-                        <input
-                          v-model="confirmPassword"
-                          type="password"
-                          required
-                          minlength="8"
-                          placeholder="Confirm password"
-                          aria-label="Confirm password"
-                          autocomplete="new-password"
-                          class="auth-modal__input"
-                        />
-                      </div>
-                      <p
-                        v-if="password && confirmPassword && password !== confirmPassword"
-                        class="auth-modal__error-inline"
-                      >
-                        Passwords do not match
-                      </p>
-                      <button
-                        type="submit"
-                        :disabled="auth.loading || password !== confirmPassword"
-                        class="auth-modal__btn auth-modal__btn--primary"
-                      >
-                        <Loader2 v-if="auth.loading" :size="16" class="auth-modal__spinner" />
-                        <UserPlus v-else :size="16" />
-                        <span>{{ auth.loading ? 'Creating...' : 'Create Account' }}</span>
-                      </button>
-                    </form>
+                  <p class="text-center text-xs text-fg-muted">
+                    Don't have an account?
+                    <button type="button" :class="linkClass" @click="currentView = 'signup'">Sign up</button>
+                  </p>
+                </div>
 
-                    <p class="auth-modal__switch-text">
-                      Already have an account?
-                      <button @click="currentView = 'signin'" class="auth-modal__link">Sign in</button>
-                    </p>
+                <!-- View: Sign up -->
+                <div v-else-if="currentView === 'signup'" class="flex animate-enter flex-col gap-5">
+                  <div>
+                    <h3 class="text-base font-semibold text-fg">Create Account</h3>
+                    <p class="mt-0.5 text-xs text-fg-muted">We'll email you a code to verify your address.</p>
                   </div>
-                </template>
+
+                  <form class="flex flex-col gap-3.5" @submit.prevent="handleEmailRegister">
+                    <div class="flex flex-col gap-1.5">
+                      <label :for="ids.email" :class="labelClass">Email</label>
+                      <input
+                        :id="ids.email"
+                        v-model="email"
+                        type="email"
+                        required
+                        placeholder="you@example.com"
+                        autocomplete="email"
+                        :class="inputClass"
+                      />
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                      <label :for="ids.password" :class="labelClass">Password</label>
+                      <input
+                        :id="ids.password"
+                        v-model="password"
+                        type="password"
+                        required
+                        minlength="8"
+                        placeholder="At least 8 characters"
+                        autocomplete="new-password"
+                        :class="inputClass"
+                      />
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                      <label :for="ids.confirm" :class="labelClass">Confirm password</label>
+                      <input
+                        :id="ids.confirm"
+                        v-model="confirmPassword"
+                        type="password"
+                        required
+                        minlength="8"
+                        placeholder="Repeat your password"
+                        autocomplete="new-password"
+                        :class="inputClass"
+                        :aria-invalid="passwordMismatch || undefined"
+                      />
+                      <p v-if="passwordMismatch" class="text-xs text-danger">Passwords do not match</p>
+                    </div>
+                    <button
+                      type="submit"
+                      :disabled="auth.loading || password !== confirmPassword"
+                      :class="[primaryButtonClass, 'mt-1']"
+                    >
+                      <Loader2 v-if="auth.loading" class="animate-spin" />
+                      <UserPlus v-else />
+                      {{ auth.loading ? 'Creating...' : 'Create Account' }}
+                    </button>
+                  </form>
+
+                  <p class="text-center text-xs text-fg-muted">
+                    Already have an account?
+                    <button type="button" :class="linkClass" @click="currentView = 'signin'">Sign in</button>
+                  </p>
+                </div>
 
                 <!-- View: Verify OTP -->
-                <template v-else-if="currentView === 'verify-otp'">
-                  <div class="auth-modal__view">
-                    <div class="auth-modal__view-header auth-modal__view-header--centered">
-                      <div class="auth-modal__view-icon">
-                        <Mail :size="24" />
-                      </div>
-                      <h3 class="auth-modal__view-title">Check your email</h3>
-                      <p class="auth-modal__view-subtitle">
-                        Enter the 6-digit code sent to
-                        <br />
-                        <span class="auth-modal__email-highlight">{{ auth.pendingVerificationEmail }}</span>
-                      </p>
-                    </div>
+                <div v-else-if="currentView === 'verify-otp'" class="flex animate-enter flex-col gap-5">
+                  <div>
+                    <h3 class="text-base font-semibold text-fg">Check your email</h3>
+                    <p class="mt-0.5 text-xs text-fg-muted">
+                      Enter the 6-digit code sent to
+                      <span class="font-medium text-fg">{{ auth.pendingVerificationEmail }}</span>
+                    </p>
+                  </div>
 
-                    <form @submit.prevent="handleVerifyOtp" class="auth-modal__form">
+                  <form class="flex flex-col gap-3.5" @submit.prevent="handleVerifyOtp">
+                    <div class="flex flex-col gap-1.5">
+                      <label :for="ids.otp" :class="labelClass">Verification code</label>
                       <input
+                        :id="ids.otp"
                         ref="otpInput"
                         v-model="otpCode"
                         type="text"
@@ -260,142 +254,160 @@
                         maxlength="6"
                         required
                         placeholder="000000"
-                        aria-label="Verification code"
                         autocomplete="one-time-code"
-                        class="auth-modal__input auth-modal__input--otp"
+                        :class="otpInputClass"
                         @input="handleOtpInput"
                       />
+                    </div>
+                    <button
+                      type="submit"
+                      :disabled="auth.loading || otpCode.length !== 6"
+                      :class="[primaryButtonClass, 'mt-1']"
+                    >
+                      <Loader2 v-if="auth.loading" class="animate-spin" />
+                      <CheckCircle v-else />
+                      {{ auth.loading ? 'Verifying...' : 'Verify' }}
+                    </button>
+                  </form>
+
+                  <div class="flex items-center justify-between gap-3 text-xs text-fg-muted">
+                    <button type="button" :class="quietLinkClass" @click="resetToSignIn">← Back</button>
+                    <span>
+                      Didn't receive it?
                       <button
-                        type="submit"
-                        :disabled="auth.loading || otpCode.length !== 6"
-                        class="auth-modal__btn auth-modal__btn--primary"
+                        type="button"
+                        :disabled="resendCooldown > 0 || auth.loading"
+                        :class="linkClass"
+                        @click="handleResendCode"
                       >
-                        <Loader2 v-if="auth.loading" :size="16" class="auth-modal__spinner" />
-                        <CheckCircle v-else :size="16" />
-                        <span>{{ auth.loading ? 'Verifying...' : 'Verify' }}</span>
+                        {{ resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend' }}
                       </button>
-                    </form>
-
-                    <div class="auth-modal__otp-actions">
-                      <p class="auth-modal__switch-text">
-                        Didn't receive it?
-                        <button
-                          @click="handleResendCode"
-                          :disabled="resendCooldown > 0 || auth.loading"
-                          class="auth-modal__link"
-                        >
-                          {{ resendCooldown > 0 ? `Resend in ${resendCooldown}s` : 'Resend' }}
-                        </button>
-                      </p>
-                      <button @click="resetToSignIn" class="auth-modal__back-link">← Back</button>
-                    </div>
+                    </span>
                   </div>
-                </template>
+                </div>
 
-                <!-- View: Forgot Password -->
-                <template v-else-if="currentView === 'forgot-password'">
-                  <div class="auth-modal__view">
-                    <div class="auth-modal__view-header">
-                      <h3 class="auth-modal__view-title">Reset Password</h3>
-                      <p class="auth-modal__view-subtitle">Enter your email to receive a reset link</p>
-                    </div>
-
-                    <form @submit.prevent="handleForgotPassword" class="auth-modal__form">
-                      <div class="auth-modal__field">
-                        <input
-                          v-model="email"
-                          type="email"
-                          required
-                          placeholder="Email address"
-                          aria-label="Email"
-                          autocomplete="email"
-                          class="auth-modal__input"
-                        />
-                      </div>
-                      <button type="submit" :disabled="auth.loading" class="auth-modal__btn auth-modal__btn--primary">
-                        <Loader2 v-if="auth.loading" :size="16" class="auth-modal__spinner" />
-                        <Send v-else :size="16" />
-                        <span>{{ auth.loading ? 'Sending...' : 'Send Reset Link' }}</span>
-                      </button>
-                    </form>
-
-                    <p class="auth-modal__switch-text">
-                      <button @click="currentView = 'signin'" class="auth-modal__link">← Back to sign in</button>
-                    </p>
+                <!-- View: Forgot password -->
+                <div v-else-if="currentView === 'forgot-password'" class="flex animate-enter flex-col gap-5">
+                  <div>
+                    <h3 class="text-base font-semibold text-fg">Reset password</h3>
+                    <p class="mt-0.5 text-xs text-fg-muted">Enter your email to receive a reset link.</p>
                   </div>
-                </template>
 
-                <template v-else-if="currentView === 'reset-password'">
-                  <div class="auth-modal__view">
-                    <h3 class="auth-modal__view-title">Choose a new password</h3>
-                    <form @submit.prevent="handleResetPassword" class="auth-modal__form">
+                  <form class="flex flex-col gap-3.5" @submit.prevent="handleForgotPassword">
+                    <div class="flex flex-col gap-1.5">
+                      <label :for="ids.email" :class="labelClass">Email</label>
                       <input
+                        :id="ids.email"
+                        v-model="email"
+                        type="email"
+                        required
+                        placeholder="you@example.com"
+                        autocomplete="email"
+                        :class="inputClass"
+                      />
+                    </div>
+                    <button type="submit" :disabled="auth.loading" :class="[primaryButtonClass, 'mt-1']">
+                      <Loader2 v-if="auth.loading" class="animate-spin" />
+                      <Send v-else />
+                      {{ auth.loading ? 'Sending...' : 'Send Reset Link' }}
+                    </button>
+                  </form>
+
+                  <p class="text-center text-xs">
+                    <button type="button" :class="quietLinkClass" @click="currentView = 'signin'">
+                      ← Back to sign in
+                    </button>
+                  </p>
+                </div>
+
+                <!-- View: Choose a new password (reset link) -->
+                <div v-else-if="currentView === 'reset-password'" class="flex animate-enter flex-col gap-5">
+                  <div>
+                    <h3 class="text-base font-semibold text-fg">Choose a new password</h3>
+                    <p class="mt-0.5 text-xs text-fg-muted">Use at least 8 characters.</p>
+                  </div>
+
+                  <form class="flex flex-col gap-3.5" @submit.prevent="handleResetPassword">
+                    <div class="flex flex-col gap-1.5">
+                      <label :for="ids.password" :class="labelClass">Password</label>
+                      <input
+                        :id="ids.password"
                         v-model="password"
                         type="password"
                         required
                         minlength="8"
-                        aria-label="Password"
                         autocomplete="new-password"
-                        placeholder="Password (min 8 characters)"
-                        class="auth-modal__input"
+                        placeholder="At least 8 characters"
+                        :class="inputClass"
                       />
+                    </div>
+                    <div class="flex flex-col gap-1.5">
+                      <label :for="ids.confirm" :class="labelClass">Confirm password</label>
                       <input
+                        :id="ids.confirm"
                         v-model="confirmPassword"
                         type="password"
                         required
                         minlength="8"
-                        aria-label="Confirm password"
                         autocomplete="new-password"
-                        placeholder="Confirm password"
-                        class="auth-modal__input"
+                        placeholder="Repeat your password"
+                        :class="inputClass"
+                        :aria-invalid="(!!confirmPassword && password !== confirmPassword) || undefined"
                       />
-                      <p v-if="confirmPassword && password !== confirmPassword" class="auth-modal__error-inline">
+                      <p v-if="confirmPassword && password !== confirmPassword" class="text-xs text-danger">
                         Passwords do not match
                       </p>
-                      <button
-                        type="submit"
-                        :disabled="auth.loading || password !== confirmPassword"
-                        class="auth-modal__btn auth-modal__btn--primary"
-                      >
-                        {{ auth.loading ? 'Saving...' : 'Save password' }}
-                      </button>
-                    </form>
-                  </div>
-                </template>
+                    </div>
+                    <button
+                      type="submit"
+                      :disabled="auth.loading || password !== confirmPassword"
+                      :class="[primaryButtonClass, 'mt-1']"
+                    >
+                      <Loader2 v-if="auth.loading" class="animate-spin" />
+                      {{ auth.loading ? 'Saving...' : 'Save password' }}
+                    </button>
+                  </form>
+                </div>
 
-                <!-- View: Reset Email Sent -->
-                <template v-else-if="currentView === 'reset-sent'">
-                  <div class="auth-modal__view">
-                    <div class="auth-modal__view-header auth-modal__view-header--centered">
-                      <div class="auth-modal__view-icon auth-modal__view-icon--success">
-                        <CheckCircle :size="24" />
-                      </div>
-                      <h3 class="auth-modal__view-title">Check your email</h3>
-                      <p class="auth-modal__view-subtitle">
+                <!-- View: Reset email sent -->
+                <div v-else-if="currentView === 'reset-sent'" class="flex animate-enter flex-col gap-5">
+                  <div class="flex items-start gap-3">
+                    <span
+                      class="grid size-8 shrink-0 place-items-center rounded-lg border border-[var(--success-line)] bg-success-soft text-success"
+                    >
+                      <CheckCircle class="size-4" />
+                    </span>
+                    <div>
+                      <h3 class="text-base font-semibold text-fg">Check your email</h3>
+                      <p class="mt-0.5 text-xs text-fg-muted">
                         If an account exists for {{ email }}, you'll receive a password reset link.
                       </p>
                     </div>
-                    <button @click="currentView = 'signin'" class="auth-modal__link auth-modal__link--block">
-                      Return to sign in
-                    </button>
                   </div>
-                </template>
+                  <button type="button" :class="secondaryButtonClass" @click="currentView = 'signin'">
+                    Return to sign in
+                  </button>
+                </div>
 
-                <!-- Error Message -->
-                <Transition name="slide-fade">
-                  <div v-if="auth.error" role="alert" class="auth-modal__message auth-modal__message--error">
-                    <AlertTriangle :size="14" />
-                    <p>{{ auth.error }}</p>
-                  </div>
-                </Transition>
+                <!-- Error message -->
+                <div
+                  v-if="auth.error"
+                  role="alert"
+                  class="mt-4 flex animate-enter items-start gap-2 rounded-[var(--radius-control)] border border-[var(--danger-line)] bg-danger-soft px-3 py-2.5 text-xs text-danger"
+                >
+                  <AlertTriangle class="mt-px size-3.5 shrink-0" />
+                  <p>{{ auth.error }}</p>
+                </div>
 
-                <!-- Success Message -->
-                <Transition name="slide-fade">
-                  <div v-if="successMessage" role="status" class="auth-modal__message auth-modal__message--success">
-                    <CheckCircle :size="14" />
-                    <p>{{ successMessage }}</p>
-                  </div>
-                </Transition>
+                <!-- Success message -->
+                <div
+                  v-if="successMessage"
+                  role="status"
+                  class="mt-4 flex animate-enter items-start gap-2 rounded-[var(--radius-control)] border border-[var(--success-line)] bg-success-soft px-3 py-2.5 text-xs text-success"
+                >
+                  <CheckCircle class="mt-px size-3.5 shrink-0" />
+                  <p>{{ successMessage }}</p>
+                </div>
               </div>
             </div>
           </div>
@@ -406,7 +418,7 @@
 </template>
 
 <script setup lang="ts">
-  import { onMounted, onUnmounted, watch, ref } from 'vue';
+  import { computed, onMounted, onUnmounted, watch, ref, useId } from 'vue';
   import {
     X,
     Zap,
@@ -421,6 +433,7 @@
     Send,
   } from 'lucide-vue-next';
   import logo from '../../public/logo.svg';
+  import logoIcon from '../../public/logo-titlebar.svg';
   import type { AuthDialogAdapter } from './authDialog';
 
   const props = defineProps<{
@@ -437,6 +450,36 @@
     passwordReset: [];
   }>();
 
+  // Class recipes mirroring the desktop Button / Input / Field primitives (see note in the template).
+  const controlBase =
+    'w-full rounded-[var(--radius-control)] border border-line bg-surface-raised text-fg transition-[border-color,box-shadow] placeholder:text-fg-subtle hover:border-line-strong focus-visible:border-brand-line focus-visible:shadow-[0_0_0_3px_var(--brand-soft)] focus-visible:outline-none aria-[invalid=true]:border-[var(--danger-line)]';
+  const inputClass = `${controlBase} block h-[var(--control-lg)] px-3 text-sm`;
+  const otpInputClass = `${controlBase} block h-12 px-3 text-center font-mono text-xl tracking-[0.4em] placeholder:tracking-[0.4em]`;
+  const labelClass = 'text-xs font-medium text-fg-muted';
+  const buttonBase =
+    'inline-flex h-[var(--control-lg)] w-full items-center justify-center gap-1.5 whitespace-nowrap rounded-[var(--radius-control)] px-4 text-sm font-medium transition-[background-color,border-color,color,box-shadow,opacity] duration-150 focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-45 [&_svg]:size-4 [&_svg]:shrink-0';
+  const primaryButtonClass = `${buttonBase} bg-[var(--primary-bg)] text-[var(--fg-on-light)] shadow-[var(--shadow-sm)] hover:bg-[var(--primary-bg-hover)]`;
+  const secondaryButtonClass = `${buttonBase} border border-line bg-surface-raised text-fg hover:border-line-strong hover:bg-surface-hover`;
+  const linkBase =
+    'rounded-sm font-medium underline-offset-4 transition-colors focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none disabled:pointer-events-none disabled:opacity-45';
+  const linkClass = `${linkBase} text-xs text-brand hover:text-brand-hover hover:underline`;
+  const quietLinkClass = `${linkBase} text-xs text-fg-muted hover:text-fg`;
+
+  const features = [
+    { icon: Zap, title: 'AI-powered detection', description: 'Automatically find the best moments in your videos' },
+    { icon: Film, title: 'Professional editing', description: 'Timeline editor with multi-platform formatting' },
+    { icon: DollarSign, title: 'Credit-based pricing', description: 'Pay only for what you use, no subscriptions' },
+  ];
+
+  const uid = useId();
+  const ids = {
+    title: `${uid}-title`,
+    email: `${uid}-email`,
+    password: `${uid}-password`,
+    confirm: `${uid}-confirm`,
+    otp: `${uid}-otp`,
+  };
+
   const auth = props.auth;
   const authMethod = ref<'google' | 'email' | null>(null);
   const currentView = ref<'signin' | 'signup' | 'verify-otp' | 'forgot-password' | 'reset-sent' | 'reset-password'>(
@@ -449,6 +492,10 @@
   const successMessage = ref('');
   const resendCooldown = ref(0);
   const otpInput = ref<HTMLInputElement | null>(null);
+
+  const passwordMismatch = computed(
+    () => !!password.value && !!confirmPassword.value && password.value !== confirmPassword.value
+  );
 
   let cooldownInterval: ReturnType<typeof setInterval> | null = null;
 
@@ -637,595 +684,3 @@
     window.removeEventListener('email-verified', handleEmailVerified);
   });
 </script>
-
-<style scoped>
-  /* ===== Overlay ===== */
-  .auth-modal__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 1rem;
-    z-index: 9999;
-  }
-
-  /* ===== Dialog Container ===== */
-  .auth-modal {
-    position: relative;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 720px;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  }
-
-  /* ===== Accent Bar ===== */
-  .auth-modal__accent {
-    height: 3px;
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
-    flex-shrink: 0;
-  }
-
-  /* ===== Close Button ===== */
-  .auth-modal__close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    z-index: 10;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .auth-modal__close:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .auth-modal__close:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* ===== Two Column Grid ===== */
-  .auth-modal__grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    min-height: 0;
-    align-items: start;
-    overflow-y: auto;
-  }
-
-  @media (min-width: 768px) {
-    .auth-modal__grid {
-      grid-template-columns: 1fr 1fr;
-    }
-  }
-
-  @media (max-width: 767px) {
-    .auth-modal__grid .auth-modal__features,
-    .auth-modal__grid .auth-modal__trust {
-      display: none;
-    }
-    .auth-modal__branding {
-      padding-bottom: 1rem;
-    }
-  }
-
-  /* ===== Branding Column ===== */
-  .auth-modal__branding {
-    display: flex;
-    flex-direction: column;
-    padding: 1.5rem;
-    background-color: rgba(6, 182, 212, 0.04);
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  @media (min-width: 768px) {
-    .auth-modal__branding {
-      padding: 2rem;
-      border-bottom: none;
-      border-right: 1px solid var(--sidebar-border);
-    }
-  }
-
-  .auth-modal__logo {
-    margin-bottom: 1.5rem;
-  }
-
-  .auth-modal__logo img {
-    height: 2rem;
-    width: auto;
-  }
-
-  @media (min-width: 768px) {
-    .auth-modal__logo img {
-      height: 2.5rem;
-    }
-  }
-
-  .auth-modal__value-props {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-
-  .auth-modal__headline {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .auth-modal__title {
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.02em;
-  }
-
-  @media (min-width: 768px) {
-    .auth-modal__title {
-      font-size: 1.375rem;
-    }
-  }
-
-  .auth-modal__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  /* ===== Features List ===== */
-  .auth-modal__features {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .auth-modal__feature {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-  }
-
-  .auth-modal__feature-icon {
-    flex-shrink: 0;
-    width: 36px;
-    height: 36px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border-radius: 8px;
-    color: var(--sidebar-accent);
-  }
-
-  .auth-modal__feature-icon--primary {
-    background-color: rgba(6, 182, 212, 0.15);
-    border: 1px solid rgba(6, 182, 212, 0.25);
-  }
-
-  .auth-modal__feature-icon--secondary {
-    background-color: rgba(56, 189, 248, 0.15);
-    border: 1px solid rgba(56, 189, 248, 0.25);
-    color: #38bdf8;
-  }
-
-  .auth-modal__feature-icon--tertiary {
-    background-color: rgba(34, 211, 238, 0.15);
-    border: 1px solid rgba(34, 211, 238, 0.25);
-    color: #22d3ee;
-  }
-
-  .auth-modal__feature-content {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .auth-modal__feature-title {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .auth-modal__feature-desc {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-    line-height: 1.4;
-  }
-
-  /* ===== Trust Badge ===== */
-  .auth-modal__trust {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 1.5rem;
-    padding-top: 1rem;
-    border-top: 1px solid var(--sidebar-border);
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  /* ===== Content Column ===== */
-  .auth-modal__content {
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    padding: 1.5rem;
-  }
-
-  @media (min-width: 768px) {
-    .auth-modal__content {
-      padding: 2rem;
-    }
-  }
-
-  /* ===== View Container ===== */
-  .auth-modal__view {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .auth-modal__view-header {
-    margin-bottom: 0.25rem;
-  }
-
-  .auth-modal__view-header--centered {
-    text-align: center;
-  }
-
-  .auth-modal__view-title {
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    text-align: center;
-  }
-
-  .auth-modal__view-subtitle {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-    text-align: center;
-    line-height: 1.5;
-  }
-
-  .auth-modal__view-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 52px;
-    height: 52px;
-    margin: 0 auto 0.75rem;
-    border-radius: 50%;
-    background-color: rgba(6, 182, 212, 0.1);
-    border: 1px solid rgba(6, 182, 212, 0.2);
-    color: var(--sidebar-accent);
-  }
-
-  .auth-modal__view-icon--success {
-    background-color: rgba(34, 197, 94, 0.1);
-    border-color: rgba(34, 197, 94, 0.2);
-    color: #22c55e;
-  }
-
-  .auth-modal__email-highlight {
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  /* ===== Form ===== */
-  .auth-modal__form {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .auth-modal__field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .auth-modal__field-action {
-    display: flex;
-    justify-content: flex-end;
-  }
-
-  .auth-modal__input {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .auth-modal__input::placeholder {
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  .auth-modal__input:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
-  }
-
-  .auth-modal__input--otp {
-    text-align: center;
-    font-size: 1.25rem;
-    font-family: monospace;
-    letter-spacing: 0.4em;
-    padding: 1rem;
-  }
-
-  .auth-modal__input--otp::placeholder {
-    letter-spacing: 0.4em;
-  }
-
-  .auth-modal__error-inline {
-    font-size: 0.75rem;
-    color: #f87171;
-    margin: 0;
-  }
-
-  /* ===== Buttons ===== */
-  .auth-modal__btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .auth-modal__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .auth-modal__btn--primary {
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
-  }
-
-  .auth-modal__btn--primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .auth-modal__spinner {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  /* ===== Links ===== */
-  .auth-modal__link {
-    background: none;
-    border: none;
-    padding: 0;
-    font-size: 0.75rem;
-    color: var(--sidebar-accent);
-    cursor: pointer;
-    transition: color 150ms ease;
-  }
-
-  .auth-modal__link:hover {
-    color: #67e8f9;
-    text-decoration: underline;
-  }
-
-  .auth-modal__link:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .auth-modal__link--block {
-    display: block;
-    text-align: center;
-    font-size: 0.875rem;
-  }
-
-  .auth-modal__switch-text {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    text-align: center;
-    margin: 0;
-  }
-
-  .auth-modal__back-link {
-    background: none;
-    border: none;
-    padding: 0;
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: color 150ms ease;
-  }
-
-  .auth-modal__back-link:hover {
-    color: var(--sidebar-text);
-  }
-
-  .auth-modal__otp-actions {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  /* ===== Divider ===== */
-  .auth-modal__divider {
-    position: relative;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0.5rem 0;
-  }
-
-  .auth-modal__divider::before,
-  .auth-modal__divider::after {
-    content: '';
-    flex: 1;
-    height: 1px;
-    background-color: var(--sidebar-border);
-  }
-
-  .auth-modal__divider span {
-    padding: 0 0.75rem;
-    font-size: 0.625rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  /* ===== Social Auth ===== */
-  .auth-modal__social {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .auth-modal__social-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .auth-modal__social-btn:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .auth-modal__social-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .auth-modal__social-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  /* ===== Messages ===== */
-  .auth-modal__message {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    border-radius: 8px;
-    margin-top: 0.75rem;
-  }
-
-  .auth-modal__message p {
-    font-size: 0.75rem;
-    margin: 0;
-    line-height: 1.4;
-  }
-
-  .auth-modal__message--error {
-    background-color: rgba(248, 113, 113, 0.1);
-    border: 1px solid rgba(248, 113, 113, 0.2);
-    color: #f87171;
-  }
-
-  .auth-modal__message--success {
-    background-color: rgba(34, 197, 94, 0.1);
-    border: 1px solid rgba(34, 197, 94, 0.2);
-    color: #22c55e;
-  }
-
-  /* ===== Transitions ===== */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  .dialog-enter-active {
-    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 150ms ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.96) translateY(8px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  .slide-fade-enter-active {
-    transition: all 200ms ease-out;
-  }
-
-  .slide-fade-leave-active {
-    transition: all 150ms ease-in;
-  }
-
-  .slide-fade-enter-from {
-    opacity: 0;
-    transform: translateY(-6px);
-  }
-
-  .slide-fade-leave-to {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-</style>

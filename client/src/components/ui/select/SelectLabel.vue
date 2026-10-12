@@ -8,5 +8,5 @@
 </script>
 
 <template>
-  <SelectLabel :class="cn('px-2 py-1.5 text-sm font-semibold', props.class)"><slot /></SelectLabel>
+  <SelectLabel :class="cn('px-2 pt-1.5 pb-1 text-2xs font-semibold uppercase tracking-[0.06em] text-fg-subtle', props.class)"><slot /></SelectLabel>
 </template>

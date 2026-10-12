@@ -6,16 +6,11 @@ import { useAuthStore } from '@/stores/auth';
 import { useChatPopout } from '@/composables/useChatPopout';
 import { formatConversationTime } from '@/utils/dateTimeUtils';
 import type { Conversation } from '@/services/messagingApi';
-import {
-  Search,
-  Plus,
-  X,
-  Users,
-  User,
-  Megaphone,
-  Headset,
-  Maximize2,
-} from 'lucide-vue-next';
+import { MessageSquare, Maximize2, SearchX, X } from 'lucide-vue-next';
+import ConversationRow from '@/components/messaging/ConversationRow.vue';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { SearchField } from '@/components/ui/search-field';
 
 const messagingStore = useMessagingStore();
 const authStore = useAuthStore();
@@ -76,318 +71,65 @@ function goToMessagesPage() {
 </script>
 
 <template>
-  <div class="chat-popover">
+  <div
+    class="flex max-h-[min(520px,calc(100vh-var(--titlebar-height)-24px))] w-[340px] flex-col overflow-hidden rounded-xl bg-surface-raised shadow-[var(--shadow-lg)]"
+    role="dialog"
+    aria-label="Messages"
+  >
     <!-- Header -->
-    <div class="chat-popover__header">
-      <h3 class="chat-popover__title">Messages</h3>
-      <div class="chat-popover__header-actions">
-        <button class="chat-popover__btn" @click="goToMessagesPage" title="Open full messages">
-          <Maximize2 :size="16" />
-        </button>
-        <button class="chat-popover__btn" @click="closePopover" title="Close">
-          <X :size="16" />
-        </button>
-      </div>
+    <div class="flex h-11 shrink-0 items-center gap-1 border-b border-line-subtle pl-3.5 pr-1.5">
+      <h3 class="flex-1 text-sm font-semibold text-fg">Messages</h3>
+      <Button variant="ghost" size="icon-sm" aria-label="Open messages page" title="Open messages page" @click="goToMessagesPage">
+        <Maximize2 />
+      </Button>
+      <Button variant="ghost" size="icon-sm" aria-label="Close" title="Close" @click="closePopover">
+        <X />
+      </Button>
     </div>
 
     <!-- Search -->
-    <div class="chat-popover__search">
-      <Search class="chat-popover__search-icon" :size="14" />
-      <input
-        v-model="searchQuery"
-        type="text"
-        placeholder="Search conversations..."
-        class="chat-popover__search-input"
-      />
+    <div class="shrink-0 px-2.5 pb-1.5 pt-2.5">
+      <SearchField v-model="searchQuery" placeholder="Search conversations" size="sm" />
     </div>
 
-    <!-- Conversation List -->
-    <div class="chat-popover__list">
-      <!-- Loading -->
-      <div v-if="messagingStore.isLoading" class="chat-popover__loading">
-        <div class="chat-popover__spinner"></div>
-        <span>Loading...</span>
-      </div>
-
-      <!-- Empty -->
-      <div v-else-if="filteredConversations.length === 0" class="chat-popover__empty">
-        <p>No conversations yet</p>
-      </div>
-
-      <!-- Conversations -->
-      <template v-else>
-        <div
-          v-for="conv in filteredConversations"
-          :key="conv.id"
-          class="chat-popover__item"
-          :class="{ 'chat-popover__item--unread': getUnreadCount(conv.id) > 0 }"
-          @click="handleSelectConversation(conv.id)"
-        >
-          <!-- Avatar -->
-          <div class="chat-popover__avatar" :class="'chat-popover__avatar--' + conv.type">
-            <img
-              v-if="getConversationAvatar(conv)"
-              :src="getConversationAvatar(conv)!"
-              :alt="getConversationName(conv)"
-              class="chat-popover__avatar-img"
-            />
-            <template v-else>
-              <Headset v-if="conv.type === 'support'" :size="18" />
-              <Users v-else-if="conv.type === 'group'" :size="18" />
-              <Megaphone v-else-if="conv.type === 'announcement'" :size="18" />
-              <span v-else class="chat-popover__avatar-initial">
-                {{ getConversationName(conv).charAt(0).toUpperCase() }}
-              </span>
-            </template>
-          </div>
-
-          <!-- Content -->
-          <div class="chat-popover__content">
-            <div class="chat-popover__item-header">
-              <span class="chat-popover__name">{{ getConversationName(conv) }}</span>
-              <span class="chat-popover__time">
-                {{ conv.lastMessageAt ? formatConversationTime(conv.lastMessageAt) : '' }}
-              </span>
-            </div>
-            <div class="chat-popover__preview-row">
-              <span class="chat-popover__preview">
-                {{ conv.lastMessagePreview || 'No messages yet' }}
-              </span>
-              <span v-if="getUnreadCount(conv.id) > 0" class="chat-popover__badge">
-                {{ getUnreadCount(conv.id) > 99 ? '99+' : getUnreadCount(conv.id) }}
-              </span>
-            </div>
+    <!-- Conversation list -->
+    <div class="min-h-0 flex-1 overflow-y-auto px-1.5 pb-1.5">
+      <!-- First load only; re-initialising keeps the list on screen -->
+      <div v-if="messagingStore.isLoading && messagingStore.conversationList.length === 0" class="flex flex-col">
+        <div v-for="i in 4" :key="i" class="flex items-center gap-2.5 px-2 py-1.5">
+          <div class="skeleton size-7 shrink-0 !rounded-full" />
+          <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+            <div class="skeleton h-2.5 w-2/5" />
+            <div class="skeleton h-2 w-4/5" />
           </div>
         </div>
-      </template>
+      </div>
+
+      <EmptyState
+        v-else-if="filteredConversations.length === 0"
+        size="sm"
+        :icon="searchQuery ? SearchX : MessageSquare"
+        :title="searchQuery ? 'No matches' : 'No conversations yet'"
+        :description="searchQuery ? undefined : 'Start a conversation from the Messages page.'"
+      >
+        <Button v-if="!searchQuery" variant="secondary" size="sm" @click="goToMessagesPage">Open messages</Button>
+      </EmptyState>
+
+      <div v-else class="flex animate-fade-in flex-col gap-0.5">
+        <ConversationRow
+          v-for="conv in filteredConversations"
+          :key="conv.id"
+          size="sm"
+          :name="getConversationName(conv)"
+          :type="conv.type"
+          :avatar-url="getConversationAvatar(conv)"
+          :preview="conv.lastMessagePreview"
+          :time="conv.lastMessageAt ? formatConversationTime(conv.lastMessageAt) : ''"
+          :unread="getUnreadCount(conv.id)"
+          :muted="conv.muted"
+          @select="handleSelectConversation(conv.id)"
+        />
+      </div>
     </div>
   </div>
 </template>
-
-<style scoped>
-.chat-popover {
-  width: 340px;
-  max-height: 500px;
-  background: var(--sidebar-surface, #141416);
-  border: 1px solid var(--sidebar-border, #1f1f23);
-  border-radius: 12px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.6);
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.chat-popover__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 12px 16px;
-  border-bottom: 1px solid var(--sidebar-border, #1f1f23);
-}
-
-.chat-popover__title {
-  font-size: 16px;
-  font-weight: 600;
-  color: var(--sidebar-text, #fafafa);
-  margin: 0;
-}
-
-.chat-popover__header-actions {
-  display: flex;
-  gap: 4px;
-}
-
-.chat-popover__btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  border: none;
-  border-radius: 6px;
-  background: transparent;
-  color: var(--sidebar-text-muted, #71717a);
-  cursor: pointer;
-  transition: background 0.15s, color 0.15s;
-}
-
-.chat-popover__btn:hover {
-  background: var(--sidebar-hover, rgba(255, 255, 255, 0.05));
-  color: var(--sidebar-text, #fafafa);
-}
-
-.chat-popover__search {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  border-bottom: 1px solid var(--sidebar-border, #1f1f23);
-}
-
-.chat-popover__search-icon {
-  color: var(--sidebar-text-muted, #71717a);
-  flex-shrink: 0;
-}
-
-.chat-popover__search-input {
-  flex: 1;
-  background: none;
-  border: none;
-  outline: none;
-  color: var(--sidebar-text, #fafafa);
-  font-size: 13px;
-  font-family: inherit;
-}
-
-.chat-popover__search-input::placeholder {
-  color: var(--sidebar-text-muted, #71717a);
-}
-
-.chat-popover__list {
-  flex: 1;
-  overflow-y: auto;
-  min-height: 0;
-}
-
-.chat-popover__loading,
-.chat-popover__empty {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  padding: 32px 16px;
-  color: var(--sidebar-text-muted, #71717a);
-  font-size: 13px;
-}
-
-.chat-popover__spinner {
-  width: 16px;
-  height: 16px;
-  border: 2px solid var(--sidebar-border, #1f1f23);
-  border-top-color: var(--sidebar-accent, #0ea5e9);
-  border-radius: 50%;
-  animation: spin 0.6s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.chat-popover__item {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 10px 12px;
-  cursor: pointer;
-  transition: background 0.15s;
-}
-
-.chat-popover__item:hover {
-  background: var(--sidebar-hover, rgba(255, 255, 255, 0.05));
-}
-
-.chat-popover__item--unread .chat-popover__name {
-  font-weight: 600;
-}
-
-.chat-popover__item--unread .chat-popover__preview {
-  color: var(--sidebar-text, #fafafa);
-}
-
-.chat-popover__avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--sidebar-text-muted, #71717a);
-}
-
-.chat-popover__avatar--direct {
-  background: var(--sidebar-accent, #0ea5e9);
-  color: white;
-}
-
-.chat-popover__avatar--group {
-  background: #2563eb;
-  color: white;
-}
-
-.chat-popover__avatar--announcement {
-  background: #dc2626;
-  color: white;
-}
-
-.chat-popover__avatar--support {
-  background: #16a34a;
-  color: white;
-}
-
-.chat-popover__avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-  border-radius: 50%;
-}
-
-.chat-popover__avatar-initial {
-  font-size: 16px;
-  font-weight: 600;
-}
-
-.chat-popover__content {
-  flex: 1;
-  min-width: 0;
-}
-
-.chat-popover__item-header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 8px;
-  margin-bottom: 2px;
-}
-
-.chat-popover__name {
-  font-size: 13px;
-  font-weight: 500;
-  color: var(--sidebar-text, #fafafa);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.chat-popover__time {
-  font-size: 11px;
-  color: var(--sidebar-text-muted, #71717a);
-  flex-shrink: 0;
-}
-
-.chat-popover__preview-row {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.chat-popover__preview {
-  font-size: 12px;
-  color: var(--sidebar-text-muted, #71717a);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  flex: 1;
-}
-
-.chat-popover__badge {
-  background: var(--sidebar-accent, #0ea5e9);
-  color: white;
-  font-size: 10px;
-  font-weight: 600;
-  padding: 1px 5px;
-  border-radius: 8px;
-  flex-shrink: 0;
-}
-</style>

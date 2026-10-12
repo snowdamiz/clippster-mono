@@ -1,169 +1,110 @@
 <template>
-  <div class="poi-source-panel flex flex-col h-full">
+  <div class="poi-source-panel @container flex h-full flex-col bg-surface">
     <!-- Header -->
-    <div class="flex items-center justify-between px-2 py-1.5 border-b border-zinc-700/50">
-      <div class="flex items-center gap-2">
+    <div class="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-line-subtle px-2">
+      <div class="flex min-w-0 items-center gap-2">
         <!-- View tabs: Clip vs Uploaded Media -->
-        <div class="flex items-center gap-1 bg-zinc-800/50 rounded-lg p-0.5">
-          <button
-            @click="activeSourceView = 'clip'"
-            class="px-2 py-1 text-[10px] font-medium rounded-md transition-colors"
-            :class="activeSourceView === 'clip'
-              ? 'bg-zinc-700 text-zinc-100'
-              : 'text-zinc-400 hover:text-zinc-200'"
-          >
-            Clip
-          </button>
-          <button
-            v-if="selectedRegionHasMedia"
-            @click="activeSourceView = 'media'"
-            class="px-2 py-1 text-[10px] font-medium rounded-md transition-colors flex items-center gap-1"
-            :class="activeSourceView === 'media'
-              ? 'bg-blue-600/80 text-blue-100'
-              : 'text-blue-400 hover:text-blue-300 bg-blue-500/10'"
-          >
-            <ImageIcon class="w-3 h-3" />
-            Media
-          </button>
-        </div>
-        <span class="text-[10px] text-zinc-500 font-mono">{{ sourceAspectRatio }}</span>
+        <SegmentedControl v-model="activeSourceView" :options="sourceViewOptions" size="sm" />
+        <span class="shrink-0 font-mono text-2xs text-fg-subtle">{{ sourceAspectRatio }}</span>
       </div>
-      <div class="flex items-center gap-2">
-        <button
+      <div class="flex shrink-0 items-center gap-1">
+        <Button
           v-if="allowMediaUpload"
-          @click="openMediaUpload"
-          class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded-md transition-colors"
+          variant="ghost"
+          size="xs"
           title="Upload image/video (creates new region)"
+          @click="openMediaUpload"
         >
-          <ImageIcon class="w-3 h-3" />
-          Upload Media
-        </button>
-        <button
-          @click="addRegion"
-          class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 rounded-md transition-colors"
-          :disabled="regions.length >= maxRegions"
-          :class="{ 'opacity-50 cursor-not-allowed': regions.length >= maxRegions }"
-        >
-          <PlusIcon class="w-3 h-3" />
-          Add Region
-        </button>
+          <ImageIcon />
+          <span class="hidden @md:inline">Upload media</span>
+        </Button>
+        <Button variant="secondary" size="xs" :disabled="regions.length >= maxRegions" @click="addRegion">
+          <PlusIcon />
+          Add region
+        </Button>
 
         <!-- Platform overlay preview (9:16 export) — chrome shows on output panel only -->
-        <template v-if="isExport916">
-          <button
-            ref="platformOverlayButtonRef"
-            type="button"
-            class="flex items-center gap-1.5 shrink-0 px-2 py-1 text-[10px] font-medium rounded-md whitespace-nowrap transition-all cursor-pointer border border-white/10 bg-white/5 text-zinc-300 hover:bg-white/[0.08] hover:border-white/[0.15] hover:text-white"
-            @click.stop="showSocialPlatformMenu = !showSocialPlatformMenu"
-          >
-            <Smartphone class="w-3 h-3 shrink-0 opacity-80" />
-            <span>{{ localSocialOverlay?.label || 'Platform' }}</span>
-          </button>
-
-          <Teleport to="body">
-            <Transition name="poi-social-dropdown">
-              <div
-                v-if="showSocialPlatformMenu && isExport916"
-                ref="socialPlatformMenuPanelRef"
-                class="fixed z-[10050] min-w-[180px] rounded-lg border border-white/10 bg-zinc-950/98 py-1.5 px-1.5 shadow-2xl backdrop-blur-md"
-                :style="socialPlatformMenuStyle"
-                @click.stop
+        <DropdownMenu
+          v-if="isExport916"
+          :open="showSocialPlatformMenu"
+          @update:open="(v: boolean) => (showSocialPlatformMenu = v)"
+        >
+          <DropdownMenuTrigger as-child>
+            <button
+              ref="platformOverlayButtonRef"
+              type="button"
+              :class="buttonVariants({ variant: 'ghost', size: 'xs' })"
+              title="Preview platform overlay"
+            >
+              <Smartphone />
+              <span class="hidden @md:inline">{{ localSocialOverlay?.label || 'Platform' }}</span>
+            </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="end" class="min-w-44">
+            <div ref="socialPlatformMenuPanelRef">
+              <DropdownMenuItem @select="setSocialOverlay(null)">
+                <XIcon />
+                <span class="flex-1">None</span>
+                <CheckIcon v-if="!localSocialOverlay" class="size-3.5 text-brand" />
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                v-for="preset in SOCIAL_OVERLAY_PRESETS"
+                :key="preset.platform"
+                @select="toggleSocialOverlayPreset(preset)"
               >
-                <button
-                  type="button"
-                  class="flex items-center gap-3 w-full px-3 py-2.5 text-[13px] rounded-md text-left transition-colors cursor-pointer border-0"
-                  :class="
-                    !localSocialOverlay
-                      ? 'bg-cyan-500/15 text-cyan-400'
-                      : 'bg-transparent text-zinc-300 hover:bg-white/[0.08] hover:text-white'
-                  "
-                  @click="setSocialOverlay(null)"
-                >
-                  <span class="text-lg leading-none">✕</span>
-                  <span class="font-medium">None</span>
-                </button>
-                <button
-                  v-for="preset in SOCIAL_OVERLAY_PRESETS"
-                  :key="preset.platform"
-                  type="button"
-                  class="flex items-center gap-3 w-full px-3 py-2.5 text-[13px] rounded-md text-left transition-colors cursor-pointer border-0"
-                  :class="
-                    localSocialOverlay?.platform === preset.platform
-                      ? 'bg-cyan-500/15 text-cyan-400'
-                      : 'bg-transparent text-zinc-300 hover:bg-white/[0.08] hover:text-white'
-                  "
-                  @click="toggleSocialOverlayPreset(preset)"
-                >
-                  <span class="text-lg leading-none">{{ preset.icon }}</span>
-                  <span class="font-medium">{{ preset.label }}</span>
-                </button>
-              </div>
-            </Transition>
-          </Teleport>
-        </template>
+                <span class="grid w-4 place-items-center text-sm leading-none">{{ preset.icon }}</span>
+                <span class="flex-1">{{ preset.label }}</span>
+                <CheckIcon v-if="localSocialOverlay?.platform === preset.platform" class="size-3.5 text-brand" />
+              </DropdownMenuItem>
+            </div>
+          </DropdownMenuContent>
+        </DropdownMenu>
       </div>
     </div>
 
-    <!-- Aspect Ratio Lock Control (shown when region is selected) -->
-    <div
-      v-if="selectedRegion"
-      class="px-2 py-1.5 border-b border-zinc-700/50 bg-zinc-900/30"
-    >
+    <!-- Region options (shown when a region is selected) -->
+    <div v-if="selectedRegion" class="flex shrink-0 flex-col gap-2 border-b border-line-subtle px-3 py-2">
       <div class="flex items-center justify-between gap-3">
-        <div class="flex items-center gap-2 group">
+        <label class="flex min-w-0 cursor-pointer items-center gap-2">
           <Checkbox
             :model-value="selectedRegion.aspectRatioLocked !== false"
             aria-label="Toggle aspect ratio lock"
-            class="h-4 w-4 rounded border-white/45 bg-white/10 text-white hover:border-emerald-300/80 data-[state=checked]:border-emerald-300 data-[state=checked]:bg-emerald-500 focus-visible:ring-emerald-400/50"
             @update:model-value="onAspectRatioLockChange"
-          >
-            <CheckIcon class="h-3.5 w-3.5" />
-          </Checkbox>
-          <LockIcon
-            v-if="selectedRegion.aspectRatioLocked !== false"
-            class="w-3.5 h-3.5 text-emerald-400"
           />
-          <UnlockIcon
-            v-else
-            class="w-3.5 h-3.5 text-amber-400"
-          />
-          <span
-            class="text-xs font-medium transition-colors"
-            :class="selectedRegion.aspectRatioLocked !== false ? 'text-emerald-300' : 'text-amber-300'"
-          >
-            {{ selectedRegion.aspectRatioLocked !== false ? 'Aspect Ratio Locked' : 'Aspect Ratio Unlocked' }}
+          <LockIcon v-if="selectedRegion.aspectRatioLocked !== false" class="size-3.5 shrink-0 text-fg-muted" />
+          <UnlockIcon v-else class="size-3.5 shrink-0 text-fg-muted" />
+          <span class="truncate text-xs font-medium text-fg">
+            {{ selectedRegion.aspectRatioLocked !== false ? 'Aspect ratio locked' : 'Aspect ratio unlocked' }}
           </span>
-          <span class="text-[10px] text-zinc-500">
+          <span class="hidden truncate text-2xs text-fg-subtle sm:inline">
             ({{ selectedRegion.aspectRatioLocked !== false ? 'maintains proportions' : 'free resize' }})
           </span>
-        </div>
-        
+        </label>
+
         <!-- Delete Media button (only shown when region has uploaded media) -->
-        <button
+        <Button
           v-if="selectedRegionHasMedia"
-          @click="deleteMedia"
-          class="flex items-center gap-1 px-2 py-1 text-[11px] font-medium text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded-md transition-colors"
+          variant="destructive-soft"
+          size="xs"
           title="Remove uploaded media from this region"
+          @click="deleteMedia"
         >
-          <TrashIcon class="w-3 h-3" />
-          Delete Media
-        </button>
+          <TrashIcon />
+          Delete media
+        </Button>
       </div>
 
       <!-- Rounded Corners Control -->
-      <div class="flex items-center gap-3 mt-2">
-        <div class="flex items-center gap-2 group shrink-0">
+      <div class="flex h-6 items-center gap-3">
+        <label class="flex shrink-0 cursor-pointer items-center gap-2">
           <Checkbox
             :model-value="selectedRegion.cornerRadiusEnabled === true"
             aria-label="Toggle rounded corners"
-            class="h-4 w-4 rounded border-white/45 bg-white/10 text-white hover:border-violet-300/80 data-[state=checked]:border-violet-300 data-[state=checked]:bg-violet-500 focus-visible:ring-violet-400/50"
             @update:model-value="onCornerRadiusToggle"
-          >
-            <CheckIcon class="h-3.5 w-3.5" />
-          </Checkbox>
-          <RoundCornerIcon class="w-3.5 h-3.5 text-violet-400" />
-          <span class="text-xs font-medium text-zinc-300">Round Corners</span>
-        </div>
+          />
+          <RoundCornerIcon class="size-3.5 text-fg-muted" />
+          <span class="text-xs font-medium text-fg">Round corners</span>
+        </label>
         <template v-if="selectedRegion.cornerRadiusEnabled">
           <input
             type="range"
@@ -171,17 +112,18 @@
             max="540"
             step="4"
             :value="selectedRegion.cornerRadiusPx ?? 0"
-            class="flex-1 h-1 accent-violet-500 cursor-pointer"
+            class="min-w-0 flex-1"
+            aria-label="Corner radius"
             @input="updateCornerRadius"
           />
-          <span class="text-[10px] text-zinc-400 font-mono w-7 text-right shrink-0">{{ selectedRegion.cornerRadiusPx ?? 0 }}px</span>
+          <span class="tabular w-10 shrink-0 text-right font-mono text-2xs text-fg-muted">{{ selectedRegion.cornerRadiusPx ?? 0 }}px</span>
         </template>
       </div>
     </div>
 
     <!-- Canvas Area -->
-    <div class="flex-1 px-2 py-2 flex items-center justify-center bg-zinc-950/50">
-      <div ref="containerRef" class="relative bg-black rounded-lg overflow-hidden shadow-lg" :style="containerStyle">
+    <div class="flex flex-1 items-center justify-center bg-surface-sunken p-2">
+      <div ref="containerRef" class="relative overflow-hidden rounded-lg bg-black" :style="containerStyle">
         <!-- ===== CLIP VIEW ===== -->
         <template v-if="activeSourceView === 'clip'">
           <!-- Live composited editor timeline (preferred in OpenCut export). -->
@@ -215,10 +157,10 @@
           />
 
           <!-- Placeholder when no thumbnail or video -->
-          <div v-else class="absolute inset-0 flex items-center justify-center bg-zinc-900">
-            <div class="text-center">
-              <VideoIcon class="w-8 h-8 text-zinc-600 mx-auto mb-2" />
-              <span class="text-xs text-zinc-500">No preview available</span>
+          <div v-else class="absolute inset-0 flex items-center justify-center bg-surface">
+            <div class="flex flex-col items-center gap-2 text-center">
+              <VideoIcon class="size-6 text-fg-disabled" />
+              <span class="text-xs text-fg-subtle">No preview available</span>
             </div>
           </div>
 
@@ -254,9 +196,9 @@
 
           <!-- Click to add region hint (when empty) -->
           <div v-if="regions.length === 0" class="absolute inset-0 flex items-center justify-center pointer-events-none">
-            <div class="text-center bg-black/60 backdrop-blur-sm rounded-lg px-4 py-3">
-              <PlusCircleIcon class="w-6 h-6 text-zinc-400 mx-auto mb-1" />
-              <p class="text-xs text-zinc-400">Click "Add Region" to define crop areas</p>
+            <div class="flex flex-col items-center gap-1.5 rounded-lg bg-black/65 px-4 py-3 text-center">
+              <PlusCircleIcon class="size-5 text-fg-muted" />
+              <p class="text-xs text-fg-muted">Click "Add region" to define crop areas</p>
             </div>
           </div>
         </template>
@@ -267,7 +209,7 @@
           <video
             v-if="selectedRegionMediaType === 'video'"
             :src="selectedRegionMediaSrc"
-            class="absolute inset-0 w-full h-full object-contain bg-zinc-900"
+            class="absolute inset-0 h-full w-full animate-fade-in bg-surface object-contain"
             controls
             muted
             playsinline
@@ -276,22 +218,22 @@
           <img
             v-else
             :src="selectedRegionMediaSrc"
-            class="absolute inset-0 w-full h-full object-contain bg-zinc-900"
+            class="absolute inset-0 h-full w-full animate-fade-in bg-surface object-contain"
             alt="Uploaded region media"
             draggable="false"
           />
 
           <!-- Media info overlay -->
-          <div class="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-3">
+          <div class="absolute inset-x-0 bottom-0 bg-black/65 px-3 py-2">
             <div class="flex items-center gap-2">
               <div
                 class="w-3 h-3 rounded-sm"
                 :style="{ backgroundColor: selectedRegion?.color }"
               />
-              <span class="text-xs text-zinc-300 font-medium">
+              <span class="text-xs font-medium text-fg">
                 {{ selectedRegion ? regionLabel(selectedRegion) : '' }}
               </span>
-              <span class="text-[10px] text-zinc-500">
+              <span class="text-2xs text-fg-muted">
                 {{ selectedRegionMediaType === 'video' ? 'Video' : 'Image' }} media
               </span>
             </div>
@@ -300,10 +242,10 @@
 
         <!-- Fallback if media view but no media -->
         <template v-else-if="activeSourceView === 'media'">
-          <div class="absolute inset-0 flex items-center justify-center bg-zinc-900">
-            <div class="text-center">
-              <ImageIcon class="w-8 h-8 text-zinc-600 mx-auto mb-2" />
-              <span class="text-xs text-zinc-500">No media uploaded for this region</span>
+          <div class="absolute inset-0 flex animate-fade-in items-center justify-center bg-surface">
+            <div class="flex flex-col items-center gap-2 text-center">
+              <ImageIcon class="size-6 text-fg-disabled" />
+              <span class="text-xs text-fg-subtle">No media uploaded for this region</span>
             </div>
           </div>
         </template>
@@ -313,66 +255,47 @@
     <!-- Scaled 16:9 + region + overlay tab row -->
     <div
       v-if="showScaled16x9Tab || regions.length > 0 || showSubtitlesTab || showTextBoxTab"
-      class="px-2 py-1.5 border-t border-zinc-700/50 max-h-24 overflow-y-auto"
+      class="max-h-24 shrink-0 overflow-y-auto border-t border-line-subtle px-2 py-1.5"
     >
-      <div class="flex flex-wrap gap-1.5">
+      <div class="flex flex-wrap gap-1">
         <button
           v-if="showScaled16x9Tab"
           type="button"
+          :class="chipClass(selectedRegionId === POI_OVERLAY_SCALED_16X9_ID)"
           @click="selectRegion(POI_OVERLAY_SCALED_16X9_ID)"
-          class="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors"
-          :class="
-            selectedRegionId === POI_OVERLAY_SCALED_16X9_ID
-              ? 'bg-zinc-700 text-white'
-              : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300'
-          "
         >
-          <div class="w-2 h-2 rounded-sm bg-purple-500" />
+          <Maximize2Icon class="size-3 text-fg-subtle" />
           Scaled 16:9
         </button>
 
         <button
           v-for="region in regions"
           :key="region.id"
+          type="button"
+          :class="chipClass(selectedRegionId === region.id)"
           @click="selectRegion(region.id)"
-          class="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors"
-          :class="
-            selectedRegionId === region.id
-              ? 'bg-zinc-700 text-white'
-              : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300'
-          "
         >
-          <div class="w-2 h-2 rounded-sm" :style="{ backgroundColor: region.color }" />
+          <span class="size-2 rounded-sm" :style="{ backgroundColor: region.color }" />
           {{ regionLabel(region) }}
         </button>
 
         <button
           v-if="showSubtitlesTab"
           type="button"
+          :class="chipClass(selectedRegionId === POI_OVERLAY_SUBTITLES_ID)"
           @click="selectRegion(POI_OVERLAY_SUBTITLES_ID)"
-          class="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors"
-          :class="
-            selectedRegionId === POI_OVERLAY_SUBTITLES_ID
-              ? 'bg-zinc-700 text-white'
-              : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300'
-          "
         >
-          <div class="w-2 h-2 rounded-sm bg-purple-400" />
+          <CaptionsIcon class="size-3 text-fg-subtle" />
           Subtitles
         </button>
 
         <button
           v-if="showTextBoxTab"
           type="button"
+          :class="chipClass(selectedRegionId === POI_OVERLAY_TEXTBOX_ID)"
           @click="selectRegion(POI_OVERLAY_TEXTBOX_ID)"
-          class="flex items-center gap-1.5 px-2 py-1 rounded text-[10px] font-medium transition-colors"
-          :class="
-            selectedRegionId === POI_OVERLAY_TEXTBOX_ID
-              ? 'bg-zinc-700 text-white'
-              : 'bg-zinc-800/50 text-zinc-400 hover:bg-zinc-800 hover:text-zinc-300'
-          "
         >
-          <div class="w-2 h-2 rounded-sm bg-amber-400" />
+          <TypeIcon class="size-3 text-fg-subtle" />
           Text box
         </button>
       </div>
@@ -393,10 +316,17 @@
     Smartphone,
     CircleDotIcon as RoundCornerIcon,
     CheckIcon,
+    XIcon,
+    Maximize2Icon,
+    CaptionsIcon,
+    TypeIcon,
   } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import POIRegion from './POIRegion.vue';
   import { Checkbox } from '@/components/ui/checkbox';
+  import { Button, buttonVariants } from '@/components/ui/button';
+  import { SegmentedControl } from '@/components/ui/segmented-control';
+  import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuTrigger } from '@/components/ui/dropdown-menu';
   import type { ManualRegion, ManualRegionRect } from '@/types';
   import { POI_REGION_COLORS } from '@/types';
   import { SOCIAL_OVERLAY_PRESETS } from '@/editor/constants/social-overlay-constants';
@@ -541,6 +471,21 @@
 
   // View toggle: 'clip' shows source video, 'media' shows uploaded region media
   const activeSourceView = ref<'clip' | 'media'>('clip');
+
+  const sourceViewOptions = computed(() => [
+    { value: 'clip' as const, label: 'Clip' },
+    ...(selectedRegionHasMedia.value ? [{ value: 'media' as const, label: 'Media', icon: ImageIcon }] : []),
+  ]);
+
+  /** Pill style for the region / overlay selector row. */
+  function chipClass(selected: boolean): string {
+    return [
+      'inline-flex h-6 items-center gap-1.5 rounded-md px-2 text-2xs font-medium transition-colors',
+      selected
+        ? 'bg-brand-soft text-fg shadow-[inset_0_0_0_1px_var(--brand-line)]'
+        : 'bg-surface-hover text-fg-muted hover:bg-surface-active hover:text-fg',
+    ].join(' ');
+  }
 
   // Check if selected region has uploaded media
   const selectedRegionHasMedia = computed(() => {
@@ -1029,19 +974,3 @@
     }
   );
 </script>
-
-<style scoped>
-  .poi-source-panel {
-    background: linear-gradient(to bottom, rgb(24 24 27 / 0.8), rgb(24 24 27 / 0.95));
-  }
-
-  .poi-social-dropdown-enter-active,
-  .poi-social-dropdown-leave-active {
-    transition: opacity 0.15s ease;
-  }
-
-  .poi-social-dropdown-enter-from,
-  .poi-social-dropdown-leave-to {
-    opacity: 0;
-  }
-</style>

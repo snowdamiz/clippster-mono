@@ -1,192 +1,126 @@
 <template>
   <PageLayout
-    title="News Management"
+    title="News"
     description="Manage breaking news feed for AI context"
-    :show-header="true"
     :icon="Newspaper"
-    :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'News Management' }]"
+    :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'News' }]"
   >
     <template #actions>
-      <button 
-        class="action-btn" 
-        :disabled="isFetching"
-        @click="manualFetch"
-      >
-        <Loader2 v-if="isFetching" class="action-btn__icon" :class="{ 'animate-spin': isFetching }" />
-        <RefreshCw v-else class="action-btn__icon" />
-        Fetch News Now
-      </button>
+      <Button variant="primary" size="sm" :loading="isFetching" :disabled="isFetching" @click="manualFetch">
+        <RefreshCw v-if="!isFetching" />
+        Fetch news now
+      </Button>
     </template>
 
-    <div class="news-page">
-      <!-- Stats Cards -->
-      <div class="stats-grid">
-        <div class="stat-card stat-card--cyan">
-          <div class="stat-card__icon">
-            <Newspaper />
-          </div>
-          <div class="stat-card__content">
-            <span class="stat-card__value">{{ newsArticles.length }}</span>
-            <span class="stat-card__label">Total Articles</span>
-          </div>
+    <template #toolbar>
+      <AdminFilterBar :count="filteredArticles.length" count-label="article">
+        <template #end>
+          <span class="hidden text-xs text-fg-subtle min-[1000px]:inline">· Auto-fetched every 15 minutes</span>
+        </template>
+        <div class="w-40">
+          <CustomDropdown
+            v-model="filters.category"
+            :options="categoryOptions"
+            placeholder="All categories"
+            size="sm"
+            @update:model-value="loadNews"
+          />
         </div>
-        <div class="stat-card stat-card--purple">
-          <div class="stat-card__icon">
-            <Clock />
-          </div>
-          <div class="stat-card__content">
-            <span class="stat-card__value">{{ lastFetchTime || 'Never' }}</span>
-            <span class="stat-card__label">Last Fetched</span>
-          </div>
+        <div class="w-36">
+          <CustomDropdown
+            v-model="filters.featured"
+            :options="featuredOptions"
+            placeholder="All articles"
+            size="sm"
+            @update:model-value="loadNews"
+          />
         </div>
-        <div class="stat-card stat-card--green">
-          <div class="stat-card__icon">
-            <Star />
-          </div>
-          <div class="stat-card__content">
-            <span class="stat-card__value">{{ newsArticles.filter(a => a.is_featured).length }}</span>
-            <span class="stat-card__label">Featured</span>
-          </div>
-        </div>
-      </div>
+      </AdminFilterBar>
+    </template>
 
-      <!-- News Section -->
-      <section class="section">
-        <div class="section__header">
-          <div class="section__header-icon section__header-icon--cyan">
-            <Newspaper />
-          </div>
-          <div class="section__header-text">
-            <h2 class="section-title">Breaking News Feed</h2>
-            <p class="section-subtitle">Articles are automatically fetched every 15 minutes · {{ filteredArticles.length }} article{{ filteredArticles.length !== 1 ? 's' : '' }}</p>
-          </div>
-          <div class="filters">
-            <CustomDropdown
-              v-model="filters.category"
-              :options="categoryOptions"
-              placeholder="All Categories"
-              trigger-class="dropdown-trigger"
-              @update:modelValue="loadNews"
-            />
-            <CustomDropdown
-              v-model="filters.featured"
-              :options="featuredOptions"
-              placeholder="All Articles"
-              trigger-class="dropdown-trigger"
-              @update:modelValue="loadNews"
-            />
-          </div>
-        </div>
+    <div class="flex flex-col gap-4 px-5 py-4">
+      <StatGrid :count="3">
+        <StatCard label="Total articles" :value="newsArticles.length" :icon="Newspaper" :loading="loading && !newsArticles.length" />
+        <StatCard
+          label="Last fetched"
+          :value="lastFetchTime || 'Never'"
+          :icon="Clock"
+          :loading="loading && !newsArticles.length"
+        />
+        <StatCard
+          label="Featured"
+          :value="newsArticles.filter((a) => a.is_featured).length"
+          :icon="Star"
+          :loading="loading && !newsArticles.length"
+        />
+      </StatGrid>
 
-        <!-- Loading State -->
-        <div v-if="loading" class="loading-rows">
-          <div v-for="i in 6" :key="i" class="skeleton-row skeleton-row--lg"></div>
-        </div>
-
-        <!-- News Articles Grid -->
-        <div v-else-if="filteredArticles.length > 0" class="news-grid">
-          <div 
-            v-for="article in filteredArticles" 
-            :key="article.uuid" 
-            class="news-card"
-          >
-            <!-- Article Image -->
-            <div v-if="article.image_url" class="news-card__image">
-              <img :src="article.image_url" :alt="article.title" />
-              <div v-if="article.is_featured" class="news-card__badge">
-                <Star />
-                Featured
-              </div>
+      <DataTable :columns="columns" :rows="filteredArticles" row-key="uuid" :loading="loading">
+        <template #cell-article="{ row: article }">
+          <div class="flex min-w-0 items-center gap-3">
+            <div class="h-10 w-16 shrink-0 overflow-hidden rounded-md border border-line-subtle bg-surface-sunken">
+              <img v-if="article.image_url" :src="article.image_url" :alt="''" class="size-full object-cover" />
+              <div v-else class="grid size-full place-items-center text-fg-disabled"><Newspaper class="size-4" /></div>
             </div>
-
-            <!-- Article Content -->
-            <div class="news-card__content">
-              <h3 class="news-card__title">{{ article.title }}</h3>
-              <p class="news-card__description">
-                {{ article.description || article.snippet }}
+            <div class="min-w-0 flex-1">
+              <p class="flex min-w-0 items-center gap-1.5">
+                <Star v-if="article.is_featured" class="size-3.5 shrink-0 fill-current text-warning" title="Featured" />
+                <span class="truncate font-medium text-fg" :title="article.title">{{ article.title }}</span>
               </p>
-
-              <!-- Article Meta -->
-              <div class="news-card__meta">
-                <span v-if="article.source" class="news-card__source">
-                  <Building2 />
-                  {{ article.source }}
-                </span>
-                <span class="news-card__time">
-                  <Clock />
-                  {{ formatTimeAgo(article.published_at) }}
-                </span>
-              </div>
-              <div v-if="article.categories.length > 0" class="news-card__tags">
-                <span
-                  v-for="category in article.categories.slice(0, 3)"
-                  :key="category"
-                  class="news-card__tag"
-                >
-                  {{ category }}
-                </span>
-              </div>
-
-              <!-- Article Actions -->
-              <div class="news-card__actions">
-                <button
-                  class="card-btn card-btn--view"
-                  @click="openArticle(article.url)"
-                >
-                  <ExternalLink />
-                  View
-                </button>
-                <button
-                  class="card-btn card-btn--feature"
-                  :class="{ 'card-btn--featured': article.is_featured }"
-                  :disabled="updatingArticleId === article.uuid"
-                  @click="toggleFeatured(article)"
-                >
-                  <Loader2
-                    v-if="updatingArticleId === article.uuid"
-                    class="animate-spin"
-                  />
-                  <Star v-else />
-                  {{ article.is_featured ? 'Unfeature' : 'Feature' }}
-                </button>
-                <button
-                  class="card-btn card-btn--delete"
-                  :disabled="deletingArticleId === article.uuid"
-                  @click="confirmDelete(article)"
-                >
-                  <Loader2
-                    v-if="deletingArticleId === article.uuid"
-                    class="animate-spin"
-                  />
-                  <Trash2 v-else />
-                  Delete
-                </button>
-              </div>
+              <p class="truncate text-xs text-fg-muted">{{ article.description || article.snippet }}</p>
             </div>
           </div>
-        </div>
-
-        <!-- Empty State -->
-        <div v-else class="empty-state">
-          <Newspaper class="empty-state__icon" />
-          <p class="empty-state__title">No news articles found</p>
-          <p class="empty-state__text">Fetch breaking news to populate the AI context feed</p>
-          <button class="empty-state__btn" @click="manualFetch">
-            <RefreshCw />
-            Fetch News Now
-          </button>
-        </div>
-      </section>
+        </template>
+        <template #cell-source="{ row: article }">
+          <span class="block truncate text-xs text-fg-muted">{{ article.source || '—' }}</span>
+        </template>
+        <template #cell-categories="{ row: article }">
+          <div class="flex min-w-0 gap-1 overflow-hidden">
+            <Badge v-for="category in article.categories.slice(0, 2)" :key="category" variant="neutral" class="capitalize">
+              {{ category }}
+            </Badge>
+          </div>
+        </template>
+        <template #cell-published="{ row: article }">
+          <span class="tabular whitespace-nowrap text-xs text-fg-muted">{{ formatTimeAgo(article.published_at) }}</span>
+        </template>
+        <template #actions="{ row: article }">
+          <AdminRowActions
+            :label="`Actions for ${article.title}`"
+            :loading="updatingArticleId === article.uuid || deletingArticleId === article.uuid"
+          >
+            <AdminActionItem :icon="ExternalLink" @select="openArticle(article.url)">Open article</AdminActionItem>
+            <AdminActionItem :icon="Star" @select="toggleFeatured(article)">
+              {{ article.is_featured ? 'Unfeature' : 'Feature' }}
+            </AdminActionItem>
+            <DropdownMenuSeparator />
+            <AdminActionItem :icon="Trash2" destructive @select="confirmDelete(article)">Delete</AdminActionItem>
+          </AdminRowActions>
+        </template>
+        <template #empty>
+          <EmptyState
+            size="sm"
+            :icon="Newspaper"
+            title="No news articles found"
+            description="Fetch breaking news to populate the AI context feed."
+          >
+            <Button variant="secondary" size="sm" :disabled="isFetching" @click="manualFetch">
+              <RefreshCw />
+              Fetch news now
+            </Button>
+          </EmptyState>
+        </template>
+      </DataTable>
     </div>
 
     <!-- Delete Confirmation Dialog -->
     <ConfirmationModal
       v-if="articleToDelete"
       :show="!!articleToDelete"
-      title="Delete News Article"
+      title="Delete news article"
       :message="`Are you sure you want to delete`"
       :item-name="articleToDelete.title"
-      confirm-text="Delete Article"
+      confirm-text="Delete article"
       variant="destructive"
       @confirm="deleteArticle"
       @close="articleToDelete = null"
@@ -196,17 +130,19 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue'
-  import { 
-    Newspaper, 
-    RefreshCw, 
-    Loader2, 
-    Star, 
-    ExternalLink, 
-    Trash2,
-    Clock,
-    Building2
-  } from 'lucide-vue-next'
+  import { Newspaper, RefreshCw, Star, ExternalLink, Trash2, Clock } from 'lucide-vue-next'
   import PageLayout from '@/components/PageLayout.vue'
+  import { Badge } from '@/components/ui/badge'
+  import { Button } from '@/components/ui/button'
+  import { DropdownMenuSeparator } from '@/components/ui/dropdown-menu'
+  import { EmptyState } from '@/components/ui/empty-state'
+  import { StatCard, StatGrid } from '@/components/ui/stat-card'
+  import {
+    AdminActionItem,
+    AdminFilterBar,
+    AdminRowActions,
+  } from '@/components/admin/shared'
+  import { DataTable, type DataTableColumn } from '@/components/ui/data-table'
   import CustomDropdown from '@/components/CustomDropdown.vue'
   import ConfirmationModal from '@/components/ConfirmationModal.vue'
   import { fetchNews, triggerNewsFetch, type NewsArticle } from '@/services/newsApi'
@@ -228,8 +164,15 @@
     featured: null as string | null
   })
 
+  const columns: DataTableColumn[] = [
+    { key: 'article', label: 'Article' },
+    { key: 'source', label: 'Source', width: '128px', hideBelow: 'md' },
+    { key: 'categories', label: 'Categories', width: '168px', hideBelow: 'lg' },
+    { key: 'published', label: 'Published', width: '96px' },
+  ]
+
   const categoryOptions = [
-    { label: 'All Categories', value: null },
+    { label: 'All categories', value: null },
     { label: 'General', value: 'general' },
     { label: 'Tech', value: 'tech' },
     { label: 'Sports', value: 'sports' },
@@ -238,9 +181,9 @@
   ]
 
   const featuredOptions = [
-    { label: 'All Articles', value: null },
-    { label: 'Featured Only', value: 'true' },
-    { label: 'Not Featured', value: 'false' }
+    { label: 'All articles', value: null },
+    { label: 'Featured only', value: 'true' },
+    { label: 'Not featured', value: 'false' }
   ]
 
   const filteredArticles = computed(() => {
@@ -363,487 +306,3 @@
     loadNews()
   })
 </script>
-
-<style scoped>
-  /* ===== Page Container ===== */
-  .news-page {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: 1.5rem;
-    max-width: 1400px;
-    margin: 0 auto;
-    width: 100%;
-  }
-
-  /* ===== Stats Grid ===== */
-  .stats-grid {
-    display: grid;
-    grid-template-columns: repeat(1, 1fr);
-    gap: 0.875rem;
-  }
-
-  @media (min-width: 640px) {
-    .stats-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  .stat-card {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 1rem 1.125rem;
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    transition: border-color 180ms ease;
-  }
-
-  .stat-card:hover {
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .stat-card__icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .stat-card__icon svg {
-    width: 18px;
-    height: 18px;
-    color: white;
-  }
-
-  .stat-card--cyan .stat-card__icon {
-    background: linear-gradient(135deg, #06b6d4 0%, #0891b2 100%);
-  }
-
-  .stat-card--purple .stat-card__icon {
-    background: linear-gradient(135deg, #a855f7 0%, #9333ea 100%);
-  }
-
-  .stat-card--green .stat-card__icon {
-    background: linear-gradient(135deg, #10b981 0%, #059669 100%);
-  }
-
-  .stat-card__content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .stat-card__value {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    line-height: 1;
-  }
-
-  .stat-card__label {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  /* ===== Section ===== */
-  .section {
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    padding: 1.25rem;
-  }
-
-  .section__header {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    margin-bottom: 1.25rem;
-    flex-wrap: wrap;
-  }
-
-  .section__header-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: var(--sidebar-hover);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .section__header-icon svg {
-    width: 18px;
-    height: 18px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .section__header-icon--cyan {
-    background: rgba(6, 182, 212, 0.1);
-  }
-
-  .section__header-icon--cyan svg {
-    color: #06b6d4;
-  }
-
-  .section__header-text {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .section-title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.125rem;
-  }
-
-  .section-subtitle {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  /* ===== Action Button ===== */
-  .action-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    height: 32px;
-    padding: 0 0.875rem;
-    background: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border: none;
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: opacity 150ms ease;
-  }
-
-  .action-btn:hover {
-    opacity: 0.9;
-  }
-
-  .action-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .action-btn__icon {
-    width: 13px;
-    height: 13px;
-  }
-
-  .animate-spin {
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to { transform: rotate(360deg); }
-  }
-
-  /* ===== Filters ===== */
-  .filters {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-left: auto;
-  }
-
-  .dropdown-trigger {
-    background: var(--sidebar-hover);
-    border-color: var(--sidebar-border);
-    color: var(--sidebar-text);
-  }
-
-  /* ===== Loading Rows ===== */
-  .loading-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .skeleton-row {
-    height: 60px;
-    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    border-radius: 8px;
-  }
-
-  .skeleton-row--lg {
-    height: 180px;
-  }
-
-  @keyframes shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-  }
-
-  /* ===== News Grid ===== */
-  .news-grid {
-    display: grid;
-    grid-template-columns: repeat(1, 1fr);
-    gap: 0.875rem;
-  }
-
-  @media (min-width: 768px) {
-    .news-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (min-width: 1024px) {
-    .news-grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  .news-card {
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    overflow: hidden;
-    transition: border-color 180ms ease;
-  }
-
-  .news-card:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-  }
-
-  .news-card__image {
-    position: relative;
-    height: 160px;
-    overflow: hidden;
-    background: var(--sidebar-surface);
-  }
-
-  .news-card__image img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .news-card__badge {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.25rem 0.5rem;
-    background: #eab308;
-    color: #111827;
-    border-radius: 9999px;
-    font-size: 0.625rem;
-    font-weight: 700;
-  }
-
-  .news-card__badge svg {
-    width: 10px;
-    height: 10px;
-  }
-
-  .news-card__content {
-    padding: 0.875rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-  }
-
-  .news-card__title {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    line-height: 1.3;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .news-card__description {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    line-height: 1.4;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .news-card__meta {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    font-size: 0.625rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .news-card__source,
-  .news-card__time {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  .news-card__source svg,
-  .news-card__time svg {
-    width: 11px;
-    height: 11px;
-  }
-
-  .news-card__tags {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    flex-wrap: wrap;
-  }
-
-  .news-card__tag {
-    padding: 0.125rem 0.375rem;
-    background: var(--sidebar-surface);
-    border-radius: 3px;
-    font-size: 0.5625rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .news-card__actions {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding-top: 0.625rem;
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  .card-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.25rem 0.5rem;
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 4px;
-    font-size: 0.625rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .card-btn svg {
-    width: 11px;
-    height: 11px;
-  }
-
-  .card-btn:hover {
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-accent);
-  }
-
-  .card-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .card-btn--view:hover {
-    border-color: #06b6d4;
-    color: #06b6d4;
-  }
-
-  .card-btn--feature:hover {
-    border-color: #eab308;
-    color: #eab308;
-  }
-
-  .card-btn--featured {
-    background: #eab308;
-    border-color: #eab308;
-    color: #111827;
-  }
-
-  .card-btn--featured:hover {
-    opacity: 0.9;
-  }
-
-  .card-btn--delete {
-    margin-left: auto;
-  }
-
-  .card-btn--delete:hover {
-    border-color: #ef4444;
-    color: #ef4444;
-  }
-
-  /* ===== Empty State ===== */
-  .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    padding: 3rem 1.5rem;
-  }
-
-  .empty-state__icon {
-    width: 48px;
-    height: 48px;
-    color: var(--sidebar-text-muted);
-    margin-bottom: 0.875rem;
-    opacity: 0.5;
-  }
-
-  .empty-state__title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
-  }
-
-  .empty-state__text {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 1.125rem;
-    max-width: 320px;
-    line-height: 1.5;
-  }
-
-  .empty-state__btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    height: 32px;
-    padding: 0 0.875rem;
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .empty-state__btn:hover {
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-accent);
-  }
-
-  .empty-state__btn svg {
-    width: 13px;
-    height: 13px;
-  }
-</style>

@@ -1,13 +1,13 @@
 <template>
   <PageLayout :title="title" :description="description" :show-header="true" :icon="icon">
-    <div class="h-full overflow-y-auto p-6">
-      <p v-if="error" role="alert" class="mb-4 rounded-lg border border-red-400/30 p-4 text-red-300">{{ error }} <a :href="billingUrl" target="_top" class="underline">Manage plan</a></p>
-      <p v-if="loading" role="status">Loading…</p>
+    <div class="h-full overflow-y-auto px-5 py-4">
+      <p v-if="error" role="alert" class="mb-4 rounded-lg border border-[var(--danger-line)] bg-danger-soft px-3 py-2.5 text-sm text-danger">{{ error }} <a :href="billingUrl" target="_top" class="underline">Manage plan</a></p>
+      <p v-if="loading" role="status" class="text-sm text-fg-muted">Loading…</p>
       <template v-else-if="!blocked">
         <div class="mb-6 flex flex-wrap items-center gap-3">
           <input v-model="search" class="field max-w-sm" :aria-label="`Search ${title}`" placeholder="Search…" />
           <button class="button-secondary" @click="load">Refresh</button>
-          <button v-if="view === 'prompts' || view === 'creators'" class="button-primary" @click="edit()">{{ view === 'prompts' ? 'New Prompt' : 'New Profile' }}</button>
+          <button v-if="view === 'prompts' || view === 'creators'" class="button-primary" @click="edit()">{{ view === 'prompts' ? 'New prompt' : 'New profile' }}</button>
           <template v-if="view === 'creators'">
             <button v-for="scope in ['streamer', 'global', 'assigned']" :key="scope" class="button-secondary" :aria-pressed="creatorScope === scope" @click="creatorScope = scope">{{ scope === 'streamer' ? 'Creators' : scope === 'global' ? 'Global Profiles' : 'Assigned Creators' }}</button>
           </template>
@@ -27,24 +27,24 @@
             <button class="button-secondary" @click="cursor = new Date()">Today</button>
             <select v-model="calendarMode" class="field w-auto" aria-label="Calendar view"><option value="month">Month</option><option value="week">Week</option></select>
           </div>
-          <p class="mb-4 text-sm text-zinc-400">Publish and schedule built clips from your Video Library. Times are shown in {{ Intl.DateTimeFormat().resolvedOptions().timeZone }}.</p>
-          <div class="grid grid-cols-7 border-l border-t border-white/10">
-            <div v-for="day in days" :key="day.toISOString()" class="min-h-28 border-b border-r border-white/10 p-2">
-              <span class="text-xs text-zinc-400">{{ day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}</span>
-              <button v-for="post in eventsOn(day)" :key="post.key" class="mt-2 block w-full rounded bg-cyan-400/10 p-2 text-left text-xs" @click="selected = post">{{ post.title }} · {{ post.status }}</button>
+          <p class="mb-4 text-sm text-fg-muted">Publish and schedule built clips from your Video Library. Times are shown in {{ Intl.DateTimeFormat().resolvedOptions().timeZone }}.</p>
+          <div class="grid grid-cols-7 border-l border-t border-line">
+            <div v-for="day in days" :key="day.toISOString()" class="min-h-28 border-b border-r border-line p-2">
+              <span class="text-xs text-fg-muted">{{ day.toLocaleDateString(undefined, { weekday: 'short', day: 'numeric' }) }}</span>
+              <button v-for="post in eventsOn(day)" :key="post.key" class="mt-2 block w-full rounded bg-brand/10 p-2 text-left text-xs" @click="selected = post">{{ post.title }} · {{ post.status }}</button>
             </div>
           </div>
         </template>
         <div v-else-if="view === 'campaigns' && campaignScope === 'earnings'" class="grid gap-4">
-          <div class="grid gap-4 sm:grid-cols-3"><div v-for="(value, label) in earnings" :key="label" class="rounded-xl border border-white/10 p-5"><p class="text-sm capitalize text-zinc-400">{{ label.replaceAll('_', ' ') }}</p><p class="mt-2 text-xl">{{ value }}</p></div></div>
+          <div class="grid gap-4 sm:grid-cols-3"><div v-for="(value, label) in earnings" :key="label" class="rounded-xl border border-line-subtle bg-surface px-3.5 py-3"><p class="text-xs capitalize text-fg-muted">{{ label.replaceAll('_', ' ') }}</p><p class="tabular mt-1 text-lg font-semibold">{{ value }}</p></div></div>
           <h2 class="text-lg font-semibold">Payments</h2>
-          <article v-for="payment in filtered" :key="payment.id" class="rounded-xl border border-white/10 p-5"><h3>{{ payment.campaign?.title || 'Campaign payment' }}</h3><p>{{ payment.amount }} · {{ payment.status }}</p><p class="text-sm text-zinc-400">{{ new Date(payment.paid_at || payment.inserted_at).toLocaleDateString() }}</p></article>
+          <article v-for="payment in filtered" :key="payment.id" class="rounded-xl border border-line p-5"><h3>{{ payment.campaign?.title || 'Campaign payment' }}</h3><p>{{ payment.amount }} · {{ payment.status }}</p><p class="text-sm text-fg-muted">{{ new Date(payment.paid_at || payment.inserted_at).toLocaleDateString() }}</p></article>
         </div>
         <div v-else class="grid gap-4 md:grid-cols-2 xl:grid-cols-3">
-          <article v-for="item in filtered" :key="item.id" class="rounded-xl border border-white/10 bg-white/[.02] p-5">
+          <article v-for="item in filtered" :key="item.id" class="rounded-xl border border-line bg-white/[.02] p-5">
             <h2 class="mb-2 text-lg font-semibold">{{ item.name || item.title || item.campaign?.title || 'Submitted clip' }}</h2>
-            <p class="mb-4 line-clamp-4 whitespace-pre-wrap text-sm text-zinc-400">{{ item.content || item.description || 'No description' }}</p>
-            <p v-if="view === 'creators'" class="mb-4 text-xs text-zinc-400">{{ (item.platform_links || []).map((link: any) => `${link.platform}: ${link.platform_id}`).join(' · ') }}</p>
+            <p class="mb-4 line-clamp-4 whitespace-pre-wrap text-sm text-fg-muted">{{ item.content || item.description || 'No description' }}</p>
+            <p v-if="view === 'creators'" class="mb-4 text-xs text-fg-muted">{{ (item.platform_links || []).map((link: any) => `${link.platform}: ${link.platform_id}`).join(' · ') }}</p>
             <div class="flex flex-wrap gap-2">
               <template v-if="view === 'prompts'">
                 <button class="button-secondary" @click="copy(item.content)">Copy</button>
@@ -61,12 +61,12 @@
             </div>
           </article>
         </div>
-        <p v-if="view !== 'calendar' && !filtered.length" class="py-16 text-center text-zinc-400">No {{ title.toLowerCase() }} found.</p>
+        <p v-if="view !== 'calendar' && !filtered.length" class="py-16 text-center text-fg-muted">No {{ title.toLowerCase() }} found.</p>
       </template>
     </div>
-    <dialog v-if="view === 'creators' || view === 'prompts'" ref="editor" class="m-auto w-[95vw] max-w-xl rounded-xl border border-white/10 bg-zinc-950 p-6 text-white backdrop:bg-black/80">
+    <dialog v-if="view === 'creators' || view === 'prompts'" ref="editor" class="m-auto w-[95vw] max-w-xl rounded-xl border border-line bg-surface p-6 text-white backdrop:bg-[var(--overlay)]">
       <form class="grid gap-4" @submit.prevent="save">
-        <h2 class="text-xl font-semibold">{{ draft.system ? 'System prompt' : draft.id ? 'Edit' : 'Create' }} {{ view === 'prompts' ? 'prompt' : 'profile' }}</h2>
+        <h2 class="text-base font-semibold">{{ draft.system ? 'System prompt' : draft.id ? 'Edit' : 'Create' }} {{ view === 'prompts' ? 'prompt' : 'profile' }}</h2>
         <label>Name<input v-model="draft.name" class="field mt-2" required maxlength="120" :readonly="draft.system" /></label>
         <label>{{ view === 'prompts' ? 'Prompt' : 'Description' }}<textarea v-model="draft.content" class="field mt-2" rows="10" :required="view === 'prompts'" :maxlength="view === 'prompts' ? 4000 : 1000" :readonly="draft.system" /></label>
         <label v-if="view === 'creators'">Profile type<select v-model="draft.scope" class="field"><option value="streamer">Creator</option><option value="global">Global</option></select></label>
@@ -79,24 +79,24 @@
           </div>
           <button type="button" class="button-secondary" :disabled="draft.platform_links.length >= 12" @click="draft.platform_links.push({ platform: 'twitch', platform_id: '', is_primary: draft.platform_links.length === 0 })">Add platform</button>
         </fieldset>
-        <p v-if="draft.system" class="text-sm text-zinc-400">System prompts are read-only.</p>
-        <p v-if="dialogError" role="alert" class="text-red-300">{{ dialogError }}</p>
+        <p v-if="draft.system" class="text-sm text-fg-muted">System prompts are read-only.</p>
+        <p v-if="dialogError" role="alert" class="text-danger">{{ dialogError }}</p>
         <div class="flex gap-3"><button v-if="!draft.system" class="button-primary" :disabled="saving">Save</button><button type="button" class="button-secondary" @click="editor?.close()">Close</button></div>
       </form>
     </dialog>
     <div v-if="selected" class="fixed inset-0 z-50 flex items-center justify-center bg-black/80 p-6" @click.self="selected = null">
-      <section role="dialog" aria-modal="true" aria-label="Details" class="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-white/10 bg-zinc-950 p-6">
+      <section role="dialog" aria-modal="true" aria-label="Details" class="max-h-[85vh] w-full max-w-2xl overflow-y-auto rounded-xl border border-line bg-surface p-6">
         <button class="button-secondary float-right" @click="selected = null">Close</button>
-        <h2 class="mb-4 text-xl font-semibold">{{ selected.title || selected.caption || 'Scheduled post' }}</h2>
-        <p class="whitespace-pre-wrap text-zinc-300">{{ selected.description || selected.caption }}</p>
+        <h2 class="mb-4 text-base font-semibold">{{ selected.title || selected.caption || 'Scheduled post' }}</h2>
+        <p class="whitespace-pre-wrap text-fg">{{ selected.description || selected.caption }}</p>
         <template v-if="view === 'campaigns'">
           <p class="my-4 text-sm">{{ selected.join_type === 'open' ? 'Open campaign' : 'Application required' }} · {{ selected.status }} · {{ selected.allowed_platforms?.join(', ') }}</p>
           <p class="my-4 text-sm">Payment: {{ selected.payment_model === 'per_clip' ? selected.per_clip_amount + ' per clip' : selected.cpm + ' CPM' }}</p>
-          <a v-for="resource in selected.resources || []" :key="resource.id" :href="safeLink(resource.url)" target="_blank" rel="noopener noreferrer" class="mb-2 block text-cyan-400">{{ resource.title || resource.name || 'Resource' }}</a>
-          <p v-if="selected.participation" class="my-4 text-cyan-300">Your participation: {{ selected.participation.status }}</p>
+          <a v-for="resource in selected.resources || []" :key="resource.id" :href="safeLink(resource.url)" target="_blank" rel="noopener noreferrer" class="mb-2 block text-brand">{{ resource.title || resource.name || 'Resource' }}</a>
+          <p v-if="selected.participation" class="my-4 text-brand">Your participation: {{ selected.participation.status }}</p>
           <template v-else><label class="mt-4 block">Application note<textarea v-model="applicationNote" class="field mt-2" /></label>
           <button class="button-primary my-4" :disabled="saving || selected.status !== 'active'" @click="applyCampaign">{{ selected.join_type === 'open' ? 'Join campaign' : 'Apply to campaign' }}</button></template>
-          <form v-if="selected.participation?.status === 'approved'" class="grid gap-3 border-t border-white/10 pt-4" @submit.prevent="submitCampaign">
+          <form v-if="selected.participation?.status === 'approved'" class="grid gap-3 border-t border-line pt-4" @submit.prevent="submitCampaign">
             <label>Published clip URL<input v-model="clipUrl" type="url" required class="field mt-2" placeholder="https://…" /></label>
             <label>Platform<select v-model="platform" required class="field"><option v-for="p in selected.allowed_platforms || ['tiktok', 'instagram', 'youtube', 'twitter']" :key="p">{{ p }}</option></select></label>
             <button class="button-secondary" :disabled="saving">Submit clip</button>
@@ -112,7 +112,7 @@
           <button v-if="selected.can_cancel" class="button-secondary" :disabled="saving" @click="cancelPost">Cancel scheduled post</button>
           <a v-if="selected.post_url" :href="safeLink(selected.post_url)" target="_blank" rel="noopener noreferrer" class="button-secondary">View post</a>
         </template>
-        <p v-if="dialogError" role="status" class="mt-4 text-cyan-300">{{ dialogError }}</p>
+        <p v-if="dialogError" role="status" class="mt-4 text-brand">{{ dialogError }}</p>
       </section>
     </div>
   </PageLayout>

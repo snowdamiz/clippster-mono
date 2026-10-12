@@ -268,8 +268,7 @@
   .circle-clip-preview--floating .circle-clip-preview__surface {
     min-height: 520px;
     border: 1px solid rgba(255, 255, 255, 0.14);
-    box-shadow:
-      0 0 0 1px rgba(0, 0, 0, 0.6),
+    box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.6),
       0 18px 50px rgba(0, 0, 0, 0.55);
   }
 

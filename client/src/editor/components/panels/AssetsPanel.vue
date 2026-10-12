@@ -13,8 +13,15 @@ import { usePointerDrag } from "../../composables/usePointerDrag";
 import type { MediaAsset } from "../../types/assets";
 import type { CreateTimelineElement } from "../../types/timeline";
 import { Button } from "@/components/ui/button";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
-import { Upload, Image, Film, Music, Grid, List, FolderOpen, Clapperboard, Loader2, Plus } from "lucide-vue-next";
+import { Modal } from "@/components/ui/modal";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
+import { Upload, Image, Film, Music, Grid, List, FolderOpen, Clapperboard, Loader2, Plus, X } from "lucide-vue-next";
+import PanelHeader from "../chrome/PanelHeader.vue";
+import ToolbarButton from "../chrome/ToolbarButton.vue";
+import AssetGrid from "./shared/AssetGrid.vue";
+import AssetTile from "./shared/AssetTile.vue";
+import AssetListRow from "./shared/AssetListRow.vue";
 import { useImageMode } from "../../composables/useImageMode";
 import TextView from "./assets/TextView.vue";
 import CaptionsView from "./assets/CaptionsView.vue";
@@ -54,7 +61,15 @@ const { editor, version } = useEditor({
 const { isImageMode } = useImageMode();
 const { startDrag } = usePointerDrag();
 const showMediaDialog = ref(false);
-const dialogTab = ref<"upload" | "built" | "projects" | "audio" | "images">("upload");
+type ImportTab = "upload" | "built" | "projects" | "audio" | "images";
+const dialogTab = ref<ImportTab>("upload");
+const importTabs: SegmentedOption<ImportTab>[] = [
+	{ value: "upload", label: "Upload", icon: Upload },
+	{ value: "built", label: "Built clips", icon: Clapperboard },
+	{ value: "projects", label: "Projects", icon: FolderOpen },
+	{ value: "audio", label: "Audio", icon: Music },
+	{ value: "images", label: "Images", icon: Image },
+];
 const viewMode = ref<"grid" | "list">("grid");
 const isProcessing = ref(false);
 const progress = ref(0);
@@ -207,7 +222,8 @@ const sortOrder = ref<"asc" | "desc">("asc");
 </script>
 
 <template>
-	<div class="flex h-full flex-col bg-transparent text-zinc-200">
+	<!-- Keyed by tab so each panel switch eases in instead of popping -->
+	<div :key="activeTab ?? 'none'" class="flex h-full animate-enter flex-col bg-transparent text-fg">
 		<!-- Image mode: show ImageSourcesView for media tab -->
 		<ImageSourcesView v-if="activeTab === 'media' && isImageMode" />
 
@@ -226,273 +242,223 @@ const sortOrder = ref<"asc" | "desc">("asc");
 				@change="handleFileChange"
 			/>
 
-      <!-- Header -->
-      <div class="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
-        <span class="text-zinc-400 text-sm">Media</span>
-        <div class="flex items-center gap-1">
-          <Button variant="ghost" size="icon" class="size-6" aria-label="Import media" @click="showMediaDialog = true">
-            <Plus class="size-3" />
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            class="size-6"
-            :aria-label="viewMode === 'grid' ? 'Show media as a list' : 'Show media as a grid'"
-            :aria-pressed="viewMode === 'list'"
-            @click="viewMode = viewMode === 'grid' ? 'list' : 'grid'"
-          >
-            <component :is="viewMode === 'grid' ? List : Grid" class="size-3" />
-          </Button>
-        </div>
-      </div>
+			<PanelHeader title="Media">
+				<ToolbarButton label="Import media" @click="showMediaDialog = true">
+					<Plus />
+				</ToolbarButton>
+				<ToolbarButton
+					:label="viewMode === 'grid' ? 'Show media as a list' : 'Show media as a grid'"
+					:aria-pressed="viewMode === 'list'"
+					@click="viewMode = viewMode === 'grid' ? 'list' : 'grid'"
+				>
+					<component :is="viewMode === 'grid' ? List : Grid" />
+				</ToolbarButton>
+			</PanelHeader>
 
-      <!-- Content -->
-      <div
-        :class="['flex-1 overflow-y-auto p-3', isDragOver && 'bg-white/5']"
-        @dragenter="handleDragEnter"
-        @dragover="handleDragOver"
-        @dragleave="handleDragLeave"
-        @drop="handleDrop"
-      >
-        <p v-if="filteredMedia.length > 0 && !isDragOver" class="mb-2 text-[10px] text-zinc-500">
-          Drag to the timeline · Double-click to add at the playhead
-        </p>
-        <!-- Empty / drag overlay -->
-        <div
-          v-if="isDragOver || filteredMedia.length === 0"
-          class="flex h-full flex-col items-center justify-center gap-2 rounded-lg p-8 text-center cursor-pointer"
-          role="button"
-          tabindex="0"
-          aria-label="Upload media files"
-          @click="openFilePicker"
-          @keydown.enter="openFilePicker"
-          @keydown.space.prevent="openFilePicker"
-        >
-          <Upload class="text-zinc-500 size-8" />
-          <p class="text-zinc-500 text-sm">
-            {{ isProcessing ? `Processing... ${Math.round(progress * 100)}%` : 'Drop files here or click to upload' }}
-          </p>
-        </div>
+			<!-- Content -->
+			<div
+				class="flex flex-1 flex-col overflow-y-auto p-3"
+				@dragenter="handleDragEnter"
+				@dragover="handleDragOver"
+				@dragleave="handleDragLeave"
+				@drop="handleDrop"
+			>
+				<!-- Empty / drag overlay -->
+				<div
+					v-if="isDragOver || filteredMedia.length === 0"
+					:class="[
+						'flex flex-1 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed transition-colors',
+						isDragOver ? 'border-brand-line bg-brand-soft' : 'border-line hover:border-line-strong hover:bg-surface-hover',
+					]"
+					role="button"
+					tabindex="0"
+					aria-label="Upload media files"
+					@click="openFilePicker"
+					@keydown.enter="openFilePicker"
+					@keydown.space.prevent="openFilePicker"
+				>
+					<EmptyState
+						size="sm"
+						:icon="isProcessing ? Loader2 : Upload"
+						:tone="isDragOver ? 'brand' : 'neutral'"
+						:title="isProcessing ? `Processing… ${Math.round(progress * 100)}%` : isDragOver ? 'Drop to import' : 'Drop files here'"
+						:description="isProcessing ? undefined : 'or click to upload video, image and audio files'"
+						:class="isProcessing && '[&_svg]:animate-spin'"
+					/>
+				</div>
 
-        <!-- Grid view -->
-        <div
-          v-else-if="viewMode === 'grid'"
-          class="grid gap-2"
-          style="grid-template-columns: repeat(auto-fill, minmax(100px, 1fr))"
-        >
-          <div
-            v-for="item in filteredMedia"
-            :key="item.id"
-            :class="[
-              'group relative overflow-hidden rounded-lg border border-white/10',
-              isItemProcessing(item.id) ? 'cursor-wait opacity-60' : 'cursor-pointer',
-            ]"
-            :title="
-              isItemProcessing(item.id)
-                ? `${item.name} is processing`
-                : `Drag ${item.name} to the timeline or double-click to add`
-            "
-            role="button"
-            :tabindex="isItemProcessing(item.id) ? -1 : 0"
-            :aria-label="`${item.name}. Drag to the timeline or press Enter to add at the playhead.`"
-            @pointerdown="
-              (e: PointerEvent) => {
-                if (isItemProcessing(item.id)) return;
-                startDrag(e, { id: item.id, type: 'media', mediaType: item.type, name: item.name });
-              }
-            "
-            @dblclick="addToTimeline(item)"
-            @keydown.enter="addToTimeline(item)"
-            @dragstart.prevent
-          >
-            <!-- Processing overlay -->
-            <div
-              v-if="isItemProcessing(item.id)"
-              class="absolute inset-0 z-10 flex items-center justify-center bg-black/40"
-            >
-              <Loader2 class="size-5 animate-spin text-blue-400" />
-            </div>
-            <!-- Thumbnail -->
-            <div class="relative aspect-video bg-zinc-800">
-              <img
-                v-if="item.type === 'image' && item.url"
-                :src="item.url"
-                :alt="item.name"
-                class="size-full object-cover"
-                draggable="false"
-              />
-              <img
-                v-else-if="item.type === 'video' && item.thumbnailUrl"
-                :src="item.thumbnailUrl"
-                :alt="item.name"
-                class="size-full object-cover"
-                draggable="false"
-              />
-              <div v-else class="flex size-full items-center justify-center">
-                <component :is="getMediaIcon(item.type)" class="text-zinc-500 size-6" />
-              </div>
-              <div v-if="item.duration" class="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-xs text-white">
-                {{ formatDuration(item.duration) }}
-              </div>
-              <!-- Type badge -->
-              <div class="absolute left-1 top-1 rounded bg-black/60 p-0.5">
-                <component :is="getMediaIcon(item.type)" class="size-2.5 text-zinc-300" />
-              </div>
-            </div>
-            <!-- Name -->
-            <div class="truncate px-2 py-1 text-xs">{{ item.name }}</div>
-            <!-- Remove button -->
-            <button
-              type="button"
-              class="absolute top-1 right-1 hidden rounded bg-black/50 px-1 text-xs text-white group-hover:block"
-              :aria-label="`Remove ${item.name} from media`"
-              @click.stop="removeAsset(item.id)"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
+				<template v-else>
+					<p class="mb-2 text-2xs text-fg-subtle">Drag to the timeline · Double-click to add at the playhead</p>
 
-        <!-- List view -->
-        <div v-else class="space-y-1">
-          <div
-            v-for="item in filteredMedia"
-            :key="item.id"
-            :class="[
-              'group flex items-center gap-2 rounded-md px-2 py-1',
-              isItemProcessing(item.id) ? 'cursor-wait opacity-60' : 'cursor-pointer hover:bg-white/5',
-            ]"
-            :title="
-              isItemProcessing(item.id)
-                ? `${item.name} is processing`
-                : `Drag ${item.name} to the timeline or double-click to add`
-            "
-            role="button"
-            :tabindex="isItemProcessing(item.id) ? -1 : 0"
-            :aria-label="`${item.name}. Drag to the timeline or press Enter to add at the playhead.`"
-            @pointerdown="
-              (e: PointerEvent) => {
-                if (isItemProcessing(item.id)) return;
-                startDrag(e, { id: item.id, type: 'media', mediaType: item.type, name: item.name });
-              }
-            "
-            @dblclick="addToTimeline(item)"
-            @keydown.enter="addToTimeline(item)"
-            @dragstart.prevent
-          >
-            <Loader2 v-if="isItemProcessing(item.id)" class="size-4 shrink-0 animate-spin text-blue-400" />
-            <div class="size-8 shrink-0 overflow-hidden rounded bg-zinc-800">
-              <img
-                v-if="(item.type === 'image' && item.url) || (item.type === 'video' && item.thumbnailUrl)"
-                :src="item.type === 'image' ? item.url : item.thumbnailUrl"
-                :alt="item.name"
-                class="size-full object-cover"
-                draggable="false"
-              />
-              <div v-else class="flex size-full items-center justify-center">
-                <component :is="getMediaIcon(item.type)" class="text-zinc-500 size-4" />
-              </div>
-            </div>
-            <div class="min-w-0 flex-1">
-              <div class="truncate text-xs text-zinc-200">{{ item.name }}</div>
-              <div class="text-zinc-500 text-[10px]">
-                {{ item.type }}{{ item.duration ? ` · ${formatDuration(item.duration)}` : '' }}
-              </div>
-            </div>
-            <button
-              type="button"
-              class="hidden text-xs text-destructive group-hover:block"
-              :aria-label="`Remove ${item.name} from media`"
-              @click.stop="removeAsset(item.id)"
-            >
-              ✕
-            </button>
-          </div>
-        </div>
-      </div>
+					<!-- Grid view -->
+					<AssetGrid v-if="viewMode === 'grid'" :min="88">
+						<AssetTile
+							v-for="item in filteredMedia"
+							:key="item.id"
+							as="div"
+							aspect="16/9"
+							:label="item.name"
+							:loading="isItemProcessing(item.id)"
+							:class="isItemProcessing(item.id) ? 'cursor-wait opacity-60' : 'cursor-pointer'"
+							:title="
+								isItemProcessing(item.id)
+									? `${item.name} is processing`
+									: `Drag ${item.name} to the timeline or double-click to add`
+							"
+							role="button"
+							:tabindex="isItemProcessing(item.id) ? -1 : 0"
+							:aria-label="`${item.name}. Drag to the timeline or press Enter to add at the playhead.`"
+							@pointerdown="
+								(e: PointerEvent) => {
+									if (isItemProcessing(item.id)) return;
+									startDrag(e, { id: item.id, type: 'media', mediaType: item.type, name: item.name });
+								}
+							"
+							@dblclick="addToTimeline(item)"
+							@keydown.enter="addToTimeline(item)"
+							@dragstart.prevent
+						>
+							<img
+								v-if="item.type === 'image' && item.url"
+								:src="item.url"
+								:alt="item.name"
+								class="size-full object-cover"
+								draggable="false"
+							/>
+							<img
+								v-else-if="item.type === 'video' && item.thumbnailUrl"
+								:src="item.thumbnailUrl"
+								:alt="item.name"
+								class="size-full object-cover"
+								draggable="false"
+							/>
+							<div v-else class="flex size-full items-center justify-center">
+								<component :is="getMediaIcon(item.type)" class="size-6 text-fg-subtle" />
+							</div>
+							<template #overlay>
+								<span class="absolute left-1 top-1 grid size-4 place-items-center rounded bg-black/60 text-white/85">
+									<component :is="getMediaIcon(item.type)" class="size-2.5" />
+								</span>
+								<span
+									v-if="item.duration"
+									class="tabular absolute bottom-1 right-1 rounded bg-black/70 px-1 text-2xs leading-4 text-white"
+								>
+									{{ formatDuration(item.duration) }}
+								</span>
+							</template>
+							<template #actions>
+								<button
+									type="button"
+									class="grid size-5 place-items-center rounded bg-black/60 text-white/85 transition-colors hover:bg-danger-solid hover:text-white"
+									:title="`Remove ${item.name}`"
+									:aria-label="`Remove ${item.name} from media`"
+									@pointerdown.stop
+									@click.stop="removeAsset(item.id)"
+								>
+									<X class="size-3" />
+								</button>
+							</template>
+						</AssetTile>
+					</AssetGrid>
 
-      <!-- Import Media Dialog -->
-      <Dialog v-model:open="showMediaDialog">
-        <DialogContent class="max-w-2xl h-[600px] flex flex-col gap-0 p-0 bg-[#1e1e22] border-white/10">
-          <DialogHeader class="px-4 pt-4 pb-0 shrink-0">
-            <DialogTitle class="text-sm font-medium text-zinc-200">Import Media</DialogTitle>
-          </DialogHeader>
-          <!-- Tab bar -->
-          <div class="flex items-center border-b border-white/10 px-4 mt-3 shrink-0 overflow-x-auto">
-            <button
-              v-for="tab in [
-                { key: 'upload', label: 'Upload', icon: Upload },
-                { key: 'built', label: 'Built Clips', icon: Clapperboard },
-                { key: 'projects', label: 'Projects', icon: FolderOpen },
-                { key: 'audio', label: 'Audio', icon: Music },
-                { key: 'images', label: 'Images', icon: Image },
-              ] as const"
-              :key="tab.key"
-              type="button"
-              :class="[
-                'flex items-center gap-1 px-2 py-2 text-[11px] font-medium whitespace-nowrap transition-colors border-b-2',
-                dialogTab === tab.key
-                  ? 'border-blue-500 text-blue-400'
-                  : 'border-transparent text-zinc-500 hover:text-zinc-300',
-              ]"
-              @click="dialogTab = tab.key"
-            >
-              <component :is="tab.icon" class="size-3.5" />
-              {{ tab.label }}
-            </button>
-          </div>
-          <!-- Tab content -->
-          <div class="flex-1 overflow-hidden">
-            <UploadMediaView v-if="dialogTab === 'upload'" />
-            <BuiltClipsView v-else-if="dialogTab === 'built'" />
-            <ProjectClipsView v-else-if="dialogTab === 'projects'" />
-            <AudioLibraryView v-else-if="dialogTab === 'audio'" />
-            <ImageLibraryView v-else-if="dialogTab === 'images'" />
-          </div>
-        </DialogContent>
-      </Dialog>
-    </div>
+					<!-- List view -->
+					<div v-else class="-mx-1 space-y-px">
+						<AssetListRow
+							v-for="item in filteredMedia"
+							:key="item.id"
+							:title="item.name"
+							:class="isItemProcessing(item.id) ? 'cursor-wait opacity-60' : 'cursor-pointer'"
+							role="button"
+							:tabindex="isItemProcessing(item.id) ? -1 : 0"
+							:aria-label="`${item.name}. Drag to the timeline or press Enter to add at the playhead.`"
+							@pointerdown="
+								(e: PointerEvent) => {
+									if (isItemProcessing(item.id)) return;
+									startDrag(e, { id: item.id, type: 'media', mediaType: item.type, name: item.name });
+								}
+							"
+							@dblclick="addToTimeline(item)"
+							@keydown.enter="addToTimeline(item)"
+							@dragstart.prevent
+						>
+							<template #leading>
+								<div class="relative size-8 overflow-hidden rounded-md bg-surface-sunken">
+									<img
+										v-if="(item.type === 'image' && item.url) || (item.type === 'video' && item.thumbnailUrl)"
+										:src="item.type === 'image' ? item.url : item.thumbnailUrl"
+										:alt="item.name"
+										class="size-full object-cover"
+										draggable="false"
+									/>
+									<div v-else class="flex size-full items-center justify-center">
+										<component :is="getMediaIcon(item.type)" class="size-4 text-fg-subtle" />
+									</div>
+									<div v-if="isItemProcessing(item.id)" class="absolute inset-0 grid place-items-center bg-[var(--overlay)]">
+										<Loader2 class="size-3.5 animate-spin text-fg" />
+									</div>
+								</div>
+							</template>
+							<template #meta>
+								<span class="capitalize">{{ item.type }}</span>
+								<span v-if="item.duration" class="tabular">· {{ formatDuration(item.duration) }}</span>
+							</template>
+							<template #trailing>
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									class="hover:bg-danger-soft hover:text-danger"
+									:title="`Remove ${item.name}`"
+									:aria-label="`Remove ${item.name} from media`"
+									@pointerdown.stop
+									@click.stop="removeAsset(item.id)"
+								>
+									<X />
+								</Button>
+							</template>
+						</AssetListRow>
+					</div>
+				</template>
+			</div>
 
-		<!-- Templates view (image mode only) -->
+			<!-- Import media dialog -->
+			<Modal
+				v-model:open="showMediaDialog"
+				title="Import media"
+				description="Add clips, project videos, audio and images to this edit."
+				:icon="Upload"
+				size="xl"
+				flush
+				class="h-[min(640px,calc(100vh-var(--titlebar-height)-2rem))]"
+				body-class="flex flex-col overflow-hidden"
+			>
+				<div class="shrink-0 px-5 pb-3 pt-2">
+					<SegmentedControl v-model="dialogTab" :options="importTabs" size="sm" />
+				</div>
+				<div class="min-h-0 flex-1 overflow-hidden border-t border-line-subtle">
+					<UploadMediaView v-if="dialogTab === 'upload'" />
+					<BuiltClipsView v-else-if="dialogTab === 'built'" />
+					<ProjectClipsView v-else-if="dialogTab === 'projects'" />
+					<AudioLibraryView v-else-if="dialogTab === 'audio'" />
+					<ImageLibraryView v-else-if="dialogTab === 'images'" />
+				</div>
+			</Modal>
+		</div>
+
+		<!-- Image-mode-only views -->
 		<TemplatesView v-else-if="activeTab === 'templates'" />
-
-		<!-- Brand Kit view (image mode only) -->
 		<BrandKitView v-else-if="activeTab === 'brandkit'" />
-
-		<!-- AI Tools view (image mode only) -->
 		<AIToolsView v-else-if="activeTab === 'aitools'" />
 
-		<!-- Text view -->
 		<TextView v-else-if="activeTab === 'text'" />
-
-    <!-- Stickers view -->
-    <StickersView v-else-if="activeTab === 'stickers'" />
-
-    <!-- Effects view -->
-    <EffectsView v-else-if="activeTab === 'effects'" />
-
-    <!-- Transitions view -->
-    <TransitionsView v-else-if="activeTab === 'transitions'" />
-
-    <!-- Sounds view -->
-    <SoundsView v-else-if="activeTab === 'sounds'" />
-
-    <!-- Captions view -->
-    <CaptionsView v-else-if="activeTab === 'captions'" />
-
-    <!-- Filters view -->
-    <FiltersView v-else-if="activeTab === 'filters'" />
-
-    <!-- Transcript view -->
-    <TranscriptView v-else-if="activeTab === 'transcript'" />
-
-    <!-- AI B-roll view -->
-    <AIBrollView v-else-if="activeTab === 'broll'" />
-
-    <!-- Branding view -->
-    <BrandingView v-else-if="activeTab === 'branding'" />
-
-    <!-- Settings view -->
-    <SettingsView v-else-if="activeTab === 'settings'" />
-  </div>
+		<StickersView v-else-if="activeTab === 'stickers'" />
+		<EffectsView v-else-if="activeTab === 'effects'" />
+		<TransitionsView v-else-if="activeTab === 'transitions'" />
+		<SoundsView v-else-if="activeTab === 'sounds'" />
+		<CaptionsView v-else-if="activeTab === 'captions'" />
+		<FiltersView v-else-if="activeTab === 'filters'" />
+		<TranscriptView v-else-if="activeTab === 'transcript'" />
+		<AIBrollView v-else-if="activeTab === 'broll'" />
+		<BrandingView v-else-if="activeTab === 'branding'" />
+		<SettingsView v-else-if="activeTab === 'settings'" />
+	</div>
 </template>

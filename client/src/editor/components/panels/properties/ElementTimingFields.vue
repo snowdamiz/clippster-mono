@@ -3,6 +3,8 @@ import { toRef } from "vue";
 import type { TimelineElement } from "../../../types/timeline";
 import { useElementTimingInspector } from "../../../composables/panels/useElementTimingInspector";
 import { useImageMode } from "../../../composables/useImageMode";
+import InspectorField from "../shared/InspectorField.vue";
+import NumberBox from "../shared/NumberBox.vue";
 
 const props = defineProps<{
 	element: TimelineElement;
@@ -25,28 +27,24 @@ const {
 </script>
 
 <template>
-	<div v-if="!isImageMode" class="flex gap-4">
-		<div class="min-w-0 flex-1 space-y-1">
-			<label class="text-xs text-zinc-500">Start</label>
-			<input
+	<div v-if="!isImageMode" class="grid grid-cols-2 gap-2">
+		<InspectorField label="Start">
+			<NumberBox
 				type="text"
 				:value="startInput"
-				class="h-7 w-full rounded-sm border border-white/10 bg-white/5 px-2 text-sm text-zinc-200 outline-none focus:border-white/20"
-				@input="(e) => onStartInput((e.target as HTMLInputElement).value)"
-				@blur="commitStart"
-				@keydown.enter="($event.target as HTMLInputElement).blur()"
+				aria-label="Start time"
+				@input="onStartInput"
+				@commit="commitStart"
 			/>
-		</div>
-		<div class="min-w-0 flex-1 space-y-1">
-			<label class="text-xs text-zinc-500">Duration</label>
-			<input
+		</InspectorField>
+		<InspectorField label="Duration">
+			<NumberBox
 				type="text"
 				:value="durationInput"
-				class="h-7 w-full rounded-sm border border-white/10 bg-white/5 px-2 text-sm text-zinc-200 outline-none focus:border-white/20"
-				@input="(e) => onDurationInput((e.target as HTMLInputElement).value)"
-				@blur="commitDuration"
-				@keydown.enter="($event.target as HTMLInputElement).blur()"
+				aria-label="Duration"
+				@input="onDurationInput"
+				@commit="commitDuration"
 			/>
-		</div>
+		</InspectorField>
 	</div>
 </template>

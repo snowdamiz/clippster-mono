@@ -1,132 +1,84 @@
 <template>
-  <Teleport to="body">
-    <Transition name="modal">
-      <div
-        v-if="open"
-        class="fixed inset-0 bg-black/70 backdrop-blur-md flex items-center justify-center z-[60]"
-        @click.self="$emit('close')"
-      >
-        <Transition name="dialog" appear>
-          <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl max-w-md w-full mx-4 border border-white/10 overflow-hidden max-h-[90vh] flex flex-col"
-          >
-            <!-- Decorative top accent -->
-            <div class="h-1 w-full bg-gradient-to-r from-blue-500 via-purple-500 to-pink-500 flex-shrink-0" />
+  <Modal
+    :open="open"
+    title="Submit post link"
+    description="Share a post you've made on your personal account"
+    :icon="Link"
+    size="md"
+    :dismissible="!submitting"
+    :hide-close="submitting"
+    @close="$emit('close')"
+  >
+    <form id="external-post-form" class="flex flex-col gap-4" @submit.prevent="submit">
+      <!-- Post URL (platform auto-detected) -->
+      <Field label="Post URL" for="external-post-url" required :error="urlError">
+        <template v-if="detectedPlatform" #label-end>
+          <span class="inline-flex items-center gap-1.5 text-xs text-fg-muted">
+            <PlatformLogo :platform="detectedPlatform" size="xs" />
+            {{ platformDisplayName }}
+            <span class="text-fg-subtle">detected</span>
+          </span>
+        </template>
+        <Input
+          id="external-post-url"
+          v-model="postUrl"
+          type="url"
+          :disabled="submitting"
+          :aria-invalid="!!urlError || undefined"
+          placeholder="Paste Instagram, TikTok, YouTube, or X post URL..."
+        />
+      </Field>
 
-            <div class="p-6 overflow-y-auto custom-scrollbar">
-              <!-- Header -->
-              <div class="mb-6 text-center">
-                <div
-                  class="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-br from-blue-500/20 to-purple-500/20 border border-purple-500/30 mb-4"
-                >
-                  <Link class="h-6 w-6 text-purple-400" />
-                </div>
-                <h2 class="text-xl font-bold text-white tracking-tight">Submit Post Link</h2>
-                <p class="text-zinc-400 text-sm mt-1">
-                  Share a post you've made on your personal account
-                </p>
-              </div>
+      <!-- Creator Profile -->
+      <Field v-if="creatorProfiles.length > 0 && !preselectedCreatorProfileId" for="external-post-creator">
+        <template #label>
+          Creator profile
+          <span class="font-normal text-fg-subtle">(optional)</span>
+        </template>
+        <CustomDropdown
+          id="external-post-creator"
+          v-model="creatorProfileId"
+          :options="creatorProfileOptions"
+          :disabled="submitting"
+        />
+      </Field>
 
-              <form @submit.prevent="submit" class="space-y-4">
-                <!-- Post URL (platform auto-detected) -->
-                <div class="space-y-1.5">
-                  <label class="block text-sm font-medium text-zinc-300">Post URL *</label>
-                  <input
-                    v-model="postUrl"
-                    type="url"
-                    :disabled="submitting"
-                    placeholder="Paste Instagram, TikTok, YouTube, or X post URL..."
-                    class="w-full px-4 py-3 bg-zinc-900/80 border border-zinc-800 rounded-xl text-white text-sm placeholder:text-zinc-500 focus:outline-none focus:ring-2 focus:ring-purple-500/50"
-                  />
-                  <!-- Detected platform badge -->
-                  <div v-if="detectedPlatform" class="flex items-center gap-2 mt-1">
-                    <span class="text-xs px-2 py-0.5 rounded-full" :class="platformBadgeClass">
-                      {{ platformDisplayName }}
-                    </span>
-                    <span class="text-xs text-zinc-500">detected</span>
-                  </div>
-                  <p v-if="urlError" class="text-xs text-red-400">{{ urlError }}</p>
-                </div>
+      <!-- Campaign (optional) -->
+      <Field v-if="campaigns.length > 0" for="external-post-campaign">
+        <template #label>
+          Campaign
+          <span class="font-normal text-fg-subtle">(optional)</span>
+        </template>
+        <CustomDropdown id="external-post-campaign" v-model="campaignId" :options="campaignOptions" :disabled="submitting" />
+      </Field>
 
-                <!-- Creator Profile -->
-                <div v-if="creatorProfiles.length > 0 && !preselectedCreatorProfileId" class="space-y-1.5">
-                  <label class="block text-sm font-medium text-zinc-300">Creator Profile (Optional)</label>
-                  <div class="relative">
-                    <select
-                      v-model="creatorProfileId"
-                      :disabled="submitting"
-                      class="w-full px-4 py-3 bg-zinc-900/80 border border-zinc-800 rounded-xl text-white text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500/50 pr-10"
-                    >
-                      <option value="">None</option>
-                      <option v-for="profile in creatorProfiles" :key="profile.id" :value="String(profile.id)">
-                        {{ profile.name }}
-                      </option>
-                    </select>
-                    <ChevronDown class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
-                  </div>
-                </div>
+      <!-- Error Display -->
+      <Alert v-if="error" variant="destructive">
+        <AlertCircle />
+        <AlertDescription class="text-fg">{{ error }}</AlertDescription>
+      </Alert>
+    </form>
 
-                <!-- Campaign (optional) -->
-                <div v-if="campaigns.length > 0" class="space-y-1.5">
-                  <label class="block text-sm font-medium text-zinc-300">Campaign (Optional)</label>
-                  <div class="relative">
-                    <select
-                      v-model="campaignId"
-                      :disabled="submitting"
-                      class="w-full px-4 py-3 bg-zinc-900/80 border border-zinc-800 rounded-xl text-white text-sm appearance-none cursor-pointer focus:outline-none focus:ring-2 focus:ring-purple-500/50 pr-10"
-                    >
-                      <option value="">None</option>
-                      <option v-for="campaign in campaigns" :key="campaign.id" :value="String(campaign.id)">
-                        {{ campaign.name }}
-                      </option>
-                    </select>
-                    <ChevronDown class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-zinc-400 pointer-events-none" />
-                  </div>
-                </div>
-
-                <!-- Error Display -->
-                <div v-if="error" class="p-3 rounded-xl bg-red-500/10 border border-red-500/30">
-                  <p class="text-red-400 text-sm">{{ error }}</p>
-                </div>
-
-                <!-- Actions -->
-                <div class="flex gap-3 pt-4">
-                  <button
-                    type="button"
-                    @click="$emit('close')"
-                    :disabled="submitting"
-                    class="flex-1 px-5 py-3 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all font-medium border border-zinc-700 disabled:opacity-50 text-sm"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    :disabled="!canSubmit || submitting"
-                    class="flex-1 px-5 py-3 bg-gradient-to-r from-purple-600 to-pink-600 text-white rounded-xl font-semibold transition-all relative overflow-hidden group disabled:opacity-50 text-sm"
-                  >
-                    <div class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                    <span v-if="submitting" class="relative flex items-center justify-center">
-                      <Loader2 class="h-4 w-4 mr-2 animate-spin" />
-                      Submitting...
-                    </span>
-                    <span v-else class="relative flex items-center justify-center">
-                      <Send class="h-4 w-4 mr-2" />
-                      Submit
-                    </span>
-                  </button>
-                </div>
-              </form>
-            </div>
-          </div>
-        </Transition>
-      </div>
-    </Transition>
-  </Teleport>
+    <template #footer>
+      <Button variant="ghost" :disabled="submitting" @click="$emit('close')">Cancel</Button>
+      <Button variant="primary" type="submit" form="external-post-form" :disabled="!canSubmit" :loading="submitting">
+        <Send v-if="!submitting" />
+        {{ submitting ? 'Submitting...' : 'Submit' }}
+      </Button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
-import { Link, ChevronDown, Loader2, Send } from 'lucide-vue-next';
+import { AlertCircle, Link, Send } from 'lucide-vue-next';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Button } from '@/components/ui/button';
+import { Field } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Modal } from '@/components/ui/modal';
+import { PlatformLogo } from '@/components/ui/platform-logo';
+import CustomDropdown from '@/components/CustomDropdown.vue';
 import { useToast } from '@/composables/useToast';
 import { submitExternalPost } from '@/services/schedulingApi';
 
@@ -203,15 +155,15 @@ const platformDisplayName = computed(() => {
   }
 });
 
-const platformBadgeClass = computed(() => {
-  switch (detectedPlatform.value) {
-    case 'instagram': return 'bg-pink-500/20 text-pink-400 border border-pink-500/30';
-    case 'tiktok': return 'bg-cyan-500/20 text-cyan-400 border border-cyan-500/30';
-    case 'youtube': return 'bg-red-500/20 text-red-400 border border-red-500/30';
-    case 'twitter': return 'bg-blue-500/20 text-blue-400 border border-blue-500/30';
-    default: return 'bg-zinc-500/20 text-zinc-400 border border-zinc-500/30';
-  }
-});
+const creatorProfileOptions = computed(() => [
+  { label: 'None', value: '' },
+  ...props.creatorProfiles.map((profile) => ({ label: profile.name, value: String(profile.id) })),
+]);
+
+const campaignOptions = computed(() => [
+  { label: 'None', value: '' },
+  ...props.campaigns.map((campaign) => ({ label: campaign.name, value: String(campaign.id) })),
+]);
 
 const canSubmit = computed(() => {
   return postUrl.value && detectedPlatform.value && !urlError.value;
@@ -266,52 +218,3 @@ async function submit() {
   }
 }
 </script>
-
-<style scoped>
-.modal-enter-active,
-.modal-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
-
-.dialog-enter-active {
-  transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.dialog-leave-active {
-  transition: all 0.2s ease-in;
-}
-
-.dialog-enter-from {
-  opacity: 0;
-  transform: scale(0.95) translateY(10px);
-}
-
-.dialog-leave-to {
-  opacity: 0;
-  transform: scale(0.98);
-}
-
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgb(63 63 70);
-  border-radius: 3px;
-}
-
-select option {
-  background: rgb(24 24 27);
-  color: white;
-  padding: 8px;
-}
-</style>

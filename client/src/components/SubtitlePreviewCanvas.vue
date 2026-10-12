@@ -544,10 +544,10 @@ onUnmounted(() => {
 .sp-canvas__frame {
   position: relative;
   width: 100%;
-  background: #000;
-  border-radius: 8px;
+  background: #000; /* media letterbox */
+  border-radius: var(--radius-lg);
   overflow: visible;
-  border: 1px solid var(--sidebar-border, #2d2d33);
+  box-shadow: 0 0 0 1px var(--line-subtle);
   user-select: none;
 }
 
@@ -557,7 +557,7 @@ onUnmounted(() => {
   width: 100%;
   height: 100%;
   object-fit: cover;
-  border-radius: 8px;
+  border-radius: var(--radius-lg);
   pointer-events: none;
   display: block;
 }
@@ -568,13 +568,14 @@ onUnmounted(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  color: #52525b;
+  color: var(--fg-subtle);
 }
 
 /* Snap guides */
 .sp-canvas__guide {
   position: absolute;
-  background: rgba(250, 204, 21, 0.85);
+  background: var(--warning);
+  opacity: 0.85;
   pointer-events: none;
   z-index: 50;
 }
@@ -602,20 +603,20 @@ onUnmounted(() => {
   cursor: move;
   z-index: 10;
   border-radius: 4px;
-  background: rgba(88, 28, 135, 0.12);
-  outline: 1px solid rgba(168, 85, 247, 0.55);
+  background: var(--brand-soft);
+  outline: 1px solid var(--brand-line);
   transition: outline-color 120ms ease;
   padding: 4px 6px;
   box-sizing: border-box;
 }
 .sp-canvas__sub-box:hover {
-  outline-color: rgba(192, 132, 252, 0.9);
+  outline-color: var(--brand);
 }
 .sp-canvas__sub-box--active {
-  outline: 2px solid rgba(192, 132, 252, 1);
+  outline: 2px solid var(--brand);
 }
 .sp-canvas__sub-box--single {
-  background: rgba(88, 28, 135, 0.05);
+  background: transparent;
 }
 
 .sp-canvas__sub-words {
@@ -666,9 +667,9 @@ onUnmounted(() => {
   position: absolute;
   width: 10px;
   height: 10px;
-  background: #a855f7;
-  border: 1px solid #fff;
-  border-radius: 1px;
+  background: var(--brand);
+  border: 1.5px solid var(--fg);
+  border-radius: 2px;
   z-index: 20;
 }
 .sp-canvas__handle--nw { top: 0;    left: 0;    transform: translate(-50%, -50%); cursor: nwse-resize; }

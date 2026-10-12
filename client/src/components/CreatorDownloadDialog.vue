@@ -1,282 +1,164 @@
 <template>
-  <Transition name="modal">
-    <div v-if="show" class="fixed inset-0 z-50 flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/70 backdrop-blur-md" @click="$emit('close')"></div>
-      <Transition name="dialog" appear>
-        <div
-          class="relative flex flex-col w-full max-w-sm sm:max-w-md lg:max-w-lg mx-3 sm:mx-4 overflow-hidden bg-gradient-to-b from-zinc-900 to-zinc-950 border border-white/10 rounded-xl sm:rounded-2xl max-h-[92vh] sm:max-h-[90vh]"
-        >
-          <!-- Decorative top accent -->
-          <div class="h-1 w-full bg-gradient-to-r from-cyan-500 via-blue-500 to-violet-500 flex-shrink-0" />
-
-          <!-- Header -->
-          <div
-            class="flex items-center justify-between px-4 sm:px-6 py-3 sm:py-4 border-b border-zinc-800 bg-zinc-900/50"
-          >
-            <div class="flex items-center gap-2 sm:gap-3">
-              <div
-                class="w-8 h-8 sm:w-10 sm:h-10 rounded-lg sm:rounded-xl bg-gradient-to-br from-cyan-500/20 to-blue-500/20 flex items-center justify-center border border-cyan-500/30"
-              >
-                <Download class="h-4 w-4 sm:h-5 sm:w-5 text-cyan-400" />
-              </div>
-              <h2 class="text-base sm:text-lg font-semibold text-white">Download Latest VOD</h2>
-            </div>
+  <Modal
+    :open="show"
+    title="Download latest VOD"
+    :description="creator ? `Grab the most recent stream from ${creator.name}.` : undefined"
+    :icon="Download"
+    size="md"
+    @close="$emit('close')"
+  >
+    <div class="flex flex-col gap-4">
+      <!-- Platform selector (when the creator has several platforms) -->
+      <Field v-if="creator && creator.platform_links.length > 1" label="Platform">
+        <DropdownMenu>
+          <DropdownMenuTrigger as-child>
             <button
-              @click="$emit('close')"
-              class="p-1.5 sm:p-2 rounded-lg sm:rounded-xl text-zinc-400 hover:text-white hover:bg-zinc-800 transition-colors border border-zinc-800"
+              type="button"
+              class="flex h-[var(--control-lg)] w-full min-w-0 items-center gap-2.5 rounded-[var(--radius-control)] border border-line bg-surface-raised px-2 text-left text-sm text-fg transition-colors hover:border-line-strong data-[state=open]:border-line-strong"
             >
-              <X class="w-4 h-4 sm:w-5 sm:h-5" />
-            </button>
-          </div>
-
-          <!-- Content -->
-          <div class="flex-1 p-4 sm:p-6 overflow-y-auto custom-scrollbar" @click="showPlatformDropdown = false">
-            <!-- Platform Selector (when multiple platforms) -->
-            <div v-if="creator && creator.platform_links.length > 1" class="mb-4 sm:mb-6">
-              <label class="block text-xs sm:text-sm font-medium text-muted-foreground mb-1.5 sm:mb-2">
-                Select Platform
-              </label>
-              <div class="relative">
-                <button
-                  type="button"
-                  @click.stop="showPlatformDropdown = !showPlatformDropdown"
-                  class="w-full flex items-center gap-3 px-3 py-2.5 bg-muted border border-border rounded-lg text-foreground hover:bg-muted/80 focus:outline-none focus:ring-2 focus:ring-primary/50 transition-all"
-                >
-                  <div
-                    class="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0"
-                    :style="{
-                      backgroundColor: getPlatformColor(creator.platform_links[selectedPlatformIndex].platform),
-                    }"
-                  >
-                    <img
-                      :src="getPlatformIcon(creator.platform_links[selectedPlatformIndex].platform)"
-                      class="w-4 h-4 brightness-200"
-                    />
-                  </div>
-                  <div class="flex-1 text-left">
-                    <span class="text-sm font-medium">
-                      {{ getPlatformName(creator.platform_links[selectedPlatformIndex].platform) }}
-                    </span>
-                    <span class="text-xs text-muted-foreground ml-2">
-                      {{
-                        creator.platform_links[selectedPlatformIndex].display_name ||
-                        truncateId(creator.platform_links[selectedPlatformIndex].platform_id)
-                      }}
-                    </span>
-                  </div>
-                  <ChevronDown
-                    class="w-4 h-4 text-muted-foreground transition-transform"
-                    :class="{ 'rotate-180': showPlatformDropdown }"
-                  />
-                </button>
-
-                <!-- Platform Dropdown -->
-                <div
-                  v-if="showPlatformDropdown"
-                  class="absolute top-full left-0 right-0 mt-1 bg-card border border-border rounded-lg shadow-lg z-50 overflow-hidden"
-                  @click.stop
-                >
-                  <div class="p-1">
-                    <button
-                      v-for="(link, index) in creator.platform_links"
-                      :key="link.id"
-                      type="button"
-                      @click="selectPlatform(index)"
-                      class="w-full text-left px-3 py-2.5 rounded-md transition-colors flex items-center gap-3 hover:bg-muted/80 cursor-pointer"
-                      :class="{ 'bg-muted': selectedPlatformIndex === index }"
-                    >
-                      <div
-                        class="w-7 h-7 rounded-md flex items-center justify-center flex-shrink-0"
-                        :style="{ backgroundColor: getPlatformColor(link.platform) }"
-                      >
-                        <img :src="getPlatformIcon(link.platform)" class="w-4 h-4 brightness-200" />
-                      </div>
-                      <div class="flex-1 min-w-0">
-                        <span class="text-sm font-medium text-foreground">
-                          {{ getPlatformName(link.platform) }}
-                        </span>
-                        <span class="text-xs text-muted-foreground ml-2 truncate">
-                          {{ link.display_name || truncateId(link.platform_id) }}
-                        </span>
-                      </div>
-                      <span
-                        v-if="link.is_primary"
-                        class="text-[10px] px-1.5 py-0.5 bg-primary/20 text-primary rounded-full"
-                      >
-                        Primary
-                      </span>
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Loading State -->
-            <div v-if="loading" class="flex flex-col items-center justify-center py-12">
-              <Loader2 class="w-8 h-8 animate-spin text-primary mb-4" />
-              <p class="text-muted-foreground">Fetching latest VOD...</p>
-            </div>
-
-            <!-- Error State -->
-            <div v-else-if="error" class="text-center py-8">
-              <AlertTriangle class="w-12 h-12 text-amber-500 mx-auto mb-4" />
-              <h3 class="font-medium text-lg mb-2">No VOD Found</h3>
-              <p class="text-muted-foreground text-sm">{{ error }}</p>
-              <p v-if="currentPlatformLink" class="text-xs text-muted-foreground/70 mt-2 font-mono">
-                Searched:
-                {{
-                  currentPlatformLink.platformId.length > 16
-                    ? currentPlatformLink.platformId.slice(0, 8) + '...' + currentPlatformLink.platformId.slice(-4)
-                    : currentPlatformLink.platformId
-                }}
-              </p>
-              <Button variant="outline" class="mt-4" @click="fetchLatestVod">
-                <RefreshCw class="w-4 h-4 mr-2" />
-                Try Again
-              </Button>
-            </div>
-
-            <!-- VOD Found -->
-            <div v-else-if="latestVod" class="space-y-6">
-              <!-- VOD Preview -->
-              <div class="flex gap-4 p-4 bg-muted/20 border border-border/50 rounded-lg">
-                <div
-                  class="relative flex-shrink-0 overflow-hidden rounded bg-black/40 w-32 aspect-video border border-border/50"
-                >
-                  <img v-if="latestVod.thumbnailUrl" :src="latestVod.thumbnailUrl" class="w-full h-full object-cover" />
-                  <div v-else class="w-full h-full flex items-center justify-center">
-                    <Video class="w-8 h-8 text-muted-foreground/50" />
-                  </div>
-                </div>
-                <div class="flex-1 min-w-0">
-                  <h3 class="font-medium text-sm line-clamp-2 mb-2">{{ latestVod.title }}</h3>
-                  <div class="flex items-center gap-3 text-xs text-muted-foreground">
-                    <span class="flex items-center gap-1">
-                      <Clock class="w-3 h-3" />
-                      {{ formatDuration(latestVod.duration) }}
-                    </span>
-                    <span v-if="latestVod.createdAt">
-                      {{ formatRelativeTime(latestVod.createdAt) }}
-                    </span>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Time Range Selection -->
-              <div class="space-y-3">
-                <div class="flex items-center justify-between">
-                  <label class="text-xs font-semibold tracking-wider uppercase text-muted-foreground">
-                    Select Range
-                  </label>
-                  <span
-                    class="text-[10px] font-medium px-2 py-0.5 rounded-full border"
-                    :class="
-                      isFullStreamSelected
-                        ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
-                        : 'bg-purple-500/10 text-purple-400 border-purple-500/20'
-                    "
-                  >
-                    {{ isFullStreamSelected ? 'Full Stream' : formatDuration(selectedDuration) }}
-                  </span>
-                </div>
-                <div class="p-4 border shadow-sm bg-card border-border rounded-xl">
-                  <TimeRangePicker v-model="selectedTimeRange" :total-duration="latestVod.duration || 0" />
-                </div>
-                <button
-                  v-if="!isFullStreamSelected"
-                  @click="resetToFullStream"
-                  class="text-xs text-muted-foreground hover:text-foreground transition-colors flex items-center gap-1.5"
-                >
-                  <RotateCcw class="w-3 h-3" />
-                  Reset to full stream
-                </button>
-              </div>
-
-              <!-- Auto-Segment Option -->
-              <div
-                v-if="selectedDuration > 900"
-                class="p-4 border border-border rounded-xl bg-card shadow-sm animate-in fade-in duration-200"
-              >
-                <div class="flex items-center justify-between mb-3">
-                  <label class="text-sm font-medium text-foreground flex items-center gap-2 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      v-model="autoSegment"
-                      class="w-4 h-4 rounded border-muted-foreground text-purple-600 focus:ring-purple-500 bg-transparent"
-                    />
-                    <span>Auto-segment into parts</span>
-                  </label>
-                  <span
-                    v-if="autoSegment"
-                    class="text-[10px] font-medium bg-purple-500/10 text-purple-400 px-2 py-0.5 rounded-full border border-purple-500/20"
-                  >
-                    ~{{ estimatedParts }} parts
-                  </span>
-                </div>
-                <div v-if="autoSegment" class="space-y-3 pl-1 mt-4">
-                  <div class="flex justify-between items-center">
-                    <span class="text-xs text-muted-foreground font-medium uppercase tracking-wider">
-                      Part Duration
-                    </span>
-                    <span class="text-xs font-medium bg-muted text-foreground px-2 py-0.5 rounded-full">
-                      {{ autoSegmentDuration }} min
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    v-model.number="autoSegmentDuration"
-                    min="15"
-                    max="60"
-                    step="5"
-                    class="w-full h-2 bg-muted rounded-lg appearance-none cursor-pointer accent-purple-500"
-                  />
-                  <div class="flex justify-between text-[10px] text-muted-foreground/70 px-0.5">
-                    <span>15m</span>
-                    <span>30m</span>
-                    <span>45m</span>
-                    <span>60m</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Footer -->
-          <div
-            v-if="latestVod"
-            class="flex items-center justify-end gap-3 px-6 py-4 border-t border-zinc-800 bg-zinc-900/50"
-          >
-            <button
-              @click="$emit('close')"
-              :disabled="downloading"
-              class="px-5 py-2.5 bg-zinc-800 hover:bg-zinc-700 text-zinc-300 hover:text-white rounded-xl transition-all duration-200 font-medium border border-zinc-700 hover:border-zinc-600 disabled:opacity-50"
-            >
-              Cancel
-            </button>
-            <button
-              @click="handleStartDownload"
-              :disabled="downloading || selectedTimeRange.endTime <= selectedTimeRange.startTime"
-              class="px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 text-white rounded-xl font-semibold transition-all duration-200 relative overflow-hidden group disabled:opacity-50 disabled:cursor-not-allowed"
-            >
-              <div
-                class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
-              />
-              <span class="relative flex items-center gap-2">
-                <Loader2 v-if="downloading" class="w-4 h-4 animate-spin" />
-                {{ downloading ? 'Starting...' : 'Start Download' }}
+              <PlatformLogo :platform="creator.platform_links[selectedPlatformIndex].platform" size="md" />
+              <span class="min-w-0 flex-1 truncate">
+                <span class="font-medium">{{ getPlatformName(creator.platform_links[selectedPlatformIndex].platform) }}</span>
+                <span class="ml-2 text-xs text-fg-muted">
+                  {{
+                    creator.platform_links[selectedPlatformIndex].display_name ||
+                    truncateId(creator.platform_links[selectedPlatformIndex].platform_id)
+                  }}
+                </span>
               </span>
+              <ChevronDown class="size-3.5 shrink-0 text-fg-subtle" />
             </button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" class="w-[var(--reka-dropdown-menu-trigger-width)]">
+            <DropdownMenuItem
+              v-for="(link, index) in creator.platform_links"
+              :key="link.id"
+              @select="selectPlatform(index)"
+            >
+              <PlatformLogo :platform="link.platform" size="sm" />
+              <span class="min-w-0 flex-1 truncate">
+                {{ getPlatformName(link.platform) }}
+                <span class="ml-1.5 text-xs text-fg-muted">{{ link.display_name || truncateId(link.platform_id) }}</span>
+              </span>
+              <Badge v-if="link.is_primary" variant="brand">Primary</Badge>
+              <Check v-if="selectedPlatformIndex === index" class="!text-brand" />
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </Field>
+
+      <!-- Loading -->
+      <div v-if="loading" class="skeleton-group flex flex-col items-center justify-center gap-3 py-10 text-sm text-fg-muted">
+        <Loader2 class="size-6 animate-spin text-fg-subtle" />
+        Fetching latest VOD…
+      </div>
+
+      <!-- Error -->
+      <EmptyState
+        v-else-if="error"
+        :icon="AlertTriangle"
+        tone="warning"
+        size="sm"
+        title="No VOD found"
+        :description="error"
+      >
+        <p v-if="currentPlatformLink" class="w-full font-mono text-2xs text-fg-subtle">
+          Searched:
+          {{
+            currentPlatformLink.platformId.length > 16
+              ? currentPlatformLink.platformId.slice(0, 8) + '...' + currentPlatformLink.platformId.slice(-4)
+              : currentPlatformLink.platformId
+          }}
+        </p>
+        <Button variant="secondary" size="sm" @click="fetchLatestVod"><RefreshCw /> Try again</Button>
+      </EmptyState>
+
+      <!-- VOD found -->
+      <div v-else-if="latestVod" class="flex animate-enter flex-col gap-4">
+        <div class="flex gap-3 border-b border-line-subtle pb-4">
+          <div class="relative aspect-video w-28 shrink-0 overflow-hidden rounded-md bg-surface-sunken">
+            <img v-if="latestVod.thumbnailUrl" :src="latestVod.thumbnailUrl" alt="" class="size-full object-cover" />
+            <div v-else class="grid size-full place-items-center">
+              <Video class="size-6 text-fg-disabled" />
+            </div>
+          </div>
+          <div class="min-w-0 flex-1 py-0.5">
+            <h3 class="line-clamp-2 text-sm font-medium text-fg">{{ latestVod.title }}</h3>
+            <div class="mt-1.5 flex items-center gap-3 text-xs text-fg-muted">
+              <span class="tabular flex items-center gap-1"><Clock class="size-3" />{{ formatDuration(latestVod.duration) }}</span>
+              <span v-if="latestVod.createdAt">{{ formatRelativeTime(latestVod.createdAt) }}</span>
+            </div>
           </div>
         </div>
-      </Transition>
+
+        <Field label="Range">
+          <template #label-end>
+            <Badge :variant="isFullStreamSelected ? 'success' : 'neutral'">
+              {{ isFullStreamSelected ? 'Full stream' : formatDuration(selectedDuration) }}
+            </Badge>
+          </template>
+          <TimeRangePicker v-model="selectedTimeRange" :total-duration="latestVod.duration || 0" />
+          <Button v-if="!isFullStreamSelected" variant="ghost" size="xs" class="self-start" @click="resetToFullStream">
+            <RotateCcw /> Reset to full stream
+          </Button>
+        </Field>
+
+        <div v-if="selectedDuration > 900" class="flex flex-col gap-3 border-t border-line-subtle pt-4">
+          <label class="flex cursor-pointer items-center justify-between gap-3">
+            <span class="flex flex-col">
+              <span class="text-sm font-medium text-fg">Auto-segment into parts</span>
+              <span class="text-xs text-fg-muted">Split long ranges into separate downloads.</span>
+            </span>
+            <span class="flex items-center gap-2">
+              <Badge v-if="autoSegment">~{{ estimatedParts }} parts</Badge>
+              <Switch v-model="autoSegment" />
+            </span>
+          </label>
+          <template v-if="autoSegment">
+            <RangeField
+              v-model="autoSegmentDuration"
+              label="Part length"
+              :min="15"
+              :max="60"
+              :step="5"
+              suffix=" min"
+            />
+          </template>
+        </div>
+      </div>
     </div>
-  </Transition>
+
+    <template v-if="latestVod" #footer>
+      <Button variant="ghost" :disabled="downloading" @click="$emit('close')">Cancel</Button>
+      <Button
+        variant="primary"
+        :loading="downloading"
+        :disabled="selectedTimeRange.endTime <= selectedTimeRange.startTime"
+        @click="handleStartDownload"
+      >
+        {{ downloading ? 'Starting…' : 'Start download' }}
+      </Button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
   import { ref, watch, computed } from 'vue';
   import { useRouter } from 'vue-router';
+  import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Field } from '@/components/ui/field';
+  import { Modal } from '@/components/ui/modal';
+  import { PlatformLogo, platformLabel } from '@/components/ui/platform-logo';
+  import { Switch } from '@/components/ui/switch';
+  import RangeField from '@/components/branding/RangeField.vue';
   import TimeRangePicker from '@/components/TimeRangePicker.vue';
   import { type CreatorProfileWithLinks } from '@/services/database';
   import { usePlatformStore, type PlatformClip } from '@/stores/platform';
@@ -284,7 +166,7 @@
   import { useToast } from '@/composables/useToast';
   import { platformConfigs } from '@/config/platforms';
   import {
-    X,
+    Check,
     Loader2,
     AlertTriangle,
     RefreshCw,
@@ -368,41 +250,8 @@
     }
   );
 
-  // Platform helpers
-  function getPlatformIcon(platform: string): string {
-    const icons: Record<string, string> = {
-      pumpfun: '/capsule.svg',
-      kick: '/kick.svg',
-      twitch: '/twitch.svg',
-      youtube: '/youtube.svg',
-      rumble: '/rumble.svg',
-      twitter: '/x.svg',
-    };
-    return icons[platform] || '/capsule.svg';
-  }
-
-  function getPlatformColor(platform: string): string {
-    const colors: Record<string, string> = {
-      pumpfun: '#10b981',
-      kick: '#53FC18',
-      twitch: '#9146FF',
-      youtube: '#dc2626',
-      rumble: '#85C742',
-      twitter: '#000000',
-    };
-    return colors[platform] || '#6b7280';
-  }
-
   function getPlatformName(platform: string): string {
-    const names: Record<string, string> = {
-      pumpfun: 'PumpFun',
-      kick: 'Kick',
-      twitch: 'Twitch',
-      youtube: 'YouTube',
-      rumble: 'Rumble',
-      twitter: 'X (Twitter)',
-    };
-    return names[platform] || platform;
+    return platformLabel(platform);
   }
 
   function truncateId(id: string): string {
@@ -596,53 +445,3 @@
     }
   }
 </script>
-
-<style scoped>
-  /* Modal backdrop transition */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 0.3s ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  /* Dialog transition */
-  .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 0.2s ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* Custom scrollbar */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: rgb(63 63 70);
-    border-radius: 3px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: rgb(82 82 91);
-  }
-</style>

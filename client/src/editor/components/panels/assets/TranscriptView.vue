@@ -17,9 +17,11 @@ import {
 	SplitSquareHorizontal,
 	GripVertical,
 	Check,
-	Undo2,
 	RefreshCw,
 } from "lucide-vue-next";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import ToolbarButton from "../../chrome/ToolbarButton.vue";
 import PanelSearchBar from "./PanelSearchBar.vue";
 import {
 	collectTimelineSpeechElements,
@@ -579,7 +581,7 @@ async function loadTranscript() {
 			return;
 		}
 
-		error.value = "No transcript available. Click 'Generate Transcript' to create one.";
+		error.value = "Generate one from the timeline audio to edit this clip by text.";
 	} catch (err) {
 		console.error("[TranscriptView] Failed to load transcript:", err);
 		error.value = "Failed to load transcript data.";
@@ -1130,15 +1132,16 @@ function clearSearch() {
 }
 
 // ── Word classes ──
+// Every word keeps a 1px border (transparent by default) so state changes don't shift the text.
 function getWordClasses(index: number): string {
 	// Strikethrough
 	if (strikethroughIndices.value.has(index)) {
-		return "line-through text-red-400/60 bg-red-500/10 border border-red-500/20";
+		return "line-through decoration-danger text-danger bg-danger-soft border-[var(--danger-line)]";
 	}
 
 	// Selection
 	if (isWordInSelection(index)) {
-		return "bg-blue-500/30 text-blue-200 border border-blue-400/40";
+		return "bg-brand-soft text-brand border-brand-line";
 	}
 
 	// Active search match
@@ -1146,27 +1149,27 @@ function getWordClasses(index: number): string {
 		const query = debouncedSearchQuery.value.toLowerCase().trim();
 		const queryWords = query.split(/\s+/).filter((w) => w.length > 0);
 		if (index >= activeMatchWordIndex.value && index < activeMatchWordIndex.value + queryWords.length) {
-			return "bg-orange-500/40 text-orange-200 border border-orange-400/50 ring-1 ring-orange-400/30";
+			return "bg-warning text-[var(--fg-on-light)] border-warning";
 		}
 	}
 
 	// Search match
 	if (matchedPhraseIndices.value.includes(index)) {
-		return "bg-yellow-500/20 text-yellow-300 border border-yellow-500/30";
+		return "bg-warning-soft text-warning border-[var(--warning-line)]";
 	}
 
 	// Current word
 	if (index === currentWordIndex.value) {
-		return "bg-primary text-primary-foreground";
+		return "bg-brand text-brand-fg border-brand";
 	}
 
 	// Spoken
 	if (currentWordIndex.value >= 0 && index < currentWordIndex.value) {
-		return "text-foreground font-medium";
+		return "text-fg border-transparent";
 	}
 
 	// Future
-	return "text-muted-foreground/70";
+	return "text-fg-muted border-transparent";
 }
 
 // ── Lifecycle ──
@@ -1228,160 +1231,148 @@ watch(
 		<!-- Toolbar -->
 		<PanelSearchBar
 			v-model="searchQuery"
-			placeholder="Search..."
+			placeholder="Search transcript…"
+			:clearable="false"
 			@keydown.enter.prevent="navigateMatch(1)"
 			@keydown.shift.enter.prevent="navigateMatch(-1)"
 		>
-			<template v-if="searchQuery.trim() && matchOccurrences.length > 0">
-				<span class="text-[9px] tabular-nums text-zinc-500 whitespace-nowrap">
-					{{ currentMatchIndex + 1 }}/{{ matchOccurrences.length }}
-				</span>
-				<button @click="navigateMatch(-1)" class="p-0.5 text-zinc-500 hover:text-zinc-300 rounded" title="Previous">
-					<ChevronUp class="size-3" />
-				</button>
-				<button @click="navigateMatch(1)" class="p-0.5 text-zinc-500 hover:text-zinc-300 rounded" title="Next">
-					<ChevronDown class="size-3" />
-				</button>
-			</template>
-			<button v-if="searchQuery.trim()" @click="clearSearch" class="p-0.5 text-zinc-500 hover:text-zinc-300 rounded">
-				<XIcon class="size-3" />
-			</button>
-
-			<!-- Divider -->
-			<div class="w-px h-4 bg-white/10 mx-1" />
-
-			<!-- Sync Timeline button -->
-			<button
+			<ToolbarButton
 				v-if="words.length > 0"
+				label="Sync timeline to transcript order"
 				@click="syncTimelineToTranscript"
-				class="p-1 rounded transition-colors text-zinc-500 hover:text-zinc-300 hover:bg-white/5"
-				title="Sync timeline to match transcript order"
 			>
-				<RefreshCw class="size-3.5" />
-			</button>
-
-			<!-- Strikethrough toggle -->
-			<button
+				<RefreshCw />
+			</ToolbarButton>
+			<ToolbarButton
+				:label="strikethroughMode ? 'Exit strikethrough mode' : 'Strikethrough mode — click words to mark for removal'"
+				:active="strikethroughMode"
+				toggle
 				@click="strikethroughMode = !strikethroughMode"
-				:class="[
-					'p-1 rounded transition-colors',
-					strikethroughMode
-						? 'bg-red-500/20 text-red-400 border border-red-500/30'
-						: 'text-zinc-500 hover:text-zinc-300 hover:bg-white/5',
-				]"
-				:title="strikethroughMode ? 'Exit strikethrough mode' : 'Strikethrough mode — click words to mark for removal'"
 			>
-				<Strikethrough class="size-3.5" />
-			</button>
+				<Strikethrough />
+			</ToolbarButton>
 		</PanelSearchBar>
+
+		<!-- Search match bar -->
+		<div
+			v-if="searchQuery.trim()"
+			class="flex h-8 shrink-0 items-center gap-0.5 border-b border-line-subtle pl-3 pr-1.5"
+		>
+			<span class="tabular min-w-0 flex-1 truncate text-xs text-fg-muted">
+				<template v-if="matchOccurrences.length > 0">
+					<span class="text-fg">{{ currentMatchIndex + 1 }}</span> of {{ matchOccurrences.length }}
+					{{ matchOccurrences.length === 1 ? 'match' : 'matches' }}
+				</template>
+				<template v-else-if="debouncedSearchQuery.trim()">No matches</template>
+			</span>
+			<ToolbarButton
+				label="Previous match"
+				shortcut="Shift+Enter"
+				size="icon-xs"
+				:disabled="matchOccurrences.length === 0"
+				@click="navigateMatch(-1)"
+			>
+				<ChevronUp />
+			</ToolbarButton>
+			<ToolbarButton
+				label="Next match"
+				shortcut="Enter"
+				size="icon-xs"
+				:disabled="matchOccurrences.length === 0"
+				@click="navigateMatch(1)"
+			>
+				<ChevronDown />
+			</ToolbarButton>
+			<ToolbarButton label="Clear search" size="icon-xs" @click="clearSearch">
+				<XIcon />
+			</ToolbarButton>
+		</div>
 
 		<!-- Strikethrough action bar -->
 		<div
 			v-if="strikethroughMode && strikethroughCount > 0"
-			class="flex items-center gap-2 px-3 py-1.5 bg-red-500/10 border-b border-red-500/20"
+			class="flex h-9 shrink-0 items-center gap-1 border-b border-line-subtle pl-3 pr-1.5"
 		>
-			<span class="text-[10px] text-red-400 font-medium">
-				{{ strikethroughCount }} word{{ strikethroughCount !== 1 ? 's' : '' }} marked
+			<span class="tabular min-w-0 flex-1 truncate text-xs text-fg-muted">
+				{{ strikethroughCount }} marked
 			</span>
-			<div class="flex-1" />
-			<button
-				@click="clearStrikethrough"
-				class="flex items-center gap-1 px-2 py-0.5 text-[10px] text-zinc-400 hover:text-zinc-200 bg-white/5 rounded transition-colors"
-			>
-				<Undo2 class="size-3" />
-				Clear
-			</button>
-			<button
+			<Button variant="ghost" size="xs" title="Unmark all words" @click="clearStrikethrough">Clear</Button>
+			<Button
+				variant="destructive-soft"
+				size="xs"
+				title="Delete marked words and ripple-delete from timeline"
 				@click="commitStrikethrough"
-				class="flex items-center gap-1 px-2 py-0.5 text-[10px] text-red-400 hover:text-red-300 bg-red-500/20 rounded transition-colors border border-red-500/30"
 			>
-				<Trash2 class="size-3" />
-				Delete Marked
-			</button>
+				<Trash2 />
+				Delete
+			</Button>
 		</div>
 
 		<!-- Selection action bar -->
 		<div
 			v-if="selectionStartIndex !== -1 && selectionEndIndex !== -1"
-			class="flex items-center gap-2 px-3 py-1.5 bg-blue-500/10 border-b border-blue-500/20"
+			class="flex h-9 shrink-0 items-center gap-1 border-b border-line-subtle pl-3 pr-1.5"
 		>
-			<span class="text-[10px] text-blue-400 font-mono tabular-nums">
-				{{ formatTime(selectionTimeRange?.startTime ?? 0) }} – {{ formatTime(selectionTimeRange?.endTime ?? 0) }}
+			<span class="tabular min-w-0 flex-1 truncate font-mono text-xs text-brand">
+				{{ formatTime(selectionTimeRange?.startTime ?? 0) }}–{{ formatTime(selectionTimeRange?.endTime ?? 0) }}
 			</span>
-			<div class="flex-1" />
-			<button
-				@click="splitAtWord(selectionStartIndex)"
-				class="flex items-center gap-1 px-2 py-0.5 text-[10px] text-zinc-300 hover:text-white bg-white/5 rounded transition-colors"
+			<Button
+				variant="ghost"
+				size="xs"
 				title="Split video at selection start"
+				@click="splitAtWord(selectionStartIndex)"
 			>
-				<SplitSquareHorizontal class="size-3" />
+				<SplitSquareHorizontal />
 				Split
-			</button>
-			<button
-				@click="deleteSelectedWords"
-				class="flex items-center gap-1 px-2 py-0.5 text-[10px] text-red-400 hover:text-red-300 bg-red-500/20 rounded transition-colors border border-red-500/30"
+			</Button>
+			<Button
+				variant="destructive-soft"
+				size="xs"
 				title="Delete selected words and ripple-delete from timeline"
+				@click="deleteSelectedWords"
 			>
-				<Trash2 class="size-3" />
+				<Trash2 />
 				Delete
-			</button>
-			<button
-				@click="clearSelection"
-				class="p-0.5 text-zinc-500 hover:text-zinc-300 rounded"
-			>
-				<XIcon class="size-3" />
-			</button>
+			</Button>
+			<ToolbarButton label="Clear selection" size="icon-xs" @click="clearSelection">
+				<XIcon />
+			</ToolbarButton>
 		</div>
 
 		<!-- Loading -->
-		<div v-if="loading" class="flex-1 flex items-center justify-center">
-			<div class="text-center">
-				<Loader2 class="animate-spin size-6 mx-auto mb-2 text-blue-400" />
-				<p class="text-xs text-zinc-500">Loading transcript...</p>
-			</div>
+		<div v-if="loading" class="flex flex-1 flex-col items-center justify-center gap-2">
+			<Loader2 class="size-5 animate-spin text-fg-subtle" />
+			<p class="text-xs text-fg-muted">Loading transcript…</p>
 		</div>
 
 		<!-- Error -->
-		<div v-else-if="error" class="flex-1 flex items-center justify-center px-4">
-			<div class="text-center max-w-[240px]">
-				<FileText class="size-8 text-zinc-600 mx-auto mb-3" />
-				<p class="text-xs text-zinc-400 leading-relaxed mb-3">{{ error }}</p>
-				<div class="flex items-center justify-center gap-2">
-					<button
-						@click="loadTranscript"
-						class="px-3 py-1.5 text-[10px] font-medium text-zinc-300 bg-white/5 rounded-md border border-white/10 hover:bg-white/10 transition-colors"
-					>
-						Retry
-					</button>
-					<button
-						@click="handleGenerateTranscript"
-						:disabled="isGenerating"
-						class="px-3 py-1.5 text-[10px] font-medium text-blue-400 bg-blue-500/10 rounded-md border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-					>
-						<Loader2 v-if="isGenerating" class="inline-block animate-spin size-3 mr-1" />
-						{{ isGenerating ? 'Generating...' : 'Generate Transcript' }}
-					</button>
-				</div>
-				<p v-if="generatingStep" class="text-[10px] text-zinc-500 mt-2">{{ generatingStep }}</p>
+		<div v-else-if="error" class="flex min-h-0 flex-1 flex-col overflow-y-auto p-3">
+			<div class="my-auto">
+				<EmptyState size="sm" :icon="FileText" title="No transcript" :description="error" class="px-0">
+					<Button variant="secondary" size="sm" @click="loadTranscript">Retry</Button>
+					<Button variant="primary" size="sm" :loading="isGenerating" @click="handleGenerateTranscript">
+						{{ isGenerating ? 'Generating…' : 'Generate transcript' }}
+					</Button>
+				</EmptyState>
+				<p v-if="generatingStep" class="-mt-4 text-center text-2xs text-fg-subtle">{{ generatingStep }}</p>
 			</div>
 		</div>
 
 		<!-- Empty -->
-		<div v-else-if="words.length === 0" class="flex-1 flex items-center justify-center px-4">
-			<div class="text-center max-w-[200px]">
-				<FileText class="size-8 text-zinc-600 mx-auto mb-3" />
-				<h4 class="text-xs font-medium text-zinc-300 mb-1">No Transcript</h4>
-				<p class="text-[10px] text-zinc-500 leading-relaxed mb-3">
-					Generate a transcript from the video audio to enable text-based editing.
-				</p>
-				<button
-					@click="handleGenerateTranscript"
-					:disabled="isGenerating"
-					class="px-3 py-1.5 text-[10px] font-medium text-blue-400 bg-blue-500/10 rounded-md border border-blue-500/20 hover:bg-blue-500/20 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+		<div v-else-if="words.length === 0" class="flex min-h-0 flex-1 flex-col overflow-y-auto p-3">
+			<div class="my-auto">
+				<EmptyState
+					size="sm"
+					:icon="FileText"
+					title="No transcript"
+					description="Generate one from the timeline audio to edit this clip by text."
+					class="px-0"
 				>
-					<Loader2 v-if="isGenerating" class="inline-block animate-spin size-3 mr-1" />
-					{{ isGenerating ? 'Generating...' : 'Generate Transcript' }}
-				</button>
+					<Button variant="primary" size="sm" :loading="isGenerating" @click="handleGenerateTranscript">
+						{{ isGenerating ? 'Generating…' : 'Generate transcript' }}
+					</Button>
+				</EmptyState>
+				<p v-if="generatingStep" class="-mt-4 text-center text-2xs text-fg-subtle">{{ generatingStep }}</p>
 			</div>
 		</div>
 
@@ -1396,42 +1387,47 @@ watch(
 				v-for="(paragraph, pIdx) in paragraphs"
 				:key="paragraph.id"
 				:data-paragraph-id="paragraph.id"
-				class="mb-3 rounded-md transition-all"
-				:class="{
-					'bg-blue-500/5 border border-blue-500/20': dragOverParagraphId === paragraph.id,
-					'opacity-50': draggingParagraphId === paragraph.id,
-					'bg-blue-500/10 border border-blue-500/30': hoveredParagraphId === paragraph.id,
-				}"
+				class="-mx-1.5 mb-2 rounded-md border px-1.5 py-1 transition-colors"
+				:class="[
+					dragOverParagraphId === paragraph.id
+						? 'border-brand-line bg-brand-soft'
+						: hoveredParagraphId === paragraph.id
+							? 'border-line-subtle bg-surface-hover'
+							: 'border-transparent',
+					draggingParagraphId === paragraph.id && 'opacity-50',
+				]"
 				@pointerdown="onParagraphPointerDown($event, paragraph.id)"
 				@mouseenter="onParagraphMouseEnter(paragraph.id)"
 				@mouseleave="onParagraphMouseLeave"
 			>
 				<!-- Paragraph header -->
-				<div class="flex items-center gap-1 mb-1">
-					<GripVertical class="size-3 text-zinc-600 cursor-grab shrink-0" />
-					<span class="text-[9px] font-mono text-zinc-600 tabular-nums">
+				<div class="mb-0.5 flex h-5 items-center gap-1">
+					<GripVertical class="size-3 shrink-0 cursor-grab text-fg-disabled" />
+					<span class="tabular font-mono text-2xs text-fg-subtle">
 						{{ formatTime(paragraph.startTime) }}
 					</span>
 					<button
-						@click="splitAtWord(paragraphWordOffsets[pIdx])"
 						v-if="pIdx > 0"
-						class="p-0.5 text-zinc-600 hover:text-zinc-400 rounded transition-colors"
+						type="button"
+						class="grid size-5 place-items-center rounded text-fg-subtle transition-colors hover:bg-surface-hover hover:text-fg"
 						title="Split video at paragraph boundary"
+						aria-label="Split video at paragraph boundary"
+						@click="splitAtWord(paragraphWordOffsets[pIdx])"
 					>
-						<Scissors class="size-2.5" />
+						<Scissors class="size-3" />
 					</button>
 				</div>
 
 				<!-- Words -->
-				<div class="text-[11px] leading-relaxed break-words select-none">
+				<div class="select-none break-words text-xs leading-relaxed">
 					<span
 						v-for="(word, wIdx) in paragraph.words"
 						:key="`${paragraph.id}-${wIdx}`"
 						:ref="(el) => setWordRef(el, paragraphWordOffsets[pIdx] + wIdx)"
 						:class="[
-							'inline-block px-0.5 py-px mx-px rounded cursor-pointer whitespace-normal transition-colors',
+							'inline-block cursor-pointer whitespace-normal rounded border px-0.5 transition-colors',
 							getWordClasses(paragraphWordOffsets[pIdx] + wIdx),
-							strikethroughMode && 'hover:bg-red-500/20 hover:text-red-300',
+							strikethroughMode && 'hover:bg-danger-soft hover:text-danger',
 						]"
 						@click="onWordClick(word, paragraphWordOffsets[pIdx] + wIdx)"
 						@dblclick="onWordDoubleClick(word, paragraphWordOffsets[pIdx] + wIdx)"
@@ -1445,7 +1441,7 @@ watch(
 							v-model="editingWordText"
 							@blur="saveWordEdit()"
 							@keydown="onWordKeydown($event)"
-							class="bg-transparent border-b border-blue-400 outline-none text-inherit min-w-[20px] px-0"
+							class="min-w-[20px] border-b border-brand bg-transparent px-0 text-inherit outline-none"
 							style="font: inherit"
 						/>
 						<span v-else>{{ word.word }}{{ wIdx < paragraph.words.length - 1 ? ' ' : '' }}</span>
@@ -1457,7 +1453,7 @@ watch(
 		<!-- Confirmation Dialog -->
 		<ConfirmDialog
 			:open="showDeleteConfirm"
-			title="Delete Transcript Words"
+			title="Delete transcript words"
 			message="This will delete the selected words from the transcript and remove the corresponding video segments from the timeline. This action can be undone."
 			confirm-text="Delete"
 			cancel-text="Cancel"

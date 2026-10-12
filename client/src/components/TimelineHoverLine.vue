@@ -11,11 +11,7 @@
     }"
   >
     <!-- The line itself -->
-    <div class="absolute top-0 bottom-0 left-1 w-px bg-white/40"></div>
-    <!-- Top circle -->
-    <div class="absolute top-0 left-0 w-2 h-2 bg-white/60 rounded-full"></div>
-    <!-- Bottom circle -->
-    <div class="absolute bottom-0 left-0 w-2 h-2 bg-white/60 rounded-full"></div>
+    <div class="absolute inset-y-0 left-1 w-px bg-white/35"></div>
   </div>
 </template>
 
@@ -24,7 +20,3 @@
 
   defineProps<TimelineHoverLineProps>();
 </script>
-
-<style scoped>
-  /* Timeline hover line - styling handled via Tailwind classes */
-</style>

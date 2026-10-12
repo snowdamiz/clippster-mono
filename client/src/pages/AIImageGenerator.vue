@@ -6,129 +6,163 @@
     :icon="Images"
   >
     <template #actions>
-      <button
-        type="button"
-        class="flex h-8 items-center gap-2 rounded-md bg-[var(--sidebar-accent)] px-3 text-xs font-semibold text-[var(--sidebar-bg)] disabled:opacity-50"
-        :disabled="isCreatingProject"
-        @click="showCreateDialog = true"
-      >
-        <Plus :size="14" />
-        New Project
-      </button>
+      <Button variant="primary" :loading="isCreatingProject" @click="showCreateDialog = true">
+        <Plus v-if="!isCreatingProject" />
+        New project
+      </Button>
     </template>
 
-    <div class="flex min-h-0 flex-1 flex-col gap-5 p-6">
-      <div>
-        <h1 class="text-2xl font-bold text-zinc-100">Projects</h1>
-        <p class="mt-1 text-sm text-zinc-500">
-          Image and thumbnail projects open full-page. Export, save locally, or save a workable file when a result is ready.
-        </p>
+    <template v-if="sessions.length > 0" #toolbar>
+      <SearchField v-model="searchQuery" placeholder="Search projects…" class="min-w-[120px] max-w-64 flex-1" />
+      <div class="w-36 shrink-0">
+        <CustomDropdown v-model="typeFilter" :options="typeOptions" placeholder="Type" />
       </div>
-
-      <div v-if="isLoadingSessions" class="flex flex-1 items-center justify-center">
-        <Loader2 :size="32" class="animate-spin text-zinc-500" />
+      <div class="w-40 shrink-0">
+        <CustomDropdown v-model="sortBy" :options="sortOptions" placeholder="Sort by" />
       </div>
+    </template>
 
-      <div
-        v-else-if="sessions.length"
-        class="grid grid-cols-1 gap-4 overflow-y-auto md:grid-cols-2 xl:grid-cols-3 2xl:grid-cols-4"
-      >
-        <article
-          v-for="project in sessions"
-          :key="`${project.creator_mode}-${project.id}`"
-          class="group relative aspect-square overflow-hidden rounded-xl border border-white/10 bg-zinc-900 text-left transition hover:-translate-y-0.5 hover:border-sky-500/50"
-          role="button"
-          tabindex="0"
-          @click="openProject(project)"
-          @keydown.enter="openProject(project)"
+    <ProjectGrid
+      v-if="(isLoadingSessions && !sessions.length) || filteredSessions.length > 0"
+      :items="filteredSessions"
+      :loading="isLoadingSessions"
+      :item-key="(project) => `${project.creator_mode}-${project.id}`"
+      :group-date="groupDate"
+    >
+      <template #tile="{ item: project }">
+        <MediaTile
+          :title="projectName(project)"
+          :thumbnail="project.thumbnail_url"
+          :icon="project.creator_mode === 'image' ? Images : ImagePlay"
+          :meta="[formatStatus(project.status), relativeTime(project.updated_at)]"
+          @open="openProject(project)"
         >
-          <img
-            v-if="project.thumbnail_url"
-            :src="project.thumbnail_url"
-            :alt="project.name || 'Project preview'"
-            class="size-full object-cover"
-          />
-          <div v-else class="flex size-full items-center justify-center bg-gradient-to-br from-zinc-800 to-zinc-950">
-            <Images :size="48" class="text-zinc-700" />
-          </div>
-          <div class="absolute left-3 top-3 flex gap-1.5">
-            <span
-              class="rounded-md px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide"
-              :class="
-                project.creator_mode === 'image' ? 'bg-sky-600/90 text-white' : 'bg-cyan-700/90 text-white'
-              "
-            >
-              {{ project.creator_mode === 'image' ? 'Image' : 'Thumbnail' }}
-            </span>
-            <span
-              v-if="project.creator_mode === 'thumbnail' && project.generation_mode"
-              class="rounded-md bg-black/60 px-2 py-0.5 text-[10px] font-semibold text-zinc-200"
-            >
+          <template #badges>
+            <MediaChip>{{ project.creator_mode === 'image' ? 'Image' : 'Thumbnail' }}</MediaChip>
+            <MediaChip v-if="project.creator_mode === 'thumbnail' && project.generation_mode">
               {{ project.generation_mode === 'quick' ? 'Quick' : 'Editable' }}
-            </span>
-          </div>
-          <div class="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black via-black/80 to-transparent p-4 pt-14">
-            <p class="truncate font-semibold text-white">
-              {{ project.name || (project.creator_mode === 'image' ? 'Untitled Image' : 'Untitled Thumbnail') }}
-            </p>
-            <div class="mt-1 flex items-center justify-between text-xs text-zinc-400">
-              <span>{{ formatStatus(project.status) }}</span>
-              <button
-                type="button"
-                class="rounded p-1 opacity-0 transition hover:bg-red-500/20 hover:text-red-300 group-hover:opacity-100"
-                title="Delete project"
-                @click.stop="removeProject(project)"
-              >
-                <Trash2 :size="14" />
-              </button>
-            </div>
-          </div>
-        </article>
-      </div>
+            </MediaChip>
+          </template>
+          <template #actions>
+            <Button
+              variant="secondary"
+              size="icon-xs"
+              class="hover:text-danger"
+              title="Delete project"
+              aria-label="Delete project"
+              @click.stop="confirmRemove(project)"
+            >
+              <Trash2 />
+            </Button>
+          </template>
+        </MediaTile>
+      </template>
+    </ProjectGrid>
 
-      <div v-else class="flex flex-1 flex-col items-center justify-center gap-3 text-center">
-        <div class="flex size-16 items-center justify-center rounded-2xl bg-zinc-900">
-          <Images :size="32" class="text-zinc-600" />
-        </div>
-        <h2 class="text-lg font-semibold text-zinc-200">Create your first project</h2>
-        <p class="max-w-md text-sm text-zinc-500">
-          Start an image or thumbnail project. Both open full-page and can be saved into Image Editor.
-        </p>
-        <button
-          type="button"
-          class="mt-2 rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white"
-          @click="showCreateDialog = true"
-        >
-          Start creating
-        </button>
-      </div>
-    </div>
+    <EmptyState
+      v-else-if="sessions.length > 0"
+      :icon="SearchX"
+      title="No matching projects"
+      description="Try a different search or type filter."
+    >
+      <Button variant="secondary" @click="resetFilters">Clear filters</Button>
+    </EmptyState>
+
+    <EmptyState
+      v-else
+      :icon="Images"
+      title="Create your first project"
+      description="Start an image or thumbnail project. Both open full-page and can be saved into the Image Editor."
+    >
+      <Button variant="secondary" @click="showCreateDialog = true"><Plus /> New project</Button>
+    </EmptyState>
 
     <CreateAIImageProjectDialog
       v-model="showCreateDialog"
       :is-creating="isCreatingProject"
       @confirm="confirmCreate"
     />
+
+    <ConfirmationModal
+      :show="!!projectToDelete"
+      title="Delete project"
+      message="Delete"
+      :item-name="projectToDelete ? projectName(projectToDelete) : ''"
+      suffix="?"
+      confirm-text="Delete"
+      variant="destructive"
+      @close="projectToDelete = null"
+      @confirm="removeProject"
+    />
   </PageLayout>
 </template>
 
 <script setup lang="ts">
-  import { onMounted, ref } from 'vue';
+  import { useToast } from '@/composables/useToast';
+  import { computed, onMounted, ref } from 'vue';
   import { useRouter } from 'vue-router';
-  import { Images, Loader2, Plus, Trash2 } from 'lucide-vue-next';
+  import { ImagePlay, Images, Plus, SearchX, Trash2 } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
+  import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import { MediaChip, MediaTile } from '@/components/ui/media-tile';
+  import ProjectGrid from '@/components/create/ProjectGrid.vue';
   import CreateAIImageProjectDialog from '@/components/ai-image/CreateAIImageProjectDialog.vue';
+  import { Button } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { SearchField } from '@/components/ui/search-field';
   import { useAIImageSession } from '@/composables/useAIImageSession';
+  import { useFormatters } from '@/composables/useFormatters';
   import { createThumbnailSession } from '@/services/aiThumbnailApi';
+  import { toDate } from '@/utils/dateTimeUtils';
   import type { AIImageSessionSummary } from '@/services/aiImageApi';
 
   const router = useRouter();
   const { listSessions, createSession, deleteSession } = useAIImageSession();
+  const { getRelativeTime } = useFormatters();
 
   const sessions = ref<AIImageSessionSummary[]>([]);
-  const isLoadingSessions = ref(false);
+  // Starts true so the first paint is the (delayed) skeleton, never the empty state
+  const isLoadingSessions = ref(true);
   const showCreateDialog = ref(false);
   const isCreatingProject = ref(false);
+  const projectToDelete = ref<AIImageSessionSummary | null>(null);
+
+  const searchQuery = ref('');
+  const typeFilter = ref<'all' | 'image' | 'thumbnail'>('all');
+  const sortBy = ref<'updated' | 'created' | 'name'>('updated');
+
+  const typeOptions = [
+    { value: 'all', label: 'All types' },
+    { value: 'image', label: 'Images' },
+    { value: 'thumbnail', label: 'Thumbnails' },
+  ];
+
+  const sortOptions = [
+    { value: 'updated', label: 'Last updated' },
+    { value: 'created', label: 'Date created' },
+    { value: 'name', label: 'Name' },
+  ];
+
+  const filteredSessions = computed(() => {
+    const query = searchQuery.value.trim().toLowerCase();
+    const result = sessions.value.filter(
+      (project) =>
+        (typeFilter.value === 'all' || project.creator_mode === typeFilter.value) &&
+        (!query || projectName(project).toLowerCase().includes(query))
+    );
+    return result.sort((a, b) => {
+      if (sortBy.value === 'name') return projectName(a).localeCompare(projectName(b));
+      const key = sortBy.value === 'created' ? 'inserted_at' : 'updated_at';
+      return toDate(b[key]).getTime() - toDate(a[key]).getTime();
+    });
+  });
+
+  const groupDate = computed(() => {
+    if (sortBy.value === 'name') return undefined;
+    const key = sortBy.value === 'created' ? 'inserted_at' : 'updated_at';
+    return (project: AIImageSessionSummary) => project[key];
+  });
 
   onMounted(loadProjects);
 
@@ -139,6 +173,19 @@
     } finally {
       isLoadingSessions.value = false;
     }
+  }
+
+  function resetFilters() {
+    searchQuery.value = '';
+    typeFilter.value = 'all';
+  }
+
+  function projectName(project: AIImageSessionSummary) {
+    return project.name || (project.creator_mode === 'image' ? 'Untitled image' : 'Untitled thumbnail');
+  }
+
+  function relativeTime(value: string) {
+    return getRelativeTime(toDate(value).getTime());
   }
 
   async function confirmCreate(payload: {
@@ -168,7 +215,7 @@
       }
     } catch (cause) {
       console.error('[AIImageGenerator] create failed:', cause);
-      alert('Failed to create project. Please try again.');
+      useToast().error('Could not create project', 'Please try again.');
     } finally {
       isCreatingProject.value = false;
     }
@@ -188,10 +235,14 @@
     });
   }
 
-  async function removeProject(project: AIImageSessionSummary) {
-    const label =
-      project.name || (project.creator_mode === 'image' ? 'Untitled Image' : 'Untitled Thumbnail');
-    if (!confirm(`Delete "${label}"? This cannot be undone.`)) return;
+  function confirmRemove(project: AIImageSessionSummary) {
+    projectToDelete.value = project;
+  }
+
+  async function removeProject() {
+    const project = projectToDelete.value;
+    projectToDelete.value = null;
+    if (!project) return;
     await deleteSession(project.id);
     sessions.value = sessions.value.filter((item) => item.id !== project.id);
   }

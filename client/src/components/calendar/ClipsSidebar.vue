@@ -1,152 +1,138 @@
 <template>
-  <div class="flex flex-col h-full bg-zinc-950 border-r border-white/10">
-    <!-- Header -->
-    <div class="px-4 py-3 border-b border-white/10">
-      <div class="flex items-center gap-2 mb-2">
-        <Film class="size-4 text-blue-400" />
-        <h3 class="text-sm font-semibold text-zinc-200">Built Clips</h3>
+  <div class="flex h-full min-h-0 flex-col border-r border-line-subtle">
+    <!-- Header (same height as the calendar's weekday row) -->
+    <div class="flex h-9 shrink-0 items-center justify-between gap-2 border-b border-line-subtle px-3">
+      <h3 class="flex min-w-0 items-center gap-2 text-xs font-semibold text-fg">
+        <Film class="size-3.5 shrink-0 text-fg-subtle" />
+        <span class="truncate">Built clips</span>
+        <span class="tabular font-normal text-fg-subtle">{{ builtClipsCount }}</span>
+      </h3>
+      <span class="truncate text-2xs text-fg-subtle">Drag onto a day</span>
+    </div>
+
+    <div class="shrink-0 px-3 pt-3 pb-2">
+      <SearchField v-model="searchQuery" size="sm" placeholder="Search clips…" />
+    </div>
+
+    <!-- Loading (first load only; reloads after scheduling keep the list) -->
+    <div v-if="loading && !allBuilds.length" class="flex flex-col gap-0.5 overflow-hidden px-2 pb-3" aria-busy="true">
+      <div v-for="i in 5" :key="i" class="flex items-center gap-2.5 p-1.5">
+        <div class="skeleton aspect-video w-20 shrink-0" />
+        <div class="flex flex-1 flex-col gap-1.5">
+          <div class="skeleton h-3 w-3/4" />
+          <div class="skeleton h-2.5 w-1/2" />
+        </div>
       </div>
-      <p class="text-[10px] text-zinc-500">
-        {{ builtClipsCount }} build{{ builtClipsCount !== 1 ? 's' : '' }} ready to schedule
-      </p>
     </div>
 
-    <!-- Search -->
-    <div class="px-4 py-2 border-b border-white/5">
-      <div class="relative">
-        <Search class="absolute left-2.5 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500" />
-        <input
-          v-model="searchQuery"
-          type="text"
-          placeholder="Search clips..."
-          class="w-full pl-8 pr-3 py-1.5 text-xs bg-white/5 border border-white/10 rounded-md text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-blue-500/50 focus:bg-white/10 transition-colors"
-        />
-      </div>
-    </div>
+    <!-- Empty -->
+    <EmptyState
+      v-else-if="filteredBuilds.length === 0"
+      size="sm"
+      :icon="Film"
+      class="flex-1"
+      :title="searchQuery ? 'No clips found' : 'No built clips yet'"
+      :description="searchQuery ? 'Try a different search' : 'Build clips from your projects to schedule them'"
+    />
 
-    <!-- Loading State -->
-    <div v-if="loading" class="flex-1 flex items-center justify-center">
-      <Loader2 class="size-5 animate-spin text-blue-400" />
-    </div>
-
-    <!-- Empty State -->
-    <div v-else-if="filteredBuilds.length === 0" class="flex-1 flex flex-col items-center justify-center px-6 text-center">
-      <Film class="size-8 text-zinc-700 mb-3" />
-      <p class="text-sm text-zinc-400 mb-1">
-        {{ searchQuery ? 'No clips found' : 'No built clips yet' }}
-      </p>
-      <p class="text-xs text-zinc-600">
-        {{ searchQuery ? 'Try a different search' : 'Build clips from your projects to schedule them' }}
-      </p>
-    </div>
-
-    <!-- Builds List -->
-    <div v-else class="flex-1 overflow-y-auto custom-scrollbar p-3 space-y-2">
+    <!-- Builds -->
+    <div v-else class="flex min-h-0 flex-1 animate-fade-in flex-col gap-0.5 overflow-y-auto px-2 pb-3">
       <div
         v-for="entry in filteredBuilds"
         :key="entry.key"
-        @mousedown="handleMouseDown($event, entry)"
-        class="group relative bg-white/[0.02] hover:bg-white/[0.05] border border-white/10 rounded-lg overflow-hidden cursor-move transition-all"
+        class="group relative flex shrink-0 cursor-grab items-center gap-2.5 rounded-lg p-1.5 transition-colors hover:bg-surface-hover active:cursor-grabbing"
         :class="{ 'opacity-50': draggingBuildId === entry.build.id }"
+        :title="`${entry.clip.name || 'Untitled Clip'} — drag onto a day to schedule`"
+        @mousedown="handleMouseDown($event, entry)"
       >
-        <!-- Thumbnail -->
-        <div class="relative aspect-video bg-zinc-900">
-          <!-- Thumbnail with correct aspect ratio (letterboxed/pillarboxed) -->
-          <div v-if="getThumbnailUrl(entry)" class="absolute inset-0 z-0 flex items-center justify-center">
-            <img
-              :src="getThumbnailUrl(entry) || ''"
-              :alt="entry.clip.name || 'Clip thumbnail'"
-              class="max-w-full max-h-full object-contain"
-              :class="isPortrait(entry.aspectRatio) ? 'h-full w-auto' : 'w-full h-auto'"
-            />
-          </div>
-          <div v-else class="absolute inset-0 z-0 flex items-center justify-center">
-            <FileVideo class="size-6 text-zinc-700" />
-          </div>
-          
-          <!-- Org/Campaign badge -->
-          <div
-            v-if="entry.build.branding_type === 'campaign' && entry.build.campaign_name"
-            class="absolute left-1 top-1 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-white"
-            style="background-color: rgba(249, 115, 22, 0.9);"
-            :title="`Campaign: ${entry.build.campaign_name}`"
+        <!-- Thumbnail (letterboxed to the build's aspect ratio) -->
+        <div class="relative grid aspect-video w-20 shrink-0 place-items-center overflow-hidden rounded-md bg-surface-sunken">
+          <img
+            v-if="getThumbnailUrl(entry)"
+            :src="getThumbnailUrl(entry) || ''"
+            :alt="entry.clip.name || 'Clip thumbnail'"
+            class="max-h-full max-w-full object-contain"
+            :class="isPortrait(entry.aspectRatio) ? 'h-full w-auto' : 'h-auto w-full'"
+            draggable="false"
+          />
+          <FileVideo v-else class="size-4 text-fg-disabled" />
+          <span
+            v-if="entry.build.duration || entry.clip.built_duration"
+            class="tabular absolute right-1 bottom-1 rounded-[3px] bg-black/75 px-1 text-[10px] leading-[14px] font-medium text-white"
           >
-            <Briefcase class="size-2.5" />
-            <span class="max-w-[50px] truncate">{{ entry.build.campaign_name }}</span>
-          </div>
-          <div
-            v-else-if="entry.build.branding_type === 'org' && entry.build.organization_name"
-            class="absolute left-1 top-1 flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-white"
-            :style="{ backgroundColor: getOrgColor(entry.build.organization_id) + 'E6' }"
-            :title="entry.build.organization_name"
-          >
-            <Building2 class="size-2.5" />
-            <span class="max-w-[50px] truncate">{{ entry.build.organization_name }}</span>
-          </div>
-          
-          <!-- Duration badge -->
-          <div v-if="entry.build.duration || entry.clip.built_duration" class="absolute bottom-1.5 right-1.5 px-1.5 py-0.5 bg-black/80 rounded text-[9px] font-medium text-white">
             {{ formatDuration(entry.build.duration || entry.clip.built_duration || 0) }}
-          </div>
-
-          <!-- Drag hint -->
-          <div class="absolute inset-0 bg-blue-500/0 group-hover:bg-blue-500/10 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-all pointer-events-none">
-            <div class="bg-blue-500/90 text-white px-2 py-1 rounded-md text-[10px] font-medium flex items-center gap-1">
-              <GripVertical class="size-3" />
-              Drag to schedule
-            </div>
-          </div>
+          </span>
         </div>
 
         <!-- Info -->
-        <div class="p-2">
-          <h4 class="text-xs font-medium text-zinc-200 truncate mb-0.5" :title="entry.clip.name || 'Untitled Clip'">
-            {{ entry.clip.name || 'Untitled Clip' }}
-          </h4>
-          <div class="flex items-center gap-1.5 text-[10px] text-zinc-500">
+        <div class="flex min-w-0 flex-1 flex-col gap-1">
+          <h4 class="truncate text-xs font-medium text-fg">{{ entry.clip.name || 'Untitled Clip' }}</h4>
+          <p class="flex min-w-0 items-center gap-1 text-2xs text-fg-subtle">
             <span v-if="entry.clip.project_name" class="truncate">{{ entry.clip.project_name }}</span>
-            <span v-if="entry.clip.project_name && entry.build.created_at" class="w-0.5 h-0.5 rounded-full bg-zinc-600" />
-            <span v-if="entry.build.created_at">{{ formatDate(entry.build.created_at) }}</span>
+            <span v-if="entry.clip.project_name && entry.build.created_at" aria-hidden="true">·</span>
+            <span v-if="entry.build.created_at" class="shrink-0">{{ formatDate(entry.build.created_at) }}</span>
+          </p>
+          <div class="flex min-w-0 items-center gap-1">
+            <Badge v-if="entry.aspectRatio" variant="outline" class="tabular">{{ entry.aspectRatio }}</Badge>
+            <Badge
+              v-if="entry.build.branding_type === 'campaign' && entry.build.campaign_name"
+              variant="neutral"
+              class="min-w-0 shrink"
+              :title="`Campaign: ${entry.build.campaign_name}`"
+            >
+              <Briefcase />
+              <span class="truncate">{{ entry.build.campaign_name }}</span>
+            </Badge>
+            <Badge
+              v-else-if="entry.build.branding_type === 'org' && entry.build.organization_name"
+              variant="neutral"
+              class="min-w-0 shrink"
+              :title="entry.build.organization_name"
+            >
+              <Building2 />
+              <span class="truncate">{{ entry.build.organization_name }}</span>
+            </Badge>
           </div>
         </div>
 
         <!-- Schedule button (alternative to drag) -->
-        <button
+        <Button
+          variant="secondary"
+          size="icon-xs"
+          class="absolute top-1.5 right-1.5 opacity-0 transition-opacity group-hover:opacity-100 focus-visible:opacity-100"
+          title="Schedule this clip"
+          aria-label="Schedule this clip"
           @click.stop="$emit('scheduleClip', entry.clip, entry.build)"
           @mousedown.stop
           @dragstart.stop.prevent
-          class="absolute top-2 right-2 p-1.5 bg-blue-500/90 hover:bg-blue-500 text-white rounded-md opacity-0 group-hover:opacity-100 transition-all z-10"
-          title="Schedule this clip"
         >
-          <Calendar class="size-3" />
-        </button>
+          <CalendarPlus />
+        </Button>
       </div>
     </div>
 
-    <!-- Drag Ghost Portal -->
+    <!-- Drag ghost -->
     <Teleport to="body">
       <div
         v-if="draggingEntry"
-        class="fixed pointer-events-none z-[9999]"
+        class="pointer-events-none fixed z-[9999]"
         :style="{ left: `${dragPosition.x - 60}px`, top: `${dragPosition.y - 60}px` }"
       >
-        <div class="w-[120px] bg-zinc-900 border-2 border-blue-500 rounded-lg overflow-hidden shadow-2xl">
-          <div class="aspect-video bg-zinc-950">
+        <div class="w-[120px] overflow-hidden rounded-lg border border-brand-line bg-surface-raised shadow-[var(--shadow-lg)]">
+          <div class="aspect-video bg-surface-sunken">
             <img
               v-if="getThumbnailUrl(draggingEntry)"
               :src="getThumbnailUrl(draggingEntry) || ''"
               :alt="draggingEntry.clip.name || 'Clip'"
-              class="w-full h-full object-cover"
+              class="size-full object-cover"
             />
-            <div v-else class="w-full h-full flex items-center justify-center">
-              <FileVideo class="size-5 text-zinc-700" />
+            <div v-else class="grid size-full place-items-center">
+              <FileVideo class="size-5 text-fg-disabled" />
             </div>
           </div>
-          <div class="px-2 py-1 bg-blue-500">
-            <p class="text-[10px] font-medium text-white truncate">
-              {{ draggingEntry.clip.name || 'Untitled Clip' }}
-            </p>
-          </div>
+          <p class="truncate px-2 py-1 text-2xs font-medium text-fg">
+            {{ draggingEntry.clip.name || 'Untitled Clip' }}
+          </p>
         </div>
       </div>
     </Teleport>
@@ -155,7 +141,11 @@
 
 <script setup lang="ts">
 import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { Film, Search, Loader2, FileVideo, Calendar, GripVertical, Briefcase, Building2 } from 'lucide-vue-next';
+import { Film, FileVideo, CalendarPlus, Briefcase, Building2 } from 'lucide-vue-next';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { SearchField } from '@/components/ui/search-field';
 import { getAllClips } from '@/services/database/clips';
 import { getClipBuilds } from '@/services/database/clip-build';
 import { getThumbnailByClipId } from '@/services/database/thumbnails';
@@ -224,27 +214,6 @@ function getBadgeInfo(build: ClipBuild): { type: 'org' | 'campaign' | null; name
   return { type: null, name: '' };
 }
 
-// Generate consistent color for organization based on ID (same palette as run colors)
-function getOrgColor(orgId: number | null): string {
-  if (!orgId) return '#3B82F6'; // Default blue
-  
-  const colors = [
-    '#8B5CF6', // Purple
-    '#3B82F6', // Blue
-    '#10B981', // Green
-    '#F59E0B', // Amber
-    '#EF4444', // Red
-    '#06B6D4', // Cyan
-    '#84CC16', // Lime
-    '#EC4899', // Pink
-    '#6366F1', // Indigo
-    '#14B8A6', // Teal
-    '#A855F7', // Violet
-    '#F97316', // Orange
-  ];
-  
-  return colors[orgId % colors.length];
-}
 
 // Format duration (seconds to MM:SS)
 function formatDuration(seconds: number): string {
@@ -654,22 +623,3 @@ defineExpose({
   reload: loadClips,
 });
 </script>
-
-<style scoped>
-.custom-scrollbar::-webkit-scrollbar {
-  width: 6px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
-  border-radius: 3px;
-}
-
-.custom-scrollbar::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.15);
-}
-</style>

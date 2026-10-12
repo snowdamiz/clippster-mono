@@ -14,8 +14,6 @@
     Music,
     Download,
     Clock,
-    Loader2,
-    Trash2,
     AlertCircle,
     RefreshCw,
     Users,
@@ -23,8 +21,16 @@
     Eye,
     CheckCircle,
     Play,
-    X,
+    Plus,
+    Trash2,
   } from 'lucide-vue-next';
+  import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Modal } from '@/components/ui/modal';
+  import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
+  import { expirationBadgeVariant, formatClock, formatFileSize } from './shared/helpers';
 
   const props = defineProps<{
     organizationId: string | number;
@@ -44,8 +50,14 @@
   const downloadingId = ref<number | null>(null);
   const deletingId = ref<number | null>(null);
   const previewAudio = ref<SharedAudio | null>(null);
+  const audioToDelete = ref<SharedAudio | null>(null);
 
   const sharingFilter = ref<'all' | 'everyone' | 'specific'>('all');
+  const sharingOptions: SegmentedOption<'all' | 'everyone' | 'specific'>[] = [
+    { value: 'all', label: 'All' },
+    { value: 'everyone', label: 'All members', icon: Users },
+    { value: 'specific', label: 'Specific', icon: UserCheck },
+  ];
 
   const filteredAudio = computed(() => {
     let result = [...audioFiles.value];
@@ -114,8 +126,12 @@
     }
   }
 
+  function requestDelete(audio: SharedAudio) {
+    audioToDelete.value = audio;
+  }
+
   async function handleDelete(audio: SharedAudio) {
-    if (!confirm(`Delete "${audio.name}"? This cannot be undone.`)) return;
+    audioToDelete.value = null;
 
     deletingId.value = audio.id;
     try {
@@ -133,445 +149,173 @@
     }
   }
 
-  function formatDuration(seconds: number | null): string {
-    if (!seconds) return '--:--';
-    const mins = Math.floor(seconds / 60);
-    const secs = Math.floor(seconds % 60);
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  }
-
-  function formatFileSize(bytes: number | null): string {
-    if (!bytes) return 'Unknown';
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
   onMounted(loadAudio);
 
   defineExpose({ loadAudio });
 </script>
 
 <template>
-  <section class="shared-audio">
-    <div class="shared-audio__toolbar">
-      <div class="shared-audio__filters">
-        <button
-          class="shared-audio__filter"
-          :class="{ 'shared-audio__filter--active': sharingFilter === 'all' }"
-          @click="sharingFilter = 'all'"
-        >
-          All
-        </button>
-        <button
-          class="shared-audio__filter"
-          :class="{ 'shared-audio__filter--active': sharingFilter === 'everyone' }"
-          @click="sharingFilter = 'everyone'"
-        >
-          <Users :size="14" />
-          All Members
-        </button>
-        <button
-          class="shared-audio__filter"
-          :class="{ 'shared-audio__filter--active': sharingFilter === 'specific' }"
-          @click="sharingFilter = 'specific'"
-        >
-          <UserCheck :size="14" />
-          Specific
-        </button>
+  <section class="shared-audio flex flex-col gap-3">
+    <div class="flex min-w-0 items-center justify-between gap-3">
+      <div class="min-w-0 overflow-x-auto">
+        <SegmentedControl v-model="sharingFilter" :options="sharingOptions" size="sm" />
       </div>
+      <Button variant="ghost" size="icon-sm" title="Refresh" aria-label="Refresh" :disabled="loading" @click="loadAudio">
+        <RefreshCw :class="{ 'animate-spin': loading }" />
+      </Button>
+    </div>
 
-      <div class="shared-audio__actions">
-        <button class="shared-audio__refresh" @click="loadAudio" :disabled="loading">
-          <RefreshCw :size="16" :class="{ 'shared-audio__spin': loading }" />
-        </button>
-        <button v-if="isAdmin" class="shared-audio__share-btn" @click="emit('share-audio')">
-          <Music :size="16" />
-          Share Audio
-        </button>
+    <div
+      v-if="loading && audioFiles.length === 0"
+      class="skeleton-group grid grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3"
+      aria-busy="true"
+    >
+      <div v-for="i in 3" :key="i" class="flex gap-3 rounded-xl border border-line-subtle bg-surface p-3">
+        <div class="skeleton size-12 shrink-0 rounded-lg" />
+        <div class="flex flex-1 flex-col gap-2 pt-1">
+          <div class="skeleton h-3.5 w-2/3" />
+          <div class="skeleton h-3 w-1/2" />
+          <div class="skeleton mt-1 h-7 w-40" />
+        </div>
       </div>
     </div>
 
-    <div v-if="loading && audioFiles.length === 0" class="shared-audio__loading">
-      <Loader2 class="shared-audio__spin" :size="32" />
-    </div>
+    <EmptyState
+      v-else-if="error"
+      size="sm"
+      :icon="AlertCircle"
+      tone="danger"
+      title="Couldn't load shared audio"
+      :description="error"
+    >
+      <Button variant="secondary" size="sm" @click="loadAudio">Try again</Button>
+    </EmptyState>
 
-    <div v-else-if="error" class="shared-audio__error">
-      <AlertCircle :size="24" />
-      <p>{{ error }}</p>
-      <button @click="loadAudio">Try Again</button>
-    </div>
+    <EmptyState
+      v-else-if="filteredAudio.length === 0"
+      size="sm"
+      :icon="Music"
+      title="No shared audio yet"
+      :description="
+        isAdmin ? 'Share music or sound effects with your team for use in clips' : 'No audio has been shared with you yet'
+      "
+    >
+      <Button v-if="isAdmin" variant="secondary" size="sm" @click="emit('share-audio')">
+        <Plus />
+        Share audio
+      </Button>
+    </EmptyState>
 
-    <div v-else-if="filteredAudio.length === 0" class="shared-audio__empty">
-      <Music :size="48" />
-      <h3>No shared audio yet</h3>
-      <p>
-        {{
-          isAdmin
-            ? 'Share music or sound effects with your team for use in clips'
-            : 'No audio has been shared with you yet'
-        }}
-      </p>
-      <button v-if="isAdmin" class="shared-audio__share-btn" @click="emit('share-audio')">
-        Share Audio
-      </button>
-    </div>
-
-    <div v-else class="shared-audio__grid">
-      <div
+    <div v-else class="grid animate-fade-in grid-cols-[repeat(auto-fill,minmax(300px,1fr))] gap-3">
+      <article
         v-for="audio in filteredAudio"
         :key="audio.id"
-        class="shared-audio__card"
-        :class="{ 'shared-audio__card--new': !audio.viewed_at && !isAdmin }"
+        class="flex min-w-0 gap-3 rounded-xl border bg-surface p-3 transition-colors"
+        :class="!audio.viewed_at && !isAdmin ? 'border-brand-line' : 'border-line-subtle hover:border-line'"
       >
-        <div class="shared-audio__card-icon" @click="handlePreview(audio)">
-          <Music :size="28" />
-          <span v-if="audio.duration" class="shared-audio__duration">{{ formatDuration(audio.duration) }}</span>
-        </div>
+        <button
+          type="button"
+          class="group relative grid size-12 shrink-0 place-items-center rounded-lg bg-surface-sunken text-fg-muted transition-colors hover:text-fg"
+          :aria-label="`Preview ${audio.name}`"
+          @click="handlePreview(audio)"
+        >
+          <Music class="size-4 group-hover:hidden" />
+          <Play class="hidden size-4 fill-current group-hover:block" />
+          <span
+            v-if="audio.duration"
+            class="tabular absolute bottom-1 right-1 rounded bg-black/70 px-1 text-[10px] font-medium leading-4 text-white"
+          >
+            {{ formatClock(audio.duration) }}
+          </span>
+        </button>
 
-        <div class="shared-audio__card-body">
-          <div class="shared-audio__card-header">
-            <h4>{{ audio.name }}</h4>
-            <span class="shared-audio__expiry">
-              <Clock :size="12" />
+        <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+          <div class="flex min-w-0 items-start justify-between gap-2">
+            <h4 class="truncate text-sm font-medium text-fg">{{ audio.name }}</h4>
+            <Badge :variant="expirationBadgeVariant(audio.days_until_expiration)">
+              <Clock />
               {{ getExpirationText(audio.days_until_expiration) }}
-            </span>
+            </Badge>
           </div>
 
-          <p v-if="audio.description" class="shared-audio__description">{{ audio.description }}</p>
+          <p v-if="audio.description" class="line-clamp-2 text-xs text-fg-muted">{{ audio.description }}</p>
 
-          <div class="shared-audio__meta">
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-subtle [&_svg]:size-3">
             <span>{{ formatFileSize(audio.file_size) }}</span>
-            <span v-if="audio.downloaded_at" class="shared-audio__downloaded">
-              <CheckCircle :size="12" />
+            <span v-if="audio.downloaded_at" class="inline-flex items-center gap-1 text-success">
+              <CheckCircle />
               In library
             </span>
             <template v-if="isAdmin && audio.stats">
-              <span><Eye :size="12" /> {{ audio.stats.viewed }}</span>
-              <span><Download :size="12" /> {{ audio.stats.downloaded }}</span>
+              <span class="tabular inline-flex items-center gap-1" title="Viewed"><Eye /> {{ audio.stats.viewed }}</span>
+              <span class="tabular inline-flex items-center gap-1" title="Downloaded">
+                <Download /> {{ audio.stats.downloaded }}
+              </span>
             </template>
           </div>
 
-          <div class="shared-audio__card-actions">
-            <button class="shared-audio__btn" @click="handlePreview(audio)">
-              <Play :size="14" />
+          <div class="mt-auto flex items-center gap-1.5 pt-1">
+            <Button variant="secondary" size="sm" @click="handlePreview(audio)">
+              <Play />
               Preview
-            </button>
-            <button
-              class="shared-audio__btn shared-audio__btn--primary"
-              @click="handleDownload(audio)"
-              :disabled="downloadingId === audio.id"
-            >
-              <Loader2 v-if="downloadingId === audio.id" :size="14" class="shared-audio__spin" />
-              <Download v-else :size="14" />
-              Add to Library
-            </button>
-            <button
+            </Button>
+            <Button variant="secondary" size="sm" :loading="downloadingId === audio.id" @click="handleDownload(audio)">
+              <Download v-if="downloadingId !== audio.id" />
+              Add to library
+            </Button>
+            <Button
               v-if="isAdmin"
-              class="shared-audio__btn shared-audio__btn--danger"
-              @click="handleDelete(audio)"
-              :disabled="deletingId === audio.id"
+              variant="ghost"
+              size="icon-sm"
+              class="ml-auto hover:text-danger"
+              title="Delete"
+              aria-label="Delete"
+              :loading="deletingId === audio.id"
+              @click="requestDelete(audio)"
             >
-              <Loader2 v-if="deletingId === audio.id" :size="14" class="shared-audio__spin" />
-              <Trash2 v-else :size="14" />
-            </button>
+              <Trash2 v-if="deletingId !== audio.id" />
+            </Button>
           </div>
         </div>
-      </div>
+      </article>
     </div>
 
-    <Teleport to="body">
-      <div v-if="previewAudio" class="shared-audio__preview-overlay" @click.self="previewAudio = null">
-        <div class="shared-audio__preview">
-          <button class="shared-audio__preview-close" @click="previewAudio = null">
-            <X :size="18" />
-          </button>
-          <h3>{{ previewAudio.name }}</h3>
-          <audio v-if="previewAudio.url" :src="previewAudio.url" controls class="shared-audio__player" />
-          <p v-if="previewAudio.description">{{ previewAudio.description }}</p>
-          <button class="shared-audio__btn shared-audio__btn--primary" @click="handleDownload(previewAudio)">
-            <Download :size="14" />
-            Add to Library
-          </button>
-        </div>
+    <!-- Preview -->
+    <Modal
+      :open="!!previewAudio"
+      :title="previewAudio?.name"
+      :icon="Music"
+      size="sm"
+      @close="previewAudio = null"
+    >
+      <div v-if="previewAudio" class="flex flex-col gap-3">
+        <audio v-if="previewAudio.url" :src="previewAudio.url" controls class="w-full" />
+        <p v-if="previewAudio.description" class="text-sm text-fg-muted">{{ previewAudio.description }}</p>
       </div>
-    </Teleport>
+      <template #footer>
+        <Button variant="ghost" @click="previewAudio = null">Close</Button>
+        <Button
+          v-if="previewAudio"
+          variant="primary"
+          :loading="downloadingId === previewAudio.id"
+          @click="handleDownload(previewAudio)"
+        >
+          <Download v-if="downloadingId !== previewAudio.id" />
+          Add to library
+        </Button>
+      </template>
+    </Modal>
+
+    <ConfirmationModal
+      :show="!!audioToDelete"
+      title="Delete audio?"
+      message="This removes"
+      :item-name="audioToDelete?.name"
+      suffix="for every member."
+      confirm-text="Delete"
+      variant="destructive"
+      @close="audioToDelete = null"
+      @confirm="audioToDelete && handleDelete(audioToDelete)"
+    />
   </section>
 </template>
-
-<style scoped>
-  .shared-audio {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  .shared-audio__toolbar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    flex-wrap: wrap;
-  }
-
-  .shared-audio__filters {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .shared-audio__filter {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.875rem;
-    font-size: 0.8125rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-  }
-
-  .shared-audio__filter--active {
-    background: rgba(168, 85, 247, 0.15);
-    border-color: rgba(168, 85, 247, 0.4);
-    color: #c084fc;
-  }
-
-  .shared-audio__actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .shared-audio__refresh {
-    padding: 0.5rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-  }
-
-  .shared-audio__share-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    background: linear-gradient(135deg, #a855f7, #7c3aed);
-    border: none;
-    border-radius: 8px;
-    color: white;
-    cursor: pointer;
-  }
-
-  .shared-audio__loading,
-  .shared-audio__error,
-  .shared-audio__empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    padding: 3rem;
-    text-align: center;
-    color: var(--sidebar-text-muted);
-    border: 1px dashed var(--sidebar-border);
-    border-radius: 12px;
-  }
-
-  .shared-audio__empty h3 {
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .shared-audio__grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-    gap: 1rem;
-  }
-
-  .shared-audio__card {
-    display: flex;
-    gap: 1rem;
-    padding: 1rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-  }
-
-  .shared-audio__card--new {
-    border-color: rgba(168, 85, 247, 0.5);
-    box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.2);
-  }
-
-  .shared-audio__card-icon {
-    position: relative;
-    flex-shrink: 0;
-    width: 72px;
-    height: 72px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(168, 85, 247, 0.15);
-    border-radius: 10px;
-    color: #a855f7;
-    cursor: pointer;
-  }
-
-  .shared-audio__duration {
-    position: absolute;
-    bottom: 4px;
-    right: 4px;
-    font-size: 0.625rem;
-    background: rgba(0, 0, 0, 0.7);
-    color: white;
-    padding: 1px 4px;
-    border-radius: 3px;
-  }
-
-  .shared-audio__card-body {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .shared-audio__card-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-
-  .shared-audio__card-header h4 {
-    margin: 0;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .shared-audio__expiry {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    white-space: nowrap;
-  }
-
-  .shared-audio__description {
-    margin: 0;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .shared-audio__meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .shared-audio__meta span {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  .shared-audio__downloaded {
-    color: #4ade80;
-  }
-
-  .shared-audio__card-actions {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: auto;
-  }
-
-  .shared-audio__btn {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    color: var(--sidebar-text);
-    cursor: pointer;
-  }
-
-  .shared-audio__btn--primary {
-    background: rgba(168, 85, 247, 0.2);
-    border-color: rgba(168, 85, 247, 0.4);
-    color: #c084fc;
-  }
-
-  .shared-audio__btn--danger {
-    padding: 0.375rem;
-    color: #f87171;
-  }
-
-  .shared-audio__preview-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-  }
-
-  .shared-audio__preview {
-    position: relative;
-    width: 100%;
-    max-width: 480px;
-    padding: 1.5rem;
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .shared-audio__preview h3 {
-    margin: 0;
-    color: var(--sidebar-text);
-  }
-
-  .shared-audio__preview-close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    background: transparent;
-    border: none;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-  }
-
-  .shared-audio__player {
-    width: 100%;
-  }
-
-  .shared-audio__spin {
-    animation: spin 0.8s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-</style>

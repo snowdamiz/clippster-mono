@@ -6,10 +6,10 @@
   import { DialogClose, DialogContent, DialogOverlay, DialogPortal, useForwardPropsEmits } from 'reka-ui'
   import { cn } from '@/lib/utils'
 
-  const props = defineProps<DialogContentProps & { class?: HTMLAttributes['class'] }>()
+  const props = defineProps<DialogContentProps & { class?: HTMLAttributes['class']; hideClose?: boolean }>()
   const emits = defineEmits<DialogContentEmits>()
 
-  const delegatedProps = reactiveOmit(props, 'class')
+  const delegatedProps = reactiveOmit(props, 'class', 'hideClose')
 
   const forwarded = useForwardPropsEmits(delegatedProps, emits)
 </script>
@@ -17,22 +17,23 @@
 <template>
   <DialogPortal>
     <DialogOverlay
-      class="fixed inset-0 z-[70] bg-black/80 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
+      class="fixed inset-0 z-[10040] bg-[var(--overlay)] backdrop-blur-[2px] data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0"
     />
     <DialogContent
       v-bind="forwarded"
       :class="
         cn(
-          'fixed left-1/2 top-1/2 z-[70] grid w-full max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 border bg-background p-6 shadow-lg duration-200 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95 data-[state=closed]:slide-out-to-left-1/2 data-[state=closed]:slide-out-to-top-[48%] data-[state=open]:slide-in-from-left-1/2 data-[state=open]:slide-in-from-top-[48%] sm:rounded-lg',
+          'fixed left-1/2 top-[calc(50%+var(--titlebar-height)/2)] z-[10040] grid max-h-[calc(100vh-var(--titlebar-height)-2rem)] w-[calc(100vw-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-[var(--radius-modal)] bg-surface-raised p-5 text-fg shadow-[var(--shadow-lg)] duration-150 data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-[0.98] data-[state=open]:zoom-in-[0.98]',
           props.class
         )
       "
     >
       <slot />
       <DialogClose
-        class="absolute right-4 top-4 rounded-sm opacity-70 ring-offset-background transition-opacity hover:opacity-100 focus:outline-none focus:ring-2 focus:ring-ring focus:ring-offset-2 disabled:pointer-events-none data-[state=open]:bg-accent data-[state=open]:text-muted-foreground"
+        v-if="!hideClose"
+        class="absolute right-3 top-3 grid size-7 place-items-center rounded-md text-fg-subtle transition-colors hover:bg-surface-hover hover:text-fg focus-visible:shadow-[var(--focus-ring)] disabled:pointer-events-none"
       >
-        <X class="w-4 h-4" />
+        <X class="size-4" />
         <span class="sr-only">Close</span>
       </DialogClose>
     </DialogContent>

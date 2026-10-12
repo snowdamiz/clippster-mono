@@ -190,17 +190,24 @@ function onHandleDblClick(propKey: KeyframableProperty, kfId: string) {
 				v-for="p in properties"
 				:key="p.key"
 				type="button"
-				class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[9px] font-medium transition-opacity"
-				:class="visibleProps.has(p.key) ? 'opacity-100' : 'opacity-30'"
-				:style="{ border: `1px solid ${p.color}` }"
+				:aria-pressed="visibleProps.has(p.key)"
+				:title="visibleProps.has(p.key) ? `Hide ${p.label} curve` : `Show ${p.label} curve`"
+				class="inline-flex h-6 items-center gap-1.5 rounded-md border px-1.5 text-2xs font-medium transition-colors focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
+				:class="visibleProps.has(p.key)
+					? 'border-line-strong bg-surface-raised text-fg'
+					: 'border-line-subtle text-fg-subtle hover:border-line hover:text-fg-muted'"
 				@click="togglePropVisibility(p.key)"
 			>
-				<span class="inline-block size-2 rounded-full" :style="{ background: p.color }" />
+				<span
+					class="inline-block size-2 shrink-0 rounded-full transition-opacity"
+					:class="!visibleProps.has(p.key) && 'opacity-30'"
+					:style="{ background: p.color }"
+				/>
 				{{ p.label }}
 			</button>
 		</div>
 
-		<div class="min-w-0 overflow-hidden rounded-sm border border-white/10 bg-black/30">
+		<div class="min-w-0 overflow-hidden rounded-lg border border-line-subtle bg-surface-sunken">
 			<svg
 				ref="svgRef"
 				:viewBox="`0 0 ${GRAPH_W} ${GRAPH_H}`"
@@ -215,7 +222,7 @@ function onHandleDblClick(propKey: KeyframableProperty, kfId: string) {
 						:y1="PADDING.top"
 						:x2="gl.x"
 						:y2="PADDING.top + plotH"
-						stroke="rgba(255,255,255,0.06)"
+						stroke="var(--line)"
 						stroke-width="1"
 					/>
 					<line
@@ -223,7 +230,7 @@ function onHandleDblClick(propKey: KeyframableProperty, kfId: string) {
 						:y1="PADDING.top + plotH / 2"
 						:x2="PADDING.left + plotW"
 						:y2="PADDING.top + plotH / 2"
-						stroke="rgba(255,255,255,0.04)"
+						stroke="var(--line-subtle)"
 						stroke-width="1"
 					/>
 				</g>
@@ -235,7 +242,7 @@ function onHandleDblClick(propKey: KeyframableProperty, kfId: string) {
 					:y="GRAPH_H - 6"
 					text-anchor="middle"
 					font-size="7"
-					fill="rgba(255,255,255,0.25)"
+					fill="var(--fg-subtle)"
 				>{{ gl.label }}</text>
 
 				<line
@@ -243,7 +250,7 @@ function onHandleDblClick(propKey: KeyframableProperty, kfId: string) {
 					:y1="PADDING.top"
 					:x2="playheadX"
 					:y2="PADDING.top + plotH"
-					stroke="#f59e0b"
+					stroke="var(--warning)"
 					stroke-width="1"
 					stroke-dasharray="3 2"
 					opacity="0.9"
@@ -284,12 +291,12 @@ function onHandleDblClick(propKey: KeyframableProperty, kfId: string) {
 					:y="GRAPH_H / 2"
 					text-anchor="middle"
 					font-size="9"
-					fill="rgba(255,255,255,0.25)"
+					fill="var(--fg-subtle)"
 				>No keyframes yet — enable a property and add keyframes</text>
 			</svg>
 		</div>
 
-		<p class="text-[9px] leading-relaxed text-zinc-600">
+		<p class="text-2xs text-fg-subtle">
 			Drag diamonds to adjust time and value. Double-click to remove. Curves use the same easing as playback.
 		</p>
 	</div>

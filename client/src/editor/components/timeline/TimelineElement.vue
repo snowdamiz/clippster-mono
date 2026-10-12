@@ -32,6 +32,7 @@ import {
 import type { KeyframableProperty } from "../../types/keyframes";
 import type { MediaAsset } from "../../types/assets";
 import { mediaSupportsAudio } from "../../lib/media/media-utils";
+import { EyeOff } from "lucide-vue-next";
 
 const props = defineProps<{
 	element: TimelineElementType;
@@ -380,8 +381,8 @@ function onContextAction(action: string) {
 				isHidden ? 'opacity-50' : '',
 			]"
 			:style="{
-				borderColor: borderColor,
-				boxShadow: isSelected ? 'inset 0 0 0 1.5px rgba(14, 165, 233, 0.6)' : 'none',
+				borderColor: isSelected ? 'var(--brand)' : borderColor,
+				boxShadow: isSelected ? 'inset 0 0 0 1px var(--brand)' : 'none',
 			}"
 		>
 			<!-- Track name label (sits in the top blue bar, not over content) -->
@@ -476,7 +477,7 @@ function onContextAction(action: string) {
 					<div v-else-if="hasFilmstrip" class="absolute inset-0">
 						<!-- Filmstrip area: below the 16px title bar, above the waveform -->
 						<div
-							:class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']"
+							:class="['absolute right-0 left-0', isSelected ? 'bg-brand-soft' : 'bg-transparent']"
 							:style="{ top: '16px', bottom: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` }"
 						>
 							<div
@@ -561,7 +562,7 @@ function onContextAction(action: string) {
 				<!-- Video/Image fallback thumbnail (before filmstrip loads) -->
 				<div v-else-if="imageUrl" class="absolute inset-0">
 					<div
-						:class="['absolute right-0 left-0', isSelected ? 'bg-primary' : 'bg-transparent']"
+						:class="['absolute right-0 left-0', isSelected ? 'bg-brand-soft' : 'bg-transparent']"
 						:style="{ top: '16px', bottom: `${VIDEO_TIMELINE_WAVEFORM_HEIGHT_PCT}%` }"
 					>
 						<div
@@ -642,9 +643,9 @@ function onContextAction(action: string) {
 				<!-- Hidden overlay -->
 				<div
 					v-if="isHidden"
-					class="bg-opacity-50 pointer-events-none absolute inset-0 flex items-center justify-center bg-black"
+					class="pointer-events-none absolute inset-0 flex items-center justify-center bg-black/50"
 				>
-					<span class="text-white text-xs">👁️‍🗨️</span>
+					<EyeOff class="size-3.5 text-white/70" />
 				</div>
 
 				<!-- Effect drop target highlight -->

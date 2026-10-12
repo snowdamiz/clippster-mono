@@ -17,30 +17,13 @@
   >
     <!-- Visible playhead line -->
     <div
-      class="absolute top-0 bottom-0 bg-white/70 shadow-lg transition-all duration-100"
-      :class="{
-        'bg-white/90': isHovered || isDragging,
-        'shadow-xl': isHovered || isDragging,
-      }"
-      :style="{
-        left: '7px',
-        width: '2px',
-        'pointer-events': 'none',
-      }"
+      class="pointer-events-none absolute inset-y-0 left-[7px] w-0.5 transition-colors duration-100"
+      :class="isHovered || isDragging ? 'bg-brand-hover' : 'bg-brand'"
     >
-      <!-- Top circle -->
+      <!-- Head marker (sits in the ruler) -->
       <div
-        class="absolute top-1 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-white rounded-full shadow-md"
-        :class="{
-          'w-2.5 h-2.5': isHovered || isDragging,
-        }"
-      ></div>
-      <!-- Bottom circle -->
-      <div
-        class="absolute bottom-1 left-1/2 -translate-x-1/2 translate-y-1/2 w-2 h-2 bg-white/80 rounded-full shadow-md"
-        :class="{
-          'w-2.5 h-2.5': isHovered || isDragging,
-        }"
+        class="absolute left-1/2 top-0 h-2.5 w-3 -translate-x-1/2 rounded-b-[3px] shadow-[var(--shadow-sm)] transition-[background-color,scale] duration-100"
+        :class="isHovered || isDragging ? 'scale-110 bg-brand-hover' : 'bg-brand'"
       ></div>
     </div>
   </div>
@@ -91,59 +74,3 @@
     setDraggingState,
   });
 </script>
-
-<style scoped>
-  /* Hitbox container - 16px wide invisible area */
-  .hitbox-container {
-    user-select: none;
-  }
-
-  /* Visible playhead line styling */
-  .playhead-line {
-    background: rgba(255, 255, 255, 0.7);
-    box-shadow: 0 0 6px rgba(0, 0, 0, 0.8);
-    transition:
-      width 0.2s ease,
-      background 0.2s ease,
-      box-shadow 0.2s ease;
-    user-select: none;
-  }
-
-  .playhead-line:hover,
-  .playhead-line.dragging {
-    background: rgba(255, 255, 255, 0.9);
-    box-shadow: 0 0 12px rgba(0, 0, 0, 0.9);
-  }
-
-  /* Playhead handle dots */
-  .playhead-line::before {
-    content: '';
-    position: absolute;
-    left: -4px;
-    width: 8px;
-    height: 8px;
-    background: white;
-    border-radius: 50%;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-    transition: transform 0.2s ease;
-  }
-
-  .playhead-line::after {
-    content: '';
-    position: absolute;
-    bottom: 0px;
-    left: -4px;
-    width: 8px;
-    height: 8px;
-    background: rgba(255, 255, 255, 0.8);
-    border-radius: 50%;
-    transition: transform 0.2s ease;
-  }
-
-  .playhead-line:hover::before,
-  .playhead-line.dragging::before,
-  .playhead-line:hover::after,
-  .playhead-line.dragging::after {
-    transform: scale(1.2);
-  }
-</style>

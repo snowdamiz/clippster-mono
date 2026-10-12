@@ -3,115 +3,78 @@
     <!-- Color Preview Button -->
     <button
       ref="buttonRef"
-      @click="togglePicker"
-      class="h-10 w-16 rounded-lg border-2 border-border cursor-pointer relative overflow-hidden transition-all hover:border-border/80"
-      :style="{ backgroundColor: modelValue }"
       type="button"
-    >
-      <div class="absolute inset-0 rounded-lg pointer-events-none border border-black/10"></div>
-    </button>
+      class="relative h-8 w-14 cursor-pointer overflow-hidden rounded-[var(--radius-control)] border border-line-strong transition-shadow hover:shadow-[0_0_0_2px_var(--brand-line)] focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
+      :class="{ 'shadow-[0_0_0_2px_var(--brand-line)]': showPicker }"
+      :style="{ backgroundColor: modelValue }"
+      :title="modelValue"
+      aria-label="Pick color"
+      @click="togglePicker"
+    ></button>
 
     <!-- Custom Color Picker Popup (Teleported to body) -->
     <Teleport to="body">
       <div
         v-if="showPicker"
-        class="color-picker-popup fixed z-[9999] bg-card border-2 border-border rounded-md shadow-2xl p-4 w-64"
+        class="color-picker-popup fixed z-[10060] flex w-64 flex-col gap-3 rounded-lg bg-surface-raised p-3 shadow-[var(--shadow-md)]"
         :style="pickerPosition"
         @click.stop
       >
         <!-- Hex Input -->
-        <div class="mb-3">
-          <label class="text-xs font-medium text-muted-foreground mb-1 block">Hex Color</label>
-          <input
-            type="text"
+        <Field label="Hex color">
+          <Input
             v-model="hexInput"
-            @input="onHexInput"
-            class="w-full px-3 py-2 bg-muted/50 border border-border rounded-md text-sm text-foreground font-mono focus:outline-none focus:ring-2 focus:ring-primary/50 uppercase"
+            type="text"
+            class="h-[var(--control-sm)] font-mono text-xs uppercase"
             placeholder="#FFFFFF"
             maxlength="7"
+            @input="onHexInput"
           />
-        </div>
+        </Field>
 
-        <!-- Color Palette -->
-        <div class="mb-3">
-          <label class="text-xs font-medium text-muted-foreground mb-2 block">Quick Colors</label>
+        <!-- Color Palette (preset swatches are user-facing colors) -->
+        <Field label="Quick colors">
           <div class="grid grid-cols-8 gap-1.5">
             <button
               v-for="color in presetColors"
               :key="color"
-              @click="selectColor(color)"
-              class="w-6 h-6 rounded-md border-2 transition-all hover:scale-110"
-              :class="modelValue.toUpperCase() === color.toUpperCase() ? 'border-primary' : 'border-border/30'"
-              :style="{ backgroundColor: color }"
               type="button"
+              class="aspect-square w-full rounded-md border border-line transition-shadow hover:shadow-[0_0_0_2px_var(--line-strong)]"
+              :class="{
+                'shadow-[0_0_0_2px_var(--surface-raised),0_0_0_4px_var(--brand)] hover:shadow-[0_0_0_2px_var(--surface-raised),0_0_0_4px_var(--brand)]':
+                  modelValue.toUpperCase() === color.toUpperCase(),
+              }"
+              :style="{ backgroundColor: color }"
+              :title="color"
+              @click="selectColor(color)"
             ></button>
           </div>
-        </div>
+        </Field>
 
         <!-- RGB Sliders -->
-        <div class="space-y-3">
-          <label class="text-xs font-medium text-muted-foreground block">RGB Values</label>
-
-          <!-- Red -->
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-red-400 w-4 font-medium">R</span>
-            <div class="relative flex-1 h-2 bg-muted-foreground/30 rounded-md">
-              <div
-                class="absolute left-0 top-0 h-full bg-red-500 rounded-md transition-all duration-200"
-                :style="{ width: `${(rgb.r / 255) * 100}%` }"
-              ></div>
-              <input
-                type="range"
-                v-model.number="rgb.r"
-                @input="onRgbChange"
-                min="0"
-                max="255"
-                class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-              />
+        <Field label="RGB values">
+          <div class="flex flex-col gap-2.5">
+            <div v-for="channel in rgbChannels" :key="channel.key" class="flex items-center gap-2">
+              <span class="w-3 text-2xs font-semibold text-fg-subtle">{{ channel.label }}</span>
+              <div class="relative h-1.5 flex-1 rounded-full bg-line-strong">
+                <div
+                  class="absolute left-0 top-0 h-full rounded-full"
+                  :style="{ width: `${(rgb[channel.key] / 255) * 100}%`, backgroundColor: channel.color }"
+                ></div>
+                <input
+                  v-model.number="rgb[channel.key]"
+                  type="range"
+                  min="0"
+                  max="255"
+                  :aria-label="channel.name"
+                  class="slider absolute inset-x-0 top-1/2 z-10 h-4 w-full -translate-y-1/2 cursor-pointer"
+                  @input="onRgbChange"
+                />
+              </div>
+              <span class="tabular w-7 text-right font-mono text-2xs text-fg-muted">{{ rgb[channel.key] }}</span>
             </div>
-            <span class="text-xs text-foreground w-8 text-right font-mono">{{ rgb.r }}</span>
           </div>
-
-          <!-- Green -->
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-green-400 w-4 font-medium">G</span>
-            <div class="relative flex-1 h-2 bg-muted-foreground/30 rounded-md">
-              <div
-                class="absolute left-0 top-0 h-full bg-green-500 rounded-md transition-all duration-200"
-                :style="{ width: `${(rgb.g / 255) * 100}%` }"
-              ></div>
-              <input
-                type="range"
-                v-model.number="rgb.g"
-                @input="onRgbChange"
-                min="0"
-                max="255"
-                class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-              />
-            </div>
-            <span class="text-xs text-foreground w-8 text-right font-mono">{{ rgb.g }}</span>
-          </div>
-
-          <!-- Blue -->
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-blue-400 w-4 font-medium">B</span>
-            <div class="relative flex-1 h-2 bg-muted-foreground/30 rounded-md">
-              <div
-                class="absolute left-0 top-0 h-full bg-blue-500 rounded-md transition-all duration-200"
-                :style="{ width: `${(rgb.b / 255) * 100}%` }"
-              ></div>
-              <input
-                type="range"
-                v-model.number="rgb.b"
-                @input="onRgbChange"
-                min="0"
-                max="255"
-                class="absolute inset-0 w-full h-full cursor-pointer slider z-10"
-              />
-            </div>
-            <span class="text-xs text-foreground w-8 text-right font-mono">{{ rgb.b }}</span>
-          </div>
-        </div>
+        </Field>
       </div>
     </Teleport>
   </div>
@@ -119,6 +82,8 @@
 
 <script setup lang="ts">
   import { ref, watch, onMounted, onUnmounted } from 'vue';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
 
   interface Props {
     modelValue: string;
@@ -140,6 +105,13 @@
     g: 255,
     b: 255,
   });
+
+  // Channel indicator colors for the RGB sliders
+  const rgbChannels = [
+    { key: 'r' as const, label: 'R', name: 'Red', color: '#ef4444' },
+    { key: 'g' as const, label: 'G', name: 'Green', color: '#22c55e' },
+    { key: 'b' as const, label: 'B', name: 'Blue', color: '#3b82f6' },
+  ];
 
   const presetColors = [
     '#FFFFFF',
@@ -284,57 +256,51 @@
 </script>
 
 <style scoped>
+  /* Transparent range input over the painted channel track; only the thumb shows */
   .slider {
     -webkit-appearance: none;
     appearance: none;
+    margin: 0;
     background: transparent;
     cursor: pointer;
     outline: none;
   }
 
-  .slider::-webkit-slider-track {
+  .slider::-webkit-slider-runnable-track {
+    height: 6px;
     background: transparent;
-    height: 100%;
-    border-radius: 0.5rem;
   }
 
   .slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    width: 14px;
-    height: 14px;
+    width: 12px;
+    height: 12px;
+    margin-top: -3px;
     border-radius: 50%;
-    background: white;
+    background: var(--fg);
+    box-shadow: var(--shadow-sm);
     cursor: pointer;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-    transition: all 0.2s ease;
+    transition: transform 0.15s ease;
   }
 
   .slider::-webkit-slider-thumb:hover {
-    transform: scale(1.2);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+    transform: scale(1.15);
   }
 
   .slider::-moz-range-track {
-    background: transparent;
-    height: 100%;
-    border-radius: 0.5rem;
+    height: 6px;
     border: none;
+    background: transparent;
   }
 
   .slider::-moz-range-thumb {
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: white;
-    cursor: pointer;
+    width: 12px;
+    height: 12px;
     border: none;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-    transition: all 0.2s ease;
-  }
-
-  .slider::-moz-range-thumb:hover {
-    transform: scale(1.2);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.7);
+    border-radius: 50%;
+    background: var(--fg);
+    box-shadow: var(--shadow-sm);
+    cursor: pointer;
   }
 </style>

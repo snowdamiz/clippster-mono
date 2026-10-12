@@ -5,10 +5,21 @@
         <Transition name="dialog" appear>
           <div v-if="modelValue" class="workspace-dialog" role="dialog" aria-modal="true">
             <ProjectWorkspaceHeader
-              :title="project?.name || 'New Project'"
+              :title="project?.name || 'New project'"
               :badge="vodPresetConfig ? `${vodPresetConfig.targetAspectRatio} Pre-Edit` : undefined"
               @close="close"
-            />
+            >
+              <Button
+                variant="secondary"
+                size="sm"
+                :loading="isCreatingProject"
+                title="Open the full downloaded video in the video editor"
+                @click="onEditFullProject"
+              >
+                <Clapperboard v-if="!isCreatingProject" />
+                {{ isCreatingProject ? 'Opening editor...' : 'Open in editor' }}
+              </Button>
+            </ProjectWorkspaceHeader>
 
             <!-- Main Content Area -->
             <div class="workspace-dialog__content">
@@ -19,66 +30,47 @@
                 :class="{ 'workspace-dialog__player-column--fullscreen': isFullscreen }"
               >
                 <!-- Aspect Ratio Selector (only shown when VOD preset exists) -->
-                <div v-if="vodPresetConfig" class="workspace-dialog__aspect-selector">
-                  <label class="workspace-dialog__aspect-label">Preview:</label>
-                  <CustomDropdown
-                    v-model="previewAspectRatio"
-                    :options="aspectRatioOptions"
-                    placeholder="Select aspect ratio"
-                    class="workspace-dialog__aspect-dropdown"
-                  />
+                <div v-if="vodPresetConfig" class="flex shrink-0 items-center gap-2">
+                  <span class="text-xs font-medium text-fg-muted">Preview</span>
+                  <div class="w-[132px]">
+                    <CustomDropdown
+                      v-model="previewAspectRatio"
+                      :options="aspectRatioOptions"
+                      placeholder="Select aspect ratio"
+                      size="sm"
+                    />
+                  </div>
 
-                  <!-- Platform Preview Button (only shown for 9:16) -->
-                  <button
-                    v-if="is916"
-                    ref="socialButtonRef"
-                    type="button"
-                    class="workspace-dialog__platform-button"
-                    @click="showSocialMenu = !showSocialMenu"
-                  >
-                    <Smartphone :size="14" />
-                    <span>{{ activeSocialOverlay?.label || 'Platform' }}</span>
-                  </button>
+                  <!-- Platform preview overlay (9:16 only) -->
+                  <DropdownMenu v-if="is916">
+                    <DropdownMenuTrigger as-child>
+                      <Button variant="secondary" size="sm">
+                        <Smartphone />
+                        <span>{{ activeSocialOverlay?.label || 'Platform' }}</span>
+                        <ChevronDown class="text-fg-subtle" />
+                      </Button>
+                    </DropdownMenuTrigger>
+                    <DropdownMenuContent align="center" class="min-w-[180px]">
+                      <DropdownMenuRadioGroup
+                        :model-value="activeSocialOverlay?.platform ?? 'none'"
+                        @update:model-value="selectSocialOverlay"
+                      >
+                        <DropdownMenuRadioItem value="none">None</DropdownMenuRadioItem>
+                        <DropdownMenuRadioItem
+                          v-for="preset in SOCIAL_OVERLAY_PRESETS"
+                          :key="preset.platform"
+                          :value="preset.platform"
+                        >
+                          <span class="grid w-4 place-items-center">{{ preset.icon }}</span>
+                          {{ preset.label }}
+                        </DropdownMenuRadioItem>
+                      </DropdownMenuRadioGroup>
+                    </DropdownMenuContent>
+                  </DropdownMenu>
                 </div>
 
-                <!-- Social Overlay Dropdown Menu -->
-                <Teleport to="body">
-                  <Transition name="dropdown">
-                    <div v-if="showSocialMenu && is916" class="workspace-dialog__social-menu" :style="socialMenuStyle">
-                      <!-- None option -->
-                      <button
-                        type="button"
-                        class="workspace-dialog__social-option"
-                        :class="{ 'workspace-dialog__social-option--active': !activeSocialOverlay }"
-                        @click="
-                          activeSocialOverlay = null;
-                          showSocialMenu = false;
-                        "
-                      >
-                        <span class="workspace-dialog__social-icon">✕</span>
-                        <span class="workspace-dialog__social-label">None</span>
-                      </button>
-
-                      <!-- Platform options -->
-                      <button
-                        v-for="preset in SOCIAL_OVERLAY_PRESETS"
-                        :key="preset.platform"
-                        type="button"
-                        class="workspace-dialog__social-option"
-                        :class="{
-                          'workspace-dialog__social-option--active': activeSocialOverlay?.platform === preset.platform,
-                        }"
-                        @click="toggleSocialOverlay(preset)"
-                      >
-                        <span class="workspace-dialog__social-icon">{{ preset.icon }}</span>
-                        <span class="workspace-dialog__social-label">{{ preset.label }}</span>
-                      </button>
-                    </div>
-                  </Transition>
-                </Teleport>
-
                 <!-- Video Player Container -->
-                <div class="workspace-dialog__video-wrapper" style="position: relative">
+                <div class="workspace-dialog__video-wrapper relative">
                   <VideoPlayer
                     :resolve-media-src="convertFileSrc"
                     :video-src="videoSrc"
@@ -151,44 +143,16 @@
 
               <!-- Right Column: Tabs (Clips / Transcript) -->
               <div class="workspace-dialog__media-column">
-                <!-- Tab Bar -->
-                <div class="workspace-dialog__tab-bar">
-                  <button
-                    class="workspace-dialog__tab"
-                    :class="{ 'workspace-dialog__tab--active': rightPanelTab === 'clips' }"
-                    @click="rightPanelTab = 'clips'"
-                  >
-                    Clips
-                  </button>
-                  <button
-                    class="workspace-dialog__tab"
-                    :class="{
-                      'workspace-dialog__tab--active': rightPanelTab === 'transcript',
-                      'workspace-dialog__tab--has-transcript': isTranscribed,
-                    }"
-                    @click="rightPanelTab = 'transcript'"
-                  >
-                    Transcript
-                    <span v-if="isTranscribed" class="workspace-dialog__tab-badge">✓</span>
-                  </button>
+                <!-- Panel tabs -->
+                <div class="flex h-11 shrink-0 items-center border-b border-line-subtle px-3">
+                  <SegmentedControl v-model="rightPanelTab" :options="rightPanelTabOptions" size="sm" />
                 </div>
 
-                <!-- Clips Tab -->
-                <div v-show="rightPanelTab === 'clips'" class="workspace-dialog__full-project-bar">
-                  <button
-                    type="button"
-                    class="workspace-dialog__full-project-btn"
-                    :disabled="isCreatingProject"
-                    title="Open the full downloaded video in the video editor"
-                    @click="onEditFullProject"
-                  >
-                    <Clapperboard :size="14" />
-                    <span>{{ isCreatingProject ? 'Opening editor...' : 'Edit full project in editor' }}</span>
-                  </button>
-                </div>
+                <!-- Clips Tab (v-show keeps state; animate-enter replays each time it is shown again) -->
                 <MediaPanel
                   v-show="rightPanelTab === 'clips'"
                   ref="mediaPanelRef"
+                  class="animate-enter"
                   :is-generating="clipGenerationInProgress"
                   :generation-progress="clipProgress"
                   :generation-stage="clipStage"
@@ -233,6 +197,7 @@
                 <!-- Subtitle Properties Tab -->
                 <SubtitlePropertiesPanel
                   v-if="rightPanelTab === 'subtitles' && activeSubtitleSettings"
+                  class="animate-enter"
                   :settings="activeSubtitleSettings"
                   :segments="subtitlePanelSegmentsForPanel"
                   :current-time="currentTime"
@@ -244,6 +209,7 @@
 
                 <ClipTextBoxPropertiesPanel
                   v-if="rightPanelTab === 'text'"
+                  class="animate-enter"
                   :state="activeClipTextBox"
                   :clip-duration="selectedClipDurationForTextBox"
                   @close="onCloseClipTextPanel"
@@ -252,13 +218,13 @@
                 />
 
                 <!-- Transcript Tab -->
-                <div v-show="rightPanelTab === 'transcript'" class="flex flex-col flex-1 h-full min-h-0 px-4">
+                <div v-show="rightPanelTab === 'transcript'" class="flex h-full min-h-0 flex-1 animate-enter flex-col">
                   <TranscriptPanel
                     :project-id="project?.id"
                     :current-time="currentTime"
                     :duration="duration"
                     :hide-header="false"
-                    @seekTo="seekToTime"
+                    @seekVideo="seekToTime"
                     @createClipFromTranscript="onCreateClipFromTranscript"
                     @deleteTimeRange="onDeleteTimeRange"
                     @splitAtTime="onSplitAtTime"
@@ -317,9 +283,9 @@
   <!-- Delete Confirmation Modal -->
   <ConfirmationModal
     :show="showDeleteDialog"
-    title="Delete Clip"
+    title="Delete clip"
     message="Are you sure you want to delete this clip?"
-    suffix="This action cannot be undone."
+    suffix=""
     confirm-text="Delete"
     variant="destructive"
     @close="handleDeleteDialogClose"
@@ -408,7 +374,17 @@
     getVideoEditorProjectsForRawVideo,
     type VideoEditorProject,
   } from '@/services/database';
-  import { Smartphone, Clapperboard } from 'lucide-vue-next';
+  import { Smartphone, Clapperboard, ChevronDown, CheckCircle2 } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
+  import { SegmentedControl } from '@/components/ui/segmented-control';
+  import type { SegmentedOption } from '@/components/ui/segmented-control/types';
   import { invoke, convertFileSrc } from '@tauri-apps/api/core';
   import type {
     ActiveVodPresetConfig,
@@ -695,8 +671,6 @@
 
   // Social overlay state
   const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
-  const showSocialMenu = ref(false);
-  const socialButtonRef = ref<HTMLButtonElement | null>(null);
 
   // VOD preset config state
   const vodPresetConfig = ref<ActiveVodPresetConfig | null>(null);
@@ -799,18 +773,6 @@
   // Check if current aspect ratio is 9:16 (vertical)
   const is916 = computed(() => previewAspectRatio.value === '9:16');
 
-  // Social menu positioning
-  const socialMenuStyle = computed(() => {
-    const el = socialButtonRef.value;
-    if (!el) return {};
-    const rect = el.getBoundingClientRect();
-    return {
-      top: `${rect.bottom + 6}px`,
-      left: `${rect.left + rect.width / 2}px`,
-      transform: 'translateX(-50%)',
-    };
-  });
-
   // Framing regions for the current preview aspect (stacked POI layout). When regions exist, VideoPlayer
   // composites them (including uploaded media); "Use 16:9" single-box preview only applies when there are no regions.
   const currentFramingRegions = computed(() => {
@@ -852,18 +814,12 @@
   watch(is916, (val) => {
     if (!val) {
       activeSocialOverlay.value = null;
-      showSocialMenu.value = false;
     }
   });
 
-  // Toggle social overlay
-  function toggleSocialOverlay(preset: SocialOverlayPreset) {
-    if (activeSocialOverlay.value?.platform === preset.platform) {
-      activeSocialOverlay.value = null;
-    } else {
-      activeSocialOverlay.value = preset;
-    }
-    showSocialMenu.value = false;
+  // Platform preview overlay picked from the menu ('none' clears it)
+  function selectSocialOverlay(platform: unknown) {
+    activeSocialOverlay.value = SOCIAL_OVERLAY_PRESETS.find((preset) => preset.platform === platform) ?? null;
   }
 
   // Watch for settings or aspect ratio changes to load correct watermark data
@@ -1493,6 +1449,16 @@
     // Match Transcript tab / parseTranscriptToWords: word-level-only JSON has no whisper `segments` until synthesized.
     return (td.whisperSegments?.length ?? 0) > 0 || (td.words?.length ?? 0) > 0;
   });
+  /** Right-panel tab switch (subtitle/text property panels open from the timeline, not from here). */
+  const rightPanelTabOptions = computed<SegmentedOption<'clips' | 'transcript' | 'subtitles' | 'text'>[]>(() => [
+    { value: 'clips', label: 'Clips' },
+    {
+      value: 'transcript',
+      label: 'Transcript',
+      icon: isTranscribed.value ? CheckCircle2 : undefined,
+      title: isTranscribed.value ? 'Transcript ready' : undefined,
+    },
+  ]);
   const transcriptionConfirmAlreadyTranscribed = computed(() => {
     return pendingSubtitleTranscriptionClipIds.value.length > 0 ? false : isTranscribed.value;
   });
@@ -5713,41 +5679,37 @@
 </script>
 
 <style scoped>
-  /* ========================================
-     WORKSPACE DIALOG STYLES
-     ======================================== */
-
-  /* ===== Overlay ===== */
+  /*
+   * Full-window workspace. Not a <Modal>: it hosts teleported menus, nested
+   * dialogs and a fixed-position fullscreen player, which a focus-trapped,
+   * transformed reka dialog would break. It sits below the title bar and
+   * mirrors the app's inset content panel.
+   */
   .workspace-dialog__overlay {
     position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(8px);
+    inset: var(--titlebar-height) 0 0 0;
+    padding: 0 var(--panel-inset) var(--panel-inset);
+    background-color: var(--overlay);
     display: flex;
     align-items: center;
     justify-content: center;
     z-index: 10000;
   }
 
-  /* ===== Dialog Container ===== */
   .workspace-dialog {
-    background-color: var(--sidebar-surface, #0c0c0c);
-    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    border-radius: 16px;
-    width: calc(100% - 60px);
-    height: calc(100% - 80px);
-    margin: 60px 30px 33px 30px;
+    width: 100%;
+    height: 100%;
     max-width: 1800px;
-    max-height: 950px;
+    max-height: 1100px;
     display: flex;
     flex-direction: column;
     overflow: hidden;
-    box-shadow:
-      0 25px 80px rgba(0, 0, 0, 0.6),
-      0 0 1px rgba(255, 255, 255, 0.1);
+    background-color: var(--panel);
+    border: 1px solid var(--line);
+    border-radius: var(--radius-card);
+    box-shadow: var(--shadow-lg);
   }
 
-  /* ===== Main Content Area ===== */
   .workspace-dialog__content {
     display: flex;
     flex: 1;
@@ -5755,16 +5717,14 @@
     overflow: hidden;
   }
 
-  /* ===== Player Column ===== */
+  /* ===== Player column ===== */
   .workspace-dialog__player-column {
-    width: 60%;
+    flex: 1 1 0;
     min-width: 0;
     display: flex;
     flex-direction: column;
-    padding: 0.5rem;
     gap: 0.5rem;
-    border-right: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, transparent 100%);
+    padding: 0.75rem;
   }
 
   .workspace-dialog__player-column--fullscreen {
@@ -5784,108 +5744,14 @@
     justify-content: center !important;
   }
 
-  .workspace-dialog__aspect-selector {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .workspace-dialog__aspect-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.7);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    white-space: nowrap;
-  }
-
-  .workspace-dialog__aspect-dropdown {
-    flex: 1;
-    max-width: 150px;
-  }
-
-  .workspace-dialog__platform-button {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.7);
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 0.375rem;
-    cursor: pointer;
-    transition: all 150ms ease;
-    white-space: nowrap;
-  }
-
-  .workspace-dialog__platform-button:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.15);
-    color: rgba(255, 255, 255, 0.9);
-  }
-
-  .workspace-dialog__social-menu {
-    position: fixed;
-    z-index: 10000;
-    min-width: 180px;
-    background: rgba(24, 24, 27, 0.98);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 0.5rem;
-    padding: 0.375rem;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(12px);
-  }
-
-  .workspace-dialog__social-option {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    width: 100%;
-    padding: 0.625rem 0.75rem;
-    font-size: 0.8125rem;
-    color: rgba(255, 255, 255, 0.7);
-    background: transparent;
-    border: none;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    transition: all 150ms ease;
-    text-align: left;
-  }
-
-  .workspace-dialog__social-option:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.95);
-  }
-
-  .workspace-dialog__social-option--active {
-    background: rgba(6, 182, 212, 0.15);
-    color: #06b6d4;
-  }
-
-  .workspace-dialog__social-option--active:hover {
-    background: rgba(6, 182, 212, 0.2);
-  }
-
-  .workspace-dialog__social-icon {
-    font-size: 1.125rem;
-    line-height: 1;
-  }
-
-  .workspace-dialog__social-label {
-    font-weight: 500;
-  }
-
   .workspace-dialog__video-wrapper {
     flex: 1 1 0;
     min-height: 0;
     display: flex;
     align-items: center;
     justify-content: center;
-    background: #000;
-    border-radius: 0.5rem;
+    background: #000; /* letterbox behind the video */
+    border-radius: var(--radius-lg);
     overflow: hidden;
   }
 
@@ -5894,111 +5760,28 @@
     border-radius: 0;
   }
 
-  /* ===== Media Column ===== */
+  /* ===== Side panel (clips / transcript) ===== */
   .workspace-dialog__media-column {
-    width: 40%;
+    width: clamp(320px, 38%, 480px);
+    flex-shrink: 0;
     min-width: 0;
     display: flex;
     flex-direction: column;
-    background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.15) 100%);
     overflow: hidden;
+    border-left: 1px solid var(--line-subtle);
+    background-color: var(--canvas);
   }
 
-  /* ===== Tab Bar ===== */
-  .workspace-dialog__tab-bar {
-    display: flex;
-    gap: 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    flex-shrink: 0;
-    background-color: rgba(0, 0, 0, 0.2);
-  }
-
-  .workspace-dialog__tab {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted, rgba(255, 255, 255, 0.5));
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .workspace-dialog__tab:hover {
-    color: var(--sidebar-text, rgba(255, 255, 255, 0.9));
-    background-color: rgba(255, 255, 255, 0.03);
-  }
-
-  .workspace-dialog__tab--active {
-    color: var(--sidebar-text, rgba(255, 255, 255, 0.9));
-    border-bottom-color: var(--sidebar-accent, #06b6d4);
-  }
-
-  .workspace-dialog__tab--has-transcript {
-    color: #4ade80;
-  }
-
-  .workspace-dialog__tab--has-transcript.workspace-dialog__tab--active {
-    border-bottom-color: #22c55e;
-  }
-
-  .workspace-dialog__full-project-bar {
-    flex-shrink: 0;
-    padding: 0.5rem 0.75rem 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  }
-
-  .workspace-dialog__full-project-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.375rem;
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.5rem;
-    border: 1px solid rgba(6, 182, 212, 0.35);
-    background: rgba(6, 182, 212, 0.12);
-    color: #67e8f9;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .workspace-dialog__full-project-btn:hover:not(:disabled) {
-    background: rgba(6, 182, 212, 0.2);
-    border-color: rgba(6, 182, 212, 0.55);
-    color: #a5f3fc;
-  }
-
-  .workspace-dialog__full-project-btn:disabled {
-    opacity: 0.6;
-    cursor: wait;
-  }
-
-  .workspace-dialog__tab-badge {
-    font-size: 0.625rem;
-    font-weight: 700;
-    color: #22c55e;
-  }
-
-  /* ===== Timeline Section ===== */
+  /* ===== Timeline ===== */
   .workspace-dialog__timeline {
     flex-shrink: 0;
-    border-top: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    background-color: rgba(0, 0, 0, 0.25);
+    border-top: 1px solid var(--line-subtle);
   }
 
   /* ===== Transitions ===== */
   .modal-enter-active,
   .modal-leave-active {
-    transition: opacity 200ms ease;
+    transition: opacity 150ms ease;
   }
 
   .modal-enter-from,
@@ -6007,67 +5790,16 @@
   }
 
   .dialog-enter-active {
-    transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1);
+    transition: opacity 200ms cubic-bezier(0.16, 1, 0.3, 1), transform 200ms cubic-bezier(0.16, 1, 0.3, 1);
   }
 
   .dialog-leave-active {
-    transition: all 150ms ease-in;
+    transition: opacity 120ms ease-in, transform 120ms ease-in;
   }
 
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
-  }
-
+  .dialog-enter-from,
   .dialog-leave-to {
     opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* ===== Scrollbar Styling ===== */
-  .workspace-dialog__media-column :deep(::-webkit-scrollbar) {
-    width: 6px;
-  }
-
-  .workspace-dialog__media-column :deep(::-webkit-scrollbar-track) {
-    background: transparent;
-  }
-
-  .workspace-dialog__media-column :deep(::-webkit-scrollbar-thumb) {
-    background-color: rgba(255, 255, 255, 0.12);
-    border-radius: 3px;
-  }
-
-  .workspace-dialog__media-column :deep(::-webkit-scrollbar-thumb:hover) {
-    background-color: rgba(255, 255, 255, 0.2);
-  }
-
-  /* ===== Responsive Adjustments ===== */
-  @media (max-width: 1400px) {
-    .workspace-dialog__player-column {
-      width: 55%;
-    }
-
-    .workspace-dialog__media-column {
-      width: 45%;
-    }
-  }
-
-  @media (max-width: 1200px) {
-    .workspace-dialog {
-      margin: 20px;
-      width: calc(100% - 40px);
-      height: calc(100% - 40px);
-      border-radius: 12px;
-    }
-
-    .workspace-dialog__player-column {
-      width: 50%;
-      padding: 1rem;
-    }
-
-    .workspace-dialog__media-column {
-      width: 50%;
-    }
+    transform: scale(0.99);
   }
 </style>

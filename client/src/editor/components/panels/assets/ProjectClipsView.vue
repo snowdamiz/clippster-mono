@@ -11,17 +11,14 @@ import {
 	resolveClipTimeRangeForExtraction,
 } from "@/services/clip-vod-extract";
 import type { MediaAsset } from "../../../types/assets";
-import {
-	FolderOpen,
-	Film,
-	ArrowLeft,
-	Loader2,
-	Check,
-	Search,
-	ChevronRight,
-	Plus,
-	Clapperboard,
-} from "lucide-vue-next";
+import { FolderOpen, Film, ArrowLeft, Loader2, SearchX, ChevronRight, Clapperboard } from "lucide-vue-next";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SearchField } from "@/components/ui/search-field";
+import { SectionHeader } from "@/components/ui/section-header";
+import { PlatformLogo } from "@/components/ui/platform-logo";
+import AssetGrid from "../shared/AssetGrid.vue";
+import ImportMediaTile from "./ImportMediaTile.vue";
 import {
 	pickPrimaryRawVideo,
 	resolveRawVideosForProject,
@@ -391,7 +388,7 @@ async function addClipToEditor(clip: ClipWithVersion) {
 	if (addingIds.value.has(clip.id) || isAlreadyAdded(clip)) return;
 
 	addingIds.value = new Set([...addingIds.value, clip.id]);
-	extractionStatus.value.set(clip.id, "Extracting clip...");
+	extractionStatus.value.set(clip.id, "Extracting clip…");
 
 	try {
 		let videoServerPort: number;
@@ -409,7 +406,7 @@ async function addClipToEditor(clip: ClipWithVersion) {
 		}
 
 		// Same VOD resolution + FFmpeg extract as ProjectWorkspaceDialog → createVideoEditorProjectFromClip
-		extractionStatus.value.set(clip.id, "Extracting video...");
+		extractionStatus.value.set(clip.id, "Extracting video…");
 		const editorProjectId = activeProject.value.metadata.id;
 		const outputPath = await invoke<string>("get_editor_clip_extract_path", {
 			projectId: editorProjectId,
@@ -430,7 +427,7 @@ async function addClipToEditor(clip: ClipWithVersion) {
 		console.log("[ProjectClipsView] Clip extracted successfully:", outputPath);
 
 		// Build the media asset from the extracted file
-		extractionStatus.value.set(clip.id, "Adding to editor...");
+		extractionStatus.value.set(clip.id, "Adding to editor…");
 		const encodedPath = utf8ToBase64Url(outputPath);
 		const url = `http://localhost:${videoServerPort}/video/${encodedPath}`;
 
@@ -495,256 +492,150 @@ onMounted(loadProjects);
 
 <template>
 	<div class="flex h-full flex-col overflow-hidden">
-		<!-- Header with back button when in project -->
-		<div class="border-b border-white/10 px-3 py-2">
-			<div v-if="selectedProject" class="flex items-center gap-2">
-				<button
-					type="button"
-					class="flex items-center gap-1 rounded-md px-1.5 py-1 text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
-					@click="goBack"
-				>
-					<ArrowLeft class="size-3.5" />
-					Back
-				</button>
-				<span class="truncate text-xs font-medium text-zinc-200">
+		<!-- Toolbar: breadcrumb when inside a project, count at the root -->
+		<div class="flex h-12 shrink-0 items-center gap-3 px-5">
+			<div v-if="selectedProject" class="flex min-w-0 flex-1 items-center gap-1">
+				<Button variant="ghost" size="sm" class="-ml-2.5 shrink-0" @click="goBack">
+					<ArrowLeft />
+					Projects
+				</Button>
+				<ChevronRight class="size-3.5 shrink-0 text-fg-subtle" />
+				<span class="truncate text-sm font-medium text-fg" :title="selectedProject.name">
 					{{ selectedProject.name }}
 				</span>
 			</div>
-			<!-- Search -->
-			<div :class="selectedProject ? 'mt-2' : ''">
-				<div class="relative">
-					<Search class="absolute left-2 top-1/2 size-3.5 -translate-y-1/2 text-zinc-500" />
-					<input
-						v-model="searchQuery"
-						type="text"
-						:placeholder="selectedProject ? 'Search clips...' : 'Search projects...'"
-						class="w-full rounded-md border border-white/10 bg-white/5 py-1.5 pl-7 pr-3 text-xs text-zinc-200 placeholder-zinc-500 outline-none focus:border-blue-500/50"
-					/>
-				</div>
-			</div>
+			<p v-else class="tabular min-w-0 flex-1 truncate text-xs text-fg-muted">
+				<template v-if="!loading">
+					{{ projects.length }} {{ projects.length === 1 ? "project" : "projects" }}
+				</template>
+			</p>
+			<SearchField
+				v-model="searchQuery"
+				size="sm"
+				input-class="text-xs"
+				:placeholder="selectedProject ? 'Search clips…' : 'Search projects…'"
+				class="w-64"
+			/>
 		</div>
 
 		<!-- Content -->
-		<div class="flex-1 overflow-y-auto">
-			<!-- Loading -->
+		<div class="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
 			<div v-if="loading || loadingClips" class="flex h-full items-center justify-center">
-				<Loader2 class="size-6 animate-spin text-zinc-500" />
+				<Loader2 class="size-5 animate-spin text-fg-subtle" />
 			</div>
 
-			<!-- Project List View -->
+			<!-- Project list -->
 			<template v-else-if="!selectedProject">
-				<div
+				<EmptyState
 					v-if="filteredProjects.length === 0"
-					class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center"
-				>
-					<FolderOpen class="size-8 text-zinc-600" />
-					<p class="text-sm text-zinc-500">
-						{{ searchQuery ? "No matching projects" : "No projects yet" }}
-					</p>
-				</div>
+					size="sm"
+					class="h-full"
+					:icon="searchQuery ? SearchX : FolderOpen"
+					:title="searchQuery ? 'No matching projects' : 'No projects yet'"
+					:description="
+						searchQuery ? 'Try a different search term.' : 'Projects you create from VODs show up here.'
+					"
+				/>
 
-				<div
-					v-else
-					class="grid grid-cols-3 gap-2 p-3"
-				>
-					<button
+				<AssetGrid v-else :min="176">
+					<ImportMediaTile
 						v-for="project in filteredProjects"
 						:key="project.id"
-						type="button"
-						class="group relative overflow-hidden rounded-lg border border-white/10 text-left transition-colors hover:border-white/20"
+						:label="project.name"
+						:sublabel="formatDate(project.created_at)"
+						:src="projectThumbnailCache.get(project.id)"
+						:icon="FolderOpen"
+						action="Open"
+						:action-icon="ChevronRight"
+						:title="project.name"
 						@click="selectProject(project)"
+						@keydown.enter="selectProject(project)"
 					>
-						<!-- Thumbnail -->
-						<div class="relative aspect-video bg-zinc-800 flex items-center justify-center">
-							<img
-								v-if="projectThumbnailCache.get(project.id)"
-								:src="projectThumbnailCache.get(project.id)"
-								:alt="project.name"
-								class="size-full object-cover"
-							/>
-							<FolderOpen v-else class="size-8 text-zinc-600" />
-							<div class="absolute inset-0 hidden items-center justify-center bg-black/40 group-hover:flex">
-								<ChevronRight class="size-5 text-white" />
-							</div>
-						</div>
-						<!-- Name -->
-						<div class="truncate px-2 py-1 text-xs font-medium text-zinc-200">
-							{{ project.name }}
-						</div>
-						<!-- Meta -->
-						<div class="truncate px-2 pb-1 text-[10px] text-zinc-500">
-							{{ formatDate(project.created_at) }}<span v-if="project.platform"> · {{ project.platform }}</span>
-						</div>
-					</button>
-				</div>
+						<template v-if="project.platform" #badges>
+							<PlatformLogo :platform="project.platform" size="xs" />
+						</template>
+					</ImportMediaTile>
+				</AssetGrid>
 			</template>
 
-			<!-- Clip List View (within selected project) -->
+			<!-- Inside a project: full video + unbuilt clips -->
 			<template v-else>
-				<div v-if="primaryRawVideo" class="border-b border-white/10 p-3">
-					<p class="mb-2 text-[10px] font-medium uppercase tracking-wide text-zinc-500">
-						Full Project
-					</p>
-					<div
-						class="group relative cursor-pointer overflow-hidden rounded-lg border border-cyan-500/30 transition-colors hover:border-cyan-400/50"
-						:class="{
-							'ring-1 ring-green-500/30': fullProjectAdded,
-							'pointer-events-none': isAddingFullProject,
-						}"
-						@click="handleFullProjectClick"
-						@dblclick="addFullProjectToTimeline"
-						@pointerdown="handleFullProjectPointerDown"
-						@dragstart.prevent
-					>
-						<div class="relative aspect-video bg-zinc-800">
-							<img
-								v-if="selectedProject && projectThumbnailCache.get(selectedProject.id)"
-								:src="projectThumbnailCache.get(selectedProject.id)"
-								:alt="getFullProjectAssetName()"
-								class="size-full object-cover"
-								draggable="false"
-							/>
-							<div v-else class="flex size-full items-center justify-center">
-								<Clapperboard class="size-6 text-cyan-400/70" />
-							</div>
-							<div
-								v-if="primaryRawVideo.duration"
-								class="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-xs text-white"
-							>
-								{{ formatDuration(primaryRawVideo.duration) }}
-							</div>
-							<div
-								v-if="isAddingFullProject"
-								class="absolute inset-0 flex items-center justify-center bg-black/60"
-							>
-								<Loader2 class="size-4 animate-spin text-white" />
-							</div>
-							<div
-								v-else-if="fullProjectAdded"
-								class="absolute inset-0 flex items-center justify-center bg-black/50"
-							>
-								<Check class="size-4 text-green-400" />
-							</div>
-							<div
-								v-else
-								class="absolute inset-0 hidden items-center justify-center bg-black/40 group-hover:flex"
-							>
-								<Plus class="size-5 text-white" />
-							</div>
-						</div>
-						<div class="truncate px-2 py-1 text-xs font-medium text-cyan-200">
-							Entire Project
-						</div>
-						<div class="truncate px-2 pb-1 text-[10px] text-zinc-500">
-							Full downloaded video
-						</div>
-					</div>
-				</div>
-
-				<p
-					v-if="primaryRawVideo && filteredClips.length > 0"
-					class="px-3 pt-2 text-[10px] font-medium uppercase tracking-wide text-zinc-500"
-				>
-					Clips
-				</p>
-
-				<div
+				<EmptyState
 					v-if="filteredClips.length === 0 && !primaryRawVideo"
-					class="flex h-full flex-col items-center justify-center gap-2 p-4 text-center"
-				>
-					<Film class="size-8 text-zinc-600" />
-					<p class="text-sm text-zinc-500">
-						{{ searchQuery ? "No matching clips" : "No unbuilt clips in this project" }}
-					</p>
-					<p class="text-xs text-zinc-600">
-						Built clips appear in the Built Clips tab
-					</p>
-				</div>
+					size="sm"
+					class="h-full"
+					:icon="searchQuery ? SearchX : Film"
+					:title="searchQuery ? 'No matching clips' : 'No unbuilt clips in this project'"
+					description="Built clips appear in the Built clips tab."
+				/>
 
-				<div
-					v-else-if="filteredClips.length > 0"
-					class="grid gap-2 p-3"
-					style="grid-template-columns: repeat(3, 1fr)"
-				>
-					<div
-						v-for="clip in filteredClips"
-						:key="clip.id"
-						class="group relative cursor-pointer overflow-hidden rounded-lg border border-white/10 transition-colors hover:border-white/20"
-						:class="{
-							'ring-1 ring-green-500/30': isAlreadyAdded(clip),
-							'pointer-events-none': addingIds.has(clip.id),
-						}"
-						@click="handleClipClick(clip)"
-						@dblclick="addToTimeline(clip)"
-						@pointerdown="(e: PointerEvent) => handlePointerDown(e, clip)"
-						@dragstart.prevent
-					>
-						<!-- Thumbnail -->
-						<div class="relative aspect-video bg-zinc-800">
-							<img
-								v-if="getCachedThumbnail(clip.id)"
-								:src="getCachedThumbnail(clip.id)"
-								:alt="getClipName(clip)"
-								class="size-full object-cover"
-								draggable="false"
-								@error="($event.target as HTMLImageElement).style.display = 'none'"
+				<div v-else class="flex flex-col gap-4">
+					<section v-if="primaryRawVideo">
+						<SectionHeader variant="eyebrow" title="Full video" class="mb-1" />
+						<AssetGrid :min="176">
+							<ImportMediaTile
+								label="Entire project"
+								sublabel="Full downloaded video"
+								:src="selectedProject && projectThumbnailCache.get(selectedProject.id)"
+								:icon="Clapperboard"
+								:duration="formatDuration(primaryRawVideo.duration) || undefined"
+								:added="fullProjectAdded"
+								:busy="isAddingFullProject"
+								:action="fullProjectAdded ? 'Add to timeline' : 'Add to media'"
+								:class="{ 'pointer-events-none': isAddingFullProject }"
+								:title="getFullProjectAssetName()"
+								@click="handleFullProjectClick"
+								@dblclick="addFullProjectToTimeline"
+								@keydown.enter="handleFullProjectClick"
+								@pointerdown="handleFullProjectPointerDown"
+								@dragstart.prevent
 							/>
-							<div v-else class="flex size-full items-center justify-center">
-								<Film class="size-6 text-zinc-500" />
-							</div>
-							<!-- Duration badge -->
-							<div
-								v-if="getClipDuration(clip)"
-								class="absolute right-1 bottom-1 rounded bg-black/70 px-1 text-xs text-white"
-							>
-								{{ formatDuration(getClipDuration(clip)) }}
-							</div>
-							<!-- Extraction progress overlay -->
-							<div
-								v-if="addingIds.has(clip.id)"
-								class="absolute inset-0 flex flex-col items-center justify-center gap-1 bg-black/60"
-							>
-								<Loader2 class="size-4 animate-spin text-white" />
-								<span class="px-1 text-center text-[9px] text-white/80">
-									{{ extractionStatus.get(clip.id) || "Processing..." }}
-								</span>
-							</div>
-							<!-- Error overlay -->
-							<div
-								v-else-if="extractionStatus.has(clip.id)"
-								class="absolute inset-0 flex items-center justify-center bg-red-900/40"
-							>
-								<span class="px-1 text-center text-[9px] text-red-300">
-									{{ extractionStatus.get(clip.id) }}
-								</span>
-							</div>
-							<!-- Already added overlay -->
-							<div
-								v-else-if="isAlreadyAdded(clip)"
-								class="absolute inset-0 flex items-center justify-center bg-black/50"
-							>
-								<Check class="size-4 text-green-400" />
-							</div>
-							<!-- Add button on hover -->
-							<div
-								v-else
-								class="absolute inset-0 hidden items-center justify-center bg-black/40 group-hover:flex"
-							>
-								<Plus class="size-5 text-white" />
-							</div>
-						</div>
-						<!-- Name -->
-						<div class="truncate px-2 py-1 text-xs text-zinc-300">
-							{{ getClipName(clip) }}
-						</div>
-						<!-- Time range -->
-						<div
-							v-if="clip.start_time != null && clip.end_time != null"
-							class="truncate px-2 pb-1 text-[10px] text-zinc-500"
-						>
-							{{ formatDuration(clip.start_time) }} - {{ formatDuration(clip.end_time) }}
-						</div>
-					</div>
+						</AssetGrid>
+					</section>
+
+					<section>
+						<SectionHeader
+							v-if="primaryRawVideo"
+							variant="eyebrow"
+							title="Clips"
+							:count="filteredClips.length"
+							class="mb-1"
+						/>
+						<p v-if="filteredClips.length === 0" class="text-xs text-fg-subtle">
+							{{
+								searchQuery
+									? "No matching clips."
+									: "No unbuilt clips in this project. Built clips appear in the Built clips tab."
+							}}
+						</p>
+						<AssetGrid v-else :min="176">
+							<ImportMediaTile
+								v-for="clip in filteredClips"
+								:key="clip.id"
+								:label="getClipName(clip)"
+								:sublabel="
+									clip.start_time != null && clip.end_time != null
+										? `${formatDuration(clip.start_time)} – ${formatDuration(clip.end_time)}`
+										: undefined
+								"
+								:src="getCachedThumbnail(clip.id)"
+								:icon="Film"
+								:duration="formatDuration(getClipDuration(clip)) || undefined"
+								:added="isAlreadyAdded(clip)"
+								:busy="addingIds.has(clip.id)"
+								:status="extractionStatus.get(clip.id) || 'Processing…'"
+								:error="!addingIds.has(clip.id) ? extractionStatus.get(clip.id) : undefined"
+								:action="isAlreadyAdded(clip) ? 'Add to timeline' : 'Add to media'"
+								:class="{ 'pointer-events-none': addingIds.has(clip.id) }"
+								:title="getClipName(clip)"
+								@click="handleClipClick(clip)"
+								@dblclick="addToTimeline(clip)"
+								@keydown.enter="handleClipClick(clip)"
+								@pointerdown="(e: PointerEvent) => handlePointerDown(e, clip)"
+								@dragstart.prevent
+							/>
+						</AssetGrid>
+					</section>
 				</div>
 			</template>
 		</div>

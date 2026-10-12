@@ -1,19 +1,19 @@
 <template>
-  <div class="dashboard-container flex h-full">
+  <div class="dashboard flex h-full min-h-0 bg-canvas">
     <DashboardSidebar :disabled="sidebarDisabled" @show-auth-modal="showAuthModal = true" />
-    <!-- Main content area with left margin to account for fixed sidebar -->
+    <!-- Content sits in an inset panel so the window chrome (title bar + sidebar) frames it -->
     <main
-      class="flex-1 flex flex-col transition-[margin-left] duration-200 ease-out dashboard-container"
-      :class="isCollapsed ? 'ml-12' : 'ml-60'"
+      class="dashboard-panel relative mb-[var(--panel-inset)] mr-[var(--panel-inset)] flex min-w-0 flex-1 flex-col overflow-hidden rounded-xl border border-line-subtle bg-panel"
     >
-      <!-- <DashboardHeader /> -->
       <!-- Page content: rendered via slot so layouts like OrganizationLayout
            can inject their own gated router-view instead of this default one. -->
-      <div class="flex-1 min-h-0 dashboard-container">
+      <div class="min-h-0 flex-1">
         <slot>
           <router-view v-slot="{ Component }">
-            <!-- Avoid mode="out-in": a setup crash on the entering page can leave a permanent blank content area -->
-            <transition name="fade">
+            <!-- Enter-only: the old page is removed at once (no overlap, no layout jump) and the new
+                 one eases in. Avoid mode="out-in": a setup crash on the entering page can leave a
+                 permanent blank content area. -->
+            <transition name="page">
               <component :is="Component" :key="route.fullPath" class="h-full" />
             </transition>
           </router-view>
@@ -48,7 +48,7 @@
 
   const route = useRoute();
   const authStore = useAuthStore();
-  const { isCollapsed, expand } = useSidebarState();
+  const { expand } = useSidebarState();
   const {
     showWelcome,
     acceptWelcome,
@@ -171,17 +171,7 @@
 </script>
 
 <style scoped>
-  .dashboard-container {
-    background-color: var(--sidebar-bg);
-  }
-
-  .fade-enter-active,
-  .fade-leave-active {
-    transition: opacity 0.1s ease;
-  }
-
-  .fade-enter-from,
-  .fade-leave-to {
-    opacity: 0;
+  .page-enter-active {
+    animation: enter var(--duration-base) var(--ease-out) backwards;
   }
 </style>

@@ -1,801 +1,445 @@
 <template>
-  <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="show" class="org-dialog__overlay" @click.self="closeDialog">
-        <Transition name="dialog" appear>
-          <div class="org-dialog org-dialog--cyan org-dialog--lg">
-            <!-- Accent Bar -->
-            <div class="org-dialog__accent org-dialog__accent--cyan" />
+  <Modal
+    :open="show && !showClipDefaultsEditor"
+    :title="dialogTitle"
+    :description="dialogDescription"
+    :icon="formData.scope === 'global' ? Paintbrush : UserCircle"
+    size="lg"
+    flush
+    class="h-[min(620px,calc(100vh-5rem))]"
+    :dismissible="!saving"
+    @close="closeDialog"
+  >
+    <!-- Section tabs -->
+    <div class="sticky top-0 z-10 border-b border-line-subtle bg-surface-raised px-5 pb-3 pt-2">
+      <SegmentedControl v-model="activeSection" :options="sectionOptions" />
+    </div>
 
-            <!-- Header -->
-            <div class="org-dialog__header">
-              <button class="org-dialog__close" @click="closeDialog" title="Close">
-                <X :size="18" />
-              </button>
-              <div class="org-dialog__icon org-dialog__icon--cyan">
-                <Paintbrush v-if="formData.scope === 'global'" :size="24" />
-                <UserCircle v-else :size="24" />
-              </div>
-              <h2 class="org-dialog__title">
-                {{ formData.scope === 'global'
-                  ? (isEditing ? 'Edit Global Branding' : 'Create Global Branding')
-                  : (isEditing ? 'Edit Creator Profile' : 'Create Creator Profile')
-                }}
-              </h2>
-              <p class="org-dialog__subtitle">
-                {{ formData.scope === 'global'
-                  ? (isEditing
-                    ? 'Update default branding applied to content without a creator profile'
-                    : 'Set default intro, outro, and watermark for content without a specific creator profile')
-                  : (isEditing
-                    ? 'Update profile details and platform links'
-                    : 'Add a new creator with platform connections')
-                }}
-              </p>
-            </div>
+    <!-- Sections stay mounted (v-show); animate-enter restarts whenever one is shown again. -->
+    <div class="px-5 py-4">
+      <!-- ── Profile ─────────────────────────────────────────── -->
+      <div v-show="activeSection === 'profile'" class="flex animate-enter flex-col gap-4">
+        <Field label="Name" required>
+          <Input
+            v-model="formData.name"
+            :placeholder="formData.scope === 'global' ? 'Branding profile name' : 'Creator name'"
+          />
+        </Field>
+        <Field label="Description">
+          <template #label-end><span class="text-2xs text-fg-subtle">Optional</span></template>
+          <Textarea
+            v-model="formData.description"
+            rows="2"
+            class="min-h-[60px] resize-none"
+            :placeholder="
+              formData.scope === 'global' ? 'e.g. Default branding for all content' : 'Brief description of this creator…'
+            "
+          />
+        </Field>
 
-            <!-- Content -->
-            <div
-              class="org-dialog__content"
-              @click="
-                openPlatformDropdown = null;
-                openAssetDropdown = null;
-                showOverlayDropdown = false;
-              "
-            >
-              <!-- Basic Info Section -->
-              <div class="org-dialog__section">
-                <h3 class="org-dialog__section-title">Basic Info</h3>
-                <div class="org-dialog__section-items">
-                  <div class="org-dialog__field">
-                    <label class="org-dialog__label">Name *</label>
-                    <input
-                      v-model="formData.name"
-                      type="text"
-                      required
-                      :placeholder="formData.scope === 'global' ? 'Branding profile name' : 'Creator name'"
-                      class="org-dialog__input"
-                    />
-                  </div>
+        <div
+          v-if="mode === 'local' && formData.scope !== 'global'"
+          class="overflow-hidden rounded-lg border border-line-subtle bg-surface"
+        >
+          <SettingRow
+            inset
+            :icon="Disc"
+            label="Personal profile for Clippster Studio"
+            description="Use when recording in Studio. Applies the watermark live and intro/outro after recording ends."
+          >
+            <Switch
+              :model-value="formData.scope === 'personal_studio'"
+              @update:model-value="(v: boolean) => (formData.scope = v ? 'personal_studio' : 'streamer')"
+            />
+          </SettingRow>
+          <SettingRow
+            v-if="formData.scope === 'streamer'"
+            inset
+            :icon="HardDrive"
+            label="Auto DVR"
+            description="Automatically start DVR when this creator goes live."
+          >
+            <Switch v-model="formData.auto_dvr_enabled" />
+          </SettingRow>
+        </div>
 
-                  <div class="org-dialog__field">
-                    <label class="org-dialog__label">
-                      Description
-                      <span class="org-dialog__label-hint">(optional)</span>
-                    </label>
-                    <textarea
-                      v-model="formData.description"
-                      rows="2"
-                      :placeholder="formData.scope === 'global' ? 'e.g. Default branding for all content' : 'Brief description of this creator...'"
-                      class="org-dialog__input org-dialog__textarea"
-                    />
-                  </div>
-                </div>
-              </div>
+        <!-- Platform links (not for global branding) -->
+        <section v-if="formData.scope === 'streamer'" class="flex flex-col gap-2">
+          <SectionHeader title="Platform links" :count="formData.platformLinks.length || undefined">
+            <Button v-if="formData.platformLinks.length > 0" variant="ghost" size="xs" @click="addPlatformLink">
+              <Plus /> Add platform
+            </Button>
+          </SectionHeader>
 
+          <button
+            v-if="formData.platformLinks.length === 0"
+            type="button"
+            class="flex flex-col items-center gap-1 rounded-lg border border-dashed border-line-strong px-4 py-5 text-center transition-colors hover:border-brand-line hover:bg-surface-hover"
+            @click="addPlatformLink"
+          >
+            <span class="flex items-center gap-1.5 text-sm font-medium text-fg"><Plus class="size-4" /> Add platform</span>
+            <span class="text-xs text-fg-muted">Link Kick, Twitch, YouTube, Rumble or PumpFun channels</span>
+          </button>
+
+          <div
+            v-for="(link, index) in formData.platformLinks"
+            :key="index"
+            class="flex flex-col gap-3 rounded-lg border border-line-subtle bg-surface p-3"
+          >
+            <div class="flex items-center gap-2">
               <div
-                v-if="mode === 'local' && formData.scope !== 'global'"
-                class="org-dialog__feature-card"
+                class="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full border border-line-subtle bg-surface-raised text-fg-subtle"
               >
-                <div class="org-dialog__feature-icon">
-                  <Disc :size="16" />
-                </div>
-                <div class="org-dialog__feature-content">
-                  <div class="org-dialog__feature-header">
-                    <div class="org-dialog__feature-text">
-                      <span class="org-dialog__feature-title">Personal profile for Clippster Studio</span>
-                      <span class="org-dialog__feature-desc">
-                        Use this profile when recording in Studio. Applies watermark live and intro/outro after recording ends.
-                      </span>
-                    </div>
-                    <Switch
-                      :model-value="formData.scope === 'personal_studio'"
-                      @update:model-value="(v: boolean) => (formData.scope = v ? 'personal_studio' : 'streamer')"
-                    />
-                  </div>
-                </div>
+                <img
+                  v-if="link.profile_image_url"
+                  :src="link.profile_image_url"
+                  alt=""
+                  class="size-full object-cover"
+                  @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
+                />
+                <Loader2
+                  v-else-if="link.platform === 'pumpfun' && link.platform_id && fetchingProfileImage"
+                  class="size-4 animate-spin"
+                />
+                <Users v-else class="size-4" />
               </div>
 
-              <!-- Auto DVR Toggle (streamer profiles only) -->
-              <div v-if="mode === 'local' && formData.scope === 'streamer'" class="org-dialog__feature-card">
-                <div class="org-dialog__feature-icon">
-                  <Sparkles :size="16" />
-                </div>
-                <div class="org-dialog__feature-content">
-                  <div class="org-dialog__feature-header">
-                    <div class="org-dialog__feature-text">
-                      <span class="org-dialog__feature-title">Auto DVR</span>
-                      <span class="org-dialog__feature-desc">Automatically start DVR when this creator goes live</span>
-                    </div>
-                    <Switch v-model="formData.auto_dvr_enabled" />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Platform Links Section (hidden for global branding profiles) -->
-              <div v-if="formData.scope === 'streamer'" class="org-dialog__section">
-                <div class="org-dialog__section-header">
-                  <h3 class="org-dialog__section-title">Platform Links</h3>
-                  <button type="button" @click="addPlatformLink" class="org-dialog__add-btn">
-                    <Plus :size="14" />
-                    <span>Add Platform</span>
+              <DropdownMenu
+                :open="openPlatformDropdown === index"
+                @update:open="(open: boolean) => (openPlatformDropdown = open ? index : null)"
+              >
+                <DropdownMenuTrigger as-child>
+                  <button
+                    type="button"
+                    class="flex h-[var(--control-md)] min-w-0 items-center gap-2 rounded-[var(--radius-control)] border border-line bg-surface-raised pl-1.5 pr-2.5 text-sm text-fg transition-colors hover:border-line-strong data-[state=open]:border-line-strong"
+                  >
+                    <PlatformLogo :platform="link.platform" size="sm" />
+                    <span class="truncate">{{ getPlatformName(link.platform) }}</span>
+                    <ChevronDown class="size-3.5 shrink-0 text-fg-subtle" />
                   </button>
-                </div>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="start" class="w-44">
+                  <DropdownMenuItem
+                    v-for="platform in availablePlatforms"
+                    :key="platform.id"
+                    :disabled="platform.disabled"
+                    @select="selectPlatform(index, platform.id)"
+                  >
+                    <PlatformLogo :platform="platform.id" size="xs" />
+                    <span class="flex-1">{{ platform.name }}</span>
+                    <Badge v-if="platform.disabled">Soon</Badge>
+                    <Check v-else-if="link.platform === platform.id" class="!text-brand" />
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
 
-                <!-- Empty State -->
-                <div v-if="formData.platformLinks.length === 0" class="org-dialog__empty-state">
-                  <p class="org-dialog__empty-text">No platforms added yet</p>
-                  <button @click="addPlatformLink" class="org-dialog__empty-link">Add your first platform</button>
-                </div>
-
-                <!-- Platform Links List -->
-                <div v-else class="org-dialog__section-items">
-                  <div v-for="(link, index) in formData.platformLinks" :key="index" class="org-dialog__platform-card">
-                    <div class="org-dialog__platform-header">
-                      <div class="org-dialog__platform-left">
-                        <!-- Profile Image Preview -->
-                        <div class="org-dialog__platform-avatar">
-                          <img
-                            v-if="link.profile_image_url"
-                            :src="link.profile_image_url"
-                            class="org-dialog__platform-avatar-img"
-                            @error="(e) => ((e.target as HTMLImageElement).style.display = 'none')"
-                          />
-                          <component
-                            v-else
-                            :is="
-                              link.platform === 'pumpfun' && link.platform_id && fetchingProfileImage ? Loader2 : Users
-                            "
-                            :class="[
-                              'org-dialog__platform-avatar-icon',
-                              link.platform === 'pumpfun' && link.platform_id && fetchingProfileImage
-                                ? 'org-dialog__spin'
-                                : '',
-                            ]"
-                          />
-                        </div>
-
-                        <!-- Platform Dropdown -->
-                        <div class="org-dialog__dropdown-wrapper">
-                          <button
-                            type="button"
-                            @click.stop="togglePlatformDropdown(index)"
-                            class="org-dialog__platform-select"
-                          >
-                            <div
-                              class="org-dialog__platform-select-icon"
-                              :style="{ backgroundColor: getPlatformColor(link.platform) }"
-                            >
-                              <img
-                                :src="getPlatformIcon(link.platform)"
-                                class="org-dialog__platform-select-icon-img"
-                                :class="getPlatformIconClass(link.platform)"
-                              />
-                            </div>
-                            <span class="org-dialog__platform-select-label">{{ getPlatformName(link.platform) }}</span>
-                            <ChevronDown
-                              class="org-dialog__chevron"
-                              :class="{ 'org-dialog__chevron--open': openPlatformDropdown === index }"
-                            />
-                          </button>
-
-                          <!-- Platform Dropdown Menu -->
-                          <div v-if="openPlatformDropdown === index" class="org-dialog__dropdown" @click.stop>
-                            <div class="org-dialog__dropdown-list">
-                              <button
-                                v-for="platform in availablePlatforms"
-                                :key="platform.id"
-                                type="button"
-                                @click="selectPlatform(index, platform.id)"
-                                class="org-dialog__dropdown-item"
-                                :class="{
-                                  'org-dialog__dropdown-item--disabled': platform.disabled,
-                                  'org-dialog__dropdown-item--active': link.platform === platform.id,
-                                }"
-                                :disabled="platform.disabled"
-                              >
-                                <div
-                                  class="org-dialog__platform-select-icon"
-                                  :style="{ backgroundColor: getPlatformColor(platform.id) }"
-                                >
-                                  <img
-                                    :src="getPlatformIcon(platform.id)"
-                                    class="org-dialog__platform-select-icon-img"
-                                    :class="getPlatformIconClass(platform.id)"
-                                  />
-                                </div>
-                                <span :class="platform.disabled ? 'org-dialog__text-muted' : ''">
-                                  {{ platform.name }}
-                                </span>
-                                <span v-if="platform.disabled" class="org-dialog__dropdown-badge">Soon</span>
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-
-                      <div class="org-dialog__platform-actions">
-                        <label class="org-dialog__platform-primary">
-                          <input
-                            type="radio"
-                            :name="'primary-' + index"
-                            :checked="link.is_primary"
-                            @change="setPrimaryLink(index)"
-                          />
-                          Primary
-                        </label>
-                        <button type="button" @click="removePlatformLink(index)" class="org-dialog__platform-delete">
-                          <Trash2 :size="16" />
-                        </button>
-                      </div>
-                    </div>
-
-                    <div class="org-dialog__platform-fields">
-                      <div class="org-dialog__field">
-                        <label class="org-dialog__label org-dialog__label--sm">
-                          {{ link.platform === 'pumpfun' ? 'Mint ID or URL' : 'Channel Slug or URL' }} *
-                        </label>
-                        <input
-                          v-model="link.platform_id"
-                          :placeholder="
-                            link.platform === 'pumpfun'
-                              ? 'Enter mint ID or paste PumpFun URL'
-                              : 'Enter channel slug or paste URL'
-                          "
-                          class="org-dialog__input org-dialog__input--sm"
-                          @blur="extractPlatformId(link)"
-                        />
-                      </div>
-                      <div class="org-dialog__field">
-                        <label class="org-dialog__label org-dialog__label--sm">Display Name</label>
-                        <input
-                          v-model="link.display_name"
-                          placeholder="Optional display name"
-                          class="org-dialog__input org-dialog__input--sm"
-                        />
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Asset Selection Section -->
-              <div class="org-dialog__section" :class="{ 'org-dialog__section--locked': isFreeTierUser }" @click.stop="openAssetDropdown = null; showOverlayDropdown = false">
-                <h3 class="org-dialog__section-title">Default Assets</h3>
-                <p class="org-dialog__section-desc">
-                  {{ formData.scope === 'global'
-                    ? 'Configure the intro, outro, and watermark applied to all content without a specific creator profile.'
-                    : "Configure default intro, outro, and watermark for this creator's content."
-                  }}
-                </p>
-
-                <!-- Free tier lock overlay -->
-                <div v-if="isFreeTierUser" class="org-dialog__premium-lock">
-                  <Lock :size="16" />
-                  <span>Custom assets require a paid plan</span>
-                </div>
-
-                <div class="org-dialog__section-items">
-                  <!-- Intro Selection -->
-                  <div class="org-dialog__asset-row">
-                    <label class="org-dialog__asset-label">Intro</label>
-                    <div class="org-dialog__asset-controls">
-                      <div class="org-dialog__dropdown-wrapper org-dialog__flex-1">
-                        <button
-                          type="button"
-                          @click.stop="toggleAssetDropdown('intro')"
-                          :disabled="uploadingIntro"
-                          class="org-dialog__asset-select"
-                        >
-                          <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--intro">
-                            <Play :size="14" />
-                          </div>
-                          <span class="org-dialog__asset-select-label">
-                            {{ getSelectedIntroName() }}
-                          </span>
-                          <ChevronDown
-                            class="org-dialog__chevron"
-                            :class="{ 'org-dialog__chevron--open': openAssetDropdown === 'intro' }"
-                          />
-                        </button>
-
-                        <!-- Intro Dropdown -->
-                        <div
-                          v-if="openAssetDropdown === 'intro'"
-                          class="org-dialog__dropdown org-dialog__dropdown--full"
-                          @click.stop
-                        >
-                          <div class="org-dialog__dropdown-list org-dialog__dropdown-list--scrollable">
-                            <button
-                              type="button"
-                              @click="selectIntro(null)"
-                              class="org-dialog__dropdown-item"
-                              :class="{ 'org-dialog__dropdown-item--active': formData.intro_id === null }"
-                            >
-                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--none">
-                                <X :size="14" />
-                              </div>
-                              <span class="org-dialog__text-muted">No intro</span>
-                            </button>
-                            <button
-                              v-for="asset in introAssets"
-                              :key="asset.id"
-                              type="button"
-                              @click="selectIntro(asset.id)"
-                              class="org-dialog__dropdown-item"
-                              :class="{ 'org-dialog__dropdown-item--active': formData.intro_id === asset.id }"
-                            >
-                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--intro">
-                                <Play :size="14" />
-                              </div>
-                              <span class="org-dialog__truncate">{{ asset.name }}</span>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                      <!-- Configure intro per aspect ratio -->
-                      <button
-                        type="button"
-                        @click="openRatioPicker('intro')"
-                        class="org-dialog__asset-upload"
-                        :class="{ 'org-dialog__asset-upload--active': hasIntroRatioConfig }"
-                        title="Configure intro per aspect ratio"
-                      >
-                        <Settings2 :size="16" />
-                      </button>
-                      <button
-                        type="button"
-                        @click="handleIntroUploadClick"
-                        :disabled="uploadingIntro"
-                        class="org-dialog__asset-upload"
-                        title="Upload new intro"
-                      >
-                        <Loader2 v-if="uploadingIntro" :size="16" class="org-dialog__spin" />
-                        <Upload v-else :size="16" />
-                      </button>
-                    </div>
-                    <p class="org-dialog__asset-ratio-hint">16:9 aspect ratio</p>
-                    <p v-if="hasIntroRatioConfig" class="org-dialog__asset-hint">
-                      <Settings2 :size="12" />
-                      Per-ratio intros configured
-                    </p>
-                  </div>
-
-                  <!-- Outro Selection -->
-                  <div class="org-dialog__asset-row">
-                    <label class="org-dialog__asset-label">Outro</label>
-                    <div class="org-dialog__asset-controls">
-                      <div class="org-dialog__dropdown-wrapper org-dialog__flex-1">
-                        <button
-                          type="button"
-                          @click.stop="toggleAssetDropdown('outro')"
-                          :disabled="uploadingOutro"
-                          class="org-dialog__asset-select"
-                        >
-                          <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--outro">
-                            <SkipForward :size="14" />
-                          </div>
-                          <span class="org-dialog__asset-select-label">
-                            {{ getSelectedOutroName() }}
-                          </span>
-                          <ChevronDown
-                            class="org-dialog__chevron"
-                            :class="{ 'org-dialog__chevron--open': openAssetDropdown === 'outro' }"
-                          />
-                        </button>
-
-                        <!-- Outro Dropdown -->
-                        <div
-                          v-if="openAssetDropdown === 'outro'"
-                          class="org-dialog__dropdown org-dialog__dropdown--full"
-                          @click.stop
-                        >
-                          <div class="org-dialog__dropdown-list org-dialog__dropdown-list--scrollable">
-                            <button
-                              type="button"
-                              @click="selectOutro(null)"
-                              class="org-dialog__dropdown-item"
-                              :class="{ 'org-dialog__dropdown-item--active': formData.outro_id === null }"
-                            >
-                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--none">
-                                <X :size="14" />
-                              </div>
-                              <span class="org-dialog__text-muted">No outro</span>
-                            </button>
-                            <button
-                              v-for="asset in outroAssets"
-                              :key="asset.id"
-                              type="button"
-                              @click="selectOutro(asset.id)"
-                              class="org-dialog__dropdown-item"
-                              :class="{ 'org-dialog__dropdown-item--active': formData.outro_id === asset.id }"
-                            >
-                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--outro">
-                                <SkipForward :size="14" />
-                              </div>
-                              <span class="org-dialog__truncate">{{ asset.name }}</span>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                      <!-- Configure outro per aspect ratio -->
-                      <button
-                        type="button"
-                        @click="openRatioPicker('outro')"
-                        class="org-dialog__asset-upload"
-                        :class="{ 'org-dialog__asset-upload--active': hasOutroRatioConfig }"
-                        title="Configure outro per aspect ratio"
-                      >
-                        <Settings2 :size="16" />
-                      </button>
-                      <button
-                        type="button"
-                        @click="handleOutroUploadClick"
-                        :disabled="uploadingOutro"
-                        class="org-dialog__asset-upload"
-                        title="Upload new outro"
-                      >
-                        <Loader2 v-if="uploadingOutro" :size="16" class="org-dialog__spin" />
-                        <Upload v-else :size="16" />
-                      </button>
-                    </div>
-                    <p class="org-dialog__asset-ratio-hint">16:9 aspect ratio</p>
-                    <p v-if="hasOutroRatioConfig" class="org-dialog__asset-hint">
-                      <Settings2 :size="12" />
-                      Per-ratio outros configured
-                    </p>
-                  </div>
-
-                  <!-- Watermark Selection -->
-                  <div class="org-dialog__asset-row">
-                    <label class="org-dialog__asset-label">Watermark</label>
-                    <div class="org-dialog__asset-controls">
-                      <div class="org-dialog__dropdown-wrapper org-dialog__flex-1">
-                        <button
-                          type="button"
-                          @click.stop="toggleAssetDropdown('watermark')"
-                          :disabled="uploadingWatermark"
-                          class="org-dialog__asset-select"
-                        >
-                          <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--watermark">
-                            <Image :size="14" />
-                          </div>
-                          <span class="org-dialog__asset-select-label">
-                            {{ getSelectedWatermarkName() }}
-                          </span>
-                          <ChevronDown
-                            class="org-dialog__chevron"
-                            :class="{ 'org-dialog__chevron--open': openAssetDropdown === 'watermark' }"
-                          />
-                        </button>
-
-                        <!-- Watermark Dropdown -->
-                        <div
-                          v-if="openAssetDropdown === 'watermark'"
-                          class="org-dialog__dropdown org-dialog__dropdown--full"
-                          @click.stop
-                        >
-                          <div class="org-dialog__dropdown-list org-dialog__dropdown-list--scrollable">
-                            <button
-                              type="button"
-                              @click="selectWatermark(null)"
-                              class="org-dialog__dropdown-item"
-                              :class="{ 'org-dialog__dropdown-item--active': formData.watermark_id === null }"
-                            >
-                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--none">
-                                <X :size="14" />
-                              </div>
-                              <span class="org-dialog__text-muted">No watermark</span>
-                            </button>
-                            <button
-                              v-for="asset in watermarkAssets"
-                              :key="asset.id"
-                              type="button"
-                              @click="selectWatermark(asset.id)"
-                              class="org-dialog__dropdown-item"
-                              :class="{ 'org-dialog__dropdown-item--active': formData.watermark_id === asset.id }"
-                            >
-                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--watermark">
-                                <Image :size="14" />
-                              </div>
-                              <span class="org-dialog__truncate">{{ asset.name }}</span>
-                            </button>
-                          </div>
-                        </div>
-                      </div>
-                      <!-- Configure position button -->
-                      <button
-                        type="button"
-                        @click="openWatermarkPositionPicker"
-                        :disabled="!formData.watermark_id"
-                        class="org-dialog__asset-upload"
-                        :class="{ 'org-dialog__asset-upload--active': formData.watermark_settings }"
-                        title="Configure watermark position"
-                      >
-                        <Settings2 :size="16" />
-                      </button>
-                      <input
-                        ref="watermarkFileInput"
-                        type="file"
-                        accept="image/png,image/jpeg,image/webp,image/gif"
-                        class="org-dialog__hidden"
-                        @change="handleWatermarkUpload"
-                      />
-                      <button
-                        type="button"
-                        @click="props.mode === 'local' ? handleWatermarkUploadLocal() : watermarkFileInput?.click()"
-                        :disabled="uploadingWatermark"
-                        class="org-dialog__asset-upload"
-                        title="Upload new watermark"
-                      >
-                        <Loader2 v-if="uploadingWatermark" :size="16" class="org-dialog__spin" />
-                        <Upload v-else :size="16" />
-                      </button>
-                    </div>
-                    <!-- Configured indicator -->
-                    <p v-if="formData.watermark_settings" class="org-dialog__asset-hint">
-                      <Settings2 :size="12" />
-                      Position configured for {{ getConfiguredRatiosCount() }} aspect ratio(s)
-                    </p>
-                  </div>
-
-                  <!-- Layout Overlays Section -->
-                  <div class="org-dialog__asset-row">
-                    <label class="org-dialog__asset-label">Layout Overlays</label>
-                    <div class="org-dialog__asset-controls">
-                      <div class="org-dialog__dropdown-wrapper org-dialog__flex-1">
-                        <button
-                          type="button"
-                          class="org-dialog__asset-select"
-                          :disabled="uploadingOverlay"
-                          @click.stop="showOverlayDropdown = !showOverlayDropdown"
-                        >
-                          <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--overlay">
-                            <Layers :size="14" />
-                          </div>
-                          <span class="org-dialog__asset-select-label">
-                            {{ formData.layout_overlays.length > 0
-                              ? `${formData.layout_overlays.length} overlay${formData.layout_overlays.length > 1 ? 's' : ''}`
-                              : 'No overlays' }}
-                          </span>
-                          <ChevronDown
-                            class="org-dialog__chevron"
-                            :class="{ 'org-dialog__chevron--open': showOverlayDropdown }"
-                          />
-                        </button>
-
-                        <!-- Overlay Dropdown -->
-                        <div
-                          v-if="showOverlayDropdown"
-                          class="org-dialog__dropdown org-dialog__dropdown--full"
-                          @click.stop
-                        >
-                          <div class="org-dialog__dropdown-list org-dialog__dropdown-list--scrollable">
-                            <button
-                              v-if="formData.layout_overlays.length === 0"
-                              type="button"
-                              class="org-dialog__dropdown-item org-dialog__dropdown-item--active"
-                              disabled
-                            >
-                              <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--none">
-                                <X :size="14" />
-                              </div>
-                              <span class="org-dialog__text-muted">No overlays added</span>
-                            </button>
-                            <div
-                              v-for="(overlay, idx) in formData.layout_overlays"
-                              :key="overlay.id"
-                              class="org-dialog__dropdown-item org-dialog__dropdown-item--overlay"
-                            >
-                              <div class="org-dialog__overlay-thumb">
-                                <img
-                                  v-if="overlayPreviews[overlay.id]"
-                                  :src="overlayPreviews[overlay.id]"
-                                  class="org-dialog__overlay-thumb-img"
-                                  alt=""
-                                />
-                                <Layers v-else :size="12" style="color: var(--sidebar-text-muted)" />
-                              </div>
-                              <div class="org-dialog__overlay-info">
-                                <input
-                                  v-model="overlay.label"
-                                  class="org-dialog__overlay-name"
-                                  :placeholder="`Overlay ${idx + 1}`"
-                                  @click.stop
-                                />
-                                <span class="org-dialog__overlay-meta">
-                                  {{ overlay.opacity }}% opacity
-                                  <template v-if="overlayConfiguredRatioCount(overlay) > 0">
-                                    · {{ overlayConfiguredRatioCount(overlay) }}/4 ratios
-                                  </template>
-                                </span>
-                              </div>
-                              <button
-                                type="button"
-                                @click.stop="openOverlayPositionPicker(idx)"
-                                class="org-dialog__overlay-action"
-                                :class="{ 'org-dialog__overlay-action--active': overlayConfiguredRatioCount(overlay) > 0 }"
-                                title="Configure position per aspect ratio"
-                              >
-                                <Settings2 :size="14" />
-                              </button>
-                              <button
-                                type="button"
-                                @click.stop="removeLayoutOverlay(idx)"
-                                class="org-dialog__overlay-action org-dialog__overlay-action--danger"
-                                title="Remove overlay"
-                              >
-                                <Trash2 :size="14" />
-                              </button>
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                      <!-- Configure position button -->
-                      <button
-                        type="button"
-                        @click="openOverlayPositionPicker(0)"
-                        :disabled="formData.layout_overlays.length === 0"
-                        class="org-dialog__asset-upload"
-                        :class="{ 'org-dialog__asset-upload--active': totalOverlayRatios > 0 }"
-                        title="Configure overlay position"
-                      >
-                        <Settings2 :size="16" />
-                      </button>
-                      <button
-                        type="button"
-                        @click="addLayoutOverlay"
-                        :disabled="uploadingOverlay"
-                        class="org-dialog__asset-upload"
-                        title="Upload new overlay"
-                      >
-                        <Loader2 v-if="uploadingOverlay" :size="16" class="org-dialog__spin" />
-                        <Upload v-else :size="16" />
-                      </button>
-                    </div>
-                    <p v-if="formData.layout_overlays.length > 0" class="org-dialog__asset-hint">
-                      <Layers :size="12" />
-                      {{ totalOverlayRatios }} aspect ratio(s) configured across {{ formData.layout_overlays.length }} overlay(s)
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Clip defaults — same layout primitives as Default Assets (asset-row / asset-select pattern) -->
-              <div
-                v-if="mode === 'local' && formData.scope === 'streamer'"
-                class="org-dialog__section"
-              >
-                <h3 class="org-dialog__section-title">Clip Defaults</h3>
-                <p class="org-dialog__section-desc">
-                  Set the framing, layout, and subtitle style this creator usually needs. When you
-                  download a VOD for them you can tick "Use creator layout" to start every project
-                  pre-configured with these defaults.
-                </p>
-
-                <div class="org-dialog__section-items">
-                  <!-- Output ratio (pill group: same chrome as asset-upload sizing) -->
-                  <div class="org-dialog__asset-row">
-                    <label class="org-dialog__asset-label">Default output ratio</label>
-                    <div class="org-dialog__asset-controls org-dialog__asset-controls--wrap">
-                      <button
-                        v-for="ratio in CLIP_DEFAULT_RATIO_OPTIONS"
-                        :key="ratio"
-                        type="button"
-                        class="org-dialog__aspect-pill"
-                        :class="{
-                          'org-dialog__aspect-pill--active':
-                            formData.clip_build_defaults.targetAspectRatio === ratio,
-                        }"
-                        @click="setClipDefaultRatio(ratio)"
-                      >
-                        {{ ratio }}
-                      </button>
-                    </div>
-                    <p class="org-dialog__asset-ratio-hint">
-                      Matches the framing editor · source frame {{ formData.clip_build_defaults.sourceAspectRatio }}
-                    </p>
-                  </div>
-
-                  <!-- Reference image -->
-                  <div class="org-dialog__asset-row">
-                    <label class="org-dialog__asset-label">Reference image</label>
-                    <p class="org-dialog__asset-ratio-hint">
-                      Used to align crop regions on the canvas (same as framing editor upload).
-                    </p>
-                    <div class="org-dialog__asset-controls">
-                      <button
-                        type="button"
-                        class="org-dialog__aspect-pill org-dialog__aspect-pill--grow"
-                        :class="{
-                          'org-dialog__aspect-pill--active':
-                            formData.clip_build_defaults.referenceImageSource === 'upload',
-                        }"
-                        @click="pickReferenceImageUpload"
-                      >
-                        Upload screenshot
-                      </button>
-                      <button
-                        type="button"
-                        class="org-dialog__aspect-pill org-dialog__aspect-pill--grow"
-                        :class="{
-                          'org-dialog__aspect-pill--active':
-                            formData.clip_build_defaults.referenceImageSource === 'none',
-                        }"
-                        @click="setReferenceSource('none')"
-                      >
-                        No image
-                      </button>
-                    </div>
-
-                    <div v-if="resolvedReferenceImageUrl" class="org-dialog__clip-ref-preview">
-                      <img
-                        :src="resolvedReferenceImageUrl"
-                        class="org-dialog__clip-ref-preview-img"
-                        @error="onReferenceImageError"
-                        alt="Reference frame preview"
-                      />
-                    </div>
-                    <p v-else-if="formData.clip_build_defaults.referenceImageSource !== 'none'" class="org-dialog__asset-hint">
-                      <AlertCircle :size="12" />
-                      No reference image yet. Pick a source above.
-                    </p>
-                  </div>
-
-                  <!-- Primary action = same pattern as Intro / Overlay rows (asset-select + icon) -->
-                  <div class="org-dialog__asset-row">
-                    <label class="org-dialog__asset-label">Layout & subtitles</label>
-                    <div class="org-dialog__asset-controls">
-                      <button type="button" class="org-dialog__asset-select org-dialog__flex-1" @click="openClipDefaultsEditor">
-                        <div class="org-dialog__asset-select-icon org-dialog__asset-select-icon--overlay">
-                          <Layers :size="14" />
-                        </div>
-                        <span class="org-dialog__asset-select-label">{{
-                          hasClipDefaultsConfig ? 'Edit framing & subtitles' : 'Configure framing & subtitles'
-                        }}</span>
-                      </button>
-                    </div>
-                    <p v-if="hasClipDefaultsConfig" class="org-dialog__asset-hint">
-                      <Settings2 :size="12" />
-                      {{ clipDefaultsSummary }}
-                    </p>
-                  </div>
-                </div>
+              <div class="ml-auto flex shrink-0 items-center gap-1">
+                <Badge v-if="link.is_primary" variant="brand">Primary</Badge>
+                <Button v-else variant="ghost" size="xs" @click="setPrimaryLink(index)">Set primary</Button>
+                <Button
+                  variant="ghost"
+                  size="icon-sm"
+                  class="hover:text-danger"
+                  title="Remove platform"
+                  aria-label="Remove platform"
+                  @click="removePlatformLink(index)"
+                >
+                  <Trash2 />
+                </Button>
               </div>
             </div>
 
-            <!-- Footer -->
-            <div class="org-dialog__footer">
-              <button
-                type="button"
-                @click="closeDialog"
-                :disabled="saving"
-                class="org-dialog__btn org-dialog__btn--secondary"
-              >
-                Cancel
-              </button>
-              <button
-                @click="handleSubmit"
-                :disabled="!isValid || saving || fetchingProfileImage"
-                class="org-dialog__btn org-dialog__btn--primary"
-              >
-                <Loader2 v-if="saving || fetchingProfileImage" :size="16" class="org-dialog__btn-spinner" />
-                {{
-                  saving
-                    ? 'Saving...'
-                    : fetchingProfileImage
-                      ? 'Fetching Info...'
-                      : formData.scope === 'global'
-                        ? (isEditing ? 'Update Branding' : 'Create Branding')
-                        : (isEditing ? 'Update Profile' : 'Create Profile')
-                }}
-              </button>
+            <div class="grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <Field :label="link.platform === 'pumpfun' ? 'Mint ID or URL' : 'Channel slug or URL'" required>
+                <Input
+                  v-model="link.platform_id"
+                  :placeholder="link.platform === 'pumpfun' ? 'Mint ID or PumpFun URL' : 'Channel slug or URL'"
+                  @blur="extractPlatformId(link)"
+                />
+              </Field>
+              <Field label="Display name">
+                <Input v-model="link.display_name" placeholder="Optional" />
+              </Field>
             </div>
           </div>
-        </Transition>
+        </section>
       </div>
-    </Transition>
-  </Teleport>
+
+      <!-- ── Branding ────────────────────────────────────────── -->
+      <div v-show="activeSection === 'branding'" class="flex animate-enter flex-col gap-4">
+        <p class="text-xs text-fg-muted">
+          {{
+            formData.scope === 'global'
+              ? 'Intro, outro and watermark applied to all content without a specific creator profile.'
+              : "Default intro, outro and watermark for this creator's content."
+          }}
+        </p>
+
+        <div
+          v-if="isFreeTierUser"
+          class="flex items-center gap-2 rounded-lg border border-[var(--warning-line)] bg-warning-soft px-3 py-2 text-xs font-medium text-warning"
+        >
+          <Lock class="size-3.5 shrink-0" />
+          Custom assets require a paid plan
+        </div>
+
+        <div class="flex flex-col gap-4" :class="{ 'pointer-events-none opacity-40': isFreeTierUser }">
+          <!-- Intro -->
+          <Field label="Intro" :hint="hasIntroRatioConfig ? 'Per-ratio intros configured' : '16:9 aspect ratio'">
+            <div class="flex items-center gap-1.5">
+              <AssetSelect
+                :model-value="formData.intro_id"
+                :options="introAssets"
+                :icon="Play"
+                none-label="No intro"
+                :disabled="uploadingIntro"
+                class="flex-1"
+                @update:model-value="selectIntro"
+              />
+              <Button
+                variant="secondary"
+                size="icon"
+                :class="hasIntroRatioConfig && 'border-brand-line text-brand'"
+                title="Configure intro per aspect ratio"
+                aria-label="Configure intro per aspect ratio"
+                @click="openRatioPicker('intro')"
+              >
+                <Settings2 />
+              </Button>
+              <Button
+                variant="secondary"
+                size="icon"
+                :loading="uploadingIntro"
+                title="Upload new intro"
+                aria-label="Upload new intro"
+                @click="handleIntroUploadClick"
+              >
+                <Upload v-if="!uploadingIntro" />
+              </Button>
+            </div>
+          </Field>
+
+          <!-- Outro -->
+          <Field label="Outro" :hint="hasOutroRatioConfig ? 'Per-ratio outros configured' : '16:9 aspect ratio'">
+            <div class="flex items-center gap-1.5">
+              <AssetSelect
+                :model-value="formData.outro_id"
+                :options="outroAssets"
+                :icon="SkipForward"
+                none-label="No outro"
+                :disabled="uploadingOutro"
+                class="flex-1"
+                @update:model-value="selectOutro"
+              />
+              <Button
+                variant="secondary"
+                size="icon"
+                :class="hasOutroRatioConfig && 'border-brand-line text-brand'"
+                title="Configure outro per aspect ratio"
+                aria-label="Configure outro per aspect ratio"
+                @click="openRatioPicker('outro')"
+              >
+                <Settings2 />
+              </Button>
+              <Button
+                variant="secondary"
+                size="icon"
+                :loading="uploadingOutro"
+                title="Upload new outro"
+                aria-label="Upload new outro"
+                @click="handleOutroUploadClick"
+              >
+                <Upload v-if="!uploadingOutro" />
+              </Button>
+            </div>
+          </Field>
+
+          <!-- Watermark -->
+          <Field
+            label="Watermark"
+            :hint="
+              formData.watermark_settings
+                ? `Position configured for ${getConfiguredRatiosCount()} aspect ratio(s)`
+                : undefined
+            "
+          >
+            <div class="flex items-center gap-1.5">
+              <AssetSelect
+                :model-value="formData.watermark_id"
+                :options="watermarkAssets"
+                :icon="Image"
+                none-label="No watermark"
+                :disabled="uploadingWatermark"
+                class="flex-1"
+                @update:model-value="selectWatermark"
+              />
+              <Button
+                variant="secondary"
+                size="icon"
+                :disabled="!formData.watermark_id"
+                :class="formData.watermark_settings && 'border-brand-line text-brand'"
+                title="Configure watermark position"
+                aria-label="Configure watermark position"
+                @click="openWatermarkPositionPicker"
+              >
+                <Settings2 />
+              </Button>
+              <input
+                ref="watermarkFileInput"
+                type="file"
+                accept="image/png,image/jpeg,image/webp,image/gif"
+                class="hidden"
+                @change="handleWatermarkUpload"
+              />
+              <Button
+                variant="secondary"
+                size="icon"
+                :loading="uploadingWatermark"
+                title="Upload new watermark"
+                aria-label="Upload new watermark"
+                @click="props.mode === 'local' ? handleWatermarkUploadLocal() : watermarkFileInput?.click()"
+              >
+                <Upload v-if="!uploadingWatermark" />
+              </Button>
+            </div>
+          </Field>
+
+          <!-- Layout overlays -->
+          <Field
+            label="Layout overlays"
+            :hint="
+              formData.layout_overlays.length > 0
+                ? `${totalOverlayRatios} aspect ratio(s) configured across ${formData.layout_overlays.length} overlay(s)`
+                : 'Border images, dividers or decorative frames placed over clips'
+            "
+          >
+            <template #label-end>
+              <Button variant="ghost" size="xs" :loading="uploadingOverlay" @click="addLayoutOverlay">
+                <Upload v-if="!uploadingOverlay" /> Upload overlay
+              </Button>
+            </template>
+            <div
+              v-if="formData.layout_overlays.length > 0"
+              class="divide-y divide-line-subtle overflow-hidden rounded-lg border border-line-subtle bg-surface"
+            >
+              <OverlayRow
+                v-for="(overlay, idx) in formData.layout_overlays"
+                :key="overlay.id"
+                v-model:label="overlay.label"
+                :preview-url="overlayPreviews[overlay.id]"
+                :placeholder="`Overlay ${idx + 1}`"
+              >
+                <template #meta>
+                  {{ overlay.opacity }}% opacity
+                  <template v-if="overlayConfiguredRatioCount(overlay) > 0">
+                    · {{ overlayConfiguredRatioCount(overlay) }}/4 ratios
+                  </template>
+                </template>
+                <template #actions>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    :class="overlayConfiguredRatioCount(overlay) > 0 && 'text-brand'"
+                    title="Configure position per aspect ratio"
+                    aria-label="Configure position per aspect ratio"
+                    @click="openOverlayPositionPicker(idx)"
+                  >
+                    <Settings2 />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="hover:text-danger"
+                    title="Remove overlay"
+                    aria-label="Remove overlay"
+                    @click="removeLayoutOverlay(idx)"
+                  >
+                    <Trash2 />
+                  </Button>
+                </template>
+              </OverlayRow>
+            </div>
+          </Field>
+        </div>
+      </div>
+
+      <!-- ── Clip defaults ───────────────────────────────────── -->
+      <div v-if="hasClipDefaultsSection" v-show="activeSection === 'defaults'" class="flex animate-enter flex-col gap-4">
+        <p class="text-xs text-fg-muted">
+          Framing, layout and subtitle style this creator usually needs. When downloading a VOD for them, tick
+          “Use creator layout” to start every project pre-configured with these defaults.
+        </p>
+
+        <Field
+          label="Default output ratio"
+          :hint="`Matches the framing editor · source frame ${formData.clip_build_defaults.sourceAspectRatio}`"
+        >
+          <SegmentedControl
+            :model-value="formData.clip_build_defaults.targetAspectRatio"
+            :options="clipRatioOptions"
+            class="self-start"
+            @update:model-value="setClipDefaultRatio"
+          />
+        </Field>
+
+        <Field label="Reference image" hint="Used to align crop regions on the canvas, like the framing editor upload.">
+          <div class="flex flex-wrap items-center gap-1.5">
+            <Button variant="secondary" size="sm" @click="pickReferenceImageUpload">
+              <Upload />
+              {{ formData.clip_build_defaults.referenceImageSource === 'upload' ? 'Replace screenshot' : 'Upload screenshot' }}
+            </Button>
+            <Button
+              v-if="formData.clip_build_defaults.referenceImageSource !== 'none'"
+              variant="ghost"
+              size="sm"
+              @click="setReferenceSource('none')"
+            >
+              No image
+            </Button>
+          </div>
+          <div
+            v-if="resolvedReferenceImageUrl"
+            class="mt-1 overflow-hidden rounded-lg border border-line-subtle bg-surface-sunken"
+          >
+            <img
+              :src="resolvedReferenceImageUrl"
+              alt="Reference frame preview"
+              class="max-h-40 w-full object-contain"
+              @error="onReferenceImageError"
+            />
+          </div>
+          <p
+            v-else-if="formData.clip_build_defaults.referenceImageSource !== 'none'"
+            class="flex items-center gap-1.5 text-xs text-warning"
+          >
+            <AlertCircle class="size-3.5" /> No reference image yet. Upload a screenshot above.
+          </p>
+        </Field>
+
+        <SettingRow
+          :icon="Layers"
+          label="Layout & subtitles"
+          :description="hasClipDefaultsConfig ? clipDefaultsSummary : 'Crop regions and subtitle style'"
+        >
+          <Button variant="secondary" size="sm" @click="openClipDefaultsEditor">
+            {{ hasClipDefaultsConfig ? 'Edit' : 'Configure' }}
+          </Button>
+        </SettingRow>
+      </div>
+    </div>
+
+    <template #footer>
+      <Button variant="ghost" :disabled="saving" @click="closeDialog">Cancel</Button>
+      <Button
+        variant="primary"
+        :loading="saving || fetchingProfileImage"
+        :disabled="!isValid"
+        @click="handleSubmit"
+      >
+        {{ submitLabel }}
+      </Button>
+    </template>
+  </Modal>
 
   <!-- Watermark Position Picker -->
   <WatermarkPositionPicker
@@ -853,26 +497,44 @@
 <script setup lang="ts">
   import { ref, computed, watch, onUnmounted } from 'vue';
   import {
-    UserCircle,
-    Plus,
-    X,
-    Play,
-    SkipForward,
-    Image,
-    Loader2,
-    Upload,
-    ChevronDown,
-    Trash2,
-    Users,
-    Settings2,
-    Sparkles,
-    Paintbrush,
-    Layers,
-    Lock,
     AlertCircle,
+    Check,
+    ChevronDown,
     Disc,
+    HardDrive,
+    Image,
+    Layers,
+    Loader2,
+    Lock,
+    Paintbrush,
+    Play,
+    Plus,
+    Settings2,
+    SkipForward,
+    Trash2,
+    Upload,
+    UserCircle,
+    Users,
   } from 'lucide-vue-next';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
+  import { Field } from '@/components/ui/field';
+  import { SettingRow } from '@/components/ui/setting-row';
+  import { Input } from '@/components/ui/input';
+  import { Modal } from '@/components/ui/modal';
+  import { PlatformLogo, platformLabel } from '@/components/ui/platform-logo';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
   import { Switch } from '@/components/ui/switch';
+  import { Textarea } from '@/components/ui/textarea';
+  import AssetSelect from './creators/AssetSelect.vue';
+  import OverlayRow from './branding/OverlayRow.vue';
   import {
     createOrganizationCreatorProfile,
     updateOrganizationCreatorProfile,
@@ -1275,6 +937,59 @@
     return props.mode === 'organization' ? !!props.profile : !!props.creator;
   });
 
+  // ── Dialog chrome ───────────────────────────────────────
+  type DialogSection = 'profile' | 'branding' | 'defaults';
+  const activeSection = ref<DialogSection>('profile');
+
+  const hasClipDefaultsSection = computed(() => props.mode === 'local' && formData.value.scope === 'streamer');
+
+  const sectionOptions = computed<SegmentedOption<DialogSection>[]>(() => {
+    const options: SegmentedOption<DialogSection>[] = [
+      { value: 'profile', label: formData.value.scope === 'global' ? 'Details' : 'Profile', icon: UserCircle },
+      { value: 'branding', label: 'Branding', icon: Paintbrush },
+    ];
+    if (hasClipDefaultsSection.value) {
+      options.push({ value: 'defaults', label: 'Clip defaults', icon: Layers });
+    }
+    return options;
+  });
+
+  watch(hasClipDefaultsSection, (available) => {
+    if (!available && activeSection.value === 'defaults') activeSection.value = 'profile';
+  });
+
+  watch(
+    () => props.show,
+    (isOpen) => {
+      if (isOpen) activeSection.value = 'profile';
+    }
+  );
+
+  const clipRatioOptions = computed<SegmentedOption<string>[]>(() =>
+    CLIP_DEFAULT_RATIO_OPTIONS.map((ratio) => ({ value: ratio, label: ratio }))
+  );
+
+  const dialogTitle = computed(() => {
+    if (formData.value.scope === 'global') return isEditing.value ? 'Edit global branding' : 'Create global branding';
+    return isEditing.value ? 'Edit creator profile' : 'Create creator profile';
+  });
+
+  const dialogDescription = computed(() => {
+    if (formData.value.scope === 'global') {
+      return isEditing.value
+        ? 'Update default branding applied to content without a creator profile.'
+        : 'Set the default intro, outro and watermark for content without a specific creator profile.';
+    }
+    return isEditing.value ? 'Update profile details and platform links.' : 'Add a new creator with platform connections.';
+  });
+
+  const submitLabel = computed(() => {
+    if (saving.value) return 'Saving…';
+    if (fetchingProfileImage.value) return 'Fetching info…';
+    if (formData.value.scope === 'global') return isEditing.value ? 'Update branding' : 'Create branding';
+    return isEditing.value ? 'Update profile' : 'Create profile';
+  });
+
   const isValid = computed(() => {
     if (!formData.value.name.trim()) return false;
     // Platform links are now optional for local mode
@@ -1643,45 +1358,8 @@
   // Platform Helpers
   // ============================================
 
-  function getPlatformIcon(platform: string): string {
-    const icons: Record<string, string> = {
-      pumpfun: '/capsule.svg',
-      kick: '/kick.svg',
-      twitch: '/twitch.svg',
-      youtube: '/youtube.svg',
-      YouTube: '/youtube.svg',
-      rumble: '/rumble.svg',
-    };
-    return icons[platform] || '/capsule.svg';
-  }
-
-  function getPlatformColor(platform: string): string {
-    const colors: Record<string, string> = {
-      pumpfun: '#10b981',
-      kick: '#53FC18',
-      twitch: '#9146FF',
-      youtube: '#dc2626',
-      YouTube: '#dc2626',
-      rumble: '#85c742',
-    };
-    return colors[platform] || '#6b7280';
-  }
-
-  function getPlatformIconClass(platform: string): string {
-    if (platform === 'kick') return '';
-    return 'org-dialog__brightness';
-  }
-
   function getPlatformName(platform: string): string {
-    const names: Record<string, string> = {
-      pumpfun: 'PumpFun',
-      kick: 'Kick',
-      twitch: 'Twitch',
-      youtube: 'YouTube',
-      YouTube: 'YouTube',
-      rumble: 'Rumble',
-    };
-    return names[platform] || platform;
+    return platformLabel(platform);
   }
 
   // ============================================
@@ -2600,977 +2278,3 @@
     emit('close');
   }
 </script>
-
-<style scoped>
-  /* ===== Dialog Overlay ===== */
-  .org-dialog__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 60;
-  }
-
-  /* ===== Dialog Container ===== */
-  .org-dialog {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 440px;
-    margin: 1rem;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  }
-
-  .org-dialog--lg {
-    max-width: 560px;
-  }
-
-  /* ===== Accent Bar ===== */
-  .org-dialog__accent {
-    height: 3px;
-    flex-shrink: 0;
-  }
-
-  .org-dialog__accent--cyan {
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
-  }
-
-  /* ===== Header ===== */
-  .org-dialog__header {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1.5rem 1.5rem 1rem;
-    text-align: center;
-  }
-
-  .org-dialog__close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__close:hover:not(:disabled) {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .org-dialog__close:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .org-dialog__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 12px;
-    margin-bottom: 0.875rem;
-  }
-
-  .org-dialog__icon--cyan {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-  }
-
-  .org-dialog__title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.02em;
-  }
-
-  .org-dialog__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  /* ===== Content ===== */
-  .org-dialog__content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0.5rem 1.5rem 1.5rem;
-  }
-
-  .org-dialog__content::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .org-dialog__content::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .org-dialog__content::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  /* ===== Sections ===== */
-  .org-dialog__section {
-    margin-bottom: 1.25rem;
-  }
-
-  .org-dialog__section:last-child {
-    margin-bottom: 0;
-  }
-
-  .org-dialog__section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.625rem;
-  }
-
-  .org-dialog__section-title {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 0.625rem;
-  }
-
-  .org-dialog__section-header .org-dialog__section-title {
-    margin: 0;
-  }
-
-  .org-dialog__section--locked {
-    position: relative;
-  }
-
-  .org-dialog__section--locked .org-dialog__section-items {
-    opacity: 0.35;
-    pointer-events: none;
-    filter: blur(1px);
-  }
-
-  .org-dialog__premium-lock {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    background: rgba(168, 85, 247, 0.08);
-    border: 1px solid rgba(168, 85, 247, 0.2);
-    border-radius: 8px;
-    color: #a855f7;
-    font-size: 0.75rem;
-    font-weight: 500;
-    margin-bottom: 0.75rem;
-  }
-
-  .org-dialog__section-desc {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: -0.375rem 0 0.75rem;
-    opacity: 0.8;
-  }
-
-  .org-dialog__section-items {
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-  }
-
-  /* ===== Form Fields ===== */
-  .org-dialog__field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .org-dialog__label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .org-dialog__label--sm {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-dialog__label-hint {
-    color: var(--sidebar-text-muted);
-    font-weight: 400;
-    font-size: 0.8125rem;
-  }
-
-  .org-dialog__input {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__input::placeholder {
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  .org-dialog__input:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
-  }
-
-  .org-dialog__input--sm {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.8125rem;
-  }
-
-  .org-dialog__textarea {
-    resize: none;
-    min-height: 60px;
-  }
-
-  /* ===== Feature Card (Auto DVR) ===== */
-  .org-dialog__feature-card {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.875rem;
-    padding: 1rem;
-    background-color: rgba(6, 182, 212, 0.05);
-    border: 1px solid rgba(6, 182, 212, 0.15);
-    border-radius: 10px;
-    margin-bottom: 1.25rem;
-  }
-
-  .org-dialog__feature-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    flex-shrink: 0;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-  }
-
-  .org-dialog__feature-content {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .org-dialog__feature-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
-  .org-dialog__feature-text {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .org-dialog__feature-title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .org-dialog__feature-desc {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  /* ===== Add Button ===== */
-  .org-dialog__add-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 150ms ease;
-    color: var(--sidebar-accent);
-  }
-
-  .org-dialog__add-btn:hover {
-    background-color: rgba(6, 182, 212, 0.1);
-  }
-
-  /* ===== Empty State ===== */
-  .org-dialog__empty-state {
-    padding: 1.25rem;
-    border: 1px dashed var(--sidebar-border);
-    border-radius: 8px;
-    text-align: center;
-  }
-
-  .org-dialog__empty-text {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 0.5rem;
-  }
-
-  .org-dialog__empty-link {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    background: none;
-    border: none;
-    cursor: pointer;
-    transition: opacity 150ms ease;
-    color: var(--sidebar-accent);
-  }
-
-  .org-dialog__empty-link:hover {
-    opacity: 0.8;
-  }
-
-  /* ===== Platform Card ===== */
-  .org-dialog__platform-card {
-    padding: 1rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .org-dialog__platform-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-bottom: 0.875rem;
-  }
-
-  .org-dialog__platform-left {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .org-dialog__platform-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 8px;
-    overflow: hidden;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .org-dialog__platform-avatar-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .org-dialog__platform-avatar-icon {
-    width: 20px;
-    height: 20px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-dialog__platform-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-  }
-
-  .org-dialog__platform-primary {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-  }
-
-  .org-dialog__platform-primary input {
-    width: 12px;
-    height: 12px;
-  }
-
-  .org-dialog__platform-delete {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__platform-delete:hover {
-    background-color: rgba(239, 68, 68, 0.1);
-    color: #ef4444;
-  }
-
-  .org-dialog__platform-fields {
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-  }
-
-  /* ===== Platform Select Button ===== */
-  .org-dialog__platform-select {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.375rem 0.625rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    color: var(--sidebar-text);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__platform-select:hover {
-    background-color: var(--sidebar-hover);
-  }
-
-  .org-dialog__platform-select-icon {
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .org-dialog__platform-select-icon-img {
-    width: 14px;
-    height: 14px;
-  }
-
-  .org-dialog__platform-select-label {
-    font-size: 0.8125rem;
-    font-weight: 500;
-  }
-
-  .org-dialog__chevron {
-    width: 14px;
-    height: 14px;
-    color: var(--sidebar-text-muted);
-    transition: transform 150ms ease;
-  }
-
-  .org-dialog__chevron--open {
-    transform: rotate(180deg);
-  }
-
-  /* ===== Dropdown ===== */
-  .org-dialog__dropdown-wrapper {
-    position: relative;
-  }
-
-  .org-dialog__dropdown {
-    position: absolute;
-    top: 100%;
-    left: 0;
-    margin-top: 0.25rem;
-    min-width: 180px;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.3);
-    z-index: 50;
-    overflow: hidden;
-  }
-
-  .org-dialog__dropdown--full {
-    right: 0;
-  }
-
-  .org-dialog__dropdown-list {
-    padding: 0.25rem;
-  }
-
-  .org-dialog__dropdown-list--scrollable {
-    max-height: 200px;
-    overflow-y: auto;
-  }
-
-  .org-dialog__dropdown-list--scrollable::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .org-dialog__dropdown-list--scrollable::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .org-dialog__dropdown-list--scrollable::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  .org-dialog__dropdown-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-    cursor: pointer;
-    transition: all 150ms ease;
-    text-align: left;
-  }
-
-  .org-dialog__dropdown-item:hover:not(.org-dialog__dropdown-item--disabled) {
-    background-color: rgba(6, 182, 212, 0.1);
-    color: var(--sidebar-accent);
-  }
-
-  .org-dialog__dropdown-item--active {
-    background-color: var(--sidebar-active);
-  }
-
-  .org-dialog__dropdown-item--disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .org-dialog__dropdown-badge {
-    margin-left: auto;
-    padding: 0.125rem 0.375rem;
-    background-color: rgba(245, 158, 11, 0.2);
-    color: #f59e0b;
-    font-size: 0.625rem;
-    font-weight: 600;
-    border-radius: 9999px;
-  }
-
-  /* ===== Asset Row ===== */
-  .org-dialog__asset-row {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .org-dialog__asset-label {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .org-dialog__asset-controls {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .org-dialog__asset-hint {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.6875rem;
-    color: #f59e0b;
-    opacity: 0.9;
-    margin: 0;
-  }
-
-  .org-dialog__asset-ratio-hint {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    opacity: 0.7;
-    margin: -0.25rem 0 0;
-  }
-
-  /* ===== Asset Select Button ===== */
-  .org-dialog__asset-select {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__asset-select:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-  }
-
-  .org-dialog__asset-select:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .org-dialog__asset-select-icon {
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    color: white;
-  }
-
-  .org-dialog__asset-select-icon--intro {
-    background-color: #3b82f6;
-  }
-
-  .org-dialog__asset-select-icon--outro {
-    background-color: #a855f7;
-  }
-
-  .org-dialog__asset-select-icon--watermark {
-    background-color: #f59e0b;
-  }
-
-  .org-dialog__asset-select-icon--none {
-    background-color: var(--sidebar-surface);
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-dialog__asset-select-label {
-    flex: 1;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    text-align: left;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* ===== Asset Upload Button ===== */
-  .org-dialog__asset-upload {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 38px;
-    height: 38px;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-    flex-shrink: 0;
-  }
-
-  .org-dialog__asset-upload:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-text);
-  }
-
-  .org-dialog__asset-upload:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .org-dialog__asset-upload--active {
-    border-color: rgba(245, 158, 11, 0.5);
-    color: #f59e0b;
-  }
-
-  .org-dialog__asset-upload--danger:hover:not(:disabled) {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
-    border-color: rgba(239, 68, 68, 0.3);
-  }
-
-  .org-dialog__asset-select-icon--overlay {
-    background-color: #f59e0b;
-  }
-
-  /* ===== Overlay Dropdown Items ===== */
-  .org-dialog__dropdown-item--overlay {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.625rem;
-    cursor: default;
-  }
-
-  .org-dialog__overlay-thumb {
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    flex-shrink: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-  }
-
-  .org-dialog__overlay-thumb-img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-  }
-
-  .org-dialog__overlay-info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .org-dialog__overlay-action {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    border-radius: 6px;
-    border: none;
-    background: transparent;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__overlay-action:hover {
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-text);
-  }
-
-  .org-dialog__overlay-action--active {
-    color: #f59e0b;
-  }
-
-  .org-dialog__overlay-action--danger:hover {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
-  }
-
-  .org-dialog__overlay-name {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    background: transparent;
-    border: none;
-    outline: none;
-    width: 100%;
-    padding: 0;
-  }
-
-  .org-dialog__overlay-name::placeholder {
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-dialog__overlay-meta {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    font-variant-numeric: tabular-nums;
-  }
-
-  /* ===== Footer ===== */
-  .org-dialog__footer {
-    display: flex;
-    gap: 0.625rem;
-    padding: 1.25rem 1.5rem;
-    border-top: 1px solid var(--sidebar-border);
-    margin-top: 1rem;
-  }
-
-  /* ===== Buttons ===== */
-  .org-dialog__btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-dialog__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .org-dialog__btn--secondary {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-    border: 1px solid var(--sidebar-border);
-  }
-
-  .org-dialog__btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .org-dialog__btn--primary {
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: #000;
-  }
-
-  .org-dialog__btn--primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .org-dialog__btn-spinner {
-    animation: spin 0.8s linear infinite;
-  }
-
-  /* ===== Transitions ===== */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  .dialog-enter-active {
-    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 150ms ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.96) translateY(8px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  /* ===== Utility Classes ===== */
-  .org-dialog__flex-1 {
-    flex: 1;
-  }
-
-  .org-dialog__hidden {
-    display: none;
-  }
-
-  .org-dialog__truncate {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .org-dialog__spin {
-    animation: spin 1s linear infinite;
-  }
-
-  .org-dialog__brightness {
-    filter: brightness(2);
-  }
-
-  .org-dialog__text-muted {
-    color: var(--sidebar-text-muted);
-  }
-
-  /* ===== Clip defaults (uses asset-row + shared asset chrome; pills match asset-upload height / active ring) ===== */
-  .org-dialog__asset-controls--wrap {
-    flex-wrap: wrap;
-  }
-
-  .org-dialog__aspect-pill {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    min-height: 38px;
-    padding: 0 0.75rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-    flex-shrink: 0;
-  }
-
-  .org-dialog__aspect-pill:hover {
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-text);
-  }
-
-  .org-dialog__aspect-pill--active {
-    border-color: rgba(245, 158, 11, 0.5);
-    color: #f59e0b;
-  }
-
-  .org-dialog__aspect-pill--grow {
-    flex: 1;
-    min-width: min(160px, 100%);
-  }
-
-  .org-dialog__clip-ref-preview {
-    margin-top: 0.25rem;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    overflow: hidden;
-    aspect-ratio: 16 / 9;
-    background-color: rgba(0, 0, 0, 0.25);
-  }
-
-  .org-dialog__clip-ref-preview-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    display: block;
-  }
-</style>

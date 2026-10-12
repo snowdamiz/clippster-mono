@@ -20,9 +20,13 @@ defmodule ClippsterServerWeb.PaymentController do
   end
 
   @doc """
-  Get pricing information for all credit packs with current SOL price
+  Get pricing information for all credit packs with current SOL price.
+
+  Pass `context=organization` for an organization credit pool: the Basic-tier
+  restriction only applies to a user's own balance (organization checkout
+  doesn't enforce it), so organization buyers see every pack.
   """
-  def get_pricing(conn, _params) do
+  def get_pricing(conn, params) do
     packs = Credits.get_credit_packs()
     company_wallet = Credits.get_company_wallet_address()
     rpc_url = Credits.get_solana_rpc_url()
@@ -31,8 +35,8 @@ defmodule ClippsterServerWeb.PaymentController do
     user = conn.assigns[:current_user]
 
     filtered_packs =
-      if user && user.subscription_tier == "basic" do
-        # Basic tier can only purchase large pack
+      if user && user.subscription_tier == "basic" && params["context"] != "organization" do
+        # Basic tier can only purchase large pack for their own balance
         Map.take(packs, ["large"])
       else
         packs

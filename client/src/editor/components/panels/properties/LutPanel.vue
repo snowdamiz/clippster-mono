@@ -2,6 +2,7 @@
 import { computed } from "vue";
 import { open } from "@tauri-apps/plugin-dialog";
 import { Upload, X, FileImage } from "lucide-vue-next";
+import { Button } from "@/components/ui/button";
 
 const props = defineProps<{
 	lutPath?: string;
@@ -36,36 +37,22 @@ function clearLut() {
 
 <template>
 	<div class="space-y-2">
-		<div class="flex items-center justify-between">
-			<span class="text-[11px] font-medium text-zinc-300">LUT (Look-Up Table)</span>
-		</div>
-
 		<!-- Current LUT -->
-		<div v-if="lutName" class="flex items-center gap-2 rounded border border-white/10 bg-white/5 px-2 py-1.5">
-			<FileImage class="size-3.5 shrink-0 text-zinc-400" />
-			<span class="flex-1 truncate text-[11px] text-zinc-300">{{ lutName }}</span>
-			<button
-				type="button"
-				class="shrink-0 text-zinc-500 transition-colors hover:text-zinc-300"
-				title="Remove LUT"
-				@click="clearLut"
-			>
-				<X class="size-3" />
-			</button>
+		<div v-if="lutName" class="flex h-7 items-center gap-2 rounded-md border border-line bg-surface-raised pl-2 pr-1">
+			<FileImage class="size-3.5 shrink-0 text-fg-subtle" />
+			<span class="min-w-0 flex-1 truncate text-xs text-fg" :title="lutPath">{{ lutName }}</span>
+			<Button variant="ghost" size="icon-xs" title="Remove LUT" aria-label="Remove LUT" @click="clearLut">
+				<X />
+			</Button>
 		</div>
 
-		<!-- Browse button -->
-		<button
-			type="button"
-			class="flex w-full items-center justify-center gap-1.5 rounded border border-dashed border-white/20 bg-white/[0.03] px-3 py-2 text-[11px] text-zinc-400 transition-colors hover:border-white/30 hover:text-zinc-200"
-			@click="browseLut"
-		>
-			<Upload class="size-3.5" />
+		<Button variant="secondary" size="sm" block @click="browseLut">
+			<Upload />
 			{{ lutPath ? "Change LUT" : "Browse .cube file…" }}
-		</button>
+		</Button>
 
-		<p class="text-[9px] leading-snug text-zinc-600">
-			Supports .cube format (17³ or 33³ grids). Applied on export via FFmpeg lut3d filter.
+		<p class="text-2xs text-fg-subtle">
+			Supports .cube files (17³ or 33³ grids). Applied on export.
 		</p>
 	</div>
 </template>

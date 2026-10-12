@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref, computed, watch } from "vue";
+import { ref, computed, watch, defineComponent, h } from "vue";
 import { invoke } from "@tauri-apps/api/core";
 import { useBrandingConfig, ASPECT_RATIOS } from "../../../composables/useBrandingConfig";
 import { useEditor } from "../../../composables/useEditor";
@@ -10,15 +10,27 @@ import type { IntroOutro } from "@/services/database/types";
 import type { AspectRatioId } from "../../../types/project";
 import WatermarkPositionPicker from "@/components/WatermarkPositionPicker.vue";
 import type { CreatorWatermarkSettings } from "@/components/WatermarkPositionPicker.vue";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuSeparator,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import PanelHeader from "../../chrome/PanelHeader.vue";
+import { AssetListRow, InspectorSection } from "../shared";
 import {
 	Info,
 	Film,
 	ChevronDown,
+	ChevronRight,
 	Monitor,
 	Smartphone,
 	Square,
 	RectangleVertical,
 	Move,
+	User,
 	X,
 	Upload,
 	Loader2,
@@ -49,6 +61,33 @@ const ratioConfig = [
 	{ id: "1:1" as AspectRatioId, label: "1:1", icon: Square },
 	{ id: "4:5" as AspectRatioId, label: "4:5", icon: RectangleVertical },
 ];
+
+/** Status dot on ratios that already have branding configured (rendered as the option icon). */
+const ConfiguredDot = defineComponent({
+	inheritAttrs: false,
+	setup: () => () =>
+		h("span", {
+			class: "pointer-events-none absolute right-0.5 top-0.5 size-1.5 rounded-full bg-success",
+			"aria-hidden": "true",
+		}),
+});
+
+const ratioOptions = computed<SegmentedOption<AspectRatioId>[]>(() =>
+	ratioConfig.map((ar) => {
+		const configured = !!(getActiveWatermark(ar.id) || getActiveIntro(ar.id) || getActiveOutro(ar.id));
+		return {
+			value: ar.id,
+			label: ar.label,
+			icon: configured ? ConfiguredDot : undefined,
+			title: configured ? `${ar.label} · branding configured` : undefined,
+		};
+	}),
+);
+
+/** Picker rows look like a select field: value + meta, trailing chevron. */
+const pickerRowClass =
+	"rounded-lg border border-line bg-surface-raised px-2 py-2 hover:border-line-strong hover:bg-surface-raised data-[state=open]:border-line-strong disabled:cursor-not-allowed disabled:opacity-60";
+const activeItemClass = "bg-brand-soft text-brand focus:bg-brand-soft [&>svg]:text-brand";
 
 // Watermark data
 const watermarks = ref<WatermarkImage[]>([]);
@@ -411,302 +450,223 @@ function formatDuration(d: number | null | undefined): string {
 
 <template>
 	<div class="flex h-full flex-col overflow-hidden">
-		<!-- Header -->
-		<div class="flex items-center justify-between border-b border-white/10 px-3 py-2">
-			<span class="text-sm text-zinc-400">Branding</span>
-			<div class="flex items-center gap-1">
-				<button
-					v-for="ar in ratioConfig"
-					:key="ar.id"
-					type="button"
-					:class="[
-						'relative flex items-center rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors',
-						activeRatio === ar.id
-							? 'bg-blue-500/15 text-blue-400'
-							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
-					]"
-					@click="activeRatio = ar.id"
-				>
-					{{ ar.label }}
-					<span
-						v-if="getActiveWatermark(ar.id) || getActiveIntro(ar.id) || getActiveOutro(ar.id)"
-						class="absolute -right-0.5 -top-0.5 size-1.5 rounded-full bg-green-500"
-					/>
-				</button>
-			</div>
-		</div>
+		<PanelHeader title="Branding">
+			<SegmentedControl v-model="activeRatio" :options="ratioOptions" size="sm" class="[&>button]:relative" />
+		</PanelHeader>
 
-		<!-- Read-only banner -->
-		<div
-			v-if="isReadOnly && selectedBrandingProfileName"
-			class="mx-3 mt-2 flex items-center gap-2 rounded-md border border-blue-500/20 bg-blue-500/10 px-3 py-2"
-		>
-			<Info class="size-3.5 shrink-0 text-blue-400" />
-			<div class="min-w-0">
-				<p class="truncate text-[11px] font-medium text-blue-300">
-					{{ selectedBrandingProfileName }}
-				</p>
-				<p class="text-[10px] text-blue-400/70">Configured by creator profile</p>
+		<!-- Read-only notice -->
+		<div v-if="isReadOnly && selectedBrandingProfileName" class="shrink-0 px-3 pt-3">
+			<div class="flex items-start gap-2 rounded-lg border border-brand-line bg-brand-soft px-2.5 py-2">
+				<Info class="mt-px size-3.5 shrink-0 text-brand" />
+				<div class="min-w-0">
+					<p class="truncate text-xs font-medium text-fg">{{ selectedBrandingProfileName }}</p>
+					<p class="text-2xs text-fg-muted">Configured by creator profile</p>
+				</div>
 			</div>
 		</div>
 
 		<!-- Content -->
 		<div class="flex-1 overflow-y-auto">
-			<div>
-				<div class="px-3 pb-1 pt-3">
-					<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Branding Profile</span>
-				</div>
-
-				<div class="relative">
-					<button
-						type="button"
-						class="flex w-full items-center gap-3 border-b border-white/5 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.03]"
-						@click.stop="showProfileDropdown = !showProfileDropdown"
+			<InspectorSection title="Branding profile">
+				<DropdownMenu v-model:open="showProfileDropdown">
+					<DropdownMenuTrigger as-child>
+						<AssetListRow as="button" persistent-actions :class="pickerRowClass">
+							<template #leading>
+								<div class="grid size-8 place-items-center rounded-md bg-surface-sunken">
+									<User class="size-3.5 text-fg-subtle" />
+								</div>
+							</template>
+							<template #title>
+								<span :class="selectedBrandingProfileName ? 'text-fg' : 'text-fg-muted'">
+									{{ selectedBrandingProfileName ?? 'None' }}
+								</span>
+							</template>
+							<template #meta>
+								<span class="truncate">{{ selectedBrandingProfileName ? 'Profile branding applied' : 'No profile selected' }}</span>
+							</template>
+							<template #trailing>
+								<ChevronDown class="size-3.5 text-fg-subtle" />
+							</template>
+						</AssetListRow>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent
+						align="start"
+						class="max-h-64 w-[var(--reka-dropdown-menu-trigger-width)] overflow-y-auto"
 					>
-						<div class="flex size-8 shrink-0 items-center justify-center rounded-md bg-white/5">
-							<Info class="size-3.5 text-zinc-500" />
-						</div>
-						<div class="min-w-0 flex-1">
-							<p class="truncate text-xs" :class="selectedBrandingProfileName ? 'text-zinc-200' : 'text-zinc-500'">
-								{{ selectedBrandingProfileName ?? 'None' }}
-							</p>
-							<p class="text-[10px] text-zinc-500">
-								{{ selectedBrandingProfileName ? 'Profile branding applied' : 'No profile selected' }}
-							</p>
-						</div>
-						<ChevronDown class="size-3 shrink-0 text-zinc-500" />
-					</button>
-
-					<div
-						v-if="showProfileDropdown"
-						class="absolute left-0 right-0 top-full z-50 mt-1 max-h-48 overflow-y-auto rounded-lg border border-white/10 bg-[#1e1e22] py-1 shadow-xl"
-						@click.stop
-					>
-						<button
-							type="button"
-							:class="[
-								'flex w-full items-center gap-2 px-2.5 py-1.5 text-xs transition-colors',
-								!selectedBrandingProfileId ? 'bg-blue-500/10 text-blue-400' : 'text-zinc-300 hover:bg-white/5',
-							]"
-							@click="applyBrandingProfileSelection(null)"
+						<DropdownMenuItem
+							:class="!selectedBrandingProfileId && activeItemClass"
+							@select="applyBrandingProfileSelection(null)"
 						>
-							<X class="size-3" />
+							<X />
 							None
-						</button>
-						<button
+						</DropdownMenuItem>
+						<DropdownMenuItem
 							v-for="profile in applicableProfiles"
 							:key="profile.profile.id"
-							type="button"
-							:class="[
-								'flex w-full items-center gap-2 px-2.5 py-1.5 text-xs transition-colors',
-								selectedBrandingProfileId === profile.profile.id ? 'bg-blue-500/10 text-blue-400' : 'text-zinc-300 hover:bg-white/5',
-							]"
-							@click="applyBrandingProfileSelection(profile)"
+							:class="selectedBrandingProfileId === profile.profile.id && activeItemClass"
+							@select="applyBrandingProfileSelection(profile)"
 						>
-							<Info class="size-3 shrink-0 text-zinc-500" />
-							<span class="truncate">{{ profile.profile.name }}</span>
-							<span class="ml-auto text-[10px] text-zinc-500">{{ profile.label }}</span>
-						</button>
-						<div v-if="applicableProfiles.length === 0" class="px-2.5 py-2 text-center text-[10px] text-zinc-500">
+							<User />
+							<span class="min-w-0 flex-1 truncate">{{ profile.profile.name }}</span>
+							<span class="shrink-0 text-2xs text-fg-subtle">{{ profile.label }}</span>
+						</DropdownMenuItem>
+						<p v-if="applicableProfiles.length === 0" class="px-2 py-2 text-center text-xs text-fg-subtle">
 							No branding profiles available
-						</div>
-					</div>
-				</div>
-			</div>
-
-			<!-- Watermark Section -->
-			<div>
-				<div class="px-3 pb-1 pt-3">
-					<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Watermark</span>
-				</div>
-
-				<!-- Open WatermarkPositionPicker button (viewable even when read-only) -->
-				<button
-					type="button"
-					class="flex w-full items-center gap-3 border-b border-white/5 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.03]"
-					@click="openPositionPicker"
-				>
-					<div class="relative flex size-8 shrink-0 items-center justify-center overflow-hidden rounded-md bg-white/5">
-						<img v-if="activeWatermarkThumbnail" :src="activeWatermarkThumbnail" class="size-full object-contain" />
-						<Move v-else class="size-3.5 text-zinc-500" />
-					</div>
-					<div class="min-w-0 flex-1">
-						<p class="truncate text-xs" :class="activeWatermarkName ? 'text-zinc-200' : 'text-zinc-500'">
-							{{ activeWatermarkName ?? "Configure Watermark" }}
 						</p>
-						<p v-if="activeWatermark?.position" class="text-[10px] text-zinc-500">
+					</DropdownMenuContent>
+				</DropdownMenu>
+			</InspectorSection>
+
+			<!-- Watermark: opens WatermarkPositionPicker (viewable even when read-only) -->
+			<InspectorSection title="Watermark">
+				<AssetListRow as="button" persistent-actions :class="pickerRowClass" @click="openPositionPicker">
+					<template #leading>
+						<div class="grid size-8 place-items-center overflow-hidden rounded-md bg-surface-sunken">
+							<img v-if="activeWatermarkThumbnail" :src="activeWatermarkThumbnail" alt="" class="size-full object-contain" />
+							<Move v-else class="size-3.5 text-fg-subtle" />
+						</div>
+					</template>
+					<template #title>
+						<span :class="activeWatermarkName ? 'text-fg' : 'text-fg-muted'">
+							{{ activeWatermarkName ?? "Configure watermark" }}
+						</span>
+					</template>
+					<template #meta>
+						<span v-if="activeWatermark?.position" class="tabular truncate">
 							{{ activeWatermark.position.opacity }}% opacity · {{ activeWatermark.position.scale }}% scale
-						</p>
-					</div>
-					<ChevronDown class="size-3 shrink-0 text-zinc-500" />
-				</button>
-			</div>
+						</span>
+						<span v-else-if="!activeWatermarkName" class="truncate">Position, opacity and scale</span>
+					</template>
+					<template #trailing>
+						<ChevronRight class="size-3.5 text-fg-subtle" />
+					</template>
+				</AssetListRow>
+			</InspectorSection>
 
-			<!-- Intro Section -->
-			<div>
-				<div class="px-3 pb-1 pt-3">
-					<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Intro Video</span>
-				</div>
-
-				<div class="relative">
-					<button
-						type="button"
-						:disabled="isReadOnly"
-						class="flex w-full items-center gap-3 border-b border-white/5 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.03] disabled:cursor-not-allowed disabled:opacity-60"
-						@click.stop="showIntroDropdown = !showIntroDropdown"
+			<!-- Intro -->
+			<InspectorSection title="Intro video">
+				<DropdownMenu v-model:open="showIntroDropdown">
+					<DropdownMenuTrigger as-child :disabled="isReadOnly">
+						<AssetListRow as="button" persistent-actions :disabled="isReadOnly" :class="pickerRowClass">
+							<template #leading>
+								<div class="grid size-8 place-items-center rounded-md bg-surface-sunken">
+									<Film class="size-3.5 text-fg-subtle" />
+								</div>
+							</template>
+							<template #title>
+								<span :class="activeIntroName ? 'text-fg' : 'text-fg-muted'">{{ activeIntroName ?? "None" }}</span>
+							</template>
+							<template #meta>
+								<span v-if="activeIntro?.duration" class="tabular">{{ formatDuration(activeIntro.duration) }}</span>
+								<span v-else-if="!activeIntroName" class="truncate">Plays before the clip</span>
+							</template>
+							<template #trailing>
+								<ChevronDown class="size-3.5 text-fg-subtle" />
+							</template>
+						</AssetListRow>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent
+						align="start"
+						class="max-h-64 w-[var(--reka-dropdown-menu-trigger-width)] overflow-y-auto"
 					>
-						<div class="flex size-8 shrink-0 items-center justify-center rounded-md bg-white/5">
-							<Film class="size-3.5 text-zinc-500" />
-						</div>
-						<div class="min-w-0 flex-1">
-							<p class="truncate text-xs" :class="activeIntroName ? 'text-zinc-200' : 'text-zinc-500'">
-								{{ activeIntroName ?? "None" }}
-							</p>
-							<p v-if="activeIntro?.duration" class="text-[10px] text-zinc-500">
-								{{ formatDuration(activeIntro.duration) }}
-							</p>
-						</div>
-						<ChevronDown class="size-3 shrink-0 text-zinc-500" />
-					</button>
-
-					<div
-						v-if="showIntroDropdown"
-						class="absolute left-0 right-0 top-full z-50 mt-1 max-h-40 overflow-y-auto rounded-lg border border-white/10 bg-[#1e1e22] py-1 shadow-xl"
-						@click.stop
-					>
-						<button
-							type="button"
-							class="flex w-full items-center gap-2 px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-white/5"
-							@click="selectIntro(null)"
-						>
-							<X class="size-3" />
+						<DropdownMenuItem :class="!activeIntro?.assetId && activeItemClass" @select="selectIntro(null)">
+							<X />
 							None
-						</button>
-						<button
+						</DropdownMenuItem>
+						<DropdownMenuItem
 							v-for="intro in intros"
 							:key="intro.id"
-							type="button"
-							:class="[
-								'flex w-full items-center gap-2 px-2.5 py-1.5 text-xs transition-colors',
-								activeIntro?.assetId === intro.id
-									? 'bg-blue-500/10 text-blue-400'
-									: 'text-zinc-300 hover:bg-white/5',
-							]"
-							@click="selectIntro(intro)"
+							:class="activeIntro?.assetId === intro.id && activeItemClass"
+							@select="selectIntro(intro)"
 						>
-							<Film class="size-3.5 shrink-0 text-zinc-500" />
-							<span class="truncate">{{ intro.name }}</span>
-							<span v-if="intro.duration" class="ml-auto text-[10px] text-zinc-500">
+							<Film />
+							<span class="min-w-0 flex-1 truncate">{{ intro.name }}</span>
+							<span v-if="intro.duration" class="tabular shrink-0 text-2xs text-fg-subtle">
 								{{ formatDuration(intro.duration) }}
 							</span>
-						</button>
-						<div v-if="loadingIntroOutros" class="px-2.5 py-2 text-center text-[10px] text-zinc-500">
-							Loading...
-						</div>
-						<div v-if="!loadingIntroOutros && intros.length === 0" class="px-2.5 py-2 text-center text-[10px] text-zinc-500">
+						</DropdownMenuItem>
+						<p v-if="loadingIntroOutros" class="flex items-center justify-center gap-1.5 px-2 py-2 text-xs text-fg-subtle">
+							<Loader2 class="size-3.5 animate-spin" />
+							Loading…
+						</p>
+						<p
+							v-if="!loadingIntroOutros && intros.length === 0"
+							class="px-2 py-2 text-center text-xs text-fg-subtle"
+						>
 							No intros available
-						</div>
-						<!-- Upload new intro -->
-						<button
-							type="button"
-							:disabled="uploadingIntro"
-							class="flex w-full items-center gap-2 border-t border-white/10 px-2.5 py-1.5 text-xs text-blue-400 transition-colors hover:bg-white/5"
-							@click="uploadIntroOutro('intro')"
-						>
-							<Upload v-if="!uploadingIntro" class="size-3" />
-							<Loader2 v-else class="size-3 animate-spin" />
-							{{ uploadingIntro ? 'Uploading...' : 'Upload new' }}
-						</button>
-					</div>
-				</div>
-			</div>
+						</p>
+						<DropdownMenuSeparator />
+						<DropdownMenuItem :disabled="uploadingIntro" @select="uploadIntroOutro('intro')">
+							<Upload v-if="!uploadingIntro" />
+							<Loader2 v-else class="animate-spin" />
+							{{ uploadingIntro ? 'Uploading…' : 'Upload new' }}
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			</InspectorSection>
 
-			<!-- Outro Section -->
-			<div>
-				<div class="px-3 pb-1 pt-3">
-					<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Outro Video</span>
-				</div>
-
-				<div class="relative">
-					<button
-						type="button"
-						:disabled="isReadOnly"
-						class="flex w-full items-center gap-3 border-b border-white/5 px-3 py-2.5 text-left transition-colors hover:bg-white/[0.03] disabled:cursor-not-allowed disabled:opacity-60"
-						@click.stop="showOutroDropdown = !showOutroDropdown"
+			<!-- Outro -->
+			<InspectorSection title="Outro video" flush>
+				<DropdownMenu v-model:open="showOutroDropdown">
+					<DropdownMenuTrigger as-child :disabled="isReadOnly">
+						<AssetListRow as="button" persistent-actions :disabled="isReadOnly" :class="pickerRowClass">
+							<template #leading>
+								<div class="grid size-8 place-items-center rounded-md bg-surface-sunken">
+									<Film class="size-3.5 text-fg-subtle" />
+								</div>
+							</template>
+							<template #title>
+								<span :class="activeOutroName ? 'text-fg' : 'text-fg-muted'">{{ activeOutroName ?? "None" }}</span>
+							</template>
+							<template #meta>
+								<span v-if="activeOutro?.duration" class="tabular">{{ formatDuration(activeOutro.duration) }}</span>
+								<span v-else-if="!activeOutroName" class="truncate">Plays after the clip</span>
+							</template>
+							<template #trailing>
+								<ChevronDown class="size-3.5 text-fg-subtle" />
+							</template>
+						</AssetListRow>
+					</DropdownMenuTrigger>
+					<DropdownMenuContent
+						align="start"
+						class="max-h-64 w-[var(--reka-dropdown-menu-trigger-width)] overflow-y-auto"
 					>
-						<div class="flex size-8 shrink-0 items-center justify-center rounded-md bg-white/5">
-							<Film class="size-3.5 text-zinc-500" />
-						</div>
-						<div class="min-w-0 flex-1">
-							<p class="truncate text-xs" :class="activeOutroName ? 'text-zinc-200' : 'text-zinc-500'">
-								{{ activeOutroName ?? "None" }}
-							</p>
-							<p v-if="activeOutro?.duration" class="text-[10px] text-zinc-500">
-								{{ formatDuration(activeOutro.duration) }}
-							</p>
-						</div>
-						<ChevronDown class="size-3 shrink-0 text-zinc-500" />
-					</button>
-
-					<div
-						v-if="showOutroDropdown"
-						class="absolute left-0 right-0 top-full z-50 mt-1 max-h-40 overflow-y-auto rounded-lg border border-white/10 bg-[#1e1e22] py-1 shadow-xl"
-						@click.stop
-					>
-						<button
-							type="button"
-							class="flex w-full items-center gap-2 px-2.5 py-1.5 text-xs text-zinc-400 hover:bg-white/5"
-							@click="selectOutro(null)"
-						>
-							<X class="size-3" />
+						<DropdownMenuItem :class="!activeOutro?.assetId && activeItemClass" @select="selectOutro(null)">
+							<X />
 							None
-						</button>
-						<button
+						</DropdownMenuItem>
+						<DropdownMenuItem
 							v-for="outro in outros"
 							:key="outro.id"
-							type="button"
-							:class="[
-								'flex w-full items-center gap-2 px-2.5 py-1.5 text-xs transition-colors',
-								activeOutro?.assetId === outro.id
-									? 'bg-blue-500/10 text-blue-400'
-									: 'text-zinc-300 hover:bg-white/5',
-							]"
-							@click="selectOutro(outro)"
+							:class="activeOutro?.assetId === outro.id && activeItemClass"
+							@select="selectOutro(outro)"
 						>
-							<Film class="size-3.5 shrink-0 text-zinc-500" />
-							<span class="truncate">{{ outro.name }}</span>
-							<span v-if="outro.duration" class="ml-auto text-[10px] text-zinc-500">
+							<Film />
+							<span class="min-w-0 flex-1 truncate">{{ outro.name }}</span>
+							<span v-if="outro.duration" class="tabular shrink-0 text-2xs text-fg-subtle">
 								{{ formatDuration(outro.duration) }}
 							</span>
-						</button>
-						<div v-if="loadingIntroOutros" class="px-2.5 py-2 text-center text-[10px] text-zinc-500">
-							Loading...
-						</div>
-						<div v-if="!loadingIntroOutros && outros.length === 0" class="px-2.5 py-2 text-center text-[10px] text-zinc-500">
-							No outros available
-						</div>
-						<!-- Upload new outro -->
-						<button
-							type="button"
-							:disabled="uploadingOutro"
-							class="flex w-full items-center gap-2 border-t border-white/10 px-2.5 py-1.5 text-xs text-blue-400 transition-colors hover:bg-white/5"
-							@click="uploadIntroOutro('outro')"
+						</DropdownMenuItem>
+						<p v-if="loadingIntroOutros" class="flex items-center justify-center gap-1.5 px-2 py-2 text-xs text-fg-subtle">
+							<Loader2 class="size-3.5 animate-spin" />
+							Loading…
+						</p>
+						<p
+							v-if="!loadingIntroOutros && outros.length === 0"
+							class="px-2 py-2 text-center text-xs text-fg-subtle"
 						>
-							<Upload v-if="!uploadingOutro" class="size-3" />
-							<Loader2 v-else class="size-3 animate-spin" />
-							{{ uploadingOutro ? 'Uploading...' : 'Upload new' }}
-						</button>
-					</div>
-				</div>
-			</div>
+							No outros available
+						</p>
+						<DropdownMenuSeparator />
+						<DropdownMenuItem :disabled="uploadingOutro" @select="uploadIntroOutro('outro')">
+							<Upload v-if="!uploadingOutro" />
+							<Loader2 v-else class="animate-spin" />
+							{{ uploadingOutro ? 'Uploading…' : 'Upload new' }}
+						</DropdownMenuItem>
+					</DropdownMenuContent>
+				</DropdownMenu>
+			</InspectorSection>
 		</div>
-
-		<!-- Click-away for dropdowns -->
-		<div
-			v-if="showProfileDropdown || showIntroDropdown || showOutroDropdown"
-			class="fixed inset-0 z-40"
-			@click="closeDropdowns"
-		/>
 
 		<!-- Watermark Position Picker Dialog -->
 		<!-- This handles everything: per-ratio watermark selection, upload, drag positioning, opacity, scale, full-frame overlay -->

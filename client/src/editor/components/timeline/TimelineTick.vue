@@ -22,14 +22,14 @@ const label = computed(() =>
 <template>
 	<span
 		v-if="showLabel"
-		class="text-zinc-500/85 absolute bottom-0 select-none text-[10px] leading-none"
+		class="tabular absolute bottom-0 select-none text-[10px] leading-none text-fg-subtle"
 		:style="{ left: `${leftPosition}px` }"
 	>
 		{{ label }}
 	</span>
 	<div
 		v-else
-		class="border-zinc-500/25 absolute bottom-0.5 h-1.5 border-l"
+		class="absolute bottom-0.5 h-1.5 border-l border-line-strong"
 		:style="{ left: `${leftPosition}px` }"
 	/>
 </template>

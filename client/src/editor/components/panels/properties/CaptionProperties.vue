@@ -14,20 +14,33 @@ import type { CaptionElementUpdatable } from "../../../lib/commands/timeline/ele
 import { CAPTION_PRESETS, getPresetById } from "../../../constants/caption-constants";
 import type { CaptionPresetCategory } from "../../../constants/caption-constants";
 import { ANIMATION_PRESETS, getExportableAnimationPresetsForDirection } from "../../../constants/animation-constants";
-import ColorPicker from "@/components/ColorPicker.vue";
 import type { AnimationType } from "../../../types/animations";
 import { Button } from "@/components/ui/button";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { Checkbox } from "@/components/ui/checkbox";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SectionHeader } from "@/components/ui/section-header";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
+import InspectorSection from "../shared/InspectorSection.vue";
+import InspectorField from "../shared/InspectorField.vue";
+import InspectorTabRail from "../shared/InspectorTabRail.vue";
+import InspectorSelect from "../shared/InspectorSelect.vue";
+import SliderField from "../shared/SliderField.vue";
+import NumberBox from "../shared/NumberBox.vue";
+import OptionChip from "../shared/OptionChip.vue";
+import ChipGroup from "../shared/ChipGroup.vue";
+import ColorSwatchField from "../shared/ColorSwatchField.vue";
+import AssetGrid from "../shared/AssetGrid.vue";
+import AssetTile from "../shared/AssetTile.vue";
 import {
-	ChevronDown,
-	ChevronUp,
 	AlignLeft,
 	AlignCenter,
 	AlignRight,
 	RotateCcw,
 	Plus,
 	Trash2,
-	Check,
+	Ban,
 	Captions,
 	Type,
 	Zap,
@@ -63,10 +76,19 @@ const topTabs: { id: TopTab; label: string; icon: any }[] = [
 type TextSubTab = "style" | "effects";
 const activeTextSubTab = ref<TextSubTab>("style");
 const showCustomize = ref(false);
+const TEXT_SUB_TAB_OPTIONS: SegmentedOption<TextSubTab>[] = [
+	{ value: "style", label: "Style" },
+	{ value: "effects", label: "Effects" },
+];
 
 // ── Animation sub-tabs ──
 type AnimSubTab = "in" | "out" | "loop";
 const activeAnimSubTab = ref<AnimSubTab>("in");
+const ANIM_SUB_TAB_OPTIONS: SegmentedOption<AnimSubTab>[] = [
+	{ value: "in", label: "In" },
+	{ value: "out", label: "Out" },
+	{ value: "loop", label: "Loop" },
+];
 
 // ── Apply to all toggle ──
 const applyToAll = ref(true);
@@ -317,6 +339,27 @@ function resetTransform() {
 }
 
 // ── Font ──
+/** Font list for the family select; keeps the current family listed even if it isn't loaded. */
+const fontOptions = computed(() => {
+	const options = allFonts.value.map((font) => ({ value: font.family, label: font.family }));
+	if (props.element.fontFamily && !options.some((o) => o.value === props.element.fontFamily)) {
+		options.unshift({ value: props.element.fontFamily, label: props.element.fontFamily });
+	}
+	return options;
+});
+
+const FONT_WEIGHT_OPTIONS = [
+	{ value: "normal", label: "Normal" },
+	{ value: "bold", label: "Bold" },
+	...["100", "200", "300", "400", "500", "600", "700", "800", "900"].map((w) => ({ value: w, label: w })),
+];
+
+const TEXT_ALIGN_OPTIONS = [
+	{ value: "left", label: "Align left", icon: AlignLeft },
+	{ value: "center", label: "Align center", icon: AlignCenter },
+	{ value: "right", label: "Align right", icon: AlignRight },
+] as const;
+
 function selectFont(fontFamily: string, filePath?: string) {
 	if (filePath) ensureFontLoaded(fontFamily, filePath);
 	update({ fontFamily, fontFilePath: filePath });
@@ -388,7 +431,7 @@ function applyPreset(presetId: CaptionPresetId) {
 const highlightStyles: { value: CaptionElement["highlightStyle"]; label: string }[] = [
 	{ value: "none", label: "None" },
 	{ value: "karaoke", label: "Karaoke" },
-	{ value: "karaoke-scale", label: "Karaoke Pop" },
+	{ value: "karaoke-scale", label: "Karaoke pop" },
 	{ value: "underline", label: "Underline" },
 	{ value: "background", label: "Background" },
 	{ value: "glow", label: "Glow" },
@@ -511,7 +554,7 @@ function deleteCaptionLine(trackId: string, elementId: string, lineIndex: number
 
 // ── Template category filter ──
 const CATEGORY_LABELS: Record<CaptionPresetCategory, string> = {
-	"single-word": "Single Word",
+	"single-word": "Single word",
 	classic: "Classic",
 	creator: "Creator",
 	colorful: "Colorful",
@@ -562,6 +605,41 @@ const currentAnimIn = computed(() => props.element.animationIn?.type ?? null);
 const currentAnimOut = computed(() => props.element.animationOut?.type ?? null);
 const currentAnimLoop = computed(() => props.element.animationLoop?.type ?? null);
 
+// Preset tiles + current selection for the active In / Out / Loop sub-tab
+const activeAnimPresets = computed(() =>
+	activeAnimSubTab.value === "in"
+		? captionAnimInPresets.value
+		: activeAnimSubTab.value === "out"
+			? captionAnimOutPresets.value
+			: captionAnimLoopPresets.value,
+);
+const activeAnimType = computed(() =>
+	activeAnimSubTab.value === "in"
+		? currentAnimIn.value
+		: activeAnimSubTab.value === "out"
+			? currentAnimOut.value
+			: currentAnimLoop.value,
+);
+function animTileLabel(label: string) {
+	if (activeAnimSubTab.value === "in") return label.replace(" In", "");
+	if (activeAnimSubTab.value === "out") return label.replace(" Out", "");
+	return label;
+}
+
+// ── Text effect toggles (Switch) ──
+function setStrokeEnabled(on: boolean) {
+	showStroke.value = on;
+	update({ stroke: showStroke.value ? { color: props.element.stroke?.color || "#000000", width: props.element.stroke?.width || 3 } : undefined });
+}
+function setShadowEnabled(on: boolean) {
+	showShadow.value = on;
+	update({ shadow: showShadow.value ? { color: props.element.shadow?.color || "rgba(0,0,0,0.8)", offsetX: 2, offsetY: 2, blur: 4 } : undefined });
+}
+function setGlowEnabled(on: boolean) {
+	showGlow.value = on;
+	update({ glow: showGlow.value ? { color: props.element.glow?.color || "#22D3EE", intensity: props.element.glow?.intensity || 10 } : undefined });
+}
+
 const captionText = computed(() => {
 	return props.element.lines.map((l) => l.text).join("\n");
 });
@@ -581,622 +659,448 @@ async function handleUploadFont() {
 </script>
 
 <template>
-	<div class="flex h-full flex-row text-xs">
-		<!-- ═══ Content Area ═══ -->
-		<div class="flex flex-1 min-w-0 flex-col overflow-hidden">
+	<div class="flex h-full min-h-0 flex-row">
+		<div class="flex min-h-0 min-w-0 flex-1 flex-col overflow-hidden">
+			<!-- ══════ Captions tab — line-by-line breakdown ══════ -->
+			<div v-if="activeTopTab === 'captions'" class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+				<InspectorSection title="Caption lines" flush body-class="space-y-0 px-1.5">
+					<template v-if="paragraphCount > 0" #meta>
+						<Badge variant="neutral" class="tabular">{{ paragraphCount }}</Badge>
+					</template>
 
-		<!-- ═══════════════════════════════════════════ -->
-		<!-- TAB: Captions — line-by-line breakdown     -->
-		<!-- ═══════════════════════════════════════════ -->
-		<div v-if="activeTopTab === 'captions'" class="flex flex-col gap-0 overflow-y-auto" style="max-height: calc(100vh - 200px)">
-			<!-- Paragraph count header -->
-			<div class="px-3 pt-3 pb-2 text-zinc-500 text-[11px]">
-				The {{ paragraphCount }} paragraph{{ paragraphCount !== 1 ? 's' : '' }}
-			</div>
-
-			<!-- Line list -->
-			<div class="flex flex-col">
-				<div
-					v-for="item in allCaptionLines"
-					:key="`${item.elementId}-${item.lineIndex}`"
-					class="group flex items-start gap-2 border-b border-white/5 px-3 py-2.5 hover:bg-white/[0.03]"
-				>
-					<!-- Line number (click to seek) -->
-					<span
-						class="mt-1 w-5 shrink-0 text-right text-zinc-500 text-[11px] cursor-pointer hover:text-primary transition-colors"
-						title="Seek to line"
-						@click="seekToLine(item.line)"
-					>{{ item.globalIndex + 1 }}</span>
-
-					<!-- Editable line text -->
-					<input
-						type="text"
-						:value="item.line.text"
-						:data-caption-line-key="captionLineInputKey(item)"
-						class="flex-1 bg-transparent border-none outline-none text-zinc-300 text-[11px] leading-relaxed px-0 py-0 focus:text-white focus:ring-0"
-						@change="updateCaptionLineText(item.trackId, item.elementId, item.elementLocalIndex, ($event.target as HTMLInputElement).value)"
-						@keydown="handleCaptionLineKeydown($event, item)"
-						@click.stop
-					/>
-
-					<!-- Action buttons (visible on hover) -->
-					<div class="flex shrink-0 gap-0.5 opacity-0 group-hover:opacity-100 transition-opacity">
-						<button
-							class="rounded p-1 hover:bg-white/10 text-zinc-400 hover:text-zinc-200"
-							title="Delete line"
-							@click.stop="deleteCaptionLine(item.trackId, item.elementId, item.elementLocalIndex)"
-						>
-							<Trash2 class="size-3" />
-						</button>
-					</div>
-				</div>
-			</div>
-
-			<!-- Empty state -->
-			<div v-if="allCaptionLines.length === 0" class="px-3 py-6 text-center text-zinc-500 text-[11px]">
-				No caption lines generated yet.
-			</div>
-		</div>
-
-		<!-- ═══════════════════════════════════════════ -->
-		<!-- TAB: Text — Style / Effects               -->
-		<!-- ═══════════════════════════════════════════ -->
-		<div v-else-if="activeTopTab === 'text'" class="flex flex-col overflow-y-auto" style="max-height: calc(100vh - 200px)">
-			<!-- Sub-tab bar -->
-			<div class="flex gap-1 border-b border-white/5 px-3 py-1.5">
-				<button
-					v-for="sub in (['style', 'effects'] as TextSubTab[])"
-					:key="sub"
-					class="rounded-md px-3 py-1 text-xs font-medium capitalize transition-colors"
-					:class="activeTextSubTab === sub ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'"
-					@click="activeTextSubTab = sub"
-				>
-					{{ sub }}
-				</button>
-			</div>
-
-			<!-- Apply to all checkbox -->
-			<div class="flex items-center gap-2 px-3 pt-3 pb-1">
-				<button
-					class="flex size-4 items-center justify-center rounded border transition-colors"
-					:class="applyToAll ? 'border-primary bg-primary' : 'border-white/20 bg-transparent'"
-					@click="applyToAll = !applyToAll"
-				>
-					<Check v-if="applyToAll" class="size-3 text-white" />
-				</button>
-				<span class="text-zinc-400 text-[11px]">Apply to all main captions</span>
-			</div>
-
-			<!-- ── Style sub-tab (presets + customize) ── -->
-			<div v-if="activeTextSubTab === 'style'" class="flex flex-col gap-3 p-3">
-
-				<!-- Preset grid (collapsed into 3-col) -->
-				<div class="flex flex-col gap-1.5">
-					<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Style Preset</span>
-					<!-- Category filter pills -->
-					<div class="flex flex-wrap gap-1">
-						<button
-							class="rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors"
-							:class="activeTemplateCategory === 'all' ? 'border-primary/40 bg-primary/20 text-primary' : 'border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-200'"
-							@click="activeTemplateCategory = 'all'"
-						>All</button>
-						<button
-							v-for="cat in CATEGORY_ORDER"
-							:key="cat"
-							class="rounded-full border px-2.5 py-1 text-[10px] font-medium transition-colors"
-							:class="activeTemplateCategory === cat ? 'border-primary/40 bg-primary/20 text-primary' : 'border-white/10 bg-white/5 text-zinc-400 hover:text-zinc-200'"
-							@click="activeTemplateCategory = cat"
-						>{{ CATEGORY_LABELS[cat] }}</button>
-					</div>
-					<!-- Grouped preset sections -->
-					<div v-for="group in groupedPresets" :key="group.category" class="flex flex-col gap-1.5">
-						<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">{{ group.label }}</span>
-						<div class="grid grid-cols-3 gap-1.5">
-							<button
-								v-for="preset in group.presets"
-								:key="preset.id"
-								class="group relative flex flex-col items-center gap-1 rounded-lg border p-2 text-center transition-all hover:border-white/20 hover:bg-white/5"
-								:class="element.presetId === preset.id ? 'border-primary/50 bg-primary/10' : 'border-white/10 bg-white/[0.02]'"
-								@click="applyPreset(preset.id)"
-							>
-								<div
-									class="flex h-8 w-full items-center justify-center rounded font-bold"
-									:class="preset.maxWordsPerLine === 1 ? 'text-sm' : 'text-[11px]'"
-									:style="{
-										color: preset.color === 'transparent' ? (preset.stroke?.color || '#FFFFFF') : preset.color,
-										fontFamily: preset.fontFamily,
-										fontWeight: preset.fontWeight,
-										fontStyle: preset.fontStyle,
-										letterSpacing: preset.letterSpacing + 'px',
-										backgroundColor: preset.backgroundColor && preset.backgroundColor !== 'transparent' ? preset.backgroundColor : undefined,
-										padding: preset.backgroundColor && preset.backgroundColor !== 'transparent' ? '2px 5px' : undefined,
-										borderRadius: preset.backgroundColor && preset.backgroundColor !== 'transparent' ? '3px' : undefined,
-									}"
-								>Aa</div>
-								<span class="truncate text-[9px] text-zinc-400 group-hover:text-zinc-200">{{ preset.name }}</span>
-							</button>
-						</div>
-					</div>
-				</div>
-
-				<!-- Customize disclosure -->
-				<div class="border-t border-white/10 pt-2">
-					<button
-						class="flex w-full items-center justify-between py-1 text-[11px] font-medium text-zinc-400 hover:text-zinc-200"
-						@click="showCustomize = !showCustomize"
+					<div
+						v-for="item in allCaptionLines"
+						:key="`${item.elementId}-${item.lineIndex}`"
+						class="group/line flex h-8 items-center gap-1 rounded-md pr-0.5 transition-colors hover:bg-surface-hover"
 					>
-						<span>Customize</span>
-						<ChevronDown v-if="!showCustomize" class="size-3.5" />
-						<ChevronUp v-else class="size-3.5" />
-					</button>
-				</div>
+						<!-- Line number (click to seek) -->
+						<button
+							type="button"
+							class="tabular h-6 w-7 shrink-0 rounded text-right text-2xs text-fg-subtle transition-colors hover:text-brand focus-visible:outline-none focus-visible:text-brand"
+							title="Seek to line"
+							@click="seekToLine(item.line)"
+						>{{ item.globalIndex + 1 }}</button>
 
-				<div v-if="showCustomize" class="flex flex-col gap-3">
-
-				<!-- ── Transform section ── -->
-				<div class="space-y-2">
-					<div class="flex items-center justify-between">
-						<span class="text-zinc-300 font-medium">Transform</span>
-						<button class="text-zinc-500 hover:text-zinc-300" title="Reset transform" @click="resetTransform">
-							<RotateCcw class="size-3.5" />
-						</button>
-					</div>
-
-					<!-- Scale slider -->
-					<div class="space-y-1">
-						<label class="text-zinc-500">Scale</label>
-						<div class="flex items-center gap-2">
-							<input
-								type="range"
-								min="10"
-								max="500"
-								:value="Math.round(element.transform.scale * 100)"
-								class="flex-1"
-								@input="handleScaleSlider(($event.target as HTMLInputElement).value)"
-							/>
-							<div class="flex items-center">
-								<input
-									type="text"
-									:value="scaleInput"
-									class="h-6 w-14 rounded-md border border-white/10 bg-white/5 px-2 text-right text-xs text-zinc-200"
-									@input="handleScaleInput(($event.target as HTMLInputElement).value)"
-									@blur="handleScaleBlur"
-								/>
-								<span class="ml-0.5 text-zinc-500">%</span>
-							</div>
-						</div>
-					</div>
-
-					<!-- Position X / Y -->
-					<div class="flex gap-2">
-						<div class="flex-1 space-y-1">
-							<label class="text-zinc-500">X</label>
-							<input
-								type="range"
-								min="-1000"
-								max="1000"
-								:value="Math.round(element.transform.position.x)"
-								class="w-full"
-								@input="handlePosXChange(($event.target as HTMLInputElement).value)"
-							/>
-							<input
-								type="text"
-								:value="posXInput"
-								class="h-6 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200"
-								@input="handlePosXChange(($event.target as HTMLInputElement).value)"
-							/>
-						</div>
-						<div class="flex-1 space-y-1">
-							<label class="text-zinc-500">Y</label>
-							<input
-								type="range"
-								min="-1000"
-								max="1000"
-								:value="Math.round(element.transform.position.y)"
-								class="w-full"
-								@input="handlePosYChange(($event.target as HTMLInputElement).value)"
-							/>
-							<input
-								type="text"
-								:value="posYInput"
-								class="h-6 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200"
-								@input="handlePosYChange(($event.target as HTMLInputElement).value)"
-							/>
-						</div>
-					</div>
-
-					<!-- Rotation -->
-					<div class="space-y-1">
-						<label class="text-zinc-500">Rotation</label>
-						<input
-							type="range"
-							min="-180"
-							max="180"
-							step="0.1"
-							:value="element.transform.rotate"
-							class="w-full"
-							@input="handleRotationChange(($event.target as HTMLInputElement).value)"
-						/>
+						<!-- Editable line text -->
 						<input
 							type="text"
-							:value="rotationInput"
-							class="h-6 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200"
-							@input="handleRotationChange(($event.target as HTMLInputElement).value)"
+							:value="item.line.text"
+							:data-caption-line-key="captionLineInputKey(item)"
+							aria-label="Caption line text"
+							class="h-7 min-w-0 flex-1 rounded-md border border-transparent bg-transparent px-1.5 text-xs text-fg-muted outline-none transition-colors hover:text-fg focus:border-brand-line focus:bg-surface-raised focus:text-fg"
+							@change="updateCaptionLineText(item.trackId, item.elementId, item.elementLocalIndex, ($event.target as HTMLInputElement).value)"
+							@keydown="handleCaptionLineKeydown($event, item)"
+							@click.stop
 						/>
-					</div>
-				</div>
 
-				<!-- ── Font section ── -->
-				<div class="space-y-2 border-t border-white/10 pt-4">
-					<div class="flex items-center justify-between">
-						<span class="text-zinc-300 font-medium">Font</span>
-						<button
-							@click="handleUploadFont"
-							class="flex items-center gap-1 px-2 py-1 text-[10px] text-primary hover:text-primary/80 bg-primary/10 rounded transition-colors border border-primary/20"
-							title="Upload custom font"
+						<!-- Actions (visible on hover) -->
+						<Button
+							variant="ghost"
+							size="icon-xs"
+							class="opacity-0 transition-opacity hover:bg-danger-soft hover:text-danger group-hover/line:opacity-100 focus-visible:opacity-100"
+							title="Delete line"
+							aria-label="Delete line"
+							@click.stop="deleteCaptionLine(item.trackId, item.elementId, item.elementLocalIndex)"
 						>
-							<Plus class="size-3" />
-							Upload Font
-						</button>
+							<Trash2 />
+						</Button>
 					</div>
 
-					<!-- Font family -->
-					<Select :model-value="element.fontFamily" @update:model-value="(v) => selectFont(String(v))">
-						<SelectTrigger class="h-7 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200">
-							<SelectValue :placeholder="element.fontFamily" />
-						</SelectTrigger>
-						<SelectContent class="max-h-[250px] bg-zinc-900 border-white/10">
-							<SelectItem v-for="font in allFonts" :key="font.family" :value="font.family" class="text-xs text-zinc-200">
-								{{ font.family }}
-							</SelectItem>
-						</SelectContent>
-					</Select>
-
-					<div class="space-y-1">
-						<label class="text-zinc-500">Fill color</label>
-						<ColorPicker :model-value="element.color" @update:model-value="(v) => update({ color: v })" />
-					</div>
-
-					<!-- Font size + weight -->
-					<div class="flex gap-2">
-						<div class="flex-1 space-y-1">
-							<label class="text-zinc-500">Size</label>
-							<input
-								type="text"
-								:value="fontSizeInput"
-								class="h-6 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200"
-								@input="handleFontSizeChange(($event.target as HTMLInputElement).value)"
-								@blur="handleFontSizeBlur"
-							/>
-						</div>
-						<div class="flex-1 space-y-1">
-							<label class="text-zinc-500">Weight</label>
-							<Select :model-value="element.fontWeight" @update:model-value="(v) => update({ fontWeight: String(v) })">
-								<SelectTrigger class="h-6 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200">
-									<SelectValue />
-								</SelectTrigger>
-								<SelectContent class="bg-zinc-900 border-white/10">
-									<SelectItem value="normal" class="text-xs text-zinc-200">Normal</SelectItem>
-									<SelectItem value="bold" class="text-xs text-zinc-200">Bold</SelectItem>
-									<SelectItem value="100" class="text-xs text-zinc-200">100</SelectItem>
-									<SelectItem value="200" class="text-xs text-zinc-200">200</SelectItem>
-									<SelectItem value="300" class="text-xs text-zinc-200">300</SelectItem>
-									<SelectItem value="400" class="text-xs text-zinc-200">400</SelectItem>
-									<SelectItem value="500" class="text-xs text-zinc-200">500</SelectItem>
-									<SelectItem value="600" class="text-xs text-zinc-200">600</SelectItem>
-									<SelectItem value="700" class="text-xs text-zinc-200">700</SelectItem>
-									<SelectItem value="800" class="text-xs text-zinc-200">800</SelectItem>
-									<SelectItem value="900" class="text-xs text-zinc-200">900</SelectItem>
-								</SelectContent>
-							</Select>
-						</div>
-					</div>
-
-					<!-- Alignment -->
-					<div class="flex gap-1">
-						<button
-							class="flex-1 rounded-md border p-1.5 transition-all"
-							:class="element.textAlign === 'left' ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:bg-white/5'"
-							@click="update({ textAlign: 'left' })"
-						>
-							<AlignLeft class="mx-auto size-3.5 text-zinc-300" />
-						</button>
-						<button
-							class="flex-1 rounded-md border p-1.5 transition-all"
-							:class="element.textAlign === 'center' ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:bg-white/5'"
-							@click="update({ textAlign: 'center' })"
-						>
-							<AlignCenter class="mx-auto size-3.5 text-zinc-300" />
-						</button>
-						<button
-							class="flex-1 rounded-md border p-1.5 transition-all"
-							:class="element.textAlign === 'right' ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:bg-white/5'"
-							@click="update({ textAlign: 'right' })"
-						>
-							<AlignRight class="mx-auto size-3.5 text-zinc-300" />
-						</button>
-					</div>
-
-					<!-- Words/line + Opacity -->
-					<div class="flex gap-2">
-						<div class="flex-1 space-y-1">
-							<label class="text-zinc-500">Words/line</label>
-							<input
-								type="text"
-								:value="maxWordsInput"
-								class="h-6 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200"
-								@input="handleMaxWordsChange(($event.target as HTMLInputElement).value)"
-								@blur="handleMaxWordsBlur"
-							/>
-						</div>
-						<div class="flex-1 space-y-1">
-							<label class="text-zinc-500">Opacity %</label>
-							<input
-								type="text"
-								:value="opacityInput"
-								class="h-6 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200"
-								@input="handleOpacityChange(($event.target as HTMLInputElement).value)"
-								@blur="handleOpacityBlur"
-							/>
-						</div>
-					</div>
-				</div>
-			</div>
-			</div>
-
-			<!-- ── Effects sub-tab ── -->
-			<div v-if="activeTextSubTab === 'effects'" class="flex flex-col gap-2 p-3">
-				<!-- Highlight (karaoke) — lives with effects to avoid duplicating style preset colors -->
-				<div class="space-y-2 border-b border-white/10 pb-3">
-					<span class="text-zinc-300 font-medium text-xs">Highlight</span>
-					<Select :model-value="element.highlightStyle" @update:model-value="(v) => update({ highlightStyle: String(v) })">
-						<SelectTrigger class="h-7 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent class="bg-zinc-900 border-white/10">
-							<SelectItem v-for="hs in highlightStyles" :key="hs.value" :value="hs.value" class="text-xs text-zinc-200">
-								{{ hs.label }}
-							</SelectItem>
-						</SelectContent>
-					</Select>
-					<div class="flex gap-3">
-						<div class="flex-1 space-y-1">
-							<label class="text-zinc-500 text-[10px]">Active word</label>
-							<ColorPicker :model-value="element.highlightColor" @update:model-value="(v) => update({ highlightColor: v })" />
-						</div>
-					</div>
-				</div>
-				<!-- Stroke toggle -->
-				<div class="flex items-center justify-between">
-					<label class="text-zinc-400">Stroke</label>
-					<button
-						class="h-5 w-9 rounded-full transition-colors"
-						:class="showStroke ? 'bg-primary' : 'bg-white/10'"
-						@click="showStroke = !showStroke; update({ stroke: showStroke ? { color: element.stroke?.color || '#000000', width: element.stroke?.width || 3 } : undefined })"
-					>
-						<div class="h-4 w-4 rounded-full bg-white shadow transition-transform" :class="showStroke ? 'translate-x-4' : 'translate-x-0.5'" />
-					</button>
-				</div>
-				<div v-if="showStroke && element.stroke" class="flex flex-wrap items-center gap-2 pl-2">
-					<ColorPicker
-						:model-value="element.stroke.color.startsWith('#') ? element.stroke.color : '#000000'"
-						@update:model-value="(v) => update({ stroke: { ...element.stroke!, color: v } })"
+					<EmptyState
+						v-if="allCaptionLines.length === 0"
+						size="sm"
+						:icon="Captions"
+						title="No caption lines generated yet"
 					/>
-					<input type="range" min="1" max="10" :value="element.stroke.width" class="min-w-[100px] flex-1" @input="update({ stroke: { ...element.stroke!, width: parseInt(($event.target as HTMLInputElement).value) } })" />
-					<span class="w-6 text-right text-zinc-500">{{ element.stroke.width }}</span>
-				</div>
+				</InspectorSection>
+			</div>
 
-				<!-- Shadow toggle -->
-				<div class="flex items-center justify-between">
-					<label class="text-zinc-400">Shadow</label>
-					<button
-						class="h-5 w-9 rounded-full transition-colors"
-						:class="showShadow ? 'bg-primary' : 'bg-white/10'"
-						@click="showShadow = !showShadow; update({ shadow: showShadow ? { color: element.shadow?.color || 'rgba(0,0,0,0.8)', offsetX: 2, offsetY: 2, blur: 4 } : undefined })"
-					>
-						<div class="h-4 w-4 rounded-full bg-white shadow transition-transform" :class="showShadow ? 'translate-x-4' : 'translate-x-0.5'" />
-					</button>
-				</div>
-				<div v-if="showShadow && element.shadow" class="space-y-1.5 pl-2">
-					<div class="flex flex-wrap items-center gap-2">
-						<ColorPicker
-							:model-value="element.shadow.color.startsWith('#') ? element.shadow.color : '#000000'"
-							@update:model-value="(v) => update({ shadow: { ...element.shadow!, color: v } })"
+			<!-- ══════ Text + Animation tabs ══════ -->
+			<template v-else>
+				<!-- Sub-tabs + "apply to all" (pinned above the scroll area) -->
+				<div class="shrink-0 space-y-2 border-b border-line-subtle px-3 py-2">
+					<SegmentedControl
+						v-if="activeTopTab === 'text'"
+						v-model="activeTextSubTab"
+						:options="TEXT_SUB_TAB_OPTIONS"
+						size="sm"
+						block
+					/>
+					<SegmentedControl
+						v-else
+						v-model="activeAnimSubTab"
+						:options="ANIM_SUB_TAB_OPTIONS"
+						size="sm"
+						block
+					/>
+					<label class="flex h-5 cursor-pointer items-center gap-2 text-xs text-fg-muted">
+						<Checkbox
+							:model-value="applyToAll"
+							@update:model-value="(v) => (applyToAll = v === true)"
 						/>
-						<label class="text-zinc-500">Blur</label>
-						<input type="range" min="0" max="20" :value="element.shadow.blur" class="min-w-[80px] flex-1" @input="update({ shadow: { ...element.shadow!, blur: parseInt(($event.target as HTMLInputElement).value) } })" />
-						<span class="w-6 text-right text-zinc-500">{{ element.shadow.blur }}</span>
-					</div>
+						Apply to all main captions
+					</label>
 				</div>
 
-				<!-- Glow toggle -->
-				<div class="flex items-center justify-between">
-					<label class="text-zinc-400">Glow</label>
-					<button
-						class="h-5 w-9 rounded-full transition-colors"
-						:class="showGlow ? 'bg-primary' : 'bg-white/10'"
-						@click="showGlow = !showGlow; update({ glow: showGlow ? { color: element.glow?.color || '#22D3EE', intensity: element.glow?.intensity || 10 } : undefined })"
-					>
-						<div class="h-4 w-4 rounded-full bg-white shadow transition-transform" :class="showGlow ? 'translate-x-4' : 'translate-x-0.5'" />
-					</button>
-				</div>
-				<div v-if="showGlow && element.glow" class="flex flex-wrap items-center gap-2 pl-2">
-					<ColorPicker :model-value="element.glow.color" @update:model-value="(v) => update({ glow: { ...element.glow!, color: v } })" />
-					<input type="range" min="1" max="30" :value="element.glow.intensity" class="min-w-[100px] flex-1" @input="update({ glow: { ...element.glow!, intensity: parseInt(($event.target as HTMLInputElement).value) } })" />
-					<span class="w-6 text-right text-zinc-500">{{ element.glow.intensity }}</span>
-				</div>
+				<div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+					<!-- ── Text › Style (presets + customize) ── -->
+					<template v-if="activeTopTab === 'text' && activeTextSubTab === 'style'">
+						<InspectorSection title="Style preset">
+							<!-- Category filter -->
+							<div class="flex flex-wrap gap-1">
+								<OptionChip :active="activeTemplateCategory === 'all'" @click="activeTemplateCategory = 'all'">All</OptionChip>
+								<OptionChip
+									v-for="cat in CATEGORY_ORDER"
+									:key="cat"
+									:active="activeTemplateCategory === cat"
+									@click="activeTemplateCategory = cat"
+								>
+									{{ CATEGORY_LABELS[cat] }}
+								</OptionChip>
+							</div>
 
-				<!-- Background color -->
-				<div class="space-y-1">
-					<label class="text-zinc-500">Background</label>
-					<div class="flex flex-wrap items-center gap-2">
-						<ColorPicker
-							v-if="element.backgroundColor !== 'transparent'"
-							:model-value="element.backgroundColor"
-							@update:model-value="(v) => update({ backgroundColor: v })"
-						/>
-						<span v-else class="text-[10px] text-zinc-500">None</span>
-						<button
-							class="rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-zinc-400 hover:bg-white/5"
-							@click="update({ backgroundColor: 'transparent' })"
+							<!-- Grouped preset tiles (previews show the preset's own styling) -->
+							<div v-for="group in groupedPresets" :key="group.category" class="space-y-1.5">
+								<SectionHeader :title="group.label" variant="eyebrow" class="min-h-0" />
+								<AssetGrid :min="76" class="gap-1.5">
+									<AssetTile
+										v-for="preset in group.presets"
+										:key="preset.id"
+										:label="preset.name"
+										:title="preset.description"
+										:selected="element.presetId === preset.id"
+										aspect="2/1"
+										preview-class="flex items-center justify-center p-1.5"
+										@click="applyPreset(preset.id)"
+									>
+										<div
+											class="flex h-8 w-full items-center justify-center rounded font-bold"
+											:class="preset.maxWordsPerLine === 1 ? 'text-sm' : 'text-2xs'"
+											:style="{
+												color: preset.color === 'transparent' ? (preset.stroke?.color || '#FFFFFF') : preset.color,
+												fontFamily: preset.fontFamily,
+												fontWeight: preset.fontWeight,
+												fontStyle: preset.fontStyle,
+												letterSpacing: preset.letterSpacing + 'px',
+												backgroundColor: preset.backgroundColor && preset.backgroundColor !== 'transparent' ? preset.backgroundColor : undefined,
+												padding: preset.backgroundColor && preset.backgroundColor !== 'transparent' ? '2px 5px' : undefined,
+												borderRadius: preset.backgroundColor && preset.backgroundColor !== 'transparent' ? '3px' : undefined,
+											}"
+										>Aa</div>
+									</AssetTile>
+								</AssetGrid>
+							</div>
+						</InspectorSection>
+
+						<InspectorSection
+							title="Customize"
+							collapsible
+							flush
+							:open="showCustomize"
+							@update:open="(v) => (showCustomize = v)"
 						>
-							Clear
-						</button>
-						<button
-							v-if="element.backgroundColor === 'transparent'"
-							class="rounded-md border border-white/10 px-2 py-0.5 text-[10px] text-zinc-400 hover:bg-white/5"
-							@click="update({ backgroundColor: '#1a1a1a' })"
-						>
-							Set color
-						</button>
-					</div>
+							<!-- Transform -->
+							<div class="space-y-2">
+								<SectionHeader title="Transform" variant="eyebrow" class="min-h-6">
+									<Button variant="ghost" size="xs" title="Reset transform" @click="resetTransform">
+										<RotateCcw />
+										Reset
+									</Button>
+								</SectionHeader>
+								<SliderField
+									inline
+									label="Scale"
+									:model-value="Math.round(element.transform.scale * 100)"
+									:input-value="scaleInput"
+									:min="10"
+									:max="500"
+									unit="%"
+									input-type="text"
+									@slide="(v) => handleScaleSlider(String(v))"
+									@input="handleScaleInput"
+									@commit="handleScaleBlur"
+								/>
+								<SliderField
+									inline
+									label="Position X"
+									:model-value="Math.round(element.transform.position.x)"
+									:input-value="posXInput"
+									:min="-1000"
+									:max="1000"
+									input-type="text"
+									@slide="(v) => handlePosXChange(String(v))"
+									@input="handlePosXChange"
+								/>
+								<SliderField
+									inline
+									label="Position Y"
+									:model-value="Math.round(element.transform.position.y)"
+									:input-value="posYInput"
+									:min="-1000"
+									:max="1000"
+									input-type="text"
+									@slide="(v) => handlePosYChange(String(v))"
+									@input="handlePosYChange"
+								/>
+								<SliderField
+									inline
+									label="Rotation"
+									:model-value="element.transform.rotate"
+									:input-value="rotationInput"
+									:min="-180"
+									:max="180"
+									:step="0.1"
+									input-type="text"
+									@slide="(v) => handleRotationChange(String(v))"
+									@input="handleRotationChange"
+								/>
+							</div>
+
+							<!-- Font -->
+							<div class="space-y-3 border-t border-line-subtle pt-3">
+								<SectionHeader title="Font" variant="eyebrow" class="min-h-6">
+									<Button variant="ghost" size="xs" title="Upload custom font" @click="handleUploadFont">
+										<Plus />
+										Upload font
+									</Button>
+								</SectionHeader>
+
+								<InspectorSelect
+									:model-value="element.fontFamily"
+									:options="fontOptions"
+									aria-label="Font family"
+									@update:model-value="(v) => selectFont(String(v))"
+								/>
+
+								<InspectorField label="Fill color">
+									<ColorSwatchField
+										app-picker
+										:model-value="element.color"
+										aria-label="Fill color"
+										@update:model-value="(v) => update({ color: v })"
+									/>
+								</InspectorField>
+
+								<div class="grid grid-cols-2 gap-2">
+									<InspectorField label="Size">
+										<NumberBox
+											type="text"
+											:value="fontSizeInput"
+											aria-label="Font size"
+											@input="handleFontSizeChange"
+											@commit="handleFontSizeBlur"
+										/>
+									</InspectorField>
+									<InspectorField label="Weight">
+										<InspectorSelect
+											:model-value="element.fontWeight"
+											:options="FONT_WEIGHT_OPTIONS"
+											aria-label="Font weight"
+											@update:model-value="(v) => update({ fontWeight: String(v) })"
+										/>
+									</InspectorField>
+								</div>
+
+								<InspectorField label="Alignment">
+									<ChipGroup class="flex w-full">
+										<OptionChip
+											v-for="opt in TEXT_ALIGN_OPTIONS"
+											:key="opt.value"
+											variant="ghost"
+											:icon="opt.icon"
+											:active="element.textAlign === opt.value"
+											:title="opt.label"
+											:aria-label="opt.label"
+											class="flex-1"
+											@click="update({ textAlign: opt.value })"
+										/>
+									</ChipGroup>
+								</InspectorField>
+
+								<div class="grid grid-cols-2 gap-2">
+									<InspectorField label="Words / line">
+										<NumberBox
+											type="text"
+											:value="maxWordsInput"
+											aria-label="Words per line"
+											@input="handleMaxWordsChange"
+											@commit="handleMaxWordsBlur"
+										/>
+									</InspectorField>
+									<InspectorField label="Opacity">
+										<NumberBox
+											type="text"
+											:value="opacityInput"
+											suffix="%"
+											aria-label="Opacity"
+											@input="handleOpacityChange"
+											@commit="handleOpacityBlur"
+										/>
+									</InspectorField>
+								</div>
+							</div>
+						</InspectorSection>
+					</template>
+
+					<!-- ── Text › Effects ── -->
+					<template v-else-if="activeTopTab === 'text' && activeTextSubTab === 'effects'">
+						<!-- Highlight (karaoke) — lives with effects to avoid duplicating style preset colors -->
+						<InspectorSection title="Highlight">
+							<InspectorField inline label="Style">
+								<InspectorSelect
+									:model-value="element.highlightStyle"
+									:options="highlightStyles"
+									aria-label="Highlight style"
+									class="flex-1"
+									@update:model-value="(v) => update({ highlightStyle: String(v) })"
+								/>
+							</InspectorField>
+							<InspectorField inline label="Active word">
+								<ColorSwatchField
+									app-picker
+									:model-value="element.highlightColor"
+									aria-label="Active word color"
+									class="flex-1"
+									@update:model-value="(v) => update({ highlightColor: v })"
+								/>
+							</InspectorField>
+						</InspectorSection>
+
+						<InspectorSection title="Effects" flush>
+							<!-- Stroke -->
+							<div class="space-y-2">
+								<InspectorField inline label="Stroke">
+									<div class="flex-1" />
+									<Switch :model-value="showStroke" aria-label="Stroke" @update:model-value="setStrokeEnabled" />
+								</InspectorField>
+								<template v-if="showStroke && element.stroke">
+									<InspectorField inline label="Color">
+										<ColorSwatchField
+											app-picker
+											:model-value="element.stroke.color.startsWith('#') ? element.stroke.color : '#000000'"
+											aria-label="Stroke color"
+											class="flex-1"
+											@update:model-value="(v) => update({ stroke: { ...element.stroke!, color: v } })"
+										/>
+									</InspectorField>
+									<SliderField
+										inline
+										label="Width"
+										:model-value="element.stroke.width"
+										:min="1"
+										:max="10"
+										:readout="String(element.stroke.width)"
+										@slide="(v) => update({ stroke: { ...element.stroke!, width: v } })"
+									/>
+								</template>
+							</div>
+
+							<!-- Shadow -->
+							<div class="space-y-2 border-t border-line-subtle pt-3">
+								<InspectorField inline label="Shadow">
+									<div class="flex-1" />
+									<Switch :model-value="showShadow" aria-label="Shadow" @update:model-value="setShadowEnabled" />
+								</InspectorField>
+								<template v-if="showShadow && element.shadow">
+									<InspectorField inline label="Color">
+										<ColorSwatchField
+											app-picker
+											:model-value="element.shadow.color.startsWith('#') ? element.shadow.color : '#000000'"
+											aria-label="Shadow color"
+											class="flex-1"
+											@update:model-value="(v) => update({ shadow: { ...element.shadow!, color: v } })"
+										/>
+									</InspectorField>
+									<SliderField
+										inline
+										label="Blur"
+										:model-value="element.shadow.blur"
+										:min="0"
+										:max="20"
+										:readout="String(element.shadow.blur)"
+										@slide="(v) => update({ shadow: { ...element.shadow!, blur: v } })"
+									/>
+								</template>
+							</div>
+
+							<!-- Glow -->
+							<div class="space-y-2 border-t border-line-subtle pt-3">
+								<InspectorField inline label="Glow">
+									<div class="flex-1" />
+									<Switch :model-value="showGlow" aria-label="Glow" @update:model-value="setGlowEnabled" />
+								</InspectorField>
+								<template v-if="showGlow && element.glow">
+									<InspectorField inline label="Color">
+										<ColorSwatchField
+											app-picker
+											:model-value="element.glow.color"
+											aria-label="Glow color"
+											class="flex-1"
+											@update:model-value="(v) => update({ glow: { ...element.glow!, color: v } })"
+										/>
+									</InspectorField>
+									<SliderField
+										inline
+										label="Intensity"
+										:model-value="element.glow.intensity"
+										:min="1"
+										:max="30"
+										:readout="String(element.glow.intensity)"
+										@slide="(v) => update({ glow: { ...element.glow!, intensity: v } })"
+									/>
+								</template>
+							</div>
+
+							<!-- Background color -->
+							<InspectorField label="Background" class="border-t border-line-subtle pt-3">
+								<template v-if="element.backgroundColor === 'transparent'" #actions>
+									<Button variant="ghost" size="xs" class="-my-1" @click="update({ backgroundColor: '#1a1a1a' })">Set color</Button>
+								</template>
+								<ColorSwatchField
+									app-picker
+									:model-value="element.backgroundColor === 'transparent' ? '' : element.backgroundColor"
+									fallback="#1a1a1a"
+									placeholder="None"
+									clearable
+									aria-label="Background color"
+									@update:model-value="(v) => update({ backgroundColor: v })"
+									@clear="update({ backgroundColor: 'transparent' })"
+								/>
+							</InspectorField>
+						</InspectorSection>
+					</template>
+
+					<!-- ── Animation › In / Out / Loop ── -->
+					<InspectorSection v-else-if="activeTopTab === 'animation'" flush>
+						<p class="text-2xs text-fg-subtle">Plays in preview and export.</p>
+						<AssetGrid :min="72" class="gap-1.5">
+							<AssetTile
+								label="None"
+								aspect="2/1"
+								:selected="!activeAnimType"
+								preview-class="grid place-items-center"
+								@click="setAnimation(activeAnimSubTab, null)"
+							>
+								<Ban class="size-5 text-fg-subtle" />
+							</AssetTile>
+							<AssetTile
+								v-for="preset in activeAnimPresets"
+								:key="preset.type"
+								:label="animTileLabel(preset.label)"
+								:title="preset.label"
+								aspect="2/1"
+								:selected="activeAnimType === preset.type"
+								preview-class="grid place-items-center"
+								@click="setAnimation(activeAnimSubTab, preset.type)"
+							>
+								<span class="text-xs font-bold text-fg-muted">Aa</span>
+							</AssetTile>
+						</AssetGrid>
+					</InspectorSection>
 				</div>
-			</div>
+			</template>
 		</div>
 
-		<!-- ═══════════════════════════════════════════ -->
-		<!-- TAB: Animation — In / Out / Loop / Captions -->
-		<!-- ═══════════════════════════════════════════ -->
-		<div v-else-if="activeTopTab === 'animation'" class="flex flex-col overflow-y-auto" style="max-height: calc(100vh - 200px)">
-			<!-- Sub-tab bar -->
-			<div class="flex gap-1 border-b border-white/5 px-3 py-1.5">
-				<button
-					v-for="sub in (['in', 'out', 'loop'] as AnimSubTab[])"
-					:key="sub"
-					class="rounded-md px-3 py-1 text-xs font-medium capitalize transition-colors"
-					:class="activeAnimSubTab === sub ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'"
-					@click="activeAnimSubTab = sub"
-				>
-					{{ sub === 'in' ? 'In' : sub === 'out' ? 'Out' : 'Loop' }}
-				</button>
-			</div>
-
-			<!-- Apply to all checkbox -->
-			<div class="flex items-center gap-2 px-3 pt-3 pb-1">
-				<button
-					class="flex size-4 items-center justify-center rounded border transition-colors"
-					:class="applyToAll ? 'border-primary bg-primary' : 'border-white/20 bg-transparent'"
-					@click="applyToAll = !applyToAll"
-				>
-					<Check v-if="applyToAll" class="size-3 text-white" />
-				</button>
-				<span class="text-zinc-400 text-[11px]">Apply to all main captions</span>
-			</div>
-
-			<!-- ── In animations ── -->
-			<div v-if="activeAnimSubTab === 'in'" class="grid grid-cols-4 gap-1.5 p-3">
-				<!-- None option -->
-				<button
-					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
-					:class="!currentAnimIn ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
-					@click="setAnimation('in', null)"
-				>
-					<div class="flex size-10 items-center justify-center rounded-md bg-white/5">
-						<div class="size-6 rounded-full border-2 border-white/20 relative">
-							<div class="absolute inset-0 flex items-center justify-center">
-								<div class="w-full h-[2px] bg-white/20 rotate-45" />
-							</div>
-						</div>
-					</div>
-					<span class="text-[9px] text-zinc-500">None</span>
-				</button>
-				<button
-					v-for="preset in captionAnimInPresets"
-					:key="preset.type"
-					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
-					:class="currentAnimIn === preset.type ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
-					@click="setAnimation('in', preset.type)"
-				>
-					<div class="flex size-10 items-center justify-center rounded-md bg-white/5">
-						<span class="text-[10px] font-bold text-zinc-300">Aa</span>
-					</div>
-					<span class="text-[9px] text-zinc-500 truncate w-full text-center">{{ preset.label.replace(' In', '') }}</span>
-					<span class="text-[8px] text-emerald-400">Preview / Export</span>
-				</button>
-			</div>
-
-			<!-- ── Out animations ── -->
-			<div v-else-if="activeAnimSubTab === 'out'" class="grid grid-cols-4 gap-1.5 p-3">
-				<button
-					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
-					:class="!currentAnimOut ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
-					@click="setAnimation('out', null)"
-				>
-					<div class="flex size-10 items-center justify-center rounded-md bg-white/5">
-						<div class="size-6 rounded-full border-2 border-white/20 relative">
-							<div class="absolute inset-0 flex items-center justify-center">
-								<div class="w-full h-[2px] bg-white/20 rotate-45" />
-							</div>
-						</div>
-					</div>
-					<span class="text-[9px] text-zinc-500">None</span>
-				</button>
-				<button
-					v-for="preset in captionAnimOutPresets"
-					:key="preset.type"
-					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
-					:class="currentAnimOut === preset.type ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
-					@click="setAnimation('out', preset.type)"
-				>
-					<div class="flex size-10 items-center justify-center rounded-md bg-white/5">
-						<span class="text-[10px] font-bold text-zinc-300">Aa</span>
-					</div>
-					<span class="text-[9px] text-zinc-500 truncate w-full text-center">{{ preset.label.replace(' Out', '') }}</span>
-					<span class="text-[8px] text-emerald-400">Preview / Export</span>
-				</button>
-			</div>
-
-			<!-- ── Loop animations ── -->
-			<div v-else-if="activeAnimSubTab === 'loop'" class="grid grid-cols-4 gap-1.5 p-3">
-				<button
-					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
-					:class="!currentAnimLoop ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
-					@click="setAnimation('loop', null)"
-				>
-					<div class="flex size-10 items-center justify-center rounded-md bg-white/5">
-						<div class="size-6 rounded-full border-2 border-white/20 relative">
-							<div class="absolute inset-0 flex items-center justify-center">
-								<div class="w-full h-[2px] bg-white/20 rotate-45" />
-							</div>
-						</div>
-					</div>
-					<span class="text-[9px] text-zinc-500">None</span>
-				</button>
-				<button
-					v-for="preset in captionAnimLoopPresets"
-					:key="preset.type"
-					class="flex flex-col items-center gap-1 rounded-lg border p-2 transition-all"
-					:class="currentAnimLoop === preset.type ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:border-white/20 hover:bg-white/5'"
-					@click="setAnimation('loop', preset.type)"
-				>
-					<div class="flex size-10 items-center justify-center rounded-md bg-white/5">
-						<span class="text-[10px] font-bold text-zinc-300">Aa</span>
-					</div>
-					<span class="text-[9px] text-zinc-500 truncate w-full text-center">{{ preset.label }}</span>
-					<span class="text-[8px] text-emerald-400">Preview / Export</span>
-				</button>
-			</div>
-
-		</div>
-		</div>
-
-		<!-- ═══ Right Tab Strip ═══ -->
-		<div class="flex w-10 shrink-0 flex-col items-center gap-2 border-l border-white/10 bg-[#0e0e10] py-3 overflow-y-auto scrollbar-hidden">
-			<button
-				v-for="tab in topTabs"
-				:key="tab.id"
-				type="button"
-				:title="tab.label"
-				:class="[
-					'flex flex-col items-center justify-center rounded-md p-1.5 transition-colors',
-					activeTopTab === tab.id
-						? 'text-blue-400'
-						: 'text-zinc-500 hover:text-zinc-300',
-				]"
-				@click="activeTopTab = tab.id"
-			>
-				<component :is="tab.icon" class="size-[15px]" />
-			</button>
-		</div>
+		<InspectorTabRail v-model="activeTopTab" :tabs="topTabs" />
 	</div>
 </template>

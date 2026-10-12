@@ -1,9 +1,9 @@
 <template>
-  <div class="livestream-seek-bar w-full" @click.stop>
+  <div class="w-full select-none py-1" @click.stop>
     <!-- Timeline Container -->
     <div
       ref="timelineRef"
-      class="relative h-2 bg-zinc-800 rounded-full cursor-pointer group"
+      class="group relative h-1.5 cursor-pointer rounded-full bg-white/15"
       @mousedown.stop="handleMouseDown"
       @mouseenter="isHovering = true"
       @mouseleave="handleMouseLeave"
@@ -13,7 +13,7 @@
       <div
         v-for="(range, index) in bufferedRanges"
         :key="index"
-        class="absolute top-0 h-full bg-zinc-600 rounded-full"
+        class="absolute top-0 h-full rounded-full bg-white/25"
         :style="{
           left: `${getPercentage(range.start)}%`,
           width: `${getPercentage(range.end) - getPercentage(range.start)}%`,
@@ -22,7 +22,7 @@
 
       <!-- Progress (playback position) -->
       <div
-        class="absolute top-0 h-full bg-gradient-to-r from-[var(--sidebar-accent)] to-[#0891b2] rounded-full transition-all duration-100"
+        class="absolute top-0 h-full rounded-full bg-brand transition-all duration-100"
         :style="{ width: `${progressPercentage}%` }"
       />
 
@@ -32,29 +32,29 @@
         class="absolute top-0 h-full flex items-center"
         :style="{ left: `${liveEdgePercentage}%` }"
       >
-        <div class="relative w-1 h-full bg-red-500 rounded-full">
-          <div class="absolute -top-1 left-1/2 -translate-x-1/2 w-2 h-2 bg-red-500 rounded-full animate-pulse" />
+        <div class="relative h-full w-1 rounded-full bg-live">
+          <div class="absolute -top-1 left-1/2 size-2 -translate-x-1/2 animate-pulse rounded-full bg-live" />
         </div>
       </div>
 
       <!-- Hover Preview -->
       <div
         v-if="isHovering && !isDragging"
-        class="absolute top-0 h-full w-0.5 bg-white/50 pointer-events-none"
+        class="pointer-events-none absolute top-0 h-full w-0.5 bg-white/50"
         :style="{ left: `${hoverPercentage}%` }"
       />
 
       <!-- Scrubber Handle -->
       <div
-        class="absolute top-1/2 -translate-y-1/2 w-4 h-4 bg-white rounded-full shadow-lg transition-transform duration-100"
+        class="absolute top-1/2 size-3.5 -translate-y-1/2 rounded-full bg-white shadow-[var(--shadow-sm)] transition-transform duration-100"
         :class="[isDragging ? 'scale-125' : 'scale-0 group-hover:scale-100']"
-        :style="{ left: `calc(${progressPercentage}% - 8px)` }"
+        :style="{ left: `calc(${progressPercentage}% - 7px)` }"
       />
 
       <!-- Hover Time Tooltip -->
       <div
         v-if="isHovering || isDragging"
-        class="absolute -top-8 px-2 py-1 bg-zinc-900 border border-zinc-700 rounded text-xs text-white whitespace-nowrap pointer-events-none transform -translate-x-1/2"
+        class="tabular pointer-events-none absolute -top-8 -translate-x-1/2 whitespace-nowrap rounded-md bg-surface-raised px-1.5 py-0.5 text-2xs font-medium text-fg shadow-[var(--shadow-md)]"
         :style="{ left: `${isDragging ? progressPercentage : hoverPercentage}%` }"
       >
         {{ formatTime(isDragging ? currentTime : hoverTime) }}
@@ -197,9 +197,3 @@
     window.removeEventListener('mouseup', handleWindowMouseUp);
   });
 </script>
-
-<style scoped>
-  .livestream-seek-bar {
-    user-select: none;
-  }
-</style>

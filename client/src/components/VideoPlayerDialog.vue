@@ -1,226 +1,192 @@
 <template>
-  <Transition name="modal">
-    <div
-      v-if="showVideoPlayer"
-      class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center"
-      :class="zIndexClass"
-    >
-      <Transition name="dialog" appear>
-        <div
-          class="bg-zinc-950 rounded-xl sm:rounded-2xl max-h-[calc(100vh-40px)] sm:max-h-[calc(100vh-80px)] mx-2 sm:mx-4 border border-white/10 overflow-hidden flex flex-col"
-          :style="dialogStyle"
-        >
-          <!-- Custom Video Player -->
-          <div v-if="videoSrc" class="relative w-full flex-1 min-h-0 flex flex-col">
-            <!-- Video Title Header -->
-            <div
-              class="absolute top-0 left-0 right-0 z-20 bg-gradient-to-b from-black/90 via-black/60 to-transparent p-3 pt-4 sm:p-5 sm:pt-6"
-            >
-              <h3 class="text-white text-sm sm:text-base lg:text-lg font-semibold truncate pr-10 sm:pr-12">
-                {{ displayTitle }}
-              </h3>
-              <!-- Clip metadata (only in clip preview mode) -->
-              <div v-if="isClipPreviewMode" class="flex items-center gap-3 mt-1.5 text-xs text-white/60">
-                <span v-if="clipSegmentName" class="flex items-center gap-1.5">
-                  <FolderOpen class="h-3 w-3" />
-                  {{ clipSegmentName }}
-                </span>
-                <span class="flex items-center gap-1.5">
-                  <Clock class="h-3 w-3" />
-                  {{ formatDuration(effectiveStartTime) }} - {{ formatDuration(effectiveEndTime) }}
-                </span>
-                <span class="text-white/40">
-                  ({{ formatClipDurationLabel(effectiveEndTime - effectiveStartTime) }})
-                </span>
-              </div>
-            </div>
-            <!-- Close Button (Top Right) -->
-            <button
-              @click="$emit('close')"
-              class="absolute top-3 right-3 sm:top-6 sm:right-6 z-30 p-2 sm:p-2.5 bg-zinc-900/80 hover:bg-zinc-800 backdrop-blur-sm rounded-lg sm:rounded-xl transition-all border border-white/10"
-              title="Close"
-            >
-              <X class="h-4 w-4 sm:h-5 sm:w-5 text-white" />
-            </button>
-            <!-- Video Display (Dynamic Aspect Ratio) -->
-            <div class="relative flex-1 flex items-center justify-center bg-black min-h-0 overflow-hidden">
-              <video
-                ref="videoElement"
-                :key="videoKey"
-                :src="videoSrc"
-                class="max-w-full max-h-full"
-                :style="{ aspectRatio: `${videoWidth}/${videoHeight}` }"
-                @timeupdate="onTimeUpdate"
-                @loadedmetadata="onLoadedMetadata"
-                @ended="onVideoEnded"
-              />
+  <Modal
+    :open="showVideoPlayer"
+    flush
+    hide-close
+    class="w-auto max-w-[calc(100vw-2rem)] overflow-hidden"
+    @close="$emit('close')"
+  >
+    <template #header>
+      <header class="flex shrink-0 items-center gap-3 border-b border-line-subtle px-4 py-2.5">
+        <div class="min-w-0 flex-1">
+          <h3 class="truncate text-sm font-semibold text-fg">{{ displayTitle }}</h3>
+          <!-- Clip metadata (only in clip preview mode) -->
+          <div v-if="isClipPreviewMode" class="mt-0.5 flex min-w-0 items-center gap-3 text-xs text-fg-muted">
+            <span v-if="clipSegmentName" class="flex min-w-0 items-center gap-1.5">
+              <FolderOpen class="size-3 shrink-0" />
+              <span class="truncate">{{ clipSegmentName }}</span>
+            </span>
+            <span class="tabular flex shrink-0 items-center gap-1.5">
+              <Clock class="size-3" />
+              {{ formatDuration(effectiveStartTime) }} – {{ formatDuration(effectiveEndTime) }}
+              <span class="text-fg-subtle">({{ formatClipDurationLabel(effectiveEndTime - effectiveStartTime) }})</span>
+            </span>
+          </div>
+        </div>
+        <Button variant="ghost" size="icon-sm" title="Close" aria-label="Close" @click="$emit('close')">
+          <X />
+        </Button>
+      </header>
+    </template>
 
-              <!-- Watermark Overlay -->
+    <div class="flex flex-col" :style="playerLayout.box">
+      <template v-if="videoSrc">
+        <!-- Video Display (Dynamic Aspect Ratio) -->
+        <div
+          class="relative flex w-full items-center justify-center overflow-hidden bg-black"
+          :style="playerLayout.video"
+        >
+          <video
+            ref="videoElement"
+            :key="videoKey"
+            :src="videoSrc"
+            class="max-h-full max-w-full object-contain"
+            :style="{ aspectRatio: `${videoWidth}/${videoHeight}` }"
+            @timeupdate="onTimeUpdate"
+            @loadedmetadata="onLoadedMetadata"
+            @ended="onVideoEnded"
+          />
+
+          <!-- Watermark Overlay -->
+          <div
+            v-if="shouldShowWatermark"
+            class="pointer-events-none absolute z-10 transition-opacity duration-300"
+            :style="getWatermarkOverlayStyle"
+          >
+            <img
+              :src="watermarkDataUrl ?? undefined"
+              alt="Watermark"
+              class="max-h-full max-w-full object-contain"
+              :style="{ opacity: getWatermarkOpacity }"
+              @load="onWatermarkLoad"
+            />
+          </div>
+
+          <!-- Loading Indicator -->
+          <div v-if="isVideoLoading" class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/60">
+            <Loader2 class="size-6 animate-spin text-white/80" />
+            <span class="text-xs font-medium text-white/80">Loading video…</span>
+          </div>
+
+          <!-- Center Play/Pause Overlay -->
+          <button
+            v-if="!isVideoLoading && !showReplayButton"
+            type="button"
+            class="absolute inset-0 flex items-center justify-center opacity-0 transition-opacity hover:opacity-100"
+            :title="isPlaying ? 'Pause' : 'Play'"
+            @click="togglePlayPause"
+          >
+            <span class="grid size-14 place-items-center rounded-full bg-black/55 text-white backdrop-blur-sm">
+              <Play v-if="!isPlaying" class="size-6 translate-x-px" />
+              <Pause v-else class="size-6" />
+            </span>
+          </button>
+
+          <!-- Replay Button (shown when clip ends in clip preview mode) -->
+          <Transition name="fade">
+            <button
+              v-if="showReplayButton && isClipPreviewMode"
+              type="button"
+              class="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-black/50 text-white"
+              title="Replay"
+              @click="replayClip"
+            >
+              <span class="grid size-14 place-items-center rounded-full bg-white/15 backdrop-blur-sm">
+                <RotateCcw class="size-6" />
+              </span>
+              <span class="text-sm font-medium">Replay</span>
+            </button>
+          </Transition>
+        </div>
+
+        <!-- Custom Video Controls -->
+        <div class="relative shrink-0 bg-surface-raised">
+          <!-- Full-width Timeline/Seek Bar -->
+          <div
+            ref="timelineRef"
+            class="group relative flex h-4 w-full cursor-pointer items-center"
+            @mousedown="startDrag($event)"
+            @mousemove="onTimelineHover($event)"
+            @mouseleave="onTimelineLeave"
+          >
+            <div class="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2">
+              <div class="absolute inset-0 bg-white/15" />
+              <!-- Buffered segments indicator (only in non-clip mode) -->
               <div
-                v-if="shouldShowWatermark"
-                class="absolute pointer-events-none z-10 transition-opacity duration-300"
-                :style="getWatermarkOverlayStyle"
-              >
-                <img
-                  :src="watermarkDataUrl ?? undefined"
-                  alt="Watermark"
-                  class="max-w-full max-h-full object-contain"
-                  :style="{ opacity: getWatermarkOpacity }"
-                  @load="onWatermarkLoad"
+                v-if="!isClipPreviewMode"
+                class="absolute h-full bg-white/20 transition-all duration-300"
+                :style="{ width: `${duration ? (buffered / duration) * 100 : 0}%` }"
+              />
+              <!-- Progress Bar -->
+              <div
+                class="absolute h-full bg-brand"
+                :class="{ 'transition-all duration-75': !isDragging }"
+                :style="{ width: `${progressPercent}%` }"
+              />
+            </div>
+            <!-- Seek thumb -->
+            <div
+              class="pointer-events-none absolute top-1/2 rounded-full bg-white shadow-[var(--shadow-sm)]"
+              :class="[isDragging ? 'size-3.5' : 'size-2.5 group-hover:size-3', { 'transition-all duration-75': !isDragging }]"
+              :style="{ left: `${progressPercent}%`, transform: 'translate(-50%, -50%)' }"
+            />
+            <!-- Hover/drag time preview -->
+            <div
+              v-if="hoverTime !== null || isDragging"
+              class="tabular pointer-events-none absolute -top-7 z-20 whitespace-nowrap rounded-md bg-surface-raised px-1.5 py-0.5 text-2xs font-medium text-fg shadow-[var(--shadow-md)]"
+              :style="{ left: `${isDragging ? progressPercent : hoverPosition}%`, transform: 'translateX(-50%)' }"
+            >
+              {{ formatDuration(isDragging ? (progressPercent / 100) * duration : (hoverTime ?? 0)) }}
+            </div>
+          </div>
+
+          <!-- Control Buttons and Time Display -->
+          <div class="flex items-center justify-between gap-3 px-3 pb-2.5 pt-1">
+            <div class="flex items-center gap-2">
+              <Button variant="ghost" size="icon-sm" :title="isPlaying ? 'Pause' : 'Play'" @click="togglePlayPause">
+                <Play v-if="!isPlaying" />
+                <Pause v-else />
+              </Button>
+              <span class="tabular whitespace-nowrap text-xs text-fg-muted">
+                <span class="text-fg">{{ formatDuration(displayCurrentTime) }}</span>
+                / {{ formatDuration(displayDuration) }}
+              </span>
+            </div>
+            <div class="flex items-center gap-1">
+              <Button variant="ghost" size="icon-sm" :title="isMuted ? 'Unmute' : 'Mute'" @click="toggleMute">
+                <VolumeX v-if="isMuted || volume === 0" />
+                <Volume2 v-else />
+              </Button>
+              <div class="relative mr-1 h-1 w-20 rounded-full bg-white/15">
+                <div
+                  class="absolute left-0 top-0 h-full rounded-full bg-fg transition-all duration-200"
+                  :style="{ width: `${volume * 100}%` }"
+                />
+                <input
+                  v-model="volume"
+                  type="range"
+                  min="0"
+                  max="1"
+                  step="0.05"
+                  class="volume-slider absolute inset-0 z-10 h-full w-full cursor-pointer"
+                  aria-label="Volume"
+                  @input="updateVolume"
                 />
               </div>
-              <!-- Loading Indicator -->
-              <div v-if="isVideoLoading" class="absolute inset-0 flex items-center justify-center bg-black/60">
-                <div class="flex flex-col items-center gap-3 sm:gap-4">
-                  <div
-                    class="w-12 h-12 sm:w-16 sm:h-16 rounded-xl sm:rounded-2xl bg-violet-500/20 flex items-center justify-center"
-                  >
-                    <Loader2 class="animate-spin h-6 w-6 sm:h-8 sm:w-8 text-violet-400" />
-                  </div>
-                  <span class="text-white text-xs sm:text-sm font-medium">Loading video...</span>
-                </div>
-              </div>
-              <!-- Center Play/Pause Overlay -->
-              <button
-                v-if="!isVideoLoading && !showReplayButton"
-                @click="togglePlayPause"
-                class="absolute inset-0 flex items-center justify-center opacity-0 hover:opacity-100 transition-opacity bg-black/30"
-                title="Play/Pause"
-              >
-                <div
-                  class="p-3 sm:p-5 bg-white/20 backdrop-blur-md rounded-xl sm:rounded-2xl hover:bg-white/30 transition-colors border border-white/20"
-                >
-                  <Play v-if="!isPlaying" class="h-7 w-7 sm:h-10 sm:w-10 text-white" />
-                  <Pause v-else class="h-7 w-7 sm:h-10 sm:w-10 text-white" />
-                </div>
-              </button>
-              <!-- Replay Button (shown when clip ends in clip preview mode) -->
-              <Transition name="fade">
-                <button
-                  v-if="showReplayButton && isClipPreviewMode"
-                  @click="replayClip"
-                  class="absolute inset-0 flex items-center justify-center bg-black/50"
-                  title="Replay"
-                >
-                  <div
-                    class="p-4 sm:p-6 bg-violet-500/20 backdrop-blur-md rounded-2xl sm:rounded-3xl hover:bg-violet-500/30 transition-colors border border-violet-500/30 flex flex-col items-center gap-2"
-                  >
-                    <RotateCcw class="h-8 w-8 sm:h-12 sm:w-12 text-violet-400" />
-                    <span class="text-white text-sm font-medium">Replay</span>
-                  </div>
-                </button>
-              </Transition>
-            </div>
-            <!-- Custom Video Controls -->
-            <div class="flex-shrink-0 bg-black/60 backdrop-blur-sm relative z-20">
-              <!-- Full-width Timeline/Seek Bar -->
-              <div
-                ref="timelineRef"
-                class="relative h-4 w-full cursor-pointer group flex items-center"
-                @mousedown="startDrag($event)"
-                @mousemove="onTimelineHover($event)"
-                @mouseleave="onTimelineLeave"
-              >
-                <!-- Visual track (centered in larger hit area) -->
-                <div class="absolute inset-x-0 h-1 top-1/2 -translate-y-1/2">
-                  <!-- Background track -->
-                  <div class="absolute inset-0 bg-white/20"></div>
-                  <!-- Buffered segments indicator (only in non-clip mode) -->
-                  <div
-                    v-if="!isClipPreviewMode"
-                    class="absolute h-full bg-violet-500/30 transition-all duration-300"
-                    :style="{ width: `${duration ? (buffered / duration) * 100 : 0}%` }"
-                  ></div>
-                  <!-- Progress Bar -->
-                  <div
-                    class="absolute h-full bg-violet-500"
-                    :class="{ 'transition-all duration-75': !isDragging }"
-                    :style="{ width: `${progressPercent}%` }"
-                  ></div>
-                </div>
-                <!-- Seek thumb - always visible, larger during drag -->
-                <div
-                  class="absolute top-1/2 bg-violet-400 rounded-full shadow-md pointer-events-none"
-                  :class="[isDragging ? 'w-4 h-4' : 'w-3 h-3', { 'transition-all duration-75': !isDragging }]"
-                  :style="{
-                    left: `${progressPercent}%`,
-                    transform: 'translate(-50%, -50%)',
-                  }"
-                ></div>
-                <!-- Hover/drag time preview -->
-                <div
-                  v-if="hoverTime !== null || isDragging"
-                  class="absolute -top-8 bg-black/90 backdrop-blur-sm text-white text-xs px-2 py-1 rounded font-medium whitespace-nowrap z-20 pointer-events-none"
-                  :style="{ left: `${isDragging ? progressPercent : hoverPosition}%`, transform: 'translateX(-50%)' }"
-                >
-                  {{ formatDuration(isDragging ? (progressPercent / 100) * duration : (hoverTime ?? 0)) }}
-                </div>
-              </div>
-              <!-- Control Buttons and Time Display -->
-              <div class="flex items-center justify-between px-4 py-3">
-                <!-- Left Controls -->
-                <div class="flex items-center gap-4">
-                  <!-- Play/Pause Button -->
-                  <button
-                    @click="togglePlayPause"
-                    class="p-2.5 bg-zinc-800/80 hover:bg-zinc-700 rounded-xl transition-all duration-200 border border-zinc-700"
-                    :title="isPlaying ? 'Pause' : 'Play'"
-                  >
-                    <Play v-if="!isPlaying" class="h-5 w-5 text-white" />
-                    <Pause v-else class="h-5 w-5 text-white" />
-                  </button>
-                  <!-- Time Display -->
-                  <div
-                    class="text-white text-sm font-mono font-medium bg-zinc-800/80 px-4 py-2.5 rounded-xl border border-zinc-700"
-                  >
-                    {{ formatDuration(displayCurrentTime) }} / {{ formatDuration(displayDuration) }}
-                  </div>
-                </div>
-                <!-- Right Controls -->
-                <div class="flex items-center gap-4">
-                  <!-- Volume Control -->
-                  <div class="flex items-center gap-3">
-                    <button
-                      @click="toggleMute"
-                      class="p-2.5 bg-zinc-800/80 hover:bg-zinc-700 rounded-xl transition-all duration-200 border border-zinc-700"
-                      :title="isMuted ? 'Unmute' : 'Mute'"
-                    >
-                      <VolumeX v-if="isMuted || volume === 0" class="h-4 w-4 text-white" />
-                      <Volume2 v-else class="h-4 w-4 text-white" />
-                    </button>
-                    <div class="relative w-24 h-1.5 bg-zinc-800 rounded-full">
-                      <div
-                        class="absolute left-0 top-0 h-full bg-gradient-to-r from-violet-500 to-purple-500 rounded-full transition-all duration-200"
-                        :style="{ width: `${volume * 100}%` }"
-                      ></div>
-                      <input
-                        v-model="volume"
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.05"
-                        class="absolute inset-0 w-full h-full cursor-pointer slider z-10 mt-0.5"
-                        @input="updateVolume"
-                      />
-                    </div>
-                  </div>
-                  <!-- Replay Button (only in clip preview mode) -->
-                  <button
-                    v-if="isClipPreviewMode"
-                    @click="replayClip"
-                    class="p-2.5 bg-zinc-800/80 hover:bg-zinc-700 rounded-xl transition-all duration-200 border border-zinc-700"
-                    title="Replay clip"
-                  >
-                    <RotateCcw class="h-4 w-4 text-white" />
-                  </button>
-                </div>
-              </div>
+              <!-- Replay Button (only in clip preview mode) -->
+              <Button v-if="isClipPreviewMode" variant="ghost" size="icon-sm" title="Replay clip" @click="replayClip">
+                <RotateCcw />
+              </Button>
             </div>
           </div>
         </div>
-      </Transition>
+      </template>
+
+      <div v-else class="grid place-items-center bg-black" :style="playerLayout.video">
+        <Loader2 class="size-6 animate-spin text-white/60" />
+      </div>
     </div>
-  </Transition>
+  </Modal>
 </template>
 
 <script setup lang="ts">
@@ -230,6 +196,8 @@
   import type { RawVideo, IntroOutro } from '@/services/database';
   import { X, Loader2, Play, Pause, VolumeX, Volume2, RotateCcw, FolderOpen, Clock } from 'lucide-vue-next';
   import { utf8ToBase64Url } from '@/utils/encoding';
+  import { Button } from '@/components/ui/button';
+  import { Modal } from '@/components/ui/modal';
 
   type VideoLike = RawVideo | IntroOutro;
 
@@ -278,12 +246,7 @@
     return props.clipStartTime !== null && props.clipEndTime !== null;
   });
 
-  // Computed: z-index class
-  const zIndexClass = computed(() => {
-    if (props.zIndex === 10000) return 'z-[10000]';
-    if (props.zIndex === 60) return 'z-[60]';
-    return 'z-50';
-  });
+  // Note: `zIndex` is kept for API compatibility; stacking is handled by <Modal>.
 
   // Computed: Effective start/end times
   const effectiveStartTime = computed(() => props.clipStartTime ?? 0);
@@ -596,34 +559,19 @@
     };
   });
 
-  // Compute dialog style based on video aspect ratio
-  const dialogStyle = computed(() => {
-    const aspectRatio = videoWidth.value / videoHeight.value;
-
-    // For portrait videos (aspect ratio < 1), use narrower dialog with explicit height
-    // For landscape videos, use wider dialog
-    if (aspectRatio < 0.8) {
-      // Portrait (9:16, 4:5, etc.) - use near-full viewport height and calculate width
-      return {
-        height: 'calc(100vh - 80px)',
-        width: `calc((100vh - 80px) * ${aspectRatio})`,
-        maxWidth: '90vw',
-      };
-    } else if (aspectRatio < 1.2) {
-      // Square-ish (1:1, 4:3) - constrain height to ensure controls fit
-      // Account for ~120px of controls/header space
-      return {
-        width: '100%',
-        maxWidth: '800px',
-        maxHeight: 'calc(100vh - 80px)',
-      };
-    } else {
-      // Landscape (16:9, 21:9)
-      return {
-        width: '100%',
-        maxWidth: '1152px', // lg:max-w-6xl equivalent
-      };
-    }
+  // Size the player to the video's aspect ratio so it fits the window without
+  // scrolling: `box` sets the width, `video` the height of the video area.
+  const PLAYER_CHROME = '8.5rem'; // header + controls
+  const playerLayout = computed(() => {
+    const ratio = videoWidth.value / videoHeight.value || 16 / 9;
+    // Portrait: use the height; square-ish: cap at 800px; landscape: cap at 1152px
+    const cap = ratio < 0.8 ? '90vw' : ratio < 1.2 ? '800px' : '1152px';
+    const maxWidth = `min(${cap}, calc(100vw - 2rem))`;
+    const maxVideoHeight = `calc(100vh - 3rem - ${PLAYER_CHROME})`;
+    return {
+      box: { width: `max(min(360px, ${maxWidth}), min(${maxWidth}, calc(${maxVideoHeight} * ${ratio})))` },
+      video: { height: `min(${maxVideoHeight}, calc(${maxWidth} / ${ratio}))` },
+    };
   });
 
   // Helper function to get video title for both RawVideo and IntroOutro types
@@ -964,10 +912,8 @@
   function handleKeydown(event: KeyboardEvent) {
     if (!props.showVideoPlayer) return;
 
+    // Escape is handled by <Modal>, which emits `close`.
     switch (event.key) {
-      case 'Escape':
-        emit('close');
-        break;
       case ' ':
         event.preventDefault();
         togglePlayPause();
@@ -990,40 +936,10 @@
 </script>
 
 <style scoped>
-  /* Modal backdrop transition */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 0.3s ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  /* Dialog transition */
-  .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 0.2s ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* Fade transition for replay button */
+  /* Fade transition for the replay overlay */
   .fade-enter-active,
   .fade-leave-active {
-    transition: opacity 0.3s ease;
+    transition: opacity 0.2s ease;
   }
 
   .fade-enter-from,
@@ -1031,59 +947,39 @@
     opacity: 0;
   }
 
-  /* Custom range input styling */
-  input[type='range'].slider {
+  /* Native range input drawn invisibly over the custom volume track */
+  .volume-slider {
     -webkit-appearance: none;
     appearance: none;
     background: transparent;
-    cursor: pointer;
   }
 
-  input[type='range'].slider::-webkit-slider-track {
+  .volume-slider::-webkit-slider-runnable-track {
     background: transparent;
-    height: 6px;
-    border-radius: 3px;
+    height: 4px;
   }
 
-  input[type='range'].slider::-webkit-slider-thumb {
+  .volume-slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    background: white;
-    height: 14px;
-    width: 14px;
-    border-radius: 50%;
-    margin-top: -5px;
-    transition: all 0.2s ease;
+    width: 12px;
+    height: 12px;
+    margin-top: -4px;
+    border-radius: 9999px;
+    background: var(--fg);
+    box-shadow: var(--shadow-sm);
   }
 
-  input[type='range'].slider::-webkit-slider-thumb:hover {
-    background: #f3f4f6;
-    transform: scale(1.1);
-  }
-
-  input[type='range'].slider::-moz-range-track {
+  .volume-slider::-moz-range-track {
     background: transparent;
-    height: 6px;
-    border-radius: 3px;
+    height: 4px;
   }
 
-  input[type='range'].slider::-moz-range-thumb {
+  .volume-slider::-moz-range-thumb {
+    width: 12px;
+    height: 12px;
     border: none;
-    background: white;
-    height: 14px;
-    width: 14px;
-    border-radius: 50%;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  input[type='range'].slider::-moz-range-thumb:hover {
-    background: #f3f4f6;
-    transform: scale(1.1);
-  }
-
-  /* Video element styling */
-  video {
-    object-fit: contain;
+    border-radius: 9999px;
+    background: var(--fg);
   }
 </style>

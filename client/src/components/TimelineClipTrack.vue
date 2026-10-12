@@ -2,60 +2,55 @@
   <div
     v-for="(clip, index) in clips"
     :key="clip.id"
-    class="flex items-center min-h-12 px-2 border-b border-border/20 cursor-pointer relative"
+    class="relative flex h-10 cursor-pointer items-center border-b border-line-subtle px-2"
     @click="onTimelineClipClick(clip.id)"
   >
     <!-- Track Label -->
     <div
-      class="w-18 h-8 -ml-2 flex items-center justify-center sticky left-0 z-30 bg-gradient-to-r from-[#141416] to-[#141416]/80 backdrop-blur-md border-r border-white/[0.04]"
+      class="sticky left-0 z-30 -ml-2 flex h-full w-18 shrink-0 items-center gap-1.5 border-r border-line-subtle bg-surface pl-3 pr-2"
+      :title="clip.title"
     >
-      <div class="text-xs text-center px-1.5">
-        <div class="font-medium text-white/70 truncate max-w-16 text-[10px] tracking-wide" :title="clip.title">
-          {{ getClipLabel(clip) }}
-        </div>
-      </div>
+      <span class="size-1.5 shrink-0 rounded-full" :style="{ backgroundColor: clip.run_color || DEFAULT_RUN_COLOR }" />
+      <span class="truncate text-2xs font-medium text-fg-muted">{{ getClipLabel(clip) }}</span>
     </div>
     <!-- Clip Track Content -->
-    <div class="flex-1 h-8 relative">
+    <div class="relative h-8 flex-1">
       <div
-        class="absolute inset-0 bg-gradient-to-b from-[#161618]/40 to-[#0d0d0e]/30 rounded-md border border-white/[0.03] cursor-pointer"
+        class="absolute inset-0 cursor-pointer rounded-md bg-surface-sunken"
         @click="onClipTrackClick"
         @contextmenu="onClipTrackContextMenu($event, clip)"
       ></div>
       <!-- Clip segments on timeline -->
-      <div class="absolute inset-0 flex items-center pointer-events-none">
+      <div class="pointer-events-none absolute inset-0 flex items-center">
         <!-- Render each segment as a clip on the timeline -->
         <div
           v-for="(segment, segIndex) in clip.segments"
           :key="`${clip.id}_${segIndex}`"
           :ref="(el) => setTimelineClipRef(el, clip.id)"
-          class="clip-segment absolute h-6 rounded-md flex items-center justify-center pointer-events-auto group overflow-hidden"
+          class="clip-segment group pointer-events-auto absolute flex h-7 items-center justify-center overflow-hidden rounded-md border"
           :class="[
             isDraggingSegment && draggedSegmentInfo?.clipId === clip.id && draggedSegmentInfo?.segmentIndex === segIndex
-              ? 'cursor-grabbing z-30 shadow-2xl border-2 border-blue-400 dragging'
+              ? 'is-dragging z-30 cursor-grabbing'
               : isResizingSegment && resizeHandleInfo?.clipId === clip.id && resizeHandleInfo?.segmentIndex === segIndex
-                ? 'cursor-ew-resize z-30 shadow-2xl border-2 border-green-400 resizing'
+                ? 'is-resizing z-30 cursor-ew-resize'
                 : isCutToolActive && cutHoverInfo?.clipId === clip.id && cutHoverInfo?.segmentIndex === segIndex
-                  ? 'cursor-crosshair z-65 shadow-xl border-2 border-orange-400 ring-2 ring-orange-400/50 ring-offset-1 ring-offset-transparent'
+                  ? 'is-cut-target cut-mode z-65'
                   : isCutToolActive
-                    ? 'cursor-crosshair z-62 transition-all duration-200 ease-out'
-                    : 'cursor-grab hover:cursor-grab transition-all duration-200 ease-out',
+                    ? 'cut-mode z-62'
+                    : 'cursor-grab',
             clip.run_number ? `run-${clip.run_number}` : '',
             !isCutToolActive && currentlyPlayingClipId === clip.id
-              ? 'shadow-lg z-20 ring-2 ring-emerald-400/70 border border-emerald-400/50'
-              : !isCutToolActive &&
-                  (hoveredClipId === clip.id || hoveredTimelineClipId === clip.id)
-                ? 'shadow-lg z-20 ring-1 ring-white/40'
+              ? 'is-playing z-20'
+              : !isCutToolActive && (hoveredClipId === clip.id || hoveredTimelineClipId === clip.id)
+                ? 'is-hovered z-20'
                 : '',
-            selectedSegmentKeys?.has(`${clip.id}_${segIndex}`)
-              ? 'ring-2 ring-blue-400 ring-offset-1 ring-offset-transparent selected-segment'
-              : '',
+            selectedSegmentKeys?.has(`${clip.id}_${segIndex}`) ? 'selected-segment' : '',
             isMovingSegment && selectedSegmentKeys?.has(`${clip.id}_${segIndex}`) ? 'keyboard-moving-segment' : '',
           ]"
           :style="{
             left: `${duration ? (getSegmentDisplayTime(segment, 'start') / duration) * 100 : 0}%`,
             width: `${duration ? ((getSegmentDisplayTime(segment, 'end') - getSegmentDisplayTime(segment, 'start')) / duration) * 100 : 0}%`,
-            ...generateClipGradient(clip.run_color),
+            ...segmentColorStyle(clip.run_color),
           }"
           :data-run-color="clip.run_color"
           :title="`${clip.title} - ${formatDuration(getSegmentDisplayTime(segment, 'start'))} to ${formatDuration(getSegmentDisplayTime(segment, 'end'))}${clip.run_number ? ` (Run ${clip.run_number})` : ''}`"
@@ -103,7 +98,7 @@
           "
           @contextmenu="onSegmentContextMenu($event, clip.id, segIndex, segment, clip.title)"
         >
-          <span class="segment-title text-[11px] text-white font-medium truncate px-2 select-none">
+          <span class="segment-title select-none truncate px-2 text-2xs font-medium text-fg">
             {{ clip.title }}
           </span>
           <!-- Cut preview indicator -->
@@ -117,47 +112,31 @@
             @vue:mounted="console.log(`[CUTTING] Cut preview indicator mounted for ${clip.id}_${segIndex}`)"
           >
             <!-- Vertical cut line -->
-            <div
-              class="absolute left-1/2 -translate-x-1/2 top-0 bottom-0 w-0.5 bg-orange-400 shadow-lg shadow-orange-400/50"
-            ></div>
-            <!-- Top cut indicator -->
-            <div
-              class="absolute top-0 left-1/2 -translate-x-1/2 -translate-y-1/2 w-2 h-2 bg-orange-400 rounded-full shadow-md shadow-orange-400/50 border border-white/80 cut-indicator flex items-center justify-center"
-            >
-              <X :size="6" class="text-white" stroke-width="3" />
-            </div>
-            <!-- Bottom cut indicator -->
-            <div
-              class="absolute bottom-0 left-1/2 -translate-x-1/2 translate-y-1/2 w-2 h-2 bg-orange-400 rounded-full shadow-md shadow-orange-400/50 border border-white/80 cut-indicator flex items-center justify-center"
-            >
-              <X :size="6" class="text-white" stroke-width="3" />
-            </div>
+            <div class="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-fg"></div>
+            <div class="absolute left-1/2 top-0 size-1.5 -translate-x-1/2 -translate-y-1/2 rounded-full bg-fg"></div>
+            <div class="absolute bottom-0 left-1/2 size-1.5 -translate-x-1/2 translate-y-1/2 rounded-full bg-fg"></div>
           </div>
           <!-- Left resize handle -->
           <div
             v-if="!getSegmentAdjacency(clip.id, segIndex).hasPrevious"
-            class="resize-handle resize-handle-left absolute left-0 top-0 bottom-0 w-3 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center group-hover:opacity-100 group-hover:pointer-events-auto"
+            class="resize-handle resize-handle-left pointer-events-none absolute inset-y-0 left-0 flex w-2.5 cursor-ew-resize items-center justify-center opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100"
             :class="{
               'opacity-100 pointer-events-auto': !isCutToolActive && hoveredSegmentKey === `${clip.id}_${segIndex}`,
             }"
             @mousedown="onResizeMouseDown($event, clip.id, segIndex, segment, 'left')"
           >
-            <div
-              class="w-1 h-3 bg-white/80 rounded-full shadow-sm transition-all duration-150 group-hover:h-4 group-hover:bg-white"
-            ></div>
+            <div class="resize-grip h-3.5 w-[3px] rounded-full bg-white/85"></div>
           </div>
           <!-- Right resize handle -->
           <div
             v-if="!getSegmentAdjacency(clip.id, segIndex).hasNext"
-            class="resize-handle resize-handle-right absolute right-0 top-0 bottom-0 w-3 opacity-0 transition-all duration-150 cursor-ew-resize pointer-events-none flex items-center justify-center group-hover:opacity-100 group-hover:pointer-events-auto"
+            class="resize-handle resize-handle-right pointer-events-none absolute inset-y-0 right-0 flex w-2.5 cursor-ew-resize items-center justify-center opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100"
             :class="{
               'opacity-100 pointer-events-auto': !isCutToolActive && hoveredSegmentKey === `${clip.id}_${segIndex}`,
             }"
             @mousedown="onResizeMouseDown($event, clip.id, segIndex, segment, 'right')"
           >
-            <div
-              class="w-1 h-3 bg-white/80 rounded-full shadow-sm transition-all duration-150 group-hover:h-4 group-hover:bg-white"
-            ></div>
+            <div class="resize-grip h-3.5 w-[3px] rounded-full bg-white/85"></div>
           </div>
         </div>
       </div>
@@ -167,8 +146,7 @@
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import { X } from 'lucide-vue-next';
-  import { formatDuration, generateClipGradient, getSegmentDisplayTime } from '../utils/timelineUtils';
+  import { formatDuration, getSegmentDisplayTime, hexToRgba } from '../utils/timelineUtils';
   import type { TimelineClipTrackProps, ClipSegment, Clip } from '../types';
 
   defineProps<TimelineClipTrackProps>();
@@ -229,6 +207,17 @@
     emit('timelineSegmentClick', clipId, segmentIndex, event);
   }
 
+  // Run colors identify detection runs (data color); manual clips fall back to emerald.
+  const DEFAULT_RUN_COLOR = '#10B981';
+
+  function segmentColorStyle(runColor: string | undefined) {
+    const color = runColor || DEFAULT_RUN_COLOR;
+    return {
+      backgroundColor: hexToRgba(color, 0.3),
+      borderColor: hexToRgba(color, 0.65),
+    };
+  }
+
   // Get a short label for the clip track
   function getClipLabel(clip: Clip): string {
     // Use clip title, truncated if too long
@@ -242,36 +231,15 @@
 </script>
 
 <style scoped>
-  /* ============================================
-     CLIP SEGMENT - Base Styles
-     ============================================ */
+  /* Segment state chrome: one calm ring system (brand = selected / active edit). */
   .clip-segment {
     transition:
-      transform 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-      box-shadow 0.2s cubic-bezier(0.4, 0, 0.2, 1),
-      filter 0.2s ease;
-    will-change: transform, box-shadow;
-    backdrop-filter: blur(4px);
+      box-shadow 0.15s ease,
+      filter 0.15s ease;
   }
 
-  /* Segment title text styling */
-  .segment-title {
-    text-shadow:
-      0 1px 2px rgba(0, 0, 0, 0.5),
-      0 0 8px rgba(0, 0, 0, 0.3);
-    letter-spacing: 0.01em;
-  }
-
-  /* ============================================
-     HOVER States
-     ============================================ */
   .clip-segment:hover {
-    transform: translateY(-1px);
-    box-shadow:
-      0 4px 12px rgba(0, 0, 0, 0.25),
-      0 0 0 1px rgba(255, 255, 255, 0.1),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12);
-    filter: brightness(1.1);
+    filter: brightness(1.15);
   }
 
   .clip-segment:hover .resize-handle {
@@ -279,188 +247,74 @@
     pointer-events: auto !important;
   }
 
-  /* ============================================
-     SELECTED State
-     ============================================ */
+  .segment-title {
+    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
+  }
+
+  .clip-segment.is-hovered {
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.35);
+  }
+
+  .clip-segment.is-playing {
+    box-shadow: 0 0 0 1.5px var(--fg);
+  }
+
   .clip-segment.selected-segment {
     z-index: 15;
-    transform: translateY(-1px);
-    box-shadow:
-      0 0 0 2px rgba(59, 130, 246, 0.8),
-      0 4px 16px rgba(59, 130, 246, 0.35),
-      inset 0 1px 0 rgba(255, 255, 255, 0.15);
+    box-shadow: 0 0 0 2px var(--brand);
     filter: brightness(1.15);
   }
 
-  .clip-segment.selected-segment:not(.dragging):not(.resizing) {
-    animation: selection-glow 2s ease-in-out infinite;
-  }
-
-  @keyframes selection-glow {
-    0%,
-    100% {
-      box-shadow:
-        0 0 0 2px rgba(59, 130, 246, 0.8),
-        0 4px 16px rgba(59, 130, 246, 0.35),
-        inset 0 1px 0 rgba(255, 255, 255, 0.15);
-    }
-    50% {
-      box-shadow:
-        0 0 0 2px rgba(59, 130, 246, 1),
-        0 4px 20px rgba(59, 130, 246, 0.5),
-        0 0 24px rgba(59, 130, 246, 0.25),
-        inset 0 1px 0 rgba(255, 255, 255, 0.15);
-    }
-  }
-
-  /* ============================================
-     PLAYING State (green glow)
-     ============================================ */
-  .clip-segment.shadow-lg.z-20 {
-    box-shadow:
-      0 0 0 2px rgba(16, 185, 129, 0.7),
-      0 4px 16px rgba(16, 185, 129, 0.3),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12);
-    filter: brightness(1.12);
-  }
-
-  /* ============================================
-     DRAGGING State
-     ============================================ */
-  .clip-segment.dragging {
+  .clip-segment.is-dragging {
     cursor: grabbing !important;
-    transform: translateY(-2px) scale(1.02);
     transition: none !important;
     box-shadow:
-      0 8px 24px rgba(0, 0, 0, 0.35),
-      0 0 0 2px rgba(59, 130, 246, 0.6),
-      inset 0 1px 0 rgba(255, 255, 255, 0.15);
-    filter: brightness(1.15);
+      0 0 0 2px var(--brand),
+      var(--shadow-md);
+    filter: brightness(1.2);
   }
 
-  /* ============================================
-     RESIZING State
-     ============================================ */
-  .clip-segment.resizing {
+  .clip-segment.is-resizing {
     transition: none !important;
-    box-shadow:
-      0 4px 16px rgba(0, 0, 0, 0.3),
-      0 0 0 2px rgba(34, 197, 94, 0.7),
-      inset 0 1px 0 rgba(255, 255, 255, 0.12);
-    filter: brightness(1.1);
+    box-shadow: 0 0 0 2px var(--brand);
   }
 
-  .clip-segment.resizing .resize-handle {
+  .clip-segment.is-resizing .resize-handle {
     opacity: 1 !important;
     pointer-events: auto !important;
   }
 
-  .clip-segment.resizing .resize-handle > div {
-    background: white !important;
-    height: 1rem !important;
-    box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
-  }
-
-  /* ============================================
-     KEYBOARD MOVEMENT State
-     ============================================ */
   .clip-segment.keyboard-moving-segment {
     z-index: 35;
-    transform: translateY(-2px) scale(1.01);
     box-shadow:
-      0 0 0 2px rgba(59, 130, 246, 0.9),
-      0 8px 24px rgba(59, 130, 246, 0.4),
-      0 0 32px rgba(59, 130, 246, 0.2);
-    transition: all 0.1s ease-out;
-    filter: brightness(1.2);
+      0 0 0 2px var(--brand),
+      0 0 0 5px var(--brand-soft);
+    transition: box-shadow 0.1s ease-out;
   }
 
-  .clip-segment.keyboard-moving-segment::after {
-    content: '';
-    position: absolute;
-    inset: -3px;
-    border-radius: 8px;
-    background: linear-gradient(45deg, rgba(59, 130, 246, 0.3), rgba(139, 92, 246, 0.2));
-    z-index: -1;
-    animation: keyboard-move-pulse 0.6s ease-in-out infinite;
+  /* Cut tool: the white cut line replaces the cursor */
+  .clip-segment.cut-mode {
+    cursor: none !important;
   }
 
-  @keyframes keyboard-move-pulse {
-    0%,
-    100% {
-      opacity: 0.5;
-    }
-    50% {
-      opacity: 1;
-    }
+  .clip-segment.is-cut-target {
+    box-shadow: 0 0 0 1px var(--fg);
   }
 
-  /* ============================================
-     RESIZE HANDLES
-     ============================================ */
   .resize-handle {
     z-index: 10;
   }
 
   .resize-handle-left {
-    background: linear-gradient(to right, rgba(0, 0, 0, 0.3), transparent);
-    border-radius: 6px 0 0 6px;
+    background: linear-gradient(to right, rgba(0, 0, 0, 0.35), transparent);
   }
 
   .resize-handle-right {
-    background: linear-gradient(to left, rgba(0, 0, 0, 0.3), transparent);
-    border-radius: 0 6px 6px 0;
+    background: linear-gradient(to left, rgba(0, 0, 0, 0.35), transparent);
   }
 
-  .resize-handle:hover > div {
-    transform: scaleY(1.2);
-    box-shadow: 0 0 8px rgba(255, 255, 255, 0.5);
-  }
-
-  /* ============================================
-     CUT TOOL States
-     ============================================ */
-  .clip-segment.cursor-crosshair {
-    background: linear-gradient(
-      180deg,
-      rgba(251, 146, 60, 0.5) 0%,
-      rgba(251, 146, 60, 0.35) 50%,
-      rgba(251, 146, 60, 0.45) 100%
-    ) !important;
-    box-shadow:
-      0 0 0 2px rgba(251, 146, 60, 0.7),
-      0 4px 16px rgba(251, 146, 60, 0.3),
-      inset 0 1px 0 rgba(255, 255, 255, 0.15) !important;
-    transform: translateY(-1px);
-    cursor:
-      url('data:image/svg+xml;utf8,<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"><rect width="1" height="1" fill="transparent"/></svg>'),
-      none !important;
-  }
-
-  .clip-segment.cursor-crosshair:hover {
-    transform: translateY(-2px);
-    filter: brightness(1.15);
-  }
-
-  /* Cut line animation */
-  @keyframes cut-line-pulse {
-    0%,
-    100% {
-      opacity: 0.9;
-      box-shadow: 0 0 8px rgba(251, 146, 60, 0.8);
-    }
-    50% {
-      opacity: 1;
-      box-shadow: 0 0 16px rgba(251, 146, 60, 1);
-    }
-  }
-
-  .bg-orange-400 {
-    animation: cut-line-pulse 1.5s ease-in-out infinite;
-  }
-
-  .cut-indicator {
-    transform: translateZ(0);
-    backface-visibility: hidden;
+  .resize-handle:hover .resize-grip,
+  .clip-segment.is-resizing .resize-grip {
+    background: var(--fg);
   }
 </style>

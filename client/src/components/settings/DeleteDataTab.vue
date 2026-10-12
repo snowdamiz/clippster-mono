@@ -1,117 +1,95 @@
 <template>
-  <div class="settings-tab">
-    <div class="settings-section">
-      <h2 class="settings-section-title">Clear Local Storage</h2>
-      <p class="settings-section-description">
-        Free up disk space by deleting local media files from your computer.
-      </p>
-
-      <!-- Warning Banner -->
-      <div class="warning-banner">
-        <div class="warning-banner__icon">
-          <AlertTriangle :size="20" />
-        </div>
-        <div class="warning-banner__content">
-          <h3 class="warning-banner__title">Permanent Deletion</h3>
-          <p class="warning-banner__text">
-            This will permanently delete all local media files except built clips. This action cannot be undone.
+  <div class="flex flex-col gap-5">
+    <SettingsSection
+      title="Clear local storage"
+      description="Free up disk space by deleting local media files from your computer."
+    >
+      <!-- Storage usage -->
+      <div v-if="storageInfo" class="animate-enter p-4">
+        <div class="flex items-center justify-between gap-3">
+          <p class="flex items-center gap-1.5 text-xs text-fg-muted">
+            <HardDrive class="size-3.5 shrink-0 text-fg-subtle" />
+            Current storage usage
           </p>
+          <p class="tabular text-lg font-semibold text-fg">{{ storageInfo.total_formatted }}</p>
         </div>
-      </div>
-
-      <!-- Storage Info Card -->
-      <div v-if="storageInfo" class="storage-info-card">
-        <div class="storage-info-card__header">
-          <div class="storage-info-card__icon">
-            <HardDrive :size="24" />
-          </div>
-          <div>
-            <h3 class="storage-info-card__title">Current Storage Usage</h3>
-            <p class="storage-info-card__subtitle">Space used by local media files</p>
-          </div>
-        </div>
-        
-        <div class="storage-info-card__size">
-          {{ storageInfo.total_formatted }}
-        </div>
-
-        <div v-if="storageInfo.breakdown.length > 0" class="storage-info-card__breakdown">
-          <div
-            v-for="item in storageInfo.breakdown"
-            :key="item.name"
-            class="storage-breakdown-item"
-          >
-            <span class="storage-breakdown-item__label">{{ item.name }}</span>
-            <span class="storage-breakdown-item__value">{{ item.formatted }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Loading State -->
-      <div v-else-if="isCalculating" class="storage-loading">
-        <Loader2 :size="24" class="animate-spin" />
-        <span>Calculating storage usage...</span>
-      </div>
-
-      <!-- What Gets Deleted -->
-      <div class="info-section">
-        <h3 class="info-section__title">
-          <Trash2 :size="18" />
-          What will be deleted
-        </h3>
-        <ul class="info-list info-list--danger">
-          <li>Raw videos (VOD recordings, livestream recordings)</li>
-          <li>Video projects and timeline data</li>
-          <li>Temporary DVR files</li>
-          <li>Auto-detect temporary files</li>
-          <li>Proxy files</li>
-          <li>Downloaded library audio</li>
-        </ul>
-      </div>
-
-      <!-- What Gets Preserved -->
-      <div class="info-section">
-        <h3 class="info-section__title info-section__title--success">
-          <Shield :size="18" />
-          What will be preserved
-        </h3>
-        <ul class="info-list info-list--success">
-          <li>Built clips (final exported videos)</li>
-          <li>Clip transcripts and metadata</li>
-          <li>Your profile and account settings</li>
-          <li>Your subscription and billing information</li>
-        </ul>
-      </div>
-
-      <!-- Action Button -->
-      <div class="settings-actions">
-        <button
-          @click="handleDeleteClick"
-          class="btn-danger"
-          :disabled="isCalculating || !storageInfo"
+        <dl
+          v-if="storageInfo.breakdown.length > 0"
+          class="mt-3 flex flex-col gap-1.5 border-t border-line-subtle pt-3"
         >
-          <Trash2 :size="18" />
-          Clear Local Storage
-        </button>
+          <div v-for="item in storageInfo.breakdown" :key="item.name" class="flex items-center justify-between gap-3 text-xs">
+            <dt class="truncate text-fg-muted">{{ item.name }}</dt>
+            <dd class="tabular shrink-0 font-medium text-fg">{{ item.formatted }}</dd>
+          </div>
+        </dl>
       </div>
-    </div>
+
+      <!-- Loading -->
+      <div v-else-if="isCalculating" class="flex items-center justify-between gap-3 p-4" aria-busy="true">
+        <div class="skeleton h-3 w-36" />
+        <div class="skeleton h-5 w-20" />
+        <span class="sr-only">Calculating storage usage...</span>
+      </div>
+
+      <!-- What gets deleted / preserved -->
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(220px,1fr))] gap-x-6 gap-y-4 p-4">
+        <div class="flex flex-col gap-2">
+          <h3 class="flex items-center gap-1.5 text-xs font-semibold text-fg">
+            <Trash2 class="size-3.5 text-danger" />
+            What will be deleted
+          </h3>
+          <ul class="flex flex-col gap-1.5">
+            <li v-for="item in deletedItems" :key="item" class="flex items-start gap-2 text-xs text-fg-muted">
+              <span class="mt-[7px] size-1 shrink-0 rounded-full bg-danger" />
+              {{ item }}
+            </li>
+          </ul>
+        </div>
+        <div class="flex flex-col gap-2">
+          <h3 class="flex items-center gap-1.5 text-xs font-semibold text-fg">
+            <Shield class="size-3.5 text-success" />
+            What will be preserved
+          </h3>
+          <ul class="flex flex-col gap-1.5">
+            <li v-for="item in preservedItems" :key="item" class="flex items-start gap-2 text-xs text-fg-muted">
+              <span class="mt-[7px] size-1 shrink-0 rounded-full bg-success" />
+              {{ item }}
+            </li>
+          </ul>
+        </div>
+      </div>
+
+      <template #footer>
+        <p class="mr-auto flex min-w-0 items-center gap-1.5 text-xs text-fg-muted">
+          <AlertTriangle class="size-3.5 shrink-0 text-danger" />
+          Local media is deleted permanently. This cannot be undone.
+        </p>
+        <Button
+          variant="destructive"
+          size="sm"
+          :disabled="isCalculating || !storageInfo"
+          @click="handleDeleteClick"
+        >
+          <Trash2 />
+          Clear local storage
+        </Button>
+      </template>
+    </SettingsSection>
 
     <!-- Confirmation Dialog -->
-    <DeleteDataConfirmDialog
-      v-model="showConfirmDialog"
-      :storage-info="storageInfo"
-      @deleted="handleDeleted"
-    />
+    <DeleteDataConfirmDialog v-model="showConfirmDialog" :storage-info="storageInfo" @deleted="handleDeleted" />
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
-import { AlertTriangle, HardDrive, Trash2, Shield, Loader2 } from 'lucide-vue-next';
+import { AlertTriangle, HardDrive, Trash2, Shield } from 'lucide-vue-next';
 import { invoke } from '@tauri-apps/api/core';
 import { useToast } from '@/composables/useToast';
 import { performCompleteCleanup } from '@/services/database/storage-cleanup';
+import { Button } from '@/components/ui/button';
 import DeleteDataConfirmDialog from './DeleteDataConfirmDialog.vue';
+import SettingsSection from './SettingsSection.vue';
 
 interface StorageSizeInfo {
   total_bytes: number;
@@ -131,6 +109,22 @@ interface DeletionResult {
 }
 
 const { error, success } = useToast();
+
+const deletedItems = [
+  'Raw videos (VOD recordings, livestream recordings)',
+  'Video projects and timeline data',
+  'Temporary DVR files',
+  'Auto-detect temporary files',
+  'Proxy files',
+  'Downloaded library audio',
+];
+
+const preservedItems = [
+  'Built clips (final exported videos)',
+  'Clip transcripts and metadata',
+  'Your profile and account settings',
+  'Your subscription and billing information',
+];
 
 const storageInfo = ref<StorageSizeInfo | null>(null);
 const isCalculating = ref(false);
@@ -182,228 +176,3 @@ onMounted(() => {
   calculateStorageSize();
 });
 </script>
-
-<style scoped>
-.settings-tab {
-  max-width: 800px;
-}
-
-.settings-section {
-  margin-bottom: 2rem;
-}
-
-.settings-section-title {
-  font-size: 1.5rem;
-  font-weight: 600;
-  margin-bottom: 0.5rem;
-  color: var(--sidebar-text);
-}
-
-.settings-section-description {
-  font-size: 0.875rem;
-  color: var(--sidebar-text-muted);
-  margin-bottom: 1.5rem;
-}
-
-.warning-banner {
-  display: flex;
-  gap: 1rem;
-  padding: 1rem;
-  background: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  border-radius: 8px;
-  margin-bottom: 1.5rem;
-}
-
-.warning-banner__icon {
-  flex-shrink: 0;
-  color: #f87171;
-}
-
-.warning-banner__content {
-  flex: 1;
-}
-
-.warning-banner__title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #f87171;
-  margin-bottom: 0.25rem;
-}
-
-.warning-banner__text {
-  font-size: 0.8125rem;
-  color: var(--sidebar-text-muted);
-}
-
-.storage-info-card {
-  background-color: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 12px;
-  padding: 1.5rem;
-  margin-bottom: 1.5rem;
-}
-
-.storage-info-card__header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.storage-info-card__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 48px;
-  height: 48px;
-  background-color: rgba(6, 182, 212, 0.15);
-  border-radius: 12px;
-  color: var(--sidebar-accent);
-}
-
-.storage-info-card__title {
-  font-size: 1rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-}
-
-.storage-info-card__subtitle {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-}
-
-.storage-info-card__size {
-  font-size: 2.5rem;
-  font-weight: 700;
-  color: var(--sidebar-accent);
-  margin-bottom: 1rem;
-}
-
-.storage-info-card__breakdown {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-  padding-top: 1rem;
-  border-top: 1px solid var(--sidebar-border);
-}
-
-.storage-breakdown-item {
-  display: flex;
-  justify-content: space-between;
-  font-size: 0.8125rem;
-}
-
-.storage-breakdown-item__label {
-  color: var(--sidebar-text-muted);
-}
-
-.storage-breakdown-item__value {
-  color: var(--sidebar-text);
-  font-weight: 500;
-}
-
-.storage-loading {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 2rem;
-  background-color: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 12px;
-  margin-bottom: 1.5rem;
-  color: var(--sidebar-text-muted);
-  font-size: 0.875rem;
-}
-
-.info-section {
-  margin-bottom: 1.5rem;
-}
-
-.info-section__title {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: #ef4444;
-  margin-bottom: 0.75rem;
-}
-
-.info-section__title--success {
-  color: #10b981;
-}
-
-.info-list {
-  list-style: none;
-  padding: 0;
-  margin: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.info-list li {
-  font-size: 0.8125rem;
-  padding-left: 1.5rem;
-  position: relative;
-}
-
-.info-list li::before {
-  content: '•';
-  position: absolute;
-  left: 0.5rem;
-  font-weight: bold;
-}
-
-.info-list--danger li {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.info-list--danger li::before {
-  color: #ef4444;
-}
-
-.info-list--success li {
-  color: rgba(255, 255, 255, 0.7);
-}
-
-.info-list--success li::before {
-  color: #10b981;
-}
-
-.settings-actions {
-  display: flex;
-  gap: 1rem;
-  padding-top: 1rem;
-}
-
-.btn-danger {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1.5rem;
-  background: #ef4444;
-  color: #fff;
-  border: none;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 0.2s;
-}
-
-.btn-danger:hover:not(:disabled) {
-  background: #dc2626;
-  transform: translateY(-1px);
-}
-
-.btn-danger:active:not(:disabled) {
-  transform: translateY(0);
-}
-
-.btn-danger:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-</style>

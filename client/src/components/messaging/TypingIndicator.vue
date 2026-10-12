@@ -1,68 +1,47 @@
 <script setup lang="ts">
-defineProps<{
-  userNames: string[];
-}>();
+  /** Subtle "… is typing" line with three pulsing dots, shown under the last message. */
+  defineProps<{
+    userNames: string[];
+  }>();
 
-function formatTypingText(names: string[]): string {
-  if (names.length === 0) return '';
-  if (names.length === 1) return `${names[0]} is typing...`;
-  if (names.length === 2) return `${names[0]} and ${names[1]} are typing...`;
-  return `${names[0]} and ${names.length - 1} others are typing...`;
-}
+  function formatTypingText(names: string[]): string {
+    if (names.length === 0) return '';
+    if (names.length === 1) return `${names[0]} is typing…`;
+    if (names.length === 2) return `${names[0]} and ${names[1]} are typing…`;
+    return `${names[0]} and ${names.length - 1} others are typing…`;
+  }
 </script>
 
 <template>
-  <div class="typing-indicator">
-    <div class="typing-dots">
-      <span class="dot"></span>
-      <span class="dot"></span>
-      <span class="dot"></span>
-    </div>
-    <span class="typing-text">{{ formatTypingText(userNames) }}</span>
+  <div class="flex items-center gap-2 px-1 py-1 text-2xs text-fg-subtle" role="status" aria-live="polite">
+    <span class="inline-flex items-center gap-[3px] rounded-full bg-surface-raised px-2 py-1.5">
+      <span class="typing-dot" />
+      <span class="typing-dot [animation-delay:150ms]" />
+      <span class="typing-dot [animation-delay:300ms]" />
+    </span>
+    <span class="truncate">{{ formatTypingText(userNames) }}</span>
   </div>
 </template>
 
 <style scoped>
-.typing-indicator {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  padding: 8px 12px;
-  color: var(--text-secondary, #888);
-  font-size: 13px;
-}
-
-.typing-dots {
-  display: flex;
-  gap: 3px;
-}
-
-.dot {
-  width: 6px;
-  height: 6px;
-  border-radius: 50%;
-  background: var(--text-tertiary, #666);
-  animation: bounce 1.4s infinite ease-in-out both;
-}
-
-.dot:nth-child(1) {
-  animation-delay: -0.32s;
-}
-
-.dot:nth-child(2) {
-  animation-delay: -0.16s;
-}
-
-@keyframes bounce {
-  0%, 80%, 100% {
-    transform: scale(0);
+  .typing-dot {
+    width: 4px;
+    height: 4px;
+    border-radius: 999px;
+    background: var(--fg-subtle);
+    animation: typing-bounce 1.2s ease-in-out infinite;
   }
-  40% {
-    transform: scale(1);
-  }
-}
 
-.typing-text {
-  font-style: italic;
-}
+  @keyframes typing-bounce {
+    0%,
+    60%,
+    100% {
+      opacity: 0.4;
+      transform: translateY(0);
+    }
+    30% {
+      opacity: 1;
+      transform: translateY(-2px);
+    }
+  }
 </style>

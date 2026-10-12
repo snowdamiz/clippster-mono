@@ -1,6 +1,6 @@
 <template>
-  <dialog ref="dialog" aria-label="Manual framing" class="m-auto h-[90dvh] w-[96vw] max-w-6xl overflow-y-auto rounded-xl border border-white/10 bg-zinc-950 p-6 text-white backdrop:bg-black/80" @cancel.prevent="$emit('close')" @pointerup="history.commit" @change="history.commit" @keydown="keyboard">
-    <header class="mb-5 flex items-center justify-between"><div><h2 class="text-xl font-semibold">Manual framing</h2><p class="text-sm text-zinc-400">Select source regions and arrange them in the output frame.</p></div><button class="button-secondary" @click="$emit('close')">Close</button></header>
+  <dialog ref="dialog" aria-label="Manual framing" class="m-auto h-[90dvh] w-[96vw] max-w-6xl overflow-y-auto rounded-xl border border-line bg-surface p-6 text-white backdrop:bg-[var(--overlay)]" @cancel.prevent="$emit('close')" @pointerup="history.commit" @change="history.commit" @keydown="keyboard">
+    <header class="mb-5 flex items-center justify-between"><div><h2 class="text-base font-semibold">Manual framing</h2><p class="text-sm text-fg-muted">Select source regions and arrange them in the output frame.</p></div><button class="button-secondary" @click="$emit('close')">Close</button></header>
     <div class="mb-4 flex flex-wrap items-center gap-3">
       <select v-model="segmentId" class="field w-auto" aria-label="Framing segment"><option value="">Default layout</option><option v-for="segment in config.segmentConfigs" :key="segment.segmentId" :value="segment.segmentId">{{ segment.startTime.toFixed(1) }}–{{ segment.endTime.toFixed(1) }} seconds</option></select>
       <button class="button-secondary" :disabled="regions.length >= 6" @click="add">Add region</button>
@@ -12,7 +12,7 @@
       <button class="button-secondary" :disabled="!regions.length" @click="stack">Stack regions</button>
       <label class="text-xs">Safe zones<select v-model="safeZone" class="field"><option value="">Off</option><option v-for="preset in SOCIAL_OVERLAY_PRESETS" :key="preset.platform" :value="preset.platform">{{ preset.label }}</option></select></label>
     </div>
-    <fieldset class="mb-4 flex flex-wrap items-end gap-4 rounded-lg border border-white/10 p-3">
+    <fieldset class="mb-4 flex flex-wrap items-end gap-4 rounded-lg border border-line p-3">
       <legend class="text-sm">Source background</legend>
       <label class="text-xs">Mode<select v-model="config.sourceFrameMode" class="field"><option value="none">None</option><option value="scale">Scale source</option><option value="use16x9">Source with full background</option></select></label>
       <label class="text-xs">Scale<input v-model.number="config.sourceTransform!.scale" class="field" type="number" min="0.1" max="4" step="0.05" /></label>
@@ -21,7 +21,7 @@
       <label class="text-sm"><input v-model="config.blurEnabled" type="checkbox" /> Blur</label>
       <label v-if="config.blurEnabled" class="text-xs">Blur amount<input v-model.number="config.blurAmount" class="field" type="number" min="0" max="30" /></label>
     </fieldset>
-    <fieldset v-if="selected" class="mb-4 flex flex-wrap items-end gap-4 rounded-lg border border-white/10 p-3">
+    <fieldset v-if="selected" class="mb-4 flex flex-wrap items-end gap-4 rounded-lg border border-line p-3">
       <legend class="text-sm">{{ selected.label || 'Selected region' }}</legend>
       <label class="text-xs">Label<input v-model="selected.label" class="field" maxlength="80" /></label>
       <label class="text-sm"><input v-model="selected.aspectRatioLocked" type="checkbox" /> Lock aspect ratio</label>
@@ -29,7 +29,7 @@
       <label v-if="selected.cornerRadiusEnabled" class="text-xs">Radius (px)<input v-model.number="selected.cornerRadiusPx" class="field" type="number" min="0" max="500" /></label>
       <label class="text-xs">Region media<select :value="selected.mediaAssetId || ''" class="field" @change="selectMedia(($event.target as HTMLSelectElement).value)"><option value="">Source video</option><option v-for="asset in media.assets.value" :key="asset.id" :value="asset.id">{{ asset.name }}</option></select></label>
     </fieldset>
-    <div class="mb-4 flex flex-wrap items-center gap-3"><label class="button-secondary">{{ media.uploading.value ? 'Uploading…' : 'Upload image / video' }}<input type="file" class="hidden" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime" :disabled="media.uploading.value" @change="media.upload(($event.target as HTMLInputElement).files?.[0])" /></label><span class="text-xs text-zinc-400">Up to 128 MB per asset. Uploaded media can be used in timed layouts.</span><p v-if="media.error.value" role="alert" class="text-sm text-red-300">{{ media.error.value }}</p></div>
+    <div class="mb-4 flex flex-wrap items-center gap-3"><label class="button-secondary">{{ media.uploading.value ? 'Uploading…' : 'Upload image / video' }}<input type="file" class="hidden" accept="image/png,image/jpeg,image/webp,video/mp4,video/webm,video/quicktime" :disabled="media.uploading.value" @change="media.upload(($event.target as HTMLInputElement).files?.[0])" /></label><span class="text-xs text-fg-muted">Up to 128 MB per asset. Uploaded media can be used in timed layouts.</span><p v-if="media.error.value" role="alert" class="text-sm text-danger">{{ media.error.value }}</p></div>
     <POIBrollPanel v-model="config" :assets="media.assets.value" :words="clipWords" :duration="duration" :time="time" :uploading="media.uploading.value" :import-stock="media.importStock" />
     <div v-if="activeSegment" class="mb-4 flex gap-4">
       <label>Start<input v-model.number="activeSegment.startTime" class="field" type="number" min="0" :max="duration" step="0.1" /></label>
@@ -47,7 +47,7 @@
       </div></section>
     </div>
     <label class="mt-5 block text-sm">Clip time · {{ time.toFixed(1) }}s<input class="mt-2 w-full accent-cyan-400" type="range" min="0" :max="duration" step="0.05" :value="time" @input="seek(Number(($event.target as HTMLInputElement).value))" /></label>
-    <p class="my-4 text-xs text-zinc-400">Timed layouts use the assembled clip's time. Regions are draggable and resizable in both panels.</p>
+    <p class="my-4 text-xs text-fg-muted">Timed layouts use the assembled clip's time. Regions are draggable and resizable in both panels.</p>
     <footer class="flex justify-end gap-3"><button class="button-secondary" @click="$emit('close')">Cancel</button><button class="button-primary" @click="$emit('confirm', config)">Apply layout</button></footer>
   </dialog>
 </template>

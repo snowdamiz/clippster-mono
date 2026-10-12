@@ -7,7 +7,17 @@ import { useImageMode } from "../../composables/useImageMode";
 import { useImageEditorTools } from "../../composables/useImageEditorTools";
 import { applyCanvasCrop } from "../../lib/canvas-crop";
 import type { VideoElement, ImageElement, CropRect } from "../../types/timeline";
-import { Check, X, ChevronDown } from "lucide-vue-next";
+import { Check, X } from "lucide-vue-next";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { Button } from "@/components/ui/button";
+import ToolbarButton from "../chrome/ToolbarButton.vue";
+import ToolbarMenuButton from "../chrome/ToolbarMenuButton.vue";
+import ToolbarSeparator from "../chrome/ToolbarSeparator.vue";
 
 const props = defineProps<{
 	canvasRef: HTMLCanvasElement | null;
@@ -811,7 +821,7 @@ onUnmounted(() => {
 
 		<!-- Floating toolbar at bottom of crop region -->
 		<div
-			class="absolute z-20 flex items-center gap-1.5 rounded-md border border-white/15 bg-[#1a1a1e]/95 px-2 py-1 shadow-xl backdrop-blur-sm"
+			class="absolute z-20 flex items-center gap-0.5 rounded-lg bg-surface-raised p-1 shadow-[var(--shadow-md)]"
 			:style="{
 				left: `${cropScreenRect.x + cropScreenRect.w / 2}px`,
 				top: `${cropScreenRect.y + cropScreenRect.h + 10}px`,
@@ -819,84 +829,59 @@ onUnmounted(() => {
 			}"
 			@mousedown.stop
 		>
-			<!-- Aspect ratio dropdown -->
-			<div class="relative">
-				<button
-					type="button"
-					class="flex items-center gap-1 rounded px-1.5 py-0.5 text-[10px] font-medium text-zinc-300 transition-colors hover:bg-white/10"
-					@click.stop="showPresetDropdown = !showPresetDropdown"
-				>
-					{{ activeCropPresetLabel }}
-					<ChevronDown class="size-2.5 text-zinc-500" />
-				</button>
-				<div
-					v-if="showPresetDropdown"
-					class="absolute bottom-full left-0 mb-1 rounded-md border border-white/10 bg-[#1e1e22] py-0.5 shadow-lg"
-				>
-					<button
+			<!-- Aspect ratio preset -->
+			<DropdownMenu v-model:open="showPresetDropdown">
+				<DropdownMenuTrigger as-child>
+					<ToolbarMenuButton class="h-6 text-xs" title="Crop aspect ratio" @click.stop>
+						{{ activeCropPresetLabel }}
+					</ToolbarMenuButton>
+				</DropdownMenuTrigger>
+				<DropdownMenuContent side="top" align="start" class="min-w-32">
+					<DropdownMenuItem
 						v-for="preset in cropPresets"
 						:key="preset.label"
-						type="button"
-						:class="[
-							'flex w-full items-center px-3 py-1 text-[10px] transition-colors whitespace-nowrap',
-							activeCropPresetLabel === preset.label
-								? 'text-primary bg-primary/10'
-								: 'text-zinc-300 hover:bg-white/5',
-						]"
-						@click.stop="applyCropPreset(preset)"
+						:class="activeCropPresetLabel === preset.label && 'bg-brand-soft text-brand focus:bg-brand-soft'"
+						@select="applyCropPreset(preset)"
 					>
 						{{ preset.label }}
-					</button>
-				</div>
-				<div v-if="showPresetDropdown" class="fixed inset-0 z-10" @click="showPresetDropdown = false" />
-			</div>
+					</DropdownMenuItem>
+				</DropdownMenuContent>
+			</DropdownMenu>
 
-			<div class="h-4 w-px bg-white/10" />
+			<ToolbarSeparator />
 
 			<!-- Dimensions display -->
-			<span class="text-[10px] tabular-nums text-zinc-500">{{ cropDimsDisplay }}</span>
+			<span class="tabular px-1 text-2xs text-fg-subtle">{{ cropDimsDisplay }}</span>
 
-			<div class="h-4 w-px bg-white/10" />
+			<ToolbarSeparator />
 
-			<!-- Grid mode button -->
-			<button
-				type="button"
-				class="rounded px-1.5 py-0.5 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
+			<!-- Grid mode -->
+			<Button
+				variant="ghost"
+				size="xs"
+				class="font-normal"
 				:title="`Grid: ${gridModeLabels[gridMode]} (O)`"
 				@click.stop="cycleGridMode"
 			>
 				{{ gridModeLabels[gridMode] }}
-			</button>
+			</Button>
 
-			<div class="h-4 w-px bg-white/10" />
+			<ToolbarSeparator />
 
-			<!-- Cancel -->
-			<button
-				type="button"
-				class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-medium text-zinc-400 transition-colors hover:bg-red-500/15 hover:text-red-400"
-				title="Cancel (Esc)"
-				@click.stop="handleCancel"
-			>
-				<X class="size-3" />
-			</button>
-
-			<!-- Confirm -->
-			<button
-				type="button"
-				class="flex items-center gap-0.5 rounded bg-primary/20 px-1.5 py-0.5 text-[10px] font-medium text-primary transition-colors hover:bg-primary/30"
-				title="Apply (Enter)"
-				@click.stop="handleConfirm"
-			>
-				<Check class="size-3" />
-			</button>
+			<ToolbarButton label="Cancel" shortcut="Esc" size="icon-xs" class="hover:bg-danger-soft hover:text-danger" @click.stop="handleCancel">
+				<X />
+			</ToolbarButton>
+			<ToolbarButton label="Apply" shortcut="Enter" size="icon-xs" active @click.stop="handleConfirm">
+				<Check />
+			</ToolbarButton>
 		</div>
 
 		<!-- Shift-lock indicator -->
 		<div
 			v-if="shiftHeld && isDragging"
-			class="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded bg-black/70 px-2 py-0.5 text-[10px] font-medium text-yellow-400"
+			class="pointer-events-none absolute left-1/2 top-2 -translate-x-1/2 rounded-md bg-black/70 px-2 py-0.5 text-2xs font-medium text-white"
 		>
-			Aspect Ratio Locked
+			Aspect ratio locked
 		</div>
 	</div>
 </template>

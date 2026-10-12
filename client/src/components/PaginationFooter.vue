@@ -1,130 +1,83 @@
 <template>
   <footer
     v-if="totalPages > 1"
-    :class="[
-      'flex items-center justify-between px-8 py-4 border-t border-border/40 bg-background/95',
-      mode === 'fixed' ? 'fixed bottom-0 left-64 right-0 h-16 backdrop-blur-sm z-10' : 'w-full rounded-b-lg',
-    ]"
+    class="flex items-center justify-between gap-4 border-t border-line-subtle px-5 py-2.5"
+    :class="mode === 'fixed' ? 'sticky bottom-0 z-10 bg-panel/90 backdrop-blur-md' : 'w-full'"
   >
-    <!-- Page info -->
+    <p class="tabular truncate text-xs text-fg-muted">
+      <template v-if="totalItems > 0">
+        {{ totalItems }} {{ itemLabel }}{{ totalItems !== 1 ? 's' : '' }}
+        <span class="text-fg-subtle">· Page {{ currentPage }} of {{ totalPages }}</span>
+      </template>
+    </p>
 
-    <div class="text-sm text-muted-foreground">
-      <span v-if="totalItems > 0">
-        {{ totalItems }} {{ itemLabel }}{{ totalItems !== 1 ? 's' : '' }} • Page {{ currentPage }} of {{ totalPages }}
-      </span>
-    </div>
-
-    <!-- Pagination Controls -->
-
-    <div class="flex items-center gap-2 rounded-md p-0.5">
-      <!-- Previous Button -->
-
-      <button
-        @click="$emit('previous')"
-        :disabled="currentPage === 1"
-        class="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-all text-sm"
-        title="Previous page"
-      >
-        <ChevronLeft class="h-3.5 w-3.5" />
-        Previous
-      </button>
-
-      <!-- Page Numbers -->
-
-      <div class="flex items-center gap-1">
-        <!-- Generate page numbers with smart ellipsis -->
-
-        <template v-for="page in totalPages" :key="page">
-          <!-- Show first page -->
-
-          <button
-            v-if="page === 1"
-            @click="$emit('goToPage', page)"
-            :class="[
-              'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
-              currentPage === page ? 'text-purple-500' : 'hover:bg-muted/80 text-foreground',
-            ]"
-          >
-            {{ page }}
-          </button>
-
-          <!-- Show ellipsis before current page range -->
-
-          <span v-else-if="page === currentPage - 2 && page > 2" class="px-1.5 text-muted-foreground text-sm">...</span>
-
-          <!-- Show pages around current -->
-
-          <button
-            v-else-if="page >= currentPage - 1 && page <= currentPage + 1"
-            @click="$emit('goToPage', page)"
-            :class="[
-              'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
-              currentPage === page ? 'text-purple-500' : 'hover:bg-muted/80 text-foreground',
-            ]"
-          >
-            {{ page }}
-          </button>
-
-          <!-- Show ellipsis after current page range -->
-
-          <span
-            v-else-if="page === currentPage + 2 && page < totalPages - 1"
-            class="px-1.5 text-muted-foreground text-sm"
-          >
-            ...
-          </span>
-
-          <!-- Show last page -->
-
-          <button
-            v-else-if="page === totalPages && totalPages > 1"
-            @click="$emit('goToPage', page)"
-            :class="[
-              'px-2.5 py-1.5 rounded-md transition-all text-sm font-medium',
-              currentPage === page ? 'bg-purple-500 text-white' : 'hover:bg-muted/80 text-foreground',
-            ]"
-          >
-            {{ page }}
-          </button>
-        </template>
-      </div>
-
-      <!-- Next Button -->
-
-      <button
-        @click="$emit('next')"
+    <nav class="flex items-center gap-1" aria-label="Pagination">
+      <Button variant="ghost" size="icon-sm" :disabled="currentPage === 1" title="Previous page" @click="$emit('previous')">
+        <ChevronLeft />
+      </Button>
+      <template v-for="(page, i) in pages" :key="i">
+        <span v-if="page === null" class="w-6 text-center text-xs text-fg-subtle">…</span>
+        <button
+          v-else
+          type="button"
+          class="tabular h-7 min-w-7 rounded-md px-1.5 text-xs font-medium transition-colors"
+          :class="page === currentPage ? 'bg-surface-active text-fg' : 'text-fg-muted hover:bg-surface-hover hover:text-fg'"
+          :aria-current="page === currentPage ? 'page' : undefined"
+          @click="$emit('goToPage', page)"
+        >
+          {{ page }}
+        </button>
+      </template>
+      <Button
+        variant="ghost"
+        size="icon-sm"
         :disabled="currentPage === totalPages"
-        class="flex items-center gap-2 px-3 py-1.5 hover:bg-muted/80 disabled:opacity-50 disabled:cursor-not-allowed rounded-md transition-all text-sm"
         title="Next page"
+        @click="$emit('next')"
       >
-        Next
-        <ChevronRight class="h-3.5 w-3.5" />
-      </button>
-    </div>
+        <ChevronRight />
+      </Button>
+    </nav>
   </footer>
 </template>
 
 <script setup lang="ts">
+  import { computed } from 'vue';
   import { ChevronLeft, ChevronRight } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
 
   interface Props {
     currentPage: number;
     totalPages: number;
     totalItems: number;
     itemLabel?: string;
+    /** `fixed` sticks to the bottom of the scrolling page; `static` flows inline. */
     mode?: 'fixed' | 'static';
   }
 
-  interface Emits {
-    (e: 'goToPage', page: number): void;
-    (e: 'previous'): void;
-    (e: 'next'): void;
-  }
-
-  withDefaults(defineProps<Props>(), {
+  const props = withDefaults(defineProps<Props>(), {
     itemLabel: 'item',
     mode: 'fixed',
   });
 
-  defineEmits<Emits>();
+  defineEmits<{
+    (e: 'goToPage', page: number): void;
+    (e: 'previous'): void;
+    (e: 'next'): void;
+  }>();
+
+  /** First, last and a window around the current page; `null` marks a gap. */
+  const pages = computed<(number | null)[]>(() => {
+    const { currentPage: current, totalPages: total } = props;
+    const result: (number | null)[] = [];
+    for (let page = 1; page <= total; page++) {
+      const nearCurrent = page >= current - 1 && page <= current + 1;
+      if (page === 1 || page === total || nearCurrent) {
+        result.push(page);
+      } else if (result[result.length - 1] !== null) {
+        result.push(null);
+      }
+    }
+    return result;
+  });
 </script>

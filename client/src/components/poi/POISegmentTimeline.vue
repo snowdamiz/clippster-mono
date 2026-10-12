@@ -1,39 +1,34 @@
 <template>
   <!-- shrink-0: parent is flex-col; without this the strip collapses and h-12 becomes a few pixels tall -->
-  <div class="poi-segment-timeline shrink-0 border-t border-zinc-800 bg-zinc-900/70">
+  <div class="poi-segment-timeline shrink-0 border-t border-line-subtle bg-surface">
     <!-- Header -->
-    <div class="flex items-center justify-between px-3 pt-3 pb-2 border-b border-zinc-700/50">
-      <div class="flex items-center gap-2">
-        <div class="text-xs font-semibold text-zinc-200">Time-Based Regions</div>
-        <span class="text-[10px] text-zinc-500">{{ segments.length }} segment{{ segments.length !== 1 ? 's' : '' }}</span>
+    <div class="flex h-10 items-center justify-between gap-2 border-b border-line-subtle px-3">
+      <div class="flex min-w-0 items-baseline gap-2">
+        <div class="text-xs font-semibold text-fg">Time-based regions</div>
+        <span class="tabular text-2xs text-fg-subtle">{{ segments.length }} segment{{ segments.length !== 1 ? 's' : '' }}</span>
       </div>
-      <button
-        @click="addSegment"
-        class="flex items-center gap-1 px-2 py-1 text-[10px] font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded transition-colors"
-        :disabled="!canAddSegment"
-        :class="{ 'opacity-50 cursor-not-allowed': !canAddSegment }"
-      >
-        <PlusIcon class="w-3 h-3" />
-        Add Segment
-      </button>
+      <Button variant="ghost" size="xs" :disabled="!canAddSegment" @click="addSegment">
+        <PlusIcon />
+        Add segment
+      </Button>
     </div>
 
     <!-- Timeline -->
     <div class="px-3 py-2">
       <!-- Time markers -->
-      <div class="flex items-center justify-between mb-1 px-1">
-        <span class="text-[10px] text-zinc-500 font-mono">0:00</span>
-        <span class="text-[10px] text-zinc-500 font-mono">{{ formatTime(duration) }}</span>
+      <div class="mb-1 flex items-center justify-between px-1">
+        <span class="tabular font-mono text-2xs text-fg-subtle">0:00</span>
+        <span class="tabular font-mono text-2xs text-fg-subtle">{{ formatTime(duration) }}</span>
       </div>
 
       <!-- Timeline track: fixed min height so filmstrip stays visible; flex parents cannot squash it -->
       <div 
         ref="timelineRef"
-        class="relative h-16 min-h-[4rem] shrink-0 bg-zinc-900/50 rounded-lg border border-zinc-800/50"
+        class="relative h-16 min-h-[4rem] shrink-0 rounded-lg border border-line-subtle bg-surface-sunken"
         @click="onTimelineClick"
       >
         <!-- Filmstrip background (with overflow-hidden for rounded corners) -->
-        <div class="absolute inset-0 bg-black/20 rounded-lg overflow-hidden">
+        <div class="absolute inset-0 overflow-hidden rounded-lg">
           <canvas
             v-if="videoUrl"
             ref="filmstripCanvasRef"
@@ -60,7 +55,7 @@
         />
         
         <!-- Dark overlay for better contrast -->
-        <div class="absolute inset-0 bg-gradient-to-b from-zinc-900/40 via-zinc-900/20 to-zinc-900/40" />
+        <div class="absolute inset-0 rounded-lg bg-black/30" />
         <!-- B-roll overlays (independent from framing segments) -->
         <div
           v-for="broll in brollRegions"
@@ -70,40 +65,44 @@
           @click.stop="selectBroll(broll.brollId)"
         >
           <div
-            class="absolute inset-0 rounded-md border-2 transition-all cursor-move"
-            :class="activeBrollId === broll.brollId ? 'border-cyan-300 bg-cyan-500/35 shadow-lg shadow-cyan-500/20' : 'border-cyan-500/70 bg-cyan-500/20 hover:border-cyan-300'"
+            class="absolute inset-0 cursor-move rounded-md border transition-colors"
+            :class="
+              activeBrollId === broll.brollId
+                ? 'border-ai bg-ai-soft shadow-[0_0_0_1px_var(--ai)]'
+                : 'border-[var(--ai-line)] bg-ai-soft hover:border-ai'
+            "
             @mousedown.stop="(e) => startDragBroll(e, broll.brollId)"
           >
             <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span class="text-[10px] font-semibold tracking-wide text-cyan-100">B-roll</span>
-              <span class="mt-0.5 text-[9px] font-mono text-cyan-200/80">
+              <span class="text-2xs font-semibold text-fg">B-roll</span>
+              <span class="tabular font-mono text-[10px] leading-none text-fg-muted">
                 {{ formatTime(broll.startTime) }} - {{ formatTime(broll.endTime) }}
               </span>
             </div>
           </div>
 
           <div
-            class="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize z-10 bg-cyan-300/80 hover:w-1.5"
+            class="absolute inset-y-0 left-0 z-10 w-1 cursor-ew-resize rounded-l-md bg-ai/70 hover:bg-ai"
             title="Drag to adjust B-roll start time"
             @mousedown.stop="(e) => startResizeBroll(e, broll.brollId, 'start')"
           />
 
           <div
-            class="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize z-10 bg-cyan-300/80 hover:w-1.5"
+            class="absolute inset-y-0 right-0 z-10 w-1 cursor-ew-resize rounded-r-md bg-ai/70 hover:bg-ai"
             title="Drag to adjust B-roll end time"
             @mousedown.stop="(e) => startResizeBroll(e, broll.brollId, 'end')"
           />
 
           <button
             @click.stop="deleteBroll(broll.brollId)"
-            class="absolute -top-8 left-1/2 -translate-x-1/2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white transition-all shadow-lg hover:scale-110 z-30"
+            class="absolute -top-7 left-1/2 z-30 grid size-6 -translate-x-1/2 place-items-center rounded-full bg-surface-raised text-fg-muted shadow-[var(--shadow-md)] transition-[opacity,background-color,color] hover:bg-danger-solid hover:text-white"
             :class="{
               'opacity-100': activeBrollId === broll.brollId,
               'opacity-0 group-hover:opacity-100': activeBrollId !== broll.brollId
             }"
             title="Delete B-roll"
           >
-            <XIcon class="w-3.5 h-3.5" />
+            <XIcon class="size-3.5" />
           </button>
         </div>
 
@@ -116,25 +115,26 @@
           @click.stop="selectSegment(segment.segmentId)"
         >
           <!-- Segment bar -->
-          <div 
-            class="absolute inset-0 rounded-md transition-all cursor-move"
-            :class="{
-              'bg-gradient-to-r from-blue-500/40 to-blue-600/40 border-2 border-blue-400 shadow-lg shadow-blue-500/20': activeSegmentId === segment.segmentId,
-              'bg-gradient-to-r from-zinc-700/60 to-zinc-600/60 border border-zinc-600/80 hover:border-zinc-500': activeSegmentId !== segment.segmentId,
-            }"
+          <div
+            class="absolute inset-0 cursor-move rounded-md border transition-colors"
+            :class="
+              activeSegmentId === segment.segmentId
+                ? 'border-brand bg-brand-soft shadow-[0_0_0_1px_var(--brand)]'
+                : 'border-line-strong bg-surface-raised/80 hover:border-fg-subtle'
+            "
             @mousedown.stop="(e) => startDragSegment(e, segment.segmentId)"
           >
             <!-- Segment label -->
             <div class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none">
-              <span 
-                class="text-[10px] font-semibold tracking-wide"
-                :class="activeSegmentId === segment.segmentId ? 'text-blue-200' : 'text-zinc-300'"
+              <span
+                class="text-2xs font-semibold"
+                :class="activeSegmentId === segment.segmentId ? 'text-fg' : 'text-fg-muted'"
               >
                 Segment {{ index + 1 }}
               </span>
-              <span 
-                class="text-[9px] font-mono mt-0.5"
-                :class="activeSegmentId === segment.segmentId ? 'text-blue-300/80' : 'text-zinc-400'"
+              <span
+                class="tabular font-mono text-[10px] leading-none"
+                :class="activeSegmentId === segment.segmentId ? 'text-brand' : 'text-fg-subtle'"
               >
                 {{ formatTime(segment.startTime) }} - {{ formatTime(segment.endTime) }}
               </span>
@@ -143,22 +143,16 @@
 
           <!-- Left resize handle -->
           <div
-            class="absolute left-0 top-0 bottom-0 w-1 cursor-ew-resize z-10 transition-all"
-            :class="{
-              'bg-blue-400 hover:bg-blue-300 hover:w-1.5': activeSegmentId === segment.segmentId,
-              'bg-zinc-600/50 hover:bg-zinc-500 hover:w-1.5': activeSegmentId !== segment.segmentId,
-            }"
+            class="absolute inset-y-0 left-0 z-10 w-1 cursor-ew-resize rounded-l-md transition-colors"
+            :class="activeSegmentId === segment.segmentId ? 'bg-brand hover:bg-brand-hover' : 'bg-line-strong hover:bg-fg-subtle'"
             @mousedown.stop="(e) => startResize(e, segment.segmentId, 'start')"
             title="Drag to adjust start time"
           />
 
           <!-- Right resize handle -->
           <div
-            class="absolute right-0 top-0 bottom-0 w-1 cursor-ew-resize z-10 transition-all"
-            :class="{
-              'bg-blue-400 hover:bg-blue-300 hover:w-1.5': activeSegmentId === segment.segmentId,
-              'bg-zinc-600/50 hover:bg-zinc-500 hover:w-1.5': activeSegmentId !== segment.segmentId,
-            }"
+            class="absolute inset-y-0 right-0 z-10 w-1 cursor-ew-resize rounded-r-md transition-colors"
+            :class="activeSegmentId === segment.segmentId ? 'bg-brand hover:bg-brand-hover' : 'bg-line-strong hover:bg-fg-subtle'"
             @mousedown.stop="(e) => startResize(e, segment.segmentId, 'end')"
             title="Drag to adjust end time"
           />
@@ -166,26 +160,26 @@
           <!-- Delete button - shown on hover or when active -->
           <button
             @click.stop="deleteSegment(segment.segmentId)"
-            class="absolute -top-8 left-1/2 -translate-x-1/2 w-6 h-6 bg-red-500 hover:bg-red-600 rounded-full flex items-center justify-center text-white transition-all shadow-lg hover:scale-110 z-30"
+            class="absolute -top-7 left-1/2 z-30 grid size-6 -translate-x-1/2 place-items-center rounded-full bg-surface-raised text-fg-muted shadow-[var(--shadow-md)] transition-[opacity,background-color,color] hover:bg-danger-solid hover:text-white"
             :class="{
               'opacity-100': activeSegmentId === segment.segmentId,
               'opacity-0 group-hover:opacity-100': activeSegmentId !== segment.segmentId
             }"
             title="Delete segment"
           >
-            <XIcon class="w-3.5 h-3.5" />
+            <XIcon class="size-3.5" />
           </button>
         </div>
 
         <!-- Playhead indicator -->
         <div
           v-if="currentTime !== null"
-          class="absolute top-0 bottom-0 w-0.5 bg-white/90 z-20 shadow-lg cursor-ew-resize"
+          class="absolute inset-y-0 z-20 w-0.5 cursor-ew-resize bg-brand"
           :style="{ left: `${(currentTime / duration) * 100}%` }"
           @mousedown.stop="startDragPlayhead"
         >
-          <div 
-            class="absolute -top-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-white rounded-full shadow-lg border-2 border-zinc-900 cursor-ew-resize hover:scale-125 transition-transform"
+          <div
+            class="absolute -top-1.5 left-1/2 size-3 -translate-x-1/2 cursor-ew-resize rounded-full border-2 border-surface-sunken bg-brand transition-transform hover:scale-125"
             @mousedown.stop="startDragPlayhead"
           />
         </div>
@@ -194,8 +188,8 @@
 
     <!-- Active segment info -->
     <div v-if="activeSegment" class="px-3 pb-2">
-      <div class="flex items-center gap-2 text-[10px] text-zinc-400">
-        <span class="font-medium text-blue-400">Active:</span>
+      <div class="tabular flex items-center gap-1.5 text-2xs text-fg-subtle">
+        <span class="font-medium text-fg-muted">Active:</span>
         <span>Segment {{ getSegmentIndex(activeSegment.segmentId) + 1 }}</span>
         <span>•</span>
         <span>{{ activeSegment.regions.length }} region{{ activeSegment.regions.length !== 1 ? 's' : '' }}</span>
@@ -209,6 +203,7 @@
 <script setup lang="ts">
   import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue';
   import { PlusIcon, XIcon } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
   import type { BrollRegionConfig, SegmentRegionConfig } from '@/types';
 
   interface Props {
