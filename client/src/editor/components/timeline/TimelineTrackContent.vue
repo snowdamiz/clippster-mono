@@ -120,7 +120,7 @@ function onTrackMouseDown(event: MouseEvent) {
 <template>
 	<!-- div (not button): TimelineElement uses an inner <button>; nested buttons are invalid HTML and break hit-testing/cursor in browsers -->
 	<div
-		:class="['size-full', hasSelectedElements && 'bg-white/5', razorMode && 'cursor-crosshair']"
+		:class="['size-full', hasSelectedElements && 'bg-surface-hover', razorMode && 'cursor-crosshair']"
 		role="presentation"
 		@click="onTrackClick"
 		@mousedown="onTrackMouseDown"
@@ -128,7 +128,7 @@ function onTrackMouseDown(event: MouseEvent) {
 		<div class="relative h-full min-w-full">
 			<div
 				v-if="track.elements.length === 0"
-				class="flex size-full items-center justify-center rounded-sm border-2 border-dashed border-white/10 text-xs text-zinc-600"
+				class="flex size-full items-center justify-center rounded-md border border-dashed border-line-strong text-xs text-fg-subtle"
 			/>
 			<TimelineElement
 				v-for="element in visibleElements"

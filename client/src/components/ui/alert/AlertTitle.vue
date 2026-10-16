@@ -8,5 +8,5 @@
 </script>
 
 <template>
-  <h5 :class="cn('mb-1 font-medium leading-none tracking-tight', props.class)"><slot /></h5>
+  <h5 :class="cn('mb-0.5 text-sm font-medium leading-5', props.class)"><slot /></h5>
 </template>

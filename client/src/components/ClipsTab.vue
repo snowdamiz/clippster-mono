@@ -1,5 +1,5 @@
 <template>
-<ClipsTabView :model="viewModel">
+  <ClipsTabView :model="viewModel">
     <!-- Build Settings Dialog -->
     <ClipBuildSettingsDialog
       v-model="showBuildSettingsDialog"
@@ -25,8 +25,8 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, reactive, toRefs, computed, watch, onMounted, onUnmounted } from 'vue';
   import ClipsTabView from './ClipsTabView.vue';
+  import { ref, computed, watch, onMounted, reactive, toRefs, onUnmounted } from 'vue';
   import { formatDateTime } from '@/utils/dateTimeUtils';
   import { parseTranscriptToWords, type WordInfo } from '@/utils/timelineUtils';
   import { maxWordsChunkForAspectRatioString } from '@/utils/subtitleVisibleWords';
@@ -58,10 +58,29 @@
     LayoutDashboard,
     Rocket,
   } from 'lucide-vue-next';
+  import { Badge } from '@/components/ui/badge';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuLabel,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
+  import { Button } from '@/components/ui/button';
+  import { IconTile } from '@/components/ui/icon-tile';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+  import InlineProgress from '@/components/workspace/InlineProgress.vue';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { useClipThumbnailStore } from '@/stores/clipThumbnails';
-  import ClipBuildSettingsDialog, { type BuildSettings, type BuildTarget, type IntroOutroItem } from './ClipBuildSettingsDialog.vue';
+  import ClipBuildSettingsDialog, {
+    type BuildSettings,
+    type BuildTarget,
+    type IntroOutroItem,
+  } from './ClipBuildSettingsDialog.vue';
   import type { SubtitleSettings, WatermarkSettings, IntroOutroRef } from '@/types';
   import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
@@ -123,10 +142,7 @@
       return subtitleSettings;
     }
 
-    const ratios =
-      aspectRatios.length > 0
-        ? aspectRatios
-        : Object.keys(subtitleSettings.perRatioConfigs ?? {});
+    const ratios = aspectRatios.length > 0 ? aspectRatios : Object.keys(subtitleSettings.perRatioConfigs ?? {});
     const targetRatios = ratios.length > 0 ? ratios : ['16:9'];
     const perRatioConfigs = { ...(subtitleSettings.perRatioConfigs ?? {}) };
     const { perRatioConfigs: _perRatioConfigs, ...rootSettingsForPreview } = subtitleSettings;
@@ -138,14 +154,9 @@
       // single workspace drag (typically 16:9 default) — applying them to
       // every ratio's per-ratio config would clobber positions the user
       // intentionally set for each aspect ratio in the POI editor.
-      const hasPerRatioPosition =
-        existing.position?.x != null && existing.position?.y != null;
-      const ratioPositionX = hasPerRatioPosition
-        ? existing.position!.x
-        : clip.subtitle_position_x;
-      const ratioPositionY = hasPerRatioPosition
-        ? existing.position!.y
-        : clip.subtitle_position_y;
+      const hasPerRatioPosition = existing.position?.x != null && existing.position?.y != null;
+      const ratioPositionX = hasPerRatioPosition ? existing.position!.x : clip.subtitle_position_x;
+      const ratioPositionY = hasPerRatioPosition ? existing.position!.y : clip.subtitle_position_y;
 
       perRatioConfigs[ratio] = {
         // Root settings act as DEFAULTS — they fill in fields that aren't
@@ -165,10 +176,7 @@
         // propagate to ratios that haven't been customized.
         position: { x: ratioPositionX, y: ratioPositionY },
         positionPercentage: ratioPositionY,
-        maxWidth:
-          existing.maxWidth ??
-          clip.subtitle_position_width ??
-          subtitleSettings.maxWidth,
+        maxWidth: existing.maxWidth ?? clip.subtitle_position_width ?? subtitleSettings.maxWidth,
       };
     }
 
@@ -185,11 +193,7 @@
    * Mirrors VideoPlayer.vue `maxWordsForAspectRatio` so the export's chunking matches the preview
    * (otherwise wide builds can ship 3-word frames while the preview shows 6 words per page).
    */
-  function getSubtitleMaxWordsForAspectRatio(
-    ratio: string,
-    fallback?: number,
-    animationStyle?: string
-  ): number {
+  function getSubtitleMaxWordsForAspectRatio(ratio: string, fallback?: number, animationStyle?: string): number {
     const computed = maxWordsChunkForAspectRatioString(ratio, animationStyle);
     if (Number.isFinite(computed) && computed > 0) return computed;
     return fallback || 4;
@@ -344,7 +348,11 @@
         const parsed = JSON.parse(trimmed);
         if (typeof parsed?.text === 'string') return parsed.text.trim();
         if (Array.isArray(parsed?.segments)) {
-          return parsed.segments.map((seg: any) => seg?.text).filter(Boolean).join(' ').trim();
+          return parsed.segments
+            .map((seg: any) => seg?.text)
+            .filter(Boolean)
+            .join(' ')
+            .trim();
         }
       } catch {
         // Plain transcript text can legitimately look JSON-ish.
@@ -554,7 +562,8 @@
   ): Promise<{ words: WordInfo[]; whisperSegments: any[]; text: string } | null> {
     if (!clip.file_path) return null;
 
-    const { getRawVideosByProjectId, getTranscriptByRawVideoId, getTranscriptSegments } = await import('@/services/database');
+    const { getRawVideosByProjectId, getTranscriptByRawVideoId, getTranscriptSegments } =
+      await import('@/services/database');
     const rawVideos = await getRawVideosByProjectId(projectId);
     const normalizedClipPath = normalizePathForCompare(clip.file_path);
     const rawVideo = rawVideos.find((video) => normalizePathForCompare(video.file_path) === normalizedClipPath);
@@ -592,7 +601,10 @@
     }
 
     if (!text && dbSegments.length > 0) {
-      text = dbSegments.map((segment) => segment.text).filter(Boolean).join(' ');
+      text = dbSegments
+        .map((segment) => segment.text)
+        .filter(Boolean)
+        .join(' ');
     }
 
     return { words, whisperSegments, text };
@@ -729,14 +741,14 @@
       subtitle_preset_id: clip?.subtitle_preset_id,
       has_subtitle_settings: !!clip?.subtitle_settings,
       subtitle_settings_type: typeof clip?.subtitle_settings,
-      subtitle_settings_length: clip?.subtitle_settings?.length
+      subtitle_settings_length: clip?.subtitle_settings?.length,
     });
-    
+
     if (!clip?.subtitle_enabled || !clip?.subtitle_preset_id) {
       console.log('[ClipsTab] No subtitles enabled or no preset ID, returning null');
       return null;
     }
-    
+
     // First, try to load full settings from database if they exist
     if (clip.subtitle_settings) {
       try {
@@ -744,11 +756,10 @@
           type: typeof clip.subtitle_settings,
           value: clip.subtitle_settings,
           clipId: clip.id,
-          clipName: clip.name
+          clipName: clip.name,
         });
-        const savedSettings = typeof clip.subtitle_settings === 'string' 
-          ? JSON.parse(clip.subtitle_settings) 
-          : clip.subtitle_settings;
+        const savedSettings =
+          typeof clip.subtitle_settings === 'string' ? JSON.parse(clip.subtitle_settings) : clip.subtitle_settings;
         console.log('[ClipsTab] Using saved subtitle settings from database for clip build:', {
           animationStyle: savedSettings.animationStyle,
           border1Width: savedSettings.border1Width,
@@ -758,7 +769,7 @@
           fontSize: savedSettings.fontSize,
           fontFamily: savedSettings.fontFamily,
           textColor: savedSettings.textColor,
-          highlightColor: savedSettings.highlightColor
+          highlightColor: savedSettings.highlightColor,
         });
         return savedSettings;
       } catch (error) {
@@ -768,19 +779,33 @@
     } else {
       console.log('[ClipsTab] No subtitle_settings in clip, falling back to preset:', clip.subtitle_preset_id);
     }
-    
+
     // Fall back to preset if no full settings saved
     const preset = CAPTION_PRESETS.find((p) => p.id === clip.subtitle_preset_id);
     if (!preset) return null;
     const fontWeightMap: Record<string, number> = {
-      normal: 400, bold: 700,
-      '100': 100, '200': 200, '300': 300, '400': 400,
-      '500': 500, '600': 600, '700': 700, '800': 800, '900': 900,
+      normal: 400,
+      bold: 700,
+      '100': 100,
+      '200': 200,
+      '300': 300,
+      '400': 400,
+      '500': 500,
+      '600': 600,
+      '700': 700,
+      '800': 800,
+      '900': 900,
     };
     const animMap: Record<string, SubtitleSettings['animationStyle']> = {
-      none: 'none', karaoke: 'karaoke', 'karaoke-scale': 'karaoke',
-      zoom: 'zoom', pop: 'pop', glow: 'glow',
-      'box-highlight': 'box-highlight', typewriter: 'typewriter', wave: 'wave',
+      none: 'none',
+      karaoke: 'karaoke',
+      'karaoke-scale': 'karaoke',
+      zoom: 'zoom',
+      pop: 'pop',
+      glow: 'glow',
+      'box-highlight': 'box-highlight',
+      typewriter: 'typewriter',
+      wave: 'wave',
     };
     return {
       enabled: true,
@@ -821,9 +846,7 @@
   const buildDialogSubtitleSettings = computed((): SubtitleSettings | null => {
     const vodDefaults = props.vodPresetConfig?.subtitleDefaults;
     const shouldUseLivePreviewSettings =
-      !!props.subtitleSettings &&
-      !!clipToBuild.value &&
-      clipToBuild.value.id === props.subtitleSettingsClipId;
+      !!props.subtitleSettings && !!clipToBuild.value && clipToBuild.value.id === props.subtitleSettingsClipId;
     const clipSettings = shouldUseLivePreviewSettings
       ? props.subtitleSettings
       : (derivedSubtitleSettings.value ?? props.subtitleSettings ?? null);
@@ -835,13 +858,6 @@
     }
     return null;
   });
-  const openDownloadDropdownId = ref<string | null>(null);
-  const dropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
-
-  // Action menu dropdown state
-  const openActionMenuId = ref<string | null>(null);
-  const actionMenuButtonRefs = ref<Map<string, HTMLElement>>(new Map());
-
   // Aspect framing settings loaded from clip editor
   const savedAspectRatios = ref<string[] | null>(null);
   const savedFramingMode = ref<'auto' | 'manual' | null>(null);
@@ -863,26 +879,8 @@
     return props.clips.every((clip) => thumbnailStore.hasThumbnail(clip.id) || !clip.built_thumbnail_path);
   });
 
-  // Close dropdowns when clicking outside
-  function handleClickOutside(event: MouseEvent) {
-    const target = event.target as HTMLElement;
-    if (!target.closest('[data-action-menu]')) {
-      if (openDownloadDropdownId.value !== null) {
-        openDownloadDropdownId.value = null;
-      }
-      if (openActionMenuId.value !== null) {
-        openActionMenuId.value = null;
-      }
-    }
-  }
-
   onMounted(() => {
-    document.addEventListener('click', handleClickOutside);
     loadClipThumbnails();
-  });
-
-  onUnmounted(() => {
-    document.removeEventListener('click', handleClickOutside);
   });
 
   // Load thumbnails when clips change
@@ -1140,17 +1138,14 @@
     return [
       {
         title: 'Completed',
-        accentClass: 'bg-emerald-400',
         clips: completed,
       },
       {
         title: 'In Projects',
-        accentClass: 'bg-violet-400',
         clips: inProjects,
       },
       {
         title: 'Found Clips',
-        accentClass: 'bg-blue-400',
         clips: found,
       },
     ].filter((section) => section.clips.length > 0 || section.title === 'Found Clips');
@@ -1196,27 +1191,23 @@
     }
   });
 
-  const stageIconClass = computed(() => {
-    return 'text-blue-500';
-  });
-
   const stageTitle = computed(() => {
     switch (props.generationStage) {
       case 'starting':
       case 'initializing':
         return 'Initializing';
       case 'checking_cache':
-        return 'Checking Cache';
+        return 'Checking cache';
       case 'extracting_chunks':
-        return 'Extracting Audio';
+        return 'Extracting audio';
       case 'transcribing':
       case 'transcribing_chunks':
-        return 'Transcribing Audio';
+        return 'Transcribing audio';
       case 'analyzing':
       case 'detecting_clips':
-        return 'Detecting Clips';
+        return 'Detecting clips';
       case 'validating':
-        return 'Validating Results';
+        return 'Validating results';
       case 'finalizing':
         return 'Finalizing';
       case 'completed':
@@ -1281,7 +1272,7 @@
     // If clip has segments, sum their durations (for stitched clips)
     if (clip.current_version_segments && clip.current_version_segments.length > 0) {
       return clip.current_version_segments.reduce((total, segment) => {
-        return total + (segment.duration || (segment.end_time - segment.start_time));
+        return total + (segment.duration || segment.end_time - segment.start_time);
       }, 0);
     }
     // Otherwise use the time range (for continuous clips)
@@ -1464,20 +1455,13 @@
     }
   }
 
-  function getViralityColorClass(score: number | null | undefined): string {
-    if (!score) return 'bg-muted/50 text-muted-foreground';
-    if (score >= 90)
-      return 'bg-rose-500/15 text-rose-400 ring-1 ring-rose-500/30 shadow-[0_0_8px_rgba(244,63,94,0.15)]';
-    if (score >= 80) return 'bg-orange-500/15 text-orange-400 ring-1 ring-orange-500/30';
-    if (score >= 60) return 'bg-yellow-500/15 text-yellow-400 ring-1 ring-yellow-500/30';
-    return 'bg-muted/50 text-muted-foreground';
-  }
+  /** Destructive items in the row menus. */
 
   function getConfidenceColorClass(score: number | null | undefined): string {
-    if (!score) return 'text-muted-foreground';
-    if (score >= 0.8) return 'text-green-400';
-    if (score >= 0.6) return 'text-yellow-400';
-    return 'text-muted-foreground';
+    if (!score) return 'text-fg-subtle';
+    if (score >= 0.8) return 'text-success';
+    if (score >= 0.6) return 'text-warning';
+    return 'text-fg-subtle';
   }
 
   // Get actual clip timing from segments (respects timeline edits)
@@ -1553,121 +1537,6 @@
     } else {
       return '15-30 minutes';
     }
-  }
-
-  function setDropdownButtonRef(el: any, clipId: string) {
-    if (el && el instanceof HTMLElement) {
-      dropdownButtonRefs.value.set(clipId, el);
-    } else {
-      dropdownButtonRefs.value.delete(clipId);
-    }
-  }
-
-  function getDropdownPosition(clipId: string): Record<string, string> {
-    const button = dropdownButtonRefs.value.get(clipId);
-    if (!button) {
-      return { top: '0px', right: '0px' };
-    }
-
-    const rect = button.getBoundingClientRect();
-    const dropdownMaxHeight = 300;
-    const padding = 8;
-    const viewportWidth = window.innerWidth;
-    const viewportHeight = window.innerHeight;
-
-    // Position dropdown's right edge aligned with button's right edge
-    const right = viewportWidth - rect.right;
-
-    // Calculate vertical position - prefer below, but flip above if not enough space
-    let top = rect.bottom + 4;
-
-    if (top + dropdownMaxHeight > viewportHeight - padding) {
-      top = rect.top - dropdownMaxHeight - 4;
-      if (top < padding) {
-        top = padding;
-      }
-    }
-
-    return {
-      top: `${top}px`,
-      right: `${Math.max(right, padding)}px`,
-    };
-  }
-
-  function toggleDownloadDropdown(clipId: string) {
-    // Close action menu if open
-    if (openActionMenuId.value !== null) {
-      openActionMenuId.value = null;
-    }
-    openDownloadDropdownId.value = openDownloadDropdownId.value === clipId ? null : clipId;
-  }
-
-  function closeDownloadDropdown() {
-    openDownloadDropdownId.value = null;
-  }
-
-  // Action menu functions
-  function setActionMenuButtonRef(el: any, clipId: string) {
-    if (el && el instanceof HTMLElement) {
-      actionMenuButtonRefs.value.set(clipId, el);
-    } else {
-      actionMenuButtonRefs.value.delete(clipId);
-    }
-  }
-
-  function toggleActionMenu(clipId: string) {
-    // Close download dropdown if open
-    if (openDownloadDropdownId.value !== null) {
-      openDownloadDropdownId.value = null;
-    }
-    openActionMenuId.value = openActionMenuId.value === clipId ? null : clipId;
-  }
-
-  function closeActionMenu() {
-    openActionMenuId.value = null;
-  }
-
-  function getActionMenuPosition(clipId: string): Record<string, string> {
-    const button = actionMenuButtonRefs.value.get(clipId);
-    if (!button) {
-      return { top: '0px', left: '0px' };
-    }
-
-    const rect = button.getBoundingClientRect();
-    const menuWidth = 200;
-    const menuMaxHeight = 280;
-    const padding = 8;
-
-    // Align to right edge of button
-    let left = rect.right - menuWidth;
-
-    // Ensure it doesn't go off the left edge
-    if (left < padding) {
-      left = padding;
-    }
-
-    // Ensure it doesn't go off the right edge
-    const viewportWidth = window.innerWidth;
-    if (left + menuWidth > viewportWidth - padding) {
-      left = viewportWidth - menuWidth - padding;
-    }
-
-    // Position below button
-    let top = rect.bottom + 4;
-    const viewportHeight = window.innerHeight;
-
-    // Flip above if not enough space below
-    if (top + menuMaxHeight > viewportHeight - padding) {
-      top = rect.top - menuMaxHeight - 4;
-      if (top < padding) {
-        top = padding;
-      }
-    }
-
-    return {
-      top: `${top}px`,
-      left: `${left}px`,
-    };
   }
 
   function handleDetectClips() {
@@ -1993,17 +1862,19 @@
         });
       }
 
-      console.log('[ClipsTab] Build target groups:', targetGroups.map(g => ({
-        key: g.key,
-        type: g.type,
-        ratios: g.ratios,
-        campaignId: g.campaignId,
-        brandingProfileId: g.brandingProfileId,
-      })));
-
-      const { updateClipBuildStatus, getRawVideosByProjectId, createClipBuild, getClipBuilds } = await import(
-        '@/services/database'
+      console.log(
+        '[ClipsTab] Build target groups:',
+        targetGroups.map((g) => ({
+          key: g.key,
+          type: g.type,
+          ratios: g.ratios,
+          campaignId: g.campaignId,
+          brandingProfileId: g.brandingProfileId,
+        }))
       );
+
+      const { updateClipBuildStatus, getRawVideosByProjectId, createClipBuild, getClipBuilds } =
+        await import('@/services/database');
       const { getIntroOutroById, resolveIntroOutroById } = await import('@/services/database/intro-outros');
       const { resolveWatermarkById, resolveLayoutOverlaysForBuild } = await import('@/services/database/watermarks');
 
@@ -2144,16 +2015,17 @@
       // Get transcript data from props (already computed in parent)
       const sourceSegmentsForSelfContained = selfContainedClip ? getSourceSegmentsForSelfContainedClip(clip) : [];
       const useSourceTranscriptForSelfContained =
-        selfContainedClip && !anchoredSelfContainedTranscript && wordsOverlapSegments(props.transcriptData?.words, sourceSegmentsForSelfContained);
+        selfContainedClip &&
+        !anchoredSelfContainedTranscript &&
+        wordsOverlapSegments(props.transcriptData?.words, sourceSegmentsForSelfContained);
       const sourceTranscriptWords = useSourceTranscriptForSelfContained
         ? props.transcriptData?.words || []
         : anchoredSelfContainedTranscript?.words || props.transcriptData?.words || [];
       const shouldUseSourceWindowForSubtitles =
         selfContainedClip && (useSourceTranscriptForSelfContained || !anchoredSelfContainedTranscript);
-      const sourceSegmentsForSubtitles =
-        shouldUseSourceWindowForSubtitles
-          ? sourceSegmentsForSelfContained
-          : freshSegments;
+      const sourceSegmentsForSubtitles = shouldUseSourceWindowForSubtitles
+        ? sourceSegmentsForSelfContained
+        : freshSegments;
       const sourceBasedTranscriptWords = buildEditedSubtitleWordsForExport(
         sourceSegmentsForSubtitles,
         sourceTranscriptWords
@@ -2525,7 +2397,7 @@
             '[ClipsTab] Using manual framing configuration with per-ratio configs:',
             Object.keys(settings.manualFramingConfigs || {})
           );
-          
+
           // Leave framingStrategy as null - the backend will use manualFramingConfigs instead
           // This ensures each aspect ratio gets its own unique crop regions
           framingStrategy = null;
@@ -2570,12 +2442,10 @@
 
             // Only analyze if clip is long enough (3+ seconds)
             if (clipDuration >= 3) {
-              const { analyzeSpeakers, getRecommendedSampleInterval } = await import(
-                '@/services/speaker-detection-api'
-              );
-              const { getFramingStrategyWithData, saveFramingStrategy } = await import(
-                '@/services/database/speaker-detection'
-              );
+              const { analyzeSpeakers, getRecommendedSampleInterval } =
+                await import('@/services/speaker-detection-api');
+              const { getFramingStrategyWithData, saveFramingStrategy } =
+                await import('@/services/database/speaker-detection');
 
               // Check if we already have a cached strategy for this clip
               const cachedStrategy = await getFramingStrategyWithData(clip.id);
@@ -2642,8 +2512,7 @@
       let effectiveSubtitleSettings: SubtitleSettings | null = null;
 
       const vodSubtitleDefaults = props.vodPresetConfig?.subtitleDefaults;
-      const shouldUseLivePreviewSettingsForBuild =
-        !!props.subtitleSettings && clip.id === props.subtitleSettingsClipId;
+      const shouldUseLivePreviewSettingsForBuild = !!props.subtitleSettings && clip.id === props.subtitleSettingsClipId;
 
       if (shouldUseLivePreviewSettingsForBuild) {
         effectiveSubtitleSettings = mergeVodSubtitleDefaultsWithSavedSettings(
@@ -2653,9 +2522,10 @@
         console.log('[ClipsTab] Using LIVE preview subtitle settings for current clip build');
       } else if (freshClipData?.subtitle_settings) {
         try {
-          const savedSettings = typeof freshClipData.subtitle_settings === 'string'
-            ? JSON.parse(freshClipData.subtitle_settings)
-            : freshClipData.subtitle_settings;
+          const savedSettings =
+            typeof freshClipData.subtitle_settings === 'string'
+              ? JSON.parse(freshClipData.subtitle_settings)
+              : freshClipData.subtitle_settings;
           effectiveSubtitleSettings = mergeVodSubtitleDefaultsWithSavedSettings(savedSettings, vodSubtitleDefaults);
           console.log('[ClipsTab] Loaded FRESH subtitle settings from database:', {
             animationStyle: savedSettings.animationStyle,
@@ -2694,15 +2564,9 @@
           rawLength: clipTextRaw?.length ?? 0,
           parsed: clipTextBoxState,
           enabled: clipTextBoxState?.enabled,
-          perRatioKeys: clipTextBoxState?.perRatioConfigs
-            ? Object.keys(clipTextBoxState.perRatioConfigs)
-            : [],
+          perRatioKeys: clipTextBoxState?.perRatioConfigs ? Object.keys(clipTextBoxState.perRatioConfigs) : [],
         });
-        textOverlaysForExport = mergeClipTextBoxIntoExportOverlays(
-          clip.id,
-          textOverlaysForExport,
-          clipTextRaw
-        );
+        textOverlaysForExport = mergeClipTextBoxIntoExportOverlays(clip.id, textOverlaysForExport, clipTextRaw);
         if (clipTextBoxState?.enabled) {
           const clipBoxPayload = textOverlaysForExport?.find((o) => o.id === `${clip.id}-clip-text-box`);
           if (clipBoxPayload) {
@@ -2713,9 +2577,7 @@
               positionX: clipBoxPayload.positionX,
               positionY: clipBoxPayload.positionY,
               hasPerRatioConfigs: !!clipBoxPayload.perRatioConfigs,
-              perRatioKeys: clipBoxPayload.perRatioConfigs
-                ? Object.keys(clipBoxPayload.perRatioConfigs)
-                : [],
+              perRatioKeys: clipBoxPayload.perRatioConfigs ? Object.keys(clipBoxPayload.perRatioConfigs) : [],
             });
           }
         }
@@ -2728,14 +2590,28 @@
         const preset = CAPTION_PRESETS.find((p) => p.id === presetId);
         if (!preset) return null;
         const fontWeightMap: Record<string, number> = {
-          normal: 400, bold: 700,
-          '100': 100, '200': 200, '300': 300, '400': 400,
-          '500': 500, '600': 600, '700': 700, '800': 800, '900': 900,
+          normal: 400,
+          bold: 700,
+          '100': 100,
+          '200': 200,
+          '300': 300,
+          '400': 400,
+          '500': 500,
+          '600': 600,
+          '700': 700,
+          '800': 800,
+          '900': 900,
         };
         const animMap: Record<string, SubtitleSettings['animationStyle']> = {
-          none: 'none', karaoke: 'karaoke', 'karaoke-scale': 'karaoke',
-          zoom: 'zoom', pop: 'pop', glow: 'glow',
-          'box-highlight': 'box-highlight', typewriter: 'typewriter', wave: 'wave',
+          none: 'none',
+          karaoke: 'karaoke',
+          'karaoke-scale': 'karaoke',
+          zoom: 'zoom',
+          pop: 'pop',
+          glow: 'glow',
+          'box-highlight': 'box-highlight',
+          typewriter: 'typewriter',
+          wave: 'wave',
         };
         return {
           selectedPresetId: preset.id,
@@ -2810,17 +2686,20 @@
           ? Object.fromEntries(
               Object.entries(finalSubtitleOverrides).map(([ratio, ov]) => {
                 const v = ov as any;
-                return [ratio, {
-                  animationStyle: v?.animationStyle,
-                  fontFamily: v?.fontFamily,
-                  textColor: v?.textColor,
-                  highlightColor: v?.highlightColor,
-                  fontSize: v?.fontSize,
-                  border1Width: v?.border1Width,
-                  positionPercentage: v?.positionPercentage,
-                  maxWidth: v?.maxWidth,
-                  hasPalette: Array.isArray(v?.colorPalette) && v.colorPalette.length > 0,
-                }];
+                return [
+                  ratio,
+                  {
+                    animationStyle: v?.animationStyle,
+                    fontFamily: v?.fontFamily,
+                    textColor: v?.textColor,
+                    highlightColor: v?.highlightColor,
+                    fontSize: v?.fontSize,
+                    border1Width: v?.border1Width,
+                    positionPercentage: v?.positionPercentage,
+                    maxWidth: v?.maxWidth,
+                    hasPalette: Array.isArray(v?.colorPalette) && v.colorPalette.length > 0,
+                  },
+                ];
               })
             )
           : null,
@@ -2829,1001 +2708,1044 @@
       // ── Per-Target Build Loop ──────────────────────────────────────────────
       // Each target group gets its own branding resolution and Rust invoke.
       for (const tg of targetGroups) {
-      const activeCampaignId = tg.campaignId;
-      const activeCampaignBrandingProfileId = tg.brandingProfileId;
-      const activeBrandingType = tg.type;
-      const activeTarget = tg.target;
-      const targetRatios = tg.ratios;
+        const activeCampaignId = tg.campaignId;
+        const activeCampaignBrandingProfileId = tg.brandingProfileId;
+        const activeBrandingType = tg.type;
+        const activeTarget = tg.target;
+        const targetRatios = tg.ratios;
 
-      console.log('[ClipsTab] Processing target group:', {
-        key: tg.key,
-        type: tg.type,
-        ratios: targetRatios,
-        campaignId: activeCampaignId,
-        brandingProfileId: activeCampaignBrandingProfileId,
-      });
-
-      // Calculate build number for this target group
-      let buildNumber = 1;
-      try {
-        // Get existing builds to determine the next build number
-        const existingBuilds = await getClipBuilds(clip.id);
-        buildNumber = existingBuilds.length + 1;
-        console.log('[ClipsTab] Calculated build number for target group', tg.key, ':', buildNumber, '(existing builds:', existingBuilds.length, ')');
-      } catch {
-        // Table might not exist yet
-        buildNumber = 1;
-        console.log('[ClipsTab] Using default build number 1 for target group', tg.key);
-      }
-
-      // Create a unique build record for this target group
-      let buildId: string | null = null;
-      try {
-        const brandingType = tg.campaignId ? 'campaign' : tg.organizationId ? 'org' : 'personal';
-        console.log('[ClipsTab] Build branding data:', {
-          targetGroupKey: tg.key,
-          targetGroupType: tg.type,
-          campaignId: tg.campaignId,
-          organizationId: tg.organizationId,
-          calculatedBrandingType: brandingType,
-          campaignName: tg.selectedCampaign?.title,
-          orgName: tg.target?.type === 'org' ? (tg.target as any).name : (tg.selectedCampaign?.organization?.name || null),
+        console.log('[ClipsTab] Processing target group:', {
+          key: tg.key,
+          type: tg.type,
+          ratios: targetRatios,
+          campaignId: activeCampaignId,
+          brandingProfileId: activeCampaignBrandingProfileId,
         });
-        
-        buildId = await createClipBuild(clip.id, {
-          aspectRatios: targetRatios,
-          quality: settings.quality,
-          frameRate: settings.frameRate,
-          outputFormat: settings.format,
-          includeSubtitles: effectiveSubtitleSettings?.enabled ?? false,
-          organizationId: tg.organizationId || null,
-          organizationName: tg.target?.type === 'org' 
-            ? (tg.target as any).name
-            : (tg.selectedCampaign?.organization?.name || null),
-          campaignId: tg.campaignId || null,
-          campaignName: tg.selectedCampaign?.title || null,
-          brandingProfileId: tg.brandingProfileId ? String(tg.brandingProfileId) : null,
-          brandingType: brandingType,
-        });
-        console.log('[ClipsTab] Created build record for target group', tg.key, ':', buildId, 'build number:', buildNumber);
-      } catch (err) {
-        console.warn('[ClipsTab] Could not create build record for target group', tg.key, ':', err);
-      }
 
-      // Clone watermarkSettings for this target (so campaign overrides don't leak between groups)
-      let targetWatermarkSettings = watermarkSettings ? { ...watermarkSettings } : null;
-
-      // Personal / legacy builds: use workspace watermark when the dialog emitted none (e.g. edge timing).
-      // Never use this for org/campaign targets — those resolve their own branding.
-      if (
-        (activeBrandingType === 'personal' || activeBrandingType === 'legacy') &&
-        !activeCampaignId &&
-        !targetWatermarkSettings
-      ) {
-        const fb = await getPersonalWatermarkFallback();
-        if (fb) {
-          targetWatermarkSettings = { ...fb };
-          console.log('[ClipsTab] Personal workspace watermark applied for personal/legacy target');
+        // Calculate build number for this target group
+        let buildNumber = 1;
+        try {
+          // Get existing builds to determine the next build number
+          const existingBuilds = await getClipBuilds(clip.id);
+          buildNumber = existingBuilds.length + 1;
+          console.log(
+            '[ClipsTab] Calculated build number for target group',
+            tg.key,
+            ':',
+            buildNumber,
+            '(existing builds:',
+            existingBuilds.length,
+            ')'
+          );
+        } catch {
+          // Table might not exist yet
+          buildNumber = 1;
+          console.log('[ClipsTab] Using default build number 1 for target group', tg.key);
         }
-      }
 
-      // ── Campaign Branding Override ────────────────────────────────────────────
-      let campaignOverrideIntro: IntroOutroRef | null = null;
-      let campaignOverrideOutro: IntroOutroRef | null = null;
-      let campaignOverrideWatermark: WatermarkSettings | null = null;
+        // Create a unique build record for this target group
+        let buildId: string | null = null;
+        try {
+          const brandingType = tg.campaignId ? 'campaign' : tg.organizationId ? 'org' : 'personal';
+          console.log('[ClipsTab] Build branding data:', {
+            targetGroupKey: tg.key,
+            targetGroupType: tg.type,
+            campaignId: tg.campaignId,
+            organizationId: tg.organizationId,
+            calculatedBrandingType: brandingType,
+            campaignName: tg.selectedCampaign?.title,
+            orgName:
+              tg.target?.type === 'org' ? (tg.target as any).name : tg.selectedCampaign?.organization?.name || null,
+          });
 
-      if (activeCampaignId && tg.selectedCampaign && tg.selectedCampaign.id === activeCampaignId) {
-        const campaign = tg.selectedCampaign;
-        console.log('[ClipsTab] Applying campaign branding for:', campaign.title, '(id:', campaign.id, ')');
+          buildId = await createClipBuild(clip.id, {
+            aspectRatios: targetRatios,
+            quality: settings.quality,
+            frameRate: settings.frameRate,
+            outputFormat: settings.format,
+            includeSubtitles: effectiveSubtitleSettings?.enabled ?? false,
+            organizationId: tg.organizationId || null,
+            organizationName:
+              tg.target?.type === 'org' ? (tg.target as any).name : tg.selectedCampaign?.organization?.name || null,
+            campaignId: tg.campaignId || null,
+            campaignName: tg.selectedCampaign?.title || null,
+            brandingProfileId: tg.brandingProfileId ? String(tg.brandingProfileId) : null,
+            brandingType: brandingType,
+          });
+          console.log(
+            '[ClipsTab] Created build record for target group',
+            tg.key,
+            ':',
+            buildId,
+            'build number:',
+            buildNumber
+          );
+        } catch (err) {
+          console.warn('[ClipsTab] Could not create build record for target group', tg.key, ':', err);
+        }
 
-        if (campaign.global_intro) {
-          const introResult = await ensureAssetDownloaded({
-            id: campaign.global_intro.id,
-            name: campaign.global_intro.name,
-            asset_type: 'intro',
-            url: campaign.global_intro.url,
-            organization_id: campaign.organization_id,
-            organization_name: campaign.organization?.name || '',
-            duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : undefined,
-            inserted_at: campaign.inserted_at,
-            updated_at: campaign.updated_at,
-          } as unknown as ServerOrganizationAsset);
-          if (introResult.success && introResult.filePath) {
-            campaignOverrideIntro = {
-              id: `org-asset-${campaign.global_intro.id}`,
-              type: 'intro',
-              name: campaign.global_intro.name,
-              file_path: introResult.filePath,
-              duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : null,
-              thumbnail_path: campaign.global_intro.thumbnail_url || null,
-            };
-            console.log('[ClipsTab] Campaign global intro applied:', campaign.global_intro.name);
+        // Clone watermarkSettings for this target (so campaign overrides don't leak between groups)
+        let targetWatermarkSettings = watermarkSettings ? { ...watermarkSettings } : null;
+
+        // Personal / legacy builds: use workspace watermark when the dialog emitted none (e.g. edge timing).
+        // Never use this for org/campaign targets — those resolve their own branding.
+        if (
+          (activeBrandingType === 'personal' || activeBrandingType === 'legacy') &&
+          !activeCampaignId &&
+          !targetWatermarkSettings
+        ) {
+          const fb = await getPersonalWatermarkFallback();
+          if (fb) {
+            targetWatermarkSettings = { ...fb };
+            console.log('[ClipsTab] Personal workspace watermark applied for personal/legacy target');
           }
         }
 
-        if (campaign.global_outro) {
-          const outroResult = await ensureAssetDownloaded({
-            id: campaign.global_outro.id,
-            name: campaign.global_outro.name,
-            asset_type: 'outro',
-            url: campaign.global_outro.url,
-            organization_id: campaign.organization_id,
-            organization_name: campaign.organization?.name || '',
-            duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : undefined,
-            inserted_at: campaign.inserted_at,
-            updated_at: campaign.updated_at,
-          } as unknown as ServerOrganizationAsset);
-          if (outroResult.success && outroResult.filePath) {
-            campaignOverrideOutro = {
-              id: `org-asset-${campaign.global_outro.id}`,
-              type: 'outro',
-              name: campaign.global_outro.name,
-              file_path: outroResult.filePath,
-              duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : null,
-              thumbnail_path: campaign.global_outro.thumbnail_url || null,
-            };
-            console.log('[ClipsTab] Campaign global outro applied:', campaign.global_outro.name);
-          }
-        }
+        // ── Campaign Branding Override ────────────────────────────────────────────
+        let campaignOverrideIntro: IntroOutroRef | null = null;
+        let campaignOverrideOutro: IntroOutroRef | null = null;
+        let campaignOverrideWatermark: WatermarkSettings | null = null;
 
-        const campaignCreatorProfile = campaign.branding_profile || campaign.creator_profiles?.[0] || campaign.creator_profile;
-        // Also check branding_profile for intro/outro if global_intro/global_outro were not set
-        if (!campaignOverrideIntro && campaignCreatorProfile?.intro?.url) {
-          try {
+        if (activeCampaignId && tg.selectedCampaign && tg.selectedCampaign.id === activeCampaignId) {
+          const campaign = tg.selectedCampaign;
+          console.log('[ClipsTab] Applying campaign branding for:', campaign.title, '(id:', campaign.id, ')');
+
+          if (campaign.global_intro) {
             const introResult = await ensureAssetDownloaded({
-              id: campaignCreatorProfile.intro.id,
-              name: campaignCreatorProfile.intro.name,
+              id: campaign.global_intro.id,
+              name: campaign.global_intro.name,
               asset_type: 'intro',
-              url: campaignCreatorProfile.intro.url,
+              url: campaign.global_intro.url,
               organization_id: campaign.organization_id,
               organization_name: campaign.organization?.name || '',
-              duration: campaignCreatorProfile.intro.duration ? parseFloat(campaignCreatorProfile.intro.duration) : undefined,
+              duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : undefined,
               inserted_at: campaign.inserted_at,
               updated_at: campaign.updated_at,
             } as unknown as ServerOrganizationAsset);
             if (introResult.success && introResult.filePath) {
               campaignOverrideIntro = {
-                id: `org-asset-${campaignCreatorProfile.intro.id}`,
+                id: `org-asset-${campaign.global_intro.id}`,
                 type: 'intro',
-                name: campaignCreatorProfile.intro.name,
+                name: campaign.global_intro.name,
                 file_path: introResult.filePath,
-                duration: campaignCreatorProfile.intro.duration ? parseFloat(campaignCreatorProfile.intro.duration) : null,
-                thumbnail_path: campaignCreatorProfile.intro.thumbnail_url || null,
+                duration: campaign.global_intro.duration ? parseFloat(campaign.global_intro.duration) : null,
+                thumbnail_path: campaign.global_intro.thumbnail_url || null,
               };
-              console.log('[ClipsTab] Campaign branding_profile intro applied:', campaignCreatorProfile.intro.name);
+              console.log('[ClipsTab] Campaign global intro applied:', campaign.global_intro.name);
             }
-          } catch (e) {
-            console.warn('[ClipsTab] Failed to download campaign branding_profile intro:', e);
           }
-        }
 
-        if (!campaignOverrideOutro && campaignCreatorProfile?.outro?.url) {
-          try {
+          if (campaign.global_outro) {
             const outroResult = await ensureAssetDownloaded({
-              id: campaignCreatorProfile.outro.id,
-              name: campaignCreatorProfile.outro.name,
+              id: campaign.global_outro.id,
+              name: campaign.global_outro.name,
               asset_type: 'outro',
-              url: campaignCreatorProfile.outro.url,
+              url: campaign.global_outro.url,
               organization_id: campaign.organization_id,
               organization_name: campaign.organization?.name || '',
-              duration: campaignCreatorProfile.outro.duration ? parseFloat(campaignCreatorProfile.outro.duration) : undefined,
+              duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : undefined,
               inserted_at: campaign.inserted_at,
               updated_at: campaign.updated_at,
             } as unknown as ServerOrganizationAsset);
             if (outroResult.success && outroResult.filePath) {
               campaignOverrideOutro = {
-                id: `org-asset-${campaignCreatorProfile.outro.id}`,
+                id: `org-asset-${campaign.global_outro.id}`,
                 type: 'outro',
-                name: campaignCreatorProfile.outro.name,
+                name: campaign.global_outro.name,
                 file_path: outroResult.filePath,
-                duration: campaignCreatorProfile.outro.duration ? parseFloat(campaignCreatorProfile.outro.duration) : null,
-                thumbnail_path: campaignCreatorProfile.outro.thumbnail_url || null,
+                duration: campaign.global_outro.duration ? parseFloat(campaign.global_outro.duration) : null,
+                thumbnail_path: campaign.global_outro.thumbnail_url || null,
               };
-              console.log('[ClipsTab] Campaign branding_profile outro applied:', campaignCreatorProfile.outro.name);
+              console.log('[ClipsTab] Campaign global outro applied:', campaign.global_outro.name);
             }
+          }
+
+          const campaignCreatorProfile =
+            campaign.branding_profile || campaign.creator_profiles?.[0] || campaign.creator_profile;
+          // Also check branding_profile for intro/outro if global_intro/global_outro were not set
+          if (!campaignOverrideIntro && campaignCreatorProfile?.intro?.url) {
+            try {
+              const introResult = await ensureAssetDownloaded({
+                id: campaignCreatorProfile.intro.id,
+                name: campaignCreatorProfile.intro.name,
+                asset_type: 'intro',
+                url: campaignCreatorProfile.intro.url,
+                organization_id: campaign.organization_id,
+                organization_name: campaign.organization?.name || '',
+                duration: campaignCreatorProfile.intro.duration
+                  ? parseFloat(campaignCreatorProfile.intro.duration)
+                  : undefined,
+                inserted_at: campaign.inserted_at,
+                updated_at: campaign.updated_at,
+              } as unknown as ServerOrganizationAsset);
+              if (introResult.success && introResult.filePath) {
+                campaignOverrideIntro = {
+                  id: `org-asset-${campaignCreatorProfile.intro.id}`,
+                  type: 'intro',
+                  name: campaignCreatorProfile.intro.name,
+                  file_path: introResult.filePath,
+                  duration: campaignCreatorProfile.intro.duration
+                    ? parseFloat(campaignCreatorProfile.intro.duration)
+                    : null,
+                  thumbnail_path: campaignCreatorProfile.intro.thumbnail_url || null,
+                };
+                console.log('[ClipsTab] Campaign branding_profile intro applied:', campaignCreatorProfile.intro.name);
+              }
+            } catch (e) {
+              console.warn('[ClipsTab] Failed to download campaign branding_profile intro:', e);
+            }
+          }
+
+          if (!campaignOverrideOutro && campaignCreatorProfile?.outro?.url) {
+            try {
+              const outroResult = await ensureAssetDownloaded({
+                id: campaignCreatorProfile.outro.id,
+                name: campaignCreatorProfile.outro.name,
+                asset_type: 'outro',
+                url: campaignCreatorProfile.outro.url,
+                organization_id: campaign.organization_id,
+                organization_name: campaign.organization?.name || '',
+                duration: campaignCreatorProfile.outro.duration
+                  ? parseFloat(campaignCreatorProfile.outro.duration)
+                  : undefined,
+                inserted_at: campaign.inserted_at,
+                updated_at: campaign.updated_at,
+              } as unknown as ServerOrganizationAsset);
+              if (outroResult.success && outroResult.filePath) {
+                campaignOverrideOutro = {
+                  id: `org-asset-${campaignCreatorProfile.outro.id}`,
+                  type: 'outro',
+                  name: campaignCreatorProfile.outro.name,
+                  file_path: outroResult.filePath,
+                  duration: campaignCreatorProfile.outro.duration
+                    ? parseFloat(campaignCreatorProfile.outro.duration)
+                    : null,
+                  thumbnail_path: campaignCreatorProfile.outro.thumbnail_url || null,
+                };
+                console.log('[ClipsTab] Campaign branding_profile outro applied:', campaignCreatorProfile.outro.name);
+              }
+            } catch (e) {
+              console.warn('[ClipsTab] Failed to download campaign branding_profile outro:', e);
+            }
+          }
+
+          if (campaignCreatorProfile?.watermark?.url) {
+            try {
+              const filename = `campaign-watermark-${campaignCreatorProfile.watermark.id}.png`;
+              const filePath = await invoke<string>('download_org_asset_from_url', {
+                url: campaignCreatorProfile.watermark.url,
+                filename,
+                assetType: 'watermarks',
+                organizationId: String(campaign.organization_id),
+              });
+              let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
+              if (campaignCreatorProfile.watermark_settings) {
+                try {
+                  const wmSettings =
+                    typeof campaignCreatorProfile.watermark_settings === 'string'
+                      ? JSON.parse(campaignCreatorProfile.watermark_settings as unknown as string)
+                      : campaignCreatorProfile.watermark_settings;
+                  const ratioConfig = wmSettings['16:9'];
+                  if (ratioConfig?.position) defaultPos = ratioConfig.position;
+                } catch (e) {
+                  console.warn('[ClipsTab] Failed to parse campaign watermark settings:', e);
+                }
+              }
+              campaignOverrideWatermark = {
+                enabled: true,
+                watermarkId: `org-asset-${campaignCreatorProfile.watermark.id}`,
+                positionX: defaultPos.x,
+                positionY: defaultPos.y,
+                opacity: defaultPos.opacity,
+                scale: defaultPos.scale,
+                perRatioSettings: (campaignCreatorProfile.watermark_settings as any) ?? null,
+              };
+              console.log('[ClipsTab] Campaign watermark applied:', campaignCreatorProfile.watermark.name);
+            } catch (e) {
+              console.warn('[ClipsTab] Failed to download campaign watermark:', e);
+            }
+          }
+
+          // Save campaign_id to the clip for payment tracking
+          try {
+            const { updateClip } = await import('@/services/database/clips');
+            await updateClip(clip.id, { campaign_id: activeCampaignId });
+            console.log('[ClipsTab] Saved campaign_id', activeCampaignId, 'to clip', clip.id);
           } catch (e) {
-            console.warn('[ClipsTab] Failed to download campaign branding_profile outro:', e);
+            console.warn('[ClipsTab] Failed to save campaign_id to clip:', e);
           }
         }
+        // ── End Campaign Branding Override ───────────────────────────────────────
 
-        if (campaignCreatorProfile?.watermark?.url) {
+        // ── Org Branding Resolution ─────────────────────────────────────────────
+        let orgOverrideIntro: IntroOutroRef | null = null;
+        let orgOverrideOutro: IntroOutroRef | null = null;
+        let targetResolvedProfile: any = null; // Stores resolved profile for layout_overlays
+
+        if (!activeCampaignId && activeBrandingType === 'org') {
           try {
-            const filename = `campaign-watermark-${campaignCreatorProfile.watermark.id}.png`;
-            const filePath = await invoke<string>('download_org_asset_from_url', {
-              url: campaignCreatorProfile.watermark.url,
-              filename,
-              assetType: 'watermarks',
-              organizationId: String(campaign.organization_id),
-            });
-            let defaultPos = { x: 12, y: 92, opacity: 80, scale: 20 };
-            if (campaignCreatorProfile.watermark_settings) {
-              try {
-                const wmSettings = typeof campaignCreatorProfile.watermark_settings === 'string'
-                  ? JSON.parse(campaignCreatorProfile.watermark_settings as unknown as string)
-                  : campaignCreatorProfile.watermark_settings;
-                const ratioConfig = wmSettings['16:9'];
-                if (ratioConfig?.position) defaultPos = ratioConfig.position;
-              } catch (e) {
-                console.warn('[ClipsTab] Failed to parse campaign watermark settings:', e);
+            let profile: any = null;
+            const clipProjectId = clip.project_id || (clip as { segment_id?: string }).segment_id || props.projectId;
+            const orgId = activeTarget?.organizationId;
+
+            if (clipProjectId && orgId) {
+              const { resolveOrgBuildBranding } = await import('@/composables/useBrandingProfileSelection');
+              profile = await resolveOrgBuildBranding(Number(orgId), clipProjectId);
+
+              if (
+                profile &&
+                activeCampaignBrandingProfileId &&
+                String(profile.id) !== String(activeCampaignBrandingProfileId)
+              ) {
+                console.warn(
+                  '[ClipsTab] Org branding profile mismatch: dialog selected',
+                  activeCampaignBrandingProfileId,
+                  'resolved',
+                  profile.id
+                );
+              }
+
+              if (profile) {
+                targetResolvedProfile = profile;
+                console.log('[ClipsTab] Org branding resolved:', profile.name, 'for org', orgId);
+              } else {
+                console.log('[ClipsTab] Org branding: no profile resolved for org', orgId);
               }
             }
-            campaignOverrideWatermark = {
+
+            console.log('[ClipsTab] Org branding profile lookup:', {
+              brandingProfileId: activeCampaignBrandingProfileId,
+              foundProfile: !!profile,
+              profileName: profile?.name || null,
+              introId: profile?.intro_id || null,
+              outroId: profile?.outro_id || null,
+            });
+
+            // Profile from resolveApplicableProfiles is in local format:
+            // outro_id/intro_id are already "org-asset-{id}" strings. Pass directly.
+            if (profile?.intro_id) {
+              const introResolved = await resolveIntroOutroById(profile.intro_id);
+              if (introResolved) {
+                orgOverrideIntro = {
+                  id: profile.intro_id,
+                  type: 'intro',
+                  name: (profile.name || 'Org') + ' Intro',
+                  file_path: introResolved.filePath,
+                  duration: introResolved.duration,
+                  thumbnail_path: null,
+                } as IntroOutroRef;
+                console.log('[ClipsTab] Org profile intro resolved:', profile.intro_id);
+              }
+            }
+
+            if (profile?.outro_id) {
+              const outroResolved = await resolveIntroOutroById(profile.outro_id);
+              if (outroResolved) {
+                orgOverrideOutro = {
+                  id: profile.outro_id,
+                  type: 'outro',
+                  name: (profile.name || 'Org') + ' Outro',
+                  file_path: outroResolved.filePath,
+                  duration: outroResolved.duration,
+                  thumbnail_path: null,
+                } as IntroOutroRef;
+                console.log('[ClipsTab] Org profile outro resolved:', profile.outro_id);
+              }
+            }
+          } catch (e) {
+            console.warn('[ClipsTab] Failed to resolve org branding profile intro/outro:', e);
+          }
+        }
+        // ── End Org Branding Resolution ─────────────────────────────────────────
+
+        // Effective intro/outro: campaign > org > (personal/legacy: creator defaults + dialog) | (org/campaign targets: dialog only).
+        const isOrgOrCampaignTarget = activeBrandingType === 'org' || activeBrandingType === 'campaign';
+        const effectiveIntro =
+          campaignOverrideIntro ??
+          orgOverrideIntro ??
+          (activeCampaignId
+            ? null
+            : isOrgOrCampaignTarget
+              ? settings.intro
+              : props.creatorDefaultIntro || settings.intro);
+        const effectiveOutro =
+          campaignOverrideOutro ??
+          orgOverrideOutro ??
+          (activeCampaignId
+            ? null
+            : isOrgOrCampaignTarget
+              ? settings.outro
+              : props.creatorDefaultOutro || settings.outro);
+        // If campaign selected, use campaign watermark; otherwise clear org watermark (don't leak org branding into campaign builds)
+        if (activeCampaignId && campaignOverrideWatermark) {
+          // Re-resolve watermark for Rust from campaign override
+          if (campaignOverrideWatermark.watermarkId) {
+            const campaignWm = await resolveWatermarkById(campaignOverrideWatermark.watermarkId);
+            if (campaignWm) {
+              const wmPerRatio: Record<string, any> = {};
+              const allRatios = ['16:9', '9:16', '1:1', '4:5'];
+              for (const ratio of allRatios) {
+                const pos = (campaignOverrideWatermark.perRatioSettings as any)?.[ratio]?.position ?? {
+                  x: campaignOverrideWatermark.positionX,
+                  y: campaignOverrideWatermark.positionY,
+                  opacity: campaignOverrideWatermark.opacity,
+                  scale: campaignOverrideWatermark.scale,
+                };
+                wmPerRatio[ratio] = {
+                  watermarkId: campaignOverrideWatermark.watermarkId,
+                  filePath: campaignWm.filePath,
+                  width: campaignWm.width,
+                  height: campaignWm.height,
+                  position: pos,
+                };
+              }
+              targetWatermarkSettings = {
+                enabled: true,
+                watermarkId: campaignOverrideWatermark.watermarkId,
+                filePath: campaignWm.filePath,
+                width: campaignWm.width ?? 0,
+                height: campaignWm.height ?? 0,
+                positionX: campaignOverrideWatermark.positionX,
+                positionY: campaignOverrideWatermark.positionY,
+                opacity: campaignOverrideWatermark.opacity,
+                scale: campaignOverrideWatermark.scale,
+                perRatioSettings: wmPerRatio,
+              };
+              console.log('[ClipsTab] Watermark re-resolved for campaign:', campaignOverrideWatermark.watermarkId);
+            }
+          }
+        } else if (activeCampaignId) {
+          targetWatermarkSettings = null;
+          console.log('[ClipsTab] Cleared org watermark for campaign build (no campaign watermark set)');
+        } else if (!activeCampaignId && activeBrandingType === 'org' && targetResolvedProfile?.watermark_id) {
+          const { expandWatermarkForBuild } = await import('@/composables/useOrgCampaignBuildBranding');
+          const orgWm = await resolveWatermarkById(targetResolvedProfile.watermark_id);
+          if (orgWm) {
+            let wmSettings: Record<string, unknown> | null = null;
+            if (targetResolvedProfile.watermark_settings) {
+              try {
+                wmSettings =
+                  typeof targetResolvedProfile.watermark_settings === 'string'
+                    ? JSON.parse(targetResolvedProfile.watermark_settings)
+                    : targetResolvedProfile.watermark_settings;
+              } catch {
+                wmSettings = null;
+              }
+            }
+            const defaultPos = (
+              wmSettings as Record<string, { position?: { x: number; y: number; opacity: number; scale: number } }>
+            )?.['16:9']?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 };
+
+            const expanded = await expandWatermarkForBuild({
               enabled: true,
-              watermarkId: `org-asset-${campaignCreatorProfile.watermark.id}`,
+              watermarkId: targetResolvedProfile.watermark_id,
               positionX: defaultPos.x,
               positionY: defaultPos.y,
               opacity: defaultPos.opacity,
               scale: defaultPos.scale,
-              perRatioSettings: (campaignCreatorProfile.watermark_settings as any) ?? null,
-            };
-            console.log('[ClipsTab] Campaign watermark applied:', campaignCreatorProfile.watermark.name);
-          } catch (e) {
-            console.warn('[ClipsTab] Failed to download campaign watermark:', e);
+              perRatioSettings: wmSettings as any,
+            });
+            if (expanded) {
+              targetWatermarkSettings = expanded as unknown as typeof targetWatermarkSettings;
+              console.log('[ClipsTab] Org watermark applied:', targetResolvedProfile.watermark_id);
+            }
           }
         }
 
-        // Save campaign_id to the clip for payment tracking
-        try {
-          const { updateClip } = await import('@/services/database/clips');
-          await updateClip(clip.id, { campaign_id: activeCampaignId });
-          console.log('[ClipsTab] Saved campaign_id', activeCampaignId, 'to clip', clip.id);
-        } catch (e) {
-          console.warn('[ClipsTab] Failed to save campaign_id to clip:', e);
-        }
-      }
-      // ── End Campaign Branding Override ───────────────────────────────────────
+        console.log('[ClipsTab] Campaign branding resolution result:', {
+          hasCampaign: !!activeCampaignId,
+          overrideIntro: campaignOverrideIntro?.name || null,
+          overrideOutro: campaignOverrideOutro?.name || null,
+          overrideWatermark: campaignOverrideWatermark ? 'yes' : 'no',
+          effectiveIntro: effectiveIntro?.name || null,
+          effectiveOutro: effectiveOutro?.name || null,
+          watermarkAfterOverride: (settings as any).watermark?.enabled
+            ? (settings as any).watermark?.watermarkId
+            : null,
+        });
 
-      // ── Org Branding Resolution ─────────────────────────────────────────────
-      let orgOverrideIntro: IntroOutroRef | null = null;
-      let orgOverrideOutro: IntroOutroRef | null = null;
-      let targetResolvedProfile: any = null; // Stores resolved profile for layout_overlays
+        let introPath: string | null = null;
+        let outroPath: string | null = null;
+        let introDuration: number | null = null;
+        let outroDuration: number | null = null;
 
-      if (!activeCampaignId && activeBrandingType === 'org') {
-        try {
-          let profile: any = null;
-          const clipProjectId =
-            clip.project_id ||
-            (clip as { segment_id?: string }).segment_id ||
-            props.projectId;
-          const orgId = activeTarget?.organizationId;
+        // Handle intro
+        if (effectiveIntro) {
+          introPath = effectiveIntro.file_path || null;
+          introDuration = effectiveIntro.duration || null;
+          const introSource = campaignOverrideIntro
+            ? '(campaign)'
+            : orgOverrideIntro
+              ? '(org branding)'
+              : !activeCampaignId &&
+                  !isOrgOrCampaignTarget &&
+                  props.creatorDefaultIntro &&
+                  effectiveIntro &&
+                  (effectiveIntro.id === props.creatorDefaultIntro.id ||
+                    effectiveIntro.file_path === props.creatorDefaultIntro.file_path)
+                ? '(creator profile default)'
+                : '(dialog selection)';
+          console.log('[ClipsTab] Using intro:', effectiveIntro.name, introSource);
 
-          if (clipProjectId && orgId) {
-            const { resolveOrgBuildBranding } = await import('@/composables/useBrandingProfileSelection');
-            profile = await resolveOrgBuildBranding(Number(orgId), clipProjectId);
+          // Download org intro if needed (cast to any for org asset properties)
+          const introAny = effectiveIntro as any;
+          if (introAny.isOrgAsset && introAny.serverId) {
+            console.log('[ClipsTab] Downloading org intro asset on-demand:', effectiveIntro.name);
+            const introResult = await ensureAssetDownloaded({
+              id: introAny.serverId,
+              name: effectiveIntro.name,
+              asset_type: 'intro',
+              url: introAny.serverUrl || effectiveIntro.file_path,
+              organization_id: Number(introAny.organization_id),
+              organization_name: introAny.organization_name || undefined,
+              duration: effectiveIntro.duration || undefined,
+              thumbnail_url: introAny.thumbnail_path || undefined,
+              inserted_at: introAny.created_at,
+              updated_at: introAny.updated_at,
+            } as unknown as ServerOrganizationAsset);
 
-            if (
-              profile &&
-              activeCampaignBrandingProfileId &&
-              String(profile.id) !== String(activeCampaignBrandingProfileId)
-            ) {
-              console.warn(
-                '[ClipsTab] Org branding profile mismatch: dialog selected',
-                activeCampaignBrandingProfileId,
-                'resolved',
-                profile.id
-              );
-            }
-
-            if (profile) {
-              targetResolvedProfile = profile;
-              console.log('[ClipsTab] Org branding resolved:', profile.name, 'for org', orgId);
+            if (introResult.success && introResult.filePath) {
+              introPath = introResult.filePath;
+              console.log('[ClipsTab] Org intro downloaded to:', introPath);
             } else {
-              console.log('[ClipsTab] Org branding: no profile resolved for org', orgId);
+              throw new Error(`Failed to download intro asset: ${introResult.error || 'Unknown error'}`);
             }
           }
+        }
 
-          console.log('[ClipsTab] Org branding profile lookup:', {
-            brandingProfileId: activeCampaignBrandingProfileId,
-            foundProfile: !!profile,
-            profileName: profile?.name || null,
-            introId: profile?.intro_id || null,
-            outroId: profile?.outro_id || null,
-          });
+        // Handle outro
+        if (effectiveOutro) {
+          outroPath = effectiveOutro.file_path || null;
+          outroDuration = effectiveOutro.duration || null;
+          const outroSource = campaignOverrideOutro
+            ? '(campaign)'
+            : orgOverrideOutro
+              ? '(org branding)'
+              : !activeCampaignId &&
+                  !isOrgOrCampaignTarget &&
+                  props.creatorDefaultOutro &&
+                  effectiveOutro &&
+                  (effectiveOutro.id === props.creatorDefaultOutro.id ||
+                    effectiveOutro.file_path === props.creatorDefaultOutro.file_path)
+                ? '(creator profile default)'
+                : '(dialog selection)';
+          console.log('[ClipsTab] Using outro:', effectiveOutro.name, outroSource);
 
-          // Profile from resolveApplicableProfiles is in local format:
-          // outro_id/intro_id are already "org-asset-{id}" strings. Pass directly.
-          if (profile?.intro_id) {
-            const introResolved = await resolveIntroOutroById(profile.intro_id);
-            if (introResolved) {
-              orgOverrideIntro = {
-                id: profile.intro_id,
-                type: 'intro',
-                name: (profile.name || 'Org') + ' Intro',
-                file_path: introResolved.filePath,
-                duration: introResolved.duration,
-                thumbnail_path: null,
-              } as IntroOutroRef;
-              console.log('[ClipsTab] Org profile intro resolved:', profile.intro_id);
+          // Download org outro if needed (cast to any for org asset properties)
+          const outroAny = effectiveOutro as any;
+          if (outroAny.isOrgAsset && outroAny.serverId) {
+            console.log('[ClipsTab] Downloading org outro asset on-demand:', effectiveOutro.name);
+            const outroResult = await ensureAssetDownloaded({
+              id: outroAny.serverId,
+              name: effectiveOutro.name,
+              asset_type: 'outro',
+              url: outroAny.serverUrl || effectiveOutro.file_path,
+              organization_id: Number(outroAny.organization_id),
+              organization_name: outroAny.organization_name || undefined,
+              duration: effectiveOutro.duration || undefined,
+              thumbnail_url: outroAny.thumbnail_path || undefined,
+              inserted_at: outroAny.created_at,
+              updated_at: outroAny.updated_at,
+            } as unknown as ServerOrganizationAsset);
+
+            if (outroResult.success && outroResult.filePath) {
+              outroPath = outroResult.filePath;
+              console.log('[ClipsTab] Org outro downloaded to:', outroPath);
+            } else {
+              throw new Error(`Failed to download outro asset: ${outroResult.error || 'Unknown error'}`);
             }
           }
-
-          if (profile?.outro_id) {
-            const outroResolved = await resolveIntroOutroById(profile.outro_id);
-            if (outroResolved) {
-              orgOverrideOutro = {
-                id: profile.outro_id,
-                type: 'outro',
-                name: (profile.name || 'Org') + ' Outro',
-                file_path: outroResolved.filePath,
-                duration: outroResolved.duration,
-                thumbnail_path: null,
-              } as IntroOutroRef;
-              console.log('[ClipsTab] Org profile outro resolved:', profile.outro_id);
-            }
-          }
-
-        } catch (e) {
-          console.warn('[ClipsTab] Failed to resolve org branding profile intro/outro:', e);
         }
-      }
-      // ── End Org Branding Resolution ─────────────────────────────────────────
 
-      // Effective intro/outro: campaign > org > (personal/legacy: creator defaults + dialog) | (org/campaign targets: dialog only).
-      const isOrgOrCampaignTarget = activeBrandingType === 'org' || activeBrandingType === 'campaign';
-      const effectiveIntro =
-        campaignOverrideIntro ??
-        orgOverrideIntro ??
-        (activeCampaignId
-          ? null
-          : isOrgOrCampaignTarget
-            ? settings.intro
-            : props.creatorDefaultIntro || settings.intro);
-      const effectiveOutro =
-        campaignOverrideOutro ??
-        orgOverrideOutro ??
-        (activeCampaignId
-          ? null
-          : isOrgOrCampaignTarget
-            ? settings.outro
-            : props.creatorDefaultOutro || settings.outro);
-      // If campaign selected, use campaign watermark; otherwise clear org watermark (don't leak org branding into campaign builds)
-      if (activeCampaignId && campaignOverrideWatermark) {
-        // Re-resolve watermark for Rust from campaign override
-        if (campaignOverrideWatermark.watermarkId) {
-          const campaignWm = await resolveWatermarkById(campaignOverrideWatermark.watermarkId);
-          if (campaignWm) {
-            const wmPerRatio: Record<string, any> = {};
-            const allRatios = ['16:9', '9:16', '1:1', '4:5'];
-            for (const ratio of allRatios) {
-              const pos = (campaignOverrideWatermark.perRatioSettings as any)?.[ratio]?.position
-                ?? { x: campaignOverrideWatermark.positionX, y: campaignOverrideWatermark.positionY, opacity: campaignOverrideWatermark.opacity, scale: campaignOverrideWatermark.scale };
-              wmPerRatio[ratio] = {
-                watermarkId: campaignOverrideWatermark.watermarkId,
-                filePath: campaignWm.filePath,
-                width: campaignWm.width,
-                height: campaignWm.height,
-                position: pos,
-              };
-            }
-            targetWatermarkSettings = {
-              enabled: true,
-              watermarkId: campaignOverrideWatermark.watermarkId,
-              filePath: campaignWm.filePath,
-              width: campaignWm.width ?? 0,
-              height: campaignWm.height ?? 0,
-              positionX: campaignOverrideWatermark.positionX,
-              positionY: campaignOverrideWatermark.positionY,
-              opacity: campaignOverrideWatermark.opacity,
-              scale: campaignOverrideWatermark.scale,
-              perRatioSettings: wmPerRatio,
-            };
-            console.log('[ClipsTab] Watermark re-resolved for campaign:', campaignOverrideWatermark.watermarkId);
-          }
-        }
-      } else if (activeCampaignId) {
-        targetWatermarkSettings = null;
-        console.log('[ClipsTab] Cleared org watermark for campaign build (no campaign watermark set)');
-      } else if (
-        !activeCampaignId &&
-        activeBrandingType === 'org' &&
-        targetResolvedProfile?.watermark_id
-      ) {
-        const { expandWatermarkForBuild } = await import('@/composables/useOrgCampaignBuildBranding');
-        const orgWm = await resolveWatermarkById(targetResolvedProfile.watermark_id);
-        if (orgWm) {
-          let wmSettings: Record<string, unknown> | null = null;
-          if (targetResolvedProfile.watermark_settings) {
-            try {
-              wmSettings =
-                typeof targetResolvedProfile.watermark_settings === 'string'
-                  ? JSON.parse(targetResolvedProfile.watermark_settings)
-                  : targetResolvedProfile.watermark_settings;
-            } catch {
-              wmSettings = null;
-            }
-          }
-          const defaultPos =
-            (wmSettings as Record<string, { position?: { x: number; y: number; opacity: number; scale: number } }>)?.[
-              '16:9'
-            ]?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 };
+        // Per-ratio intro/outro from profile JSON — org/campaign targets only (not personal builds).
+        const introOutroPerRatio: Record<
+          string,
+          { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number }
+        > = {};
 
-          const expanded = await expandWatermarkForBuild({
-            enabled: true,
-            watermarkId: targetResolvedProfile.watermark_id,
-            positionX: defaultPos.x,
-            positionY: defaultPos.y,
-            opacity: defaultPos.opacity,
-            scale: defaultPos.scale,
-            perRatioSettings: wmSettings as any,
-          });
-          if (expanded) {
-            targetWatermarkSettings = expanded as unknown as typeof targetWatermarkSettings;
-            console.log('[ClipsTab] Org watermark applied:', targetResolvedProfile.watermark_id);
-          }
-        }
-      }
+        const perRatioIntroOutroRaw =
+          activeBrandingType === 'org' && targetResolvedProfile?.intro_outro_settings
+            ? targetResolvedProfile.intro_outro_settings
+            : null;
 
-      console.log('[ClipsTab] Campaign branding resolution result:', {
-        hasCampaign: !!activeCampaignId,
-        overrideIntro: campaignOverrideIntro?.name || null,
-        overrideOutro: campaignOverrideOutro?.name || null,
-        overrideWatermark: campaignOverrideWatermark ? 'yes' : 'no',
-        effectiveIntro: effectiveIntro?.name || null,
-        effectiveOutro: effectiveOutro?.name || null,
-        watermarkAfterOverride: (settings as any).watermark?.enabled ? (settings as any).watermark?.watermarkId : null,
-      });
+        if (perRatioIntroOutroRaw) {
+          try {
+            const introOutroSettings =
+              typeof perRatioIntroOutroRaw === 'string' ? JSON.parse(perRatioIntroOutroRaw) : perRatioIntroOutroRaw;
 
-      let introPath: string | null = null;
-      let outroPath: string | null = null;
-      let introDuration: number | null = null;
-      let outroDuration: number | null = null;
+            for (const ratio of settings.aspectRatios) {
+              const ratioConfig = introOutroSettings[ratio];
+              if (ratioConfig) {
+                const ratioData: {
+                  introPath?: string;
+                  introDuration?: number;
+                  outroPath?: string;
+                  outroDuration?: number;
+                } = {};
 
-      // Handle intro
-      if (effectiveIntro) {
-        introPath = effectiveIntro.file_path || null;
-        introDuration = effectiveIntro.duration || null;
-        const introSource = campaignOverrideIntro
-          ? '(campaign)'
-          : orgOverrideIntro
-            ? '(org branding)'
-            : !activeCampaignId &&
-                !isOrgOrCampaignTarget &&
-                props.creatorDefaultIntro &&
-                effectiveIntro &&
-                (effectiveIntro.id === props.creatorDefaultIntro.id ||
-                  effectiveIntro.file_path === props.creatorDefaultIntro.file_path)
-              ? '(creator profile default)'
-              : '(dialog selection)';
-        console.log('[ClipsTab] Using intro:', effectiveIntro.name, introSource);
-
-        // Download org intro if needed (cast to any for org asset properties)
-        const introAny = effectiveIntro as any;
-        if (introAny.isOrgAsset && introAny.serverId) {
-          console.log('[ClipsTab] Downloading org intro asset on-demand:', effectiveIntro.name);
-          const introResult = await ensureAssetDownloaded({
-            id: introAny.serverId,
-            name: effectiveIntro.name,
-            asset_type: 'intro',
-            url: introAny.serverUrl || effectiveIntro.file_path,
-            organization_id: Number(introAny.organization_id),
-            organization_name: introAny.organization_name || undefined,
-            duration: effectiveIntro.duration || undefined,
-            thumbnail_url: introAny.thumbnail_path || undefined,
-            inserted_at: introAny.created_at,
-            updated_at: introAny.updated_at,
-          } as unknown as ServerOrganizationAsset);
-
-          if (introResult.success && introResult.filePath) {
-            introPath = introResult.filePath;
-            console.log('[ClipsTab] Org intro downloaded to:', introPath);
-          } else {
-            throw new Error(`Failed to download intro asset: ${introResult.error || 'Unknown error'}`);
-          }
-        }
-      }
-
-      // Handle outro
-      if (effectiveOutro) {
-        outroPath = effectiveOutro.file_path || null;
-        outroDuration = effectiveOutro.duration || null;
-        const outroSource = campaignOverrideOutro
-          ? '(campaign)'
-          : orgOverrideOutro
-            ? '(org branding)'
-            : !activeCampaignId &&
-                !isOrgOrCampaignTarget &&
-                props.creatorDefaultOutro &&
-                effectiveOutro &&
-                (effectiveOutro.id === props.creatorDefaultOutro.id ||
-                  effectiveOutro.file_path === props.creatorDefaultOutro.file_path)
-              ? '(creator profile default)'
-              : '(dialog selection)';
-        console.log('[ClipsTab] Using outro:', effectiveOutro.name, outroSource);
-
-        // Download org outro if needed (cast to any for org asset properties)
-        const outroAny = effectiveOutro as any;
-        if (outroAny.isOrgAsset && outroAny.serverId) {
-          console.log('[ClipsTab] Downloading org outro asset on-demand:', effectiveOutro.name);
-          const outroResult = await ensureAssetDownloaded({
-            id: outroAny.serverId,
-            name: effectiveOutro.name,
-            asset_type: 'outro',
-            url: outroAny.serverUrl || effectiveOutro.file_path,
-            organization_id: Number(outroAny.organization_id),
-            organization_name: outroAny.organization_name || undefined,
-            duration: effectiveOutro.duration || undefined,
-            thumbnail_url: outroAny.thumbnail_path || undefined,
-            inserted_at: outroAny.created_at,
-            updated_at: outroAny.updated_at,
-          } as unknown as ServerOrganizationAsset);
-
-          if (outroResult.success && outroResult.filePath) {
-            outroPath = outroResult.filePath;
-            console.log('[ClipsTab] Org outro downloaded to:', outroPath);
-          } else {
-            throw new Error(`Failed to download outro asset: ${outroResult.error || 'Unknown error'}`);
-          }
-        }
-      }
-
-      // Per-ratio intro/outro from profile JSON — org/campaign targets only (not personal builds).
-      const introOutroPerRatio: Record<string, { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number }> = {};
-
-      const perRatioIntroOutroRaw =
-        activeBrandingType === 'org' && targetResolvedProfile?.intro_outro_settings
-          ? targetResolvedProfile.intro_outro_settings
-          : null;
-
-      if (perRatioIntroOutroRaw) {
-        try {
-          const introOutroSettings =
-            typeof perRatioIntroOutroRaw === 'string'
-              ? JSON.parse(perRatioIntroOutroRaw)
-              : perRatioIntroOutroRaw;
-          
-          for (const ratio of settings.aspectRatios) {
-            const ratioConfig = introOutroSettings[ratio];
-            if (ratioConfig) {
-              const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
-              
-              // Resolve intro for this ratio
-              if (ratioConfig.introId) {
-                const introResolved = await resolveIntroOutroById(ratioConfig.introId);
-                if (introResolved) {
-                  ratioData.introPath = introResolved.filePath || undefined;
-                  ratioData.introDuration = introResolved.duration || undefined;
-                  console.log(`[ClipsTab] Resolved intro for ${ratio}:`, ratioConfig.introId);
+                // Resolve intro for this ratio
+                if (ratioConfig.introId) {
+                  const introResolved = await resolveIntroOutroById(ratioConfig.introId);
+                  if (introResolved) {
+                    ratioData.introPath = introResolved.filePath || undefined;
+                    ratioData.introDuration = introResolved.duration || undefined;
+                    console.log(`[ClipsTab] Resolved intro for ${ratio}:`, ratioConfig.introId);
+                  }
                 }
-              }
-              
-              // Resolve outro for this ratio
-              if (ratioConfig.outroId) {
-                const outroResolved = await resolveIntroOutroById(ratioConfig.outroId);
-                if (outroResolved) {
-                  ratioData.outroPath = outroResolved.filePath || undefined;
-                  ratioData.outroDuration = outroResolved.duration || undefined;
-                  console.log(`[ClipsTab] Resolved outro for ${ratio}:`, ratioConfig.outroId);
+
+                // Resolve outro for this ratio
+                if (ratioConfig.outroId) {
+                  const outroResolved = await resolveIntroOutroById(ratioConfig.outroId);
+                  if (outroResolved) {
+                    ratioData.outroPath = outroResolved.filePath || undefined;
+                    ratioData.outroDuration = outroResolved.duration || undefined;
+                    console.log(`[ClipsTab] Resolved outro for ${ratio}:`, ratioConfig.outroId);
+                  }
                 }
+
+                introOutroPerRatio[ratio] = ratioData;
               }
-              
-              introOutroPerRatio[ratio] = ratioData;
             }
+          } catch (e) {
+            console.warn('[ClipsTab] Failed to parse intro_outro_settings:', e);
           }
-        } catch (e) {
-          console.warn('[ClipsTab] Failed to parse intro_outro_settings:', e);
         }
-      }
 
-      // Free tier branding override: apply admin intro/outro
-      // Note: Watermark settings are already loaded into UI state by ProjectWorkspaceDialog
-      const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
-      const { getBrandingIfFreeTier } = useFreeTierBranding();
-      const adminBranding = await getBrandingIfFreeTier();
-      if (adminBranding) {
-        console.log('[ClipsTab] Free tier user detected, applying admin branding');
+        // Free tier branding override: apply admin intro/outro
+        // Note: Watermark settings are already loaded into UI state by ProjectWorkspaceDialog
+        const { useFreeTierBranding } = await import('@/composables/useFreeTierBranding');
+        const { getBrandingIfFreeTier } = useFreeTierBranding();
+        const adminBranding = await getBrandingIfFreeTier();
+        if (adminBranding) {
+          console.log('[ClipsTab] Free tier user detected, applying admin branding');
 
-        // Clear user-selected global intro/outro (per-ratio settings handled below)
-        introPath = null;
-        introDuration = null;
-        outroPath = null;
-        outroDuration = null;
-        
-        // Override per-ratio intro/outro with admin settings if configured
-        if (adminBranding.intro_settings || adminBranding.outro_settings) {
-          const adminIntroRatios = adminBranding.intro_settings ?? {};
-          const adminOutroRatios = adminBranding.outro_settings ?? {};
-          
-          // Clear user-configured per-ratio settings
-          Object.keys(introOutroPerRatio).forEach(key => delete introOutroPerRatio[key]);
-          
-          // Apply admin per-ratio settings for selected aspect ratios
-          for (const ratio of settings.aspectRatios) {
-            const ratioData: { introPath?: string; introDuration?: number; outroPath?: string; outroDuration?: number } = {};
-            
-            if (adminIntroRatios[ratio]?.assetId) {
-              const introConfig = adminIntroRatios[ratio] as any;
-              if (introConfig.url) {
-                // Use presigned URL directly — bypasses org asset system for free tier users
-                try {
-                  const filename = `free-tier-intro-${introConfig.assetId.replace(/[^a-zA-Z0-9-]/g, '_')}.mp4`;
-                  const dlPath = await invoke<string>('download_org_asset_from_url', {
-                    url: introConfig.url,
-                    filename,
-                    assetType: 'intros',
-                    organizationId: 'free-tier',
-                  });
-                  ratioData.introPath = dlPath || undefined;
-                  console.log(`[ClipsTab] Applied admin intro for ${ratio} via presigned URL`);
-                } catch (dlErr) {
-                  console.error(`[ClipsTab] Failed to download admin intro for ${ratio}:`, dlErr);
+          // Clear user-selected global intro/outro (per-ratio settings handled below)
+          introPath = null;
+          introDuration = null;
+          outroPath = null;
+          outroDuration = null;
+
+          // Override per-ratio intro/outro with admin settings if configured
+          if (adminBranding.intro_settings || adminBranding.outro_settings) {
+            const adminIntroRatios = adminBranding.intro_settings ?? {};
+            const adminOutroRatios = adminBranding.outro_settings ?? {};
+
+            // Clear user-configured per-ratio settings
+            Object.keys(introOutroPerRatio).forEach((key) => delete introOutroPerRatio[key]);
+
+            // Apply admin per-ratio settings for selected aspect ratios
+            for (const ratio of settings.aspectRatios) {
+              const ratioData: {
+                introPath?: string;
+                introDuration?: number;
+                outroPath?: string;
+                outroDuration?: number;
+              } = {};
+
+              if (adminIntroRatios[ratio]?.assetId) {
+                const introConfig = adminIntroRatios[ratio] as any;
+                if (introConfig.url) {
+                  // Use presigned URL directly — bypasses org asset system for free tier users
+                  try {
+                    const filename = `free-tier-intro-${introConfig.assetId.replace(/[^a-zA-Z0-9-]/g, '_')}.mp4`;
+                    const dlPath = await invoke<string>('download_org_asset_from_url', {
+                      url: introConfig.url,
+                      filename,
+                      assetType: 'intros',
+                      organizationId: 'free-tier',
+                    });
+                    ratioData.introPath = dlPath || undefined;
+                    console.log(`[ClipsTab] Applied admin intro for ${ratio} via presigned URL`);
+                  } catch (dlErr) {
+                    console.error(`[ClipsTab] Failed to download admin intro for ${ratio}:`, dlErr);
+                    const introResolved = await resolveIntroOutroById(introConfig.assetId);
+                    if (introResolved) {
+                      ratioData.introPath = introResolved.filePath || undefined;
+                      ratioData.introDuration = introResolved.duration || undefined;
+                    }
+                  }
+                } else {
                   const introResolved = await resolveIntroOutroById(introConfig.assetId);
                   if (introResolved) {
                     ratioData.introPath = introResolved.filePath || undefined;
                     ratioData.introDuration = introResolved.duration || undefined;
+                    console.log(`[ClipsTab] Applied admin intro for ${ratio}`);
                   }
                 }
-              } else {
-                const introResolved = await resolveIntroOutroById(introConfig.assetId);
-                if (introResolved) {
-                  ratioData.introPath = introResolved.filePath || undefined;
-                  ratioData.introDuration = introResolved.duration || undefined;
-                  console.log(`[ClipsTab] Applied admin intro for ${ratio}`);
-                }
               }
-            }
-            
-            if (adminOutroRatios[ratio]?.assetId) {
-              const outroConfig = adminOutroRatios[ratio] as any;
-              if (outroConfig.url) {
-                // Use presigned URL directly — bypasses org asset system for free tier users
-                try {
-                  const filename = `free-tier-outro-${outroConfig.assetId.replace(/[^a-zA-Z0-9-]/g, '_')}.mp4`;
-                  const dlPath = await invoke<string>('download_org_asset_from_url', {
-                    url: outroConfig.url,
-                    filename,
-                    assetType: 'outros',
-                    organizationId: 'free-tier',
-                  });
-                  ratioData.outroPath = dlPath || undefined;
-                  console.log(`[ClipsTab] Applied admin outro for ${ratio} via presigned URL`);
-                } catch (dlErr) {
-                  console.error(`[ClipsTab] Failed to download admin outro for ${ratio}:`, dlErr);
+
+              if (adminOutroRatios[ratio]?.assetId) {
+                const outroConfig = adminOutroRatios[ratio] as any;
+                if (outroConfig.url) {
+                  // Use presigned URL directly — bypasses org asset system for free tier users
+                  try {
+                    const filename = `free-tier-outro-${outroConfig.assetId.replace(/[^a-zA-Z0-9-]/g, '_')}.mp4`;
+                    const dlPath = await invoke<string>('download_org_asset_from_url', {
+                      url: outroConfig.url,
+                      filename,
+                      assetType: 'outros',
+                      organizationId: 'free-tier',
+                    });
+                    ratioData.outroPath = dlPath || undefined;
+                    console.log(`[ClipsTab] Applied admin outro for ${ratio} via presigned URL`);
+                  } catch (dlErr) {
+                    console.error(`[ClipsTab] Failed to download admin outro for ${ratio}:`, dlErr);
+                    const outroResolved = await resolveIntroOutroById(outroConfig.assetId);
+                    if (outroResolved) {
+                      ratioData.outroPath = outroResolved.filePath || undefined;
+                      ratioData.outroDuration = outroResolved.duration || undefined;
+                    }
+                  }
+                } else {
                   const outroResolved = await resolveIntroOutroById(outroConfig.assetId);
                   if (outroResolved) {
                     ratioData.outroPath = outroResolved.filePath || undefined;
                     ratioData.outroDuration = outroResolved.duration || undefined;
+                    console.log(`[ClipsTab] Applied admin outro for ${ratio}`);
                   }
                 }
-              } else {
-                const outroResolved = await resolveIntroOutroById(outroConfig.assetId);
-                if (outroResolved) {
-                  ratioData.outroPath = outroResolved.filePath || undefined;
-                  ratioData.outroDuration = outroResolved.duration || undefined;
-                  console.log(`[ClipsTab] Applied admin outro for ${ratio}`);
-                }
+              }
+
+              if (ratioData.introPath || ratioData.outroPath) {
+                introOutroPerRatio[ratio] = ratioData;
               }
             }
-            
-            if (ratioData.introPath || ratioData.outroPath) {
-              introOutroPerRatio[ratio] = ratioData;
-            }
-          }
-        }
-        
-        // Apply admin watermark settings for free tier users
-        if (adminBranding.watermark_id) {
-          console.log('[ClipsTab] Applying admin watermark for free tier user:', adminBranding.watermark_id);
-          
-          // Resolve watermark file path — prefer presigned URL to bypass org asset system
-          let wmFilePath: string | null = null;
-          let wmWidth: number | null = null;
-          let wmHeight: number | null = null;
-
-          if (adminBranding.watermark_url) {
-            try {
-              const filename = `free-tier-watermark-${adminBranding.watermark_id.replace(/[^a-zA-Z0-9-]/g, '_')}.png`;
-              wmFilePath = await invoke<string>('download_org_asset_from_url', {
-                url: adminBranding.watermark_url,
-                filename,
-                assetType: 'watermarks',
-                organizationId: 'free-tier',
-              });
-              console.log('[ClipsTab] Free tier watermark downloaded to:', wmFilePath);
-            } catch (dlErr) {
-              console.error('[ClipsTab] Failed to download free tier watermark via presigned URL:', dlErr);
-            }
           }
 
-          if (!wmFilePath) {
-            // Fallback: local cache (works for org members)
-            const adminWatermark = await resolveWatermarkById(adminBranding.watermark_id);
-            if (adminWatermark) {
-              wmFilePath = adminWatermark.filePath;
-              wmWidth = adminWatermark.width;
-              wmHeight = adminWatermark.height;
-            }
-          }
+          // Apply admin watermark settings for free tier users
+          if (adminBranding.watermark_id) {
+            console.log('[ClipsTab] Applying admin watermark for free tier user:', adminBranding.watermark_id);
 
-          if (wmFilePath) {
-            const adminWatermarkSettings = adminBranding.watermark_settings
-              ? (typeof adminBranding.watermark_settings === 'string'
+            // Resolve watermark file path — prefer presigned URL to bypass org asset system
+            let wmFilePath: string | null = null;
+            let wmWidth: number | null = null;
+            let wmHeight: number | null = null;
+
+            if (adminBranding.watermark_url) {
+              try {
+                const filename = `free-tier-watermark-${adminBranding.watermark_id.replace(/[^a-zA-Z0-9-]/g, '_')}.png`;
+                wmFilePath = await invoke<string>('download_org_asset_from_url', {
+                  url: adminBranding.watermark_url,
+                  filename,
+                  assetType: 'watermarks',
+                  organizationId: 'free-tier',
+                });
+                console.log('[ClipsTab] Free tier watermark downloaded to:', wmFilePath);
+              } catch (dlErr) {
+                console.error('[ClipsTab] Failed to download free tier watermark via presigned URL:', dlErr);
+              }
+            }
+
+            if (!wmFilePath) {
+              // Fallback: local cache (works for org members)
+              const adminWatermark = await resolveWatermarkById(adminBranding.watermark_id);
+              if (adminWatermark) {
+                wmFilePath = adminWatermark.filePath;
+                wmWidth = adminWatermark.width;
+                wmHeight = adminWatermark.height;
+              }
+            }
+
+            if (wmFilePath) {
+              const adminWatermarkSettings = adminBranding.watermark_settings
+                ? typeof adminBranding.watermark_settings === 'string'
                   ? JSON.parse(adminBranding.watermark_settings)
-                  : adminBranding.watermark_settings)
-              : null;
-            
-            // Build per-ratio settings from admin watermark config
-            const buildPerRatioSettings: Record<
-              string,
-              {
-                watermarkId: string | null;
-                filePath: string | null;
-                width: number | null;
-                height: number | null;
-                position: { x: number; y: number; opacity: number; scale: number } | null;
-              } | null
-            > = {};
-            
-            const allRatios = ['16:9', '9:16', '1:1', '4:5'];
-            for (const ratio of allRatios) {
-              const ratioConfig = adminWatermarkSettings?.[ratio];
-              buildPerRatioSettings[ratio] = {
+                  : adminBranding.watermark_settings
+                : null;
+
+              // Build per-ratio settings from admin watermark config
+              const buildPerRatioSettings: Record<
+                string,
+                {
+                  watermarkId: string | null;
+                  filePath: string | null;
+                  width: number | null;
+                  height: number | null;
+                  position: { x: number; y: number; opacity: number; scale: number } | null;
+                } | null
+              > = {};
+
+              const allRatios = ['16:9', '9:16', '1:1', '4:5'];
+              for (const ratio of allRatios) {
+                const ratioConfig = adminWatermarkSettings?.[ratio];
+                buildPerRatioSettings[ratio] = {
+                  watermarkId: adminBranding.watermark_id,
+                  filePath: wmFilePath,
+                  width: wmWidth,
+                  height: wmHeight,
+                  position: ratioConfig?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 },
+                };
+              }
+
+              // Get default position from 16:9 config
+              const defaultPos = adminWatermarkSettings?.['16:9']?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 };
+
+              targetWatermarkSettings = {
+                enabled: true,
                 watermarkId: adminBranding.watermark_id,
                 filePath: wmFilePath,
-                width: wmWidth,
-                height: wmHeight,
-                position: ratioConfig?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 },
+                width: wmWidth ?? 0,
+                height: wmHeight ?? 0,
+                positionX: defaultPos.x,
+                positionY: defaultPos.y,
+                opacity: defaultPos.opacity,
+                scale: defaultPos.scale,
+                perRatioSettings: buildPerRatioSettings,
               };
-            }
-            
-            // Get default position from 16:9 config
-            const defaultPos = adminWatermarkSettings?.['16:9']?.position ?? { x: 12, y: 92, opacity: 80, scale: 20 };
 
-            targetWatermarkSettings = {
-              enabled: true,
-              watermarkId: adminBranding.watermark_id,
-              filePath: wmFilePath,
-              width: wmWidth ?? 0,
-              height: wmHeight ?? 0,
-              positionX: defaultPos.x,
-              positionY: defaultPos.y,
-              opacity: defaultPos.opacity,
-              scale: defaultPos.scale,
-              perRatioSettings: buildPerRatioSettings,
-            };
-            
-            console.log('[ClipsTab] Admin watermark applied:', {
-              watermarkId: adminBranding.watermark_id,
-              filePath: wmFilePath,
-            });
+              console.log('[ClipsTab] Admin watermark applied:', {
+                watermarkId: adminBranding.watermark_id,
+                filePath: wmFilePath,
+              });
+            }
           }
+
+          console.log('[ClipsTab] Free tier branding applied successfully');
         }
-        
-        console.log('[ClipsTab] Free tier branding applied successfully');
-      }
 
-      console.log('[ClipsTab] Final branding payload before invoke:', {
-        targetGroup: tg.key,
-        activeCampaignId,
-        activeCampaignBrandingProfileId,
-        activeBrandingType,
-        aspectRatios: targetRatios,
-        introPath: introPath,
-        outroPath: outroPath,
-        introDuration: introDuration,
-        outroDuration: outroDuration,
-        hasIntroOutroPerRatio: Object.keys(introOutroPerRatio).length > 0,
-      });
+        console.log('[ClipsTab] Final branding payload before invoke:', {
+          targetGroup: tg.key,
+          activeCampaignId,
+          activeCampaignBrandingProfileId,
+          activeBrandingType,
+          aspectRatios: targetRatios,
+          introPath: introPath,
+          outroPath: outroPath,
+          introDuration: introDuration,
+          outroDuration: outroDuration,
+          hasIntroOutroPerRatio: Object.keys(introOutroPerRatio).length > 0,
+        });
 
-      // Pre-render subtitles to PNG for pixel-perfect export (if subtitles enabled)
-      let subtitleOverlays: Record<string, Array<{ imagePath: string; startTime: number; endTime: number; positionX: number; positionY: number }>> | null = null;
-      
-      if (effectiveSubtitleSettings?.enabled && transcriptWords.length > 0) {
-        console.log('[ClipsTab] Pre-rendering subtitles for pixel-perfect export...');
-        console.log('[ClipsTab] transcriptWords count:', transcriptWords.length);
-        console.log('[ClipsTab] whisperSegments count:', transcriptSegments.length);
-        console.log('[ClipsTab] segments for subtitle render:', segments.map(s => ({ start: s.start_time, end: s.end_time })));
-        try {
-          const { preRenderSubtitleOverlays } = await import('@/services/subtitle-renderer');
-          subtitleOverlays = {};
+        // Pre-render subtitles to PNG for pixel-perfect export (if subtitles enabled)
+        let subtitleOverlays: Record<
+          string,
+          Array<{ imagePath: string; startTime: number; endTime: number; positionX: number; positionY: number }>
+        > | null = null;
 
-          // CRITICAL: The renderer must chunk on the SAME boundaries as VideoPlayer.vue's preview.
-          // VideoPlayer chunks within each whisper segment (one sentence) — so a 4-word sentence
-          // is its own 4-word frame, regardless of `maxWords`. If we feed the renderer a single
-          // synthetic clip segment instead, it groups every 6 words from word 0, producing
-          // entirely different chunks ("They're looking. They're looking. No. the" instead of
-          // "They're looking. They're looking.") and a wider box that wraps and drifts off-center.
-          const subtitleSegments = transcriptSegments.length > 0
-            ? transcriptSegments.map((seg: any) => ({
-                start: Number(seg.start) || 0,
-                end: Number(seg.end) || 0,
-                transcript: typeof (seg as any).text === 'string' ? (seg as any).text : '',
-              }))
-            : segments.map((s) => ({
-                start: s.start_time,
-                end: s.end_time,
-                transcript: s.transcript || '',
-              }));
-          
-          for (const ratio of targetRatios) {
-            // Calculate output dimensions based on aspect ratio
-            // IMPORTANT: Must match Rust backend calculation in video_processor.rs
-            // Rust uses width=1080 as base: output_w = 1080, output_h = 1080 * (h/w)
-            const [w, h] = ratio.split(':').map(Number);
-            const canvasWidth = 1080;
-            const canvasHeight = Math.round((canvasWidth * h) / w);
-            // Ensure even dimensions (required by H.264)
-            const evenCanvasHeight = canvasHeight % 2 === 0 ? canvasHeight : canvasHeight + 1;
-            
-            // Get the intro offset for this ratio (subtitles need to start after intro)
-            const ratioIntroConfig = introOutroPerRatio[ratio];
-            const introOffset = ratioIntroConfig?.introDuration ?? introDuration ?? 0;
-            
-            // Get per-ratio settings if available
-            const ratioOverride = finalSubtitleOverrides?.[ratio];
-            const mergedSettings = ratioOverride 
-              ? { ...effectiveSubtitleSettings, ...ratioOverride }
-              : effectiveSubtitleSettings;
-            
-            console.log('[ClipsTab] Calling preRenderSubtitleOverlays for', ratio, 'with', {
-              canvasWidth,
-              canvasHeight: evenCanvasHeight,
-              wordsCount: transcriptWords.length,
-              segmentsCount: subtitleSegments.length,
-              animationStyle: mergedSettings.animationStyle,
-              maxWords: getSubtitleMaxWordsForAspectRatio(
-                ratio,
-                props.maxWordsForAspectRatio,
-                mergedSettings.animationStyle
-              ),
-              hasRatioOverride: !!ratioOverride,
-              ratioOverrideAnimationStyle: ratioOverride?.animationStyle,
-              ratioOverrideMultiColorEnabled: ratioOverride?.multiColorEnabled,
-              position: mergedSettings.position,
-              positionPercentage: mergedSettings.positionPercentage,
-              fontSize: mergedSettings.fontSize,
-              highlightColor: mergedSettings.highlightColor,
-              border1Width: mergedSettings.border1Width,
-              multiColorEnabled: mergedSettings.multiColorEnabled,
-            });
-            
-            // Debug: log the sources of the merge with FULL values
-            const dialogOv = (settings.subtitleOverrides as any)?.[ratio];
-            const dbOv = (effectiveSubtitleSettings?.perRatioConfigs as any)?.[ratio];
-            console.log('[ClipsTab] DEBUG merge sources for', ratio, ':', {
-              fromDialogOverrides: dialogOv ? {
-                animationStyle: dialogOv.animationStyle,
-                multiColorEnabled: dialogOv.multiColorEnabled,
-                position: dialogOv.position,
-                fontSize: dialogOv.fontSize,
-                highlightColor: dialogOv.highlightColor,
-              } : 'NO DIALOG OVERRIDE',
-              fromDbPerRatioConfigs: dbOv ? {
-                animationStyle: dbOv.animationStyle,
-                multiColorEnabled: dbOv.multiColorEnabled,
-                position: dbOv.position,
-                fontSize: dbOv.fontSize,
-                highlightColor: dbOv.highlightColor,
-              } : 'NO DB OVERRIDE',
-              finalOverrideValues: ratioOverride ? {
-                animationStyle: (ratioOverride as any).animationStyle,
-                multiColorEnabled: (ratioOverride as any).multiColorEnabled,
-                position: (ratioOverride as any).position,
-                fontSize: (ratioOverride as any).fontSize,
-                highlightColor: (ratioOverride as any).highlightColor,
-              } : 'NO FINAL OVERRIDE',
-            });
-            
-            // Also log what's in finalSubtitleOverrides for this ratio
-            console.log('[ClipsTab] finalSubtitleOverrides[' + ratio + '] =', finalSubtitleOverrides?.[ratio]);
-            
-            // Log the position specifically
-            console.log('[ClipsTab] Position for', ratio, ':', {
-              mergedPosition: mergedSettings.position,
-              mergedPositionPercentage: mergedSettings.positionPercentage,
-              isPositionObject: typeof mergedSettings.position === 'object' && mergedSettings.position !== null,
-            });
-            
-            // CRITICAL — timing offset:
-            // Subtitle frame times are emitted in OUTPUT-VIDEO time (FFmpeg `t`, starting at 0).
-            // Words/segments arrive in source-time of the build's input file. For self-contained
-            // clips we always build the whole input from t=0, so source-time == clip-time and the
-            // offset is 0. For regular project clips the build extracts from segments[0].start_time
-            // (FFmpeg `-ss`), so that is the source-time corresponding to output-time 0.
-            // Using `min(segment.start)` here was the prior bug: when the clip had silence before
-            // the first whisper sentence, it shifted ALL subtitles earlier by the silence length.
-            const clipStartTimeForRenderer = selfContainedClip
-              ? 0
-              : Number(freshSegments[0]?.start_time) || 0;
-
-            const overlays = await preRenderSubtitleOverlays({
-              settings: mergedSettings,
-              words: transcriptWords,
-              segments: subtitleSegments,
-              maxWords: getSubtitleMaxWordsForAspectRatio(
-                ratio,
-                props.maxWordsForAspectRatio,
-                mergedSettings.animationStyle
-              ),
-              canvasWidth,
-              canvasHeight: evenCanvasHeight,
-              aspectRatio: ratio,
-              introOffset,
-              clipStartTime: clipStartTimeForRenderer,
-            });
-            
-            subtitleOverlays[ratio] = overlays;
-            console.log(`[ClipsTab] Pre-rendered ${overlays.length} subtitle frames for ${ratio}`);
-            if (overlays.length === 0) {
-              throw new Error(`No subtitle PNG overlays were generated for ${ratio}`);
-            }
-          }
-        } catch (err) {
-          console.error('[ClipsTab] Failed to pre-render subtitles for pixel-perfect export:', err);
-          throw new Error(
-            `Failed to render preview-matching subtitle overlays: ${
-              err instanceof Error ? err.message : String(err)
-            }`
+        if (effectiveSubtitleSettings?.enabled && transcriptWords.length > 0) {
+          console.log('[ClipsTab] Pre-rendering subtitles for pixel-perfect export...');
+          console.log('[ClipsTab] transcriptWords count:', transcriptWords.length);
+          console.log('[ClipsTab] whisperSegments count:', transcriptSegments.length);
+          console.log(
+            '[ClipsTab] segments for subtitle render:',
+            segments.map((s) => ({ start: s.start_time, end: s.end_time }))
           );
+          try {
+            const { preRenderSubtitleOverlays } = await import('@/services/subtitle-renderer');
+            subtitleOverlays = {};
+
+            // CRITICAL: The renderer must chunk on the SAME boundaries as VideoPlayer.vue's preview.
+            // VideoPlayer chunks within each whisper segment (one sentence) — so a 4-word sentence
+            // is its own 4-word frame, regardless of `maxWords`. If we feed the renderer a single
+            // synthetic clip segment instead, it groups every 6 words from word 0, producing
+            // entirely different chunks ("They're looking. They're looking. No. the" instead of
+            // "They're looking. They're looking.") and a wider box that wraps and drifts off-center.
+            const subtitleSegments =
+              transcriptSegments.length > 0
+                ? transcriptSegments.map((seg: any) => ({
+                    start: Number(seg.start) || 0,
+                    end: Number(seg.end) || 0,
+                    transcript: typeof (seg as any).text === 'string' ? (seg as any).text : '',
+                  }))
+                : segments.map((s) => ({
+                    start: s.start_time,
+                    end: s.end_time,
+                    transcript: s.transcript || '',
+                  }));
+
+            for (const ratio of targetRatios) {
+              // Calculate output dimensions based on aspect ratio
+              // IMPORTANT: Must match Rust backend calculation in video_processor.rs
+              // Rust uses width=1080 as base: output_w = 1080, output_h = 1080 * (h/w)
+              const [w, h] = ratio.split(':').map(Number);
+              const canvasWidth = 1080;
+              const canvasHeight = Math.round((canvasWidth * h) / w);
+              // Ensure even dimensions (required by H.264)
+              const evenCanvasHeight = canvasHeight % 2 === 0 ? canvasHeight : canvasHeight + 1;
+
+              // Get the intro offset for this ratio (subtitles need to start after intro)
+              const ratioIntroConfig = introOutroPerRatio[ratio];
+              const introOffset = ratioIntroConfig?.introDuration ?? introDuration ?? 0;
+
+              // Get per-ratio settings if available
+              const ratioOverride = finalSubtitleOverrides?.[ratio];
+              const mergedSettings = ratioOverride
+                ? { ...effectiveSubtitleSettings, ...ratioOverride }
+                : effectiveSubtitleSettings;
+
+              console.log('[ClipsTab] Calling preRenderSubtitleOverlays for', ratio, 'with', {
+                canvasWidth,
+                canvasHeight: evenCanvasHeight,
+                wordsCount: transcriptWords.length,
+                segmentsCount: subtitleSegments.length,
+                animationStyle: mergedSettings.animationStyle,
+                maxWords: getSubtitleMaxWordsForAspectRatio(
+                  ratio,
+                  props.maxWordsForAspectRatio,
+                  mergedSettings.animationStyle
+                ),
+                hasRatioOverride: !!ratioOverride,
+                ratioOverrideAnimationStyle: ratioOverride?.animationStyle,
+                ratioOverrideMultiColorEnabled: ratioOverride?.multiColorEnabled,
+                position: mergedSettings.position,
+                positionPercentage: mergedSettings.positionPercentage,
+                fontSize: mergedSettings.fontSize,
+                highlightColor: mergedSettings.highlightColor,
+                border1Width: mergedSettings.border1Width,
+                multiColorEnabled: mergedSettings.multiColorEnabled,
+              });
+
+              // Debug: log the sources of the merge with FULL values
+              const dialogOv = (settings.subtitleOverrides as any)?.[ratio];
+              const dbOv = (effectiveSubtitleSettings?.perRatioConfigs as any)?.[ratio];
+              console.log('[ClipsTab] DEBUG merge sources for', ratio, ':', {
+                fromDialogOverrides: dialogOv
+                  ? {
+                      animationStyle: dialogOv.animationStyle,
+                      multiColorEnabled: dialogOv.multiColorEnabled,
+                      position: dialogOv.position,
+                      fontSize: dialogOv.fontSize,
+                      highlightColor: dialogOv.highlightColor,
+                    }
+                  : 'NO DIALOG OVERRIDE',
+                fromDbPerRatioConfigs: dbOv
+                  ? {
+                      animationStyle: dbOv.animationStyle,
+                      multiColorEnabled: dbOv.multiColorEnabled,
+                      position: dbOv.position,
+                      fontSize: dbOv.fontSize,
+                      highlightColor: dbOv.highlightColor,
+                    }
+                  : 'NO DB OVERRIDE',
+                finalOverrideValues: ratioOverride
+                  ? {
+                      animationStyle: (ratioOverride as any).animationStyle,
+                      multiColorEnabled: (ratioOverride as any).multiColorEnabled,
+                      position: (ratioOverride as any).position,
+                      fontSize: (ratioOverride as any).fontSize,
+                      highlightColor: (ratioOverride as any).highlightColor,
+                    }
+                  : 'NO FINAL OVERRIDE',
+              });
+
+              // Also log what's in finalSubtitleOverrides for this ratio
+              console.log('[ClipsTab] finalSubtitleOverrides[' + ratio + '] =', finalSubtitleOverrides?.[ratio]);
+
+              // Log the position specifically
+              console.log('[ClipsTab] Position for', ratio, ':', {
+                mergedPosition: mergedSettings.position,
+                mergedPositionPercentage: mergedSettings.positionPercentage,
+                isPositionObject: typeof mergedSettings.position === 'object' && mergedSettings.position !== null,
+              });
+
+              // CRITICAL — timing offset:
+              // Subtitle frame times are emitted in OUTPUT-VIDEO time (FFmpeg `t`, starting at 0).
+              // Words/segments arrive in source-time of the build's input file. For self-contained
+              // clips we always build the whole input from t=0, so source-time == clip-time and the
+              // offset is 0. For regular project clips the build extracts from segments[0].start_time
+              // (FFmpeg `-ss`), so that is the source-time corresponding to output-time 0.
+              // Using `min(segment.start)` here was the prior bug: when the clip had silence before
+              // the first whisper sentence, it shifted ALL subtitles earlier by the silence length.
+              const clipStartTimeForRenderer = selfContainedClip ? 0 : Number(freshSegments[0]?.start_time) || 0;
+
+              const overlays = await preRenderSubtitleOverlays({
+                settings: mergedSettings,
+                words: transcriptWords,
+                segments: subtitleSegments,
+                maxWords: getSubtitleMaxWordsForAspectRatio(
+                  ratio,
+                  props.maxWordsForAspectRatio,
+                  mergedSettings.animationStyle
+                ),
+                canvasWidth,
+                canvasHeight: evenCanvasHeight,
+                aspectRatio: ratio,
+                introOffset,
+                clipStartTime: clipStartTimeForRenderer,
+              });
+
+              subtitleOverlays[ratio] = overlays;
+              console.log(`[ClipsTab] Pre-rendered ${overlays.length} subtitle frames for ${ratio}`);
+              if (overlays.length === 0) {
+                throw new Error(`No subtitle PNG overlays were generated for ${ratio}`);
+              }
+            }
+          } catch (err) {
+            console.error('[ClipsTab] Failed to pre-render subtitles for pixel-perfect export:', err);
+            throw new Error(
+              `Failed to render preview-matching subtitle overlays: ${err instanceof Error ? err.message : String(err)}`
+            );
+          }
         }
-      }
 
-      console.log('[ClipsTab] Text overlays being sent to Rust:', {
-        count: textOverlaysForExport?.length ?? 0,
-        overlays: textOverlaysForExport?.map(o => ({
-          id: o.id,
-          text: o.text?.substring(0, 50),
-          startTime: o.startTime,
-          endTime: o.endTime,
-          positionX: o.positionX,
-          positionY: o.positionY,
-          hasPerRatioConfigs: !!o.perRatioConfigs,
-          perRatioKeys: o.perRatioConfigs ? Object.keys(o.perRatioConfigs) : [],
-        })),
-      });
-      
-      await invoke('build_clip_from_segments', {
-        projectId: props.projectId,
-        clipId: clip.id,
-        clipName: clip.current_version_name || clip.name || 'Untitled',
-        videoPath: projectVideo.file_path,
-        segments: segments,
-        subtitleSettings: effectiveSubtitleSettings,
-        subtitleOverrides: finalSubtitleOverrides,
-        subtitleOverlays: subtitleOverlays,
-        transcriptWords: transcriptWords,
-        transcriptSegments: transcriptSegments,
-        maxWords: targetRatios.length === 1
-          ? getSubtitleMaxWordsForAspectRatio(
-              targetRatios[0],
-              props.maxWordsForAspectRatio,
-              effectiveSubtitleSettings?.animationStyle
-            )
-          : props.maxWordsForAspectRatio,
-        aspectRatios: targetRatios,
-        quality: settings.quality,
-        frameRate: settings.frameRate,
-        outputFormat: settings.format,
-        runNumber: clip.run_number || null,
-        buildNumber: buildNumber,
-        buildId: buildId,
-        introPath: introPath,
-        introDuration: introDuration,
-        outroPath: outroPath,
-        outroDuration: outroDuration,
-        introOutroPerRatio: introOutroPerRatio,
-        watermarkSettings: targetWatermarkSettings,
-        audioSettings: audioSettings,
-        framingStrategy: framingStrategy,
-        manualFramingConfigs: settings.manualFramingConfigs || null,
-        videoFilterSegments: videoFilterSegments,
-        textOverlays: textOverlaysForExport,
-        stickers: stickersForExport,
-        clipWatermarks: clipWatermarksForExport,
-        layoutOverlays: await resolveLayoutOverlaysForBuild(
-          settings.layoutOverlays ||
-            (activeBrandingType === 'org' && targetResolvedProfile?.layout_overlays
-              ? typeof targetResolvedProfile.layout_overlays === 'string'
-                ? JSON.parse(targetResolvedProfile.layout_overlays)
-                : targetResolvedProfile.layout_overlays
-              : null)
-        ),
-        campaignId: activeCampaignId,
-        campaignBrandingProfileId: activeCampaignBrandingProfileId,
-        brandingType: activeBrandingType,
-      });
+        console.log('[ClipsTab] Text overlays being sent to Rust:', {
+          count: textOverlaysForExport?.length ?? 0,
+          overlays: textOverlaysForExport?.map((o) => ({
+            id: o.id,
+            text: o.text?.substring(0, 50),
+            startTime: o.startTime,
+            endTime: o.endTime,
+            positionX: o.positionX,
+            positionY: o.positionY,
+            hasPerRatioConfigs: !!o.perRatioConfigs,
+            perRatioKeys: o.perRatioConfigs ? Object.keys(o.perRatioConfigs) : [],
+          })),
+        });
 
-      console.log('[ClipsTab] Target group build started:', tg.key);
-      buildNumber++;
+        await invoke('build_clip_from_segments', {
+          projectId: props.projectId,
+          clipId: clip.id,
+          clipName: clip.current_version_name || clip.name || 'Untitled',
+          videoPath: projectVideo.file_path,
+          segments: segments,
+          subtitleSettings: effectiveSubtitleSettings,
+          subtitleOverrides: finalSubtitleOverrides,
+          subtitleOverlays: subtitleOverlays,
+          transcriptWords: transcriptWords,
+          transcriptSegments: transcriptSegments,
+          maxWords:
+            targetRatios.length === 1
+              ? getSubtitleMaxWordsForAspectRatio(
+                  targetRatios[0],
+                  props.maxWordsForAspectRatio,
+                  effectiveSubtitleSettings?.animationStyle
+                )
+              : props.maxWordsForAspectRatio,
+          aspectRatios: targetRatios,
+          quality: settings.quality,
+          frameRate: settings.frameRate,
+          outputFormat: settings.format,
+          runNumber: clip.run_number || null,
+          buildNumber: buildNumber,
+          buildId: buildId,
+          introPath: introPath,
+          introDuration: introDuration,
+          outroPath: outroPath,
+          outroDuration: outroDuration,
+          introOutroPerRatio: introOutroPerRatio,
+          watermarkSettings: targetWatermarkSettings,
+          audioSettings: audioSettings,
+          framingStrategy: framingStrategy,
+          manualFramingConfigs: settings.manualFramingConfigs || null,
+          videoFilterSegments: videoFilterSegments,
+          textOverlays: textOverlaysForExport,
+          stickers: stickersForExport,
+          clipWatermarks: clipWatermarksForExport,
+          layoutOverlays: await resolveLayoutOverlaysForBuild(
+            settings.layoutOverlays ||
+              (activeBrandingType === 'org' && targetResolvedProfile?.layout_overlays
+                ? typeof targetResolvedProfile.layout_overlays === 'string'
+                  ? JSON.parse(targetResolvedProfile.layout_overlays)
+                  : targetResolvedProfile.layout_overlays
+                : null)
+          ),
+          campaignId: activeCampaignId,
+          campaignBrandingProfileId: activeCampaignBrandingProfileId,
+          brandingType: activeBrandingType,
+        });
+
+        console.log('[ClipsTab] Target group build started:', tg.key);
+        buildNumber++;
       } // ── End Per-Target Build Loop ──────────────────────────────────────────
 
       console.log('[ClipsTab] All', targetGroups.length, 'target group builds started successfully');
@@ -3920,14 +3842,11 @@
           copied > 0 ? 'Partial export' : 'Export failed',
           copied > 0
             ? `Saved ${copied} of ${sources.length} files. First error: ${errors[0]}`
-            : errors[0] ?? 'Unknown error',
+            : (errors[0] ?? 'Unknown error'),
           10000
         );
       } else {
-        showSuccessToast(
-          'Clips exported',
-          `Saved ${copied} file${copied !== 1 ? 's' : ''} to ${dir}`
-        );
+        showSuccessToast('Clips exported', `Saved ${copied} file${copied !== 1 ? 's' : ''} to ${dir}`);
       }
     } catch (error) {
       console.error('[ClipsTab] Download all failed:', error);
@@ -4040,7 +3959,6 @@
       showErrorToast(title, message, 8000);
     } catch (error) {
       console.error('[ClipsTab] Failed to show error message:', error);
-      alert(`${title}: ${message}`);
     }
   }
 
@@ -4050,8 +3968,49 @@
     hasClipElement: (clipId: string) => clipElements.value.has(clipId),
     refreshThumbnails: loadClipThumbnails,
   });
-const viewModel = reactive({ ...toRefs(props), allowEditor: true, clipsScrollContainer, clipIndexMap, clipSections, closeActionMenu, closeDownloadDropdown, completedDownloadAllFileCount, formatBuildDate, formatDuration, formatTime, getActionMenuPosition, getClipDuration, getClipThumbnail, getCompactMessage, getConfidenceColorClass, getDownloadableFiles, getDownloadableFilesCount, getDropdownPosition, getLoadingMessage, getPromptDisplayName, getViralityColorClass, handleAddClip, handleCancelBuild, handleCancelDetection, handleDetectClips, hasCompletedBuilds, hoveredClipId, inEditorStore, isAIAllowed, isDownloadingAll, onAdjustClip, onBuildClip, onClearFromInEditor, onClipClick, onDeleteClip, onDownloadAllBuiltClips, onEditClip, onPlayClip, onPublishNow, onSaveBuiltClip, onSaveFile, openActionMenuId, openDownloadDropdownId, props, setActionMenuButtonRef, setClipRef, setDropdownButtonRef, stageDescription, stageIcon, stageIconClass, stageTitle, thumbnailStore, toggleActionMenu, toggleDownloadDropdown });
+  const viewModel = reactive({
+    ...toRefs(props),
+    allowEditor: true,
+    clipsScrollContainer,
+    clipIndexMap,
+    clipSections,
+    completedDownloadAllFileCount,
+    formatBuildDate,
+    formatDuration,
+    formatTime,
+    getClipDuration,
+    getClipThumbnail,
+    getCompactMessage,
+    getConfidenceColorClass,
+    getDownloadableFiles,
+    getDownloadableFilesCount,
+    getLoadingMessage,
+    getPromptDisplayName,
+    handleAddClip,
+    handleCancelBuild,
+    handleCancelDetection,
+    handleDetectClips,
+    hasCompletedBuilds,
+    hoveredClipId,
+    inEditorStore,
+    isAIAllowed,
+    isDownloadingAll,
+    onAdjustClip,
+    onBuildClip,
+    onClearFromInEditor,
+    onClipClick,
+    onDeleteClip,
+    onDownloadAllBuiltClips,
+    onEditClip,
+    onPlayClip,
+    onPublishNow,
+    onSaveBuiltClip,
+    onSaveFile,
+    props,
+    setClipRef,
+    stageDescription,
+    stageIcon,
+    stageTitle,
+    thumbnailStore,
+  });
 </script>
-
-<style scoped src="@/styles/workspaceClips.css"></style>
-<style src="@/styles/workspaceClipMenus.css"></style>

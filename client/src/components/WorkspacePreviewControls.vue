@@ -1,26 +1,61 @@
 <template>
-  <div class="workspace-dialog__aspect-selector">
-    <label class="workspace-dialog__aspect-label">Preview:</label>
-    <CustomDropdown :model-value="ratio" :options="options" placeholder="Select aspect ratio" class="workspace-dialog__aspect-dropdown" @update:model-value="$emit('update:ratio', String($event))" />
-    <button v-if="ratio === '9:16'" ref="button" type="button" class="workspace-dialog__platform-button" @click="opened = !opened"><Smartphone :size="14" /><span>{{ social?.label || 'Platform' }}</span></button>
-    <Teleport to="body"><Transition name="dropdown"><div v-if="opened && ratio === '9:16'" ref="menu" class="workspace-dialog__social-menu" :style="menuStyle">
-      <button type="button" class="workspace-dialog__social-option" :class="{ 'workspace-dialog__social-option--active': !social }" @click="choose(null)"><span class="workspace-dialog__social-icon">✕</span><span class="workspace-dialog__social-label">None</span></button>
-      <button v-for="preset in SOCIAL_OVERLAY_PRESETS" :key="preset.platform" type="button" class="workspace-dialog__social-option" :class="{ 'workspace-dialog__social-option--active': social?.platform === preset.platform }" @click="choose(preset)"><span class="workspace-dialog__social-icon">{{ preset.icon }}</span><span class="workspace-dialog__social-label">{{ preset.label }}</span></button>
-    </div></Transition></Teleport>
+  <div class="flex shrink-0 items-center gap-2">
+    <span class="text-xs font-medium text-fg-muted">Preview</span>
+    <div class="w-[132px]">
+      <CustomDropdown
+        :model-value="ratio"
+        @update:model-value="$emit('update:ratio', String($event))"
+        :options="options"
+        placeholder="Select aspect ratio"
+        size="sm"
+      />
+    </div>
+
+    <!-- Platform preview overlay (9:16 only) -->
+    <DropdownMenu v-if="ratio === '9:16'">
+      <DropdownMenuTrigger as-child>
+        <Button variant="secondary" size="sm">
+          <Smartphone />
+          <span>{{ social?.label || 'Platform' }}</span>
+          <ChevronDown class="text-fg-subtle" />
+        </Button>
+      </DropdownMenuTrigger>
+      <DropdownMenuContent align="center" class="min-w-[180px]">
+        <DropdownMenuRadioGroup :model-value="social?.platform ?? 'none'" @update:model-value="choose">
+          <DropdownMenuRadioItem value="none">None</DropdownMenuRadioItem>
+          <DropdownMenuRadioItem
+            v-for="preset in SOCIAL_OVERLAY_PRESETS"
+            :key="preset.platform"
+            :value="preset.platform"
+          >
+            <span class="grid w-4 place-items-center">{{ preset.icon }}</span>
+            {{ preset.label }}
+          </DropdownMenuRadioItem>
+        </DropdownMenuRadioGroup>
+      </DropdownMenuContent>
+    </DropdownMenu>
   </div>
 </template>
 <script setup lang="ts">
-import { ref, computed, onMounted, onUnmounted } from 'vue';
-import { Smartphone } from 'lucide-vue-next';
-import CustomDropdown from './CustomDropdown.vue';
-import { SOCIAL_OVERLAY_PRESETS } from '@/editor/constants/social-overlay-constants';
-import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
-const props = defineProps<{ ratio: string; options: Array<{ value: string; label: string }>; social: SocialOverlayPreset | null }>();
-const emit = defineEmits<{ 'update:ratio': [value: string]; 'update:social': [value: SocialOverlayPreset | null] }>();
-const opened = ref(false), button = ref<HTMLElement>(), menu = ref<HTMLElement>();
-const menuStyle = computed(() => { const bounds = button.value?.getBoundingClientRect(); return bounds ? { top: `${bounds.bottom + 6}px`, left: `${bounds.left + bounds.width / 2}px`, transform: 'translateX(-50%)' } : {}; });
-function choose(value: SocialOverlayPreset | null) { emit('update:social', value && props.social?.platform === value.platform ? null : value); opened.value = false; }
-function outside(event: MouseEvent) { if (!button.value?.contains(event.target as Node) && !menu.value?.contains(event.target as Node)) opened.value = false; }
-onMounted(() => document.addEventListener('click', outside)); onUnmounted(() => document.removeEventListener('click', outside));
+  import { Smartphone, ChevronDown } from 'lucide-vue-next';
+  import CustomDropdown from './CustomDropdown.vue';
+  import { Button } from '@/components/ui/button';
+  import {
+    DropdownMenu,
+    DropdownMenuTrigger,
+    DropdownMenuContent,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
+  } from '@/components/ui/dropdown-menu';
+  import { SOCIAL_OVERLAY_PRESETS } from '@/editor/constants/social-overlay-constants';
+  import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
+  defineProps<{
+    ratio: string;
+    options: Array<{ value: string; label: string }>;
+    social: SocialOverlayPreset | null;
+  }>();
+  const emit = defineEmits<{ 'update:ratio': [value: string]; 'update:social': [value: SocialOverlayPreset | null] }>();
+  function choose(value: string) {
+    emit('update:social', SOCIAL_OVERLAY_PRESETS.find((preset) => preset.platform === value) ?? null);
+  }
 </script>
-<style scoped src="../styles/workspacePreviewControls.css"></style>

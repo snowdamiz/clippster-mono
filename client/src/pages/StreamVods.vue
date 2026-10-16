@@ -1,12 +1,16 @@
-<template><StreamVodsView :model="viewModel"><template #auth><AuthModal v-model="showAuthModal" /></template></StreamVodsView></template>
+<template>
+  <StreamVodsView :model="viewModel">
+    <template #auth><AuthModal v-model="showAuthModal" /></template>
+  </StreamVodsView>
+</template>
 <script setup lang="ts">
-import StreamVodsView from '@/components/StreamVodsView.vue';
+  import StreamVodsView from '@/components/StreamVodsView.vue';
 
   import { ref, reactive, computed, onMounted, onUnmounted, watch } from 'vue';
   import { useRouter, useRoute } from 'vue-router';
   import { formatDate, formatDateTime } from '@/utils/dateTimeUtils';
   import AuthModal from '@/components/AuthModal.vue';
-  import { usePlatformStore, type PlatformClip } from '@/stores/platform';
+  import { usePlatformStore, type PlatformClip, type RecentSearch } from '@/stores/platform';
   import { platformConfigs, type PlatformId } from '@/config/platforms';
   import { extractMintId } from '@/services/pumpfun';
   import { extractChannelSlug } from '@/services/kick';
@@ -15,11 +19,21 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
   import { useToast } from '@/composables/useToast';
   import { useDownloads } from '@/composables/useDownloads';
   import { getNextSegmentNumber, getDownloadedVodIds } from '@/services/database';
-  import { Clock } from 'lucide-vue-next';
-  import {
-    getCreatorProfileByPlatformId,
-    type CreatorProfileWithLinks,
-  } from '@/services/database';
+  import RecentSearchesMenu from '@/components/streams/RecentSearchesMenu.vue';
+  import StreamLinkInput from '@/components/streams/StreamLinkInput.vue';
+  import VodCard from '@/components/streams/VodCard.vue';
+  import { Clock, AlertTriangle, Download, Video, Search, Loader2, RotateCcw, Info } from 'lucide-vue-next';
+  import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { Checkbox } from '@/components/ui/checkbox';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Field } from '@/components/ui/field';
+  import { Modal } from '@/components/ui/modal';
+  import { PlatformLogo } from '@/components/ui/platform-logo';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
+  import { getCreatorProfileByPlatformId, type CreatorProfileWithLinks } from '@/services/database';
   import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
   import { useAppTour } from '@/composables/useAppTour';
@@ -56,9 +70,7 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
   /** Read deep-link search from route so first paint already shows creator + loading. */
   function readPendingRouteSearch(): { platform: PlatformId; search: string } | null {
     const rawPlatform = route.query.platform;
-    const queryPlatform = (
-      Array.isArray(rawPlatform) ? rawPlatform[0] : rawPlatform
-    ) as string | undefined;
+    const queryPlatform = (Array.isArray(rawPlatform) ? rawPlatform[0] : rawPlatform) as string | undefined;
     const rawSearch = route.query.search ?? route.query.id;
     const querySearch = (Array.isArray(rawSearch) ? rawSearch[0] : rawSearch) as string | undefined;
 
@@ -113,10 +125,10 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
   if (pendingRouteSearch) {
     platformStore.setLoading(true);
   }
-  
+
   // YouTube tab state (Live Streams vs Videos)
   const youtubeTab = ref<'streams' | 'videos'>('streams');
-  
+
   // Rumble tab state (Live Streams vs Videos)
   const rumbleTab = ref<'streams' | 'videos'>('streams');
 
@@ -166,9 +178,7 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
     // Check for Tokend creator URLs (tokend.tv or local web :4100)
     if (
       canAccessTokend(authStore.user) &&
-      (lowerVal.includes('tokend.tv') ||
-        lowerVal.includes('localhost:4100') ||
-        lowerVal.includes('127.0.0.1:4100'))
+      (lowerVal.includes('tokend.tv') || lowerVal.includes('localhost:4100') || lowerVal.includes('127.0.0.1:4100'))
     ) {
       detectedPlatform.value = 'tokend';
       return;
@@ -177,9 +187,7 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
     // Check for X/Twitter (timeline post, broadcast, or space URL)
     if (
       (lowerVal.includes('twitter.com') || lowerVal.includes('x.com')) &&
-      (lowerVal.includes('/i/broadcasts/') ||
-        lowerVal.includes('/i/spaces/') ||
-        /\/status(?:es)?\/\d+/i.test(lowerVal))
+      (lowerVal.includes('/i/broadcasts/') || lowerVal.includes('/i/spaces/') || /\/status(?:es)?\/\d+/i.test(lowerVal))
     ) {
       detectedPlatform.value = 'twitter';
       return;
@@ -218,7 +226,7 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
   onMounted(async () => {
     document.addEventListener('click', handleClickOutside);
     window.addEventListener('focus', handleWindowFocus);
-    
+
     // Clean up any audio platform searches (YouTube/Twitter) from VOD recent searches
     // These were incorrectly added before the fix
     platformStore.cleanupAudioSearchesFromVodList();
@@ -299,37 +307,9 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
     return `${id.slice(0, 4)}...${id.slice(-4)}`;
   }
 
-  // Platform helper functions for recent searches dropdown
-  function getPlatformIcon(platform: PlatformId): string {
-    const icons: Record<PlatformId, string> = {
-      pumpfun: '/capsule.svg',
-      kick: '/kick.svg',
-      twitch: '/twitch.svg',
-      YouTube: '/youtube.svg',
-      rumble: '/rumble.svg',
-      twitter: '/x.svg',
-      tokend: '/tokend.png',
-    };
-    return icons[platform] || '/capsule.svg';
-  }
+  /** Primary label for a recent search row. */
 
-  function getPlatformDisplayName(platform: PlatformId): string {
-    const names: Record<PlatformId, string> = {
-      pumpfun: 'PumpFun',
-      kick: 'Kick',
-      twitch: 'Twitch',
-      YouTube: 'YouTube',
-      rumble: 'Rumble',
-      twitter: 'X (Twitter)',
-      tokend: 'Tokend',
-    };
-    return names[platform] || platform;
-  }
-
-  function getPlatformFallbackIcon(_platform: PlatformId) {
-    // Return a component or default to Clock
-    return Clock;
-  }
+  /** Live streams / Videos switch for platforms that split their catalog (YouTube, Rumble, Tokend). */
 
   function getCleanChannelName(id: string, platform: PlatformId): string {
     // Clean up channel names for display
@@ -431,7 +411,11 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
     loadingNextYouTubePage.value = true;
 
     try {
-      const result = await platformStore.loadMoreYouTubeClips(platformStore.currentSearchId, clipsPerPage, youtubeTab.value);
+      const result = await platformStore.loadMoreYouTubeClips(
+        platformStore.currentSearchId,
+        clipsPerPage,
+        youtubeTab.value
+      );
 
       if (result.success) {
         if (result.added > 0) {
@@ -477,16 +461,16 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
   // Switch YouTube tab and refetch content
   async function switchYouTubeTab(tab: 'streams' | 'videos') {
     if (youtubeTab.value === tab || platformStore.loading) return;
-    
+
     console.log('[StreamVods] Switching YouTube tab to:', tab);
     youtubeTab.value = tab;
-    
+
     // Refetch with the new tab
     const input = searchInput.value.trim();
     if (input && detectedPlatform.value === 'YouTube') {
       // Ensure platform is set before searching
       platformStore.setActivePlatform('YouTube');
-      
+
       try {
         console.log('[StreamVods] Calling searchClips with tab:', youtubeTab.value);
         const result = await platformStore.searchClips(input, 20, youtubeTab.value);
@@ -509,16 +493,16 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
   // Switch Rumble tab and refetch content
   async function switchRumbleTab(tab: 'streams' | 'videos') {
     if (rumbleTab.value === tab || platformStore.loading) return;
-    
+
     console.log('[StreamVods] Switching Rumble tab to:', tab);
     rumbleTab.value = tab;
-    
+
     // Refetch with the new tab
     const input = searchInput.value.trim();
     if (input && detectedPlatform.value === 'rumble') {
       // Ensure platform is set before searching
       platformStore.setActivePlatform('rumble');
-      
+
       try {
         console.log('[StreamVods] Calling searchClips with tab:', rumbleTab.value);
         const result = await platformStore.searchClips(input, 20, rumbleTab.value);
@@ -614,15 +598,19 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
 
     try {
       // Pass tab parameter for YouTube, Rumble, and Tokend
-      const tabParam = detectedPlatform.value === 'YouTube' ? youtubeTab.value 
-                     : detectedPlatform.value === 'rumble' ? rumbleTab.value
-                     : detectedPlatform.value === 'tokend' ? tokendTab.value
-                     : undefined;
+      const tabParam =
+        detectedPlatform.value === 'YouTube'
+          ? youtubeTab.value
+          : detectedPlatform.value === 'rumble'
+            ? rumbleTab.value
+            : detectedPlatform.value === 'tokend'
+              ? tokendTab.value
+              : undefined;
       const result = await platformStore.searchClips(input, 20, tabParam);
       if (result.success) {
         // Reload downloaded VOD IDs after search to ensure we have latest data
         await loadDownloadedVodIds();
-        
+
         if (result.total === 0) {
           showError('No VODs Found', 'No available VODs found for this search');
         } else if ('fallbackUsed' in result && result.fallbackUsed && result.actualTab && tabParam) {
@@ -663,10 +651,7 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
     clipDefaultsEligible.value = false;
     if (detectedPlatform.value && platformStore.currentSearchId) {
       try {
-        const lp = await getCreatorProfileByPlatformId(
-          detectedPlatform.value as any,
-          platformStore.currentSearchId
-        );
+        const lp = await getCreatorProfileByPlatformId(detectedPlatform.value as any, platformStore.currentSearchId);
         clipDefaultsEligible.value = !!parseCreatorClipBuildDefaults(lp?.clip_build_defaults ?? null);
       } catch {
         clipDefaultsEligible.value = false;
@@ -716,13 +701,13 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
       }
     }
 
-    const selectedClips = platformStore.clips.filter(clip => selectedVodIds.value.has(clip.clipId));
+    const selectedClips = platformStore.clips.filter((clip) => selectedVodIds.value.has(clip.clipId));
     if (selectedClips.length === 0) return;
-    
+
     downloadQueue.value = selectedClips;
     currentQueueIndex.value = 0;
     isProcessingQueue.value = true;
-    
+
     // Start with first VOD in queue
     await handleDownloadClip(downloadQueue.value[0]);
   }
@@ -765,11 +750,8 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
         });
 
         try {
-          const {
-            isOrgSuppliedAccount,
-            resolveOrgBuildBranding,
-            profileToDownloadWatermarkSettings,
-          } = await import('@/composables/useBrandingProfileSelection');
+          const { isOrgSuppliedAccount, resolveOrgBuildBranding, profileToDownloadWatermarkSettings } =
+            await import('@/composables/useBrandingProfileSelection');
 
           const platformLabel =
             detectedPlatform.value === 'kick'
@@ -817,8 +799,7 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
       }
 
       const clipDefaultsParsed = parseCreatorClipBuildDefaults(localCreatorProfile?.clip_build_defaults ?? null);
-      const applyLayout =
-        useCreatorLayout.value && !!clipDefaultsParsed && !!localCreatorProfile?.id;
+      const applyLayout = useCreatorLayout.value && !!clipDefaultsParsed && !!localCreatorProfile?.id;
 
       await startDownload(
         clip.title,
@@ -835,7 +816,18 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
         {
           autoSegment: autoSegment.value,
           segmentDuration: autoSegmentDuration.value * 60,
-          provider: detectedPlatform.value === 'kick' ? 'kick' : detectedPlatform.value === 'twitch' ? 'twitch' : detectedPlatform.value === 'YouTube' ? 'YouTube' : detectedPlatform.value === 'rumble' ? 'rumble' : detectedPlatform.value === 'twitter' ? 'twitter' : 'pumpfun',
+          provider:
+            detectedPlatform.value === 'kick'
+              ? 'kick'
+              : detectedPlatform.value === 'twitch'
+                ? 'twitch'
+                : detectedPlatform.value === 'YouTube'
+                  ? 'YouTube'
+                  : detectedPlatform.value === 'rumble'
+                    ? 'rumble'
+                    : detectedPlatform.value === 'twitter'
+                      ? 'twitter'
+                      : 'pumpfun',
           creatorWatermarkSettings,
           creatorProfileId: applyLayout ? localCreatorProfile!.id : undefined,
           applyCreatorClipLayout: applyLayout,
@@ -860,7 +852,7 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
       // Check if we're processing a queue
       if (isProcessingQueue.value && downloadQueue.value.length > 0) {
         currentQueueIndex.value++;
-        
+
         // If there are more VODs in queue, show next dialog
         if (currentQueueIndex.value < downloadQueue.value.length) {
           setTimeout(() => {
@@ -887,7 +879,7 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
       }
     } catch (err) {
       const errorMessage = err instanceof Error ? err.message : String(err);
-      
+
       // Check if this is a free tier limit error
       if (errorMessage.includes('Daily download limit reached')) {
         // Show subscription gate instead of error toast
@@ -895,10 +887,10 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
       } else {
         showError('Download Failed', `Failed to download "${clip.title}": ${errorMessage}`);
       }
-      
+
       downloadStarting.value = false;
       closeDownloadDialog();
-      
+
       // If queue processing failed, cleanup
       if (isProcessingQueue.value) {
         isProcessingQueue.value = false;
@@ -908,5 +900,56 @@ import StreamVodsView from '@/components/StreamVodsView.vue';
     }
   }
 
-const viewModel = reactive({ autoSegment, autoSegmentDuration, clearSelection, clipDefaultsEligible, clipToDownload, closeDownloadDialog, currentPage, currentQueueIndex, detectPlatform, detectedPlatform, displayTotalPages, downloadClipConfirmed, downloadQueue, downloadSelectedVods, downloadStarting, estimatedParts, formatAbsoluteDate, formatDuration, formatRelativeTime, getCleanChannelName, getPlatformFallbackIcon, getPlatformIcon, goToPage, handleClipClick, handleDownloadClip, handleRecentSearchClick, handleSearch, handleTimeRangeChange, isFullStreamSelected, isProcessingQueue, isVodAlreadyDownloaded, nextPage, paginatedClips, platformStore, previousPage, resetToFullStream, rumbleTab, searchInput, selectedDuration, selectedTimeRange, selectedVodIds, showAuthModal, showDownloadDialog, showRecentDropdown, switchRumbleTab, switchTokendTab, switchYouTubeTab, toggleVodSelection, tokendModeLabel, tokendTab, useCreatorLayout, youtubeTab });
+  const viewModel = reactive({
+    autoSegment,
+    autoSegmentDuration,
+    clearSelection,
+    clipDefaultsEligible,
+    clipToDownload,
+    closeDownloadDialog,
+    currentPage,
+    currentQueueIndex,
+    detectPlatform,
+    detectedPlatform,
+    displayTotalPages,
+    downloadClipConfirmed,
+    downloadQueue,
+    downloadSelectedVods,
+    downloadStarting,
+    estimatedParts,
+    formatAbsoluteDate,
+    formatDuration,
+    formatRelativeTime,
+    getCleanChannelName,
+    goToPage,
+    handleClipClick,
+    handleDownloadClip,
+    handleRecentSearchClick,
+    handleSearch,
+    handleTimeRangeChange,
+    isFullStreamSelected,
+    isProcessingQueue,
+    isVodAlreadyDownloaded,
+    nextPage,
+    paginatedClips,
+    platformStore,
+    previousPage,
+    resetToFullStream,
+    rumbleTab,
+    searchInput,
+    selectedDuration,
+    selectedTimeRange,
+    selectedVodIds,
+    showAuthModal,
+    showDownloadDialog,
+    showRecentDropdown,
+    switchRumbleTab,
+    switchTokendTab,
+    switchYouTubeTab,
+    toggleVodSelection,
+    tokendModeLabel,
+    tokendTab,
+    useCreatorLayout,
+    youtubeTab,
+  });
 </script>

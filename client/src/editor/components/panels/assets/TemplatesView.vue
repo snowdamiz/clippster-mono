@@ -9,7 +9,10 @@ import {
 	type ImageTemplate,
 	type TemplateCategory,
 } from "../../../constants/image-templates";
-import { LayoutTemplate, Search } from "lucide-vue-next";
+import { LayoutTemplate, SearchX } from "lucide-vue-next";
+import { EmptyState } from "@/components/ui/empty-state";
+import { AssetGrid, AssetTile, OptionChip } from "../shared";
+import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor } = useEditor();
 
@@ -94,58 +97,46 @@ function getAspectLabel(w: number, h: number): string {
 
 <template>
 	<div class="flex h-full flex-col">
-		<!-- Search -->
-		<div class="flex items-center gap-2 border-b border-white/10 px-3 py-2">
-			<Search class="size-3.5 text-zinc-500" />
-			<input
-				v-model="searchQuery"
-				type="text"
-				placeholder="Search templates..."
-				class="flex-1 bg-transparent text-xs text-zinc-200 outline-none placeholder:text-zinc-600"
-			/>
-		</div>
+		<PanelSearchBar v-model="searchQuery" placeholder="Search templates…" />
 
-		<!-- Category tabs -->
-		<div class="flex items-center gap-0.5 overflow-x-auto border-b border-white/10 px-2 py-1 scrollbar-hidden">
-			<button
+		<!-- Category filter -->
+		<div
+			class="flex shrink-0 flex-wrap gap-1 border-b border-line-subtle px-3 py-1.5"
+			role="group"
+			aria-label="Template category"
+		>
+			<OptionChip
 				v-for="cat in TEMPLATE_CATEGORIES"
 				:key="cat.value"
-				type="button"
-				:class="[
-					'whitespace-nowrap rounded px-2 py-1 text-[10px] font-medium transition-colors',
-					activeCategory === cat.value
-						? 'bg-purple-600/20 text-purple-400'
-						: 'text-zinc-500 hover:text-zinc-300',
-				]"
+				variant="ghost"
+				:active="activeCategory === cat.value"
 				@click="activeCategory = cat.value"
 			>
 				{{ cat.label }}
-			</button>
+			</OptionChip>
 		</div>
 
 		<!-- Template grid -->
-		<div class="flex-1 overflow-y-auto p-2">
-			<div v-if="filteredTemplates.length === 0" class="flex items-center justify-center h-20 text-zinc-600 text-xs">
-				No templates found
-			</div>
-			<div
-				v-else
-				class="grid gap-2"
-				style="grid-template-columns: repeat(auto-fill, minmax(100px, 1fr))"
-			>
-				<button
+		<div class="flex-1 overflow-y-auto p-3">
+			<EmptyState
+				v-if="filteredTemplates.length === 0"
+				size="sm"
+				:icon="SearchX"
+				title="No templates found"
+				description="Try a different search or category."
+			/>
+			<AssetGrid v-else :min="100">
+				<AssetTile
 					v-for="template in filteredTemplates"
 					:key="template.id"
-					type="button"
-					class="group relative overflow-hidden rounded-lg border border-white/10 text-left transition-all hover:border-purple-500/50 hover:shadow-lg hover:shadow-purple-500/10"
+					aspect="16/10"
+					:label="template.name"
+					:sublabel="template.description"
+					:title="`Use the ${template.name} template`"
 					@click="applyTemplate(template)"
 				>
-					<!-- Preview -->
-					<div
-						class="relative flex items-center justify-center overflow-hidden"
-						:style="{ ...getPreviewStyle(template), aspectRatio: '16/10' }"
-					>
-						<!-- Mini text preview -->
+					<!-- Preview: the template's own background and type (content, not chrome) -->
+					<div class="flex size-full items-center justify-center" :style="getPreviewStyle(template)">
 						<div class="flex flex-col items-center gap-0.5 px-2">
 							<span
 								v-for="(textEl, i) in template.textElements.slice(0, 2)"
@@ -163,25 +154,15 @@ function getAspectLabel(w: number, h: number): string {
 							</span>
 							<LayoutTemplate v-if="template.textElements.length === 0" class="size-5 text-white/20" />
 						</div>
+					</div>
 
-						<!-- Aspect badge -->
-						<div class="absolute right-1 bottom-1 rounded bg-black/60 px-1 text-[8px] text-white/70">
+					<template #overlay>
+						<span class="tabular absolute bottom-1 right-1 rounded bg-black/60 px-1 text-2xs leading-4 text-white">
 							{{ getAspectLabel(template.canvasWidth, template.canvasHeight) }}
-						</div>
-					</div>
-
-					<!-- Name -->
-					<div class="px-2 py-1.5">
-						<div class="truncate text-[10px] font-medium text-zinc-300">{{ template.name }}</div>
-						<div class="truncate text-[9px] text-zinc-600">{{ template.description }}</div>
-					</div>
-
-					<!-- Hover overlay -->
-					<div class="absolute inset-0 hidden items-center justify-center bg-black/40 group-hover:flex">
-						<span class="rounded bg-purple-600 px-2 py-1 text-[10px] font-medium text-white">Use Template</span>
-					</div>
-				</button>
-			</div>
+						</span>
+					</template>
+				</AssetTile>
+			</AssetGrid>
 		</div>
 	</div>
 </template>

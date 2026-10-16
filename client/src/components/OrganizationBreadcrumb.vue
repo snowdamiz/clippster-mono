@@ -1,15 +1,12 @@
 <template>
-  <OrganizationSelector
-    v-if="hasMultipleOrgs"
-    v-model="organizationId"
-    class="org-breadcrumb__selector"
-  />
+  <!-- First crumb on organization pages: the org itself (switcher when the user has several). -->
+  <OrganizationSelector v-if="hasMultipleOrgs" :model-value="organizationId" muted />
   <router-link
     v-else
-    to="/organizations"
-    class="page-header__breadcrumb-link"
+    :to="`/organization/${organizationId}`"
+    class="truncate text-fg-muted transition-colors hover:text-fg"
   >
-    Organizations
+    {{ organization?.name || 'Organization' }}
   </router-link>
 </template>
 
@@ -18,15 +15,11 @@
   import { useRoute } from 'vue-router';
   import OrganizationSelector from './OrganizationSelector.vue';
   import { useOrganizationSelector } from '@/composables/useOrganizationSelector';
+  import { useOrganization } from '@/composables/useOrganization';
 
   const route = useRoute();
   const { hasMultipleOrgs } = useOrganizationSelector();
+  const { organization } = useOrganization();
 
   const organizationId = computed(() => route.params.id as string);
 </script>
-
-<style scoped>
-  .org-breadcrumb__selector {
-    margin: 0;
-  }
-</style>

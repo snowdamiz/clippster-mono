@@ -15,7 +15,7 @@
     <!-- Delete Confirmation Modal -->
     <ConfirmationModal
       :show="showDeleteDialog"
-      title="Delete Creator"
+      title="Delete creator"
       message="Are you sure you want to delete"
       :item-name="creatorToDelete?.name"
       suffix="? This will remove all platform links but not the associated VODs or clips."
@@ -36,16 +36,15 @@
     <AuthModal v-model="showAuthModal" />
 
     <!-- Personal Post Dialog (for non-org creators) -->
-    <AddPostDialog
-      v-model="showPersonalPostDialog"
-      @submitted="handlePersonalPostSubmitted"
-    />
+    <AddPostDialog v-model="showPersonalPostDialog" @submitted="handlePersonalPostSubmitted" />
 
     <!-- External Post Submit Dialog -->
     <ExternalPostSubmitDialog
       :open="showPostSubmitDialog"
       :organization-id="creatorForPostSubmit?.organization_id || 0"
-      :creator-profiles="creatorForPostSubmit ? [{ id: creatorForPostSubmit.server_id!, name: creatorForPostSubmit.name }] : []"
+      :creator-profiles="
+        creatorForPostSubmit ? [{ id: creatorForPostSubmit.server_id!, name: creatorForPostSubmit.name }] : []
+      "
       :campaigns="[]"
       :preselected-creator-profile-id="creatorForPostSubmit?.server_id"
       @close="showPostSubmitDialog = false"
@@ -58,7 +57,12 @@
       :creator-layout-eligible="creatorLayoutEligible"
       :creator-layout-creator-name="creatorLayoutCreatorName"
       :show-sixty-minute-cap="true"
-      @update:model-value="(open) => { showRealtimeDialog = open; if (!open) closeRealtimeDialog(); }"
+      @update:model-value="
+        (open) => {
+          showRealtimeDialog = open;
+          if (!open) closeRealtimeDialog();
+        }
+      "
       @confirm="handleRealtimeDetectionConfirm"
     />
 
@@ -69,91 +73,50 @@
       @close="showAutoDetectLimitDialog = false"
     />
 
-    <Teleport to="body">
-      <Transition name="modal">
-        <div
-          v-if="showSegmentDialog"
-          class="segment-dialog__overlay"
-          @click.self="closeSegmentDialog"
+    <!-- Record-when-live settings -->
+    <Modal
+      :open="showSegmentDialog"
+      title="Record when live"
+      description="Automatically record when this creator goes live."
+      :icon="Video"
+      size="sm"
+      @close="closeSegmentDialog"
+    >
+      <div class="flex flex-col gap-4">
+        <Field label="Segment duration">
+          <SegmentedControl v-model="selectedDuration" :options="durationOptions" block />
+        </Field>
+        <Field
+          v-if="creatorLayoutEligible"
+          label="Use creator layout"
+          hint="Apply this creator's saved framing and subtitle defaults."
+          inline
         >
-          <Transition name="dialog" appear>
-            <div
-              v-if="showSegmentDialog"
-              class="segment-dialog"
-              role="dialog"
-              aria-modal="true"
-            >
-              <div class="segment-dialog__accent"></div>
-              <div class="segment-dialog__header">
-                <button class="segment-dialog__close" @click="closeSegmentDialog" title="Close">
-                  <X class="creator-btn__icon" />
-                </button>
-                <div class="segment-dialog__icon">
-                  <Video class="creator-btn__icon" />
-                </div>
-                <h2 class="segment-dialog__title">Record When Live</h2>
-                <p class="segment-dialog__subtitle">
-                  Automatically record when this creator goes live
-                </p>
-              </div>
-              <div class="segment-dialog__content">
-                <div class="segment-dialog__field">
-                  <label class="segment-dialog__label">Segment Duration</label>
-                  <div class="segment-dialog__duration-grid">
-                    <button
-                      v-for="duration in availableDurationsRecord"
-                      :key="duration"
-                      type="button"
-                      class="segment-dialog__duration-btn"
-                      :class="{
-                        'segment-dialog__duration-btn--selected': selectedDuration === duration,
-                      }"
-                      @click="selectedDuration = duration"
-                    >
-                      {{ duration === 0 ? 'Entire' : `${duration} min` }}
-                    </button>
-                  </div>
-                </div>
-                <div v-if="creatorLayoutEligible" class="segment-dialog__field">
-                  <label class="segment-dialog__label">Creator layout</label>
-                  <label class="segment-dialog__checkbox-row">
-                    <input
-                      v-model="recordUseCreatorLayout"
-                      type="checkbox"
-                      class="segment-dialog__checkbox"
-                    />
-                    <span class="segment-dialog__checkbox-text">Use creator layout</span>
-                  </label>
-                </div>
-              </div>
-              <div class="segment-dialog__footer">
-                <button
-                  type="button"
-                  class="segment-dialog__btn segment-dialog__btn--secondary"
-                  @click="closeSegmentDialog"
-                >
-                  Cancel
-                </button>
-                <button
-                  type="button"
-                  class="segment-dialog__btn segment-dialog__btn--primary"
-                  @click="handleRecordDialogConfirm"
-                >
-                  Enable Record
-                </button>
-              </div>
-            </div>
-          </Transition>
-        </div>
-      </Transition>
-    </Teleport>
+          <Switch v-model="recordUseCreatorLayout" />
+        </Field>
+      </div>
+      <template #footer>
+        <Button variant="ghost" @click="closeSegmentDialog">Cancel</Button>
+        <Button variant="primary" @click="handleRecordDialogConfirm">Enable record</Button>
+      </template>
+    </Modal>
   </div>
 </template>
 
 <script setup lang="ts">
   import { ref, onMounted, onUnmounted, computed, reactive } from 'vue';
   import { useRouter } from 'vue-router';
+  import PageLayout from '@/components/PageLayout.vue';
+  import AssignedCampaignCard from '@/components/creators/AssignedCampaignCard.vue';
   import CreatorProfilesView from '@/components/CreatorProfilesView.vue';
+  import { Button } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Field } from '@/components/ui/field';
+  import { Modal } from '@/components/ui/modal';
+  import { SearchField } from '@/components/ui/search-field';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
+  import { Switch } from '@/components/ui/switch';
   import { getPlatformIcon, getPlatformFilter } from '@/lib/creatorProfilePresentation';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import ProfileDialog from '@/components/ProfileDialog.vue';
@@ -176,7 +139,8 @@
     getAllStreamerProfiles,
     type CreatorProfileWithLinks,
   } from '@/services/database';
-  import { getUserAssignedCreatorProfiles,
+  import {
+    getUserAssignedCreatorProfiles,
     updatePlatformLink as updateOrgPlatformLink,
     toggleCreatorProfileDisabled,
     type ServerOrganizationCreatorProfile,
@@ -195,41 +159,15 @@
   import { getYouTubeChannelInfo } from '@/services/youtube';
   import { getRumbleChannelInfo } from '@/services/rumble';
   import { type PlatformId } from '@/config/platforms';
-  import {
-    Users,
-    Plus,
-    Cloud,
-    Edit,
-    Video,
-    Download,
-    Disc,
-    Trash2,
-    Play,
-    SkipForward,
-    Image as ImageIcon,
-    Search,
-    Sparkles,
-    Square,
-    Loader2,
-    Building2,
-    Eye,
-    EyeOff,
-    MoreHorizontal,
-    MoreVertical,
-    Radio,
-    Activity,
-    HardDrive,
-    Link,
-    Paintbrush,
-    Trophy,
-    Globe,
-    ChevronDown,
-    X,
-  } from 'lucide-vue-next';
+  import { Activity, Building2, Cloud, Paintbrush, Plus, Search, Trophy, Users, Video } from 'lucide-vue-next';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useLivestreamStore } from '@/stores/livestream';
 
-  import { convertCampaignsToGroupedDisplay, type DisplayCreatorProfile, type DisplayCampaign } from '@/lib/creatorCampaignPresentation';
+  import {
+    convertCampaignsToGroupedDisplay,
+    type DisplayCreatorProfile,
+    type DisplayCampaign,
+  } from '@/lib/creatorCampaignPresentation';
 
   function getMonitoredStreamerId(creator: DisplayCreatorProfile): string | null {
     for (const link of creator.platform_links) {
@@ -386,8 +324,7 @@
   const { maybeStartPageTour } = useAppTour();
   const { success, error: showError } = useToast();
   const { showGate, requireSubscription } = useSubscriptionGate();
-  const { activeSessions, monitoredStreamers, stopMonitoring, hasDvrRecording } =
-    useLivestreamMonitoring();
+  const { activeSessions, monitoredStreamers, stopMonitoring, hasDvrRecording } = useLivestreamMonitoring();
   const {
     showRealtimeDialog,
     showSegmentDialog,
@@ -483,11 +420,11 @@
 
   // Profile type filters
   const organizationProfiles = computed(() => {
-    return sortedCreators.value.filter(c => c.isOrgProfile && !c.campaign_id);
+    return sortedCreators.value.filter((c) => c.isOrgProfile && !c.campaign_id);
   });
 
   const userProfiles = computed(() => {
-    return sortedCreators.value.filter(c => !c.isOrgProfile && !c.campaign_id);
+    return sortedCreators.value.filter((c) => !c.isOrgProfile && !c.campaign_id);
   });
 
   async function syncPersonalToCloud() {
@@ -629,14 +566,14 @@
       try {
         const previousStatus = liveStatusMap.value.get(platformId);
         const wasLive = previousStatus?.isLive ?? false;
-        
+
         const status = await fetchLiveStatus(mintId);
         liveStatusMap.value.set(platformId, {
           isLive: status.isLive,
           viewerCount: status.numParticipants,
           isChecking: false,
         });
-        
+
         // Note: Toast notifications are handled by global polling system to avoid duplicates
       } catch (error) {
         console.error('[CreatorProfiles] Failed to check PumpFun live status for', mintId, error);
@@ -659,7 +596,7 @@
         try {
           const previousStatus = liveStatusMap.value.get(platformId);
           const wasLive = previousStatus?.isLive ?? false;
-          
+
           const status = await checkKickLivestream(channelSlug);
           liveStatusMap.value.set(platformId, {
             isLive: status.isLive,
@@ -667,7 +604,7 @@
             profileImageUrl: status.profileImageUrl,
             isChecking: false,
           });
-          
+
           // Note: Toast notifications are handled by global polling system to avoid duplicates
 
           // Persist profile image if we got one and don't have one stored
@@ -717,7 +654,7 @@
         try {
           const previousStatus = liveStatusMap.value.get(platformId);
           const wasLive = previousStatus?.isLive ?? false;
-          
+
           const status = await checkTwitchLivestream(channelName);
           liveStatusMap.value.set(platformId, {
             isLive: status.isLive,
@@ -725,7 +662,7 @@
             profileImageUrl: status.profileImageUrl,
             isChecking: false,
           });
-          
+
           // Note: Toast notifications are handled by global polling system to avoid duplicates
 
           // Persist profile image if we got one and don't have one stored
@@ -943,9 +880,15 @@
       watermark_id: profile.watermark_id ? `org-asset-${profile.watermark_id}` : null,
       watermark_settings: profile.watermark_settings ? JSON.stringify(profile.watermark_settings) : null,
       layout_overlays: profile.layout_overlays ? JSON.stringify(profile.layout_overlays) : null,
-      intro_outro_settings: (profile as any).intro_outro_settings ? JSON.stringify((profile as any).intro_outro_settings) : null,
-      intro_ratio_settings: (profile as any).intro_ratio_settings ? JSON.stringify((profile as any).intro_ratio_settings) : null,
-      outro_ratio_settings: (profile as any).outro_ratio_settings ? JSON.stringify((profile as any).outro_ratio_settings) : null,
+      intro_outro_settings: (profile as any).intro_outro_settings
+        ? JSON.stringify((profile as any).intro_outro_settings)
+        : null,
+      intro_ratio_settings: (profile as any).intro_ratio_settings
+        ? JSON.stringify((profile as any).intro_ratio_settings)
+        : null,
+      outro_ratio_settings: (profile as any).outro_ratio_settings
+        ? JSON.stringify((profile as any).outro_ratio_settings)
+        : null,
       created_at: new Date(profile.inserted_at).getTime(),
       updated_at: new Date(profile.updated_at).getTime(),
       user_id: null,
@@ -1011,7 +954,6 @@
     const img = event.target as HTMLImageElement;
     img.style.display = 'none';
   }
-
 
   function truncateId(id: string): string {
     if (!id || id.length < 8) return id;
@@ -1114,6 +1056,16 @@
   }
 
   const activeTab = ref<'streamer' | 'global'>('streamer');
+
+  const durationOptions = computed<SegmentedOption<number>[]>(() =>
+    availableDurationsRecord.map((duration) => ({
+      value: duration,
+      label: duration === 0 ? 'Entire' : `${duration} min`,
+    }))
+  );
+
+  /** Organization-managed profiles first, then the user's own profiles. */
+
   const profileDialogScope = ref<'streamer' | 'global'>('streamer');
 
   async function openCreateDialog() {
@@ -1121,11 +1073,11 @@
       showAuthModal.value = true;
       return;
     }
-    
+
     const context = activeTab.value === 'global' ? 'Add Global Profile' : 'Add Creator';
     const hasAccess = await requireSubscription({ context, type: 'general' });
     if (!hasAccess) return;
-    
+
     creatorToEdit.value = null;
     profileDialogScope.value = activeTab.value;
     showProfileDialog.value = true;
@@ -1274,9 +1226,51 @@
       showError('Stop Failed', 'Failed to stop monitoring');
     }
   }
-  const viewModel = reactive({ Paintbrush, Users, activeTab, authStore, campaigns, canWatchCreator, confirmDeleteCreator, creators, filteredCreators, getCreatorProfileImage, getCreatorStatusLabel, getPlatformFilter, getPlatformIcon, handleImageError, hasMonitorableLink, isCampaignExpanded, isCreatorAutoDvrEnabled, isCreatorCheckingLive, isCreatorLive, isCreatorMonitored, isCreatorPersistentAutoDetect, isCreatorPersistentRecord, isLiveClipEnabled, liveCreatorsCount, loading, monitoringCreatorsCount, onCreatorAutoDetectClick, onCreatorRecordClick, openCreateDialog, openDownloadDialog, openEditDialog, openPersonalPostDialog, openPostSubmitDialog, organizationProfiles, searchQuery, stopCreatorMonitoring, syncPersonalToCloud, syncingPersonal, toggleCampaignExpansion, toggleCreatorAutoDvr, toggleProfileDisabled, userProfiles, viewCreatorVods, watchCreator, syncPersonalLabel: 'Sync personal to cloud' });
+  const viewModel = reactive({
+    Paintbrush,
+    Users,
+    activeTab,
+    authStore,
+    campaigns,
+    canWatchCreator,
+    confirmDeleteCreator,
+    creators,
+    filteredCreators,
+    getCreatorProfileImage,
+    getCreatorStatusLabel,
+    getPlatformFilter,
+    getPlatformIcon,
+    handleImageError,
+    hasMonitorableLink,
+    isCampaignExpanded,
+    isCreatorAutoDvrEnabled,
+    isCreatorCheckingLive,
+    isCreatorLive,
+    isCreatorMonitored,
+    isCreatorPersistentAutoDetect,
+    isCreatorPersistentRecord,
+    isLiveClipEnabled,
+    liveCreatorsCount,
+    loading,
+    monitoringCreatorsCount,
+    onCreatorAutoDetectClick,
+    onCreatorRecordClick,
+    openCreateDialog,
+    openDownloadDialog,
+    openEditDialog,
+    openPersonalPostDialog,
+    openPostSubmitDialog,
+    organizationProfiles,
+    searchQuery,
+    stopCreatorMonitoring,
+    syncPersonalToCloud,
+    syncingPersonal,
+    toggleCampaignExpansion,
+    toggleCreatorAutoDvr,
+    toggleProfileDisabled,
+    userProfiles,
+    viewCreatorVods,
+    watchCreator,
+    syncPersonalLabel: 'Sync personal to cloud',
+  });
 </script>
-
-<style scoped>
-  .creators { width: 100%; min-height: 100%; }
-</style>

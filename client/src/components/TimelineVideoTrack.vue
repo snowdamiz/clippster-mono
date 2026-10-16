@@ -1,52 +1,48 @@
 <template>
-  <div class="flex items-center h-14 px-2 border-b border-border/20 relative" :style="{ height: 'var(--workspace-video-track-height, 3.5rem)' }">
+  <div
+    :style="{ height: 'var(--workspace-video-track-height, 3rem)' }"
+    class="relative flex h-12 items-center border-b border-line-subtle px-2"
+  >
     <!-- Track Label -->
     <div
-      class="w-18 h-10 -ml-2 flex items-center justify-center text-xs text-center sticky left-0 z-40 bg-gradient-to-r from-[#141416] to-[#141416]/80 backdrop-blur-md border-r border-white/[0.04]"
+      class="sticky left-0 z-40 -ml-2 flex h-full w-18 shrink-0 items-center gap-1.5 border-r border-line-subtle bg-surface pl-3 pr-2"
     >
-      <div>
-        <div class="font-medium text-white/70 text-[10px] tracking-wide">Main</div>
-        <div class="text-[9px] text-white/40">Video</div>
-      </div>
+      <Video class="size-3.5 shrink-0 text-fg-subtle" />
+      <span class="truncate text-2xs font-medium text-fg-muted">Video</span>
     </div>
     <!-- Video Track Content -->
-    <div class="flex-1 h-10 relative flex items-center" :style="{ height: 'var(--workspace-waveform-height, 2.5rem)' }">
+    <div class="relative flex h-full flex-1 items-center">
       <div
         data-video-track="true"
         :style="{ height: 'var(--workspace-waveform-height, 2rem)' }"
-        class="flex-1 h-8 bg-[#0a0a0b]/50 rounded-md relative cursor-pointer group overflow-hidden"
+        class="group relative h-8 flex-1 cursor-pointer overflow-hidden rounded-md bg-surface-sunken"
         @click="onVideoTrackClick"
         @mousemove="onTimelineTrackHover"
         @mouseleave="onTimelineMouseLeave"
       >
-        <!-- Video Track Background -->
-        <div v-if="!videoSrc" class="absolute inset-0 flex items-center justify-center">
-          <div class="text-center text-muted-foreground/40">
-            <Video class="h-3.5 w-3.5 mx-auto mb-1" />
-            <p class="text-xs">No video</p>
-          </div>
+        <!-- Empty -->
+        <div v-if="!videoSrc" class="absolute inset-0 flex items-center justify-center gap-1.5 text-fg-disabled">
+          <Video class="size-3.5" />
+          <span class="text-2xs">No video</span>
         </div>
         <!-- Video Track with Waveform -->
-        <div v-else class="relative w-full h-full">
-          <!-- Full video duration background (cool gray) -->
-          <div class="absolute inset-0 bg-[#161618] rounded-md"></div>
-
+        <div v-else class="relative h-full w-full">
           <!-- Audio Waveform Canvas -->
           <canvas
             ref="waveformCanvas"
-            class="absolute inset-0 w-full h-full rounded-md pointer-events-none"
+            class="pointer-events-none absolute inset-0 h-full w-full rounded-md"
             style="mix-blend-mode: normal; z-index: 25"
           ></canvas>
 
-          <!-- Played progress overlay (cool lighter gray) -->
+          <!-- Played progress overlay -->
           <div
-            class="absolute inset-y-0 left-0 bg-[#1f1f23] rounded-l-md transition-all duration-100 pointer-events-none z-15"
+            class="pointer-events-none absolute inset-y-0 left-0 z-15 rounded-l-md bg-surface-active transition-[width] duration-100"
             :style="{ width: `${duration ? (currentTime / duration) * 100 : 0}%` }"
           ></div>
 
           <!-- Loading indicator for waveform -->
-          <div v-if="isLoading" class="absolute inset-0 flex items-center justify-center bg-black/20 rounded-md">
-            <div class="text-xs text-muted-foreground/60">Loading waveform...</div>
+          <div v-if="isLoading" class="absolute inset-0 flex items-center justify-center">
+            <span class="text-2xs text-fg-subtle">Loading waveform…</span>
           </div>
         </div>
       </div>
@@ -55,7 +51,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, watch, nextTick, onMounted, onUnmounted, computed } from 'vue';
+  import { ref, watch, nextTick, onUnmounted, computed } from 'vue';
   import { Video } from 'lucide-vue-next';
   import { waveformService, useWaveform } from '@/services/waveformService';
   import { renderWaveformWithPlayhead, createThrottledRenderer } from '@/utils/waveformRenderer';
@@ -116,6 +112,8 @@
 
   // Resize observer for canvas updates
   let resizeObserver: ResizeObserver | null = null;
+  let scrollContainer: HTMLElement | null = null;
+  let renderGeneration = 0;
 
   // Render waveform on canvas
   async function renderWaveformOnCanvas(): Promise<void> {
@@ -130,7 +128,15 @@
 
     try {
       const canvas = waveformCanvas.value;
-      const rect = canvas.getBoundingClientRect();
+      const track = canvas.parentElement;
+      if (!track) return;
+      const rect = track.getBoundingClientRect();
+      const viewport = scrollContainer?.getBoundingClientRect() ?? rect;
+      const offset = Math.max(0, viewport.left - rect.left);
+      const width = Math.max(0, Math.min(rect.right, viewport.right) - Math.max(rect.left, viewport.left));
+      if (!width) return;
+      const run = ++renderGeneration;
+      const source = props.videoSrc;
 
       if (rect.width === 0 || rect.height === 0) return;
 
@@ -138,25 +144,27 @@
       // Limit peak density to prevent rendering issues at extreme zoom levels
       // Professional video editors use max ~10,000 peaks for waveform display
       const MAX_PEAKS = 10000;
-      const requestedPeaks = Math.min(Math.floor(rect.width), MAX_PEAKS);
-      
+      const requestedPeaks = Math.min(Math.ceil(width), MAX_PEAKS);
+
       const gainMultiplier = dbToLinear(props.audioGainDb ?? 0);
-      const peaks = await waveformService.getPeaksForRange(props.videoSrc, {
-        startTime: 0,
-        endTime: props.duration,
+      const startTime = (offset / rect.width) * props.duration;
+      const endTime = Math.min(props.duration, ((offset + width) / rect.width) * props.duration);
+      const peaks = await waveformService.getPeaksForRange(source, {
+        startTime,
+        endTime,
         pixelWidth: requestedPeaks,
         gainMultiplier,
       });
 
-      if (!peaks || peaks.length === 0) {
-        return;
-      }
+      if (run !== renderGeneration || source !== props.videoSrc) return;
+      canvas.style.left = `${offset}px`;
+      canvas.style.width = `${width}px`;
 
       // Normalize peaks for display (makes quiet audio visible)
       const normalizedPeaks = normalizePeaks(peaks);
 
       // Use the unified renderer with playhead support
-      renderWaveformWithPlayhead(canvas, normalizedPeaks, rect.width, rect.height, props.currentTime, props.duration, {
+      renderWaveformWithPlayhead(canvas, normalizedPeaks, width, rect.height, 0, endTime - startTime, {
         style: 'bars',
         useGradientColors: false, // Simple white/teal for this track
         minBarHeight: 0,
@@ -177,7 +185,8 @@
       throttledRender();
     });
 
-    resizeObserver.observe(waveformCanvas.value);
+    if (waveformCanvas.value.parentElement) resizeObserver.observe(waveformCanvas.value.parentElement);
+    if (scrollContainer) resizeObserver.observe(scrollContainer);
   }
 
   // Cleanup resize observer
@@ -192,6 +201,10 @@
   watch(
     () => props.videoSrc,
     async (newVideoSrc) => {
+      renderGeneration++;
+      waveform.reset();
+      const canvas = waveformCanvas.value;
+      if (canvas) canvas.getContext('2d')?.clearRect(0, 0, canvas.width, canvas.height);
       if (newVideoSrc) {
         await waveform.load(newVideoSrc);
       }
@@ -202,8 +215,8 @@
   // Watch for waveform data changes and render
   // Include duration so we re-render when video metadata loads
   watch(
-    [isLoaded, () => props.zoomLevel, () => props.currentTime, () => props.audioGainDb, () => props.duration],
-    ([loaded, _zoom, _time, _gain, duration]) => {
+    [isLoaded, () => props.zoomLevel, () => props.audioGainDb, () => props.duration],
+    ([loaded, _zoom, _gain, duration]) => {
       if (loaded && duration > 0) {
         nextTick(() => {
           throttledRender();
@@ -227,56 +240,24 @@
   }
 
   // Lifecycle hooks
-  onMounted(() => {
-    nextTick(() => {
+  // The canvas is conditional on videoSrc and may mount after the track itself.
+  watch(
+    waveformCanvas,
+    (canvas) => {
+      cleanupResizeObserver();
+      scrollContainer?.removeEventListener('scroll', throttledRender);
+      scrollContainer = canvas?.closest('.overflow-x-auto') as HTMLElement | null;
+      scrollContainer?.addEventListener('scroll', throttledRender, { passive: true });
       setupResizeObserver();
-      if (props.videoSrc) {
-        waveform.load(props.videoSrc);
-      }
-    });
-  });
+      throttledRender();
+    },
+    { flush: 'post' }
+  );
 
   onUnmounted(() => {
+    renderGeneration++;
+    waveform.reset();
+    scrollContainer?.removeEventListener('scroll', throttledRender);
     cleanupResizeObserver();
   });
 </script>
-
-<style scoped>
-  /* Video track styling */
-  .video-track {
-    background: #161618;
-    border-radius: 0.375rem;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .video-track-progress {
-    background: #1f1f23;
-    transition: width 0.1s ease;
-  }
-
-  /* Hover time preview */
-  .hover-preview {
-    position: absolute;
-    background: rgba(0, 0, 0, 0.9);
-    backdrop-filter: blur(4px);
-    color: white;
-    font-size: 0.75rem;
-    padding: 0.25rem 0.5rem;
-    border-radius: 0.25rem;
-    font-weight: 500;
-    z-index: 20;
-    pointer-events: none;
-  }
-
-  .hover-preview::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 50%;
-    transform: translateX(-50%) translateY(50%) rotate(45deg);
-    width: 6px;
-    height: 6px;
-    background: rgba(0, 0, 0, 0.9);
-  }
-</style>

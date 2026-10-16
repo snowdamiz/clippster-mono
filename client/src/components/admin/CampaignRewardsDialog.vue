@@ -1,92 +1,70 @@
 <template>
-  <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="modelValue" class="campaign-dialog__overlay" @click.self="close">
-        <Transition name="dialog" appear>
-          <div v-if="modelValue" class="campaign-dialog" role="dialog" aria-modal="true">
-            <div class="campaign-dialog__accent"></div>
+  <Modal
+    :open="modelValue"
+    title="Campaign rewards"
+    description="Rewards granted for this campaign"
+    :icon="Gift"
+    size="lg"
+    @update:open="(open) => !open && close()"
+  >
+    <!-- Loading -->
+    <div v-if="loading" class="flex flex-col gap-2">
+      <div v-for="i in 3" :key="i" class="skeleton h-[68px] rounded-lg" />
+    </div>
 
-            <div class="campaign-dialog__header">
-              <button class="campaign-dialog__close" @click="close" title="Close">
-                <X :size="18" />
-              </button>
-              <div class="campaign-dialog__icon">
-                <Gift :size="24" />
-              </div>
-              <h2 class="campaign-dialog__title">Campaign Rewards</h2>
-              <p class="campaign-dialog__subtitle">View granted rewards for this campaign</p>
-            </div>
+    <Alert v-else-if="error" variant="destructive">
+      <AlertTriangle />
+      <AlertDescription>{{ error }}</AlertDescription>
+    </Alert>
 
-            <div class="campaign-dialog__content">
-              <div v-if="loading" class="campaign-dialog__loading">
-                <Loader2 :size="24" class="campaign-dialog__spinner" />
-                <p>Loading rewards...</p>
-              </div>
+    <EmptyState v-else-if="rewards.length === 0" size="sm" :icon="Gift" title="No rewards granted yet" />
 
-              <div v-else-if="error" class="campaign-dialog__alert campaign-dialog__alert--error">
-                <AlertTriangle :size="16" />
-                <p>{{ error }}</p>
-              </div>
-
-              <div v-else-if="rewards.length === 0" class="campaign-dialog__empty">
-                <div class="campaign-dialog__empty-icon">
-                  <Gift :size="32" />
-                </div>
-                <p class="campaign-dialog__empty-text">No rewards granted yet</p>
-              </div>
-
-              <div v-else class="campaign-dialog__rewards">
-                <div v-for="reward in rewards" :key="reward.id" class="campaign-dialog__reward">
-                  <div class="campaign-dialog__reward-header">
-                    <div class="campaign-dialog__reward-user">
-                      <User :size="16" />
-                      <span>{{ reward.user?.username || 'Unknown User' }}</span>
-                    </div>
-                    <div class="campaign-dialog__reward-date">
-                      {{ formatDate(reward.granted_at) }}
-                    </div>
-                  </div>
-
-                  <div class="campaign-dialog__reward-details">
-                    <div class="campaign-dialog__reward-tier">
-                      Tier {{ reward.reward_tier?.tier_number || '?' }} - {{ formatNumber(reward.reward_tier?.views_required || 0) }} views
-                    </div>
-
-                    <div class="campaign-dialog__reward-items">
-                      <div v-if="reward.stripe_coupon_id" class="campaign-dialog__reward-item">
-                        <Percent :size="14" />
-                        <span>Discount Code: {{ reward.stripe_coupon_id }}</span>
-                      </div>
-                      <div v-if="reward.free_months_granted" class="campaign-dialog__reward-item">
-                        <Calendar :size="14" />
-                        <span>{{ reward.free_months_granted }} Free Month{{ reward.free_months_granted > 1 ? 's' : '' }}</span>
-                      </div>
-                      <div v-if="reward.ai_credits_granted" class="campaign-dialog__reward-item">
-                        <Sparkles :size="14" />
-                        <span>{{ reward.ai_credits_granted }} AI Credits</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <div class="campaign-dialog__footer">
-              <button @click="close" class="campaign-dialog__btn campaign-dialog__btn--primary">
-                Close
-              </button>
-            </div>
+    <ul v-else class="flex animate-fade-in flex-col divide-y divide-line-subtle overflow-hidden rounded-lg border border-line-subtle bg-surface">
+      <li v-for="reward in rewards" :key="reward.id" class="flex items-start gap-3 px-3.5 py-3">
+        <span class="grid size-8 shrink-0 place-items-center rounded-full bg-surface-raised text-fg-subtle">
+          <User class="size-4" />
+        </span>
+        <div class="min-w-0 flex-1">
+          <div class="flex items-baseline justify-between gap-3">
+            <p class="truncate text-sm font-medium text-fg">{{ reward.user?.username || 'Unknown user' }}</p>
+            <span class="shrink-0 text-xs text-fg-subtle">{{ formatDate(reward.granted_at) }}</span>
           </div>
-        </Transition>
-      </div>
-    </Transition>
-  </Teleport>
+          <p class="tabular text-xs text-fg-muted">
+            Tier {{ reward.reward_tier?.tier_number || '?' }} · {{ formatNumber(reward.reward_tier?.views_required || 0) }} views
+          </p>
+          <div
+            v-if="reward.stripe_coupon_id || reward.free_months_granted || reward.ai_credits_granted"
+            class="mt-1.5 flex flex-wrap gap-1.5"
+          >
+            <Badge v-if="reward.stripe_coupon_id" variant="neutral" class="font-mono">
+              <Percent />{{ reward.stripe_coupon_id }}
+            </Badge>
+            <Badge v-if="reward.free_months_granted" variant="success">
+              <Calendar />{{ reward.free_months_granted }} free month{{ reward.free_months_granted > 1 ? 's' : '' }}
+            </Badge>
+            <Badge v-if="reward.ai_credits_granted" variant="ai">
+              <Sparkles />{{ reward.ai_credits_granted }} AI credits
+            </Badge>
+          </div>
+        </div>
+      </li>
+    </ul>
+
+    <template #footer>
+      <Button variant="secondary" @click="close">Close</Button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue';
-import { X, Gift, User, Percent, Calendar, Sparkles, Loader2, AlertTriangle } from 'lucide-vue-next';
+import { Gift, User, Percent, Calendar, Sparkles, AlertTriangle } from 'lucide-vue-next';
 import api from '@/services/api';
+import { Alert, AlertDescription } from '@/components/ui/alert';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Modal } from '@/components/ui/modal';
 
 interface Props {
   modelValue: boolean;
@@ -146,295 +124,3 @@ watch(() => props.modelValue, (isOpen) => {
   }
 });
 </script>
-
-<style scoped>
-.campaign-dialog__overlay {
-  position: fixed;
-  inset: 0;
-  background-color: rgba(0, 0, 0, 0.7);
-  backdrop-filter: blur(4px);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  z-index: 10000;
-}
-
-.campaign-dialog {
-  background-color: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 12px;
-  width: 100%;
-  max-width: 600px;
-  margin: 1rem;
-  max-height: 85vh;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
-}
-
-.campaign-dialog__accent {
-  height: 3px;
-  background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
-  flex-shrink: 0;
-}
-
-.campaign-dialog__header {
-  position: relative;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 1.5rem 1.5rem 1rem;
-  text-align: center;
-}
-
-.campaign-dialog__close {
-  position: absolute;
-  top: 1rem;
-  right: 1rem;
-  width: 32px;
-  height: 32px;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: var(--sidebar-text-muted);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.campaign-dialog__close:hover {
-  background-color: var(--sidebar-hover);
-  color: var(--sidebar-text);
-}
-
-.campaign-dialog__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 52px;
-  height: 52px;
-  border-radius: 12px;
-  background-color: rgba(6, 182, 212, 0.15);
-  color: var(--sidebar-accent);
-  margin-bottom: 0.875rem;
-}
-
-.campaign-dialog__title {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--sidebar-text);
-  margin: 0;
-  letter-spacing: -0.02em;
-}
-
-.campaign-dialog__subtitle {
-  font-size: 0.8125rem;
-  color: var(--sidebar-text-muted);
-  margin: 0.25rem 0 0;
-}
-
-.campaign-dialog__content {
-  flex: 1;
-  overflow-y: auto;
-  padding: 0.5rem 1.5rem 1.5rem;
-}
-
-.campaign-dialog__content::-webkit-scrollbar {
-  width: 6px;
-}
-
-.campaign-dialog__content::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.campaign-dialog__content::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
-}
-
-.campaign-dialog__loading {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem 1rem;
-  gap: 1rem;
-  color: var(--sidebar-text-muted);
-}
-
-.campaign-dialog__empty {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 3rem 1rem;
-  gap: 1rem;
-}
-
-.campaign-dialog__empty-icon {
-  width: 64px;
-  height: 64px;
-  border-radius: 12px;
-  background-color: var(--sidebar-hover);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--sidebar-text-muted);
-}
-
-.campaign-dialog__empty-text {
-  font-size: 0.875rem;
-  color: var(--sidebar-text-muted);
-  margin: 0;
-}
-
-.campaign-dialog__rewards {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.campaign-dialog__reward {
-  background-color: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 8px;
-  padding: 1rem;
-}
-
-.campaign-dialog__reward-header {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  margin-bottom: 0.75rem;
-  padding-bottom: 0.75rem;
-  border-bottom: 1px solid var(--sidebar-border);
-}
-
-.campaign-dialog__reward-user {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-weight: 600;
-  font-size: 0.875rem;
-  color: var(--sidebar-text);
-}
-
-.campaign-dialog__reward-date {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-}
-
-.campaign-dialog__reward-details {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.campaign-dialog__reward-tier {
-  font-size: 0.8125rem;
-  color: var(--sidebar-accent);
-  font-weight: 500;
-}
-
-.campaign-dialog__reward-items {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.campaign-dialog__reward-item {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.8125rem;
-  color: var(--sidebar-text);
-  padding: 0.5rem;
-  background-color: rgba(6, 182, 212, 0.05);
-  border-radius: 6px;
-}
-
-.campaign-dialog__alert {
-  display: flex;
-  align-items: flex-start;
-  gap: 0.75rem;
-  padding: 0.875rem;
-  border-radius: 8px;
-}
-
-.campaign-dialog__alert--error {
-  background-color: rgba(239, 68, 68, 0.1);
-  border: 1px solid rgba(239, 68, 68, 0.2);
-  color: #f87171;
-}
-
-.campaign-dialog__footer {
-  display: flex;
-  gap: 0.625rem;
-  padding: 1.25rem 1.5rem;
-  border-top: 1px solid var(--sidebar-border);
-}
-
-.campaign-dialog__btn {
-  flex: 1;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  font-size: 0.875rem;
-  font-weight: 600;
-  border-radius: 8px;
-  border: none;
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.campaign-dialog__btn--primary {
-  background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-  color: #000;
-}
-
-.campaign-dialog__btn--primary:hover {
-  opacity: 0.9;
-}
-
-.campaign-dialog__spinner {
-  animation: spin 0.8s linear infinite;
-}
-
-.modal-enter-active,
-.modal-leave-active {
-  transition: opacity 200ms ease;
-}
-
-.modal-enter-from,
-.modal-leave-to {
-  opacity: 0;
-}
-
-.dialog-enter-active {
-  transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.dialog-leave-active {
-  transition: all 150ms ease-in;
-}
-
-.dialog-enter-from {
-  opacity: 0;
-  transform: scale(0.96) translateY(8px);
-}
-
-.dialog-leave-to {
-  opacity: 0;
-  transform: scale(0.98);
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-</style>

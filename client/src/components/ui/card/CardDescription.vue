@@ -8,5 +8,5 @@
 </script>
 
 <template>
-  <p :class="cn('text-sm text-muted-foreground', props.class)"><slot /></p>
+  <p :class="cn('text-xs text-fg-muted', props.class)"><slot /></p>
 </template>

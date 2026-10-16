@@ -23,7 +23,7 @@ describe('AI Image Creator routing', () => {
     expect(routerSource).not.toContain("path: '/ai-thumbnail'");
   });
 
-  it('uses editor-style session chrome with Create Image / Thumbnail tabs', () => {
+  it('uses editor-style session chrome with Create image / thumbnail tabs', () => {
     const sessionSource = readFileSync(new URL('../pages/AIImageCreatorSession.vue', import.meta.url), 'utf8');
     const thumbSource = readFileSync(new URL('../pages/AIThumbnailGenerator.vue', import.meta.url), 'utf8');
     const headerSource = readFileSync(
@@ -37,8 +37,8 @@ describe('AI Image Creator routing', () => {
 
     expect(sessionSource).toContain('AIImageCreatorHeader');
     expect(thumbSource).toContain('AIImageCreatorHeader');
-    expect(headerSource).toContain('Create Image');
-    expect(headerSource).toContain('Create Thumbnail');
+    expect(headerSource).toContain('Create image');
+    expect(headerSource).toContain('Create thumbnail');
     expect(headerSource).toContain('Save workable file');
     expect(headerSource).toContain('Save locally');
     expect(toolsSource).toContain("router.push('/ai-image')");

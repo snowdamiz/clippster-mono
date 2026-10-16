@@ -30,25 +30,17 @@
           :style="caretStyle"
           aria-hidden="true"
         />
-        <div class="app-tour__tooltip-accent" />
-        <h3 class="app-tour__tooltip-title">{{ presentedStep.title }}</h3>
-        <p class="app-tour__tooltip-body">{{ presentedStep.body }}</p>
-        <div class="app-tour__tooltip-footer">
-          <span class="app-tour__tooltip-progress"
-            >{{ progress.current }} of {{ progress.total }}</span
-          >
-          <div class="app-tour__tooltip-actions">
-            <button type="button" class="app-tour__btn app-tour__btn--ghost" @click="skipTour">
-              Skip tour
-            </button>
-            <button
-              type="button"
-              class="app-tour__btn app-tour__btn--primary"
-              :disabled="isLayoutPending"
-              @click="nextStep"
-            >
+        <h3 class="text-[15px] font-semibold leading-6 tracking-[-0.01em] text-fg">{{ presentedStep.title }}</h3>
+        <p class="mt-1 text-sm text-fg-muted">{{ presentedStep.body }}</p>
+        <div class="mt-4 flex items-center justify-between gap-3">
+          <span class="tabular whitespace-nowrap text-xs text-fg-subtle">
+            {{ progress.current }} of {{ progress.total }}
+          </span>
+          <div class="flex items-center gap-1.5">
+            <Button variant="ghost" size="sm" @click="skipTour">Skip tour</Button>
+            <Button variant="primary" size="sm" :disabled="isLayoutPending" @click="nextStep">
               {{ progress.current >= progress.total ? 'Finish' : 'Next' }}
-            </button>
+            </Button>
           </div>
         </div>
       </div>
@@ -67,6 +59,7 @@
     type TourStep,
     type TooltipLayout,
   } from '@clippster/app-tour';
+  import { Button } from '@/components/ui/button';
   import { useAppTour } from '@/composables/useAppTour';
 
   const router = useRouter();
@@ -104,16 +97,28 @@
     }
     if (!tooltipLayout.value) return { visibility: 'hidden' as const };
     return {
-      top: `${tooltipLayout.value.top}px`,
+      top: `${tooltipLayout.value.top + titlebarShift.value}px`,
       left: `${tooltipLayout.value.left}px`,
     };
+  });
+
+  /**
+   * The shared layout only keeps a 12px viewport margin, so a tooltip next to
+   * a top sidebar item can slide under the window title bar. Nudge it down
+   * (and the caret up by the same amount, so it still points at the target).
+   */
+  const TITLEBAR_CLEARANCE = 44;
+  const titlebarShift = computed(() => {
+    const layout = tooltipLayout.value;
+    if (!layout || (layout.placement !== 'left' && layout.placement !== 'right')) return 0;
+    return Math.max(0, TITLEBAR_CLEARANCE - layout.top);
   });
 
   const caretStyle = computed(() => {
     const layout = tooltipLayout.value;
     if (!layout) return undefined;
     if (layout.placement === 'left' || layout.placement === 'right') {
-      return { top: `${layout.caretOffset}px` };
+      return { top: `${Math.max(12, layout.caretOffset - titlebarShift.value)}px` };
     }
     return { left: `${layout.caretOffset}px` };
   });
@@ -365,7 +370,7 @@
   .app-tour__backdrop {
     position: absolute;
     inset: 0;
-    background: rgba(0, 0, 0, 0.72);
+    background: var(--overlay);
     pointer-events: auto;
     z-index: 0;
   }
@@ -374,41 +379,28 @@
     background: transparent;
   }
 
+  /* The cutout: a transparent box whose huge spread shadow dims everything else. */
   .app-tour__spotlight {
     position: fixed;
     border-radius: 10px;
-    box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.72);
-    border: 2px solid rgba(14, 165, 233, 0.9);
+    border: 1.5px solid var(--brand);
+    box-shadow:
+      0 0 0 4px var(--brand-soft),
+      0 0 0 9999px var(--overlay);
     background: transparent;
     pointer-events: none;
     z-index: 1;
-    animation: app-tour-pulse 1.8s ease-in-out infinite;
-  }
-
-  @keyframes app-tour-pulse {
-    0%,
-    100% {
-      box-shadow:
-        0 0 0 9999px rgba(0, 0, 0, 0.72),
-        0 0 0 0 rgba(14, 165, 233, 0);
-    }
-    50% {
-      box-shadow:
-        0 0 0 9999px rgba(0, 0, 0, 0.72),
-        0 0 0 6px rgba(14, 165, 233, 0.28);
-    }
   }
 
   .app-tour__tooltip {
     position: fixed;
     z-index: 3;
     width: min(320px, calc(100vw - 24px));
-    background: #141416;
-    border: 1px solid #1f1f23;
-    border-radius: 10px;
-    padding: 1rem 1rem 0.85rem;
+    padding: 1rem 1rem 0.875rem;
+    border-radius: var(--radius-card);
+    background: var(--surface-raised);
+    box-shadow: var(--shadow-lg);
     pointer-events: auto;
-    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.45);
     transition: opacity 0.12s ease;
   }
 
@@ -425,8 +417,8 @@
     position: absolute;
     width: 10px;
     height: 10px;
-    background: #141416;
-    border: 1px solid #1f1f23;
+    background: var(--surface-raised);
+    border: 1px solid var(--line);
     transform: translate(-50%, -50%) rotate(45deg);
     pointer-events: none;
     z-index: 1;
@@ -454,93 +446,5 @@
     top: 100%;
     border-left: none;
     border-top: none;
-  }
-
-  .app-tour__tooltip-accent {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    border-radius: 10px 10px 0 0;
-    background: #0ea5e9;
-  }
-
-  .app-tour__tooltip-title {
-    margin: 0.25rem 0 0.4rem;
-    font-size: 0.7rem;
-    font-weight: 700;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-    color: #0ea5e9;
-  }
-
-  .app-tour__tooltip-body {
-    margin: 0;
-    font-size: 0.875rem;
-    line-height: 1.45;
-    color: #e4e4e7;
-  }
-
-  .app-tour__tooltip-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    margin-top: 0.9rem;
-  }
-
-  .app-tour__tooltip-progress {
-    font-size: 0.75rem;
-    color: #71717a;
-    white-space: nowrap;
-  }
-
-  .app-tour__tooltip-actions {
-    display: flex;
-    gap: 0.4rem;
-  }
-
-  .app-tour__btn {
-    border-radius: 8px;
-    font-size: 0.8rem;
-    font-weight: 600;
-    padding: 0.4rem 0.75rem;
-    cursor: pointer;
-    border: 1px solid transparent;
-  }
-
-  .app-tour__btn:disabled {
-    opacity: 0.5;
-    cursor: default;
-  }
-
-  .app-tour__btn--ghost {
-    background: transparent;
-    border-color: #3f3f46;
-    color: #a1a1aa;
-  }
-
-  .app-tour__btn--ghost:hover:not(:disabled) {
-    color: #fafafa;
-    border-color: #52525b;
-  }
-
-  .app-tour__btn--primary {
-    background: #0ea5e9;
-    color: #0a0a0b;
-    border-color: #0ea5e9;
-  }
-
-  .app-tour__btn--primary:hover:not(:disabled) {
-    background: #38bdf8;
-  }
-</style>
-
-<style>
-  .app-tour-target {
-    border-radius: 8px !important;
-    outline: 2px solid rgba(14, 165, 233, 0.95) !important;
-    outline-offset: 2px;
   }
 </style>

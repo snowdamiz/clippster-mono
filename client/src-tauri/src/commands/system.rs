@@ -1,8 +1,27 @@
 use once_cell::sync::Lazy;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
+// Background state the main window's close handler (lib.rs) checks before quitting.
 static CLIP_GENERATION_IN_PROGRESS: Lazy<Arc<Mutex<bool>>> =
     Lazy::new(|| Arc::new(Mutex::new(false)));
+static UNSAVED_CHANGES: AtomicBool = AtomicBool::new(false);
+static CLOSE_CONFIRMED: AtomicBool = AtomicBool::new(false);
+
+/// Whether clip generation is running (read by the window close handler).
+pub(crate) fn clip_generation_in_progress() -> bool {
+    *CLIP_GENERATION_IN_PROGRESS.lock().unwrap()
+}
+
+/// Whether a screen has unsaved edits (read by the window close handler).
+pub(crate) fn has_unsaved_changes() -> bool {
+    UNSAVED_CHANGES.load(Ordering::SeqCst)
+}
+
+/// Whether the user already confirmed quitting in the close dialog.
+pub(crate) fn close_confirmed() -> bool {
+    CLOSE_CONFIRMED.load(Ordering::SeqCst)
+}
 
 /// Greets the user with a personalized message
 ///
@@ -47,6 +66,20 @@ pub async fn set_clip_generation_in_progress(in_progress: bool) -> Result<(), St
     let mut clip_gen = CLIP_GENERATION_IN_PROGRESS.lock().unwrap();
     *clip_gen = in_progress;
     println!("[Rust] Clip generation in progress set to: {}", in_progress);
+    Ok(())
+}
+
+/// Marks whether a screen has unsaved edits, so closing the window asks first.
+#[tauri::command]
+pub async fn set_unsaved_changes(unsaved: bool) -> Result<(), String> {
+    UNSAVED_CHANGES.store(unsaved, Ordering::SeqCst);
+    Ok(())
+}
+
+/// The user confirmed quitting in the close dialog: the next close request goes through.
+#[tauri::command]
+pub async fn confirm_app_close() -> Result<(), String> {
+    CLOSE_CONFIRMED.store(true, Ordering::SeqCst);
     Ok(())
 }
 

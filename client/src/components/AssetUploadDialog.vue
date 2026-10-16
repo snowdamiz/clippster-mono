@@ -1,117 +1,80 @@
 <template>
-  <Teleport to="body">
-    <Transition name="asset-modal">
-      <div v-if="show" class="asset-modal__overlay" @click.self="handleClose">
-        <Transition name="asset-dialog" appear>
-          <div class="asset-modal">
-            <!-- Accent Bar -->
-            <div class="asset-modal__accent" />
+  <Modal
+    :open="show"
+    title="Upload asset"
+    :description="selectedFile ? 'Choose how this file will be used' : 'Intros, outros, watermarks, audio and images'"
+    :icon="Upload"
+    size="md"
+    :dismissible="!isUploading"
+    :hide-close="isUploading"
+    @close="handleClose"
+  >
+    <!-- File selection -->
+    <Dropzone
+      v-if="!selectedFile"
+      :icon="FolderOpen"
+      title="Choose a file"
+      hint="Video, image, or audio files"
+      @select="selectFile"
+    />
 
-            <!-- Header -->
-            <div class="asset-modal__header">
-              <button class="asset-modal__close" @click="handleClose" title="Close" :disabled="isUploading">
-                <X :size="18" />
-              </button>
-              <div class="asset-modal__icon">
-                <Upload :size="24" />
-              </div>
-              <h2 class="asset-modal__title">Upload Asset</h2>
-              <p class="asset-modal__subtitle">
-                {{ selectedFile ? 'Configure your asset' : 'Select a file to upload' }}
-              </p>
-            </div>
+    <div v-else class="flex animate-enter flex-col gap-4">
+      <!-- Selected file -->
+      <FileRow
+        :name="selectedFile.name"
+        :meta="`${fileExtension.toUpperCase()} file`"
+        :icon="getFileTypeIcon(fileExtension)"
+        @remove="clearSelectedFile"
+      />
 
-            <!-- Content -->
-            <div class="asset-content">
-              <!-- File Selection State -->
-              <div v-if="!selectedFile" class="asset-dropzone-wrapper">
-                <button @click="selectFile" class="asset-dropzone">
-                  <div class="asset-dropzone__inner">
-                    <FolderOpen class="asset-dropzone__icon" />
-                    <p class="asset-dropzone__title">Click to browse files</p>
-                    <p class="asset-dropzone__hint">Video, image, or audio files</p>
-                  </div>
-                </button>
-              </div>
+      <!-- Asset type -->
+      <Field label="Asset type">
+        <div class="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Asset type">
+          <button
+            v-for="option in assetTypeOptions"
+            :key="option.value"
+            type="button"
+            role="radio"
+            :aria-checked="selectedType === option.value"
+            class="flex items-center gap-2.5 rounded-lg border px-3 py-2.5 text-left transition-colors focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
+            :class="
+              selectedType === option.value
+                ? 'border-brand-line bg-brand-soft text-fg'
+                : 'border-line bg-surface text-fg-muted hover:border-line-strong hover:text-fg'
+            "
+            @click="selectedType = option.value"
+          >
+            <component
+              :is="option.icon"
+              class="size-4 shrink-0"
+              :class="selectedType === option.value ? 'text-brand' : 'text-fg-subtle'"
+            />
+            <span class="min-w-0 flex-1 truncate text-sm font-medium">{{ option.label }}</span>
+            <Badge v-if="option.recommended" variant="neutral">Suggested</Badge>
+          </button>
+        </div>
+      </Field>
 
-              <!-- File Selected State -->
-              <template v-else>
-                <!-- File Card -->
-                <div class="asset-file-card">
-                  <div class="asset-file-card__icon" :class="getFileTypeIconClass(fileExtension)">
-                    <component :is="getFileTypeIcon(fileExtension)" class="asset-file-card__icon-svg" />
-                  </div>
-                  <div class="asset-file-card__info">
-                    <p class="asset-file-card__name" :title="selectedFile.name">
-                      {{ selectedFile.name }}
-                    </p>
-                    <p class="asset-file-card__meta">{{ fileExtension.toUpperCase() }} file</p>
-                  </div>
-                  <button @click="clearSelectedFile" class="asset-file-card__clear" title="Remove file">
-                    <X class="asset-file-card__clear-icon" />
-                  </button>
-                </div>
+      <!-- Name -->
+      <Field label="Name" hint="Optional — defaults to the file name">
+        <Input v-model="customName" type="text" :placeholder="selectedFile.name" />
+      </Field>
+    </div>
 
-                <!-- Asset Type Selection -->
-                <div class="asset-field">
-                  <label class="asset-field__label">Asset Type</label>
-                  <div class="asset-type-grid">
-                    <button
-                      v-for="option in assetTypeOptions"
-                      :key="option.value"
-                      @click="selectedType = option.value"
-                      class="asset-type-option"
-                      :class="{
-                        'asset-type-option--selected': selectedType === option.value,
-                        [`asset-type-option--${option.color}`]: true,
-                      }"
-                    >
-                      <component :is="option.icon" class="asset-type-option__icon" />
-                      <span class="asset-type-option__label">{{ option.label }}</span>
-                      <span v-if="option.recommended" class="asset-type-option__badge">likely</span>
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Name Field -->
-                <div class="asset-field">
-                  <label class="asset-field__label">
-                    Name
-                    <span class="asset-field__hint">(optional)</span>
-                  </label>
-                  <input v-model="customName" type="text" :placeholder="selectedFile.name" class="asset-field__input" />
-                </div>
-              </template>
-            </div>
-
-            <!-- Footer -->
-            <div class="asset-modal__footer">
-              <button @click="handleClose" :disabled="isUploading" class="asset-btn asset-btn--secondary">
-                Cancel
-              </button>
-              <button
-                v-if="selectedFile"
-                @click="handleUpload"
-                :disabled="!selectedType || isUploading"
-                class="asset-btn asset-btn--primary"
-                :class="{
-                  'asset-btn--primary-cyan': selectedType === 'intro',
-                  'asset-btn--primary-violet': selectedType === 'outro',
-                  'asset-btn--primary-amber': selectedType === 'watermark',
-                  'asset-btn--primary-emerald': selectedType === 'audio',
-                  'asset-btn--primary-blue': selectedType === 'image',
-                }"
-              >
-                <Loader2 v-if="isUploading" :size="16" class="animate-spin" />
-                <Upload v-else :size="16" />
-                {{ isUploading ? 'Uploading...' : 'Upload Asset' }}
-              </button>
-            </div>
-          </div>
-        </Transition>
-      </div>
-    </Transition>
-  </Teleport>
+    <template #footer>
+      <Button variant="ghost" :disabled="isUploading" @click="handleClose">Cancel</Button>
+      <Button
+        v-if="selectedFile"
+        variant="primary"
+        :disabled="!selectedType || isUploading"
+        :loading="isUploading"
+        @click="handleUpload"
+      >
+        <Upload v-if="!isUploading" />
+        {{ isUploading ? 'Uploading…' : 'Upload asset' }}
+      </Button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
@@ -119,15 +82,20 @@
   import {
     Upload,
     Play,
-    Square,
+    Flag,
     Stamp,
     Loader2,
     Image as ImageIcon,
     Music,
-    X,
     FolderOpen,
     Film,
   } from 'lucide-vue-next';
+  import { Modal } from '@/components/ui/modal';
+  import { Button } from '@/components/ui/button';
+  import { Badge } from '@/components/ui/badge';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
+  import { Dropzone, FileRow } from '@/components/ui/dropzone';
   import { invoke } from '@tauri-apps/api/core';
   import { listen } from '@tauri-apps/api/event';
   import { createIntroOutro, createAudioAsset, createImageAsset } from '@/services/database';
@@ -158,7 +126,6 @@
     value: 'intro' | 'outro' | 'watermark' | 'audio' | 'image';
     label: string;
     icon: any;
-    color: string;
     recommended?: boolean;
   };
 
@@ -189,16 +156,16 @@
 
     if (videoExtensions.includes(ext)) {
       return [
-        { value: 'intro', label: 'Intro', icon: Play, color: 'cyan', recommended: true },
-        { value: 'outro', label: 'Outro', icon: Square, color: 'violet' },
+        { value: 'intro', label: 'Intro', icon: Play, recommended: true },
+        { value: 'outro', label: 'Outro', icon: Flag },
       ];
     } else if (imageExtensions.includes(ext)) {
       return [
-        { value: 'watermark', label: 'Watermark', icon: Stamp, color: 'amber', recommended: true },
-        { value: 'image', label: 'Sticker / Image', icon: ImageIcon, color: 'blue' },
+        { value: 'watermark', label: 'Watermark', icon: Stamp, recommended: true },
+        { value: 'image', label: 'Sticker / Image', icon: ImageIcon },
       ];
     } else if (audioExtensions.includes(ext)) {
-      return [{ value: 'audio', label: 'Audio', icon: Music, color: 'emerald', recommended: true }];
+      return [{ value: 'audio', label: 'Audio', icon: Music, recommended: true }];
     }
     return [];
   }
@@ -212,17 +179,6 @@
     if (imageExtensions.includes(ext)) return ImageIcon;
     if (audioExtensions.includes(ext)) return Music;
     return FolderOpen;
-  }
-
-  function getFileTypeIconClass(ext: string): string {
-    const videoExtensions = ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'];
-    const imageExtensions = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'tiff', 'tif'];
-    const audioExtensions = ['mp3', 'wav', 'aac', 'm4a', 'ogg', 'flac', 'wma'];
-
-    if (videoExtensions.includes(ext)) return 'asset-file-card__icon--video';
-    if (imageExtensions.includes(ext)) return 'asset-file-card__icon--image';
-    if (audioExtensions.includes(ext)) return 'asset-file-card__icon--audio';
-    return '';
   }
 
   async function selectFile() {
@@ -450,594 +406,3 @@
     success('Image uploaded', `"${assetName}" has been uploaded successfully`);
   }
 </script>
-
-<style scoped>
-  /* ===== Modal Overlay ===== */
-  .asset-modal__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(8px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-  }
-
-  /* ===== Modal Container ===== */
-  .asset-modal {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 16px;
-    width: 100%;
-    max-width: 440px;
-    margin: 1rem;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow:
-      0 0 0 1px rgba(255, 255, 255, 0.05),
-      0 24px 80px rgba(0, 0, 0, 0.5);
-  }
-
-  /* ===== Accent Bar ===== */
-  .asset-modal__accent {
-    height: 3px;
-    flex-shrink: 0;
-    background: linear-gradient(90deg, #06b6d4, #0ea5e9, #3b82f6);
-  }
-
-  /* ===== Header ===== */
-  .asset-modal__header {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1.75rem 1.5rem 1.25rem;
-    text-align: center;
-  }
-
-  .asset-modal__close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .asset-modal__close:hover:not(:disabled) {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .asset-modal__close:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .asset-modal__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 56px;
-    height: 56px;
-    border-radius: 14px;
-    margin-bottom: 1rem;
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.2), rgba(59, 130, 246, 0.2));
-    color: #06b6d4;
-    border: 1px solid rgba(6, 182, 212, 0.2);
-  }
-
-  .asset-modal__title {
-    font-size: 1.375rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.025em;
-  }
-
-  .asset-modal__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.375rem 0 0;
-  }
-
-  /* ===== Content Area ===== */
-  .asset-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0 1.25rem 1.25rem;
-  }
-
-  .asset-content::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .asset-content::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .asset-content::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
-  }
-
-  /* ===== Dropzone ===== */
-  .asset-dropzone-wrapper {
-    margin-bottom: 1rem;
-  }
-
-  .asset-dropzone {
-    width: 100%;
-    padding: 2.5rem 2rem;
-    border: 2px dashed var(--sidebar-border);
-    border-radius: 12px;
-    background: transparent;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .asset-dropzone:hover {
-    border-color: rgba(6, 182, 212, 0.5);
-    background-color: rgba(6, 182, 212, 0.05);
-  }
-
-  .asset-dropzone__inner {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .asset-dropzone__icon {
-    width: 32px;
-    height: 32px;
-    color: var(--sidebar-text-muted);
-    transition: color 150ms ease;
-  }
-
-  .asset-dropzone:hover .asset-dropzone__icon {
-    color: var(--sidebar-accent);
-  }
-
-  .asset-dropzone__title {
-    font-size: 0.9375rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .asset-dropzone__hint {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  /* ===== File Card ===== */
-  .asset-file-card {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.875rem 1rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 10px;
-    border: 1px solid var(--sidebar-border);
-    margin-bottom: 1.25rem;
-  }
-
-  .asset-file-card__icon {
-    width: 42px;
-    height: 42px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    background-color: var(--sidebar-surface);
-  }
-
-  .asset-file-card__icon--video {
-    background-color: rgba(6, 182, 212, 0.15);
-  }
-
-  .asset-file-card__icon--image {
-    background-color: rgba(245, 158, 11, 0.15);
-  }
-
-  .asset-file-card__icon--audio {
-    background-color: rgba(16, 185, 129, 0.15);
-  }
-
-  .asset-file-card__icon-svg {
-    width: 20px;
-    height: 20px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .asset-file-card__icon--video .asset-file-card__icon-svg {
-    color: #22d3ee;
-  }
-
-  .asset-file-card__icon--image .asset-file-card__icon-svg {
-    color: #fbbf24;
-  }
-
-  .asset-file-card__icon--audio .asset-file-card__icon-svg {
-    color: #34d399;
-  }
-
-  .asset-file-card__info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .asset-file-card__name {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    margin: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .asset-file-card__meta {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-  }
-
-  .asset-file-card__clear {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-    flex-shrink: 0;
-  }
-
-  .asset-file-card__clear:hover {
-    background-color: var(--sidebar-surface);
-    color: var(--sidebar-text);
-  }
-
-  .asset-file-card__clear-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  /* ===== Form Field ===== */
-  .asset-field {
-    margin-bottom: 1rem;
-  }
-
-  .asset-field__label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    margin-bottom: 0.5rem;
-  }
-
-  .asset-field__hint {
-    color: var(--sidebar-text-muted);
-    font-weight: 400;
-    font-size: 0.8125rem;
-  }
-
-  .asset-field__input {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .asset-field__input::placeholder {
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  .asset-field__input:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
-  }
-
-  /* ===== Asset Type Grid ===== */
-  .asset-type-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.5rem;
-  }
-
-  .asset-type-option {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.875rem;
-    border-radius: 10px;
-    border: 1.5px solid var(--sidebar-border);
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-    text-align: left;
-  }
-
-  .asset-type-option:hover {
-    border-color: rgba(255, 255, 255, 0.12);
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-text);
-  }
-
-  .asset-type-option--selected {
-    color: var(--sidebar-text);
-  }
-
-  .asset-type-option--selected.asset-type-option--cyan {
-    background-color: rgba(6, 182, 212, 0.12);
-    border-color: rgba(6, 182, 212, 0.4);
-  }
-
-  .asset-type-option--selected.asset-type-option--violet {
-    background-color: rgba(139, 92, 246, 0.12);
-    border-color: rgba(139, 92, 246, 0.4);
-  }
-
-  .asset-type-option--selected.asset-type-option--amber {
-    background-color: rgba(245, 158, 11, 0.12);
-    border-color: rgba(245, 158, 11, 0.4);
-  }
-
-  .asset-type-option--selected.asset-type-option--emerald {
-    background-color: rgba(16, 185, 129, 0.12);
-    border-color: rgba(16, 185, 129, 0.4);
-  }
-
-  .asset-type-option--selected.asset-type-option--blue {
-    background-color: rgba(59, 130, 246, 0.12);
-    border-color: rgba(59, 130, 246, 0.4);
-  }
-
-  .asset-type-option__icon {
-    width: 18px;
-    height: 18px;
-    flex-shrink: 0;
-    transition: color 150ms ease;
-  }
-
-  .asset-type-option--selected.asset-type-option--cyan .asset-type-option__icon {
-    color: #22d3ee;
-  }
-
-  .asset-type-option--selected.asset-type-option--violet .asset-type-option__icon {
-    color: #a78bfa;
-  }
-
-  .asset-type-option--selected.asset-type-option--amber .asset-type-option__icon {
-    color: #fbbf24;
-  }
-
-  .asset-type-option--selected.asset-type-option--emerald .asset-type-option__icon {
-    color: #34d399;
-  }
-
-  .asset-type-option--selected.asset-type-option--blue .asset-type-option__icon {
-    color: #60a5fa;
-  }
-
-  .asset-type-option__label {
-    font-size: 0.875rem;
-    font-weight: 500;
-  }
-
-  .asset-type-option--selected.asset-type-option--cyan .asset-type-option__label {
-    color: #22d3ee;
-  }
-
-  .asset-type-option--selected.asset-type-option--violet .asset-type-option__label {
-    color: #a78bfa;
-  }
-
-  .asset-type-option--selected.asset-type-option--amber .asset-type-option__label {
-    color: #fbbf24;
-  }
-
-  .asset-type-option--selected.asset-type-option--emerald .asset-type-option__label {
-    color: #34d399;
-  }
-
-  .asset-type-option--selected.asset-type-option--blue .asset-type-option__label {
-    color: #60a5fa;
-  }
-
-  .asset-type-option__badge {
-    margin-left: auto;
-    font-size: 0.625rem;
-    font-weight: 600;
-    padding: 0.125rem 0.375rem;
-    border-radius: 4px;
-    background-color: rgba(6, 182, 212, 0.2);
-    color: var(--sidebar-accent);
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-  }
-
-  /* ===== Footer ===== */
-  .asset-modal__footer {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.75rem;
-    padding: 1rem 1.25rem;
-    border-top: 1px solid var(--sidebar-border);
-    background-color: rgba(0, 0, 0, 0.15);
-  }
-
-  /* ===== Buttons ===== */
-  .asset-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1.25rem;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-    border: none;
-  }
-
-  .asset-btn--secondary {
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    color: var(--sidebar-text-muted);
-  }
-
-  .asset-btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-text);
-  }
-
-  .asset-btn--primary {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    min-width: 140px;
-  }
-
-  .asset-btn--primary:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .asset-btn--primary-cyan {
-    background: linear-gradient(135deg, #06b6d4, #0891b2);
-    color: white;
-    box-shadow: 0 2px 8px rgba(6, 182, 212, 0.25);
-  }
-
-  .asset-btn--primary-cyan:hover:not(:disabled) {
-    background: linear-gradient(135deg, #22d3ee, #06b6d4);
-    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.35);
-    transform: translateY(-1px);
-  }
-
-  .asset-btn--primary-violet {
-    background: linear-gradient(135deg, #8b5cf6, #7c3aed);
-    color: white;
-    box-shadow: 0 2px 8px rgba(139, 92, 246, 0.25);
-  }
-
-  .asset-btn--primary-violet:hover:not(:disabled) {
-    background: linear-gradient(135deg, #a78bfa, #8b5cf6);
-    box-shadow: 0 4px 12px rgba(139, 92, 246, 0.35);
-    transform: translateY(-1px);
-  }
-
-  .asset-btn--primary-amber {
-    background: linear-gradient(135deg, #f59e0b, #d97706);
-    color: white;
-    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.25);
-  }
-
-  .asset-btn--primary-amber:hover:not(:disabled) {
-    background: linear-gradient(135deg, #fbbf24, #f59e0b);
-    box-shadow: 0 4px 12px rgba(245, 158, 11, 0.35);
-    transform: translateY(-1px);
-  }
-
-  .asset-btn--primary-emerald {
-    background: linear-gradient(135deg, #10b981, #059669);
-    color: white;
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.25);
-  }
-
-  .asset-btn--primary-emerald:hover:not(:disabled) {
-    background: linear-gradient(135deg, #34d399, #10b981);
-    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.35);
-    transform: translateY(-1px);
-  }
-
-  .asset-btn--primary-blue {
-    background: linear-gradient(135deg, #3b82f6, #2563eb);
-    color: white;
-    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.25);
-  }
-
-  .asset-btn--primary-blue:hover:not(:disabled) {
-    background: linear-gradient(135deg, #60a5fa, #3b82f6);
-    box-shadow: 0 4px 12px rgba(59, 130, 246, 0.35);
-    transform: translateY(-1px);
-  }
-
-  .asset-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* ===== Modal Animations ===== */
-  .asset-modal-enter-active,
-  .asset-modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .asset-modal-enter-from,
-  .asset-modal-leave-to {
-    opacity: 0;
-  }
-
-  .asset-dialog-enter-active {
-    transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .asset-dialog-leave-active {
-    transition: all 150ms ease-in;
-  }
-
-  .asset-dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
-  }
-
-  .asset-dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.97);
-  }
-
-  /* ===== Utility Classes ===== */
-  .animate-spin {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-</style>

@@ -1,5 +1,5 @@
 <template>
-  <div class="campaign-detail">
+  <div class="h-full w-full">
     <PageLayout
       :title="campaign?.title || 'Campaign'"
       :description="campaign?.description || 'Campaign details and management'"
@@ -11,445 +11,369 @@
         <OrganizationBreadcrumb />
       </template>
       <template #actions>
-        <button v-if="campaign && isAdmin" class="edit-btn" @click="editCampaign">
-          <Pencil class="edit-btn__icon" />
-          Edit Campaign
-        </button>
+        <Button v-if="campaign && isAdmin" variant="secondary" size="sm" @click="editCampaign">
+          <Pencil />
+          Edit campaign
+        </Button>
+      </template>
+      <template v-if="campaign" #toolbar>
+        <SegmentedControl v-model="activeTab" :options="tabOptions" size="sm" />
       </template>
 
-      <!-- Loading State -->
-      <div v-if="loading" class="campaign-detail__loading">
-        <div class="skeleton-header"></div>
-        <div class="skeleton-tabs"></div>
-        <div class="skeleton-content"></div>
-      </div>
+      <div class="flex flex-1 flex-col px-5 py-4">
+        <!-- Loading -->
+        <div v-if="loading && !campaign" class="flex flex-col gap-4" aria-busy="true">
+          <div class="flex items-start gap-4 border-b border-line-subtle pb-4">
+            <div class="skeleton size-11 shrink-0 rounded-[10px]" />
+            <div class="flex flex-1 flex-col gap-2 pt-0.5">
+              <div class="skeleton h-4 w-1/3" />
+              <div class="skeleton h-3 w-1/4" />
+              <div class="skeleton h-3.5 w-1/2" />
+            </div>
+          </div>
+          <div class="@container">
+            <div class="grid grid-cols-1 items-start gap-4 @3xl:grid-cols-[minmax(0,1fr)_17rem]">
+              <div class="skeleton h-28 rounded-[var(--radius-card)]" />
+              <div class="skeleton h-56 rounded-[var(--radius-card)]" />
+            </div>
+          </div>
+        </div>
 
-      <!-- Campaign Content -->
-      <div v-else-if="campaign" class="profile-page">
-        <div class="org-profile org-profile--settings">
-          <div class="org-hero">
-            <div class="org-hero__banner"></div>
-            <div class="org-hero__content">
-              <div class="org-hero__avatar">
-                <img
-                  v-if="campaign.cover_image_url"
-                  :src="campaign.cover_image_url"
-                  class="org-hero__avatar-img"
-                />
-                <Megaphone v-else class="org-hero__avatar-fallback" />
-              </div>
-              <div class="org-hero__info">
-                <div class="profile-name-row">
-                  <h1 class="org-hero__name">{{ campaign.title }}</h1>
-                  <div class="profile-badges">
-                    <span class="status-badge" :class="`status-badge--${campaign.status}`">
-                      {{ campaign.status.toUpperCase() }}
-                    </span>
-                    <span v-if="campaign.payment_model === 'per_clip'" class="status-badge status-badge--per-clip">
-                      <DollarSign :size="12" />
-                      Per Clip
-                    </span>
-                    <span v-else class="status-badge status-badge--cpm">
-                      <TrendingUp :size="12" />
-                      CPM
-                    </span>
-                  </div>
-                </div>
-                <div class="profile-meta-row">
-                  <router-link
-                    v-if="campaign.organization"
-                    :to="campaign.organization.slug ? `/orgs/${campaign.organization.slug}` : '#'"
-                    class="profile-visibility"
+        <!-- Campaign -->
+        <div v-else-if="campaign" class="flex animate-enter flex-col gap-4">
+          <!-- Header: on the panel, hairline below -->
+          <ProfileHeader
+            :name="campaign.title"
+            :avatar="campaign.cover_image_url"
+            :avatar-icon="Megaphone"
+            shape="square"
+            :subtitle="campaign.description || 'No description provided'"
+            class="border-b border-line-subtle pb-4"
+          >
+            <template #badges>
+              <Badge :variant="statusVariant(campaign.status)">{{ humanize(campaign.status) }}</Badge>
+              <Badge>
+                <DollarSign v-if="campaign.payment_model === 'per_clip'" />
+                <TrendingUp v-else />
+                {{ campaign.payment_model === 'per_clip' ? 'Per clip' : 'CPM' }}
+              </Badge>
+            </template>
+            <template #meta>
+              <router-link
+                v-if="campaign.organization"
+                :to="campaign.organization.slug ? `/orgs/${campaign.organization.slug}` : '#'"
+                class="flex items-center gap-1.5 transition-colors hover:text-fg"
+              >
+                <Building2 class="size-3.5 text-fg-subtle" />
+                {{ campaign.organization.name }}
+              </router-link>
+              <span v-if="campaign.starts_at" class="flex items-center gap-1.5">
+                <Calendar class="size-3.5 text-fg-subtle" />
+                {{ formatDate(campaign.starts_at) }} – {{ campaign.ends_at ? formatDate(campaign.ends_at) : 'Ongoing' }}
+              </span>
+              <span v-for="platform in campaign.allowed_platforms" :key="platform" class="flex items-center gap-1.5">
+                <PlatformLogo :platform="platform" size="xs" />
+                {{ getPlatformDisplayName(platform) }}
+              </span>
+            </template>
+            <template #aside>
+              <StatGrid size="sm" :items="headerStats" class="w-full max-w-[360px] shrink-0 self-center" />
+            </template>
+          </ProfileHeader>
+
+          <div class="@container">
+            <div class="grid grid-cols-1 items-start gap-4 @3xl:grid-cols-[minmax(0,1fr)_17rem]">
+              <!-- Main column: the active tab, keyed so each switch eases in -->
+              <div :key="activeTab" class="flex min-w-0 animate-enter flex-col gap-4">
+                <!-- Overview -->
+                <SectionCard
+                  v-if="activeTab === 'overview'"
+                  title="Streamers to clip"
+                  description="Which streamers qualify for this campaign"
+                  :icon="Globe"
+                >
+                  <div
+                    v-if="!campaign.creator_profile_id && (!campaign.assigned_streamer_ids || campaign.assigned_streamer_ids.length === 0)"
+                    class="flex items-start gap-3"
                   >
-                    <Building2 :size="14" />
-                    {{ campaign.organization.name }}
-                  </router-link>
-                  <span v-if="campaign.starts_at" class="profile-last-active">
-                    <Calendar :size="14" />
-                    {{ formatDate(campaign.starts_at) }} - {{ campaign.ends_at ? formatDate(campaign.ends_at) : 'Ongoing' }}
-                  </span>
-                </div>
-                <p class="org-hero__tagline" :class="{ 'profile-bio--empty': !campaign.description }">
-                  {{ campaign.description || 'No description provided' }}
-                </p>
-                <div v-if="campaign.allowed_platforms?.length" class="org-hero__tags">
-                  <span v-for="platform in campaign.allowed_platforms" :key="platform" class="org-hero__tag">
-                    {{ getPlatformDisplayName(platform) }}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <div class="org-stats-grid org-stats-grid--settings">
-            <div class="org-stat-card">
-              <div class="org-stat-card__icon org-stat-card__icon--violet">
-                <Users :size="18" />
-              </div>
-              <div class="org-stat-card__content">
-                <span class="org-stat-card__value">{{ stats.participants_count || 0 }}</span>
-                <span class="org-stat-card__label">Participants</span>
-              </div>
-            </div>
-            <div class="org-stat-card">
-              <div class="org-stat-card__icon org-stat-card__icon--cyan">
-                <FileVideo :size="18" />
-              </div>
-              <div class="org-stat-card__content">
-                <span class="org-stat-card__value">{{ stats.submissions_count || 0 }}</span>
-                <span class="org-stat-card__label">Submissions</span>
-              </div>
-            </div>
-            <div class="org-stat-card">
-              <div class="org-stat-card__icon org-stat-card__icon--green">
-                <CheckCircle :size="18" />
-              </div>
-              <div class="org-stat-card__content">
-                <span class="org-stat-card__value">{{ stats.verified_count || 0 }}</span>
-                <span class="org-stat-card__label">Verified</span>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Budget Progress Card -->
-        <div class="ranking-card">
-          <div class="ranking-row">
-            <div class="ranking-row__header-icon">
-              <Wallet />
-            </div>
-            <div class="ranking-row__header-text">
-              <h2 class="ranking-row__title">Budget Usage</h2>
-              <p class="ranking-row__subtitle">${{ formatBudget(campaign.spent_budget || 0) }} of ${{ formatBudget(campaign.budget) }} spent</p>
-            </div>
-            <div class="ranking-row__stats">
-              <div class="rank-stat rank-stat--primary">
-                <span class="rank-stat__value">{{ getBudgetPercentage().toFixed(0) }}%</span>
-                <span class="rank-stat__label">Used</span>
-              </div>
-              <div class="rank-stat">
-                <span class="rank-stat__value">${{ formatBudget(getRemainingBudget()) }}</span>
-                <span class="rank-stat__label">Remaining</span>
-              </div>
-            </div>
-          </div>
-          <div class="budget-progress">
-            <div
-              class="budget-progress__fill"
-              :style="{ width: getBudgetPercentage() + '%' }"
-              :class="{
-                'budget-progress__fill--low': getBudgetPercentage() < 50,
-                'budget-progress__fill--medium': getBudgetPercentage() >= 50 && getBudgetPercentage() < 80,
-                'budget-progress__fill--high': getBudgetPercentage() >= 80,
-              }"
-            ></div>
-          </div>
-        </div>
-
-        <!-- Enhanced Tab Navigation -->
-        <nav class="tabs-nav">
-          <div class="tabs-container">
-            <button
-              v-for="tab in tabs"
-              :key="tab.id"
-              class="tab-button"
-              :class="{ 'tab-button--active': activeTab === tab.id }"
-              @click="activeTab = tab.id"
-            >
-              <div class="tab-button__icon">
-                <component :is="tab.icon" />
-              </div>
-              <span class="tab-button__label">{{ tab.label }}</span>
-            </button>
-          </div>
-        </nav>
-
-        <!-- Content -->
-        <main class="content">
-          <!-- Overview Tab -->
-          <template v-if="activeTab === 'overview'">
-            <section class="section">
-              <div class="section__header">
-                <div class="section__header-icon section__header-icon--purple">
-                  <DollarSign />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section-title">Campaign Details</h2>
-                  <p class="section-subtitle">Payment terms and eligibility requirements</p>
-                </div>
-              </div>
-              <div class="details-grid">
-                <div class="detail-item">
-                  <span class="detail-label">Payment Model</span>
-                  <span class="detail-value">{{ campaign.payment_model === 'per_clip' ? 'Pay Per Clip' : 'CPM (Cost Per Mille)' }}</span>
-                </div>
-                <div class="detail-item">
-                  <span class="detail-label">{{ campaign.payment_model === 'per_clip' ? 'Amount Per Clip' : 'CPM Rate' }}</span>
-                  <span class="detail-value">${{ campaign.payment_model === 'per_clip' ? formatBudget(campaign.per_clip_amount || 0) : formatCpm(campaign.cpm) }}</span>
-                </div>
-                <div class="detail-item">
-                  <span class="detail-label">Min Views for Payment</span>
-                  <span class="detail-value">{{ formatViews(campaign.min_views_for_payment) }}</span>
-                </div>
-                <div v-if="campaign.max_views" class="detail-item">
-                  <span class="detail-label">Max Views Cap</span>
-                  <span class="detail-value">{{ formatViews(campaign.max_views) }}</span>
-                </div>
-                <div class="detail-item">
-                  <span class="detail-label">Join Type</span>
-                  <span class="detail-value">{{ campaign.join_type === 'open' ? 'Open to All' : 'Application Required' }}</span>
-                </div>
-              </div>
-            </section>
-
-            <section class="section">
-              <div class="section__header">
-                <div class="section__header-icon section__header-icon--cyan">
-                  <Globe />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section-title">Streamers to Clip</h2>
-                  <p class="section-subtitle">Which streamers qualify for this campaign</p>
-                </div>
-              </div>
-              <div v-if="!campaign.creator_profile_id && (!campaign.assigned_streamer_ids || campaign.assigned_streamer_ids.length === 0)" class="global-branding-notice">
-                <div class="global-branding-notice__icon">
-                  <Globe :size="24" />
-                </div>
-                <div class="global-branding-notice__content">
-                  <h3 class="global-branding-notice__title">Any Streamers Qualify</h3>
-                  <p class="global-branding-notice__description">
-                    This campaign uses global branding. Clippers can create clips from any streamer, and the organization's branding will be applied automatically.
+                    <IconTile :icon="Globe" tone="brand" size="md" />
+                    <div class="min-w-0">
+                      <p class="text-sm font-medium text-fg">Any streamer qualifies</p>
+                      <p class="mt-0.5 text-xs text-fg-muted">
+                        This campaign uses global branding. Clippers can create clips from any streamer, and the
+                        organization's branding will be applied automatically.
+                      </p>
+                    </div>
+                  </div>
+                  <div v-else-if="campaign.creator_profile_id" class="flex items-center gap-3">
+                    <Avatar
+                      :src="campaign.creator_profile?.profile_image_url"
+                      :name="campaign.creator_profile?.name"
+                      :icon="UserCircle"
+                      size="md"
+                    />
+                    <div class="min-w-0">
+                      <p class="truncate text-sm font-medium text-fg">
+                        {{ campaign.creator_profile?.name || 'Creator profile assigned' }}
+                      </p>
+                      <p class="text-xs text-fg-muted">This campaign is assigned to a specific creator profile</p>
+                    </div>
+                  </div>
+                  <p v-else class="text-sm text-fg-muted">
+                    Clippers can only create clips from the
+                    <span class="font-medium text-fg">{{ campaign.assigned_streamer_ids.length }} streamer(s)</span>
+                    assigned to this campaign.
                   </p>
-                </div>
-              </div>
-              <div v-else-if="campaign.creator_profile_id" class="creator-profile-info">
-                <p class="creator-profile-info__lead">This campaign is assigned to a specific creator profile:</p>
-                <div v-if="campaign.creator_profile" class="creator-profile-card">
-                  <img
-                    v-if="campaign.creator_profile.profile_image_url"
-                    :src="campaign.creator_profile.profile_image_url"
-                    class="creator-profile-card__avatar"
+                </SectionCard>
+
+                <!-- Submissions -->
+                <SectionCard
+                  v-else-if="activeTab === 'submissions'"
+                  title="Submissions"
+                  :count="loadingSubmissions && !submissions.length ? undefined : submissions.length"
+                  :icon="FileVideo"
+                  flush
+                >
+                  <div v-if="loadingSubmissions && !submissions.length" class="skeleton-group divide-y divide-line-subtle">
+                    <div v-for="i in 3" :key="i" class="flex items-center gap-3 px-4 py-2.5">
+                      <div class="skeleton size-9 rounded-full" />
+                      <div class="flex flex-1 flex-col gap-1.5">
+                        <div class="skeleton h-3.5 w-32" />
+                        <div class="skeleton h-3 w-20" />
+                      </div>
+                    </div>
+                  </div>
+                  <EmptyState
+                    v-else-if="submissions.length === 0"
+                    size="sm"
+                    :icon="FileVideo"
+                    title="No submissions yet"
+                    description="Submissions will appear here once participants publish content."
                   />
-                  <div>
-                    <div class="creator-profile-card__name">{{ campaign.creator_profile.name }}</div>
-                    <div class="creator-profile-card__meta">Creator Profile</div>
-                  </div>
-                </div>
-                <div v-else class="creator-profile-card creator-profile-card--empty">
-                  Creator profile assigned
-                </div>
-              </div>
-              <div v-else class="streamers-list">
-                <p class="streamers-list__description">Clippers can only create clips from the following streamers:</p>
-                <div class="streamers-list__placeholder">
-                  {{ campaign.assigned_streamer_ids.length }} streamer(s) assigned
-                </div>
-              </div>
-            </section>
-          </template>
+                  <ul v-else class="animate-fade-in divide-y divide-line-subtle">
+                    <li v-for="submission in submissions" :key="submission.id" class="flex items-center gap-3 px-4 py-2.5">
+                      <Avatar :src="submission.user?.avatar_url" :name="submission.user?.username" size="md" />
+                      <div class="min-w-0 flex-1">
+                        <div class="flex min-w-0 items-center gap-2">
+                          <p class="truncate text-sm font-medium text-fg">{{ submission.user?.username || 'Unknown user' }}</p>
+                          <Badge :variant="statusVariant(submission.status)">{{ humanize(submission.status) }}</Badge>
+                        </div>
+                        <p class="tabular mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-fg-muted">
+                          <span class="flex items-center gap-1.5">
+                            <PlatformLogo :platform="submission.platform" size="xs" />
+                            {{ getPlatformDisplayName(submission.platform) }}
+                          </span>
+                          <span>{{ formatDate(submission.inserted_at) }}</span>
+                          <span class="flex items-center gap-1" title="Views">
+                            <Eye class="size-3.5 text-fg-subtle" />{{ formatCompact(submission.view_count || 0) }}
+                          </span>
+                          <span class="flex items-center gap-1" title="Likes">
+                            <Heart class="size-3.5 text-fg-subtle" />{{ formatCompact(submission.like_count || 0) }}
+                          </span>
+                          <span class="flex items-center gap-1" title="Comments">
+                            <MessageCircle class="size-3.5 text-fg-subtle" />{{ formatCompact(submission.comment_count || 0) }}
+                          </span>
+                          <span class="flex items-center gap-1" title="Shares">
+                            <Share2 class="size-3.5 text-fg-subtle" />{{ formatCompact(submission.share_count || 0) }}
+                          </span>
+                        </p>
+                      </div>
+                      <a
+                        v-if="submission.clip_url"
+                        :href="submission.clip_url"
+                        target="_blank"
+                        :class="buttonVariants({ variant: 'secondary', size: 'xs', class: 'shrink-0' })"
+                      >
+                        <ExternalLink />
+                        View post
+                      </a>
+                      <span v-else class="shrink-0 text-xs text-fg-subtle">URL pending…</span>
+                    </li>
+                  </ul>
+                </SectionCard>
 
-          <!-- Submissions Tab -->
-          <template v-if="activeTab === 'submissions'">
-            <div v-if="loadingSubmissions" class="loading-state">
-              <div class="spinner"></div>
-              <p>Loading submissions...</p>
-            </div>
-            <div v-else-if="submissions.length === 0" class="empty-state">
-              <FileVideo :size="48" />
-              <p>No submissions yet</p>
-              <span class="empty-state__hint">Submissions will appear here once participants publish content</span>
-            </div>
-            <div v-else class="submissions-list">
-              <div v-for="submission in submissions" :key="submission.id" class="submission-card">
-                <div class="submission-card__header">
-                  <div class="submission-card__user">
-                    <div class="submission-card__avatar">
-                      <img v-if="submission.user?.avatar_url" :src="submission.user.avatar_url" alt="" />
-                      <Users v-else :size="16" />
-                    </div>
-                    <div class="submission-card__user-info">
-                      <span class="submission-card__username">{{ submission.user?.username || 'Unknown User' }}</span>
-                      <span class="submission-card__platform">{{ getPlatformDisplayName(submission.platform) }}</span>
+                <!-- Participants -->
+                <SectionCard
+                  v-else-if="activeTab === 'participants'"
+                  title="Participants"
+                  :count="loadingParticipants && !participants.length ? undefined : participants.length"
+                  :icon="Users"
+                  flush
+                >
+                  <div v-if="loadingParticipants && !participants.length" class="skeleton-group divide-y divide-line-subtle">
+                    <div v-for="i in 3" :key="i" class="flex items-center gap-3 px-4 py-2.5">
+                      <div class="skeleton size-9 rounded-full" />
+                      <div class="flex flex-1 flex-col gap-1.5">
+                        <div class="skeleton h-3.5 w-32" />
+                        <div class="skeleton h-3 w-40" />
+                      </div>
                     </div>
                   </div>
-                  <span class="submission-card__status" :class="`submission-card__status--${submission.status}`">
-                    {{ submission.status }}
-                  </span>
-                </div>
-                <div v-if="submission.clip_url" class="submission-card__content">
-                  <a :href="submission.clip_url" target="_blank" class="submission-card__link">
-                    <ExternalLink :size="14" />
-                    View Post
-                  </a>
-                </div>
-                <div v-else class="submission-card__content">
-                  <span class="submission-card__pending">URL pending...</span>
-                </div>
-                <div class="submission-card__stats">
-                  <div class="submission-stat">
-                    <Eye :size="14" />
-                    <span>{{ formatNumber(submission.view_count || 0) }}</span>
-                  </div>
-                  <div class="submission-stat">
-                    <Heart :size="14" />
-                    <span>{{ formatNumber(submission.like_count || 0) }}</span>
-                  </div>
-                  <div class="submission-stat">
-                    <MessageCircle :size="14" />
-                    <span>{{ formatNumber(submission.comment_count || 0) }}</span>
-                  </div>
-                  <div class="submission-stat">
-                    <Share2 :size="14" />
-                    <span>{{ formatNumber(submission.share_count || 0) }}</span>
-                  </div>
-                </div>
-                <div class="submission-card__footer">
-                  <span class="submission-card__date">{{ formatDate(submission.inserted_at) }}</span>
-                </div>
-              </div>
-            </div>
-          </template>
-
-          <!-- Participants Tab -->
-          <template v-if="activeTab === 'participants'">
-            <div v-if="loadingParticipants" class="loading-state">
-              <div class="spinner"></div>
-              <p>Loading participants...</p>
-            </div>
-            <div v-else-if="participants.length === 0" class="empty-state">
-              <Users :size="48" />
-              <p>No participants yet</p>
-              <span class="empty-state__hint">Users who apply to this campaign will appear here</span>
-            </div>
-            <div v-else class="participants-list">
-              <div v-for="participant in participants" :key="participant.id" class="participant-card">
-                <div class="participant-card__header">
-                  <div class="participant-card__user">
-                    <div class="participant-card__avatar">
-                      <img 
-                        v-if="participant.clipper_profile?.avatar_url" 
-                        :src="participant.clipper_profile.avatar_url" 
-                        alt=""
-                        @error="(e) => { const img = e.target as HTMLImageElement; if (img) img.style.display = 'none'; }"
+                  <EmptyState
+                    v-else-if="participants.length === 0"
+                    size="sm"
+                    :icon="Users"
+                    title="No participants yet"
+                    description="Users who apply to this campaign will appear here."
+                  />
+                  <ul v-else class="animate-fade-in divide-y divide-line-subtle">
+                    <li v-for="participant in participants" :key="participant.id" class="flex items-center gap-3 px-4 py-2.5">
+                      <Avatar
+                        :src="participant.clipper_profile?.avatar_url"
+                        :name="participant.clipper_profile?.display_name || participant.user?.display_name || participant.user?.email"
+                        size="md"
                       />
-                      <Users :size="20" />
-                    </div>
-                    <div class="participant-card__user-info">
-                      <span class="participant-card__username">{{ participant.clipper_profile?.display_name || participant.user?.display_name || participant.user?.email || 'Unknown User' }}</span>
-                      <span class="participant-card__email">{{ participant.user?.email }}</span>
-                    </div>
-                  </div>
-                  <span class="participant-card__status" :class="`participant-card__status--${participant.status}`">
-                    {{ participant.status }}
-                  </span>
-                </div>
-                <div v-if="participant.clipper_profile" class="participant-card__profile">
-                  <div class="participant-card__stat">
-                    <FileVideo :size="14" />
-                    <span>{{ participant.clipper_profile.total_clips_delivered || 0 }} clips</span>
-                  </div>
-                  <div class="participant-card__stat">
-                    <Eye :size="14" />
-                    <span>{{ formatNumber(participant.clipper_profile.total_campaigns_completed || 0) }} campaigns</span>
-                  </div>
-                </div>
-                <div class="participant-card__footer">
-                  <span class="participant-card__date">Applied {{ formatDate(participant.inserted_at) }}</span>
-                  <div v-if="isAdmin && participant.status === 'pending'" class="participant-card__actions">
-                    <button class="participant-action-btn participant-action-btn--approve" @click="approveParticipant(participant.id)">
-                      <CheckCircle :size="14" />
-                      Approve
-                    </button>
-                    <button class="participant-action-btn participant-action-btn--reject" @click="rejectParticipant(participant.id)">
-                      <XCircle :size="14" />
-                      Reject
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-
-          <!-- Payments Tab -->
-          <template v-if="activeTab === 'payments'">
-            <div v-if="loadingPayments" class="loading-state">
-              <div class="spinner"></div>
-              <p>Loading payments...</p>
-            </div>
-            <div v-else-if="payments.length === 0" class="empty-state">
-              <DollarSign :size="48" />
-              <p>No payments yet</p>
-              <span class="empty-state__hint">Payments for verified submissions will appear here</span>
-            </div>
-            <div v-else>
-              <div class="payments-header">
-                <button v-if="isAdmin" class="calculate-payments-btn" @click="calculatePayments">
-                  <Calculator :size="16" />
-                  Calculate Payments
-                </button>
-              </div>
-              <div class="payments-list">
-                <div v-for="payment in payments" :key="payment.id" class="payment-card">
-                  <div class="payment-card__header">
-                    <div class="payment-card__user">
-                      <div class="payment-card__avatar">
-                        <img v-if="payment.user?.avatar_url" :src="payment.user.avatar_url" alt="" />
-                        <Users v-else :size="16" />
+                      <div class="min-w-0 flex-1">
+                        <div class="flex min-w-0 items-center gap-2">
+                          <p class="truncate text-sm font-medium text-fg">
+                            {{
+                              participant.clipper_profile?.display_name ||
+                              participant.user?.display_name ||
+                              participant.user?.email ||
+                              'Unknown user'
+                            }}
+                          </p>
+                          <Badge :variant="statusVariant(participant.status)">{{ humanize(participant.status) }}</Badge>
+                        </div>
+                        <p class="tabular mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-fg-muted">
+                          <span v-if="participant.user?.email" class="truncate">{{ participant.user.email }}</span>
+                          <template v-if="participant.clipper_profile">
+                            <span class="flex items-center gap-1">
+                              <FileVideo class="size-3.5 text-fg-subtle" />
+                              {{ participant.clipper_profile.total_clips_delivered || 0 }} clips
+                            </span>
+                            <span class="flex items-center gap-1">
+                              <Megaphone class="size-3.5 text-fg-subtle" />
+                              {{ formatCompact(participant.clipper_profile.total_campaigns_completed || 0) }} campaigns
+                            </span>
+                          </template>
+                          <span>Applied {{ formatDate(participant.inserted_at) }}</span>
+                        </p>
                       </div>
-                      <div class="payment-card__user-info">
-                        <span class="payment-card__username">{{ payment.user?.username || payment.user?.email || 'Unknown User' }}</span>
-                        <span class="payment-card__submission">Submission #{{ payment.submission_id }}</span>
+                      <div v-if="isAdmin && participant.status === 'pending'" class="flex shrink-0 items-center gap-1.5">
+                        <Button variant="secondary" size="xs" @click="approveParticipant(participant.id)">
+                          <CheckCircle />
+                          Approve
+                        </Button>
+                        <Button variant="destructive-soft" size="xs" @click="rejectParticipant(participant.id)">
+                          <XCircle />
+                          Reject
+                        </Button>
                       </div>
-                    </div>
-                    <div class="payment-card__amount">
-                      <span class="payment-card__amount-value">${{ parseFloat(payment.amount).toFixed(2) }}</span>
-                      <span class="payment-card__status" :class="`payment-card__status--${payment.status}`">
-                        {{ payment.status }}
-                      </span>
-                    </div>
-                  </div>
-                  <div class="payment-card__details">
-                    <div class="payment-detail">
-                      <span class="payment-detail__label">Views</span>
-                      <span class="payment-detail__value">{{ formatNumber(payment.views || 0) }}</span>
-                    </div>
-                    <div class="payment-detail">
-                      <span class="payment-detail__label">Rate</span>
-                      <span class="payment-detail__value">${{ parseFloat(payment.rate || 0).toFixed(2) }}</span>
-                    </div>
-                    <div v-if="payment.paid_at" class="payment-detail">
-                      <span class="payment-detail__label">Paid</span>
-                      <span class="payment-detail__value">{{ formatDate(payment.paid_at) }}</span>
-                    </div>
-                  </div>
-                  <div v-if="payment.transaction_hash" class="payment-card__transaction">
-                    <a :href="`https://solscan.io/tx/${payment.transaction_hash}`" target="_blank" class="payment-card__tx-link">
-                      <ExternalLink :size="12" />
-                      {{ payment.transaction_hash.substring(0, 8) }}...{{ payment.transaction_hash.substring(payment.transaction_hash.length - 8) }}
-                    </a>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </template>
-        </main>
-      </div>
+                    </li>
+                  </ul>
+                </SectionCard>
 
-      <!-- Error State -->
-      <div v-else class="campaign-detail__error">
-        <AlertCircle :size="48" />
-        <h3>Campaign not found</h3>
-        <p>The campaign you're looking for doesn't exist or you don't have access to it.</p>
-        <button class="back-btn" @click="$router.back()">Go Back</button>
+                <!-- Payments -->
+                <SectionCard
+                  v-else-if="activeTab === 'payments'"
+                  title="Payments"
+                  :count="loadingPayments && !payments.length ? undefined : payments.length"
+                  :icon="DollarSign"
+                  flush
+                >
+                  <template v-if="isAdmin && payments.length > 0" #actions>
+                    <Button variant="secondary" size="xs" @click="calculatePayments">
+                      <Calculator />
+                      Calculate payments
+                    </Button>
+                  </template>
+                  <div v-if="loadingPayments && !payments.length" class="skeleton-group divide-y divide-line-subtle">
+                    <div v-for="i in 3" :key="i" class="flex items-center gap-3 px-4 py-2.5">
+                      <div class="skeleton size-9 rounded-full" />
+                      <div class="flex flex-1 flex-col gap-1.5">
+                        <div class="skeleton h-3.5 w-32" />
+                        <div class="skeleton h-3 w-24" />
+                      </div>
+                      <div class="skeleton h-4 w-14" />
+                    </div>
+                  </div>
+                  <EmptyState
+                    v-else-if="payments.length === 0"
+                    size="sm"
+                    :icon="DollarSign"
+                    title="No payments yet"
+                    description="Payments for verified submissions will appear here."
+                  />
+                  <ul v-else class="animate-fade-in divide-y divide-line-subtle">
+                    <li v-for="payment in payments" :key="payment.id" class="flex items-center gap-3 px-4 py-2.5">
+                      <Avatar :src="payment.user?.avatar_url" :name="payment.user?.username || payment.user?.email" size="md" />
+                      <div class="min-w-0 flex-1">
+                        <p class="truncate text-sm font-medium text-fg">
+                          {{ payment.user?.username || payment.user?.email || 'Unknown user' }}
+                        </p>
+                        <p class="tabular mt-0.5 flex flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-fg-muted">
+                          <span>Submission #{{ payment.submission_id }}</span>
+                          <span><span class="text-fg-subtle">Views</span> {{ formatNumber(payment.views || 0) }}</span>
+                          <span><span class="text-fg-subtle">Rate</span> ${{ parseFloat(payment.rate || 0).toFixed(2) }}</span>
+                          <span v-if="payment.paid_at">Paid {{ formatDate(payment.paid_at) }}</span>
+                          <a
+                            v-if="payment.transaction_hash"
+                            :href="`https://solscan.io/tx/${payment.transaction_hash}`"
+                            target="_blank"
+                            class="flex items-center gap-1 font-mono text-2xs transition-colors hover:text-brand"
+                            title="View transaction"
+                          >
+                            {{ payment.transaction_hash.substring(0, 8) }}…{{
+                              payment.transaction_hash.substring(payment.transaction_hash.length - 8)
+                            }}
+                            <ExternalLink class="size-3" />
+                          </a>
+                        </p>
+                      </div>
+                      <div class="flex shrink-0 flex-col items-end gap-1">
+                        <span class="tabular text-sm font-semibold text-fg">${{ parseFloat(payment.amount).toFixed(2) }}</span>
+                        <Badge :variant="statusVariant(payment.status)">{{ humanize(payment.status) }}</Badge>
+                      </div>
+                    </li>
+                  </ul>
+                </SectionCard>
+              </div>
+
+              <!-- Side summary: one card for budget and terms -->
+              <SectionCard title="Budget & terms" :icon="Wallet" class="min-w-0">
+                <p class="tabular text-base font-semibold text-fg">
+                  ${{ formatBudget(campaign.spent_budget || 0) }}
+                  <span class="text-sm font-normal text-fg-muted">of ${{ formatBudget(campaign.budget) }} spent</span>
+                </p>
+                <div class="mt-2 h-1.5 overflow-hidden rounded-full bg-surface-active">
+                  <div
+                    class="h-full rounded-full transition-[width] duration-300"
+                    :class="budgetUsed >= 90 ? 'bg-warning' : 'bg-brand'"
+                    :style="{ width: budgetUsed + '%' }"
+                  />
+                </div>
+                <InfoList class="mt-2" :rows="termRows" />
+              </SectionCard>
+            </div>
+          </div>
+        </div>
+
+        <!-- Error -->
+        <EmptyState
+          v-else
+          :icon="AlertCircle"
+          title="Campaign not found"
+          description="The campaign you're looking for doesn't exist or you don't have access to it."
+        >
+          <Button variant="secondary" size="sm" @click="$router.back()">Go back</Button>
+        </EmptyState>
       </div>
     </PageLayout>
+
+    <!-- Edit campaign (same form as the campaigns list) -->
+    <CampaignFormDialog
+      v-if="isAdmin"
+      ref="formDialog"
+      :organization-id="String(route.params.id)"
+      @saved="loadCampaign"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, onMounted, watch } from 'vue';
-  import { useRoute, useRouter } from 'vue-router';
+  import { useRoute } from 'vue-router';
   import {
     Megaphone,
     Pencil,
@@ -470,16 +394,37 @@
     ExternalLink,
     XCircle,
     Calculator,
+    UserCircle,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
+  import { Badge } from '@/components/ui/badge';
+  import { Button, buttonVariants } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { IconTile } from '@/components/ui/icon-tile';
+  import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
+  import { StatGrid, type StatItem } from '@/components/ui/stat-card';
+  import { InfoList, type InfoListItem } from '@/components/ui/info-list';
+  import { Avatar } from '@/components/ui/avatar';
+  import { PlatformLogo } from '@/components/ui/platform-logo';
+  import ProfileHeader from '@/components/directory/ProfileHeader.vue';
+  import { SectionCard } from '@/components/ui/section-card';
+  import {
+    budgetPercent,
+    formatBudget,
+    formatCompact,
+    formatCpm,
+    humanize,
+    remainingBudget,
+    statusVariant,
+  } from '@/components/campaigns/campaignDisplay';
   import { getCampaign, getPlatformDisplayName, type Campaign, type CampaignStats, type CampaignSubmission } from '@/services/campaignApi';
   import { useToast } from '@/composables/useToast';
+  import CampaignFormDialog from '@/components/organization/campaigns/CampaignFormDialog.vue';
   import { useAuthStore } from '@/stores/auth';
   import axios from 'axios';
 
   const route = useRoute();
-  const router = useRouter();
   const { toast } = useToast();
   const authStore = useAuthStore();
 
@@ -514,68 +459,53 @@
     return true;
   });
 
-  const tabs = computed(() => [
-    { id: 'overview', label: 'Overview', icon: Megaphone },
-    { id: 'submissions', label: 'Submissions', icon: FileVideo, count: stats.value.submissions_count },
-    { id: 'participants', label: 'Participants', icon: Users, count: stats.value.participants_count },
-    { id: 'payments', label: 'Payments', icon: DollarSign },
+  const tabOptions = computed<SegmentedOption<string>[]>(() => [
+    { value: 'overview', label: 'Overview', icon: Megaphone },
+    { value: 'submissions', label: 'Submissions', icon: FileVideo, count: stats.value.submissions_count },
+    { value: 'participants', label: 'Participants', icon: Users, count: stats.value.participants_count },
+    { value: 'payments', label: 'Payments', icon: DollarSign },
   ]);
 
-  const formatBudget = (budget: string | number) => {
-    const value = typeof budget === 'string' ? parseFloat(budget) : budget;
-    if (value >= 1000) {
-      return `${(value / 1000).toFixed(1)}K`;
-    }
-    return value.toFixed(0);
-  };
+  const budgetUsed = computed(() => (campaign.value ? budgetPercent(campaign.value) : 0));
 
-  const formatCpm = (cpm: string | number) => {
-    const value = typeof cpm === 'string' ? parseFloat(cpm) : cpm;
-    return value.toFixed(2);
-  };
+  const headerStats = computed<StatItem[]>(() => [
+    { label: 'Participants', value: stats.value.participants_count || 0, icon: Users },
+    { label: 'Submissions', value: stats.value.submissions_count || 0, icon: FileVideo },
+    { label: 'Verified', value: stats.value.verified_count || 0, icon: CheckCircle },
+  ]);
 
-  const formatViews = (views: number) => {
-    if (views >= 1000000) {
-      return `${(views / 1000000).toFixed(1)}M`;
-    }
-    if (views >= 1000) {
-      return `${(views / 1000).toFixed(1)}K`;
-    }
-    return views.toString();
-  };
+  const termRows = computed<InfoListItem[]>(() => {
+    const c = campaign.value;
+    if (!c) return [];
+    const rows: InfoListItem[] = [
+      { label: 'Used', value: `${budgetUsed.value.toFixed(0)}%` },
+      { label: 'Remaining', value: `$${formatBudget(remainingBudget(c))}` },
+      { label: 'Payment model', value: c.payment_model === 'per_clip' ? 'Pay per clip' : 'CPM (cost per mille)' },
+      {
+        label: c.payment_model === 'per_clip' ? 'Amount per clip' : 'CPM rate',
+        value: `$${c.payment_model === 'per_clip' ? formatBudget(c.per_clip_amount || 0) : formatCpm(c.cpm)}`,
+        strong: true,
+      },
+      { label: 'Min views for payment', value: formatViews(c.min_views_for_payment) },
+    ];
+    if (c.max_views) rows.push({ label: 'Max views cap', value: formatViews(c.max_views) });
+    rows.push({ label: 'Join type', value: c.join_type === 'open' ? 'Open to all' : 'Application required' });
+    return rows;
+  });
+
+  const formatViews = (views: number) => formatCompact(views);
 
   const formatDate = (dateStr: string) => {
     const date = new Date(dateStr);
     return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   };
 
-  const formatNumber = (num: number) => {
-    if (num >= 1000000) {
-      return `${(num / 1000000).toFixed(1)}M`;
-    }
-    if (num >= 1000) {
-      return `${(num / 1000).toFixed(1)}K`;
-    }
-    return num.toString();
-  };
+  const formatNumber = (num: number) => formatCompact(num);
 
-  const getBudgetPercentage = () => {
-    if (!campaign.value) return 0;
-    const spent = parseFloat(campaign.value.spent_budget || '0');
-    const budget = parseFloat(campaign.value.budget || '0');
-    if (budget === 0) return 0;
-    return Math.min((spent / budget) * 100, 100);
-  };
-
-  const getRemainingBudget = () => {
-    if (!campaign.value) return 0;
-    const spent = parseFloat(campaign.value.spent_budget || '0');
-    const budget = parseFloat(campaign.value.budget || '0');
-    return Math.max(budget - spent, 0);
-  };
+  const formDialog = ref<InstanceType<typeof CampaignFormDialog> | null>(null);
 
   const editCampaign = () => {
-    router.push(`/organizations/${route.params.orgId}/campaigns`);
+    if (campaign.value) formDialog.value?.editCampaign(campaign.value);
   };
 
   const loadCampaign = async () => {
@@ -784,1418 +714,3 @@
     }
   });
 </script>
-
-<style scoped>
-/* ===== Page Container ===== */
-.campaign-detail {
-  width: 100%;
-  min-height: 100%;
-}
-
-.profile-page {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  padding: 1rem 1.5rem 0 1.5rem;
-  max-width: 1100px;
-  margin: 0 auto;
-  width: 100%;
-  flex: 1;
-}
-
-.org-profile--settings {
-  max-width: none;
-  margin: 0;
-  padding: 0 0 0.25rem 0;
-}
-
-.org-hero {
-  position: relative;
-  margin-bottom: 0;
-  padding-bottom: 1.75rem;
-}
-
-.org-hero__banner {
-  height: 120px;
-  background: linear-gradient(135deg, #0891b2 0%, #06b6d4 25%, #22d3ee 50%, #0891b2 75%, #164e63 100%);
-  background-size: 200% 200%;
-  border-radius: 14px 14px 0 0;
-  position: relative;
-  overflow: hidden;
-}
-
-.org-hero__banner::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background:
-    radial-gradient(ellipse 80% 50% at 20% 100%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
-    radial-gradient(ellipse 60% 40% at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 40%);
-}
-
-.org-hero__banner::after {
-  content: '';
-  position: absolute;
-  bottom: 0;
-  left: 0;
-  right: 0;
-  height: 52px;
-  background: linear-gradient(to top, var(--sidebar-surface) 0%, transparent 100%);
-}
-
-.org-hero__content {
-  display: flex;
-  align-items: flex-start;
-  gap: 1.25rem;
-  padding: 0 1.5rem;
-  margin-top: -48px;
-  position: relative;
-  z-index: 1;
-}
-
-.org-hero__avatar {
-  position: relative;
-  width: 96px;
-  height: 96px;
-  border-radius: 14px;
-  background: var(--sidebar-surface);
-  border: 4px solid var(--sidebar-surface);
-  overflow: hidden;
-  flex-shrink: 0;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-}
-
-.org-hero__avatar-img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.org-hero__avatar-fallback {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: var(--sidebar-hover);
-  color: var(--sidebar-text-muted);
-  padding: 24px;
-}
-
-.org-hero__info {
-  flex: 1;
-  min-width: 0;
-  padding-top: 0.375rem;
-  padding-bottom: 0.25rem;
-}
-
-.org-hero__name {
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--sidebar-text);
-  margin: 0;
-  letter-spacing: -0.02em;
-  line-height: 1.2;
-}
-
-.org-hero__tagline {
-  font-size: 0.875rem;
-  color: var(--sidebar-text-muted);
-  margin: 0 0 0.625rem;
-  line-height: 1.5;
-}
-
-.org-hero__tagline.profile-bio--empty {
-  font-style: italic;
-  opacity: 0.6;
-}
-
-.org-hero__tags {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 0.375rem;
-}
-
-.org-hero__tag {
-  display: inline-flex;
-  align-items: center;
-  padding: 0.25rem 0.625rem;
-  background: rgba(34, 211, 238, 0.1);
-  border: 1px solid rgba(34, 211, 238, 0.2);
-  border-radius: 6px;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: #22d3ee;
-  letter-spacing: 0.01em;
-}
-
-.org-stats-grid {
-  display: grid;
-  gap: 0.75rem;
-  margin-top: 0.25rem;
-  margin-bottom: 1.5rem;
-}
-
-.org-stats-grid--settings {
-  grid-template-columns: repeat(3, 1fr);
-}
-
-.org-stat-card {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 1rem;
-  background: var(--sidebar-surface);
-  border: 1px solid rgba(34, 211, 238, 0.15);
-  border-radius: 12px;
-  transition: all 200ms ease;
-}
-
-.org-stat-card:hover {
-  border-color: rgba(34, 211, 238, 0.4);
-  box-shadow: 0 0 20px rgba(34, 211, 238, 0.1);
-}
-
-.org-stat-card__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  flex-shrink: 0;
-}
-
-.org-stat-card__icon--cyan {
-  background: rgba(34, 211, 238, 0.15);
-  color: #22d3ee;
-}
-
-.org-stat-card__icon--green {
-  background: rgba(52, 211, 153, 0.15);
-  color: #34d399;
-}
-
-.org-stat-card__icon--violet {
-  background: rgba(167, 139, 250, 0.15);
-  color: #a78bfa;
-}
-
-.org-stat-card__content {
-  display: flex;
-  flex-direction: column;
-  min-width: 0;
-}
-
-.org-stat-card__value {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--sidebar-text);
-  line-height: 1.2;
-  font-variant-numeric: tabular-nums;
-}
-
-.org-stat-card__label {
-  font-size: 0.6875rem;
-  color: var(--sidebar-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-  font-weight: 500;
-  white-space: nowrap;
-}
-
-.profile-name-row {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.75rem;
-}
-
-.profile-badges {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  flex-wrap: wrap;
-}
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.625rem;
-  border-radius: 6px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.status-badge--active {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-}
-
-.status-badge--draft {
-  background: rgba(156, 163, 175, 0.15);
-  color: #9ca3af;
-}
-
-.status-badge--completed {
-  background: rgba(6, 182, 212, 0.15);
-  color: var(--sidebar-accent);
-}
-
-.status-badge--per-clip {
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
-}
-
-.status-badge--cpm {
-  background: rgba(168, 85, 247, 0.15);
-  color: #a855f7;
-}
-
-.profile-meta-row {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.75rem;
-}
-
-.profile-visibility {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.625rem;
-  background: var(--sidebar-hover);
-  border-radius: 6px;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--sidebar-text-muted);
-  text-decoration: none;
-  transition: color 150ms ease;
-}
-
-.profile-visibility:hover {
-  color: var(--sidebar-accent);
-}
-
-.profile-last-active {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-  opacity: 0.8;
-}
-
-/* ===== Ranking / Budget Card ===== */
-.ranking-card {
-  background-color: var(--sidebar-surface);
-  border: 1px solid rgba(34, 211, 238, 0.15);
-  border-radius: 14px;
-  padding: 1rem 1.125rem;
-}
-
-.ranking-row {
-  display: flex;
-  align-items: center;
-  gap: 0.875rem;
-}
-
-.ranking-row__header-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background-color: rgba(245, 158, 11, 0.15);
-  color: #fbbf24;
-  flex-shrink: 0;
-}
-
-.ranking-row__header-icon svg {
-  width: 20px;
-  height: 20px;
-}
-
-.ranking-row__header-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.ranking-row__title {
-  font-size: 1.0625rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0;
-  letter-spacing: -0.01em;
-}
-
-.ranking-row__subtitle {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-  margin: 0.125rem 0 0;
-}
-
-.ranking-row__stats {
-  display: flex;
-  gap: 2rem;
-  margin-left: auto;
-}
-
-.rank-stat {
-  text-align: center;
-  min-width: 50px;
-}
-
-.rank-stat__value {
-  display: block;
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--sidebar-text);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-.rank-stat--primary .rank-stat__value {
-  color: #fbbf24;
-}
-
-.rank-stat__label {
-  display: block;
-  font-size: 0.5625rem;
-  color: var(--sidebar-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-top: 0.25rem;
-}
-
-.budget-progress {
-  height: 8px;
-  background: var(--sidebar-hover);
-  border-radius: 4px;
-  overflow: hidden;
-  margin-top: 0.75rem;
-}
-
-.budget-progress__fill {
-  height: 100%;
-  transition: width 300ms ease;
-}
-
-.budget-progress__fill--low {
-  background: linear-gradient(90deg, #10b981 0%, #059669 100%);
-}
-
-.budget-progress__fill--medium {
-  background: linear-gradient(90deg, #f59e0b 0%, #d97706 100%);
-}
-
-.budget-progress__fill--high {
-  background: linear-gradient(90deg, #ef4444 0%, #dc2626 100%);
-}
-
-/* ===== Tab Navigation ===== */
-.tabs-nav {
-  background: var(--sidebar-surface);
-  border: 1px solid rgba(34, 211, 238, 0.15);
-  border-radius: 14px;
-  padding: 0.5rem;
-  margin-bottom: 1.5rem;
-  transition: border-color 200ms ease, box-shadow 200ms ease;
-}
-
-.tabs-nav:hover {
-  border-color: rgba(34, 211, 238, 0.25);
-}
-
-.tabs-container {
-  display: flex;
-  gap: 0.375rem;
-  overflow-x: auto;
-  scrollbar-width: none;
-}
-
-.tabs-container::-webkit-scrollbar {
-  display: none;
-}
-
-.tab-button {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1.125rem;
-  background: transparent;
-  border: none;
-  border-radius: 8px;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  color: var(--sidebar-text-muted);
-  cursor: pointer;
-  transition: all 180ms ease;
-  white-space: nowrap;
-  position: relative;
-}
-
-.tab-button:hover:not(.tab-button--active) {
-  background: var(--sidebar-hover);
-  color: var(--sidebar-text);
-}
-
-.tab-button--active {
-  background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
-  color: var(--sidebar-accent);
-  box-shadow: 0 2px 8px rgba(6, 182, 212, 0.2);
-}
-
-.tab-button__icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 18px;
-  height: 18px;
-}
-
-.tab-button__icon svg {
-  width: 100%;
-  height: 100%;
-}
-
-.tab-button__label {
-  font-size: inherit;
-}
-
-/* ===== Content ===== */
-.content {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  padding-bottom: 4rem;
-}
-
-.section {
-  background-color: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
-  padding: 1rem 1.125rem;
-}
-
-.section__header {
-  display: flex;
-  align-items: center;
-  gap: 0.875rem;
-  margin-bottom: 1rem;
-}
-
-.section__header-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background-color: rgba(6, 182, 212, 0.15);
-  color: var(--sidebar-accent);
-  flex-shrink: 0;
-}
-
-.section__header-icon svg {
-  width: 20px;
-  height: 20px;
-}
-
-.section__header-icon--green {
-  background-color: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-}
-
-.section__header-icon--purple {
-  background-color: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
-}
-
-.section__header-icon--cyan {
-  background-color: rgba(6, 182, 212, 0.15);
-  color: #06b6d4;
-}
-
-.section__header-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.section-title {
-  font-size: 1.0625rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0;
-  letter-spacing: -0.01em;
-}
-
-.section-subtitle {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-  margin: 0.125rem 0 0;
-}
-
-.details-grid {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-  gap: 1.5rem;
-}
-
-.detail-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-.detail-label {
-  font-size: 0.6875rem;
-  color: var(--sidebar-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 600;
-}
-
-.detail-value {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-}
-
-/* ===== Edit Button ===== */
-.edit-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  height: 32px;
-  padding: 0 0.875rem;
-  background-color: var(--sidebar-accent);
-  color: var(--sidebar-bg);
-  font-size: 0.75rem;
-  font-weight: 600;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: opacity 150ms ease;
-}
-
-.edit-btn:hover {
-  opacity: 0.9;
-}
-
-.edit-btn__icon {
-  width: 14px;
-  height: 14px;
-}
-
-/* ===== Global Branding Notice ===== */
-.global-branding-notice {
-  display: flex;
-  align-items: flex-start;
-  gap: 1rem;
-  padding: 1rem;
-  background: rgba(34, 211, 238, 0.06);
-  border: 1px solid rgba(34, 211, 238, 0.2);
-  border-radius: 10px;
-}
-
-.global-branding-notice__icon {
-  width: 40px;
-  height: 40px;
-  border-radius: 10px;
-  background: rgba(34, 211, 238, 0.15);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: #22d3ee;
-  flex-shrink: 0;
-}
-
-.global-branding-notice__title {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0 0 0.375rem;
-}
-
-.global-branding-notice__description {
-  font-size: 0.8125rem;
-  color: var(--sidebar-text-muted);
-  margin: 0;
-  line-height: 1.5;
-}
-
-.creator-profile-info__lead {
-  font-size: 0.8125rem;
-  color: var(--sidebar-text-muted);
-  margin: 0 0 0.75rem;
-}
-
-.creator-profile-card {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.875rem 1rem;
-  background: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
-}
-
-.creator-profile-card--empty {
-  justify-content: center;
-  color: var(--sidebar-text-muted);
-  font-size: 0.8125rem;
-}
-
-.creator-profile-card__avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  object-fit: cover;
-}
-
-.creator-profile-card__name {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-}
-
-.creator-profile-card__meta {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-}
-
-.streamers-list__description {
-  font-size: 0.8125rem;
-  color: var(--sidebar-text-muted);
-  margin: 0 0 0.75rem;
-}
-
-.streamers-list__placeholder {
-  padding: 0.875rem 1rem;
-  background: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
-  font-size: 0.8125rem;
-  color: var(--sidebar-text-muted);
-  text-align: center;
-}
-
-/* ===== Loading & Empty States ===== */
-.loading-state,
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 2.5rem 1rem;
-  gap: 0.875rem;
-  text-align: center;
-  color: var(--sidebar-text-muted);
-  background: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
-}
-
-.spinner {
-  width: 32px;
-  height: 32px;
-  border: 3px solid var(--sidebar-border);
-  border-top-color: var(--sidebar-accent);
-  border-radius: 50%;
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to { transform: rotate(360deg); }
-}
-
-.empty-state__hint {
-  font-size: 0.8125rem;
-  color: var(--sidebar-text-muted);
-  opacity: 0.7;
-  max-width: 320px;
-  line-height: 1.5;
-}
-
-.campaign-detail__loading {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  padding: 1rem 1.5rem;
-  max-width: 1100px;
-  margin: 0 auto;
-}
-
-.skeleton-header,
-.skeleton-tabs,
-.skeleton-content {
-  background: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
-  animation: pulse 1.5s ease-in-out infinite;
-}
-
-.skeleton-header {
-  height: 220px;
-}
-
-.skeleton-tabs {
-  height: 52px;
-}
-
-.skeleton-content {
-  height: 280px;
-}
-
-@keyframes pulse {
-  0%, 100% { opacity: 1; }
-  50% { opacity: 0.5; }
-}
-
-.campaign-detail__error {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 4rem 2rem;
-  gap: 1rem;
-  text-align: center;
-  color: var(--sidebar-text-muted);
-}
-
-.campaign-detail__error h3 {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0;
-}
-
-.back-btn {
-  height: 32px;
-  padding: 0 0.875rem;
-  background: transparent;
-  border: 1px solid var(--sidebar-border);
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.back-btn:hover {
-  border-color: var(--sidebar-accent);
-  color: var(--sidebar-accent);
-}
-
-/* Submissions List */
-.submissions-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 1rem;
-}
-
-.submission-card {
-  background: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 12px;
-  overflow: hidden;
-  transition: all 200ms ease;
-}
-
-.submission-card:hover {
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-}
-
-.submission-card__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem;
-  border-bottom: 1px solid var(--sidebar-border);
-}
-
-.submission-card__user {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.submission-card__avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--sidebar-hover);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.submission-card__avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.submission-card__avatar svg {
-  width: 16px;
-  height: 16px;
-  color: var(--sidebar-text-muted);
-}
-
-.submission-card__user-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-}
-
-.submission-card__username {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-}
-
-.submission-card__platform {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-}
-
-.submission-card__status {
-  padding: 0.25rem 0.625rem;
-  border-radius: 6px;
-  font-size: 0.625rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.submission-card__status--pending {
-  background: rgba(251, 191, 36, 0.15);
-  color: #fbbf24;
-}
-
-.submission-card__status--verified {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-}
-
-.submission-card__status--paid {
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
-}
-
-.submission-card__status--rejected {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
-.submission-card__content {
-  padding: 1rem;
-}
-
-.submission-card__link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: 0.8125rem;
-  color: #06b6d4;
-  text-decoration: none;
-  font-weight: 500;
-  transition: opacity 200ms ease;
-}
-
-.submission-card__link:hover {
-  opacity: 0.8;
-}
-
-.submission-card__pending {
-  font-size: 0.8125rem;
-  color: var(--sidebar-text-muted);
-  font-style: italic;
-}
-
-.submission-card__stats {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.75rem 1rem;
-  border-top: 1px solid var(--sidebar-border);
-}
-
-.submission-stat {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  color: var(--sidebar-text-muted);
-  font-size: 0.75rem;
-  font-weight: 600;
-}
-
-.submission-stat svg {
-  width: 14px;
-  height: 14px;
-}
-
-.submission-card__footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  border-top: 1px solid var(--sidebar-border);
-}
-
-.submission-card__date {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-}
-
-/* Participants List */
-.participants-list {
-  display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-  gap: 1rem;
-}
-
-.participant-card {
-  background: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 12px;
-  overflow: hidden;
-  transition: all 200ms ease;
-}
-
-.participant-card:hover {
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-}
-
-.participant-card__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 1rem;
-  border-bottom: 1px solid var(--sidebar-border);
-}
-
-.participant-card__user {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.participant-card__avatar {
-  width: 40px;
-  height: 40px;
-  border-radius: 50%;
-  background: var(--sidebar-hover);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.participant-card__avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.participant-card__avatar svg {
-  width: 20px;
-  height: 20px;
-  color: var(--sidebar-text-muted);
-}
-
-.participant-card__user-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.participant-card__username {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-}
-
-.participant-card__email {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-}
-
-.participant-card__status {
-  padding: 0.25rem 0.625rem;
-  border-radius: 6px;
-  font-size: 0.625rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.participant-card__status--pending {
-  background: rgba(251, 191, 36, 0.15);
-  color: #fbbf24;
-}
-
-.participant-card__status--approved {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-}
-
-.participant-card__status--rejected {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
-.participant-card__profile {
-  display: flex;
-  align-items: center;
-  gap: 1.5rem;
-  padding: 1rem;
-}
-
-.participant-card__stat {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  color: var(--sidebar-text-muted);
-  font-size: 0.8125rem;
-  font-weight: 600;
-}
-
-.participant-card__stat svg {
-  width: 14px;
-  height: 14px;
-}
-
-.participant-card__footer {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 0.75rem 1rem;
-  border-top: 1px solid var(--sidebar-border);
-}
-
-.participant-card__date {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-}
-
-.participant-card__actions {
-  display: flex;
-  gap: 0.5rem;
-}
-
-.participant-action-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.375rem 0.75rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border: none;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: opacity 200ms ease;
-}
-
-.participant-action-btn:hover {
-  opacity: 0.8;
-}
-
-.participant-action-btn svg {
-  width: 14px;
-  height: 14px;
-}
-
-.participant-action-btn--approve {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-}
-
-.participant-action-btn--reject {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
-/* Payments List */
-.payments-header {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: 1rem;
-}
-
-.calculate-payments-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.625rem 1rem;
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  border: 1px solid rgba(59, 130, 246, 0.3);
-  border-radius: 8px;
-  cursor: pointer;
-  transition: all 200ms ease;
-}
-
-.calculate-payments-btn:hover {
-  background: rgba(59, 130, 246, 0.25);
-}
-
-.calculate-payments-btn svg {
-  width: 16px;
-  height: 16px;
-}
-
-.payments-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.payment-card {
-  background: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 12px;
-  padding: 1rem;
-  transition: all 200ms ease;
-}
-
-.payment-card:hover {
-  border-color: rgba(255, 255, 255, 0.12);
-  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-}
-
-.payment-card__header {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0.75rem;
-}
-
-.payment-card__user {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.payment-card__avatar {
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  background: var(--sidebar-hover);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.payment-card__avatar img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.payment-card__avatar svg {
-  width: 16px;
-  height: 16px;
-  color: var(--sidebar-text-muted);
-}
-
-.payment-card__user-info {
-  display: flex;
-  flex-direction: column;
-  gap: 0.125rem;
-}
-
-.payment-card__username {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-}
-
-.payment-card__submission {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-}
-
-.payment-card__amount {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-end;
-  gap: 0.25rem;
-}
-
-.payment-card__amount-value {
-  font-size: 1.125rem;
-  font-weight: 700;
-  color: #10b981;
-}
-
-.payment-card__status {
-  padding: 0.25rem 0.625rem;
-  border-radius: 6px;
-  font-size: 0.625rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.payment-card__status--pending {
-  background: rgba(251, 191, 36, 0.15);
-  color: #fbbf24;
-}
-
-.payment-card__status--completed {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-}
-
-.payment-card__status--failed {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
-.payment-card__details {
-  display: flex;
-  gap: 1.5rem;
-  padding: 0.75rem 0;
-  border-top: 1px solid var(--sidebar-border);
-  border-bottom: 1px solid var(--sidebar-border);
-  margin-bottom: 0.75rem;
-}
-
-.payment-detail {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.payment-detail__label {
-  font-size: 0.6875rem;
-  color: var(--sidebar-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  font-weight: 600;
-}
-
-.payment-detail__value {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-}
-
-.payment-card__transaction {
-  display: flex;
-  align-items: center;
-}
-
-.payment-card__tx-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  font-size: 0.75rem;
-  color: #06b6d4;
-  text-decoration: none;
-  font-weight: 500;
-  transition: opacity 200ms ease;
-}
-
-.payment-card__tx-link:hover {
-  opacity: 0.8;
-}
-
-.payment-card__tx-link svg {
-  width: 12px;
-  height: 12px;
-}
-
-@media (max-width: 900px) {
-  .org-stats-grid--settings {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 768px) {
-  .tab-button__label {
-    display: none;
-  }
-
-  .tab-button {
-    padding: 0.75rem;
-  }
-}
-
-@media (max-width: 640px) {
-  .profile-name-row {
-    justify-content: center;
-  }
-
-  .profile-meta-row {
-    justify-content: center;
-  }
-
-  .org-hero {
-    padding-bottom: 1.5rem;
-  }
-
-  .org-hero__banner {
-    height: 100px;
-  }
-
-  .org-hero__content {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    margin-top: -40px;
-    padding: 0 1rem;
-  }
-
-  .org-hero__avatar {
-    width: 88px;
-    height: 88px;
-  }
-
-  .org-hero__info {
-    padding-top: 0.5rem;
-    padding-bottom: 0;
-  }
-
-  .org-hero__name {
-    font-size: 1.25rem;
-  }
-
-  .org-hero__tags {
-    justify-content: center;
-  }
-
-  .org-stats-grid--settings {
-    grid-template-columns: 1fr;
-  }
-
-  .ranking-row {
-    flex-wrap: wrap;
-  }
-
-  .ranking-row__stats {
-    width: 100%;
-    margin-left: 0;
-    margin-top: 0.75rem;
-  }
-}
-</style>
-

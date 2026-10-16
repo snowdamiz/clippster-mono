@@ -1,30 +1,30 @@
 <template>
-  <div class="ctp" :class="{ 'ctp--embedded': variant === 'embedded' }">
-    <div v-if="variant !== 'embedded'" class="ctp__header">
-      <button class="ctp__back" type="button" title="Back" @click="$emit('close')">
-        <ChevronLeft :size="15" />
+  <div class="pp" :class="{ 'pp--embedded': variant === 'embedded' }">
+    <div v-if="variant !== 'embedded'" class="pp__header">
+      <button class="pp__back" type="button" title="Back" aria-label="Back" @click="$emit('close')">
+        <ChevronLeft :size="16" />
       </button>
-      <span class="ctp__title">Text box</span>
+      <span class="pp__title">Text box</span>
     </div>
 
-    <div v-if="!state" class="ctp__empty-state">No text box for this clip.</div>
+    <div v-if="!state" class="pp__empty-state">No text box for this clip.</div>
 
-    <div v-else class="ctp__body">
+    <div v-else class="pp__body">
       <!-- ── CONTENT ── -->
-      <div class="ctp__section">
-        <div class="ctp__section-hd-row">
-          <span class="ctp__section-hd">Text</span>
-          <label class="ctp__toggle">
+      <div class="pp__section">
+        <div class="pp__section-hd-row">
+          <span class="pp__section-hd">Text</span>
+          <label class="pp__toggle" title="Show text box">
             <input
               type="checkbox"
               :checked="state.enabled"
               @change="patch({ enabled: ($event.target as HTMLInputElement).checked })"
             />
-            <span class="ctp__toggle-track"><span class="ctp__toggle-thumb" /></span>
+            <span class="pp__toggle-track"><span class="pp__toggle-thumb" /></span>
           </label>
         </div>
         <textarea
-          class="ctp__textarea ctp__mt"
+          class="pp__textarea pp__mt"
           :value="state.text"
           rows="3"
           placeholder="Your message"
@@ -33,23 +33,19 @@
       </div>
 
       <!-- ── VISIBLE ON CLIP ── -->
-      <div class="ctp__section">
-        <div class="ctp__section-hd-row">
-          <span class="ctp__section-hd">Visible on clip</span>
+      <div class="pp__section">
+        <div class="pp__section-hd-row">
+          <span class="pp__section-hd">Visible on clip</span>
           <span class="ctp__range-readout">
-            {{ state.startTime.toFixed(1) }}s — {{ state.endTime.toFixed(1) }}s
+            {{ state.startTime.toFixed(1) }}s – {{ state.endTime.toFixed(1) }}s
             <span class="ctp__range-readout-span">({{ visibleDuration.toFixed(1) }}s)</span>
           </span>
         </div>
-        <p v-if="effectiveDuration <= 0" class="ctp__hint ctp__mt">
+        <p v-if="effectiveDuration <= 0" class="pp__hint pp__mt">
           Clip length unavailable; timing can be set after duration is known.
         </p>
         <template v-else>
-          <div
-            ref="visibilityTrackRef"
-            class="ctp__range-track ctp__mt"
-            @mousedown.prevent="onVisibilityTrackPress"
-          >
+          <div ref="visibilityTrackRef" class="ctp__range-track pp__mt" @mousedown.prevent="onVisibilityTrackPress">
             <div class="ctp__range-bg" />
             <div
               class="ctp__range-fill"
@@ -92,15 +88,15 @@
       </div>
 
       <!-- ── FONT ── -->
-      <div class="ctp__section ctp__section--font">
-        <div class="ctp__section-hd">Font</div>
-        <div class="ctp__font-grid">
+      <div class="pp__section">
+        <div class="pp__section-hd">Font</div>
+        <div class="pp__font-grid">
           <button
             v-for="f in fontChoices"
             :key="f"
             type="button"
-            class="ctp__font-btn"
-            :class="{ 'ctp__font-btn--active': state.style.fontFamily === f }"
+            class="pp__font-btn"
+            :class="{ 'pp__font-btn--active': state.style.fontFamily === f }"
             :style="{ fontFamily: f }"
             @click="patchStyle({ fontFamily: f })"
           >
@@ -108,45 +104,44 @@
           </button>
         </div>
 
-        <div class="ctp__row2 ctp__font-controls ctp__mt">
-          <div class="ctp__field">
-            <span class="ctp__label">Size <em class="ctp__val">{{ state.style.fontSize }}px</em></span>
-            <input
-              type="range"
-              class="ctp__slider"
-              :value="state.style.fontSize"
-              min="10"
-              max="120"
-              step="1"
-              @input="patchStyle({ fontSize: Number(($event.target as HTMLInputElement).value) })"
-            />
-          </div>
-          <div class="ctp__field">
-            <span class="ctp__label">Weight</span>
-            <div class="ctp__pill-row">
-              <button
-                v-for="w in weightChoices"
-                :key="w.value"
-                type="button"
-                class="ctp__pill"
-                :class="{ 'ctp__pill--active': Number(state.style.fontWeight) === w.value }"
-                @click="patchStyle({ fontWeight: w.value })"
-              >
-                {{ w.label }}
-              </button>
-            </div>
+        <div class="pp__field pp__mt">
+          <span class="pp__label">Size <em class="pp__val">{{ state.style.fontSize }}px</em></span>
+          <input
+            type="range"
+            class="pp__slider"
+            :value="state.style.fontSize"
+            min="10"
+            max="120"
+            step="1"
+            @input="patchStyle({ fontSize: Number(($event.target as HTMLInputElement).value) })"
+          />
+        </div>
+
+        <div class="pp__field pp__mt">
+          <span class="pp__label">Weight</span>
+          <div class="pp__seg-ctrl pp__seg-ctrl--block">
+            <button
+              v-for="w in weightChoices"
+              :key="w.value"
+              type="button"
+              class="pp__seg-btn"
+              :class="{ 'pp__seg-btn--active': Number(state.style.fontWeight) === w.value }"
+              @click="patchStyle({ fontWeight: w.value })"
+            >
+              {{ w.label }}
+            </button>
           </div>
         </div>
 
-        <div class="ctp__field ctp__mt">
-          <span class="ctp__label">Transform</span>
-          <div class="ctp__seg-ctrl">
+        <div class="pp__field pp__mt">
+          <span class="pp__label">Transform</span>
+          <div class="pp__seg-ctrl">
             <button
               v-for="opt in transformChoices"
               :key="opt.value"
               type="button"
-              class="ctp__seg-btn"
-              :class="{ 'ctp__seg-btn--active': (state.style.textTransform ?? 'none') === opt.value }"
+              class="pp__seg-btn"
+              :class="{ 'pp__seg-btn--active': (state.style.textTransform ?? 'none') === opt.value }"
               :title="opt.label"
               @click="patchStyle({ textTransform: opt.value })"
             >
@@ -157,23 +152,23 @@
       </div>
 
       <!-- ── COLOR ── -->
-      <div class="ctp__section ctp__section--colors">
-        <div class="ctp__section-hd">Color</div>
-        <p class="ctp__hint ctp__mb">Text fill color</p>
-        <div class="ctp__colors-grid">
-          <div class="ctp__colors-row">
-            <span class="ctp__label">Text</span>
-            <div class="ctp__swatch-row ctp__colors-swatch-row">
-              <label class="ctp__swatch-wrap">
+      <div class="pp__section">
+        <div class="pp__section-hd">Color</div>
+        <p class="pp__hint pp__mb">Text fill color</p>
+        <div class="pp__colors-grid">
+          <div class="pp__colors-row">
+            <span class="pp__label">Text</span>
+            <div class="pp__swatch-row pp__colors-swatch-row">
+              <label class="pp__swatch-wrap">
                 <input
                   type="color"
                   :value="state.style.color"
                   @input="patchStyle({ color: ($event.target as HTMLInputElement).value })"
                 />
-                <span class="ctp__swatch" :style="{ background: state.style.color }" />
+                <span class="pp__swatch" :style="{ background: state.style.color }" />
               </label>
               <input
-                class="ctp__hex"
+                class="pp__hex"
                 type="text"
                 maxlength="7"
                 :value="state.style.color"
@@ -185,33 +180,33 @@
       </div>
 
       <!-- ── BACKGROUND ── -->
-      <div class="ctp__section">
-        <div class="ctp__section-hd-row">
-          <span class="ctp__section-hd">Background</span>
-          <label class="ctp__toggle">
+      <div class="pp__section">
+        <div class="pp__section-hd-row">
+          <span class="pp__section-hd">Background</span>
+          <label class="pp__toggle" title="Show background">
             <input
               type="checkbox"
               :checked="state.style.backgroundEnabled"
               @change="patchStyle({ backgroundEnabled: ($event.target as HTMLInputElement).checked })"
             />
-            <span class="ctp__toggle-track"><span class="ctp__toggle-thumb" /></span>
+            <span class="pp__toggle-track"><span class="pp__toggle-thumb" /></span>
           </label>
         </div>
-        <template v-if="state.style.backgroundEnabled">
-          <div class="ctp__row2 ctp__mt">
-            <div class="ctp__field">
-              <span class="ctp__label">Color</span>
-              <div class="ctp__swatch-row">
-                <label class="ctp__swatch-wrap">
+        <div v-if="state.style.backgroundEnabled" class="pp__stack pp__mt">
+          <div class="pp__row2">
+            <div class="pp__field">
+              <span class="pp__label">Color</span>
+              <div class="pp__swatch-row">
+                <label class="pp__swatch-wrap">
                   <input
                     type="color"
                     :value="state.style.backgroundColor || '#000000'"
                     @input="patchStyle({ backgroundColor: ($event.target as HTMLInputElement).value })"
                   />
-                  <span class="ctp__swatch" :style="{ background: state.style.backgroundColor || '#000000' }" />
+                  <span class="pp__swatch" :style="{ background: state.style.backgroundColor || '#000000' }" />
                 </label>
                 <input
-                  class="ctp__hex"
+                  class="pp__hex"
                   type="text"
                   maxlength="7"
                   :value="state.style.backgroundColor || '#000000'"
@@ -219,11 +214,11 @@
                 />
               </div>
             </div>
-            <div class="ctp__field">
-              <span class="ctp__label">Padding <em class="ctp__val">{{ state.style.padding }}px</em></span>
+            <div class="pp__field">
+              <span class="pp__label">Padding <em class="pp__val">{{ state.style.padding }}px</em></span>
               <input
                 type="range"
-                class="ctp__slider"
+                class="pp__slider"
                 :value="state.style.padding"
                 min="0"
                 max="48"
@@ -232,11 +227,11 @@
               />
             </div>
           </div>
-          <div class="ctp__field ctp__mt">
-            <span class="ctp__label">Corner radius <em class="ctp__val">{{ state.style.borderRadius }}px</em></span>
+          <div class="pp__field">
+            <span class="pp__label">Corner radius <em class="pp__val">{{ state.style.borderRadius }}px</em></span>
             <input
               type="range"
-              class="ctp__slider"
+              class="pp__slider"
               :value="state.style.borderRadius"
               min="0"
               max="48"
@@ -244,13 +239,13 @@
               @input="patchStyle({ borderRadius: Number(($event.target as HTMLInputElement).value) })"
             />
           </div>
-        </template>
+        </div>
       </div>
 
       <!-- ── REMOVE ── -->
-      <div class="ctp__section ctp__section--danger">
-        <button class="ctp__delete-btn" type="button" @click="$emit('delete')">
-          <Trash2 :size="15" />
+      <div class="pp__section pp__section--danger">
+        <button class="pp__delete-btn" type="button" @click="$emit('delete')">
+          <Trash2 :size="14" />
           Remove text box
         </button>
       </div>
@@ -468,350 +463,38 @@
   });
 </script>
 
+<style scoped src="./propertyPanel.css"></style>
+
 <style scoped>
-  /* Root */
-  .ctp {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    background: var(--sidebar-surface);
-    color: var(--sidebar-text);
-    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-  }
-
-  /* Embedded variant: fill flex parent and scroll the body. */
-  .ctp--embedded {
-    min-height: 0;
-    flex: 1 1 0%;
-    height: 100%;
-    font-size: 0.8125rem;
-  }
-
-  .ctp--embedded .ctp__body {
-    flex: 1 1 0;
-    min-height: 0;
-    overflow-y: auto;
-    -webkit-overflow-scrolling: touch;
-  }
-
-  .ctp--embedded .ctp__section {
-    padding: 1rem 1rem;
-  }
-
-  .ctp--embedded .ctp__section--danger {
-    padding-bottom: 1.25rem;
-  }
-
-  .ctp--embedded .ctp__section-hd {
-    font-size: 0.625rem;
-    margin-bottom: 0.625rem;
-    letter-spacing: 0.07em;
-  }
-
-  .ctp--embedded .ctp__label {
-    font-size: 0.6875rem;
-    font-weight: 500;
-    line-height: 1.35;
-  }
-
-  .ctp--embedded .ctp__val {
-    font-size: 0.625rem;
-  }
-
-  .ctp--embedded .ctp__field {
-    gap: 8px;
-    min-width: 0;
-  }
-
-  /* Narrow rail: stack paired controls so sliders aren't crushed. */
-  .ctp--embedded .ctp__row2 {
-    grid-template-columns: 1fr;
-    gap: 12px 0;
-  }
-
-  .ctp--embedded .ctp__font-controls {
-    gap: 14px 0;
-  }
-
-  .ctp--embedded .ctp__mt {
-    margin-top: 10px;
-  }
-
-  .ctp--embedded .ctp__hint {
-    font-size: 0.625rem;
-    line-height: 1.45;
-  }
-
-  .ctp--embedded .ctp__hint.ctp__mb {
-    margin-bottom: 0.625rem;
-  }
-
-  .ctp--embedded .ctp__slider {
-    margin-top: 1px;
-  }
-
-  .ctp--embedded .ctp__swatch-row {
-    gap: 8px;
-  }
-
-  .ctp--embedded .ctp__colors-grid {
-    gap: 6px 8px;
-  }
-
-  .ctp--embedded .ctp__colors-row {
-    gap: 6px;
-  }
-
-  .ctp--embedded .ctp__section--colors .ctp__colors-row > .ctp__label {
-    font-size: 0.6875rem;
-    margin: 0;
-    min-width: 0;
-  }
-
-  .ctp--embedded .ctp__section--colors .ctp__colors-swatch-row .ctp__swatch {
-    width: 24px;
-    height: 24px;
-  }
-
-  .ctp--embedded .ctp__section--colors .ctp__colors-swatch-row .ctp__hex {
-    padding: 0.35rem 0.5rem;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    font-family: inherit;
+  /* Text-box-specific: visible-range scrubber. Shared controls live in propertyPanel.css */
+  .ctp__range-readout {
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;
-    letter-spacing: 0.04em;
+    white-space: nowrap;
+    color: var(--fg-muted);
   }
 
-  .ctp--embedded .ctp__swatch {
-    width: 28px;
-    height: 28px;
+  .ctp__range-readout-span {
+    color: var(--fg-subtle);
   }
 
-  .ctp--embedded .ctp__hex {
-    flex: 1;
-    min-width: 0;
-    font-size: 0.6875rem;
-    padding: 0.375rem 0.5rem;
-  }
-
-  .ctp--embedded .ctp__font-grid {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.375rem;
-  }
-
-  .ctp--embedded .ctp__font-btn {
-    padding: 0.38rem 0.45rem;
-    font-size: 0.625rem;
-  }
-
-  .ctp--embedded .ctp__pill {
-    font-size: 0.6875rem;
-    padding: 0.4rem 0.65rem;
-  }
-
-  .ctp--embedded .ctp__seg-ctrl {
-    border-radius: 5px;
-    gap: 2px;
-    padding: 2px;
-  }
-
-  .ctp--embedded .ctp__seg-btn {
-    min-width: 28px;
-    min-height: 28px;
-    padding: 0.4rem 0.55rem;
-    font-size: 0.6875rem;
-  }
-
-  .ctp--embedded .ctp__textarea {
-    font-size: 0.75rem;
-    padding: 0.5rem 0.625rem;
-  }
-
-  .ctp--embedded .ctp__section-hd-row {
-    margin-bottom: 0.625rem;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .ctp--embedded .ctp__range-readout {
-    font-size: 0.625rem;
-  }
-
-  /* Header */
-  .ctp__header {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
-    flex-shrink: 0;
-  }
-
-  .ctp__back {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .ctp__back:hover {
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .ctp__title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    letter-spacing: -0.01em;
-  }
-
-  /* Body */
-  .ctp__body {
-    flex: 1;
-    overflow-y: auto;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .ctp__empty-state {
-    padding: 1.5rem 1.25rem;
-    color: var(--sidebar-text-muted);
-    font-size: 0.8125rem;
-  }
-
-  /* Sections */
-  .ctp__section {
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .ctp__section--danger {
-    border-bottom: none;
-    padding-bottom: 2.5rem;
-  }
-
-  .ctp__section-hd {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
-    color: var(--sidebar-text-muted);
-    margin-bottom: 0.75rem;
-  }
-
-  .ctp__section-hd-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-  }
-
-  .ctp__section-hd-row .ctp__section-hd {
-    margin-bottom: 0;
-  }
-
-  .ctp__hint {
-    color: var(--sidebar-text-muted);
-    font-size: 0.6875rem;
-    font-weight: 400;
-    line-height: 1.35;
-  }
-
-  .ctp__hint.ctp__mb {
-    margin-bottom: 8px;
-  }
-
-  /* Utility */
-  .ctp__mt {
-    margin-top: 8px;
-  }
-
-  .ctp__mb {
-    margin-bottom: 12px;
-  }
-
-  .ctp__row2 {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 0 10px;
-  }
-
-  .ctp__field {
-    display: flex;
-    flex-direction: column;
-    gap: 5px;
-  }
-
-  .ctp__label {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-  }
-
-  .ctp__val {
-    font-style: normal;
-    font-weight: 400;
-    color: var(--sidebar-text-muted);
-    margin-left: auto;
-  }
-
-  /* Textarea */
-  .ctp__textarea {
-    width: 100%;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    padding: 0.625rem 0.75rem;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-    resize: vertical;
-    font-family: inherit;
-    transition: all 150ms ease;
-  }
-
-  .ctp__textarea:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    background: rgba(255, 255, 255, 0.03);
-  }
-
-  /* Slider */
-  .ctp__slider {
-    width: 100%;
-    accent-color: var(--sidebar-accent);
-    cursor: pointer;
-  }
-
-  /* Visibility range track */
+  /* Geometry (0.5rem insets) is mirrored by the inline calc() positions in the template */
   .ctp__range-track {
     position: relative;
-    height: 40px;
-    border-radius: 8px;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
+    height: 36px;
+    border: 1px solid var(--line-subtle);
+    border-radius: var(--radius-control);
+    background: var(--surface-sunken);
     user-select: none;
     touch-action: none;
   }
 
   .ctp__range-bg {
     position: absolute;
-    top: 0.5rem;
-    bottom: 0.5rem;
-    left: 0.5rem;
-    right: 0.5rem;
+    inset: 0.5rem;
     border-radius: 4px;
-    background: rgba(0, 0, 0, 0.35);
+    background: var(--surface-hover);
     pointer-events: none;
   }
 
@@ -819,9 +502,9 @@
     position: absolute;
     top: 0.5rem;
     bottom: 0.5rem;
-    border-radius: 6px;
-    background: rgba(6, 182, 212, 0.28);
-    border: 1px solid rgba(6, 182, 212, 0.55);
+    border: 1px solid var(--brand-line);
+    border-radius: 4px;
+    background: var(--brand-soft);
     pointer-events: none;
   }
 
@@ -843,11 +526,12 @@
     z-index: 2;
     width: 14px;
     height: 14px;
+    padding: 0;
     transform: translate(-50%, -50%);
+    border: 2px solid var(--brand);
     border-radius: 50%;
-    background: #fff;
-    border: 2px solid var(--sidebar-accent);
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
+    background: var(--fg);
+    box-shadow: var(--shadow-sm);
     cursor: ew-resize;
     transition: transform 150ms ease;
   }
@@ -858,321 +542,16 @@
 
   .ctp__range-handle:focus-visible {
     outline: none;
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.45);
-  }
-
-  .ctp__range-readout {
-    font-family: 'Courier New', monospace;
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    white-space: nowrap;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .ctp__range-readout-span {
-    opacity: 0.65;
+    box-shadow: var(--focus-ring);
   }
 
   .ctp__range-axis {
     display: flex;
     justify-content: space-between;
     margin-top: 4px;
-    font-size: 0.5625rem;
-    color: var(--sidebar-text-muted);
-    opacity: 0.7;
-    font-family: 'Courier New', monospace;
+    font-family: var(--font-mono);
+    font-size: var(--text-2xs);
     font-variant-numeric: tabular-nums;
-  }
-
-  /* Font grid */
-  .ctp__font-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 3px;
-  }
-
-  .ctp__font-btn {
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    padding: 0.45rem 0.5rem;
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-    text-align: center;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .ctp__font-btn:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: var(--sidebar-border);
-    color: var(--sidebar-text);
-  }
-
-  .ctp__font-btn--active {
-    background: rgba(6, 182, 212, 0.15);
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-accent);
-  }
-
-  .ctp__font-controls {
-    column-gap: 18px;
-    align-items: start;
-  }
-
-  .ctp__font-controls .ctp__field {
-    min-width: 0;
-  }
-
-  /* Pills (weight) */
-  .ctp__pill-row {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-
-  .ctp__pill {
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 999px;
-    padding: 0.45rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-    white-space: nowrap;
-  }
-
-  .ctp__pill:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--sidebar-text);
-  }
-
-  .ctp__pill--active {
-    background: rgba(6, 182, 212, 0.15);
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-accent);
-  }
-
-  /* Segmented control (transform) */
-  .ctp__seg-ctrl {
-    display: flex;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    gap: 2px;
-    padding: 2px;
-    width: fit-content;
-  }
-
-  .ctp__seg-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    min-width: 32px;
-    min-height: 30px;
-    padding: 0.45rem 0.75rem;
-    background: var(--sidebar-hover);
-    border: 1px solid transparent;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    font-size: 0.75rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .ctp__seg-btn:hover {
-    background: rgba(255, 255, 255, 0.05);
-    color: var(--sidebar-text);
-  }
-
-  .ctp__seg-btn--active {
-    background: rgba(6, 182, 212, 0.15);
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-accent);
-    z-index: 1;
-  }
-
-  /* Colors */
-  .ctp__colors-grid {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr);
-    gap: 8px 12px;
-    align-items: center;
-  }
-
-  .ctp__colors-row {
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    gap: 8px;
-    min-width: 0;
-  }
-
-  .ctp__section--colors .ctp__colors-row > .ctp__label {
-    flex: 0 0 auto;
-    margin: 0;
-    width: auto;
-    min-width: 60px;
-    white-space: nowrap;
-    font-size: 0.75rem;
-    font-weight: 600;
-    line-height: 1.25;
-    color: var(--sidebar-text);
-  }
-
-  .ctp__colors-swatch-row {
-    flex: 1 1 0%;
-    min-width: 0;
-    gap: 6px;
-    align-items: center;
-  }
-
-  .ctp__section--colors .ctp__colors-swatch-row .ctp__swatch {
-    width: 28px;
-    height: 28px;
-    border-radius: 5px;
-  }
-
-  .ctp__section--colors .ctp__colors-swatch-row .ctp__hex {
-    min-width: 0;
-    padding: 0.4rem 0.6rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    font-family: inherit;
-    font-variant-numeric: tabular-nums;
-    letter-spacing: 0.04em;
-  }
-
-  .ctp__swatch-row {
-    display: flex;
-    align-items: center;
-    gap: 7px;
-  }
-
-  .ctp__swatch-wrap {
-    position: relative;
-    cursor: pointer;
-    display: block;
-    flex-shrink: 0;
-  }
-
-  .ctp__swatch-wrap input[type='color'] {
-    position: absolute;
-    inset: 0;
-    opacity: 0;
-    width: 100%;
-    height: 100%;
-    cursor: pointer;
-  }
-
-  .ctp__swatch {
-    display: block;
-    width: 36px;
-    height: 36px;
-    border-radius: 6px;
-    border: 1px solid var(--sidebar-border);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .ctp__swatch:hover {
-    border-color: var(--sidebar-accent);
-    transform: scale(1.05);
-  }
-
-  .ctp__hex {
-    flex: 1;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.75rem;
-    font-family: 'Courier New', monospace;
-    color: var(--sidebar-text);
-    text-transform: uppercase;
-    transition: all 150ms ease;
-  }
-
-  .ctp__hex:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    background: rgba(255, 255, 255, 0.03);
-  }
-
-  /* Toggle */
-  .ctp__toggle {
-    position: relative;
-    display: flex;
-    align-items: center;
-    cursor: pointer;
-  }
-
-  .ctp__toggle input {
-    display: none;
-  }
-
-  .ctp__toggle-track {
-    position: relative;
-    width: 44px;
-    height: 24px;
-    background: rgba(255, 255, 255, 0.1);
-    border: 1px solid rgba(255, 255, 255, 0.15);
-    border-radius: 12px;
-    cursor: pointer;
-    transition: all 200ms ease;
-    display: block;
-  }
-
-  .ctp__toggle input:checked + .ctp__toggle-track {
-    background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
-    border-color: rgba(14, 165, 233, 0.5);
-    box-shadow: 0 0 12px rgba(14, 165, 233, 0.3);
-  }
-
-  .ctp__toggle-thumb {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 18px;
-    height: 18px;
-    background: #fff;
-    border-radius: 50%;
-    transition: all 200ms ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-    display: block;
-  }
-
-  .ctp__toggle input:checked + .ctp__toggle-track .ctp__toggle-thumb {
-    transform: translateX(20px);
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-  }
-
-  /* Delete button */
-  .ctp__delete-btn {
-    width: 100%;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    border-radius: 0.625rem;
-    border: 1px solid rgba(248, 113, 113, 0.35);
-    background: rgba(248, 113, 113, 0.08);
-    color: #f87171;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .ctp__delete-btn:hover {
-    background: rgba(248, 113, 113, 0.14);
-    border-color: rgba(248, 113, 113, 0.55);
+    color: var(--fg-subtle);
   }
 </style>

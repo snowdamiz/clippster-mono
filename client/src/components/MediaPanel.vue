@@ -70,7 +70,9 @@
   import WorkspaceMediaHeader from './WorkspaceMediaHeader.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import { useAIPermission } from '@/composables/useAIPermission';
-  import { Sparkles, X as XIcon, Loader as LoaderIcon, Plus, FileText } from 'lucide-vue-next';
+  import { Sparkles, Plus, FileText } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
+  import InlineProgress from '@/components/workspace/InlineProgress.vue';
 
   // AI Permission check
   const { isAIAllowed } = useAIPermission();
@@ -604,20 +606,16 @@
       watermarkSettings.value = settings;
     },
   });
-  const mediaHeaderModel = reactive({ props, clips, isAIAllowed, transcriptData, handleCancelDetection, handleDetectClips, handleCancelTranscription, handleViewTranscript, handleTranscribe, handleAddClip });
+  const mediaHeaderModel = reactive({
+    props,
+    clips,
+    isAIAllowed,
+    transcriptData,
+    handleCancelDetection,
+    handleDetectClips,
+    handleCancelTranscription,
+    handleViewTranscript,
+    handleTranscribe,
+    handleAddClip,
+  });
 </script>
-
-<style scoped>
-  @keyframes shine {
-    0% {
-      transform: translateX(-100%) skewX(-12deg);
-    }
-    100% {
-      transform: translateX(200%) skewX(-12deg);
-    }
-  }
-
-  .animate-shine {
-    animation: shine 2s infinite;
-  }
-</style>

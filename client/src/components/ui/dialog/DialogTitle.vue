@@ -13,7 +13,7 @@
 </script>
 
 <template>
-  <DialogTitle v-bind="forwardedProps" :class="cn('text-lg font-semibold leading-none tracking-tight', props.class)">
+  <DialogTitle v-bind="forwardedProps" :class="cn('text-base font-semibold leading-snug tracking-[-0.01em] text-fg', props.class)">
     <slot />
   </DialogTitle>
 </template>

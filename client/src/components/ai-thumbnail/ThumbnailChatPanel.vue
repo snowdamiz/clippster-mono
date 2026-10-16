@@ -1,17 +1,17 @@
 <template>
-  <div class="chat-panel">
-    <div ref="messagesContainer" class="chat-panel__messages custom-scrollbar">
-      <div v-if="attachedVideoName" class="chat-panel__media-strip custom-scrollbar">
-        <div class="media-pill">
-          <Film :size="12" />
-          <span class="media-pill__name" :title="attachedVideoName">{{ attachedVideoName }}</span>
-          <span v-if="(keyFrameCount ?? 0) > 0" class="media-pill__tag">{{ keyFrameCount }} frames</span>
-        </div>
+  <div class="flex h-full min-h-0 flex-col">
+    <div ref="messagesContainer" class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-4 py-3">
+      <div v-if="attachedVideoName" class="mb-2 flex flex-wrap gap-1.5">
+        <ChatChip
+          :icon="Film"
+          :label="attachedVideoName"
+          :tag="(keyFrameCount ?? 0) > 0 ? `${keyFrameCount} frames` : undefined"
+        />
       </div>
 
-      <div v-if="!messages.length" class="chat-panel__empty">
+      <p v-if="!messages.length" class="px-3 py-4 text-center text-xs text-fg-subtle">
         Describe the thumbnail — hook, emotion, text placement, and what viewers should feel.
-      </div>
+      </p>
 
       <template v-for="msg in chatMessages" :key="msg.id">
         <ChatMessage :message="msg" />
@@ -21,79 +21,61 @@
         />
       </template>
 
-      <div v-if="isGenerating" class="chat-panel__generating">
-        <div class="gen-pulse" />
-        <span>
-          {{ generationMode === 'quick' ? 'Creating thumbnail candidates…' : 'Building plate + recipe…' }}
-        </span>
-      </div>
+      <ChatStatusCard
+        v-if="isGenerating"
+        class="mt-1"
+        :title="generationMode === 'quick' ? 'Creating thumbnail candidates…' : 'Building plate + recipe…'"
+      />
 
-      <div v-if="isSending || isRefining" class="chat-panel__typing">
-        <div class="typing-avatar"><Sparkles :size="14" /></div>
-        <div class="typing-dots">
-          <span />
-          <span />
-          <span />
-        </div>
-      </div>
+      <ChatTypingIndicator v-if="isSending || isRefining" />
     </div>
 
-    <RefinementBadge
-      v-if="isRefinementMode"
-      :round="refinementRound"
-      :max-rounds="maxRefinementRounds"
-      :messages-remaining="refinementMessagesRemaining"
-    />
+    <div class="flex shrink-0 flex-col gap-2 border-t border-line-subtle p-3">
+      <RefinementBadge
+        v-if="isRefinementMode"
+        :round="refinementRound"
+        :max-rounds="maxRefinementRounds"
+        :messages-remaining="refinementMessagesRemaining"
+      />
 
-    <div v-if="error" class="chat-panel__error">
-      <AlertCircle :size="14" />
-      <span>{{ error }}</span>
-      <button type="button" class="chat-panel__error-close" @click="$emit('clear-error')">
-        <X :size="12" />
-      </button>
-    </div>
+      <ChatNotice v-if="error" dismissible @dismiss="$emit('clear-error')">{{ error }}</ChatNotice>
 
-    <button
-      v-if="readyToGenerate && (isDiscovery || isStuckGenerating)"
-      type="button"
-      class="chat-panel__generate"
-      :disabled="isGenerating"
-      @click="$emit('generate')"
-    >
-      <Sparkles :size="16" />
-      {{
-        isStuckGenerating
-          ? `Retry ${generationMode === 'quick' ? 'Quick' : 'Editable'} Thumbnail · ${creditCost} credits`
-          : `Generate ${generationMode === 'quick' ? 'Quick' : 'Editable'} Thumbnail · ${creditCost} credits`
-      }}
-    </button>
+      <Button
+        v-if="readyToGenerate && (isDiscovery || isStuckGenerating)"
+        variant="primary"
+        block
+        :disabled="isGenerating"
+        @click="$emit('generate')"
+      >
+        <Sparkles />
+        {{
+          isStuckGenerating
+            ? `Retry ${generationMode === 'quick' ? 'quick' : 'editable'} thumbnail · ${creditCost} credits`
+            : `Generate ${generationMode === 'quick' ? 'quick' : 'editable'} thumbnail · ${creditCost} credits`
+        }}
+      </Button>
 
-    <div class="chat-panel__input">
-      <textarea
-        ref="inputEl"
+      <ChatComposer
         v-model="inputText"
         :placeholder="inputPlaceholder"
-        class="chat-input"
-        rows="1"
         :disabled="isGenerating || isCompleted"
-        @keydown.enter.exact.prevent="handleSend"
-        @input="autoResize"
+        :can-send="!isSending && !isRefining"
+        :sending="isSending || isRefining"
+        @send="handleSend"
       />
-      <button
-        type="button"
-        class="chat-send-btn"
-        :disabled="!inputText.trim() || isSending || isRefining || isGenerating || isCompleted"
-        @click="handleSend"
-      >
-        <Send :size="16" />
-      </button>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, watch, nextTick, onMounted } from 'vue';
-  import { Sparkles, Send, AlertCircle, X, Film } from 'lucide-vue-next';
+  import { Sparkles, Film } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
+  import ChatChip from '@/components/create/chat/ChatChip.vue';
+  import ChatComposer from '@/components/create/chat/ChatComposer.vue';
+  import ChatNotice from '@/components/create/chat/ChatNotice.vue';
+  import ChatStatusCard from '@/components/create/chat/ChatStatusCard.vue';
+  import ChatTypingIndicator from '@/components/create/chat/ChatTypingIndicator.vue';
   import ChatMessage from '@/components/ai-video/ChatMessage.vue';
   import RefinementBadge from '@/components/ai-video/RefinementBadge.vue';
   import ThumbnailSummaryCard, { type ThumbnailBriefSummary } from './ThumbnailSummaryCard.vue';
@@ -129,7 +111,6 @@
   }>();
 
   const messagesContainer = ref<HTMLDivElement | null>(null);
-  const inputEl = ref<HTMLTextAreaElement | null>(null);
 
   const inputText = computed({
     get: () => props.draftMessage ?? '',
@@ -159,19 +140,11 @@
     });
   }
 
-  function autoResize() {
-    const el = inputEl.value;
-    if (!el) return;
-    el.style.height = 'auto';
-    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
-  }
-
   function handleSend() {
     const text = inputText.value.trim();
     if (!text || props.isSending || props.isGenerating || props.isCompleted) return;
     emit('send', text);
     emit('update:draft-message', '');
-    nextTick(autoResize);
   }
 
   watch(
@@ -188,237 +161,5 @@
 
   onMounted(() => {
     scrollToBottom();
-    autoResize();
   });
 </script>
-
-<style scoped>
-  .chat-panel {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    min-height: 0;
-    gap: 0.5rem;
-    padding: 0.75rem;
-  }
-
-  .chat-panel__messages {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding-right: 2px;
-  }
-
-  .chat-panel__empty {
-    border: 1px dashed rgba(255, 255, 255, 0.1);
-    border-radius: 8px;
-    padding: 1rem;
-    text-align: center;
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.45);
-  }
-
-  .chat-panel__media-strip {
-    display: flex;
-    gap: 0.35rem;
-    padding-bottom: 0.5rem;
-    overflow-x: auto;
-  }
-
-  .media-pill {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.3rem;
-    padding: 0.2rem 0.5rem;
-    border-radius: 999px;
-    border: 1px solid rgba(14, 165, 233, 0.35);
-    background: rgba(14, 165, 233, 0.1);
-    color: rgba(255, 255, 255, 0.85);
-    font-size: 0.65rem;
-    flex-shrink: 0;
-  }
-
-  .media-pill__name {
-    max-width: 140px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    font-weight: 600;
-  }
-
-  .media-pill__tag {
-    padding: 0.04rem 0.35rem;
-    border-radius: 999px;
-    background: rgba(14, 165, 233, 0.25);
-    font-size: 0.6rem;
-  }
-
-  .chat-panel__generating {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    font-size: 12px;
-    color: rgba(255, 255, 255, 0.6);
-  }
-
-  .gen-pulse {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: var(--sidebar-accent, #0ea5e9);
-    animation: pulse 1.2s ease-in-out infinite;
-  }
-
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 0.4;
-      transform: scale(0.9);
-    }
-    50% {
-      opacity: 1;
-      transform: scale(1.1);
-    }
-  }
-
-  .chat-panel__typing {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-    padding: 4px 0;
-  }
-
-  .typing-avatar {
-    width: 26px;
-    height: 26px;
-    border-radius: 50%;
-    background: rgba(14, 165, 233, 0.2);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--sidebar-accent, #0ea5e9);
-  }
-
-  .typing-dots {
-    display: flex;
-    gap: 4px;
-  }
-
-  .typing-dots span {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.35);
-    animation: bounce 1.2s infinite;
-  }
-
-  .typing-dots span:nth-child(2) {
-    animation-delay: 0.15s;
-  }
-  .typing-dots span:nth-child(3) {
-    animation-delay: 0.3s;
-  }
-
-  @keyframes bounce {
-    0%,
-    80%,
-    100% {
-      transform: translateY(0);
-    }
-    40% {
-      transform: translateY(-4px);
-    }
-  }
-
-  .chat-panel__error {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 10px;
-    border-radius: 8px;
-    background: rgba(239, 68, 68, 0.12);
-    border: 1px solid rgba(239, 68, 68, 0.25);
-    font-size: 12px;
-    color: #fca5a5;
-  }
-
-  .chat-panel__error-close {
-    margin-left: auto;
-    border: 0;
-    background: transparent;
-    color: inherit;
-    cursor: pointer;
-    opacity: 0.7;
-  }
-
-  .chat-panel__generate {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    width: 100%;
-    padding: 0.65rem 1rem;
-    border-radius: 8px;
-    border: 0;
-    background: linear-gradient(135deg, var(--sidebar-accent, #0ea5e9) 0%, #0284c7 100%);
-    color: white;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-  }
-
-  .chat-panel__generate:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .chat-panel__input {
-    display: flex;
-    gap: 0.5rem;
-    align-items: flex-end;
-    padding-top: 0.25rem;
-    border-top: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .chat-input {
-    flex: 1;
-    min-height: 36px;
-    max-height: 120px;
-    resize: none;
-    border-radius: 8px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    background: rgba(255, 255, 255, 0.04);
-    color: rgba(255, 255, 255, 0.9);
-    font-size: 13px;
-    padding: 8px 10px;
-    outline: none;
-  }
-
-  .chat-input:focus {
-    border-color: rgba(14, 165, 233, 0.55);
-  }
-
-  .chat-send-btn {
-    flex-shrink: 0;
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    border: 0;
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.85);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-  }
-
-  .chat-send-btn:hover:not(:disabled) {
-    background: var(--sidebar-accent, #0ea5e9);
-  }
-
-  .chat-send-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-</style>

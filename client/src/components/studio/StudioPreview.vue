@@ -12,8 +12,8 @@
       />
 
       <div v-if="showPlaceholder" class="studio-preview__placeholder">
-        <Monitor v-if="backgroundSourceType === 'display'" :size="32" class="studio-preview__placeholder-icon" />
-        <Film v-else :size="32" class="studio-preview__placeholder-icon" />
+        <Monitor v-if="backgroundSourceType === 'display'" :size="28" :stroke-width="1.5" class="studio-preview__placeholder-icon" />
+        <Film v-else :size="28" :stroke-width="1.5" class="studio-preview__placeholder-icon" />
         <span class="studio-preview__placeholder-label">{{ placeholderLabel }}</span>
       </div>
 
@@ -723,7 +723,8 @@
   .studio-preview__canvas {
     position: relative;
     flex: 0 0 auto;
-    background: #0a0a0b;
+    background: var(--panel);
+    outline: 1px solid var(--line-subtle);
     overflow: hidden;
     margin: 0 auto;
   }
@@ -761,7 +762,7 @@
     align-items: center;
     justify-content: center;
     gap: 0.5rem;
-    color: var(--sidebar-text-muted);
+    color: var(--fg-muted);
     pointer-events: none;
   }
 
@@ -777,31 +778,31 @@
     cursor: move;
   }
 
+  /* Selection outline; color identifies the layer kind (camera / screen source / watermark). */
   .studio-preview__selection-box {
+    --selection-color: var(--brand);
     position: absolute;
     pointer-events: none;
-    border: 1px dashed rgba(6, 182, 212, 0.75);
+    border: 1px dashed var(--selection-color);
     border-radius: 2px;
-    box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.2);
   }
 
   .studio-preview__selection-box--source {
-    border-color: rgba(168, 85, 247, 0.75);
-    box-shadow: 0 0 0 1px rgba(168, 85, 247, 0.2);
+    --selection-color: var(--track-audio);
   }
 
   .studio-preview__selection-box--watermark {
-    border-color: rgba(234, 179, 8, 0.75);
-    box-shadow: 0 0 0 1px rgba(234, 179, 8, 0.2);
+    --selection-color: var(--track-watermark);
   }
 
   .studio-preview__resize-handle {
     position: absolute;
-    right: -4px;
-    bottom: -4px;
+    right: -5px;
+    bottom: -5px;
     width: 10px;
     height: 10px;
-    background: var(--sidebar-accent);
+    background: var(--selection-color);
+    border: 1px solid var(--surface-sunken);
     border-radius: 2px;
     pointer-events: auto;
     cursor: nwse-resize;
@@ -818,18 +819,18 @@
   }
 
   .studio-preview__placeholder-icon {
-    opacity: 0.5;
+    color: var(--fg-subtle);
   }
 
   .studio-preview__placeholder-label {
     font-size: 0.75rem;
-    opacity: 0.6;
+    color: var(--fg-muted);
   }
 
   .studio-preview__hint {
     flex-shrink: 0;
     font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
+    color: var(--fg-subtle);
     text-align: center;
     margin: 0;
   }

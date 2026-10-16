@@ -1,7 +1,8 @@
 <script setup lang="ts">
 import { computed } from "vue";
 import { ACTIONS, type TActionDefinition, type TActionCategory } from "../lib/actions/definitions";
-import { X } from "lucide-vue-next";
+import { Keyboard } from "lucide-vue-next";
+import { Modal } from "@/components/ui/modal";
 import { useImageMode } from "../composables/useImageMode";
 
 defineProps<{ open: boolean }>();
@@ -67,52 +68,39 @@ function shortcutsFor(action: string, def: TActionDefinition): string[] {
 </script>
 
 <template>
-	<Teleport to="body">
-		<div
-			v-if="open"
-			class="fixed inset-0 z-[9999] flex items-center justify-center bg-black/60"
-			role="dialog"
-			aria-modal="true"
-			aria-labelledby="keyboard-shortcuts-title"
-			@click.self="emit('close')"
-			@keydown.esc="emit('close')"
-		>
-			<div class="relative max-h-[80vh] w-full max-w-lg overflow-y-auto rounded-xl border border-white/10 bg-[#1c1c1e] p-6 shadow-2xl">
-				<button
-					type="button"
-					class="absolute top-3 right-3 rounded p-1 text-zinc-400 hover:bg-white/10 hover:text-white"
-					aria-label="Close keyboard shortcuts"
-					@click="emit('close')"
-				>
-					<X class="size-4" />
-				</button>
-
-				<h2 id="keyboard-shortcuts-title" class="mb-4 text-lg font-semibold text-white">Keyboard Shortcuts</h2>
-
-				<div v-for="cat in categories" :key="cat.key" class="mb-4">
-					<template v-if="groupedActions[cat.key]?.length">
-						<h3 class="mb-1.5 text-xs font-medium uppercase tracking-wider text-zinc-500">{{ cat.label }}</h3>
-						<div class="space-y-1">
-							<div
-								v-for="item in groupedActions[cat.key]"
-								:key="item.action"
-								class="flex items-center justify-between rounded px-2 py-1 text-sm hover:bg-white/5"
-							>
-								<span class="text-zinc-300">{{ item.def.description }}</span>
-								<div class="flex gap-1">
-									<kbd
-										v-for="(shortcut, idx) in shortcutsFor(item.action, item.def)"
-										:key="idx"
-										class="rounded border border-white/10 bg-white/5 px-1.5 py-0.5 font-mono text-xs text-zinc-400"
-									>
-										{{ formatShortcut(shortcut) }}
-									</kbd>
-								</div>
-							</div>
+	<Modal
+		:open="open"
+		title="Keyboard shortcuts"
+		:description="isImageMode ? 'Shortcuts for the image editor.' : 'Shortcuts for the video editor and timeline.'"
+		:icon="Keyboard"
+		size="lg"
+		body-class="!pt-2"
+		@update:open="(value) => { if (!value) emit('close'); }"
+	>
+		<div class="flex flex-col gap-4">
+			<template v-for="cat in categories" :key="cat.key">
+				<section v-if="groupedActions[cat.key]?.length" class="flex flex-col gap-1">
+					<h3 class="eyebrow px-1 pb-1">{{ cat.label }}</h3>
+					<div class="overflow-hidden rounded-[var(--radius-card)] border border-line-subtle bg-surface">
+						<div
+							v-for="item in groupedActions[cat.key]"
+							:key="item.action"
+							class="flex min-h-9 items-center justify-between gap-4 border-b border-line-subtle px-3 py-1.5 last:border-b-0"
+						>
+							<span class="text-sm text-fg">{{ item.def.description }}</span>
+							<span class="flex shrink-0 items-center gap-1">
+								<kbd
+									v-for="(shortcut, idx) in shortcutsFor(item.action, item.def)"
+									:key="idx"
+									class="inline-flex h-5 min-w-5 items-center justify-center rounded border border-line-strong bg-surface-raised px-1.5 text-2xs font-medium text-fg shadow-[0_1px_0_var(--line-strong)]"
+								>
+									{{ formatShortcut(shortcut) }}
+								</kbd>
+							</span>
 						</div>
-					</template>
-				</div>
-			</div>
+					</div>
+				</section>
+			</template>
 		</div>
-	</Teleport>
+	</Modal>
 </template>

@@ -1,217 +1,149 @@
 <template>
-  <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="modelValue" class="fixed inset-0 bg-black/80 backdrop-blur-md flex items-center justify-center z-[70]">
-        <Transition name="dialog" appear>
+  <Modal
+    :open="modelValue"
+    title="Subtitle adjustment"
+    :description="`Adjust subtitle size and position for ${aspectRatio} output`"
+    :icon="Type"
+    size="lg"
+    flush
+    @close="close"
+  >
+    <!-- Video Preview with Subtitle Overlay -->
+    <div class="flex max-h-[350px] min-h-[280px] items-center justify-center bg-surface-sunken p-4">
+      <div ref="previewContainer" class="relative overflow-hidden rounded-lg bg-black" :style="previewContainerStyle">
+        <!-- Video Element -->
+        <video
+          v-if="videoUrl"
+          ref="videoElement"
+          :src="videoUrl"
+          class="h-full w-full object-cover"
+          crossorigin="anonymous"
+          @timeupdate="onTimeUpdate"
+          @loadedmetadata="onVideoLoaded"
+          @error="onVideoError"
+        />
+
+        <!-- Fallback thumbnail -->
+        <img v-else-if="thumbnailUrl" :src="thumbnailUrl" class="h-full w-full object-cover" alt="Preview" />
+
+        <!-- Loading state -->
+        <div v-else class="absolute inset-0 flex items-center justify-center bg-surface">
+          <div class="text-sm text-fg-subtle">Loading preview…</div>
+        </div>
+
+        <!-- Subtitle Overlay Preview -->
+        <div
+          v-if="subtitleSettings"
+          class="pointer-events-none absolute inset-0 flex items-center justify-center"
+          :style="subtitleContainerStyle"
+        >
+          <div class="subtitle-preview" :style="subtitleTextStyle">Sample Subtitle Text</div>
+        </div>
+
+        <!-- Position Guide Lines -->
+        <div class="pointer-events-none absolute inset-0">
+          <!-- Horizontal line showing current position -->
           <div
-            class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl w-full max-w-3xl mx-4 border border-white/10 max-h-[90vh] flex flex-col overflow-hidden shadow-2xl"
-          >
-            <!-- Top accent -->
-            <div class="h-1 w-full bg-gradient-to-r from-purple-500 via-indigo-500 to-blue-500 flex-shrink-0" />
-
-            <!-- Header -->
-            <div class="flex items-center justify-between px-5 py-4 border-b border-zinc-800 bg-zinc-900/50">
-              <div class="flex items-center gap-3">
-                <div
-                  class="w-10 h-10 rounded-xl bg-gradient-to-br from-purple-500/20 to-indigo-500/20 flex items-center justify-center border border-purple-500/30"
-                >
-                  <Type class="h-5 w-5 text-purple-400" />
-                </div>
-                <div>
-                  <h2 class="text-lg font-semibold text-white">Subtitle Adjustment</h2>
-                  <p class="text-xs text-zinc-400">Adjust subtitle size and position for {{ aspectRatio }} output</p>
-                </div>
-              </div>
-              <button
-                @click="close"
-                class="p-2 hover:bg-zinc-800 rounded-xl transition-colors border border-zinc-800"
-                title="Close"
-              >
-                <XIcon class="h-5 w-5 text-zinc-400 hover:text-white" />
-              </button>
-            </div>
-
-            <!-- Main Content -->
-            <div class="flex-1 overflow-hidden flex flex-col">
-              <!-- Video Preview with Subtitle Overlay -->
-              <div class="flex items-center justify-center p-4 bg-zinc-950/50 min-h-[280px] max-h-[350px]">
-                <div
-                  ref="previewContainer"
-                  class="relative bg-black rounded-lg overflow-hidden shadow-2xl"
-                  :style="previewContainerStyle"
-                >
-                  <!-- Video Element -->
-                  <video
-                    v-if="videoUrl"
-                    ref="videoElement"
-                    :src="videoUrl"
-                    class="w-full h-full object-cover"
-                    crossorigin="anonymous"
-                    @timeupdate="onTimeUpdate"
-                    @loadedmetadata="onVideoLoaded"
-                    @error="onVideoError"
-                  />
-
-                  <!-- Fallback thumbnail -->
-                  <img v-else-if="thumbnailUrl" :src="thumbnailUrl" class="w-full h-full object-cover" alt="Preview" />
-
-                  <!-- Loading state -->
-                  <div v-else class="absolute inset-0 flex items-center justify-center bg-zinc-900">
-                    <div class="text-zinc-500 text-sm">Loading preview...</div>
-                  </div>
-
-                  <!-- Subtitle Overlay Preview -->
-                  <div
-                    v-if="subtitleSettings"
-                    class="absolute inset-0 pointer-events-none flex items-center justify-center"
-                    :style="subtitleContainerStyle"
-                  >
-                    <div class="subtitle-preview" :style="subtitleTextStyle">Sample Subtitle Text</div>
-                  </div>
-
-                  <!-- Position Guide Lines -->
-                  <div class="absolute inset-0 pointer-events-none">
-                    <!-- Horizontal line showing current position -->
-                    <div
-                      class="absolute left-0 right-0 border-t border-dashed border-purple-500/50 transition-all duration-150"
-                      :style="{ top: `${localOverride.positionPercentage}%` }"
-                    />
-                    <!-- Center vertical line -->
-                    <div class="absolute top-0 bottom-0 left-1/2 border-l border-dashed border-purple-500/20" />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Video Playback Controls -->
-              <div v-if="clipDuration > 0" class="px-5 py-3 border-t border-zinc-800 bg-zinc-900/70">
-                <div class="flex items-center gap-4">
-                  <!-- Play/Pause button -->
-                  <button
-                    @click="togglePlayback"
-                    class="w-9 h-9 rounded-full bg-purple-600 hover:bg-purple-500 flex items-center justify-center text-white transition-colors shadow-lg"
-                    :disabled="!videoUrl"
-                    :class="{ 'opacity-50 cursor-not-allowed': !videoUrl }"
-                  >
-                    <PlayIcon v-if="!isPlaying" class="w-4 h-4 ml-0.5" />
-                    <PauseIcon v-else class="w-4 h-4" />
-                  </button>
-
-                  <!-- Time display -->
-                  <span class="text-xs text-zinc-400 font-mono w-20">
-                    {{ formatTime(currentTime) }} / {{ formatTime(clipDuration) }}
-                  </span>
-
-                  <!-- Progress bar -->
-                  <div class="flex-1 relative group">
-                    <div class="h-1.5 bg-zinc-700 rounded-full overflow-hidden cursor-pointer" @click="onSeekClick">
-                      <div
-                        class="h-full bg-gradient-to-r from-purple-500 to-indigo-500 transition-all duration-100"
-                        :style="{ width: `${(currentTime / clipDuration) * 100}%` }"
-                      />
-                    </div>
-                    <!-- Seek handle -->
-                    <div
-                      class="absolute top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md opacity-0 group-hover:opacity-100 transition-opacity pointer-events-none"
-                      :style="{ left: `calc(${(currentTime / clipDuration) * 100}% - 6px)` }"
-                    />
-                  </div>
-
-                  <!-- Reset button -->
-                  <button
-                    @click="resetPlayback"
-                    class="p-2 text-zinc-400 hover:text-white hover:bg-zinc-800 rounded-lg transition-colors"
-                    title="Reset to start"
-                  >
-                    <RotateCcwIcon class="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              <!-- Adjustment Controls -->
-              <div class="px-5 py-4 border-t border-zinc-800 bg-zinc-900/50 space-y-4 flex-shrink-0">
-                <!-- Font Size -->
-                <div class="space-y-2">
-                  <div class="flex items-center justify-between">
-                    <label class="text-sm font-medium text-zinc-300">Font Size</label>
-                    <span class="text-sm font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded">
-                      {{ localOverride.fontSize }}px
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    v-model.number="localOverride.fontSize"
-                    min="12"
-                    max="150"
-                    step="2"
-                    class="subtitle-slider"
-                  />
-                  <div class="flex justify-between text-[10px] text-zinc-500">
-                    <span>12px</span>
-                    <span>150px</span>
-                  </div>
-                </div>
-
-                <!-- Vertical Position -->
-                <div class="space-y-2">
-                  <div class="flex items-center justify-between">
-                    <label class="text-sm font-medium text-zinc-300">Vertical Position</label>
-                    <span class="text-sm font-mono text-purple-400 bg-purple-500/10 px-2 py-0.5 rounded">
-                      {{ localOverride.positionPercentage }}%
-                    </span>
-                  </div>
-                  <input
-                    type="range"
-                    v-model.number="localOverride.positionPercentage"
-                    min="5"
-                    max="95"
-                    step="1"
-                    class="subtitle-slider"
-                  />
-                  <div class="flex justify-between text-[10px] text-zinc-500">
-                    <span>Top (5%)</span>
-                    <span>Bottom (95%)</span>
-                  </div>
-                </div>
-
-                <!-- Reset to defaults button -->
-                <button @click="resetToDefaults" class="text-xs text-zinc-400 hover:text-zinc-200 transition-colors">
-                  Reset to project defaults
-                </button>
-              </div>
-            </div>
-
-            <!-- Footer -->
-            <div class="flex items-center justify-between px-5 py-4 border-t border-zinc-800 bg-zinc-900/50">
-              <div class="text-sm text-zinc-500">Changes will only apply to the {{ aspectRatio }} export</div>
-              <div class="flex items-center gap-3">
-                <button
-                  @click="close"
-                  class="px-4 py-2 text-sm font-medium text-zinc-300 hover:text-white bg-zinc-800 hover:bg-zinc-700 border border-zinc-700 rounded-lg transition-colors"
-                >
-                  Cancel
-                </button>
-                <button
-                  @click="confirmChanges"
-                  class="flex items-center gap-2 px-5 py-2 text-sm font-semibold rounded-lg transition-all relative overflow-hidden group bg-gradient-to-r from-purple-600 to-indigo-600 text-white hover:from-purple-500 hover:to-indigo-500"
-                >
-                  <div
-                    class="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent -translate-x-full group-hover:translate-x-full transition-transform duration-700"
-                  />
-                  <CheckIcon class="h-4 w-4 relative" />
-                  <span class="relative">Apply</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </Transition>
+            class="absolute inset-x-0 border-t border-dashed border-brand-line transition-[top] duration-150"
+            :style="{ top: `${localOverride.positionPercentage}%` }"
+          />
+          <!-- Center vertical line -->
+          <div class="absolute inset-y-0 left-1/2 border-l border-dashed border-line-strong" />
+        </div>
       </div>
-    </Transition>
-  </Teleport>
+    </div>
+
+    <!-- Video Playback Controls -->
+    <div v-if="clipDuration > 0" class="flex items-center gap-3 border-t border-line-subtle px-5 py-2.5">
+      <Button
+        variant="secondary"
+        size="icon-sm"
+        :disabled="!videoUrl"
+        :title="isPlaying ? 'Pause' : 'Play'"
+        :aria-label="isPlaying ? 'Pause' : 'Play'"
+        @click="togglePlayback"
+      >
+        <PlayIcon v-if="!isPlaying" class="fill-current" />
+        <PauseIcon v-else class="fill-current" />
+      </Button>
+
+      <!-- Time display -->
+      <span class="tabular w-24 shrink-0 font-mono text-xs text-fg-muted">
+        {{ formatTime(currentTime) }} / {{ formatTime(clipDuration) }}
+      </span>
+
+      <!-- Progress bar -->
+      <div class="group relative flex-1">
+        <div class="h-1.5 cursor-pointer overflow-hidden rounded-full bg-line-strong" @click="onSeekClick">
+          <div
+            class="h-full bg-brand transition-[width] duration-100"
+            :style="{ width: `${(currentTime / clipDuration) * 100}%` }"
+          />
+        </div>
+        <!-- Seek handle -->
+        <div
+          class="pointer-events-none absolute top-1/2 size-3 -translate-y-1/2 rounded-full bg-fg opacity-0 shadow-[var(--shadow-sm)] transition-opacity group-hover:opacity-100"
+          :style="{ left: `calc(${(currentTime / clipDuration) * 100}% - 6px)` }"
+        />
+      </div>
+
+      <!-- Reset button -->
+      <Button variant="ghost" size="icon-sm" title="Reset to start" aria-label="Reset to start" @click="resetPlayback">
+        <RotateCcwIcon />
+      </Button>
+    </div>
+
+    <!-- Adjustment Controls -->
+    <div class="flex flex-col gap-4 border-t border-line-subtle px-5 py-4">
+      <!-- Font Size -->
+      <Field>
+        <template #label>Font size</template>
+        <template #label-end>
+          <span class="tabular font-mono text-xs text-fg">{{ localOverride.fontSize }}px</span>
+        </template>
+        <input v-model.number="localOverride.fontSize" type="range" min="12" max="150" step="2" class="w-full" />
+        <div class="flex justify-between text-2xs text-fg-subtle">
+          <span>12px</span>
+          <span>150px</span>
+        </div>
+      </Field>
+
+      <!-- Vertical Position -->
+      <Field>
+        <template #label>Vertical position</template>
+        <template #label-end>
+          <span class="tabular font-mono text-xs text-fg">{{ localOverride.positionPercentage }}%</span>
+        </template>
+        <input v-model.number="localOverride.positionPercentage" type="range" min="5" max="95" step="1" class="w-full" />
+        <div class="flex justify-between text-2xs text-fg-subtle">
+          <span>Top (5%)</span>
+          <span>Bottom (95%)</span>
+        </div>
+      </Field>
+
+      <!-- Reset to defaults button -->
+      <div>
+        <Button variant="ghost" size="xs" class="-ml-2" @click="resetToDefaults">Reset to project defaults</Button>
+      </div>
+    </div>
+
+    <template #footer>
+      <p class="mr-auto text-xs text-fg-subtle">Changes will only apply to the {{ aspectRatio }} export</p>
+      <Button variant="ghost" @click="close">Cancel</Button>
+      <Button variant="primary" @click="confirmChanges">
+        <CheckIcon />
+        Apply
+      </Button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
   import { ref, watch, computed, onUnmounted } from 'vue';
-  import { Type, XIcon, CheckIcon, PlayIcon, PauseIcon, RotateCcwIcon } from 'lucide-vue-next';
+  import { Type, CheckIcon, PlayIcon, PauseIcon, RotateCcwIcon } from 'lucide-vue-next';
+  import { Modal } from '@/components/ui/modal';
+  import { Button } from '@/components/ui/button';
+  import { Field } from '@/components/ui/field';
   import Hls from 'hls.js';
   import type { SubtitleSettings, SubtitleOverride } from '@/types';
   import { resolvePoiVideoSource } from '@/services/poiRuntime';
@@ -527,92 +459,9 @@
 </script>
 
 <style scoped>
-  /* Modal backdrop transition */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 0.3s ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  /* Dialog transition */
-  .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 0.2s ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* Subtitle preview styling */
+  /* Subtitle preview styling (colors/size come from the user's subtitle settings) */
   .subtitle-preview {
     text-align: center;
     white-space: nowrap;
-  }
-
-  /* Range input styling */
-  .subtitle-slider {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 100%;
-    height: 8px;
-    background: rgb(63 63 70);
-    border-radius: 4px;
-    outline: none;
-    cursor: pointer;
-  }
-
-  .subtitle-slider::-webkit-slider-runnable-track {
-    height: 8px;
-    border-radius: 4px;
-    background: rgb(63 63 70);
-  }
-
-  .subtitle-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: rgb(168 85 247);
-    cursor: pointer;
-    border: 2px solid white;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    margin-top: -5px;
-    transition: transform 0.15s ease;
-  }
-
-  .subtitle-slider::-webkit-slider-thumb:hover {
-    background: rgb(147 51 234);
-    transform: scale(1.1);
-  }
-
-  .subtitle-slider::-moz-range-track {
-    height: 8px;
-    border-radius: 4px;
-    background: rgb(63 63 70);
-  }
-
-  .subtitle-slider::-moz-range-thumb {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: rgb(168 85 247);
-    cursor: pointer;
-    border: 2px solid white;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
   }
 </style>

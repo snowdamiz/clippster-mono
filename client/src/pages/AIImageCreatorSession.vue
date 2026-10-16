@@ -1,210 +1,172 @@
 <template>
-  <div class="flex h-full w-full flex-col overflow-hidden bg-[#0e0e10]">
+  <div class="flex h-full w-full flex-col overflow-hidden bg-panel">
     <AIImageCreatorHeader
       :title="projectTitle"
       mode="image"
       :can-export="Boolean(generatedImageUrl)"
       :busy="exportBusy"
       :status-label="statusLabel"
-      :status-class="statusClass"
+      :status-variant="statusVariant"
       @back="backToProjects"
       @rename="onRename"
       @change-mode="onChangeMode"
       @export="onExportAction"
     />
 
-    <div v-if="bootError" class="flex flex-1 flex-col items-center justify-center gap-3 p-8 text-center">
-      <p class="text-sm text-red-300">{{ bootError }}</p>
-      <button type="button" class="rounded-lg bg-sky-600 px-4 py-2 text-sm font-semibold text-white" @click="backToProjects">
-        Back to projects
-      </button>
-    </div>
+    <EmptyState
+      v-if="bootError"
+      :icon="AlertTriangle"
+      tone="danger"
+      title="Couldn't open this project"
+      :description="bootError"
+    >
+      <Button variant="secondary" @click="backToProjects">Back to projects</Button>
+    </EmptyState>
 
     <div v-else-if="isLoading && !session" class="flex flex-1 items-center justify-center">
-      <Loader2 :size="36" class="animate-spin text-zinc-500" />
+      <Loader2 class="size-6 animate-spin text-fg-subtle" />
     </div>
 
     <div v-else class="flex min-h-0 flex-1 overflow-hidden">
-      <aside class="flex w-[380px] shrink-0 flex-col border-r border-white/10 bg-[#121214]">
-        <div class="border-b border-white/10 px-4 py-3">
-          <p class="text-[11px] text-zinc-500">
+      <!-- Chat rail -->
+      <aside class="flex w-[clamp(300px,34vw,400px)] shrink-0 flex-col border-r border-line-subtle bg-surface">
+        <div class="flex h-9 shrink-0 items-center gap-1.5 border-b border-line-subtle px-4 text-xs text-fg-muted">
+          <Sparkles class="size-3.5 shrink-0 text-ai" />
+          <span class="truncate">
             <template v-if="hasGeneratedImage">
               Revisions · {{ IMAGE_EDIT_CREDIT_COST }} credits each · chat is free
             </template>
-            <template v-else> True image creation · {{ IMAGE_CREATION_CREDIT_COST }} credits </template>
-          </p>
+            <template v-else>True image creation · {{ IMAGE_CREATION_CREDIT_COST }} credits</template>
+          </span>
         </div>
 
-        <div ref="messagesEl" class="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+        <div ref="messagesEl" class="flex min-h-0 flex-1 flex-col gap-1 overflow-y-auto px-4 py-3">
           <ChatMessage v-for="message in chatMessages" :key="message.id" :message="message" />
 
-          <div
-            v-if="isSending"
-            class="flex items-center gap-3 rounded-lg border border-white/10 bg-white/[0.03] p-3"
-          >
-            <Loader2 :size="16" class="animate-spin text-zinc-400" />
-            <p class="text-xs text-zinc-400">Assistant is thinking…</p>
-          </div>
+          <ChatTypingIndicator v-if="isSending" label="Thinking…" />
 
-          <div
+          <ChatStatusCard
             v-if="isGeneratingPrompt"
-            class="flex items-center gap-3 rounded-lg border border-sky-500/20 bg-sky-500/5 p-3"
-          >
-            <Loader2 :size="18" class="animate-spin text-sky-400" />
-            <div>
-              <p class="text-sm font-semibold text-zinc-100">
-                {{ hasGeneratedImage ? 'Preparing edit' : 'Generating prompt' }}
-              </p>
-              <p class="text-xs text-zinc-500">
-                {{
-                  hasGeneratedImage
-                    ? 'Turning your feedback into a precise edit instruction…'
-                    : 'Locking in your production-ready image brief…'
-                }}
-              </p>
-            </div>
-          </div>
-
-          <div
+            class="mt-1"
+            :title="hasGeneratedImage ? 'Preparing edit' : 'Generating prompt'"
+            :description="
+              hasGeneratedImage
+                ? 'Turning your feedback into a precise edit instruction…'
+                : 'Locking in your production-ready image brief…'
+            "
+          />
+          <ChatStatusCard
             v-else-if="isGenerating"
-            class="flex items-center gap-3 rounded-lg border border-sky-500/20 bg-sky-500/5 p-3"
-          >
-            <Loader2 :size="18" class="animate-spin text-sky-400" />
-            <div>
-              <p class="text-sm font-semibold text-zinc-100">
-                {{ hasGeneratedImage ? 'Improving image' : 'Creating image' }}
-              </p>
-              <p class="text-xs text-zinc-500">
-                {{
-                  hasGeneratedImage
-                    ? 'Editing from your current image…'
-                    : 'Usually takes 1–3 minutes at high quality…'
-                }}
-              </p>
-            </div>
-          </div>
+            class="mt-1"
+            :title="hasGeneratedImage ? 'Improving image' : 'Creating image'"
+            :description="
+              hasGeneratedImage ? 'Editing from your current image…' : 'Usually takes 1–3 minutes at high quality…'
+            "
+          />
         </div>
 
-        <div class="shrink-0 space-y-2 border-t border-white/10 p-3">
-          <div v-if="error" class="rounded-lg border border-red-500/20 bg-red-500/10 px-3 py-2 text-xs text-red-300">
-            {{ error }}
-          </div>
-          <div v-if="exportMessage" class="rounded-lg border border-emerald-500/20 bg-emerald-500/10 px-3 py-2 text-xs text-emerald-300">
+        <div class="flex shrink-0 flex-col gap-2 border-t border-line-subtle p-3">
+          <ChatNotice v-if="error">{{ error }}</ChatNotice>
+          <ChatNotice v-if="exportMessage" tone="success" dismissible @dismiss="exportMessage = null">
             {{ exportMessage }}
-          </div>
-          <button
+          </ChatNotice>
+          <Button
             v-if="readyToGenerate"
-            type="button"
-            class="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--sidebar-accent)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90"
+            variant="primary"
+            block
             :disabled="isSending || isGeneratingPrompt || isGenerating"
             @click="onGenerate"
           >
-            <Sparkles :size="16" />
+            <Sparkles />
             {{
               session?.status === 'generating'
-                ? `Retry Create · ${IMAGE_CREATION_CREDIT_COST} credits`
-                : `Create Image · ${IMAGE_CREATION_CREDIT_COST} credits`
+                ? `Retry create · ${IMAGE_CREATION_CREDIT_COST} credits`
+                : `Create image · ${IMAGE_CREATION_CREDIT_COST} credits`
             }}
-          </button>
-          <button
+          </Button>
+          <Button
             v-else-if="readyToEdit"
-            type="button"
-            class="flex w-full items-center justify-center gap-2 rounded-lg bg-[var(--sidebar-accent)] px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50 hover:opacity-90"
+            variant="primary"
+            block
             :disabled="isSending || isGeneratingPrompt || isGenerating"
             @click="onRevise"
           >
-            <Sparkles :size="16" />
+            <Sparkles />
             Apply changes · {{ IMAGE_EDIT_CREDIT_COST }} credits
-          </button>
-          <div class="flex items-end gap-2">
-            <textarea
-              ref="inputEl"
-              v-model="draft"
-              rows="1"
-              class="min-h-10 flex-1 resize-none rounded-lg border border-white/10 bg-zinc-900 px-3 py-2 text-sm text-zinc-100 outline-none placeholder:text-zinc-600 focus:border-sky-500"
-              :placeholder="
-                hasGeneratedImage
-                  ? 'Describe changes to this image…'
-                  : 'Describe the image you want…'
-              "
-              :disabled="isSending || isGeneratingPrompt || isGenerating"
-              @keydown.enter.exact.prevent="send"
-            />
-            <button
-              type="button"
-              class="flex size-10 shrink-0 items-center justify-center rounded-lg bg-sky-600 text-white disabled:opacity-40"
-              :disabled="!draft.trim() || isSending || isGeneratingPrompt || isGenerating"
-              @click="send"
-            >
-              <Loader2 v-if="isSending" :size="16" class="animate-spin" />
-              <Send v-else :size="16" />
-            </button>
-          </div>
+          </Button>
+          <ChatComposer
+            ref="inputEl"
+            v-model="draft"
+            :placeholder="hasGeneratedImage ? 'Describe changes to this image…' : 'Describe the image you want…'"
+            :disabled="isSending || isGeneratingPrompt || isGenerating"
+            :sending="isSending"
+            @send="send"
+          />
         </div>
       </aside>
 
-      <main class="flex min-w-0 flex-1 flex-col items-center justify-center overflow-auto p-8">
-        <div v-if="isGeneratingPrompt" class="flex flex-col items-center gap-3 text-center">
-          <Sparkles :size="44" class="animate-pulse text-sky-400" />
-          <h2 class="text-xl font-semibold text-zinc-100">
-            {{ hasGeneratedImage ? 'Preparing edit' : 'Generating prompt' }}
-          </h2>
-          <p class="max-w-md text-sm text-zinc-500">
-            {{
-              hasGeneratedImage
-                ? 'Locking in what to change and what to keep from your current image.'
-                : 'Using your ready brief — no second rewrite — then generating variants.'
-            }}
-          </p>
-        </div>
-        <div v-else-if="isGenerating" class="flex flex-col items-center gap-3 text-center">
-          <Loader2 :size="44" class="animate-spin text-sky-400" />
-          <h2 class="text-xl font-semibold text-zinc-100">
-            {{ hasGeneratedImage ? 'Improving your image' : 'Creating your image' }}
-          </h2>
-          <p class="max-w-md text-sm text-zinc-500">
-            {{
-              hasGeneratedImage
-                ? 'Applying your revision to the existing image. This is usually faster than a fresh create.'
-                  : 'Creating several high-quality variants. This usually takes 1–3 minutes.'
-            }}
-          </p>
-        </div>
-        <div v-else-if="generatedImageUrl" class="flex size-full flex-col items-center justify-center gap-4">
-          <img
-            :src="generatedImageUrl"
-            alt="AI generated result"
-            class="max-h-[70vh] max-w-full rounded-xl border border-white/10 object-contain shadow-2xl"
-            @error="onImageError"
-          />
-          <div
-            v-if="candidates.length > 1"
-            class="flex max-w-full items-center gap-2 overflow-x-auto px-2"
-          >
+      <!-- Stage -->
+      <main class="flex min-w-0 flex-1 flex-col items-center justify-center overflow-auto bg-surface-sunken p-6">
+        <EmptyState
+          v-if="isGeneratingPrompt"
+          :icon="Sparkles"
+          tone="brand"
+          :title="hasGeneratedImage ? 'Preparing edit' : 'Generating prompt'"
+          :description="
+            hasGeneratedImage
+              ? 'Locking in what to change and what to keep from your current image.'
+              : 'Using your ready brief — no second rewrite — then generating variants.'
+          "
+        />
+        <EmptyState
+          v-else-if="isGenerating"
+          :title="hasGeneratedImage ? 'Improving your image' : 'Creating your image'"
+          :description="
+            hasGeneratedImage
+              ? 'Applying your revision to the existing image. This is usually faster than a fresh create.'
+              : 'Creating several high-quality variants. This usually takes 1–3 minutes.'
+          "
+        >
+          <template #icon>
+            <IconTile :icon="Loader2" tone="brand" size="lg" class="mb-1 [&_svg]:animate-spin" />
+          </template>
+        </EmptyState>
+        <div
+          v-else-if="generatedImageUrl"
+          class="flex size-full min-h-0 animate-enter flex-col items-center justify-center gap-4"
+        >
+          <div class="flex min-h-0 w-full flex-1 items-center justify-center">
+            <!-- Keyed so each new result / picked variant eases in -->
+            <img
+              :key="generatedImageUrl"
+              :src="generatedImageUrl"
+              alt="AI generated result"
+              class="max-h-full max-w-full animate-fade-in rounded-xl border border-line object-contain"
+              @error="onImageError"
+            />
+          </div>
+          <div v-if="candidates.length > 1" class="flex max-w-full shrink-0 items-center gap-2 overflow-x-auto p-0.5">
             <button
               v-for="(candidate, index) in candidates"
-              :key="candidate.id || index"
+              :key="typeof candidate.id === 'string' || typeof candidate.id === 'number' ? candidate.id : index"
               type="button"
-              class="shrink-0 overflow-hidden rounded-lg border-2 transition"
+              class="shrink-0 overflow-hidden rounded-lg border transition focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
               :class="
                 index === selectedCandidateIndex
-                  ? 'border-[var(--sidebar-accent)]'
-                  : 'border-white/10 opacity-70 hover:opacity-100'
+                  ? 'border-brand ring-1 ring-brand'
+                  : 'border-line opacity-70 hover:opacity-100'
               "
               :title="`Variant ${index + 1}`"
+              :aria-pressed="index === selectedCandidateIndex"
               @click="onSelectCandidate(index)"
             >
-              <img
-                :src="candidate.url"
-                :alt="`Variant ${index + 1}`"
-                class="h-16 w-16 object-cover"
-              />
+              <img :src="candidate.url" :alt="`Variant ${index + 1}`" class="h-14 w-auto max-w-24 object-cover" />
             </button>
           </div>
-          <p v-if="imageLoadError" class="text-sm text-red-300">
+          <p v-if="imageLoadError" class="shrink-0 text-center text-xs text-danger">
             Image finished generating but failed to load. Try Export → Save locally, or describe a revision.
           </p>
-          <p v-else class="text-sm text-zinc-500">
+          <p v-else class="shrink-0 text-center text-xs text-fg-muted">
             {{
               candidates.length > 1
                 ? 'Pick your favorite variant, then tell the assistant what to change.'
@@ -212,31 +174,36 @@
             }}
           </p>
         </div>
-        <div v-else class="flex flex-col items-center gap-3 text-center">
-          <Images :size="56" class="text-zinc-700" />
-          <h2 class="text-lg font-semibold text-zinc-300">Your image will appear here</h2>
-          <p class="max-w-md text-sm text-zinc-600">
-            Chat through the idea. When the prompt is ready, creation starts only after the detailed prompt is generated.
-          </p>
-        </div>
+        <EmptyState
+          v-else
+          :icon="Images"
+          title="Your image will appear here"
+          description="Chat through the idea. When the prompt is ready, creation starts only after the detailed prompt is generated."
+        />
       </main>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+  import { useToast } from '@/composables/useToast';
   import { computed, nextTick, onMounted, ref, watch } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
-  import { Images, Loader2, Send, Sparkles } from 'lucide-vue-next';
+  import { AlertTriangle, Images, Loader2, Sparkles } from 'lucide-vue-next';
   import AIImageCreatorHeader from '@/components/ai-image/AIImageCreatorHeader.vue';
   import type { AIImageExportAction } from '@/components/ai-image/AIImageCreatorHeader.vue';
   import ChatMessage from '@/components/ai-video/ChatMessage.vue';
+  import ChatComposer from '@/components/create/chat/ChatComposer.vue';
+  import ChatNotice from '@/components/create/chat/ChatNotice.vue';
+  import ChatStatusCard from '@/components/create/chat/ChatStatusCard.vue';
+  import ChatTypingIndicator from '@/components/create/chat/ChatTypingIndicator.vue';
+  import { Button } from '@/components/ui/button';
+  import type { BadgeVariants } from '@/components/ui/badge';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { IconTile } from '@/components/ui/icon-tile';
   import { useAIImageSession } from '@/composables/useAIImageSession';
   import type { AIChatMessage } from '@/types/ai-video';
-  import {
-    IMAGE_CREATION_CREDIT_COST,
-    IMAGE_EDIT_CREDIT_COST,
-  } from '@/utils/imageGenerationPolicy';
+  import { IMAGE_CREATION_CREDIT_COST, IMAGE_EDIT_CREDIT_COST } from '@/utils/imageGenerationPolicy';
   import {
     createWorkableImageProject,
     exportImageToDisk,
@@ -272,21 +239,19 @@
   const bootError = ref<string | null>(null);
   const draft = ref('');
   const messagesEl = ref<HTMLElement | null>(null);
-  const inputEl = ref<HTMLTextAreaElement | null>(null);
+  const inputEl = ref<{ focus: () => void } | null>(null);
   const exportBusy = ref(false);
   const exportMessage = ref<string | null>(null);
   const imageLoadError = ref(false);
 
   const projectTitle = computed(() => session.value?.name || 'Untitled Image');
-  const hasGeneratedImage = computed(
-    () => Boolean(generatedImageUrl.value) || session.value?.status === 'generated'
-  );
+  const hasGeneratedImage = computed(() => Boolean(generatedImageUrl.value) || session.value?.status === 'generated');
   const statusLabel = computed(() => formatStatus(session.value?.status || ''));
-  const statusClass = computed(() => {
+  const statusVariant = computed<BadgeVariants['variant']>(() => {
     const status = session.value?.status;
-    if (status === 'generated' || status === 'completed') return 'bg-emerald-500/20 text-emerald-300';
-    if (status === 'generating') return 'bg-amber-500/20 text-amber-300';
-    return 'bg-zinc-500/30 text-zinc-300';
+    if (status === 'generated' || status === 'completed') return 'success';
+    if (status === 'generating') return 'warning';
+    return 'neutral';
   });
 
   const chatMessages = computed<AIChatMessage[]>(() =>
@@ -420,7 +385,7 @@
     } catch (cause) {
       console.error('[AIImageCreatorSession] export failed:', cause);
       exportMessage.value = null;
-      alert('Export failed. Please try again.');
+      useToast().error('Export failed', 'Please try again.');
     } finally {
       exportBusy.value = false;
     }

@@ -1,19 +1,18 @@
 <template>
-  <div class="sp" :class="{ 'sp--embedded': variant === 'embedded' }">
+  <div class="pp" :class="{ 'pp--embedded': variant === 'embedded' }">
     <!-- Header (hidden when embedded — parent provides its own Cancel/Done bar) -->
-    <div v-if="variant !== 'embedded'" class="sp__header">
-      <button class="sp__back" @click="$emit('close')" title="Back to Clips">
-        <ChevronLeft :size="15" />
+    <div v-if="variant !== 'embedded'" class="pp__header">
+      <button class="pp__back" type="button" title="Back to clips" aria-label="Back to clips" @click="$emit('close')">
+        <ChevronLeft :size="16" />
       </button>
-      <span class="sp__title">Subtitles</span>
+      <span class="pp__title">Subtitles</span>
     </div>
 
     <!-- Single scrolling body -->
-    <div class="sp__body">
-
+    <div class="pp__body">
       <!-- ── TRANSCRIPT ── -->
-      <div class="sp__section">
-        <div class="sp__section-hd">Transcript <span class="sp__section-hint">· edit to fix typos</span></div>
+      <div class="pp__section">
+        <div class="pp__section-hd">Transcript <span class="pp__section-hint">· edit to fix typos</span></div>
         <div class="sp__segments">
           <div
             v-for="(seg, si) in editableSegments"
@@ -24,7 +23,7 @@
           >
             <span class="sp__seg-ts">{{ formatTime(seg.start) }}</span>
             <textarea
-              class="sp__seg-ta"
+              class="pp__textarea sp__seg-ta"
               :value="seg.text"
               rows="1"
               @input="onSegmentTextInput(si, ($event.target as HTMLTextAreaElement).value)"
@@ -36,14 +35,15 @@
       </div>
 
       <!-- ── ANIMATION STYLE ── -->
-      <div class="sp__section">
-        <div class="sp__section-hd">Animation Style</div>
+      <div class="pp__section">
+        <div class="pp__section-hd">Animation style</div>
         <div class="sp__style-grid">
           <button
             v-for="style in animationStyles"
             :key="style.id"
-            class="sp__style-btn"
-            :class="{ 'sp__style-btn--active': settings.animationStyle === style.id }"
+            type="button"
+            class="pp__tile sp__style-btn"
+            :class="{ 'pp__tile--active': settings.animationStyle === style.id }"
             @click="update('animationStyle', style.id)"
           >
             <span class="sp__style-name">{{ style.name }}</span>
@@ -53,290 +53,468 @@
       </div>
 
       <!-- ── MULTI-COLOR (Single-Word Mode Only) ── -->
-      <div v-if="settings.animationStyle === 'single-word'" class="sp__section">
-        <div class="sp__section-hd-row">
+      <div v-if="settings.animationStyle === 'single-word'" class="pp__section">
+        <div class="pp__section-hd-row">
           <div>
-            <div class="sp__section-hd">Multi-Color Words</div>
-            <p class="sp__hint" style="margin-top: 4px;">Cycle through colors for each word</p>
+            <div class="pp__section-hd">Multi-color words</div>
+            <p class="pp__hint">Cycle through colors for each word</p>
           </div>
-          <label class="sp__toggle">
-            <input type="checkbox" :checked="settings.multiColorEnabled"
-              @change="update('multiColorEnabled', ($event.target as HTMLInputElement).checked)" />
-            <span class="sp__toggle-track"><span class="sp__toggle-thumb"></span></span>
+          <label class="pp__toggle">
+            <input
+              type="checkbox"
+              :checked="settings.multiColorEnabled"
+              @change="update('multiColorEnabled', ($event.target as HTMLInputElement).checked)"
+            />
+            <span class="pp__toggle-track"><span class="pp__toggle-thumb"></span></span>
           </label>
         </div>
-        
-        <template v-if="settings.multiColorEnabled">
-          <div class="sp__mt" style="margin-top: 12px;">
+
+        <div v-if="settings.multiColorEnabled" class="pp__stack pp__mt">
+          <div>
             <label class="sp__radio-option">
-              <input type="radio" name="multiColorMode" :checked="settings.multiColorMode === 'default'"
-                @change="update('multiColorMode', 'default')" />
-              <span class="sp__radio-label">Default Palette</span>
+              <input
+                type="radio"
+                name="multiColorMode"
+                :checked="settings.multiColorMode === 'default'"
+                @change="update('multiColorMode', 'default')"
+              />
+              <span class="sp__radio-label">Default palette</span>
             </label>
-            <div class="sp__color-palette-preview sp__mt" style="margin-left: 24px; margin-top: 6px;">
-              <span class="sp__palette-dot" style="background: #04F827;" title="Green"></span>
-              <span class="sp__palette-dot" style="background: #0ea5e9;" title="Cyan"></span>
-              <span class="sp__palette-dot" style="background: #FFFD03;" title="Yellow"></span>
-              <span class="sp__palette-dot" style="background: #FFFFFF;" title="White"></span>
+            <div class="sp__color-palette-preview">
+              <span class="sp__palette-dot" style="background: #04f827" title="Green"></span>
+              <span class="sp__palette-dot" style="background: #0ea5e9" title="Cyan"></span>
+              <span class="sp__palette-dot" style="background: #fffd03" title="Yellow"></span>
+              <span class="sp__palette-dot" style="background: #ffffff" title="White"></span>
             </div>
           </div>
-          
-          <div class="sp__mt" style="margin-top: 12px;">
-            <label class="sp__radio-option">
-              <input type="radio" name="multiColorMode" :checked="settings.multiColorMode === 'custom'"
-                @change="update('multiColorMode', 'custom')" />
-              <span class="sp__radio-label">Custom Palette</span>
-            </label>
-          </div>
-          
-          <div v-if="settings.multiColorMode === 'custom'" class="sp__color-palette sp__mt" style="margin-top: 12px; padding-left: 24px;">
-            <div v-for="(color, index) in settings.colorPalette" :key="index" class="sp__palette-item">
-              <label class="sp__swatch-wrap">
-                <input type="color" :value="color"
-                  @input="updatePaletteColor(index, ($event.target as HTMLInputElement).value)" />
-                <span class="sp__swatch" :style="{ background: color }"></span>
+
+          <label class="sp__radio-option">
+            <input
+              type="radio"
+              name="multiColorMode"
+              :checked="settings.multiColorMode === 'custom'"
+              @change="update('multiColorMode', 'custom')"
+            />
+            <span class="sp__radio-label">Custom palette</span>
+          </label>
+
+          <div v-if="settings.multiColorMode === 'custom'" class="sp__color-palette">
+            <div v-for="(color, index) in settings.colorPalette" :key="index" class="pp__swatch-row">
+              <label class="pp__swatch-wrap">
+                <input type="color" :value="color" @input="updatePaletteColor(index, ($event.target as HTMLInputElement).value)" />
+                <span class="pp__swatch" :style="{ background: color }"></span>
               </label>
-              <input class="sp__hex" type="text" :value="color" maxlength="7"
-                @change="updatePaletteColor(index, ($event.target as HTMLInputElement).value)" />
-              <button v-if="settings.colorPalette.length > 1" @click="removePaletteColor(index)" class="sp__btn-remove" title="Remove color">✕</button>
+              <input
+                class="pp__hex"
+                type="text"
+                :value="color"
+                maxlength="7"
+                @change="updatePaletteColor(index, ($event.target as HTMLInputElement).value)"
+              />
+              <button
+                v-if="settings.colorPalette.length > 1"
+                type="button"
+                class="sp__icon-btn"
+                title="Remove color"
+                aria-label="Remove color"
+                @click="removePaletteColor(index)"
+              >
+                <X :size="14" />
+              </button>
             </div>
-            <button @click="addPaletteColor" class="sp__btn-add">+ Add Color</button>
+            <button type="button" class="sp__btn-add" @click="addPaletteColor">
+              <Plus :size="14" />
+              Add color
+            </button>
           </div>
-        </template>
+        </div>
       </div>
 
       <!-- ── HIGHLIGHT COLOR (Karaoke/Pop/Zoom Modes) ── -->
-      <div v-if="['karaoke', 'pop', 'zoom'].includes(settings.animationStyle)" class="sp__section sp__section--highlight">
-        <div class="sp__section-hd">Highlight Color</div>
-        <p class="sp__hint sp__mb">Color when word is active</p>
-        
+      <div v-if="['karaoke', 'pop', 'zoom'].includes(settings.animationStyle)" class="pp__section">
+        <div class="pp__section-hd">Highlight color</div>
+        <p class="pp__hint pp__mb">Color when word is active</p>
+
         <div class="sp__preset-colors">
-          <button 
-            v-for="preset in highlightColorPresets" 
+          <button
+            v-for="preset in highlightColorPresets"
             :key="preset.value"
+            type="button"
             class="sp__color-preset"
             :class="{ 'sp__color-preset--active': settings.highlightColor === preset.value }"
             :style="{ background: preset.value }"
-            @click="update('highlightColor', preset.value)"
             :title="preset.name"
-          >
-            <span class="sp__color-preset-check">✓</span>
-          </button>
-          
-          <button 
+            :aria-label="preset.name"
+            @click="update('highlightColor', preset.value)"
+          ></button>
+
+          <button
+            type="button"
             class="sp__color-preset sp__color-preset--custom"
             :class="{ 'sp__color-preset--active': isCustomHighlightColor }"
+            title="Custom color"
+            aria-label="Custom color"
             @click="showCustomHighlightPicker = true"
-            title="Custom Color"
           >
             <span v-if="isCustomHighlightColor" class="sp__color-preset-swatch" :style="{ background: settings.highlightColor }"></span>
-            <span v-else class="sp__color-preset-icon">🎨</span>
+            <Pipette v-else :size="14" />
           </button>
         </div>
-        
-        <div v-if="showCustomHighlightPicker || isCustomHighlightColor" class="sp__custom-color">
-          <label class="sp__swatch-wrap">
-            <input type="color" :value="settings.highlightColor"
-              @input="update('highlightColor', ($event.target as HTMLInputElement).value)" />
-            <span class="sp__swatch" :style="{ background: settings.highlightColor }"></span>
+
+        <div v-if="showCustomHighlightPicker || isCustomHighlightColor" class="pp__swatch-row pp__mt">
+          <label class="pp__swatch-wrap">
+            <input
+              type="color"
+              :value="settings.highlightColor"
+              @input="update('highlightColor', ($event.target as HTMLInputElement).value)"
+            />
+            <span class="pp__swatch" :style="{ background: settings.highlightColor }"></span>
           </label>
-          <input class="sp__hex" type="text" :value="settings.highlightColor" maxlength="7"
-            @change="update('highlightColor', ($event.target as HTMLInputElement).value)" />
+          <input
+            class="pp__hex"
+            type="text"
+            :value="settings.highlightColor"
+            maxlength="7"
+            @change="update('highlightColor', ($event.target as HTMLInputElement).value)"
+          />
         </div>
       </div>
 
       <!-- ── FONT ── -->
-      <div class="sp__section sp__section--font">
-        <div class="sp__section-hd">Font</div>
-        <div class="sp__font-grid">
+      <div class="pp__section">
+        <div class="pp__section-hd">Font</div>
+        <div class="pp__font-grid">
           <button
-            v-for="f in fonts" :key="f"
-            class="sp__font-btn"
-            :class="{ 'sp__font-btn--active': settings.fontFamily === f }"
+            v-for="f in fonts"
+            :key="f"
+            type="button"
+            class="pp__font-btn"
+            :class="{ 'pp__font-btn--active': settings.fontFamily === f }"
             :style="{ fontFamily: f }"
             @click="update('fontFamily', f)"
-          >{{ f }}</button>
+          >
+            {{ f }}
+          </button>
         </div>
 
-        <div class="sp__row2 sp__font-controls sp__mt">
-          <div class="sp__field">
-            <span class="sp__label">Size <em class="sp__val">{{ settings.fontSize }}px</em></span>
-            <input type="range" class="sp__slider" :value="settings.fontSize" min="8" max="120" step="1"
-              @input="update('fontSize', Number(($event.target as HTMLInputElement).value))" />
-          </div>
-          <div class="sp__field">
-            <span class="sp__label">Weight</span>
-            <div class="sp__pill-row">
-              <button v-for="w in weights" :key="w.v" class="sp__pill"
-                :class="{ 'sp__pill--active': settings.fontWeight === w.v }"
-                @click="update('fontWeight', w.v)">{{ w.l }}</button>
-            </div>
+        <div class="pp__field pp__mt">
+          <span class="pp__label">Size <em class="pp__val">{{ settings.fontSize }}px</em></span>
+          <input
+            type="range"
+            class="pp__slider"
+            :value="settings.fontSize"
+            min="8"
+            max="120"
+            step="1"
+            @input="update('fontSize', Number(($event.target as HTMLInputElement).value))"
+          />
+        </div>
+
+        <div class="pp__field pp__mt">
+          <span class="pp__label">Weight</span>
+          <div class="pp__seg-ctrl pp__seg-ctrl--block">
+            <button
+              v-for="w in weights"
+              :key="w.v"
+              type="button"
+              class="pp__seg-btn"
+              :class="{ 'pp__seg-btn--active': settings.fontWeight === w.v }"
+              @click="update('fontWeight', w.v)"
+            >
+              {{ w.l }}
+            </button>
           </div>
         </div>
 
-        <div class="sp__field sp__mt">
-          <span class="sp__label">Alignment</span>
-          <div class="sp__seg-ctrl">
-            <button class="sp__seg-btn" :class="{ 'sp__seg-btn--active': settings.textAlign === 'left' }" @click="update('textAlign', 'left')"><AlignLeft :size="13" /></button>
-            <button class="sp__seg-btn" :class="{ 'sp__seg-btn--active': settings.textAlign === 'center' }" @click="update('textAlign', 'center')"><AlignCenter :size="13" /></button>
-            <button class="sp__seg-btn" :class="{ 'sp__seg-btn--active': settings.textAlign === 'right' }" @click="update('textAlign', 'right')"><AlignRight :size="13" /></button>
+        <div class="pp__field pp__mt">
+          <span class="pp__label">Alignment</span>
+          <div class="pp__seg-ctrl">
+            <button
+              type="button"
+              class="pp__seg-btn"
+              :class="{ 'pp__seg-btn--active': settings.textAlign === 'left' }"
+              title="Align left"
+              aria-label="Align left"
+              @click="update('textAlign', 'left')"
+            >
+              <AlignLeft :size="14" />
+            </button>
+            <button
+              type="button"
+              class="pp__seg-btn"
+              :class="{ 'pp__seg-btn--active': settings.textAlign === 'center' }"
+              title="Align center"
+              aria-label="Align center"
+              @click="update('textAlign', 'center')"
+            >
+              <AlignCenter :size="14" />
+            </button>
+            <button
+              type="button"
+              class="pp__seg-btn"
+              :class="{ 'pp__seg-btn--active': settings.textAlign === 'right' }"
+              title="Align right"
+              aria-label="Align right"
+              @click="update('textAlign', 'right')"
+            >
+              <AlignRight :size="14" />
+            </button>
           </div>
         </div>
       </div>
 
       <!-- ── COLORS ── -->
-      <div class="sp__section sp__section--colors">
-        <div class="sp__section-hd">Colors</div>
-        <p class="sp__hint sp__mb">Subtitle fill and karaoke highlight</p>
-        <div class="sp__colors-grid">
-          <div
-            v-for="ci in colorItems"
-            :key="ci.key"
-            class="sp__colors-row"
-          >
-            <span class="sp__label">{{ ci.label }}</span>
-            <div class="sp__swatch-row sp__colors-swatch-row">
-              <label class="sp__swatch-wrap">
-                <input type="color" :value="(settings as any)[ci.key]"
-                  @input="update(ci.key as any, ($event.target as HTMLInputElement).value)" />
-                <span class="sp__swatch" :style="{ background: (settings as any)[ci.key] }"></span>
+      <div class="pp__section">
+        <div class="pp__section-hd">Colors</div>
+        <p class="pp__hint pp__mb">Subtitle fill and karaoke highlight</p>
+        <div class="pp__colors-grid">
+          <div v-for="ci in colorItems" :key="ci.key" class="pp__colors-row">
+            <span class="pp__label">{{ ci.label }}</span>
+            <div class="pp__swatch-row pp__colors-swatch-row">
+              <label class="pp__swatch-wrap">
+                <input
+                  type="color"
+                  :value="(settings as any)[ci.key]"
+                  @input="update(ci.key as any, ($event.target as HTMLInputElement).value)"
+                />
+                <span class="pp__swatch" :style="{ background: (settings as any)[ci.key] }"></span>
               </label>
-              <input class="sp__hex" type="text" :value="(settings as any)[ci.key]" maxlength="7"
-                @change="update(ci.key as any, ($event.target as HTMLInputElement).value)" />
+              <input
+                class="pp__hex"
+                type="text"
+                :value="(settings as any)[ci.key]"
+                maxlength="7"
+                @change="update(ci.key as any, ($event.target as HTMLInputElement).value)"
+              />
             </div>
           </div>
         </div>
       </div>
 
       <!-- ── OUTLINE ── -->
-      <div class="sp__section sp__section--outline">
-        <div class="sp__section-hd">Outline</div>
-        <p class="sp__hint sp__mb">Layered strokes (Border 1 on top, Border 2 behind it)</p>
-        <div class="sp__outline-row">
-          <div class="sp__field">
-            <span class="sp__label">Border 1 <em class="sp__val">{{ settings.border1Width }}px</em></span>
-            <input type="range" class="sp__slider" :value="settings.border1Width" min="0" max="20" step="1"
-              @input="update('border1Width', Number(($event.target as HTMLInputElement).value))" />
-          </div>
-          <div class="sp__field sp__outline-color">
-            <span class="sp__label">Border 1 Color</span>
-            <div class="sp__swatch-row">
-              <label class="sp__swatch-wrap">
-                <input type="color" :value="settings.border1Color" @input="update('border1Color', ($event.target as HTMLInputElement).value)" />
-                <span class="sp__swatch" :style="{ background: settings.border1Color }"></span>
-              </label>
-              <input class="sp__hex" type="text" :value="settings.border1Color" maxlength="7" @change="update('border1Color', ($event.target as HTMLInputElement).value)" />
+      <div class="pp__section">
+        <div class="pp__section-hd">Outline</div>
+        <p class="pp__hint pp__mb">Layered strokes (Border 1 on top, Border 2 behind it)</p>
+        <div class="pp__stack">
+          <div class="pp__row2">
+            <div class="pp__field">
+              <span class="pp__label">Border 1 <em class="pp__val">{{ settings.border1Width }}px</em></span>
+              <input
+                type="range"
+                class="pp__slider"
+                :value="settings.border1Width"
+                min="0"
+                max="20"
+                step="1"
+                @input="update('border1Width', Number(($event.target as HTMLInputElement).value))"
+              />
+            </div>
+            <div class="pp__field">
+              <span class="pp__label">Border 1 color</span>
+              <div class="pp__swatch-row">
+                <label class="pp__swatch-wrap">
+                  <input
+                    type="color"
+                    :value="settings.border1Color"
+                    @input="update('border1Color', ($event.target as HTMLInputElement).value)"
+                  />
+                  <span class="pp__swatch" :style="{ background: settings.border1Color }"></span>
+                </label>
+                <input
+                  class="pp__hex"
+                  type="text"
+                  :value="settings.border1Color"
+                  maxlength="7"
+                  @change="update('border1Color', ($event.target as HTMLInputElement).value)"
+                />
+              </div>
             </div>
           </div>
-        </div>
-        <div class="sp__outline-row">
-          <div class="sp__field">
-            <span class="sp__label">Border 2 <em class="sp__val">{{ settings.border2Width }}px</em></span>
-            <input type="range" class="sp__slider" :value="settings.border2Width" min="0" max="20" step="1"
-              @input="update('border2Width', Number(($event.target as HTMLInputElement).value))" />
-          </div>
-          <div class="sp__field sp__outline-color">
-            <span class="sp__label">Border 2 Color</span>
-            <div class="sp__swatch-row">
-              <label class="sp__swatch-wrap">
-                <input type="color" :value="settings.border2Color" @input="update('border2Color', ($event.target as HTMLInputElement).value)" />
-                <span class="sp__swatch" :style="{ background: settings.border2Color }"></span>
-              </label>
-              <input class="sp__hex" type="text" :value="settings.border2Color" maxlength="7" @change="update('border2Color', ($event.target as HTMLInputElement).value)" />
+          <div class="pp__row2">
+            <div class="pp__field">
+              <span class="pp__label">Border 2 <em class="pp__val">{{ settings.border2Width }}px</em></span>
+              <input
+                type="range"
+                class="pp__slider"
+                :value="settings.border2Width"
+                min="0"
+                max="20"
+                step="1"
+                @input="update('border2Width', Number(($event.target as HTMLInputElement).value))"
+              />
+            </div>
+            <div class="pp__field">
+              <span class="pp__label">Border 2 color</span>
+              <div class="pp__swatch-row">
+                <label class="pp__swatch-wrap">
+                  <input
+                    type="color"
+                    :value="settings.border2Color"
+                    @input="update('border2Color', ($event.target as HTMLInputElement).value)"
+                  />
+                  <span class="pp__swatch" :style="{ background: settings.border2Color }"></span>
+                </label>
+                <input
+                  class="pp__hex"
+                  type="text"
+                  :value="settings.border2Color"
+                  maxlength="7"
+                  @change="update('border2Color', ($event.target as HTMLInputElement).value)"
+                />
+              </div>
             </div>
           </div>
         </div>
       </div>
 
       <!-- ── BACKGROUND ── -->
-      <div class="sp__section">
-        <div class="sp__section-hd-row">
-          <span class="sp__section-hd">Background</span>
-          <label class="sp__toggle">
-            <input type="checkbox" :checked="settings.backgroundEnabled"
-              @change="update('backgroundEnabled', ($event.target as HTMLInputElement).checked)" />
-            <span class="sp__toggle-track"><span class="sp__toggle-thumb"></span></span>
+      <div class="pp__section">
+        <div class="pp__section-hd-row">
+          <span class="pp__section-hd">Background</span>
+          <label class="pp__toggle">
+            <input
+              type="checkbox"
+              :checked="settings.backgroundEnabled"
+              @change="update('backgroundEnabled', ($event.target as HTMLInputElement).checked)"
+            />
+            <span class="pp__toggle-track"><span class="pp__toggle-thumb"></span></span>
           </label>
         </div>
-        <template v-if="settings.backgroundEnabled">
-          <div class="sp__row2 sp__mt">
-            <div class="sp__field">
-              <span class="sp__label">Color</span>
-              <div class="sp__swatch-row">
-                <label class="sp__swatch-wrap">
-                  <input type="color" :value="settings.backgroundColor" @input="update('backgroundColor', ($event.target as HTMLInputElement).value)" />
-                  <span class="sp__swatch" :style="{ background: settings.backgroundColor }"></span>
+        <div v-if="settings.backgroundEnabled" class="pp__stack pp__mt">
+          <div class="pp__row2">
+            <div class="pp__field">
+              <span class="pp__label">Color</span>
+              <div class="pp__swatch-row">
+                <label class="pp__swatch-wrap">
+                  <input
+                    type="color"
+                    :value="settings.backgroundColor"
+                    @input="update('backgroundColor', ($event.target as HTMLInputElement).value)"
+                  />
+                  <span class="pp__swatch" :style="{ background: settings.backgroundColor }"></span>
                 </label>
-                <input class="sp__hex" type="text" :value="settings.backgroundColor" maxlength="7" @change="update('backgroundColor', ($event.target as HTMLInputElement).value)" />
+                <input
+                  class="pp__hex"
+                  type="text"
+                  :value="settings.backgroundColor"
+                  maxlength="7"
+                  @change="update('backgroundColor', ($event.target as HTMLInputElement).value)"
+                />
               </div>
             </div>
-            <div class="sp__field">
-              <span class="sp__label">Padding <em class="sp__val">{{ settings.padding }}px</em></span>
-              <input type="range" class="sp__slider" :value="settings.padding" min="0" max="40" step="1"
-                @input="update('padding', Number(($event.target as HTMLInputElement).value))" />
+            <div class="pp__field">
+              <span class="pp__label">Padding <em class="pp__val">{{ settings.padding }}px</em></span>
+              <input
+                type="range"
+                class="pp__slider"
+                :value="settings.padding"
+                min="0"
+                max="40"
+                step="1"
+                @input="update('padding', Number(($event.target as HTMLInputElement).value))"
+              />
             </div>
           </div>
-          <div class="sp__field sp__mt">
-            <span class="sp__label">Corner Radius <em class="sp__val">{{ settings.borderRadius }}px</em></span>
-            <input type="range" class="sp__slider" :value="settings.borderRadius" min="0" max="40" step="1"
-              @input="update('borderRadius', Number(($event.target as HTMLInputElement).value))" />
+          <div class="pp__field">
+            <span class="pp__label">Corner radius <em class="pp__val">{{ settings.borderRadius }}px</em></span>
+            <input
+              type="range"
+              class="pp__slider"
+              :value="settings.borderRadius"
+              min="0"
+              max="40"
+              step="1"
+              @input="update('borderRadius', Number(($event.target as HTMLInputElement).value))"
+            />
           </div>
-        </template>
+        </div>
       </div>
 
       <!-- ── SHADOW ── -->
-      <div class="sp__section sp__section--shadow">
-        <div class="sp__section-hd">Shadow</div>
-        <p class="sp__hint sp__mb">Soft glow behind the subtitle</p>
-        <div class="sp__outline-row">
-          <div class="sp__field">
-            <span class="sp__label">Blur <em class="sp__val">{{ settings.shadowBlur }}px</em></span>
-            <input type="range" class="sp__slider" :value="settings.shadowBlur" min="0" max="30" step="1"
-              @input="update('shadowBlur', Number(($event.target as HTMLInputElement).value))" />
+      <div class="pp__section">
+        <div class="pp__section-hd">Shadow</div>
+        <p class="pp__hint pp__mb">Soft glow behind the subtitle</p>
+        <div class="pp__row2">
+          <div class="pp__field">
+            <span class="pp__label">Blur <em class="pp__val">{{ settings.shadowBlur }}px</em></span>
+            <input
+              type="range"
+              class="pp__slider"
+              :value="settings.shadowBlur"
+              min="0"
+              max="30"
+              step="1"
+              @input="update('shadowBlur', Number(($event.target as HTMLInputElement).value))"
+            />
           </div>
-          <div class="sp__field sp__outline-color">
-            <span class="sp__label">Color</span>
-            <div class="sp__swatch-row">
-              <label class="sp__swatch-wrap">
-                <input type="color" :value="settings.shadowColor" @input="update('shadowColor', ($event.target as HTMLInputElement).value)" />
-                <span class="sp__swatch" :style="{ background: settings.shadowColor }"></span>
+          <div class="pp__field">
+            <span class="pp__label">Color</span>
+            <div class="pp__swatch-row">
+              <label class="pp__swatch-wrap">
+                <input
+                  type="color"
+                  :value="settings.shadowColor"
+                  @input="update('shadowColor', ($event.target as HTMLInputElement).value)"
+                />
+                <span class="pp__swatch" :style="{ background: settings.shadowColor }"></span>
               </label>
-              <input class="sp__hex" type="text" :value="settings.shadowColor" maxlength="7" @change="update('shadowColor', ($event.target as HTMLInputElement).value)" />
+              <input
+                class="pp__hex"
+                type="text"
+                :value="settings.shadowColor"
+                maxlength="7"
+                @change="update('shadowColor', ($event.target as HTMLInputElement).value)"
+              />
             </div>
           </div>
         </div>
       </div>
 
       <!-- ── SPACING ── -->
-      <div class="sp__section sp__section--last">
-        <div class="sp__section-hd">Spacing</div>
-        <div class="sp__field">
-          <span class="sp__label">Line Height <em class="sp__val">{{ settings.lineHeight }}</em></span>
-          <input type="range" class="sp__slider" :value="settings.lineHeight" min="0.8" max="3" step="0.05"
-            @input="update('lineHeight', Number(($event.target as HTMLInputElement).value))" />
-        </div>
-        <div class="sp__field sp__mt">
-          <span class="sp__label">Letter Spacing <em class="sp__val">{{ settings.letterSpacing }}px</em></span>
-          <input type="range" class="sp__slider" :value="settings.letterSpacing" min="-5" max="20" step="0.5"
-            @input="update('letterSpacing', Number(($event.target as HTMLInputElement).value))" />
+      <div class="pp__section">
+        <div class="pp__section-hd">Spacing</div>
+        <div class="pp__row2">
+          <div class="pp__field">
+            <span class="pp__label">Line height <em class="pp__val">{{ settings.lineHeight }}</em></span>
+            <input
+              type="range"
+              class="pp__slider"
+              :value="settings.lineHeight"
+              min="0.8"
+              max="3"
+              step="0.05"
+              @input="update('lineHeight', Number(($event.target as HTMLInputElement).value))"
+            />
+          </div>
+          <div class="pp__field">
+            <span class="pp__label">Letter spacing <em class="pp__val">{{ settings.letterSpacing }}px</em></span>
+            <input
+              type="range"
+              class="pp__slider"
+              :value="settings.letterSpacing"
+              min="-5"
+              max="20"
+              step="0.5"
+              @input="update('letterSpacing', Number(($event.target as HTMLInputElement).value))"
+            />
+          </div>
         </div>
       </div>
 
       <!-- ── REMOVE FROM THIS CLIP ── -->
-      <div class="sp__section sp__section--danger">
-        <button class="sp__delete-btn" type="button" @click="$emit('delete')">
-          <Trash2 :size="15" />
+      <div class="pp__section pp__section--danger">
+        <button class="pp__delete-btn" type="button" @click="$emit('delete')">
+          <Trash2 :size="14" />
           Remove subtitles from this clip
         </button>
       </div>
-
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
-import { ChevronLeft, AlignLeft, AlignCenter, AlignRight, Trash2 } from 'lucide-vue-next';
+import { ChevronLeft, AlignLeft, AlignCenter, AlignRight, Trash2, Pipette, Plus, X } from 'lucide-vue-next';
 
 import type { SubtitleSettings } from '@/types';
 
@@ -664,864 +842,96 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
 
 </script>
 
+<style scoped src="./propertyPanel.css"></style>
+
 <style scoped>
-/* Root */
-.sp {
-  display: flex;
-  flex-direction: column;
-  height: 100%;
-  background: var(--sidebar-surface);
-  color: var(--sidebar-text);
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
-}
-
-/* ── Embedded (Manual POI left rail): fill flex parent and scroll the body.
-   (Previously height:auto + visible overflow let content extend past the modal; parent had
-   overflow-hidden so the panel could not scroll to Animation Style / Font / etc.) */
-.sp--embedded {
-  min-height: 0;
-  flex: 1 1 0%;
-  height: 100%;
-  font-size: 0.8125rem;
-}
-
-.sp--embedded .sp__body {
-  flex: 1 1 0;
-  min-height: 0;
-  overflow-y: auto;
-  -webkit-overflow-scrolling: touch;
-}
-
-.sp--embedded .sp__section {
-  padding: 1rem 1rem;
-}
-
-.sp--embedded .sp__section--last {
-  padding-bottom: 1.25rem;
-}
-
-.sp--embedded .sp__section-hd {
-  font-size: 0.625rem;
-  margin-bottom: 0.625rem;
-  letter-spacing: 0.07em;
-}
-
-.sp--embedded .sp__section-hint {
-  font-size: 0.5625rem;
-}
-
-.sp--embedded .sp__label {
-  font-size: 0.6875rem;
-  font-weight: 500;
-  line-height: 1.35;
-  gap: 0.25rem;
-}
-
-.sp--embedded .sp__val {
-  font-size: 0.625rem;
-}
-
-.sp--embedded .sp__field {
-  gap: 8px;
-  min-width: 0;
-}
-
-/* Narrow rail: stack paired controls so sliders aren’t crushed against color pickers */
-.sp--embedded .sp__row2 {
-  grid-template-columns: 1fr;
-  gap: 12px 0;
-}
-
-.sp--embedded .sp__font-controls {
-  gap: 14px 0;
-}
-
-.sp--embedded .sp__mt {
-  margin-top: 10px;
-}
-
-.sp--embedded .sp__hint {
-  font-size: 0.625rem;
-  line-height: 1.45;
-}
-
-.sp--embedded .sp__hint.sp__mb {
-  margin-bottom: 0.625rem;
-}
-
-.sp--embedded .sp__slider {
-  margin-top: 1px;
-}
-
-.sp--embedded .sp__swatch-row {
-  gap: 8px;
-}
-
-.sp--embedded .sp__colors-grid {
-  gap: 6px 8px;
-}
-
-.sp--embedded .sp__colors-row {
-  gap: 6px;
-}
-
-.sp--embedded .sp__section--colors .sp__colors-row > .sp__label {
-  font-size: 0.6875rem;
-  margin: 0;
-  min-width: 0;
-}
-
-.sp--embedded .sp__section--colors .sp__colors-swatch-row .sp__swatch {
-  width: 24px;
-  height: 24px;
-}
-
-.sp--embedded .sp__section--colors .sp__colors-swatch-row .sp__hex {
-  padding: 0.35rem 0.5rem;
-  font-size: 0.6875rem;
-  font-weight: 500;
-  font-family: inherit;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-}
-
-.sp--embedded .sp__swatch {
-  width: 28px;
-  height: 28px;
-}
-
-.sp--embedded .sp__hex {
-  flex: 1;
-  min-width: 0;
-  font-size: 0.6875rem;
-  padding: 0.375rem 0.5rem;
-}
-
-.sp--embedded .sp__style-grid {
-  gap: 5px;
-}
-
-.sp--embedded .sp__style-btn {
-  padding: 0.42rem 0.5rem;
-  gap: 0.3rem;
-  border-radius: 5px;
-  font-size: 0.6875rem;
-}
-
-.sp--embedded .sp__style-name {
-  font-size: 0.6875rem;
-  line-height: 1.2;
-}
-
-.sp--embedded .sp__style-desc {
-  font-size: 0.5625rem;
-  line-height: 1.4;
-  opacity: 0.7;
-}
-
-.sp--embedded .sp__style-btn--active .sp__style-desc {
-  opacity: 0.82;
-}
-
-.sp--embedded .sp__font-btn {
-  padding: 0.38rem 0.45rem;
-  font-size: 0.625rem;
-}
-
-.sp--embedded .sp__pill {
-  font-size: 8px;
-  padding: 2px 5px;
-}
-
-.sp--embedded .sp__seg-ctrl {
-  border-radius: 5px;
-  gap: 2px;
-  padding: 2px;
-}
-
-.sp--embedded .sp__seg-btn {
-  min-width: 28px;
-  min-height: 28px;
-  padding: 0.4rem 0.55rem;
-}
-
-.sp--embedded .sp__segments {
-  max-height: 160px;
-  gap: 8px;
-}
-
-.sp--embedded .sp__seg-ta {
-  font-size: 0.75rem;
-  padding: 0.5rem 0.625rem;
-}
-
-/* No “live playback” segment highlight in creator defaults — avoid emerald active chrome */
-.sp--embedded .sp__seg--active {
-  border-color: transparent;
-  background: transparent;
-}
-
-.sp--embedded .sp__seg-ta:focus {
-  border-color: var(--sidebar-border);
-}
-
-.sp--embedded .sp__font-grid {
-  grid-template-columns: repeat(3, 1fr);
-  gap: 0.375rem;
-}
-
-.sp--embedded .sp__section-hd-row {
-  margin-bottom: 0.625rem;
-  align-items: center;
-  gap: 0.75rem;
-}
-
-.sp--embedded .sp__radio-label {
-  font-size: 0.75rem;
-}
-
-.sp--embedded .sp__preset-colors {
-  gap: 5px;
-}
-
-.sp--embedded .sp__color-preset {
-  width: 28px;
-  height: 28px;
-  border-radius: 5px;
-  border-width: 1px;
-}
-
-.sp--embedded .sp__color-preset-check {
-  font-size: 11px;
-}
-
-.sp--embedded .sp__color-preset-icon {
-  font-size: 12px;
-}
-
-.sp--embedded .sp__section--highlight .sp__custom-color .sp__swatch {
-  width: 24px;
-  height: 24px;
-}
-
-.sp--embedded .sp__section--highlight .sp__custom-color .sp__hex {
-  padding: 0.35rem 0.5rem;
-  font-size: 0.625rem;
-}
-
-/* Header */
-.sp__header {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--sidebar-border);
-  flex-shrink: 0;
-}
-
-.sp__back {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 28px;
-  height: 28px;
-  background: transparent;
-  border: none;
-  border-radius: 6px;
-  color: var(--sidebar-text-muted);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.sp__back:hover {
-  background: var(--sidebar-hover);
-  color: var(--sidebar-text);
-}
-
-.sp__title {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  letter-spacing: -0.01em;
-}
-
-/* Body */
-.sp__body {
-  flex: 1;
-  overflow-y: auto;
-  display: flex;
-  flex-direction: column;
-}
-
-/* Preview */
-.sp__preview {
-  flex-shrink: 0;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-height: 68px;
-  padding: 16px;
-  border-bottom: 1px solid var(--sidebar-border);
-}
-
-.sp__preview-text {
-  display: inline-block;
-  transition: all 0.2s;
-}
-
-/* Sections */
-.sp__section {
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--sidebar-border);
-}
-
-.sp__section--last {
-  border-bottom: 1px solid var(--sidebar-border);
-}
-
-.sp__section--danger {
-  border-bottom: none;
-  padding-bottom: 2.5rem;
-}
-
-.sp__section-hd {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--sidebar-text-muted);
-  margin-bottom: 0.75rem;
-}
-
-.sp__section-hd-row {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  margin-bottom: 0;
-}
-
-.sp__section-hd-row .sp__section-hd {
-  margin-bottom: 0;
-}
-
-.sp__section-hint {
-  font-weight: 400;
-  text-transform: none;
-  letter-spacing: 0;
-  color: var(--sidebar-text-muted);
-  opacity: 0.6;
-}
-
-.sp__delete-btn {
-  width: 100%;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1rem;
-  border-radius: 0.625rem;
-  border: 1px solid rgba(248, 113, 113, 0.35);
-  background: rgba(248, 113, 113, 0.08);
-  color: #f87171;
-  font-size: 0.8125rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.sp__delete-btn:hover {
-  background: rgba(248, 113, 113, 0.14);
-  border-color: rgba(248, 113, 113, 0.55);
-}
-
-/* Utility */
-.sp__mt {
-  margin-top: 8px;
-}
-
-.sp__row2 {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0 10px;
-}
-
-.sp__section--outline .sp__hint,
-.sp__section--shadow .sp__hint {
-  margin: -2px 0 14px;
-  color: var(--sidebar-text-muted);
-  font-size: 0.6875rem;
-  font-weight: 400;
-  line-height: 1.4;
-  text-align: left;
-}
-
-.sp__outline-row {
-  display: grid;
-  grid-template-columns: 1fr;
-  gap: 14px;
-  padding: 0;
-}
-
-.sp__outline-row + .sp__outline-row {
-  margin-top: 12px;
-}
-
-.sp__section--outline .sp__field,
-.sp__section--shadow .sp__field {
-  gap: 8px;
-}
-
-.sp__section--outline .sp__label,
-.sp__section--shadow .sp__label {
-  justify-content: space-between;
-  width: 100%;
-  color: var(--sidebar-text);
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.25;
-}
-
-.sp__section--outline .sp__val,
-.sp__section--shadow .sp__val {
-  margin-left: 12px;
-  color: var(--sidebar-text-muted);
-  font-size: 0.6875rem;
-  font-weight: 500;
-}
-
-.sp__outline-color .sp__swatch-row {
-  align-items: center;
-  gap: 10px;
-}
-
-.sp__outline-color .sp__swatch {
-  width: 34px;
-  height: 34px;
-}
-
-.sp__outline-color .sp__hex {
-  min-width: 0;
-  height: 34px;
-  padding: 0 0.75rem;
-  font-size: 0.75rem;
-}
-
-.sp__field {
-  display: flex;
-  flex-direction: column;
-  gap: 5px;
-}
-
-.sp__label {
-  font-size: 0.75rem;
-  font-weight: 500;
-  color: var(--sidebar-text);
-  display: flex;
-  align-items: center;
-  gap: 0.375rem;
-}
-
-.sp__val {
-  font-style: normal;
-  font-weight: 400;
-  color: var(--sidebar-text-muted);
-  margin-left: auto;
-}
-
-/* Slider */
-.sp__slider {
-  width: 100%;
-  accent-color: var(--sidebar-accent);
-  cursor: pointer;
-}
-
-/* Animation style grid */
-.sp__style-grid {
-  display: grid;
-  grid-template-columns: repeat(2, 1fr);
-  gap: 6px;
-}
-
-.sp__style-btn {
-  display: flex;
-  flex-direction: column;
-  align-items: flex-start;
-  gap: 0.35rem;
-  padding: 0.5rem 0.65rem;
-  background: rgba(255, 255, 255, 0.04);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 6px;
-  color: var(--sidebar-text-muted);
-  font-size: 0.75rem;
-  cursor: pointer;
-  transition: background 150ms ease, border-color 150ms ease, color 150ms ease;
-  text-align: left;
-}
-
-.sp__style-btn:hover {
-  background: rgba(255, 255, 255, 0.07);
-  border-color: var(--sidebar-border);
-  color: var(--sidebar-text);
-}
-
-.sp__style-btn--active {
-  background: rgba(6, 182, 212, 0.12);
-  border-color: var(--sidebar-accent);
-  color: var(--sidebar-accent);
-}
-
-.sp__style-name {
-  font-weight: 600;
-  font-size: 0.75rem;
-  line-height: 1.25;
-  letter-spacing: -0.01em;
-}
-
-.sp__style-desc {
-  font-size: 0.625rem;
-  font-weight: 400;
-  opacity: 0.72;
-  line-height: 1.45;
-}
-
-.sp__style-btn--active .sp__style-desc {
-  opacity: 0.85;
-}
-
-/* Font grid */
-.sp__font-grid {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: 3px;
-}
-
-.sp__font-btn {
-  background: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 6px;
-  padding: 0.45rem 0.5rem;
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-  cursor: pointer;
-  transition: all 150ms ease;
-  text-align: center;
-}
-
-.sp__font-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  border-color: var(--sidebar-border);
-  color: var(--sidebar-text);
-}
-
-.sp__font-btn--active {
-  background: rgba(6, 182, 212, 0.15);
-  border-color: var(--sidebar-accent);
-  color: var(--sidebar-accent);
-}
-
-.sp__font-controls {
-  column-gap: 18px;
-  align-items: start;
-}
-
-.sp__font-controls .sp__field {
-  min-width: 0;
-}
-
-/* Pills (weight) */
-.sp__pill-row {
-  display: flex;
-  gap: 5px;
-  flex-wrap: wrap;
-}
-
-.sp__pill {
-  background: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 20px;
-  padding: 2px 6px;
-  font-size: 9px;
-  color: var(--sidebar-text-muted);
-  cursor: pointer;
-  transition: all 150ms ease;
-  white-space: nowrap;
-}
-
-.sp__pill:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--sidebar-text);
-}
-
-.sp__pill--active {
-  background: rgba(6, 182, 212, 0.15);
-  border-color: var(--sidebar-accent);
-  color: var(--sidebar-accent);
-}
-
-/* Segmented alignment */
-.sp__seg-ctrl {
-  display: flex;
-  background: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 8px;
-  gap: 2px;
-  padding: 2px;
-  width: fit-content;
-}
-
-.sp__seg-btn {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 32px;
-  min-height: 30px;
-  padding: 0.45rem 0.65rem;
-  background: var(--sidebar-hover);
-  border: 1px solid transparent;
-  border-radius: 6px;
-  color: var(--sidebar-text-muted);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.sp__seg-btn:hover {
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--sidebar-text);
-}
-
-.sp__seg-btn--active {
-  background: rgba(6, 182, 212, 0.15);
-  border-color: var(--sidebar-accent);
-  color: var(--sidebar-accent);
-  z-index: 1;
-}
-
-/* Colors (match highlight custom swatch density) */
-.sp__section--colors .sp__hint.sp__mb {
-  margin-bottom: 8px;
-}
-
-.sp__section--colors .sp__hint {
-  color: var(--sidebar-text-muted);
-  font-size: 0.6875rem;
-  font-weight: 400;
-  line-height: 1.35;
-}
-
-.sp__colors-grid {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 8px 12px;
-  align-items: center;
-}
-
-.sp__colors-row {
-  display: flex;
-  flex-direction: row;
-  align-items: center;
-  gap: 8px;
-  min-width: 0;
-}
-
-.sp__section--colors .sp__colors-row > .sp__label {
-  flex: 0 0 auto;
-  margin: 0;
-  width: auto;
-  min-width: 0;
-  white-space: nowrap;
-  font-size: 0.75rem;
-  font-weight: 600;
-  line-height: 1.25;
-  color: var(--sidebar-text);
-}
-
-.sp__colors-swatch-row {
-  flex: 1 1 0%;
-  min-width: 0;
-  gap: 6px;
-  align-items: center;
-}
-
-.sp__section--colors .sp__colors-swatch-row .sp__swatch {
-  width: 28px;
-  height: 28px;
-  border-radius: 5px;
-}
-
-.sp__section--colors .sp__colors-swatch-row .sp__hex {
-  min-width: 0;
-  padding: 0.4rem 0.6rem;
-  font-size: 0.75rem;
-  font-weight: 500;
-  font-family: inherit;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: 0.04em;
-}
-
-.sp__swatch-row {
-  display: flex;
-  align-items: center;
-  gap: 7px;
-}
-
-.sp__swatch-wrap {
-  position: relative;
-  cursor: pointer;
-  display: block;
-  flex-shrink: 0;
-}
-
-.sp__swatch-wrap input[type="color"] {
-  position: absolute;
-  inset: 0;
-  opacity: 0;
-  width: 100%;
-  height: 100%;
-  cursor: pointer;
-}
-
-.sp__swatch {
-  display: block;
-  width: 36px;
-  height: 36px;
-  border-radius: 6px;
-  border: 1px solid var(--sidebar-border);
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.sp__swatch:hover {
-  border-color: var(--sidebar-accent);
-  transform: scale(1.05);
-}
-
-.sp__hex {
-  flex: 1;
-  background: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 6px;
-  padding: 0.5rem 0.75rem;
-  font-size: 0.75rem;
-  font-family: 'Courier New', monospace;
-  color: var(--sidebar-text);
-  text-transform: uppercase;
-  transition: all 150ms ease;
-}
-
-.sp__hex:focus {
-  outline: none;
-  border-color: var(--sidebar-accent);
-  background: rgba(255, 255, 255, 0.03);
-}
-
-/* Toggle */
-.sp__toggle {
-  position: relative;
-  display: flex;
-  align-items: center;
-  cursor: pointer;
-}
-
-.sp__toggle input {
-  display: none;
-}
-
-.sp__toggle-track {
-  position: relative;
-  width: 44px;
-  height: 24px;
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid rgba(255, 255, 255, 0.15);
-  border-radius: 12px;
-  cursor: pointer;
-  transition: all 200ms ease;
-  display: block;
-}
-
-.sp__toggle input:checked + .sp__toggle-track {
-  background: linear-gradient(135deg, #0ea5e9 0%, #06b6d4 100%);
-  border-color: rgba(14, 165, 233, 0.5);
-  box-shadow: 0 0 12px rgba(14, 165, 233, 0.3);
-}
-
-.sp__toggle-thumb {
-  position: absolute;
-  top: 2px;
-  left: 2px;
-  width: 18px;
-  height: 18px;
-  background: #fff;
-  border-radius: 50%;
-  transition: all 200ms ease;
-  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  display: block;
-}
-
-.sp__toggle input:checked + .sp__toggle-track .sp__toggle-thumb {
-  transform: translateX(20px);
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-}
+/* Subtitle-specific pieces; shared inspector controls live in propertyPanel.css */
 
 /* Transcript */
 .sp__segments {
   display: flex;
-  flex-direction: column;
-  gap: 5px;
   max-height: 200px;
+  flex-direction: column;
+  gap: 4px;
   overflow-y: auto;
 }
 
 .sp__seg {
   display: flex;
-  gap: 7px;
   align-items: flex-start;
-  padding: 3px 4px;
-  border-radius: 5px;
+  gap: 8px;
+  padding: 2px;
   border: 1px solid transparent;
-  transition: border-color 0.12s, background 0.12s;
+  border-radius: var(--radius-control);
+  transition:
+    border-color 0.12s ease,
+    background-color 0.12s ease;
 }
 
 .sp__seg--active {
-  border-color: rgba(16, 185, 129, 0.28);
-  background: rgba(16, 185, 129, 0.04);
+  border-color: var(--brand-line);
+  background: var(--brand-soft);
+}
+
+/* No “live playback” segment highlight in creator defaults */
+.pp--embedded .sp__seg--active {
+  border-color: transparent;
+  background: transparent;
 }
 
 .sp__seg-ts {
-  font-size: 9px;
-  color: #3a3a3a;
-  min-width: 28px;
+  min-width: 32px;
   padding-top: 7px;
+  font-family: var(--font-mono);
+  font-size: var(--text-2xs);
   font-variant-numeric: tabular-nums;
-  font-family: monospace;
+  color: var(--fg-subtle);
 }
 
 .sp__seg-ta {
-  width: 100%;
-  background: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 6px;
-  padding: 0.625rem 0.75rem;
-  font-size: 0.8125rem;
-  color: var(--sidebar-text);
-  resize: vertical;
-  font-family: inherit;
-  transition: all 150ms ease;
-}
-
-.sp__seg-ta:focus {
-  outline: none;
-  border-color: var(--sidebar-accent);
-  background: rgba(255, 255, 255, 0.03);
+  font-size: var(--text-xs);
 }
 
 .sp__empty {
-  color: #3a3a3a;
-  font-size: 11px;
+  padding: 12px 0;
   text-align: center;
-  padding: 16px 0;
+  font-size: var(--text-xs);
+  color: var(--fg-subtle);
 }
 
-/* Radio options */
+/* Animation style tiles */
+.sp__style-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+}
+
+.sp__style-btn {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: flex-start;
+  gap: 2px;
+  padding: 7px 10px;
+  text-align: left;
+}
+
+.sp__style-name {
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--fg);
+}
+
+.pp__tile--active .sp__style-name {
+  color: var(--brand);
+}
+
+.sp__style-desc {
+  font-size: var(--text-2xs);
+  line-height: var(--text-2xs--line-height);
+  color: var(--fg-subtle);
+}
+
+/* Multi-color palette */
 .sp__radio-option {
   display: flex;
   align-items: center;
@@ -1529,176 +939,122 @@ watch(() => [props.settings.multiColorMode, props.settings.colorPalette.length],
   cursor: pointer;
 }
 
-.sp__radio-option input[type="radio"] {
+.sp__radio-option input[type='radio'] {
   margin: 0;
+  accent-color: var(--brand);
   cursor: pointer;
 }
 
 .sp__radio-label {
-  font-size: 13px;
-  cursor: pointer;
-}
-
-/* Multi-color palette */
-.sp__color-palette {
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
+  font-size: var(--text-sm);
+  color: var(--fg);
 }
 
 .sp__color-palette-preview {
   display: flex;
-  gap: 8px;
   align-items: center;
+  gap: 6px;
+  margin: 6px 0 0 22px;
 }
 
+/* Swatches below are user palette colors */
 .sp__palette-dot {
-  width: 20px;
-  height: 20px;
+  width: 18px;
+  height: 18px;
+  border: 1px solid var(--line-strong);
   border-radius: 50%;
-  border: 2px solid rgba(255, 255, 255, 0.15);
-  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3);
-  transition: transform 0.15s ease;
-  cursor: default;
 }
 
-.sp__palette-dot:hover {
-  transform: scale(1.1);
-}
-
-.sp__palette-item {
+.sp__color-palette {
   display: flex;
-  align-items: center;
-  gap: 8px;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 22px;
 }
 
-.sp__btn-remove {
-  width: 24px;
-  height: 24px;
-  background: rgba(239, 68, 68, 0.1);
-  color: #ef4444;
-  border: 1px solid rgba(239, 68, 68, 0.3);
-  border-radius: 4px;
+.sp__icon-btn {
+  display: grid;
+  flex-shrink: 0;
+  place-items: center;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  border: none;
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg-subtle);
   cursor: pointer;
-  font-size: 12px;
-  transition: all 150ms ease;
+  transition:
+    background-color 150ms ease,
+    color 150ms ease;
 }
 
-.sp__btn-remove:hover {
-  background: rgba(239, 68, 68, 0.2);
-  border-color: #ef4444;
+.sp__icon-btn:hover {
+  background: var(--danger-soft);
+  color: var(--danger);
 }
 
 .sp__btn-add {
-  padding: 8px 12px;
-  background: rgba(255, 255, 255, 0.05);
-  color: var(--sidebar-text);
-  border: 1px dashed var(--sidebar-border);
-  border-radius: 6px;
+  display: inline-flex;
+  height: var(--control-sm);
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--fg-muted);
+  font-size: var(--text-xs);
+  font-weight: 500;
   cursor: pointer;
-  font-size: 12px;
-  transition: all 150ms ease;
+  transition:
+    border-color 150ms ease,
+    color 150ms ease;
 }
 
 .sp__btn-add:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: var(--sidebar-accent);
-  color: var(--sidebar-accent);
+  border-color: var(--brand-line);
+  color: var(--fg);
 }
 
-/* Highlight color presets */
-.sp__section--highlight .sp__hint.sp__mb {
-  margin-bottom: 8px;
-}
-
-.sp__section--highlight .sp__hint {
-  color: var(--sidebar-text-muted);
-  font-size: 0.6875rem;
-  font-weight: 400;
-  line-height: 1.35;
-}
-
+/* Highlight presets (swatch colors are user content) */
 .sp__preset-colors {
   display: flex;
-  gap: 6px;
   flex-wrap: wrap;
+  gap: 6px;
 }
 
 .sp__color-preset {
-  width: 32px;
-  height: 32px;
-  border-radius: 6px;
-  border: 1px solid transparent;
+  display: grid;
+  place-items: center;
+  width: var(--control-sm);
+  height: var(--control-sm);
+  padding: 0;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-control);
   cursor: pointer;
-  transition: all 150ms ease;
-  position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
+  transition: box-shadow 150ms ease;
 }
 
 .sp__color-preset:hover {
-  transform: scale(1.04);
-  border-color: rgba(255, 255, 255, 0.25);
+  box-shadow: 0 0 0 2px var(--line-strong);
 }
 
-.sp__color-preset--active {
-  border-color: var(--sidebar-accent);
-  box-shadow: 0 0 0 1px rgba(14, 165, 233, 0.35);
-}
-
-.sp__color-preset-check {
-  color: white;
-  font-size: 12px;
-  font-weight: bold;
-  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
-  opacity: 0;
-  transition: opacity 150ms ease;
-}
-
-.sp__color-preset--active .sp__color-preset-check {
-  opacity: 1;
+.sp__color-preset--active,
+.sp__color-preset--active:hover {
+  box-shadow:
+    0 0 0 2px var(--panel),
+    0 0 0 4px var(--brand);
 }
 
 .sp__color-preset--custom {
-  background: linear-gradient(135deg, 
-    #ff0000 0%, #ff7f00 14%, #ffff00 28%, 
-    #00ff00 42%, #0000ff 57%, #4b0082 71%, 
-    #9400d3 85%, #ff0000 100%);
-}
-
-.sp__color-preset-icon {
-  font-size: 14px;
-  line-height: 1;
+  overflow: hidden;
+  border-style: dashed;
+  background: transparent;
+  color: var(--fg-muted);
 }
 
 .sp__color-preset-swatch {
   width: 100%;
   height: 100%;
-  border-radius: 5px;
-}
-
-.sp__section--highlight .sp__custom-color {
-  margin-top: 8px;
-}
-
-.sp__custom-color {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-}
-
-.sp__section--highlight .sp__custom-color .sp__swatch {
-  width: 28px;
-  height: 28px;
-}
-
-.sp__section--highlight .sp__custom-color .sp__hex {
-  padding: 0.4rem 0.6rem;
-  font-size: 0.6875rem;
-}
-
-.sp__mb {
-  margin-bottom: 12px;
 }
 </style>

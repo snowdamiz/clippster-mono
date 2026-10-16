@@ -203,7 +203,7 @@ export const comparisonCodeEvidence = {
     "server/lib/clippster_server_web/controllers/scheduling_controller.ex"
   ],
   "Manage scheduled posts": [
-    "client/src/components/organization/ScheduledPostsList.vue",
+    "client/src/components/organization/OrgScheduledPostsList.vue",
     "server/lib/clippster_server_web/controllers/scheduling_controller.ex"
   ],
   "Post tracking and analytics": [

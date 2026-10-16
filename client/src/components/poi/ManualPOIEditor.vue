@@ -1,433 +1,328 @@
 <template>
-  <Teleport to="body">
-    <Transition name="poi-modal">
-      <div v-if="modelValue" class="poi-dialog__overlay">
-        <Transition name="poi-dialog-transition" appear>
-          <div class="poi-dialog" role="dialog" aria-modal="true">
-            <!-- Top accent -->
-            <div class="poi-dialog__accent" />
-
-            <!-- Header -->
-            <div class="poi-dialog__header">
-              <div class="flex items-center gap-2.5 min-w-0">
-                <div class="poi-dialog__icon">
-                  <LayoutDashboardIcon class="h-4 w-4" />
-                </div>
-                <div class="flex items-baseline gap-2 min-w-0">
-                  <h2 class="poi-dialog__title">Manual Framing Editor</h2>
-                  <span class="poi-dialog__subtitle truncate">
-                    · Define crop regions on the source and arrange them in the {{ targetAspectRatio }} output
-                  </span>
-                </div>
-              </div>
-              <button
-                @click="close"
-                class="poi-dialog__close"
-                title="Close"
-              >
-                <XIcon :size="16" />
-              </button>
-            </div>
-
-            <!-- Main Content - Side by Side Panels -->
-            <div class="flex-1 overflow-hidden flex flex-col">
-              <div class="flex-1 flex overflow-hidden">
-                <!-- Source Panel (Left) — swapped for text box settings when editing -->
-                <div class="flex-1 poi-dialog__divider-r min-h-0 flex flex-col overflow-hidden">
-                  <!-- Subtitle Settings Mode -->
-                  <template v-if="subtitleSettingsMode && localSubtitleSettings">
-                    <div class="poi-dialog__sub-header">
-                      <span class="poi-dialog__sub-title">Subtitles</span>
-                      <div class="flex items-center gap-2">
-                        <button
-                          type="button"
-                          class="poi-dialog__btn poi-dialog__btn--secondary poi-dialog__btn--sm"
-                          @click="cancelSubtitleSettings"
-                        >Cancel</button>
-                        <button
-                          type="button"
-                          class="poi-dialog__btn poi-dialog__btn--purple poi-dialog__btn--sm"
-                          @click="doneSubtitleSettings"
-                        >Done</button>
-                      </div>
-                    </div>
-                    <SubtitlePropertiesPanel
-                      class="flex-1 min-h-0 overflow-hidden"
-                      variant="embedded"
-                      :settings="localSubtitleSettings"
-                      :segments="transcriptSegments"
-                      :current-time="currentTime"
-                      @updateSettings="onSubtitleSettingsPanelUpdate"
-                      @close="doneSubtitleSettings"
-                    />
-                  </template>
-                  <template v-else-if="textBoxSettingsMode && clipTextLocal">
-                    <div class="poi-dialog__sub-header">
-                      <span class="poi-dialog__sub-title">Text box</span>
-                      <div class="flex items-center gap-2">
-                        <button
-                          type="button"
-                          class="poi-dialog__btn poi-dialog__btn--secondary poi-dialog__btn--sm"
-                          @click="cancelTextBoxSettings"
-                        >
-                          Cancel
-                        </button>
-                        <button
-                          type="button"
-                          class="poi-dialog__btn poi-dialog__btn--amber poi-dialog__btn--sm"
-                          @click="doneTextBoxSettings"
-                        >
-                          Done
-                        </button>
-                      </div>
-                    </div>
-                    <ClipTextBoxPropertiesPanel
-                      class="flex-1 min-h-0 overflow-hidden"
-                      variant="embedded"
-                      :state="clipTextLocal"
-                      :clip-duration="clipDuration"
-                      @update-state="onClipTextPanelPatch"
-                      @delete="onClipTextPanelDelete"
-                      @close="doneTextBoxSettings"
-                    />
-                  </template>
-                  <template v-else-if="showAiBrollPanel">
-                    <AIBrollPanel
-                      class="flex-1 min-h-0"
-                      :suggestions="aiBroll.suggestions.value"
-                      :is-generating="aiBroll.isGenerating.value"
-                      :is-fetching="aiBroll.isFetching.value"
-                      :error="aiBroll.error.value"
-                      :can-generate="canGenerateAiBroll"
-                      :planner-options="aiBroll.options.value"
-                      :clip-duration="clipDuration"
-                      :playhead-time="currentTime"
-                      :manual-search-query="aiBroll.manualSearchQuery.value"
-                      :manual-search-media-type="aiBroll.manualSearchMediaType.value"
-                      :manual-search-results="aiBroll.manualSearchResults.value"
-                      :selected-manual-candidate-id="aiBroll.selectedManualCandidateId.value"
-                      :is-manual-searching="aiBroll.isManualSearching.value"
-                      :manual-search-error="aiBroll.manualSearchError.value"
-                      :is-manual-adding="isManualBrollAdding"
-                      @close="showAiBrollPanel = false"
-                      @generate="onAiBrollGenerate"
-                      @fetch-all="onAiBrollFetchAll"
-                      @apply="onAiBrollApply"
-                      @apply-all="onAiBrollApplyAll"
-                      @regenerate="onAiBrollRegenerate"
-                      @reject="onAiBrollReject"
-                      @select-candidate="onAiBrollSelectCandidate"
-                      @manual-search="onManualBrollSearch"
-                      @manual-select-candidate="onManualBrollSelectCandidate"
-                      @manual-add="onManualBrollAdd"
-                      @update:manual-search-query="aiBroll.manualSearchQuery.value = $event"
-                      @update:manual-search-media-type="aiBroll.manualSearchMediaType.value = $event"
-                    />
-                  </template>
-                  <POISourcePanel
-                    v-else
-                    :regions="displayRegions"
-                    :resolve-media-src="id => resolvePoiMedia(projectId, id)"
-                    :selected-region-id="selectedRegionId"
-                    :thumbnail-url="thumbnailUrl"
-                    :source-aspect-ratio="sourceAspectRatio"
-                    :target-aspect-ratio="targetAspectRatio"
-                    :social-overlay-preset="socialOverlayPreset"
-                    :next-region-number="nextRegionNumber"
-                    :show-scaled-16x9-tab="sourceFrameMode === 'scale'"
-                    :show-subtitles-tab="subtitlePositioningEnabled"
-                    :show-text-box-tab="Boolean(clipTextLocal?.enabled)"
-                    :video-url="videoUrl"
-                    :timeline-preview-canvas="timelinePreviewCanvas"
-                    :video-time="absoluteVideoTime"
-                    :is-playing="isPlaying"
-                    :volume="poiVolume"
-                    :is-muted="poiMuted"
-                    @add-region="addRegion"
-                    @update-region="updateRegion"
-                    @delete-region="deleteRegion"
-                    @select-region="selectRegion"
-                    @time-update="onTimeUpdate"
-                    @upload-media="handleMediaUpload"
-                    @update:socialOverlayPreset="socialOverlayPreset = $event"
-                  />
-                </div>
-
-                <!-- Arrow indicator -->
-                <div class="flex items-center justify-center w-8 poi-dialog__rail">
-                  <div class="flex flex-col items-center gap-1.5">
-                    <ArrowRightIcon class="w-4 h-4 poi-dialog__muted" />
-                    <span class="text-[9px] poi-dialog__faint font-medium tracking-wider rotate-90 whitespace-nowrap">
-                      EXPORT
-                    </span>
-                  </div>
-                </div>
-
-                <!-- Target Panel (Right) -->
-                <div class="flex-1">
-                  <POITargetPanel
-                    :regions="displayRegions"
-                    :resolve-media-src="id => resolvePoiMedia(projectId, id)"
-                    :selected-region-id="selectedRegionId"
-                    :thumbnail-url="thumbnailUrl"
-                    :target-aspect-ratio="targetAspectRatio"
-                    :source-aspect-ratio="sourceAspectRatio"
-                    :video-url="videoUrl"
-                    :timeline-preview-canvas="timelinePreviewCanvas"
-                    :video-time="absoluteVideoTime"
-                    :clip-start-time="clipStartTime"
-                    :is-playing="isPlaying"
-                    :watermark-preview="resolvedWatermark"
-                    :overlay-previews="resolvedOverlays"
-                    :subtitle-settings="localSubtitleSettings"
-                    :subtitle-position="localSubtitlePosition"
-                    :subtitle-preview-visible="subtitlePositioningEnabled"
-                    :subtitle-positioning-enabled="subtitlePositioningActive"
-                    :transcript-words="transcriptWords"
-                    :transcript-segments="transcriptSegments"
-                    :initial-source-framing="targetPanelInitialFraming"
-                    :clip-text-box-display="clipTextBoxForTarget"
-                    :clip-text-box-positioning-enabled="clipTextBoxPositioningActive"
-                    :social-overlay-preset="socialOverlayPreset"
-                    @update-region="updateRegion"
-                    @select-region="selectRegion"
-                    @update-source-transform="handleSourceTransformUpdate"
-                    @subtitlePositionChange="onSubtitlePositionChange"
-                    @subtitleSettingsChange="onSubtitleSettingsChange"
-                    @clipTextBoxPositionChange="onClipTextBoxPositionChange"
-                  />
-                </div>
-              </div>
-
-              <!-- Video Playback Controls -->
-              <div v-if="clipDuration > 0" class="poi-dialog__playback">
-                <div class="flex items-center gap-2">
-                  <!-- Play/Pause button -->
-                  <button
-                    @click="togglePlayback"
-                    class="poi-dialog__play-btn"
-                    :disabled="!videoUrl"
-                    :class="{ 'opacity-50 cursor-not-allowed': !videoUrl }"
-                  >
-                    <PlayIcon v-if="!isPlaying" class="w-4 h-4 ml-0.5" />
-                    <PauseIcon v-else class="w-4 h-4" />
-                  </button>
-
-                  <!-- Time display -->
-                  <span class="text-xs font-mono w-20 poi-dialog__muted">
-                    {{ formatTime(currentTime) }} / {{ formatTime(clipDuration) }}
-                  </span>
-
-                  <!-- Progress bar -->
-                  <div class="flex-1 relative group cursor-pointer" ref="progressBarRef" @mousedown="onSeekStart">
-                    <div class="poi-dialog__progress-track">
-                      <div
-                        class="poi-dialog__progress-fill"
-                        :class="{ 'transition-all duration-100': !isSeeking }"
-                        :style="{ width: `${(currentTime / clipDuration) * 100}%` }"
-                      />
-                    </div>
-                    <!-- Seek handle -->
-                    <div
-                      class="poi-dialog__progress-handle"
-                      :class="{
-                        'opacity-100': isSeeking || currentTime === 0,
-                        'opacity-0 group-hover:opacity-100': !isSeeking && currentTime !== 0
-                      }"
-                      :style="{ left: `calc(${(currentTime / clipDuration) * 100}% - 6px)` }"
-                    />
-                  </div>
-
-                  <!-- Volume control -->
-                  <div class="flex items-center gap-1.5 shrink-0">
-                    <button
-                      @click="togglePoiMute"
-                      class="poi-dialog__icon-btn"
-                      :title="poiMuted ? 'Unmute' : 'Mute'"
-                    >
-                      <VolumeXIcon v-if="poiMuted || poiVolume === 0" class="w-4 h-4" />
-                      <Volume2Icon v-else class="w-4 h-4" />
-                    </button>
-                    <input
-                      type="range"
-                      min="0"
-                      max="1"
-                      step="0.02"
-                      :value="poiMuted ? 0 : poiVolume"
-                      class="poi-dialog__volume-slider"
-                      @input="onPoiVolumeChange"
-                    />
-                  </div>
-
-                  <!-- Reset button -->
-                  <button
-                    @click="resetPlayback"
-                    class="poi-dialog__icon-btn"
-                    title="Reset to start"
-                  >
-                    <RotateCcwIcon class="w-4 h-4" />
-                  </button>
-                </div>
-
-                <!-- Loading/Error state -->
-                <div v-if="videoLoading" class="text-[10px] mt-2 poi-dialog__faint">Loading video preview...</div>
-                <div v-else-if="videoError" class="text-[10px] mt-2 poi-dialog__warning">
-                  {{ videoError }}
-                </div>
-              </div>
-
-              <!-- Segment Timeline -->
-              <POISegmentTimeline
-                v-if="clipDuration > 0"
-                :segments="segmentConfigs"
-                :broll-regions="brollConfigs"
-                :active-broll-id="activeBrollId"
-                :active-segment-id="activeSegmentId"
-                :duration="clipDuration"
-                :current-time="currentTime"
-                :video-url="videoUrl"
-                :thumbnail-url="thumbnailUrl"
-                :clip-start-time="clipStartTime"
-                :clip-end-time="clipEndTime"
-                @add-segment="addSegment"
-                @delete-segment="deleteSegment"
-                @select-segment="selectSegment"
-                @update-segment="updateSegment"
-                @select-broll="selectBroll"
-                @delete-broll="deleteBroll"
-                @update-broll="updateBroll"
-                @seek-time="handleSeekTime"
-              />
-
-            </div>
-
-            <!-- Feature controls: Subtitles + Clip text box + AI B-roll -->
-            <div
-              v-if="localSubtitleSettings || clipId || projectId"
-              class="poi-dialog__divider-t poi-dialog__feature-grid"
-            >
-              <!-- Subtitles cell -->
-              <div v-if="localSubtitleSettings" class="poi-dialog__feature-cell">
-                <Checkbox
-                  :model-value="subtitlePositioningEnabled"
-                  aria-label="Enable subtitle positioning"
-                  class="poi-dialog__checkbox poi-dialog__checkbox--purple shrink-0"
-                  @update:model-value="onSubtitlePositioningToggle"
-                />
-                <CaptionsIcon class="h-4 w-4 poi-dialog__icon-purple shrink-0" />
-                <div class="flex-1 min-w-0">
-                  <span class="poi-dialog__feature-label">Subtitles</span>
-                  <span v-if="isSubtitleTranscribing" class="text-[10px] ml-2 poi-dialog__muted">
-                    · {{ subtitleTranscribeStatusText }}
-                  </span>
-                  <span v-else-if="!hasTranscript" class="text-[10px] ml-2 poi-dialog__muted">
-                    · Transcript needed
-                  </span>
-                  <span v-else-if="subtitlePositioningEnabled" class="text-[10px] ml-2 poi-dialog__muted">
-                    · Select Subtitles tab to position on export preview
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  class="poi-dialog__btn poi-dialog__btn--secondary poi-dialog__btn--sm shrink-0"
-                  :disabled="isSubtitleTranscribing"
-                  @click="hasTranscript ? openSubtitleSettings() : requestSubtitleTranscription()"
-                >
-                  {{ subtitleButtonLabel }}
-                </button>
-                <span class="text-[10px] shrink-0 font-mono poi-dialog__faint">{{ targetAspectRatio }}</span>
-              </div>
-
-              <!-- Clip text box cell -->
-              <div v-if="clipId" class="poi-dialog__feature-cell">
-                <Type class="h-4 w-4 poi-dialog__icon-amber shrink-0" />
-                <div class="flex-1 min-w-0">
-                  <span class="poi-dialog__feature-label">Clip text box</span>
-                  <span v-if="clipTextLocal?.enabled" class="text-[10px] ml-2 poi-dialog__muted">
-                    · Select Text box tab to position on export preview
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  class="poi-dialog__btn poi-dialog__btn--secondary poi-dialog__btn--sm shrink-0"
-                  @click="openTextBoxSettings"
-                >
-                  {{ clipTextLocal?.enabled ? 'Edit' : 'Add text' }}
-                </button>
-                <span class="text-[10px] shrink-0 font-mono poi-dialog__faint">{{ targetAspectRatio }}</span>
-              </div>
-
-              <!-- AI B-roll cell -->
-              <div v-if="projectId && clipId" class="poi-dialog__feature-cell">
-                <Sparkles class="h-4 w-4 poi-dialog__icon-cyan shrink-0" />
-                <div class="flex-1 min-w-0">
-                  <span class="poi-dialog__feature-label">B-roll</span>
-                  <span v-if="aiBroll.appliedCount.value > 0" class="text-[10px] ml-2 poi-dialog__muted">
-                    · {{ aiBroll.appliedCount.value }} applied
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  class="poi-dialog__btn poi-dialog__btn--secondary poi-dialog__btn--sm shrink-0"
-                  @click="openAiBrollPanel"
-                >
-                  {{ showAiBrollPanel ? 'Hide' : 'Open' }}
-                </button>
-              </div>
-            </div>
-
-            <!-- Footer -->
-            <div class="poi-dialog__footer">
-              <div class="text-sm poi-dialog__muted">
-                <span v-if="!canApplyFraming" class="poi-dialog__warning">
-                  <AlertCircleIcon class="w-4 h-4 inline mr-1" />
-                  Add a region, enable Scale 16:9 / Use 16:9, or enable the clip text box
-                </span>
-                <span v-else-if="sourceFrameMode !== 'none' && displayRegions.length === 0" class="poi-dialog__faint">
-                  {{ sourceFrameMode === 'use16x9' ? 'Use 16:9' : 'Scale 16:9' }} configured
-                </span>
-                <span v-else class="poi-dialog__faint">
-                  {{ totalRegionCount }} region{{ totalRegionCount !== 1 ? 's' : '' }} configured
-                </span>
-              </div>
-              <div class="flex items-center gap-2.5">
-                <button
-                  @click="resetRegions"
-                  class="poi-dialog__btn poi-dialog__btn--secondary"
-                  :disabled="!canApplyFraming"
-                  :class="{ 'opacity-50 cursor-not-allowed': !canApplyFraming }"
-                >
-                  Reset
-                </button>
-                <button
-                  @click="close"
-                  class="poi-dialog__btn poi-dialog__btn--secondary"
-                >
-                  Cancel
-                </button>
-                <button
-                  @click="confirmConfig"
-                  :disabled="!canApplyFraming"
-                  class="poi-dialog__btn poi-dialog__btn--primary"
-                >
-                  <CheckIcon class="h-4 w-4" />
-                  <span>Apply Configuration</span>
-                </button>
-              </div>
-            </div>
-          </div>
-        </Transition>
+  <Modal
+    :open="modelValue"
+    title="Manual framing editor"
+    :description="`Define crop regions on the source and arrange them in the ${targetAspectRatio} output`"
+    :icon="LayoutDashboardIcon"
+    size="2xl"
+    flush
+    :dismissible="false"
+    body-class="flex flex-col"
+    @close="close"
+  >
+    <!-- Main Content - Side by Side Panels -->
+    <div class="mt-3 flex min-h-[280px] flex-1 overflow-hidden border-t border-line-subtle">
+      <!-- Source Panel (Left) — swapped for text box settings when editing -->
+      <div class="flex min-h-0 flex-1 flex-col overflow-hidden">
+        <!-- Subtitle Settings Mode -->
+        <template v-if="subtitleSettingsMode && localSubtitleSettings">
+          <POIPanelHeader title="Subtitles" @cancel="cancelSubtitleSettings" @done="doneSubtitleSettings" />
+          <SubtitlePropertiesPanel
+            class="flex-1 min-h-0 overflow-hidden"
+            variant="embedded"
+            :settings="localSubtitleSettings"
+            :segments="transcriptSegments"
+            :current-time="currentTime"
+            @updateSettings="onSubtitleSettingsPanelUpdate"
+            @close="doneSubtitleSettings"
+          />
+        </template>
+        <template v-else-if="textBoxSettingsMode && clipTextLocal">
+          <POIPanelHeader title="Text box" @cancel="cancelTextBoxSettings" @done="doneTextBoxSettings" />
+          <ClipTextBoxPropertiesPanel
+            class="flex-1 min-h-0 overflow-hidden"
+            variant="embedded"
+            :state="clipTextLocal"
+            :clip-duration="clipDuration"
+            @update-state="onClipTextPanelPatch"
+            @delete="onClipTextPanelDelete"
+            @close="doneTextBoxSettings"
+          />
+        </template>
+        <template v-else-if="showAiBrollPanel">
+          <AIBrollPanel
+            class="flex-1 min-h-0"
+            :suggestions="aiBroll.suggestions.value"
+            :is-generating="aiBroll.isGenerating.value"
+            :is-fetching="aiBroll.isFetching.value"
+            :error="aiBroll.error.value"
+            :can-generate="canGenerateAiBroll"
+            :planner-options="aiBroll.options.value"
+            :clip-duration="clipDuration"
+            :playhead-time="currentTime"
+            :manual-search-query="aiBroll.manualSearchQuery.value"
+            :manual-search-media-type="aiBroll.manualSearchMediaType.value"
+            :manual-search-results="aiBroll.manualSearchResults.value"
+            :selected-manual-candidate-id="aiBroll.selectedManualCandidateId.value"
+            :is-manual-searching="aiBroll.isManualSearching.value"
+            :manual-search-error="aiBroll.manualSearchError.value"
+            :is-manual-adding="isManualBrollAdding"
+            @close="showAiBrollPanel = false"
+            @generate="onAiBrollGenerate"
+            @fetch-all="onAiBrollFetchAll"
+            @apply="onAiBrollApply"
+            @apply-all="onAiBrollApplyAll"
+            @regenerate="onAiBrollRegenerate"
+            @reject="onAiBrollReject"
+            @select-candidate="onAiBrollSelectCandidate"
+            @manual-search="onManualBrollSearch"
+            @manual-select-candidate="onManualBrollSelectCandidate"
+            @manual-add="onManualBrollAdd"
+            @update:manual-search-query="aiBroll.manualSearchQuery.value = $event"
+            @update:manual-search-media-type="aiBroll.manualSearchMediaType.value = $event"
+          />
+        </template>
+        <POISourcePanel
+          v-else
+          :regions="displayRegions"
+          :selected-region-id="selectedRegionId"
+          :thumbnail-url="thumbnailUrl"
+          :source-aspect-ratio="sourceAspectRatio"
+          :target-aspect-ratio="targetAspectRatio"
+          :social-overlay-preset="socialOverlayPreset"
+          :next-region-number="nextRegionNumber"
+          :show-scaled-16x9-tab="sourceFrameMode === 'scale'"
+          :show-subtitles-tab="subtitlePositioningEnabled"
+          :show-text-box-tab="Boolean(clipTextLocal?.enabled)"
+          :video-url="videoUrl"
+          :timeline-preview-canvas="timelinePreviewCanvas"
+          :video-time="absoluteVideoTime"
+          :is-playing="isPlaying"
+          :volume="poiVolume"
+          :is-muted="poiMuted"
+          @add-region="addRegion"
+          @update-region="updateRegion"
+          @delete-region="deleteRegion"
+          @select-region="selectRegion"
+          @time-update="onTimeUpdate"
+          @upload-media="handleMediaUpload"
+          @update:socialOverlayPreset="socialOverlayPreset = $event"
+        />
       </div>
-    </Transition>
-  </Teleport>
+
+      <POIExportRail />
+
+      <!-- Target Panel (Right) -->
+      <div class="flex-1">
+        <POITargetPanel
+          :regions="displayRegions"
+          :selected-region-id="selectedRegionId"
+          :thumbnail-url="thumbnailUrl"
+          :target-aspect-ratio="targetAspectRatio"
+          :source-aspect-ratio="sourceAspectRatio"
+          :video-url="videoUrl"
+          :timeline-preview-canvas="timelinePreviewCanvas"
+          :video-time="absoluteVideoTime"
+          :clip-start-time="clipStartTime"
+          :is-playing="isPlaying"
+          :watermark-preview="resolvedWatermark"
+          :overlay-previews="resolvedOverlays"
+          :subtitle-settings="localSubtitleSettings"
+          :subtitle-position="localSubtitlePosition"
+          :subtitle-preview-visible="subtitlePositioningEnabled"
+          :subtitle-positioning-enabled="subtitlePositioningActive"
+          :transcript-words="transcriptWords"
+          :transcript-segments="transcriptSegments"
+          :initial-source-framing="targetPanelInitialFraming"
+          :clip-text-box-display="clipTextBoxForTarget"
+          :clip-text-box-positioning-enabled="clipTextBoxPositioningActive"
+          :social-overlay-preset="socialOverlayPreset"
+          @update-region="updateRegion"
+          @select-region="selectRegion"
+          @update-source-transform="handleSourceTransformUpdate"
+          @subtitlePositionChange="onSubtitlePositionChange"
+          @subtitleSettingsChange="onSubtitleSettingsChange"
+          @clipTextBoxPositionChange="onClipTextBoxPositionChange"
+        />
+      </div>
+    </div>
+
+    <!-- Video Playback Controls -->
+    <div v-if="clipDuration > 0" class="shrink-0 border-t border-line-subtle bg-surface px-4 py-1.5">
+      <div class="flex items-center gap-2">
+        <!-- Play/Pause button -->
+        <Button
+          variant="secondary"
+          size="icon-sm"
+          :disabled="!videoUrl"
+          :title="isPlaying ? 'Pause (Space)' : 'Play (Space)'"
+          :aria-label="isPlaying ? 'Pause' : 'Play'"
+          @click="togglePlayback"
+        >
+          <PlayIcon v-if="!isPlaying" class="fill-current" />
+          <PauseIcon v-else class="fill-current" />
+        </Button>
+
+        <!-- Time display -->
+        <span class="tabular w-24 shrink-0 font-mono text-xs text-fg-muted">
+          {{ formatTime(currentTime) }} / {{ formatTime(clipDuration) }}
+        </span>
+
+        <!-- Progress bar -->
+        <div ref="progressBarRef" class="group relative flex-1 cursor-pointer py-1.5" @mousedown="onSeekStart">
+          <div class="h-1 overflow-hidden rounded-full bg-line-strong">
+            <div
+              class="h-full bg-brand"
+              :class="{ 'transition-[width] duration-100': !isSeeking }"
+              :style="{ width: `${(currentTime / clipDuration) * 100}%` }"
+            />
+          </div>
+          <!-- Seek handle -->
+          <div
+            class="pointer-events-none absolute top-1/2 size-3 -translate-y-1/2 rounded-full bg-fg shadow-[var(--shadow-sm)] transition-opacity"
+            :class="{
+              'opacity-100': isSeeking || currentTime === 0,
+              'opacity-0 group-hover:opacity-100': !isSeeking && currentTime !== 0,
+            }"
+            :style="{ left: `calc(${(currentTime / clipDuration) * 100}% - 6px)` }"
+          />
+        </div>
+
+        <!-- Volume control -->
+        <div class="flex shrink-0 items-center gap-1">
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            :title="poiMuted ? 'Unmute' : 'Mute'"
+            :aria-label="poiMuted ? 'Unmute' : 'Mute'"
+            @click="togglePoiMute"
+          >
+            <VolumeXIcon v-if="poiMuted || poiVolume === 0" />
+            <Volume2Icon v-else />
+          </Button>
+          <input
+            type="range"
+            min="0"
+            max="1"
+            step="0.02"
+            :value="poiMuted ? 0 : poiVolume"
+            class="w-16"
+            aria-label="Volume"
+            @input="onPoiVolumeChange"
+          />
+        </div>
+
+        <!-- Reset button -->
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="Reset to start"
+          aria-label="Reset to start"
+          @click="resetPlayback"
+        >
+          <RotateCcwIcon />
+        </Button>
+      </div>
+
+      <!-- Loading/Error state -->
+      <div v-if="videoLoading" class="mt-1 text-2xs text-fg-subtle">Loading video preview...</div>
+      <div v-else-if="videoError" class="mt-1 text-2xs text-warning">
+        {{ videoError }}
+      </div>
+    </div>
+
+    <!-- Segment Timeline -->
+    <POISegmentTimeline
+      v-if="clipDuration > 0"
+      :segments="segmentConfigs"
+      :broll-regions="brollConfigs"
+      :active-broll-id="activeBrollId"
+      :active-segment-id="activeSegmentId"
+      :duration="clipDuration"
+      :current-time="currentTime"
+      :video-url="videoUrl"
+      :thumbnail-url="thumbnailUrl"
+      :clip-start-time="clipStartTime"
+      :clip-end-time="clipEndTime"
+      @add-segment="addSegment"
+      @delete-segment="deleteSegment"
+      @select-segment="selectSegment"
+      @update-segment="updateSegment"
+      @select-broll="selectBroll"
+      @delete-broll="deleteBroll"
+      @update-broll="updateBroll"
+      @seek-time="handleSeekTime"
+    />
+
+    <!-- Feature controls: Subtitles + Clip text box + AI B-roll -->
+    <div
+      v-if="localSubtitleSettings || clipId || projectId"
+      class="flex shrink-0 divide-x divide-line-subtle border-t border-line-subtle bg-surface"
+    >
+      <!-- Subtitles cell -->
+      <POIFeatureCell v-if="localSubtitleSettings" :icon="CaptionsIcon" label="Subtitles" :ratio="targetAspectRatio">
+        <template #control>
+          <Checkbox
+            :model-value="subtitlePositioningEnabled"
+            aria-label="Enable subtitle positioning"
+            class="shrink-0"
+            @update:model-value="onSubtitlePositioningToggle"
+          />
+        </template>
+        <template v-if="isSubtitleTranscribing">· {{ subtitleTranscribeStatusText }}</template>
+        <template v-else-if="!hasTranscript">· Transcript needed</template>
+        <template v-else-if="subtitlePositioningEnabled">· Select Subtitles tab to position on export preview</template>
+        <template #action>
+          <Button
+            variant="secondary"
+            size="xs"
+            class="shrink-0"
+            :disabled="isSubtitleTranscribing"
+            @click="hasTranscript ? openSubtitleSettings() : requestSubtitleTranscription()"
+          >
+            {{ subtitleButtonLabel }}
+          </Button>
+        </template>
+      </POIFeatureCell>
+
+      <!-- Clip text box cell -->
+      <POIFeatureCell v-if="clipId" :icon="Type" label="Clip text box" :ratio="targetAspectRatio">
+        <template v-if="clipTextLocal?.enabled">· Select Text box tab to position on export preview</template>
+        <template #action>
+          <Button variant="secondary" size="xs" class="shrink-0" @click="openTextBoxSettings">
+            {{ clipTextLocal?.enabled ? 'Edit' : 'Add text' }}
+          </Button>
+        </template>
+      </POIFeatureCell>
+
+      <!-- AI B-roll cell -->
+      <POIFeatureCell v-if="projectId && clipId" :icon="Sparkles" icon-class="text-ai" label="B-roll">
+        <template v-if="aiBroll.appliedCount.value > 0">· {{ aiBroll.appliedCount.value }} applied</template>
+        <template #action>
+          <Button variant="secondary" size="xs" class="shrink-0" @click="openAiBrollPanel">
+            {{ showAiBrollPanel ? 'Hide' : 'Open' }}
+          </Button>
+        </template>
+      </POIFeatureCell>
+    </div>
+
+    <template #footer>
+      <div class="mr-auto min-w-0 truncate text-xs">
+        <span v-if="!canApplyFraming" class="inline-flex items-center gap-1.5 text-warning">
+          <AlertCircleIcon class="size-3.5 shrink-0" />
+          Add a region, enable Scale 16:9 / Use 16:9, or enable the clip text box
+        </span>
+        <span v-else-if="sourceFrameMode !== 'none' && displayRegions.length === 0" class="text-fg-subtle">
+          {{ sourceFrameMode === 'use16x9' ? 'Use 16:9' : 'Scale 16:9' }} configured
+        </span>
+        <span v-else class="text-fg-subtle">
+          {{ totalRegionCount }} region{{ totalRegionCount !== 1 ? 's' : '' }} configured
+        </span>
+      </div>
+      <Button variant="ghost" :disabled="!canApplyFraming" @click="resetRegions">Reset</Button>
+      <Button variant="ghost" @click="close">Cancel</Button>
+      <Button variant="primary" :disabled="!canApplyFraming" @click="confirmConfig">
+        <CheckIcon />
+        Apply configuration
+      </Button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
   import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
   import {
     LayoutDashboardIcon,
-    XIcon,
-    ArrowRightIcon,
     CheckIcon,
     AlertCircleIcon,
     PlayIcon,
@@ -448,6 +343,11 @@
   import ClipTextBoxPropertiesPanel from '@/components/ClipTextBoxPropertiesPanel.vue';
   import SubtitlePropertiesPanel from '@/components/SubtitlePropertiesPanel.vue';
   import { Checkbox } from '@/components/ui/checkbox';
+  import { Modal } from '@/components/ui/modal';
+  import { Button } from '@/components/ui/button';
+  import POIPanelHeader from './POIPanelHeader.vue';
+  import POIExportRail from './POIExportRail.vue';
+  import POIFeatureCell from './POIFeatureCell.vue';
   import type {
     BrollRegionConfig,
     ManualRegion,
@@ -473,10 +373,7 @@
   import { getPoiTimelineEditor, resolvePoiVideoSource, savePoiMedia, resolvePoiMedia } from '@/services/poiRuntime';
   import type { ManualBrollMediaType } from '@/composables/useAiBroll';
   import type { AiBrollPlannerOptions } from '@/types/ai-broll';
-  import {
-    ensureGlobalDisplayNumbers,
-    getNextRegionDisplayNumber,
-  } from '@/utils/poiRegionNumbering';
+  import { ensureGlobalDisplayNumbers, getNextRegionDisplayNumber } from '@/utils/poiRegionNumbering';
   import {
     POI_OVERLAY_SCALED_16X9_ID,
     POI_OVERLAY_SUBTITLES_ID,
@@ -620,15 +517,11 @@
   const brollConfigs = ref<BrollRegionConfig[]>([]);
 
   function segmentAtTime(time: number): SegmentRegionConfig | undefined {
-    return segmentConfigs.value.find(
-      (seg) => time >= seg.startTime && time <= seg.endTime,
-    );
+    return segmentConfigs.value.find((seg) => time >= seg.startTime && time <= seg.endTime);
   }
 
   function brollsAtTime(time: number): BrollRegionConfig[] {
-    return brollConfigs.value.filter(
-      (broll) => time >= broll.startTime && time <= broll.endTime,
-    );
+    return brollConfigs.value.filter((broll) => time >= broll.startTime && time <= broll.endTime);
   }
 
   const showAiBrollPanel = ref(false);
@@ -643,14 +536,10 @@
   });
 
   const canGenerateAiBroll = computed(
-    () =>
-      Boolean(props.clipId) &&
-      (props.transcriptWords.length > 0 || props.transcriptSegments.length > 0),
+    () => Boolean(props.clipId) && (props.transcriptWords.length > 0 || props.transcriptSegments.length > 0)
   );
 
-  const hasTranscript = computed(
-    () => props.transcriptWords.length > 0 || props.transcriptSegments.length > 0,
-  );
+  const hasTranscript = computed(() => props.transcriptWords.length > 0 || props.transcriptSegments.length > 0);
 
   const subtitleTranscribeStatusText = computed(() => {
     if (props.subtitleTranscribeMessage) return props.subtitleTranscribeMessage;
@@ -665,7 +554,7 @@
   });
 
   const brollOrientation = computed<'portrait' | 'landscape'>(() =>
-    props.targetAspectRatio === '16:9' ? 'landscape' : 'portrait',
+    props.targetAspectRatio === '16:9' ? 'landscape' : 'portrait'
   );
 
   // Source frame transform (16:9 scaling in 9:16) + mode / blur (synced from POITargetPanel)
@@ -680,7 +569,7 @@
       segmentConfigs.value.some((s) => s.regions.length > 0) ||
       brollConfigs.value.length > 0 ||
       sourceFrameMode.value !== 'none' ||
-      Boolean(clipTextLocal.value?.enabled),
+      Boolean(clipTextLocal.value?.enabled)
   );
 
   const textBoxSettingsMode = ref(false);
@@ -728,15 +617,11 @@
   });
 
   const subtitlePositioningActive = computed(
-    () =>
-      subtitlePositioningEnabled.value &&
-      selectedRegionId.value === POI_OVERLAY_SUBTITLES_ID
+    () => subtitlePositioningEnabled.value && selectedRegionId.value === POI_OVERLAY_SUBTITLES_ID
   );
 
   const clipTextBoxPositioningActive = computed(
-    () =>
-      Boolean(clipTextLocal.value?.enabled) &&
-      selectedRegionId.value === POI_OVERLAY_TEXTBOX_ID
+    () => Boolean(clipTextLocal.value?.enabled) && selectedRegionId.value === POI_OVERLAY_TEXTBOX_ID
   );
 
   watch(
@@ -814,10 +699,7 @@
   });
 
   const nextRegionNumber = computed(() =>
-    getNextRegionDisplayNumber([
-      baseRegions.value,
-      ...segmentConfigs.value.map((s) => s.regions),
-    ]),
+    getNextRegionDisplayNumber([baseRegions.value, ...segmentConfigs.value.map((s) => s.regions)])
   );
 
   const totalRegionCount = computed(() => {
@@ -845,19 +727,21 @@
     props.subtitlePositionOverride ? { ...props.subtitlePositionOverride } : { x: 50, y: 85, width: 80 }
   );
   const subtitlePositioningEnabled = ref(false);
-  
+
   // Local copy of subtitle settings that can be modified
   const localSubtitleSettings = ref<SubtitleSettings>(
-    props.subtitleSettings ? { ...props.subtitleSettings } : {
-      enabled: true,
-      selectedPresetId: 'neon-glow',
-      animationStyle: 'glow',
-      textColor: '#FFFFFF',
-      highlightColor: '#22D3EE',
-      multiColorEnabled: false,
-    } as SubtitleSettings
+    props.subtitleSettings
+      ? { ...props.subtitleSettings }
+      : ({
+          enabled: true,
+          selectedPresetId: 'neon-glow',
+          animationStyle: 'glow',
+          textColor: '#FFFFFF',
+          highlightColor: '#22D3EE',
+          multiColorEnabled: false,
+        } as SubtitleSettings)
   );
-  
+
   const showStyleDropdown = ref(false);
   const showColorDropdown = ref(false);
   const isSeeking = ref(false);
@@ -915,24 +799,23 @@
     }
   }
 
-
   // Keyboard controls for precision scrubbing
   function handleKeyDown(e: KeyboardEvent) {
     // Only handle if dialog is open and not typing in an input
     if (!props.modelValue) return;
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-    
+
     // Close dropdown on Escape
     if (e.key === 'Escape' && showStyleDropdown.value) {
       showStyleDropdown.value = false;
       return;
     }
-    
+
     const microStep = 0.01; // 10ms - ultra precise
     const fineStep = 0.1; // 100ms - fine control
     const jumpTime = 1.0; // 1 second for shift+arrow
-    
-    switch(e.key) {
+
+    switch (e.key) {
       case 'ArrowLeft':
         e.preventDefault();
         if (e.shiftKey) {
@@ -990,7 +873,7 @@
     console.log('[ManualPOIEditor] Mounted with transcript data:', {
       transcriptWordsLength: props.transcriptWords?.length,
       transcriptSegmentsLength: props.transcriptSegments?.length,
-      firstWord: props.transcriptWords?.[0]
+      firstWord: props.transcriptWords?.[0],
     });
   });
 
@@ -1048,10 +931,7 @@
   // Handle time update from video
   function onTimeUpdate(time: number) {
     // Raw VOD previews report absolute source time; extracted clip previews report 0-based time.
-    currentTime.value =
-      props.clipStartTime > 0 && time >= props.clipStartTime
-        ? time - props.clipStartTime
-        : time;
+    currentTime.value = props.clipStartTime > 0 && time >= props.clipStartTime ? time - props.clipStartTime : time;
 
     // Loop back to start if we've reached the end (while still playing)
     if (currentTime.value >= clipDuration.value && isPlaying.value) {
@@ -1098,9 +978,9 @@
     const urlKeys = props.overlayPreviewUrls ? Object.keys(props.overlayPreviewUrls) : [];
     console.log('[ManualPOIEditor] resolvedOverlays evaluating:', {
       overlayCount: props.layoutOverlays.length,
-      overlayIds: props.layoutOverlays.map(o => o.id),
+      overlayIds: props.layoutOverlays.map((o) => o.id),
       previewUrlKeys: urlKeys,
-      previewUrlLengths: urlKeys.map(k => props.overlayPreviewUrls?.[k]?.length || 0),
+      previewUrlLengths: urlKeys.map((k) => props.overlayPreviewUrls?.[k]?.length || 0),
       ratioKey,
     });
 
@@ -1147,16 +1027,16 @@
   function onSeekStart(event: MouseEvent) {
     if (!progressBarRef.value) return;
     event.preventDefault();
-    
+
     // Clean up any existing listeners first
     cleanupSeekListeners();
-    
+
     const wasPlaying = isPlaying.value;
     const editor = timelineEditor();
     if (editor) editor.playback.pause();
     else isPlaying.value = false; // Pause during seek
     isSeeking.value = true;
-    
+
     // Store initial mouse position and time for precision mode
     const startX = event.clientX;
     const startTime = currentTime.value;
@@ -1166,7 +1046,7 @@
       const rect = progressBarRef.value.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const percent = Math.max(0, Math.min(1, x / rect.width));
-      
+
       if (e.shiftKey) {
         // Precision mode: quantize to 0.01 second increments
         const rawTime = percent * clipDuration.value;
@@ -1258,7 +1138,7 @@
           transcriptWordsCount: props.transcriptWords?.length || 0,
           transcriptSegmentsCount: props.transcriptSegments?.length || 0,
           firstWord: props.transcriptWords?.[0],
-          firstSegment: props.transcriptSegments?.[0]
+          firstSegment: props.transcriptSegments?.[0],
         });
 
         // Load video URL
@@ -1437,7 +1317,7 @@
         suggestion,
         brollConfigs.value,
         props.projectId,
-        brollConfigs.value.length,
+        brollConfigs.value.length
       );
       brollConfigs.value = result.brollConfigs;
       const appliedBroll = brollConfigs.value.find((broll) => broll.suggestionId === suggestion.id);
@@ -1536,7 +1416,7 @@
   function onSubtitleSettingsChange(settings: SubtitleSettings) {
     console.log('[ManualPOIEditor] onSubtitleSettingsChange called:', {
       newFontSize: settings.fontSize,
-      oldFontSize: localSubtitleSettings.value.fontSize
+      oldFontSize: localSubtitleSettings.value.fontSize,
     });
     localSubtitleSettings.value = { ...settings };
     emit('subtitleSettingsChange', { ...settings });
@@ -1575,24 +1455,14 @@
     void persistClipTextToDb();
   }
 
-  function onClipTextBoxPositionChange(payload: {
-    x: number;
-    y: number;
-    widthPct: number;
-    fontSize?: number;
-  }) {
+  function onClipTextBoxPositionChange(payload: { x: number; y: number; widthPct: number; fontSize?: number }) {
     if (!clipTextLocal.value) return;
-    clipTextLocal.value = upsertClipTextPerRatioGeometry(
-      clipTextLocal.value,
-      props.targetAspectRatio,
-      payload
-    );
+    clipTextLocal.value = upsertClipTextPerRatioGeometry(clipTextLocal.value, props.targetAspectRatio, payload);
     void persistClipTextToDb();
   }
 
   async function openTextBoxSettings() {
-    textBoxRevertJson.value =
-      clipTextLocal.value == null ? null : serializeClipTextBoxState(clipTextLocal.value);
+    textBoxRevertJson.value = clipTextLocal.value == null ? null : serializeClipTextBoxState(clipTextLocal.value);
     if (!clipTextLocal.value) {
       clipTextLocal.value = createDefaultClipTextBoxState(clipDuration.value);
     }
@@ -1603,10 +1473,7 @@
 
   async function doneTextBoxSettings() {
     if (clipTextLocal.value?.enabled) {
-      clipTextLocal.value = ensureClipTextPerRatioEntry(
-        clipTextLocal.value,
-        props.targetAspectRatio
-      );
+      clipTextLocal.value = ensureClipTextPerRatioEntry(clipTextLocal.value, props.targetAspectRatio);
       await persistClipTextToDb();
       selectedRegionId.value = POI_OVERLAY_TEXTBOX_ID;
     }
@@ -1650,7 +1517,7 @@
         multiColorEnabled: false,
         highlightColor: '#FFFFFF',
       },
-      'karaoke': {
+      karaoke: {
         fontFamily: 'Montserrat',
         fontSize: 48,
         fontWeight: 700,
@@ -1664,7 +1531,7 @@
         backgroundEnabled: false,
         backgroundColor: 'transparent',
       },
-      'zoom': {
+      zoom: {
         fontFamily: 'Montserrat',
         fontSize: 48,
         fontWeight: 700,
@@ -1676,7 +1543,7 @@
         highlightColor: '#22D3EE',
         backgroundEnabled: false,
       },
-      'pop': {
+      pop: {
         fontFamily: 'Montserrat',
         fontSize: 48,
         fontWeight: 700,
@@ -1688,7 +1555,7 @@
         highlightColor: '#EC4899',
         backgroundEnabled: false,
       },
-      'glow': {
+      glow: {
         fontFamily: 'Montserrat',
         fontSize: 44,
         fontWeight: 700,
@@ -1701,7 +1568,7 @@
         highlightColor: '#22D3EE',
         backgroundEnabled: false,
       },
-      'wave': {
+      wave: {
         fontFamily: 'Montserrat',
         fontSize: 42,
         fontWeight: 600,
@@ -1713,7 +1580,7 @@
         shadowColor: 'rgba(0,0,0,0.8)',
         backgroundEnabled: false,
       },
-      'none': {
+      none: {
         fontFamily: 'Montserrat',
         fontSize: 42,
         fontWeight: 600,
@@ -1726,7 +1593,7 @@
         backgroundEnabled: false,
       },
     };
-    
+
     return defaults[styleId] || {};
   }
 
@@ -1738,9 +1605,9 @@
       border1Width: localSubtitleSettings.value.border1Width,
       border2Width: localSubtitleSettings.value.border2Width,
       fontSize: localSubtitleSettings.value.fontSize,
-      highlightColor: localSubtitleSettings.value.highlightColor
+      highlightColor: localSubtitleSettings.value.highlightColor,
     });
-    
+
     // Apply style-specific defaults when switching styles
     const styleDefaults = getStyleDefaults(styleId);
     localSubtitleSettings.value = {
@@ -1748,17 +1615,17 @@
       ...styleDefaults,
       animationStyle: styleId as any,
     };
-    
+
     showStyleDropdown.value = false;
     console.log('[ManualPOIEditor] After style change with defaults, full settings:', {
-      ...localSubtitleSettings.value
+      ...localSubtitleSettings.value,
     });
     emit('subtitleSettingsChange', { ...localSubtitleSettings.value });
   }
 
   // Get current style display name
   function getCurrentStyleName(): string {
-    const style = ANIMATION_STYLES.find(s => s.id === localSubtitleSettings.value.animationStyle);
+    const style = ANIMATION_STYLES.find((s) => s.id === localSubtitleSettings.value.animationStyle);
     return style ? style.name : 'None';
   }
 
@@ -1771,7 +1638,7 @@
 
   // Get color name from value
   function getColorName(colorValue: string): string {
-    const color = PRESET_COLORS.find(c => c.value === colorValue);
+    const color = PRESET_COLORS.find((c) => c.value === colorValue);
     return color ? color.name : 'Custom';
   }
 
@@ -1794,7 +1661,7 @@
           border2Width: settings.border2Width,
           border2Color: settings.border2Color,
           highlightColor: settings.highlightColor,
-          fontSize: settings.fontSize
+          fontSize: settings.fontSize,
         });
         localSubtitleSettings.value = { ...settings };
         // Enable positioning when subtitles are turned on while the editor is already open
@@ -1810,7 +1677,9 @@
   // Sync subtitle position when prop changes (dialog reopened for a different ratio)
   watch(
     () => props.subtitlePositionOverride,
-    (pos) => { if (pos) localSubtitlePosition.value = { ...pos }; },
+    (pos) => {
+      if (pos) localSubtitlePosition.value = { ...pos };
+    },
     { deep: true }
   );
 
@@ -1861,7 +1730,7 @@
 
   // Update segment times (from timeline drag/resize)
   function updateSegment(segmentId: string, updates: { startTime?: number; endTime?: number }) {
-    const segment = segmentConfigs.value.find(s => s.segmentId === segmentId);
+    const segment = segmentConfigs.value.find((s) => s.segmentId === segmentId);
     if (segment) {
       if (updates.startTime !== undefined) {
         segment.startTime = updates.startTime;
@@ -1924,10 +1793,7 @@
     if (!canApplyFraming.value) return;
 
     if (clipTextLocal.value?.enabled && props.clipId) {
-      clipTextLocal.value = ensureClipTextPerRatioEntry(
-        clipTextLocal.value,
-        props.targetAspectRatio
-      );
+      clipTextLocal.value = ensureClipTextPerRatioEntry(clipTextLocal.value, props.targetAspectRatio);
       await persistClipTextToDb();
     }
 
@@ -1956,404 +1822,3 @@
     close();
   }
 </script>
-
-<!-- Unscoped: applies to child components (Checkbox) and avoids build-dialog transition class collisions -->
-<style>
-  /* ===== Overlay ===== */
-  .poi-dialog__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10050;
-  }
-
-  /* ===== Dialog Container ===== */
-  .poi-dialog {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    width: 100%;
-    /* Sized to the actual preview content (source ~400px + arrow ~32px + target ~240px) */
-    max-width: 64rem;
-    margin: 1rem;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  }
-
-  /* ===== Accent Bar ===== */
-  .poi-dialog__accent {
-    height: 3px;
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
-    flex-shrink: 0;
-  }
-
-  /* ===== Header ===== */
-  .poi-dialog__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .poi-dialog__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-    flex-shrink: 0;
-  }
-
-  .poi-dialog__title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .poi-dialog__subtitle {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .poi-dialog__close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-    flex-shrink: 0;
-  }
-
-  .poi-dialog__close:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  /* ===== Sub-header (Subtitles / Text box modes) ===== */
-  .poi-dialog__sub-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    border-bottom: 1px solid var(--sidebar-border);
-    background-color: var(--sidebar-hover);
-    flex-shrink: 0;
-  }
-
-  .poi-dialog__sub-title {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  /* ===== Dividers ===== */
-  .poi-dialog__divider-r {
-    border-right: 1px solid var(--sidebar-border);
-  }
-
-  .poi-dialog__divider-t {
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  /* ===== Rail (between source / target) ===== */
-  .poi-dialog__rail {
-    background-color: var(--sidebar-hover);
-  }
-
-  /* ===== Text helpers ===== */
-  .poi-dialog__muted {
-    color: var(--sidebar-text-muted);
-  }
-
-  .poi-dialog__faint {
-    color: var(--sidebar-text-muted);
-    opacity: 0.7;
-  }
-
-  .poi-dialog__warning {
-    color: #fbbf24;
-  }
-
-  /* ===== Feature grid (Subtitles + Clip text box, 2-column) ===== */
-  .poi-dialog__feature-grid {
-    display: flex;
-    background-color: var(--sidebar-hover);
-  }
-
-  .poi-dialog__feature-cell {
-    flex: 1 1 0;
-    min-width: 0;
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.5rem 0.875rem;
-  }
-
-  .poi-dialog__feature-cell + .poi-dialog__feature-cell {
-    border-left: 1px solid var(--sidebar-border);
-  }
-
-  .poi-dialog__feature-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .poi-dialog__icon-purple {
-    color: #c084fc;
-  }
-
-  .poi-dialog__icon-cyan {
-    color: var(--sidebar-accent);
-  }
-
-  .poi-dialog__icon-amber {
-    color: #fbbf24;
-  }
-
-  /* ===== Checkboxes (override ui/checkbox Tailwind defaults) ===== */
-  .poi-dialog__checkbox {
-    width: 1rem !important;
-    height: 1rem !important;
-    min-width: 1rem;
-    min-height: 1rem;
-    border-radius: 0.25rem !important;
-    border: 1px solid rgba(255, 255, 255, 0.35) !important;
-    background-color: rgba(255, 255, 255, 0.08) !important;
-    color: white !important;
-    cursor: pointer;
-    box-shadow: none !important;
-    transition: background-color 150ms ease, border-color 150ms ease, box-shadow 150ms ease;
-  }
-
-  .poi-dialog__checkbox:hover {
-    border-color: rgba(255, 255, 255, 0.55) !important;
-    background-color: rgba(255, 255, 255, 0.12) !important;
-  }
-
-  .poi-dialog__checkbox:focus-visible {
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.35) !important;
-  }
-
-  .poi-dialog__checkbox--purple[data-state='checked'] {
-    background-color: #a855f7 !important;
-    border-color: #c084fc !important;
-    color: white !important;
-  }
-
-  /* ===== Playback bar ===== */
-  .poi-dialog__playback {
-    padding: 0.375rem 1rem;
-    border-top: 1px solid var(--sidebar-border);
-    background-color: var(--sidebar-hover);
-  }
-
-  .poi-dialog__play-btn {
-    width: 32px;
-    height: 32px;
-    border-radius: 9999px;
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.25);
-  }
-
-  .poi-dialog__play-btn:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .poi-dialog__play-btn:disabled {
-    cursor: not-allowed;
-  }
-
-  .poi-dialog__progress-track {
-    height: 4px;
-    background-color: var(--sidebar-border);
-    border-radius: 9999px;
-    overflow: hidden;
-  }
-
-  .poi-dialog__progress-fill {
-    height: 100%;
-    background: linear-gradient(90deg, var(--sidebar-accent), #0891b2);
-  }
-
-  .poi-dialog__progress-handle {
-    position: absolute;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 12px;
-    height: 12px;
-    background-color: white;
-    border-radius: 9999px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-    transition: opacity 150ms ease;
-    pointer-events: none;
-  }
-
-  .poi-dialog__icon-btn {
-    padding: 0.375rem;
-    color: var(--sidebar-text-muted);
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .poi-dialog__icon-btn:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .poi-dialog__volume-slider {
-    width: 4rem;
-    height: 4px;
-    accent-color: var(--sidebar-accent);
-    cursor: pointer;
-  }
-
-  /* ===== Footer ===== */
-  .poi-dialog__footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    border-top: 1px solid var(--sidebar-border);
-    background-color: var(--sidebar-hover);
-  }
-
-  /* ===== Buttons ===== */
-  .poi-dialog__btn {
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.875rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border-radius: 8px;
-    border: 1px solid transparent;
-    cursor: pointer;
-    transition: all 150ms ease;
-    line-height: 1;
-  }
-
-  .poi-dialog__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .poi-dialog__btn--sm {
-    padding: 0.3125rem 0.625rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    border-radius: 6px;
-  }
-
-  .poi-dialog__btn--secondary {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-    border-color: var(--sidebar-border);
-  }
-
-  .poi-dialog__btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .poi-dialog__btn--primary {
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
-    border-color: transparent;
-  }
-
-  .poi-dialog__btn--primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .poi-dialog__btn--primary:disabled {
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-  }
-
-  .poi-dialog__btn--purple {
-    background: linear-gradient(135deg, #a855f7 0%, #7c3aed 100%);
-    color: white;
-    border-color: transparent;
-  }
-
-  .poi-dialog__btn--purple:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .poi-dialog__btn--amber {
-    background: linear-gradient(135deg, #f59e0b 0%, #d97706 100%);
-    color: white;
-    border-color: transparent;
-  }
-
-  .poi-dialog__btn--amber:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  /* ===== Transitions (poi-prefixed to avoid build-dialog name collisions) ===== */
-  .poi-modal-enter-active,
-  .poi-modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .poi-modal-enter-from,
-  .poi-modal-leave-to {
-    opacity: 0;
-  }
-
-  .poi-dialog-transition-enter-active {
-    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .poi-dialog-transition-leave-active {
-    transition: all 150ms ease-in;
-  }
-
-  .poi-dialog-transition-enter-from {
-    opacity: 0;
-    transform: scale(0.96) translateY(8px);
-  }
-
-  .poi-dialog-transition-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-</style>

@@ -5,7 +5,14 @@ import { useElementSelection } from "../../../composables/timeline/element/useEl
 import type { EffectElement } from "../../../types/timeline";
 import { getEffectPreset } from "../../../constants/effect-constants";
 import { COLOR_OVERLAY_BLEND_OPTIONS } from "../../../constants/color-overlay-constants";
-import { Wand2, Trash2, Eye, EyeOff } from "lucide-vue-next";
+import { Wand2, Trash2 } from "lucide-vue-next";
+import { Button } from "@/components/ui/button";
+import { Switch } from "@/components/ui/switch";
+import InspectorSection from "../shared/InspectorSection.vue";
+import InspectorField from "../shared/InspectorField.vue";
+import InspectorSelect from "../shared/InspectorSelect.vue";
+import SliderField from "../shared/SliderField.vue";
+import ColorSwatchField from "../shared/ColorSwatchField.vue";
 
 const props = defineProps<{
 	element: EffectElement;
@@ -53,7 +60,7 @@ const paramEntries = computed(() => {
 	if (type === "blur") {
 		entries.push({ key: "radius", value: (p.radius as number) ?? 8, label: "Radius", min: 1, max: 50, step: 1 });
 	} else if (type === "pixelate") {
-		entries.push({ key: "blockSize", value: (p.blockSize as number) ?? 12, label: "Block Size", min: 2, max: 100, step: 1 });
+		entries.push({ key: "blockSize", value: (p.blockSize as number) ?? 12, label: "Block size", min: 2, max: 100, step: 1 });
 	} else if (type === "sharpen") {
 		entries.push({ key: "amount", value: (p.amount as number) ?? 3, label: "Amount", min: 0.1, max: 10, step: 0.1 });
 	} else if (type === "vignette") {
@@ -66,7 +73,7 @@ const paramEntries = computed(() => {
 		entries.push({ key: "blueOffsetY", value: (p.blueOffsetY as number) ?? 0, label: "Blue Y", min: -20, max: 20, step: 1 });
 	} else if (type === "glitch") {
 		entries.push({ key: "sliceCount", value: (p.sliceCount as number) ?? 10, label: "Slices", min: 2, max: 50, step: 1 });
-		entries.push({ key: "colorBleed", value: (p.colorBleed as number) ?? 40, label: "Color Bleed", min: 0, max: 100, step: 1 });
+		entries.push({ key: "colorBleed", value: (p.colorBleed as number) ?? 40, label: "Color bleed", min: 0, max: 100, step: 1 });
 	} else if (type === "wave") {
 		entries.push({ key: "amplitude", value: (p.amplitude as number) ?? 10, label: "Amplitude", min: 1, max: 50, step: 1 });
 		entries.push({ key: "frequency", value: (p.frequency as number) ?? 3, label: "Frequency", min: 0.5, max: 20, step: 0.5 });
@@ -80,99 +87,80 @@ const paramEntries = computed(() => {
 
 	return entries;
 });
+
+function formatParam(param: { value: number | string; step?: number }) {
+	if (typeof param.value !== "number") return String(param.value);
+	return Number.isInteger(param.step ?? 1) ? String(param.value) : Number(param.value).toFixed(1);
+}
 </script>
 
 <template>
-	<div class="space-y-3 p-3">
-		<!-- Header -->
-		<div class="flex items-center justify-between">
-			<div class="flex items-center gap-2">
-				<Wand2 class="size-4 text-[#E040FB]" />
-				<span class="text-xs font-medium">{{ preset?.label ?? element.effectType }}</span>
-			</div>
-			<div class="flex items-center gap-1">
-				<button
-					class="rounded p-1 hover:bg-white/10"
-					:title="element.enabled ? 'Disable' : 'Enable'"
-					@click="toggleEnabled"
-				>
-					<Eye v-if="element.enabled" class="size-3.5 text-zinc-400" />
-					<EyeOff v-else class="size-3.5 text-zinc-600" />
-				</button>
-				<button
-					class="rounded p-1 text-zinc-500 hover:bg-red-500/10 hover:text-red-400"
-					title="Delete effect"
-					@click="handleDelete"
-				>
-					<Trash2 class="size-3.5" />
-				</button>
-			</div>
-		</div>
-
-		<div v-if="element.enabled" class="space-y-2.5">
-			<!-- Intensity -->
-			<div class="space-y-1">
-				<div class="flex items-center justify-between">
-					<label class="text-[11px] text-zinc-500">Intensity</label>
-					<span class="text-[11px] text-zinc-400">{{ Math.round(element.intensity) }}%</span>
-				</div>
-				<input
-					type="range"
-					:value="element.intensity"
-					min="0"
-					max="100"
-					step="1"
-					class="w-full accent-[#E040FB]"
-					@input="(e: Event) => update({ intensity: Number((e.target as HTMLInputElement).value) })"
+	<div class="h-full min-h-0 overflow-y-auto overflow-x-hidden">
+		<InspectorSection :title="preset?.label ?? element.effectType" :icon="Wand2">
+			<template #actions>
+				<Switch
+					:model-value="element.enabled"
+					:aria-label="element.enabled ? 'Disable effect' : 'Enable effect'"
+					:title="element.enabled ? 'Disable effect' : 'Enable effect'"
+					@update:model-value="toggleEnabled"
 				/>
-			</div>
-
-			<!-- Solid Color / colorOverlay -->
-			<template v-if="isColorOverlay">
-				<div class="flex items-center justify-between gap-2">
-					<label class="text-[11px] text-zinc-500">Color</label>
-					<input
-						type="color"
-						:value="overlayColor"
-						class="h-7 w-10 cursor-pointer rounded border border-white/10 bg-transparent"
-						@input="(e: Event) => updateParam('color', (e.target as HTMLInputElement).value)"
-					/>
-				</div>
-				<div class="space-y-1">
-					<label class="text-[11px] text-zinc-500">Blend Mode</label>
-					<select
-						:value="overlayBlendMode"
-						class="w-full rounded-sm border border-white/10 bg-[#1a1a1e] px-2 py-1.5 text-xs text-zinc-200 outline-none"
-						@change="(e: Event) => updateParam('blendMode', (e.target as HTMLSelectElement).value)"
-					>
-						<option v-for="opt in COLOR_OVERLAY_BLEND_OPTIONS" :key="opt.value" :value="opt.value">
-							{{ opt.label }}
-						</option>
-					</select>
-				</div>
 			</template>
 
-			<!-- Effect-specific params -->
-			<div v-for="param in paramEntries" :key="param.key" class="space-y-1">
-				<div class="flex items-center justify-between">
-					<label class="text-[11px] text-zinc-500">{{ param.label }}</label>
-					<span class="text-[11px] text-zinc-400">{{ typeof param.value === 'number' ? (Number.isInteger(param.step ?? 1) ? param.value : Number(param.value).toFixed(1)) : param.value }}</span>
-				</div>
-				<input
-					v-if="typeof param.value === 'number'"
-					type="range"
-					:value="param.value"
-					:min="param.min ?? 0"
-					:max="param.max ?? 100"
-					:step="param.step ?? 1"
-					class="w-full accent-[#E040FB]"
-					@input="(e: Event) => updateParam(param.key, Number((e.target as HTMLInputElement).value))"
+			<template v-if="element.enabled">
+				<SliderField
+					label="Intensity"
+					:model-value="element.intensity"
+					:min="0"
+					:max="100"
+					:step="1"
+					:readout="`${Math.round(element.intensity)}%`"
+					@update:model-value="(v) => update({ intensity: v })"
 				/>
-			</div>
-		</div>
 
-		<div v-else class="rounded-md bg-white/5 px-2.5 py-2 text-center text-[11px] text-zinc-600">
-			Effect disabled
+				<!-- Solid color / colorOverlay -->
+				<template v-if="isColorOverlay">
+					<InspectorField label="Color">
+						<ColorSwatchField
+							:model-value="overlayColor"
+							aria-label="Overlay color"
+							@update:model-value="(v) => updateParam('color', v)"
+						/>
+					</InspectorField>
+					<InspectorField label="Blend mode">
+						<InspectorSelect
+							:model-value="overlayBlendMode"
+							:options="COLOR_OVERLAY_BLEND_OPTIONS"
+							aria-label="Blend mode"
+							@update:model-value="(v) => updateParam('blendMode', v)"
+						/>
+					</InspectorField>
+				</template>
+
+				<!-- Effect-specific params -->
+				<template v-for="param in paramEntries" :key="param.key">
+					<SliderField
+						v-if="typeof param.value === 'number'"
+						:label="param.label"
+						:model-value="param.value"
+						:min="param.min ?? 0"
+						:max="param.max ?? 100"
+						:step="param.step ?? 1"
+						:readout="formatParam(param)"
+						@update:model-value="(v) => updateParam(param.key, v)"
+					/>
+				</template>
+			</template>
+
+			<p v-else class="rounded-md bg-surface-sunken px-2.5 py-2 text-center text-xs text-fg-subtle">
+				Effect disabled
+			</p>
+		</InspectorSection>
+
+		<div class="p-3">
+			<Button variant="destructive-soft" size="sm" block @click="handleDelete">
+				<Trash2 />
+				Delete effect
+			</Button>
 		</div>
 	</div>
 </template>

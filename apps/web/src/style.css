@@ -1,37 +1,13 @@
 @import 'tailwindcss';
 @import '../../../client/src/styles/theme.css';
+@import '../../../client/src/styles/tailwind-theme.css';
 @import '../../../client/src/fonts.css';
-@source '../../../client/src/components/BuildCard.vue';
-@source '../../../client/src/components/VideoPlayerDialog.vue';
 @custom-variant dark (&:is(.dark *));
 @source './**/*.{vue,ts}';
+@source '../../../client/src/components';
+@source '../../../client/src/lib/sharedViewPresentation.ts';
 @source '../../../client/src/pages/ClipperProfilePage.vue';
-@source '../../../client/src/components/EditProfileDialog.vue';
-@source '../../../client/src/components/ClipperProfileOnboardingWizard.vue';
-@source '../../../client/src/components/AccountSettingsDialog.vue';
-@source '../../../client/src/components/settings/*.vue';
-@source '../../../client/src/components/UserPostsList.vue';
-@source '../../../client/src/components/*PublishDialog.vue';
-@source '../../../client/src/components/AddPostDialog.vue';
-@source '../../../client/src/components/CustomTimePicker.vue';
-@source '../../../client/src/components/Timeline*.vue';
-@source '../../../client/src/components/TranscriptPanel.vue';
-@source '../../../client/src/components/SubtitlePropertiesPanel.vue';
-@source '../../../client/src/components/SubtitleEditorDialog.vue';
-@source '../../../client/src/components/SubtitleAdjustmentDialog.vue';
-@source '../../../client/src/components/ClipTextBoxPropertiesPanel.vue';
-@source '../../../client/src/components/ClipDetectionConfirmDialog.vue';
-@source '../../../client/src/components/TranscriptionConfirmDialog.vue';
-@source '../../../client/src/components/CreateClipDialog.vue';
-@source '../../../client/src/components/ConfirmationModal.vue';
-@source '../../../client/src/components/ClipsTabView.vue';
-@source '../../../client/src/components/WorkspaceClipCardView.vue';
-@source '../../../client/src/components/WorkspaceMediaHeader.vue';
-@source '../../../client/src/components/WorkspacePreviewControls.vue';
 @source '../../../client/src/editor/components/preview/SocialOverlay.vue';
-@source '../../../client/src/components/ClipGenerationProgress.vue';
-@source '../../../client/src/components/Quick*.vue';
-@source '../../../client/src/components/Build*.vue';
 @theme inline {
   --color-background: var(--sidebar-bg);
   --color-foreground: var(--sidebar-text);
@@ -49,31 +25,17 @@
   --color-card: var(--sidebar-surface);
   --color-card-foreground: var(--sidebar-text);
 }
-@source '../../../client/src/components/VideoPlayer.vue';
-@source '../../../client/src/components/VideoControls.vue';
-@source '../../../client/src/components/ProjectWorkspaceHeader.vue';
-@source '../../../client/src/components/CreatorProfilesView.vue';
-@source '../../../client/src/components/StreamVodsView.vue';
-@source '../../../client/src/components/ProjectLibraryView.vue';
-@source '../../../client/src/components/DownloadCard.vue';
-@source '../../../client/src/components/CustomDropdown.vue';
-@source '../../../client/src/components/ProjectDialog.vue';
-@source '../../../client/src/components/SearchPalette.vue';
-@source '../../../client/src/components/PaginationFooter.vue';
-@source '../../../client/src/components/CreatorDownloadDialog.vue';
-@source '../../../client/src/components/TimeRangePicker.vue';
-@source '../../../client/src/components/AddPostDialog.vue';
-@source '../../../client/src/components/organization/ExternalPostSubmitDialog.vue';
-@source '../../../client/src/components/ui/button';
-@source '../../../client/src/components/ui/input';
-@source '../../../client/src/components/ui/dropdown-menu';
+
+/* Desktop components rendered by the web workspace (Tailwind must scan them too). */
 @layer base {
   body {
     margin: 0;
     min-width: 360px;
-    background: var(--sidebar-bg);
-    color: var(--sidebar-text);
-    font-family: Inter, system-ui, sans-serif;
+    background: var(--canvas);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    -webkit-font-smoothing: antialiased;
   }
   button,
   a,
@@ -91,25 +53,22 @@
     cursor: not-allowed;
   }
   :focus-visible {
-    outline: 2px solid var(--editor-accent);
-    outline-offset: 3px;
+    outline: 2px solid var(--brand-line);
+    outline-offset: 1px;
   }
 }
 @layer components {
+  /* Mirrors the desktop Input / Button primitives (components/ui) without their dependencies. */
   .field {
-    @apply w-full rounded-lg border border-white/10 bg-black/25 px-3 py-2.5 text-sm text-zinc-100 placeholder:text-zinc-600 focus:border-sky-500 focus:outline-none;
+    @apply h-[var(--control-md)] w-full rounded-[var(--radius-control)] border border-line bg-surface-raised px-2.5 text-sm text-fg transition-[border-color,box-shadow] placeholder:text-fg-subtle hover:border-line-strong focus:border-brand-line focus:shadow-[0_0_0_3px_var(--brand-soft)] focus:outline-none;
+  }
+  textarea.field {
+    @apply h-auto py-2;
   }
   .button-primary {
-    @apply inline-flex items-center gap-2 rounded-lg bg-sky-500 px-4 py-2.5 text-sm font-semibold text-white transition-colors hover:bg-sky-400 disabled:hover:bg-sky-500;
+    @apply inline-flex h-[var(--control-md)] items-center justify-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--primary-bg)] px-3 text-sm font-medium text-[var(--fg-on-light)] shadow-[var(--shadow-sm)] transition-colors hover:bg-[var(--primary-bg-hover)];
   }
   .button-secondary {
-    @apply inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/10;
+    @apply inline-flex h-[var(--control-md)] items-center justify-center gap-1.5 rounded-[var(--radius-control)] border border-line bg-surface-raised px-3 text-sm font-medium text-fg transition-colors hover:border-line-strong hover:bg-[#20242c];
   }
 }
-@source "../../../client/src/components/ProfileDialog.vue";
-@source "../../../client/src/components/WatermarkPositionPicker.vue";
-@source "../../../client/src/components/OverlayPositionPicker.vue";
-@source "../../../client/src/components/IntroOutroRatioPicker.vue";
-@source "../../../client/src/components/poi";
-@source "../../../client/src/components/ui/switch";
-@source "../../../client/src/components/ui/checkbox";

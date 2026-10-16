@@ -2,6 +2,7 @@
   import { onMounted, onUnmounted, ref, computed, watch } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
   import Toast from '@/components/Toast.vue';
+  import DialogHost from '@/components/DialogHost.vue';
   import AppCloseDialog from '@/components/AppCloseDialog.vue';
   import TitleBar from '@/components/TitleBar.vue';
   import LoadingScreen from '@/components/LoadingScreen.vue';
@@ -638,7 +639,7 @@
 
     <!-- Main content area with scrolling -->
     <div
-      class="main-content dashboard-container"
+      class="main-content"
       :class="{
         'pip-content': isPipWindow,
         'editor-content': isEditorPage || isStudioSessionPage,
@@ -646,6 +647,8 @@
     >
       <!-- Toast notifications provider -->
       <Toast />
+      <!-- confirmDialog() / promptDialog() renderer -->
+      <DialogHost />
       <!-- Router view for page content (key changes on auth to force refresh) -->
       <router-view :key="routerKey" :sidebar-disabled="sidebarDisabled" />
       <!-- Global app close confirmation dialog -->
@@ -707,26 +710,24 @@
     width: 100%;
     height: 100vh;
     overflow: hidden;
+    background-color: var(--canvas);
   }
 
   .main-content {
     width: 100%;
     max-width: 100%;
-    height: calc(100vh - 32px);
-    margin-top: 32px; /* Account for fixed titlebar height */
+    height: calc(100vh - var(--titlebar-height));
+    margin-top: var(--titlebar-height);
     overflow-y: auto;
     overflow-x: hidden;
     box-sizing: border-box;
+    background-color: var(--canvas);
   }
 
   .main-content.pip-content {
     height: 100vh;
-    margin-top: 0; /* No title bar in PIP window */
+    margin-top: 0;
     overflow: hidden;
-  }
-
-  .dashboard-container {
-    background-color: var(--sidebar-bg);
   }
 
   .main-content.editor-content {

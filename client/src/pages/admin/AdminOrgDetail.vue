@@ -1,234 +1,152 @@
 <template>
-  <div class="admin-org-detail-page">
-    <PageLayout
-      :title="org?.name || 'Organization Details'"
-      :description="org?.description || ''"
-      :show-header="true"
-      :icon="Building2"
-      :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Organizations', path: '/admin/organizations' }, { label: org?.name || 'Details' }]"
-    >
-      <template #actions>
-        <div v-if="org" class="org-header-actions">
-          <button @click="navigateToOrgPage" class="org-action-btn org-action-btn--primary">
-            <ExternalLink class="org-action-btn__icon" />
-            View Page
-          </button>
-          <button @click="messageOwner" class="org-action-btn org-action-btn--outline">
-            <MessageSquare class="org-action-btn__icon" />
-            Message Owner
-          </button>
-        </div>
+  <PageLayout
+    :title="org?.name || 'Organization'"
+    :description="org?.description || ''"
+    :icon="Building2"
+    :breadcrumbs="[
+      { label: 'Admin', path: '/admin' },
+      { label: 'Organizations', path: '/admin/organizations' },
+      { label: org?.name || 'Details' },
+    ]"
+  >
+    <template #actions>
+      <template v-if="org">
+        <Button variant="ghost" size="icon-sm" title="Message owner" aria-label="Message owner" @click="messageOwner">
+          <MessageSquare />
+        </Button>
+        <Button variant="secondary" size="sm" @click="navigateToOrgPage">
+          <ExternalLink />
+          View page
+        </Button>
       </template>
+    </template>
 
-      <!-- Loading State -->
-      <div v-if="loading" class="org-content org-content--loading">
-        <div class="loading-spinner">
-          <Loader2 class="loading-spinner__icon" />
+    <!-- Loading -->
+    <div v-if="loading && !org" class="flex flex-col gap-5 px-5 py-4" aria-busy="true">
+      <div class="flex items-center gap-3.5 border-b border-line-subtle pb-4">
+        <div class="skeleton size-10 rounded-lg" />
+        <div class="flex flex-col gap-2">
+          <div class="skeleton h-4 w-48" />
+          <div class="skeleton h-3 w-32" />
         </div>
       </div>
-
-      <!-- Error State -->
-      <div v-else-if="error" class="org-content org-content--empty">
-        <div class="empty-state">
-          <div class="empty-state__icon-wrapper">
-            <AlertTriangle class="empty-state__icon" />
-          </div>
-          <h3 class="empty-state__title">Failed to load organization</h3>
-          <p class="empty-state__description">{{ error }}</p>
-          <Button @click="loadOrgDetails">Try Again</Button>
-        </div>
+      <div class="grid items-start gap-4 md:grid-cols-[minmax(0,1fr)_300px]">
+        <div class="skeleton h-72 rounded-[var(--radius-card)]" />
+        <div class="skeleton h-48 rounded-[var(--radius-card)]" />
       </div>
+    </div>
 
-      <!-- Main Content -->
-      <div v-else-if="org" class="org-content">
-        <!-- Organization Header -->
-        <header class="org-header">
-          <div class="org-header__main">
-            <div class="org-avatar">
-              <img
-                v-if="org.logo_url"
-                :src="org.logo_url"
-                class="org-avatar__img"
+    <!-- Error -->
+    <EmptyState
+      v-else-if="error"
+      :icon="AlertTriangle"
+      tone="danger"
+      title="Failed to load organization"
+      :description="error"
+    >
+      <Button variant="secondary" @click="loadOrgDetails">Try again</Button>
+    </EmptyState>
+
+    <!-- Main content -->
+    <div v-else-if="org" class="@container flex animate-enter flex-col gap-5 px-5 py-4">
+      <AdminDetailHeader
+        :title="org.name"
+        :subtitle="org.description"
+        :avatar-url="org.logo_url"
+        :icon="Building2"
+        avatar-shape="square"
+      >
+        <template #badges>
+          <Badge v-if="org.subscription?.tier" variant="brand">
+            <Crown />{{ formatTier(org.subscription.tier) }}
+          </Badge>
+          <Badge v-if="org.subscription?.status" :variant="statusVariant(org.subscription.status)">
+            {{ formatStatus(org.subscription.status) }}
+          </Badge>
+          <Badge v-if="org.campaigns_enabled" variant="neutral"><Target />Campaigns</Badge>
+        </template>
+        <template #meta>
+          <span>{{ org.member_count || 0 }} member{{ org.member_count === 1 ? '' : 's' }}</span>
+          <span v-if="org.created_at">Created {{ formatDate(org.created_at) }}</span>
+          <span v-if="org.owner?.email">
+            Owned by
+            <button
+              type="button"
+              class="text-fg-muted transition-colors duration-[var(--duration-fast)] hover:text-fg hover:underline"
+              :title="`View ${org.owner.email}`"
+              @click="navigateToUserProfile(org.owner.id)"
+            >
+              {{ org.owner.name || org.owner.email }}
+            </button>
+          </span>
+        </template>
+      </AdminDetailHeader>
+
+      <div class="grid items-start gap-4 @3xl:grid-cols-[minmax(0,1fr)_300px]">
+        <!-- Left column -->
+        <div class="flex min-w-0 flex-col gap-4">
+          <SectionCard title="Members" :count="members.length" :icon="Users" flush>
+            <DataTable
+              bare
+              :columns="memberColumns"
+              :rows="members"
+              row-key="id"
+              clickable
+              :empty-icon="Users"
+              empty-title="No members yet"
+              @row-click="(member) => member.user?.id && navigateToUserProfile(member.user.id)"
+            >
+              <template #cell-member="{ row: member }">
+                <div class="flex min-w-0 items-center gap-2.5">
+                  <Avatar :name="member.user?.name || member.user?.email" :src="member.user?.avatar_url" size="sm" />
+                  <div class="min-w-0">
+                    <p class="truncate font-medium text-fg">{{ member.user?.name || 'Unnamed user' }}</p>
+                    <p class="truncate text-xs text-fg-subtle">{{ member.user?.email }}</p>
+                  </div>
+                </div>
+              </template>
+              <template #cell-role="{ row: member }">
+                <Badge :variant="member.role === 'owner' ? 'brand' : 'neutral'" class="capitalize">
+                  <Shield v-if="member.role === 'owner' || member.role === 'admin'" />
+                  {{ member.role }}
+                </Badge>
+              </template>
+            </DataTable>
+          </SectionCard>
+        </div>
+
+        <!-- Right column -->
+        <aside class="flex min-w-0 flex-col gap-4">
+          <SectionCard title="Subscription" :icon="CreditCard" body-class="py-1">
+            <InfoRow label="Tier">{{ org.subscription?.tier ? formatTier(org.subscription.tier) : 'Free' }}</InfoRow>
+            <InfoRow label="Status">
+              <Badge :variant="statusVariant(org.subscription?.status)">{{ formatStatus(org.subscription?.status) }}</Badge>
+            </InfoRow>
+            <InfoRow label="Billing">
+              <span class="capitalize">{{ org.subscription?.billing_interval || 'N/A' }}</span>
+            </InfoRow>
+          </SectionCard>
+
+          <SectionCard title="Details" :icon="Info" body-class="py-1">
+            <InfoRow label="Campaigns">
+              <Switch
+                :model-value="!!org.campaigns_enabled"
+                aria-label="Campaigns access"
+                @update:model-value="(on: boolean) => (on ? enableOrgCampaigns() : disableOrgCampaigns())"
               />
-              <Building2 v-else class="org-avatar__fallback" />
-            </div>
-            <div class="org-meta">
-              <div class="org-meta__top">
-                <h1 class="org-name">{{ org.name }}</h1>
-                <span v-if="org.subscription?.tier" class="tier-badge">
-                  <Crown :size="12" class="tier-badge__icon" />
-                  {{ org.subscription.tier }}
-                </span>
-                <span v-if="org.subscription?.status === 'active'" class="status-badge status-badge--active">
-                  <span class="status-badge__dot"></span>
-                  Active
-                </span>
-                <span v-if="org.campaigns_enabled" class="status-badge status-badge--campaigns">
-                  <Target :size="12" />
-                  Campaigns Enabled
-                </span>
-              </div>
-              <p v-if="org.description" class="org-bio">{{ org.description }}</p>
-            </div>
-          </div>
-          <div class="org-stats">
-            <div class="stat">
-              <span class="stat__value">{{ org.member_count || 0 }}</span>
-              <span class="stat__label">Members</span>
-            </div>
-            <div class="stat">
-              <span class="stat__value">{{ formatDate(org.created_at) }}</span>
-              <span class="stat__label">Created</span>
-            </div>
-          </div>
-        </header>
-
-        <!-- Two Column Layout -->
-        <div class="main-layout">
-          <!-- Left Column -->
-          <div class="main-column">
-            <!-- Owner Section -->
-            <section v-if="org.owner" class="section">
-              <div class="section__header">
-                <div class="section__header-icon">
-                  <User />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section__title">Organization Owner</h2>
-                  <p class="section__subtitle">Primary account holder</p>
-                </div>
-              </div>
-              <div class="owner-card">
-                <div class="owner-card__info">
-                  <div class="owner-card__avatar">
-                    <User class="owner-card__avatar-icon" />
-                  </div>
-                  <div class="owner-card__details">
-                    <div class="owner-card__name">{{ org.owner.name || 'Unnamed User' }}</div>
-                    <div class="owner-card__email">{{ org.owner.email }}</div>
-                  </div>
-                </div>
-                <Button @click="navigateToUserProfile(org.owner.id)" variant="outline" size="sm">
-                  View Profile
-                </Button>
-              </div>
-            </section>
-
-            <!-- Members Section -->
-            <section v-if="org.members && org.members.length > 0" class="section">
-              <div class="section__header">
-                <div class="section__header-icon section__header-icon--purple">
-                  <Users />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section__title">Members</h2>
-                  <p class="section__subtitle">{{ org.members.length }} total members</p>
-                </div>
-              </div>
-              <div class="members-list">
-                <div v-for="member in org.members" :key="member.id" class="member-card">
-                  <div class="member-card__info">
-                    <div class="member-card__avatar">
-                      <User />
-                    </div>
-                    <div class="member-card__details">
-                      <div class="member-card__name">{{ member.user?.name || 'Unnamed User' }}</div>
-                      <div class="member-card__email">{{ member.user?.email }}</div>
-                    </div>
-                  </div>
-                  <span :class="['role-badge', `role-badge--${member.role}`]">
-                    <Shield v-if="member.role === 'owner' || member.role === 'admin'" :size="12" />
-                    {{ member.role }}
-                  </span>
-                </div>
-              </div>
-            </section>
-          </div>
-
-          <!-- Right Sidebar -->
-          <aside class="sidebar-column">
-            <!-- Subscription Card -->
-            <div class="sidebar-card">
-              <div class="sidebar-card__header">
-                <CreditCard class="sidebar-card__icon" />
-                <h3 class="sidebar-card__title">Subscription</h3>
-              </div>
-              <div class="sidebar-card__content">
-                <div class="info-list">
-                  <div class="info-list-item">
-                    <div class="info-list-item__label">Tier</div>
-                    <div class="info-list-item__value">{{ org.subscription?.tier || 'Free' }}</div>
-                  </div>
-                  <div class="info-list-item">
-                    <div class="info-list-item__label">Status</div>
-                    <span :class="['status-badge', `status-badge--${org.subscription?.status || 'none'}`]">
-                      {{ org.subscription?.status || 'none' }}
-                    </span>
-                  </div>
-                  <div class="info-list-item">
-                    <div class="info-list-item__label">Billing</div>
-                    <div class="info-list-item__value">{{ org.subscription?.billing_interval || 'N/A' }}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Details Card -->
-            <div class="sidebar-card">
-              <div class="sidebar-card__header">
-                <Info class="sidebar-card__icon" />
-                <h3 class="sidebar-card__title">Details</h3>
-              </div>
-              <div class="sidebar-card__content">
-                <div class="info-list">
-                  <div class="info-list-item">
-                    <div class="info-list-item__label">Organization ID</div>
-                    <div class="info-list-item__value info-list-item__value--mono">{{ org.id }}</div>
-                  </div>
-                  <div class="info-list-item">
-                    <div class="info-list-item__label">Created</div>
-                    <div class="info-list-item__value">{{ formatFullDate(org.created_at) }}</div>
-                  </div>
-                  <div v-if="org.updated_at" class="info-list-item">
-                    <div class="info-list-item__label">Last Updated</div>
-                    <div class="info-list-item__value">{{ formatFullDate(org.updated_at) }}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Feature Flags Card -->
-            <div class="sidebar-card">
-              <div class="sidebar-card__header">
-                <Settings class="sidebar-card__icon" />
-                <h3 class="sidebar-card__title">Feature Flags</h3>
-              </div>
-              <div class="sidebar-card__content">
-                <div class="feature-flags">
-                  <div class="feature-flag">
-                    <div class="feature-flag__info">
-                      <Target :size="16" class="feature-flag__icon" />
-                      <div class="feature-flag__label">Campaigns Access</div>
-                    </div>
-                    <button 
-                      @click="org.campaigns_enabled ? disableOrgCampaigns() : enableOrgCampaigns()"
-                      :class="['feature-flag__toggle', org.campaigns_enabled ? 'feature-flag__toggle--enabled' : '']"
-                    >
-                      {{ org.campaigns_enabled ? 'Enabled' : 'Disabled' }}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </aside>
-        </div>
+            </InfoRow>
+            <InfoRow label="Organization ID" mono>{{ org.id }}</InfoRow>
+            <InfoRow v-if="org.created_at" label="Created">{{ formatFullDate(org.created_at) }}</InfoRow>
+            <InfoRow v-if="org.updated_at" label="Last updated">{{ formatFullDate(org.updated_at) }}</InfoRow>
+          </SectionCard>
+        </aside>
       </div>
-    </PageLayout>
-  </div>
+    </div>
+  </PageLayout>
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { formatDate as fmtDate, formatDateTime } from '@/utils/dateTimeUtils';
 import {
@@ -237,17 +155,26 @@ import {
   CreditCard,
   ExternalLink,
   MessageSquare,
-  Loader2,
   AlertTriangle,
   Users,
-  User,
   Shield,
   Info,
   Target,
-  Settings,
 } from 'lucide-vue-next';
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { EmptyState } from '@/components/ui/empty-state';
+import { Switch } from '@/components/ui/switch';
 import PageLayout from '@/components/PageLayout.vue';
+import { Avatar } from '@/components/ui/avatar';
+import {
+  AdminDetailHeader,
+  formatStatus,
+  statusVariant,
+} from '@/components/admin/shared';
+import { SectionCard } from '@/components/ui/section-card';
+import { InfoRow } from '@/components/ui/info-list';
+import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
 import api from '@/services/api';
 import { useToast } from '@/composables/useToast';
 
@@ -268,6 +195,29 @@ const formatDate = (dateString: string) => {
 const formatFullDate = (dateString: string) => {
   return formatDateTime(dateString);
 };
+
+const TIER_LABELS: Record<string, string> = {
+  solo: 'Solo',
+  enterprise_base: 'Enterprise Base',
+  enterprise_ai: 'Enterprise AI',
+  enterprise_unlimited: 'Enterprise Unlimited',
+  custom: 'Custom',
+};
+
+const formatTier = (tier: string) => TIER_LABELS[tier] || formatStatus(tier);
+
+interface OrgMember {
+  id: number;
+  role: string;
+  user?: { id: number; name: string | null; email: string; avatar_url?: string | null } | null;
+}
+
+const members = computed<OrgMember[]>(() => org.value?.members || []);
+
+const memberColumns: DataTableColumn[] = [
+  { key: 'member', label: 'Member' },
+  { key: 'role', label: 'Role', width: '120px' },
+];
 
 const loadOrgDetails = async () => {
   loading.value = true;
@@ -327,686 +277,3 @@ onMounted(() => {
   loadOrgDetails();
 });
 </script>
-
-<style scoped>
-/* ===== Page Container ===== */
-.admin-org-detail-page {
-  width: 100%;
-  min-height: 100%;
-}
-
-.org-content {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.5rem;
-  max-width: 1400px;
-  margin: 0 auto;
-  width: 100%;
-}
-
-.org-content--loading,
-.org-content--empty {
-  justify-content: center;
-  align-items: center;
-  min-height: 400px;
-}
-
-/* ===== Loading State ===== */
-.loading-spinner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.loading-spinner__icon {
-  width: 40px;
-  height: 40px;
-  color: var(--sidebar-text-muted);
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-/* ===== Empty State ===== */
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-
-.empty-state__icon-wrapper {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 72px;
-  height: 72px;
-  background-color: var(--sidebar-hover);
-  border-radius: 16px;
-  margin-bottom: 1.5rem;
-}
-
-.empty-state__icon {
-  width: 36px;
-  height: 36px;
-  color: var(--sidebar-text-muted);
-}
-
-.empty-state__title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0 0 0.5rem;
-}
-
-.empty-state__description {
-  font-size: 0.875rem;
-  color: var(--sidebar-text-muted);
-  margin: 0 0 1.5rem;
-  max-width: 320px;
-  line-height: 1.5;
-}
-
-/* ===== Organization Header ===== */
-.org-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 2rem;
-}
-
-@media (max-width: 640px) {
-  .org-header {
-    flex-direction: column;
-  }
-}
-
-.org-header__main {
-  display: flex;
-  align-items: flex-start;
-  gap: 1.25rem;
-  flex: 1;
-}
-
-.org-avatar {
-  position: relative;
-  width: 72px;
-  height: 72px;
-  border-radius: 12px;
-  background: var(--sidebar-surface);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.org-avatar__img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.org-avatar__fallback {
-  width: 100%;
-  height: 100%;
-  padding: 16px;
-  color: var(--sidebar-text-muted);
-}
-
-.org-meta {
-  flex: 1;
-  min-width: 0;
-}
-
-.org-meta__top {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.375rem;
-}
-
-.org-name {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--sidebar-text);
-  margin: 0;
-  letter-spacing: -0.02em;
-}
-
-.tier-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.25rem 0.5rem;
-  background: rgba(6, 182, 212, 0.12);
-  border-radius: 4px;
-  font-size: 0.625rem;
-  font-weight: 600;
-  color: var(--sidebar-accent);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.tier-badge__icon {
-  flex-shrink: 0;
-}
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.25rem 0.625rem;
-  border-radius: 9999px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.status-badge--active {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-}
-
-.status-badge--none {
-  background: rgba(107, 114, 128, 0.15);
-  color: #9ca3af;
-}
-
-.status-badge__dot {
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-}
-
-.status-badge--active .status-badge__dot {
-  background: #10b981;
-  box-shadow: 0 0 4px rgba(16, 185, 129, 0.6);
-}
-
-.status-badge--none .status-badge__dot {
-  background: #6b7280;
-}
-
-.org-bio {
-  font-size: 0.8125rem;
-  color: var(--sidebar-text-muted);
-  margin: 0;
-  line-height: 1.5;
-  max-width: 420px;
-}
-
-.org-stats {
-  display: flex;
-  gap: 2rem;
-}
-
-.stat {
-  text-align: center;
-}
-
-.stat__value {
-  display: block;
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--sidebar-text);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-.stat__label {
-  display: block;
-  font-size: 0.5625rem;
-  color: var(--sidebar-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-top: 0.25rem;
-}
-
-/* Header Action Buttons */
-.org-header-actions {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.org-action-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  height: 32px;
-  padding: 0 0.875rem;
-  border-radius: 6px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.org-action-btn--primary {
-  background-color: var(--sidebar-accent);
-  color: var(--sidebar-bg);
-  border: none;
-}
-
-.org-action-btn--primary:hover:not(:disabled) {
-  opacity: 0.9;
-}
-
-.org-action-btn--outline {
-  background: transparent;
-  border: 1px solid var(--sidebar-border);
-  color: var(--sidebar-text);
-}
-
-.org-action-btn--outline:hover:not(:disabled) {
-  border-color: var(--sidebar-accent);
-  color: var(--sidebar-accent);
-}
-
-.org-action-btn:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.org-action-btn__icon {
-  width: 14px;
-  height: 14px;
-}
-
-/* ===== Main Layout ===== */
-.main-layout {
-  display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 1.5rem;
-  align-items: start;
-}
-
-@media (max-width: 1024px) {
-  .main-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-/* ===== Main Column ===== */
-.main-column {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-/* ===== Section ===== */
-.section {
-  background-color: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
-  padding: 1.25rem;
-}
-
-.section__header {
-  display: flex;
-  align-items: center;
-  gap: 0.875rem;
-  margin-bottom: 1.25rem;
-}
-
-.section__header-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  background-color: rgba(6, 182, 212, 0.15);
-  color: var(--sidebar-accent);
-  flex-shrink: 0;
-}
-
-.section__header-icon svg {
-  width: 20px;
-  height: 20px;
-}
-
-.section__header-icon--purple {
-  background-color: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
-}
-
-.section__header-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.section__title {
-  font-size: 1.0625rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0;
-  letter-spacing: -0.01em;
-}
-
-.section__subtitle {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-  margin: 0.1875rem 0 0;
-}
-
-/* Owner Card */
-.owner-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-}
-
-.owner-card__info {
-  display: flex;
-  align-items: center;
-  gap: 0.875rem;
-}
-
-.owner-card__avatar {
-  width: 48px;
-  height: 48px;
-  border-radius: 50%;
-  background: var(--sidebar-hover);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.owner-card__avatar-icon {
-  width: 24px;
-  height: 24px;
-  color: var(--sidebar-text-muted);
-}
-
-.owner-card__details {
-  flex: 1;
-  min-width: 0;
-}
-
-.owner-card__name {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-}
-
-.owner-card__email {
-  font-size: 0.8125rem;
-  color: var(--sidebar-text-muted);
-  margin-top: 0.125rem;
-}
-
-/* Members List */
-.members-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.member-card {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 1rem;
-  padding: 0.875rem;
-  background: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 8px;
-}
-
-.member-card__info {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  flex: 1;
-  min-width: 0;
-}
-
-.member-card__avatar {
-  width: 38px;
-  height: 38px;
-  border-radius: 8px;
-  background: var(--sidebar-surface);
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex-shrink: 0;
-}
-
-.member-card__avatar svg {
-  width: 18px;
-  height: 18px;
-  color: var(--sidebar-text-muted);
-}
-
-.member-card__details {
-  flex: 1;
-  min-width: 0;
-}
-
-.member-card__name {
-  font-size: 0.8125rem;
-  font-weight: 500;
-  color: var(--sidebar-text);
-}
-
-.member-card__email {
-  font-size: 0.6875rem;
-  color: var(--sidebar-text-muted);
-  margin-top: 0.125rem;
-}
-
-.role-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.25rem;
-  padding: 0.25rem 0.5rem;
-  border-radius: 4px;
-  font-size: 0.625rem;
-  font-weight: 600;
-  text-transform: capitalize;
-  background: var(--sidebar-hover);
-  color: var(--sidebar-text);
-}
-
-.role-badge--owner {
-  background: rgba(99, 102, 241, 0.15);
-  color: #818cf8;
-}
-
-.role-badge--admin {
-  background: rgba(168, 85, 247, 0.15);
-  color: #a78bfa;
-}
-
-/* ===== Sidebar Column ===== */
-.sidebar-column {
-  display: flex;
-  flex-direction: column;
-  gap: 1.25rem;
-  position: sticky;
-  top: 1.5rem;
-}
-
-@media (max-width: 1024px) {
-  .sidebar-column {
-    position: static;
-  }
-}
-
-/* Sidebar Card */
-.sidebar-card {
-  background-color: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
-  overflow: hidden;
-}
-
-.sidebar-card__header {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 1rem 1.125rem;
-  border-bottom: 1px solid var(--sidebar-border);
-}
-
-.sidebar-card__icon {
-  width: 18px;
-  height: 18px;
-  color: var(--sidebar-accent);
-}
-
-.sidebar-card__title {
-  font-size: 0.9375rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0;
-}
-
-.sidebar-card__content {
-  padding: 1rem 1.125rem;
-}
-
-/* Info List */
-.info-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.875rem;
-}
-
-.info-list-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-
-.info-list-item__label {
-  font-size: 0.6875rem;
-  color: var(--sidebar-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.04em;
-}
-
-.info-list-item__value {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--sidebar-text);
-}
-
-.info-list-item__value--mono {
-  font-family: 'Courier New', monospace;
-  font-size: 0.75rem;
-  color: var(--sidebar-accent);
-}
-
-/* Feature Flags */
-.feature-flags {
-  display: flex;
-  flex-direction: column;
-  gap: 0.75rem;
-}
-
-.feature-flag {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.75rem;
-}
-
-.feature-flag__info {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-}
-
-.feature-flag__icon {
-  color: var(--sidebar-accent);
-}
-
-.feature-flag__label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--sidebar-text);
-}
-
-.feature-flag__toggle {
-  padding: 0.375rem 0.75rem;
-  font-size: 0.75rem;
-  font-weight: 600;
-  border-radius: 0.375rem;
-  border: 1px solid var(--sidebar-border);
-  background: var(--sidebar-bg-secondary);
-  color: var(--sidebar-text-muted);
-  cursor: pointer;
-  transition: all 0.2s ease;
-}
-
-.feature-flag__toggle:hover {
-  background: var(--sidebar-bg-hover);
-  border-color: var(--sidebar-accent);
-}
-
-.feature-flag__toggle--enabled {
-  background: rgba(34, 197, 94, 0.1);
-  border-color: rgba(34, 197, 94, 0.3);
-  color: rgb(34, 197, 94);
-}
-
-.feature-flag__toggle--enabled:hover {
-  background: rgba(34, 197, 94, 0.15);
-  border-color: rgba(34, 197, 94, 0.4);
-}
-
-/* Status Badge for Campaigns */
-.status-badge--campaigns {
-  background: rgba(147, 51, 234, 0.1);
-  color: rgb(147, 51, 234);
-  border: 1px solid rgba(147, 51, 234, 0.2);
-}
-
-/* ===== Responsive ===== */
-@media (max-width: 768px) {
-  .org-content {
-    padding: 1rem;
-    gap: 1.25rem;
-  }
-
-  .org-header {
-    flex-direction: column;
-  }
-
-  .org-header__main {
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
-
-  .org-name {
-    font-size: 1.125rem;
-  }
-
-  .org-meta__top {
-    justify-content: center;
-  }
-
-  .org-stats {
-    width: 100%;
-    justify-content: center;
-  }
-
-  .stat {
-    min-width: 80px;
-  }
-
-  .main-layout {
-    gap: 1rem;
-  }
-}
-</style>

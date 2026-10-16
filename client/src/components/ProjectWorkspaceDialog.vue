@@ -5,10 +5,21 @@
         <Transition name="dialog" appear>
           <div v-if="modelValue" class="workspace-dialog" role="dialog" aria-modal="true">
             <ProjectWorkspaceHeader
-              :title="project?.name || 'New Project'"
+              :title="project?.name || 'New project'"
               :badge="vodPresetConfig ? `${vodPresetConfig.targetAspectRatio} Pre-Edit` : undefined"
               @close="close"
-            />
+            >
+              <Button
+                variant="secondary"
+                size="sm"
+                :loading="isCreatingProject"
+                title="Open the full downloaded video in the video editor"
+                @click="onEditFullProject"
+              >
+                <Clapperboard v-if="!isCreatingProject" />
+                {{ isCreatingProject ? 'Opening editor...' : 'Open in editor' }}
+              </Button>
+            </ProjectWorkspaceHeader>
 
             <!-- Main Content Area -->
             <div class="workspace-dialog__content">
@@ -18,10 +29,15 @@
                 class="workspace-dialog__player-column"
                 :class="{ 'workspace-dialog__player-column--fullscreen': isFullscreen }"
               >
-                <WorkspacePreviewControls v-if="vodPresetConfig" v-model:ratio="previewAspectRatio" v-model:social="activeSocialOverlay" :options="aspectRatioOptions" />
+                <WorkspacePreviewControls
+                  v-if="vodPresetConfig"
+                  v-model:ratio="previewAspectRatio"
+                  v-model:social="activeSocialOverlay"
+                  :options="aspectRatioOptions"
+                />
 
                 <!-- Video Player Container -->
-                <div class="workspace-dialog__video-wrapper" style="position: relative">
+                <div class="workspace-dialog__video-wrapper relative">
                   <VideoPlayer
                     :resolve-media-src="convertFileSrc"
                     :video-src="videoSrc"
@@ -94,44 +110,16 @@
 
               <!-- Right Column: Tabs (Clips / Transcript) -->
               <div class="workspace-dialog__media-column">
-                <!-- Tab Bar -->
-                <div class="workspace-dialog__tab-bar">
-                  <button
-                    class="workspace-dialog__tab"
-                    :class="{ 'workspace-dialog__tab--active': rightPanelTab === 'clips' }"
-                    @click="rightPanelTab = 'clips'"
-                  >
-                    Clips
-                  </button>
-                  <button
-                    class="workspace-dialog__tab"
-                    :class="{
-                      'workspace-dialog__tab--active': rightPanelTab === 'transcript',
-                      'workspace-dialog__tab--has-transcript': isTranscribed,
-                    }"
-                    @click="rightPanelTab = 'transcript'"
-                  >
-                    Transcript
-                    <span v-if="isTranscribed" class="workspace-dialog__tab-badge">✓</span>
-                  </button>
+                <!-- Panel tabs -->
+                <div class="flex h-11 shrink-0 items-center border-b border-line-subtle px-3">
+                  <SegmentedControl v-model="rightPanelTab" :options="rightPanelTabOptions" size="sm" />
                 </div>
 
-                <!-- Clips Tab -->
-                <div v-show="rightPanelTab === 'clips'" class="workspace-dialog__full-project-bar">
-                  <button
-                    type="button"
-                    class="workspace-dialog__full-project-btn"
-                    :disabled="isCreatingProject"
-                    title="Open the full downloaded video in the video editor"
-                    @click="onEditFullProject"
-                  >
-                    <Clapperboard :size="14" />
-                    <span>{{ isCreatingProject ? 'Opening editor...' : 'Edit full project in editor' }}</span>
-                  </button>
-                </div>
+                <!-- Clips Tab (v-show keeps state; animate-enter replays each time it is shown again) -->
                 <MediaPanel
                   v-show="rightPanelTab === 'clips'"
                   ref="mediaPanelRef"
+                  class="animate-enter"
                   :is-generating="clipGenerationInProgress"
                   :generation-progress="clipProgress"
                   :generation-stage="clipStage"
@@ -176,6 +164,7 @@
                 <!-- Subtitle Properties Tab -->
                 <SubtitlePropertiesPanel
                   v-if="rightPanelTab === 'subtitles' && activeSubtitleSettings"
+                  class="animate-enter"
                   :settings="activeSubtitleSettings"
                   :segments="subtitlePanelSegmentsForPanel"
                   :current-time="currentTime"
@@ -187,6 +176,7 @@
 
                 <ClipTextBoxPropertiesPanel
                   v-if="rightPanelTab === 'text'"
+                  class="animate-enter"
                   :state="activeClipTextBox"
                   :clip-duration="selectedClipDurationForTextBox"
                   @close="onCloseClipTextPanel"
@@ -195,13 +185,13 @@
                 />
 
                 <!-- Transcript Tab -->
-                <div v-show="rightPanelTab === 'transcript'" class="flex flex-col flex-1 h-full min-h-0 px-4">
+                <div v-show="rightPanelTab === 'transcript'" class="flex h-full min-h-0 flex-1 animate-enter flex-col">
                   <TranscriptPanel
                     :project-id="project?.id"
                     :current-time="currentTime"
                     :duration="duration"
                     :hide-header="false"
-                    @seekTo="seekToTime"
+                    @seekVideo="seekToTime"
                     @createClipFromTranscript="onCreateClipFromTranscript"
                     @deleteTimeRange="onDeleteTimeRange"
                     @splitAtTime="onSplitAtTime"
@@ -260,9 +250,9 @@
   <!-- Delete Confirmation Modal -->
   <ConfirmationModal
     :show="showDeleteDialog"
-    title="Delete Clip"
+    title="Delete clip"
     message="Are you sure you want to delete this clip?"
-    suffix="This action cannot be undone."
+    suffix=""
     confirm-text="Delete"
     variant="destructive"
     @close="handleDeleteDialogClose"
@@ -351,7 +341,17 @@
     getVideoEditorProjectsForRawVideo,
     type VideoEditorProject,
   } from '@/services/database';
-  import { Clapperboard } from 'lucide-vue-next';
+  import { Smartphone, Clapperboard, ChevronDown, CheckCircle2 } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuRadioGroup,
+    DropdownMenuRadioItem,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
+  import { SegmentedControl } from '@/components/ui/segmented-control';
+  import { type SegmentedOption } from '@/components/ui/segmented-control/types';
   import { invoke, convertFileSrc } from '@tauri-apps/api/core';
   import type {
     ActiveVodPresetConfig,
@@ -386,10 +386,7 @@
     createVideoEditorProjectFromClip,
     createVideoEditorProjectFromProject,
   } from '@/services/video-editor-project-creator';
-  import {
-    pickPrimaryRawVideo,
-    resolveRawVideosForProject,
-  } from '@/services/project-raw-video-resolve';
+  import { pickPrimaryRawVideo, resolveRawVideosForProject } from '@/services/project-raw-video-resolve';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { useVideoPlayer } from '@/composables/useVideoPlayer';
   import { useProgressSocket } from '@/composables/useProgressSocket';
@@ -416,11 +413,16 @@
     getTranscriptsWithRawVideosByProjectId,
   } from '@/services/database';
   import { getProjectVodPresetConfig } from '@/services/database/vod-presets';
-  import { updateClipFullSubtitleSettings, updateClipSubtitlePosition, updateClipTextOverlay } from '@/services/database/clips';
+  import {
+    updateClipFullSubtitleSettings,
+    updateClipSubtitlePosition,
+    updateClipTextOverlay,
+  } from '@/services/database/clips';
   import { parseClipTextOverlayJson, createDefaultClipTextBoxState, type ClipTextBoxState } from '@/utils/clipTextBox';
   import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
   import { captionPresetSettings } from '@/utils/captionPresetSettings';
   import { parseTranscriptToWords } from '@/utils/timelineUtils';
+  import { usesProjectSource, workspaceClipSegments, sameMediaPath } from '@/utils/workspaceClipTiming';
   import {
     ensureShortVideoAutoClip,
     isShortVideoAutoClipEligible,
@@ -526,9 +528,7 @@
   function getTimelineClipById(id: string | null): any | null {
     if (!id) return null;
     return (
-      timelineClips.value.find((c: any) => c.id === id) ??
-      allProjectClips.value.find((c: any) => c.id === id) ??
-      null
+      timelineClips.value.find((c: any) => c.id === id) ?? allProjectClips.value.find((c: any) => c.id === id) ?? null
     );
   }
 
@@ -538,9 +538,7 @@
 
   const subtitleEditorClips = computed(() => {
     if (subtitleEditorClipIds.value.length === 0) return subtitleTargetClips.value;
-    const resolved = subtitleEditorClipIds.value
-      .map((clipId) => getTimelineClipById(clipId))
-      .filter(Boolean);
+    const resolved = subtitleEditorClipIds.value.map((clipId) => getTimelineClipById(clipId)).filter(Boolean);
     // Fallback stubs so Save still works if the clip isn't in timeline/project lists yet.
     if (resolved.length > 0) return resolved;
     return subtitleEditorClipIds.value.map((id) => ({ id }));
@@ -739,7 +737,6 @@
   // Check if current aspect ratio is 9:16 (vertical)
   const is916 = computed(() => previewAspectRatio.value === '9:16');
 
-
   // Framing regions for the current preview aspect (stacked POI layout). When regions exist, VideoPlayer
   // composites them (including uploaded media); "Use 16:9" single-box preview only applies when there are no regions.
   const currentFramingRegions = computed(() => {
@@ -783,7 +780,6 @@
       activeSocialOverlay.value = null;
     }
   });
-
 
   // Watch for settings or aspect ratio changes to load correct watermark data
   watch(
@@ -1117,7 +1113,10 @@
             id: 0,
             start: words[0].start,
             end: words[words.length - 1].end,
-            text: words.map((word) => word.word).join(' ').trim(),
+            text: words
+              .map((word) => word.word)
+              .join(' ')
+              .trim(),
             words,
           });
         }
@@ -1135,10 +1134,7 @@
   }
 
   function tokenizeForTranscriptMatch(text: string): string[] {
-    return text
-      .split(/\s+/)
-      .map(normalizeTranscriptToken)
-      .filter(Boolean);
+    return text.split(/\s+/).map(normalizeTranscriptToken).filter(Boolean);
   }
 
   function extractPlainTranscriptText(value: unknown): string {
@@ -1151,7 +1147,11 @@
         const parsed = JSON.parse(trimmed);
         if (typeof parsed?.text === 'string') return parsed.text.trim();
         if (Array.isArray(parsed?.segments)) {
-          return parsed.segments.map((segment: any) => segment?.text).filter(Boolean).join(' ').trim();
+          return parsed.segments
+            .map((segment: any) => segment?.text)
+            .filter(Boolean)
+            .join(' ')
+            .trim();
         }
       } catch {
         // Plain transcript text can legitimately look JSON-ish.
@@ -1278,7 +1278,8 @@
   const videoPlayerTranscriptWords = computed((): WordInfo[] => {
     const activeData = activeTranscriptDataForPlayback.value;
     const words = activeData?.words || [];
-    if (activeData === activeClipTranscriptData.value && !transcriptPlaybackUsesSourceAbsolute(activeData)) return words;
+    if (activeData === activeClipTranscriptData.value && !transcriptPlaybackUsesSourceAbsolute(activeData))
+      return words;
     if (workspaceVideoTimeIsSourceAbsolute.value) return words;
     const clipId = currentlyPlayingClipId.value || lastPlayedClipId.value;
     const clip = getTimelineClipById(clipId);
@@ -1359,7 +1360,10 @@
         id: 0,
         start: words[0].start,
         end: words[words.length - 1].end,
-        text: words.map((word) => word.word).join(' ').trim(),
+        text: words
+          .map((word) => word.word)
+          .join(' ')
+          .trim(),
         words,
       },
     ];
@@ -1412,6 +1416,16 @@
     // Match Transcript tab / parseTranscriptToWords: word-level-only JSON has no whisper `segments` until synthesized.
     return (td.whisperSegments?.length ?? 0) > 0 || (td.words?.length ?? 0) > 0;
   });
+  /** Right-panel tab switch (subtitle/text property panels open from the timeline, not from here). */
+  const rightPanelTabOptions = computed<SegmentedOption<'clips' | 'transcript' | 'subtitles' | 'text'>[]>(() => [
+    { value: 'clips', label: 'Clips' },
+    {
+      value: 'transcript',
+      label: 'Transcript',
+      icon: isTranscribed.value ? CheckCircle2 : undefined,
+      title: isTranscribed.value ? 'Transcript ready' : undefined,
+    },
+  ]);
   const transcriptionConfirmAlreadyTranscribed = computed(() => {
     return pendingSubtitleTranscriptionClipIds.value.length > 0 ? false : isTranscribed.value;
   });
@@ -1644,7 +1658,11 @@
     const projectId = props.project.id;
     const subtitleClipIds = [...pendingSubtitleTranscriptionClipIds.value];
     const isSubtitleBatch = subtitleClipIds.length > 0;
-    const { transcribeProject, progress: tProgress, cancelTranscription } = useTranscriptionOnly({
+    const {
+      transcribeProject,
+      progress: tProgress,
+      cancelTranscription,
+    } = useTranscriptionOnly({
       showSuccessToast: !isSubtitleBatch,
       showErrorToast: true,
       showChunkCompletionToast: !isSubtitleBatch,
@@ -1711,10 +1729,7 @@
         const { success: showSuccess } = useToast();
         if (isSubtitleBatch) {
           const readyCount = transcribedCount + alreadyTranscribedCount;
-          showSuccess(
-            'Transcription Complete',
-            `${readyCount} clip${readyCount !== 1 ? 's' : ''} transcribed.`
-          );
+          showSuccess('Transcription Complete', `${readyCount} clip${readyCount !== 1 ? 's' : ''} transcribed.`);
           // Keep POI-targeted clip ids for Edit Subtitles (pending list is cleared in finally).
           subtitleEditorClipIds.value = subtitleClipIds;
           showSubtitleEditorDialog.value = true;
@@ -1809,7 +1824,10 @@
   }
 
   function normalizeVideoPathForCompare(path: string): string {
-    return path.replace(/\\/g, '/').replace(/^file:\/\//, '').toLowerCase();
+    return path
+      .replace(/\\/g, '/')
+      .replace(/^file:\/\//, '')
+      .toLowerCase();
   }
 
   function transcriptSourceMatchesClip(sourceVideoPath: string | null, transcriptRawVideoPath: string | null): boolean {
@@ -1823,6 +1841,7 @@
   }
 
   function resolveClipTranscriptionSourcePath(clip: any): string | null {
+    if (usesProjectSource(clip, currentVideo.value)) return null;
     const isSelfContainedLiveClip = isAutoOrManualLiveClip(clip);
     const filePath = typeof clip?.file_path === 'string' ? clip.file_path.trim() : '';
     const filename = typeof clip?.filename === 'string' ? clip.filename.trim() : '';
@@ -1979,7 +1998,12 @@
       }
     }
 
-    if (!transcript?.raw_json && isAutoOrManualLiveClip(clip) && projectTranscriptOverlapsClip(clip) && transcriptData.value?.transcript) {
+    if (
+      !transcript?.raw_json &&
+      isAutoOrManualLiveClip(clip) &&
+      projectTranscriptOverlapsClip(clip) &&
+      transcriptData.value?.transcript
+    ) {
       activeClipTranscriptData.value = {
         clipId: clip.id,
         transcript: transcriptData.value.transcript,
@@ -2048,9 +2072,7 @@
       ? await getRawVideo(transcriptData.value.transcript.raw_video_id)
       : null;
     const projectTranscriptRawVideoPath = projectTranscriptRawVideo?.file_path ?? null;
-    const transcriptSources = props.project?.id
-      ? await getTranscriptsWithRawVideosByProjectId(props.project.id)
-      : [];
+    const transcriptSources = props.project?.id ? await getTranscriptsWithRawVideosByProjectId(props.project.id) : [];
     const missing: any[] = [];
     const debugRows: any[] = [];
 
@@ -2108,7 +2130,8 @@
     const hasSelfContainedSubtitleSources = subtitleTargetClips.value.some((clip: any) =>
       Boolean(isAutoOrManualLiveClip(clip) && resolveClipTranscriptionSourcePath(clip))
     );
-    const hasTranscript = missingSelfContainedClips.length === 0 && (hasSelfContainedSubtitleSources || isTranscribed.value);
+    const hasTranscript =
+      missingSelfContainedClips.length === 0 && (hasSelfContainedSubtitleSources || isTranscribed.value);
 
     // Check if project has transcript
     if (missingSelfContainedClips.length > 0) {
@@ -2323,7 +2346,9 @@
       const activeClipId =
         [selectedClipId.value, currentlyPlayingClipId.value, lastPlayedClipId.value].find(
           (id): id is string => !!id && clipIds.includes(id)
-        ) ?? clipIds[0] ?? null;
+        ) ??
+        clipIds[0] ??
+        null;
 
       let mergedSettings: SubtitleSettings | null = null;
       if (defaults && clipIds.length > 0) {
@@ -2337,12 +2362,7 @@
         mergedSettings = settings;
         for (const id of clipIds) {
           await updateClipFullSubtitleSettings(id, settings);
-          await updateClipSubtitlePosition(
-            id,
-            50,
-            settings.positionPercentage ?? 85,
-            settings.maxWidth ?? undefined
-          );
+          await updateClipSubtitlePosition(id, 50, settings.positionPercentage ?? 85, settings.maxWidth ?? undefined);
         }
       } else {
         const { updateMultipleClipsSubtitleSettings } = await import('@/services/database/clips');
@@ -2367,9 +2387,7 @@
           activeClip.subtitle_preset_id = presetId;
           if (mergedSettings) {
             activeClip.subtitle_settings =
-              typeof activeClip.subtitle_settings === 'string'
-                ? JSON.stringify(mergedSettings)
-                : mergedSettings;
+              typeof activeClip.subtitle_settings === 'string' ? JSON.stringify(mergedSettings) : mergedSettings;
           }
 
           if (mergedSettings) {
@@ -2744,27 +2762,11 @@
 
   // Helper to scroll timeline to a specific clip
   function scrollToClipInTimeline(clipId: string) {
-    const isFirstClip = timelineClips.value.length > 0 && timelineClips.value[0].id === clipId;
-
-    if (timelineRef.value) {
-      if (isFirstClip) {
-        // Scroll timeline to the very top with smooth animation
-        const timelineContainer = (timelineRef.value as any).$el?.querySelector('.overflow-y-auto');
-        if (timelineContainer) {
-          timelineContainer.scrollTo({
-            top: 0,
-            behavior: 'smooth',
-          });
-        }
-      } else {
-        // Scroll to the corresponding timeline clip
-        timelineRef.value.scrollTimelineClipIntoView(clipId);
-      }
-    }
+    timelineRef.value?.scrollTimelineClipIntoView(clipId);
   }
 
   // Clip hover event handlers
-  function onClipHover(clipId: string | null) {
+  async function onClipHover(clipId: string | null) {
     if (clipId == null) {
       hoveredClipId.value = null;
       return;
@@ -2781,6 +2783,21 @@
 
     // Then set the new state
     hoveredClipId.value = clipId;
+    selectedClipId.value = clipId;
+    const clip = getTimelineClipById(clipId);
+    if (clip && usesProjectSource(clip, currentVideo.value)) {
+      if (!sameMediaPath(currentFilePath.value, currentVideo.value?.file_path)) {
+        await loadVideoForProject();
+        await nextTick();
+        if (selectedClipId.value !== clipId) return;
+      }
+      workspaceVideoTimeIsSourceAbsolute.value = true;
+      workspacePlaybackIsBuiltExport.value = false;
+      if (currentlyPlayingClipId.value !== clipId && clip.segments?.length) {
+        currentTime.value = clip.segments[0].start_time;
+        if (videoElement.value) videoElement.value.currentTime = currentTime.value;
+      }
+    }
 
     // Reveal the clip in the timeline (makes it visible if hidden)
     if (timelineRef.value) {
@@ -2811,15 +2828,9 @@
 
   // Timeline segment click event handler
   function onTimelineSegmentClick(clipId: string, segmentIndex: number) {
-    // Optional: You can add specific handling for segment selection here
-    // For now, we'll just log it for debugging
-    console.log(`Segment clicked: Clip ${clipId}, Segment ${segmentIndex}`);
-
-    // You could also:
-    // - Update a selected segment state
-    // - Show segment-specific details
-    // - Start playback from that specific segment
-    // etc.
+    selectedClipId.value = clipId;
+    const segment = getTimelineClipById(clipId)?.segments?.[segmentIndex];
+    if (segment) onSeekVideo(segment.start_time);
   }
 
   // Scroll event handlers
@@ -2922,87 +2933,13 @@
           return null;
         }
 
-        // Use segments from database if available, otherwise create single segment from version timing.
-        //
-        // Auto-detected and manual livestream clips have their own extracted MP4 file. Their
-        // version.start_time/end_time are LIVESTREAM-ABSOLUTE — they are NOT 0-based against
-        // the clip's own file. Worse, multiple legacy paths (e.g. the build-complete handler)
-        // historically wrote clip_segments rows using those livestream-absolute times, so a
-        // self-contained clip's segments may contain values outside its file's timeline. When
-        // that happens, the timeline bar renders in the wrong place / wrong width. Detect and
-        // ignore those stale rows, defaulting to the full clip duration so the user sees the
-        // entire clip and can trim it down if they want.
-        let segments: any[] = [];
-        const hasOwnFile =
-          typeof clip.file_path === 'string' && clip.file_path.trim() !== '';
-        const clipDurationFallback =
-          (typeof clip.duration === 'number' && clip.duration > 0
-            ? clip.duration
-            : null) ??
-          (typeof version.end_time === 'number' && typeof version.start_time === 'number'
-            ? version.end_time - version.start_time
-            : 0);
-        const dbSegments =
-          clip.current_version_segments &&
-          Array.isArray(clip.current_version_segments) &&
-          clip.current_version_segments.length > 0
-            ? clip.current_version_segments
-            : null;
-
-        // For self-contained clips, segments must live in clip-local 0-based time. If any
-        // stored segment's end_time clearly exceeds the clip's own file duration (with a
-        // small tolerance for encoder rounding), the row is stale — drop the lot and let
-        // the [0, clipDuration] fallback take over.
-        const segmentsLookStale =
-          hasOwnFile &&
-          clipDurationFallback > 0 &&
-          dbSegments != null &&
-          dbSegments.some(
-            (s: any) =>
-              typeof s?.end_time === 'number' &&
-              s.end_time > clipDurationFallback + 0.5
-          );
-
-        if (dbSegments && !segmentsLookStale) {
-          segments = dbSegments.map((segment: any) => ({
-            start_time: segment.start_time,
-            end_time: segment.end_time,
-            duration: segment.duration || segment.end_time - segment.start_time,
-            transcript: segment.transcript || version.description || 'No transcript available',
-            transcript_raw_json: segment.transcript_raw_json || null,
-            has_transcript: typeof segment.transcript === 'string' && segment.transcript.trim() !== '',
-          }));
-        } else if (hasOwnFile && clipDurationFallback > 0) {
-          // Self-contained extracted clip with no usable clip_segments row:
-          // default the timeline segment to the FULL clip duration so the user sees
-          // the entire clip and can trim it down if they want.
-          segments = [
-            {
-              start_time: 0,
-              end_time: clipDurationFallback,
-              duration: clipDurationFallback,
-              transcript: version.description || 'No transcript available',
-            },
-          ];
-        } else {
-          // Fallback: create single segment from version timing (project-source-relative)
-          segments = [
-            {
-              start_time: version.start_time,
-              end_time: version.end_time,
-              duration: version.end_time - version.start_time,
-              transcript: version.description || 'No transcript available',
-            },
-          ];
-        }
-
-        // Determine clip type based on segments
+        const segments = workspaceClipSegments(clip, currentVideo.value).map((segment) => ({
+          ...segment,
+          transcript: segment.transcript || version.description || 'No transcript available',
+          has_transcript: Boolean(segment.transcript?.trim()),
+        }));
         const clipType = segments.length > 1 ? 'spliced' : 'continuous';
-
-        const timelineTotalDuration =
-          hasOwnFile && clipDurationFallback > 0
-            ? clipDurationFallback
-            : version.end_time - version.start_time;
+        const timelineTotalDuration = segments.reduce((sum, segment) => sum + segment.duration, 0);
 
         // Transform to Timeline's Clip interface
         // IMPORTANT: Include current_version_virality_score and session_prompt to match ClipsTab sorting
@@ -3102,16 +3039,10 @@
     try {
       let clipsWithVersion = await getClipsWithVersionsByProjectId(projectId);
 
-      if (
-        clipsWithVersion.length === 0 &&
-        isShortVideoAutoClipEligible(duration.value)
-      ) {
+      if (clipsWithVersion.length === 0 && isShortVideoAutoClipEligible(duration.value)) {
         const rawVideos = await getRawVideosByProjectId(projectId);
         if (rawVideos.length === 1) {
-          const baseName =
-            rawVideos[0].original_filename?.replace(/\.[^/.]+$/, '') ||
-            props.project?.name ||
-            'Clip';
+          const baseName = rawVideos[0].original_filename?.replace(/\.[^/.]+$/, '') || props.project?.name || 'Clip';
           const createdId = await ensureShortVideoAutoClip(projectId, duration.value, {
             clipName: baseName,
           });
@@ -3330,7 +3261,7 @@
     const positionX = currentClip?.subtitle_position_x ?? existingPr.position?.x ?? 50;
     const positionY = currentClip?.subtitle_position_y ?? existingPr.position?.y ?? prev.positionPercentage ?? 85;
     const width = currentClip?.subtitle_position_width ?? existingPr.maxWidth ?? prev.maxWidth ?? null;
-  const { perRatioConfigs: _perRatioConfigs, ...settingsForRatio } = { ...prev, fontSize };
+    const { perRatioConfigs: _perRatioConfigs, ...settingsForRatio } = { ...prev, fontSize };
 
     activeSubtitleSettings.value = {
       ...prev,
@@ -3341,7 +3272,7 @@
         ...(prev.perRatioConfigs ?? {}),
         [ratio]: {
           ...existingPr,
-        ...settingsForRatio,
+          ...settingsForRatio,
           position: { x: positionX, y: positionY },
           positionPercentage: positionY,
           maxWidth: width ?? existingPr.maxWidth ?? prev.maxWidth,
@@ -3460,10 +3391,7 @@
 
           await updateClipFullSubtitleSettings(targetClipId, activeSubtitleSettings.value);
 
-          console.log(
-            '[ProjectWorkspaceDialog] Saved subtitle settings to database for clip:',
-            targetClipId
-          );
+          console.log('[ProjectWorkspaceDialog] Saved subtitle settings to database for clip:', targetClipId);
 
           // Also save position to the separate columns if we have the clip data
           if (currentClip) {
@@ -3561,11 +3489,7 @@
     }
   }
 
-  function onSubtitleSegmentDraft(
-    panelIndex: number,
-    text: string,
-    sourceRow?: Partial<SubtitlePanelTranscriptRow>
-  ) {
+  function onSubtitleSegmentDraft(panelIndex: number, text: string, sourceRow?: Partial<SubtitlePanelTranscriptRow>) {
     patchSubtitleTranscriptDraft(panelIndex, text, sourceRow);
   }
 
@@ -3789,10 +3713,7 @@
 
       creatorProfileServerId.value = null;
       const orgStreamerCandidate = candidates.find((c) => c.source === 'org-streamer');
-      if (
-        orgStreamerCandidate?.profile?.id &&
-        !orgStreamerCandidate.profile.id.startsWith('campaign-')
-      ) {
+      if (orgStreamerCandidate?.profile?.id && !orgStreamerCandidate.profile.id.startsWith('campaign-')) {
         const serverId = parseInt(orgStreamerCandidate.profile.id, 10);
         creatorProfileServerId.value = isNaN(serverId) ? null : serverId;
       }
@@ -3830,8 +3751,7 @@
       });
 
       const applyAutoBranding =
-        autoProfile !== null &&
-        (isOrgSuppliedAccount() || isPersonalWorkspaceBrandingProfile(autoProfile));
+        autoProfile !== null && (isOrgSuppliedAccount() || isPersonalWorkspaceBrandingProfile(autoProfile));
 
       if (applyAutoBranding && autoProfile) {
         const profile = autoProfile;
@@ -3956,9 +3876,7 @@
             scale: 20,
             perRatioSettings: null,
           };
-          console.log(
-            '[ProjectWorkspaceDialog] Resolved profile has no watermark — clearing inherited watermark'
-          );
+          console.log('[ProjectWorkspaceDialog] Resolved profile has no watermark — clearing inherited watermark');
           await nextTick();
           if (mediaPanelRef.value) {
             mediaPanelRef.value.setWatermarkSettings(cleared);
@@ -4140,7 +4058,11 @@
 
   // Helper function to load subtitle settings from preset (fallback when no full settings saved)
   function loadSubtitleSettingsFromPreset(clip: any) {
-    const settings = captionPresetSettings(clip.subtitle_preset_id, clip.subtitle_position_y ?? 85, clip.subtitle_position_width ?? 90);
+    const settings = captionPresetSettings(
+      clip.subtitle_preset_id,
+      clip.subtitle_position_y ?? 85,
+      clip.subtitle_position_width ?? 90
+    );
     if (!settings) return;
     activeSubtitleSettings.value = settings;
     activeSubtitleSettingsClipId.value = clip.id ?? null;
@@ -4171,6 +4093,7 @@
     // Track the currently playing clip AFTER stopping previous playback
     currentlyPlayingClipId.value = clip.id;
     lastPlayedClipId.value = clip.id;
+    selectedClipId.value = clip.id;
 
     // Set hover states to the playing clip so it highlights in both panel and timeline
     hoveredClipId.value = clip.id;
@@ -4278,6 +4201,7 @@
     // 2. If it's a manual/auto clip with its own file, load and play that with segments
     // 3. Otherwise, load the project's source video and play segments
 
+    const sourceBacked = usesProjectSource(fullClip, currentVideo.value);
     const builtFilePath = clip.built_file_path;
     const hasBuiltFile = builtFilePath && builtFilePath.trim() !== '';
 
@@ -4299,7 +4223,7 @@
     });
 
     // Priority 1: Built clips - these are self-contained exports
-    if (hasBuiltFile) {
+    if (hasBuiltFile && !sourceBacked) {
       console.log('[ProjectWorkspaceDialog] Loading built clip file:', builtFilePath);
       const loaded = await loadVideoFromPath(builtFilePath);
       if (loaded) {
@@ -4334,7 +4258,7 @@
     }
 
     // Priority 2: Manual/auto clips with their own extracted file
-    if (isManualOrAutoClip && hasClipOwnFile) {
+    if (isManualOrAutoClip && hasClipOwnFile && !sourceBacked) {
       const isDifferentFile = currentFilePath.value !== clipOwnFile;
       const needsVideoLoad = !currentFilePath.value || isDifferentFile;
 
@@ -4345,72 +4269,65 @@
       }
 
       if (loaded) {
-          workspaceVideoTimeIsSourceAbsolute.value = false;
-          // Wait for video to be ready
-          await nextTick();
-          let durationAttempts = 0;
-          while (
-            (!videoElement.value?.duration ||
-              !Number.isFinite(videoElement.value.duration)) &&
-            durationAttempts < 50
-          ) {
-            await new Promise((resolve) => setTimeout(resolve, 50));
-            durationAttempts++;
-          }
+        workspaceVideoTimeIsSourceAbsolute.value = false;
+        // Wait for video to be ready
+        await nextTick();
+        let durationAttempts = 0;
+        while (
+          (!videoElement.value?.duration || !Number.isFinite(videoElement.value.duration)) &&
+          durationAttempts < 50
+        ) {
+          await new Promise((resolve) => setTimeout(resolve, 50));
+          durationAttempts++;
+        }
 
-          // For manual/auto clips, the clip file starts at 0. Historically segments were
-          // stored with livestream-absolute timestamps and we subtracted the version's
-          // start_time to project them onto the clip-local 0-based timeline. New clips
-          // (and clips written by the build-complete handler) now persist segments in
-          // 0-based local time directly. Detect which space the row is in: if a segment
-          // already fits inside [0, clipDuration] it's already 0-based — leave it; only
-          // shift rows that look livestream-absolute.
-          const clipStartOffset = clip.current_version_start_time ?? clip.start_time ?? 0;
-          const loadedFileDuration =
-            videoElement.value?.duration && Number.isFinite(videoElement.value.duration)
-              ? videoElement.value.duration
-              : 0;
-          const clipDuration =
-            loadedFileDuration ||
-            (typeof clip.duration === 'number' && clip.duration > 0 ? clip.duration : 0) ||
-            (typeof clip.total_duration === 'number' && clip.total_duration > 0
-              ? clip.total_duration
-              : 0) ||
-            (clip.current_version_end_time ?? 0) - (clip.current_version_start_time ?? 0) ||
-            (clip.end_time ?? 0) - (clip.start_time ?? 0) ||
-            0;
+        // For manual/auto clips, the clip file starts at 0. Historically segments were
+        // stored with livestream-absolute timestamps and we subtracted the version's
+        // start_time to project them onto the clip-local 0-based timeline. New clips
+        // (and clips written by the build-complete handler) now persist segments in
+        // 0-based local time directly. Detect which space the row is in: if a segment
+        // already fits inside [0, clipDuration] it's already 0-based — leave it; only
+        // shift rows that look livestream-absolute.
+        const clipStartOffset = clip.current_version_start_time ?? clip.start_time ?? 0;
+        const loadedFileDuration =
+          videoElement.value?.duration && Number.isFinite(videoElement.value.duration)
+            ? videoElement.value.duration
+            : 0;
+        const clipDuration =
+          loadedFileDuration ||
+          (typeof clip.duration === 'number' && clip.duration > 0 ? clip.duration : 0) ||
+          (typeof clip.total_duration === 'number' && clip.total_duration > 0 ? clip.total_duration : 0) ||
+          (clip.current_version_end_time ?? 0) - (clip.current_version_start_time ?? 0) ||
+          (clip.end_time ?? 0) - (clip.start_time ?? 0) ||
+          0;
 
-          const fullClipSegment = () => [
-            {
-              id: `trim-${clip.id}`,
-              clip_version_id: clip.current_version_id || clip.id,
-              segment_index: 0,
-              source_start_time: clip.current_version_start_time ?? clip.start_time ?? 0,
-              source_end_time: clip.current_version_end_time ?? clip.end_time ?? clipDuration,
-              start_time: 0,
-              end_time: clipDuration,
-              duration: clipDuration,
-              transcript: clip.combined_transcript || clip.current_version_description || '',
-              transcript_raw_json: null,
-              audio_peaks: null,
-              created_at: Date.now(),
-            },
-          ];
+        const fullClipSegment = () => [
+          {
+            id: `trim-${clip.id}`,
+            clip_version_id: clip.current_version_id || clip.id,
+            segment_index: 0,
+            source_start_time: clip.current_version_start_time ?? clip.start_time ?? 0,
+            source_end_time: clip.current_version_end_time ?? clip.end_time ?? clipDuration,
+            start_time: 0,
+            end_time: clipDuration,
+            duration: clipDuration,
+            transcript: clip.combined_transcript || clip.current_version_description || '',
+            transcript_raw_json: null,
+            audio_peaks: null,
+            created_at: Date.now(),
+          },
+        ];
 
-          // Get the clip's segments and adjust timestamps to be 0-based
-          let adjustedSegments = [];
-          const sourceSegments = getClipTimelineSegments(clip);
-          if (sourceSegments.length > 0) {
-            adjustedSegments = sourceSegments.map((seg: any, index: number) => {
-              const segEnd =
-                typeof seg.end_time === 'number' ? seg.end_time : 0;
-              const segStart =
-                typeof seg.start_time === 'number' ? seg.start_time : 0;
-              const looksZeroBased =
-                clipDuration > 0 && segEnd <= clipDuration + 0.5 && segStart >= 0;
-              const start_time = looksZeroBased
-                ? Math.max(0, segStart)
-                : Math.max(0, segStart - clipStartOffset);
+        // Get the clip's segments and adjust timestamps to be 0-based
+        let adjustedSegments = [];
+        const sourceSegments = getClipTimelineSegments(clip);
+        if (sourceSegments.length > 0) {
+          adjustedSegments = sourceSegments
+            .map((seg: any, index: number) => {
+              const segEnd = typeof seg.end_time === 'number' ? seg.end_time : 0;
+              const segStart = typeof seg.start_time === 'number' ? seg.start_time : 0;
+              const looksZeroBased = clipDuration > 0 && segEnd <= clipDuration + 0.5 && segStart >= 0;
+              const start_time = looksZeroBased ? Math.max(0, segStart) : Math.max(0, segStart - clipStartOffset);
               const end_time = looksZeroBased
                 ? Math.min(clipDuration || segEnd, segEnd)
                 : Math.min(clipDuration, segEnd - clipStartOffset);
@@ -4428,7 +4345,8 @@
                 audio_peaks: null,
                 created_at: Date.now(),
               };
-            }).filter((seg: any) => {
+            })
+            .filter((seg: any) => {
               const isValid =
                 clipDuration > 0 &&
                 seg.start_time >= 0 &&
@@ -4448,68 +4366,68 @@
               return isValid;
             });
 
-            if (adjustedSegments.length === 0) {
-              adjustedSegments = fullClipSegment();
-            }
-          } else {
-            // No segments, create one spanning the full clip
+          if (adjustedSegments.length === 0) {
             adjustedSegments = fullClipSegment();
           }
+        } else {
+          // No segments, create one spanning the full clip
+          adjustedSegments = fullClipSegment();
+        }
 
-          console.log('[ProjectWorkspaceDialog] Playing manual/auto clip with adjusted segments:', adjustedSegments);
-          playClipSegments(adjustedSegments as any);
+        console.log('[ProjectWorkspaceDialog] Playing manual/auto clip with adjusted segments:', adjustedSegments);
+        playClipSegments(adjustedSegments as any);
 
-          // Update timelineClips to show the adjusted clip in the timeline
-          // This is critical - the timeline needs the clip with 0-based timestamps
-          timelineClips.value = [
-            {
-              id: clip.id,
-              title: clip.title || clip.name || 'Manual Clip',
-              filename: clipOwnFile,
-              type: 'continuous',
-              segments: adjustedSegments.map((seg: any) => ({
-                source_start_time: seg.source_start_time,
-                source_end_time: seg.source_end_time,
-                start_time: seg.start_time,
-                end_time: seg.end_time,
-                duration: seg.duration,
-                transcript: seg.transcript,
-              })),
-              total_duration: clipDuration,
-              combined_transcript: clip.combined_transcript || clip.current_version_description || '',
-              virality_score: clip.virality_score || 0,
-              current_version_virality_score: clip.current_version_virality_score || 0,
-              reason: clip.reason || 'Manual clip',
-              socialMediaPost: clip.socialMediaPost || '',
-              run_number: clip.run_number,
-              run_color: clip.run_color,
-              session_prompt: clip.session_prompt,
-              current_version_start_time: clip.current_version_start_time ?? clip.start_time ?? null,
-              current_version_end_time: clip.current_version_end_time ?? clip.end_time ?? null,
-              clip_text_overlay: fullClip.clip_text_overlay ?? clip.clip_text_overlay ?? null,
-              subtitle_enabled: fullClip.subtitle_enabled,
-              subtitle_preset_id: fullClip.subtitle_preset_id ?? null,
-              subtitle_position_x: fullClip.subtitle_position_x ?? null,
-              subtitle_position_y: fullClip.subtitle_position_y ?? null,
-              subtitle_position_width: fullClip.subtitle_position_width ?? null,
-              subtitle_settings: fullClip.subtitle_settings ?? null,
-            },
-          ];
+        // Update timelineClips to show the adjusted clip in the timeline
+        // This is critical - the timeline needs the clip with 0-based timestamps
+        timelineClips.value = [
+          {
+            id: clip.id,
+            title: clip.title || clip.name || 'Manual Clip',
+            filename: clipOwnFile,
+            type: 'continuous',
+            segments: adjustedSegments.map((seg: any) => ({
+              source_start_time: seg.source_start_time,
+              source_end_time: seg.source_end_time,
+              start_time: seg.start_time,
+              end_time: seg.end_time,
+              duration: seg.duration,
+              transcript: seg.transcript,
+            })),
+            total_duration: clipDuration,
+            combined_transcript: clip.combined_transcript || clip.current_version_description || '',
+            virality_score: clip.virality_score || 0,
+            current_version_virality_score: clip.current_version_virality_score || 0,
+            reason: clip.reason || 'Manual clip',
+            socialMediaPost: clip.socialMediaPost || '',
+            run_number: clip.run_number,
+            run_color: clip.run_color,
+            session_prompt: clip.session_prompt,
+            current_version_start_time: clip.current_version_start_time ?? clip.start_time ?? null,
+            current_version_end_time: clip.current_version_end_time ?? clip.end_time ?? null,
+            clip_text_overlay: fullClip.clip_text_overlay ?? clip.clip_text_overlay ?? null,
+            subtitle_enabled: fullClip.subtitle_enabled,
+            subtitle_preset_id: fullClip.subtitle_preset_id ?? null,
+            subtitle_position_x: fullClip.subtitle_position_x ?? null,
+            subtitle_position_y: fullClip.subtitle_position_y ?? null,
+            subtitle_position_width: fullClip.subtitle_position_width ?? null,
+            subtitle_settings: fullClip.subtitle_settings ?? null,
+          },
+        ];
 
-          // Clear guard flag
-          if (skipPlaybackEndedClearTimeout) {
-            clearTimeout(skipPlaybackEndedClearTimeout);
-            skipPlaybackEndedClearTimeout = null;
-          }
-          skipPlaybackEndedClear = false;
+        // Clear guard flag
+        if (skipPlaybackEndedClearTimeout) {
+          clearTimeout(skipPlaybackEndedClearTimeout);
+          skipPlaybackEndedClearTimeout = null;
+        }
+        skipPlaybackEndedClear = false;
 
-          return;
+        return;
       }
     }
 
     // Priority 3: Non-built VOD clips - need to load the project's source video
     // These clips don't have built files yet and aren't manual/auto clips
-    const needsSourceVideo = !hasBuiltFile && !isManualOrAutoClip;
+    const needsSourceVideo = sourceBacked || (!hasBuiltFile && !isManualOrAutoClip);
 
     if (needsSourceVideo) {
       // Check if the current video is different from the project's raw video
@@ -4517,7 +4435,7 @@
       const projectFilePath = projectVideo?.file_path;
 
       // If we don't have the right source video loaded, load it
-      if (!projectFilePath || currentFilePath.value !== projectFilePath) {
+      if (!projectFilePath || !sameMediaPath(currentFilePath.value, projectFilePath)) {
         console.log('[ProjectWorkspaceDialog] Loading project source video for non-built VOD clip');
         await loadVideoForProject();
 
@@ -4746,7 +4664,7 @@
       if (!primary) {
         showError(
           'No Source Video',
-          'No full-length source video found for this project. Download or attach a video first.',
+          'No full-length source video found for this project. Download or attach a video first.'
         );
         return;
       }
@@ -4771,11 +4689,7 @@
     }
   }
 
-  async function openFullProjectInNewEditor(
-    projectId: string,
-    projectName: string,
-    parentProjectId?: string | null,
-  ) {
+  async function openFullProjectInNewEditor(projectId: string, projectName: string, parentProjectId?: string | null) {
     isCreatingProject.value = true;
 
     try {
@@ -4969,11 +4883,7 @@
       isFullProjectEditorOpen.value = false;
 
       if (pending) {
-        await openFullProjectInNewEditor(
-          pending.projectId,
-          pending.projectName,
-          props.project?.parent_id ?? null,
-        );
+        await openFullProjectInNewEditor(pending.projectId, pending.projectName, props.project?.parent_id ?? null);
       }
 
       pendingFullProjectEdit.value = null;
@@ -5189,16 +5099,14 @@
             // workspace stays on whichever raw_video was picked by `loadVideoForProject`
             // (usually the longest project file), which makes other clips' segments
             // render against a mismatched timeline.
-            const initialClip = timelineClips.value.find(
-              (c: any) => c.id === props.initialClipId
-            );
+            const initialClip = timelineClips.value.find((c: any) => c.id === props.initialClipId);
             const initialClipFile = initialClip?.file_path || initialClip?.filename;
             const isSelfContainedClip =
               initialClip?.session_prompt === 'Manual clip creation' ||
-              (typeof initialClip?.session_prompt === 'string' &&
-                initialClip.session_prompt.includes('auto'));
+              (typeof initialClip?.session_prompt === 'string' && initialClip.session_prompt.includes('auto'));
             if (
               isSelfContainedClip &&
+              !usesProjectSource(initialClip, currentVideo.value) &&
               typeof initialClipFile === 'string' &&
               initialClipFile.trim() !== '' &&
               currentFilePath.value !== initialClipFile
@@ -5207,10 +5115,7 @@
                 await loadVideoFromPath(initialClipFile);
                 workspaceVideoTimeIsSourceAbsolute.value = false;
               } catch (err) {
-                console.warn(
-                  '[ProjectWorkspaceDialog] Failed to load initial clip MP4 as main video:',
-                  err
-                );
+                console.warn('[ProjectWorkspaceDialog] Failed to load initial clip MP4 as main video:', err);
               }
             }
           }
@@ -5463,15 +5368,12 @@
   watch(clipError, (newError) => {
     if (newError && clipGenerationInProgress.value) {
       const isCreditError = newError.toLowerCase().includes('insufficient credits');
-      const message = newError.includes('No credits were charged') || isCreditError
-        ? newError
-        : `${newError}. No credits were charged.`;
+      const message =
+        newError.includes('No credits were charged') || isCreditError
+          ? newError
+          : `${newError}. No credits were charged.`;
 
-      showError(
-        'Processing Error',
-        message,
-        8000
-      );
+      showError('Processing Error', message, 8000);
     }
   });
 

@@ -3,7 +3,11 @@ import { ref, computed } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useImageMode } from "../../../composables/useImageMode";
 import { Button } from "@/components/ui/button";
-import { ChevronDown } from "lucide-vue-next";
+import { Input } from "@/components/ui/input";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
+import { Pencil } from "lucide-vue-next";
+import PanelHeader from "../../chrome/PanelHeader.vue";
+import { AssetTile, InspectorField, InspectorSection, NumberBox, OptionChip } from "../shared";
 
 const { editor, version } = useEditor({
 	subscribe: {
@@ -23,8 +27,14 @@ const activeProject = computed(() => {
 });
 
 const activeSettingsTab = ref<"project-info" | "background">("project-info");
+const settingsTabs: SegmentedOption<"project-info" | "background">[] = [
+	{ value: "project-info", label: "Info" },
+	{ value: "background", label: "Background" },
+];
 
 const editingName = ref(false);
+/** Focus the name field as soon as it replaces the read-only value (autofocus doesn't fire on late inserts). */
+const vFocus = { mounted: (el: HTMLElement) => el.focus() };
 const nameInput = ref("");
 
 function startEditingName() {
@@ -125,184 +135,158 @@ const currentBlurIntensity = computed(() => isBlurBg.value ? (currentBackground.
 
 <template>
 	<div class="flex h-full flex-col">
-		<!-- Header -->
-		<div class="flex items-center justify-between border-b border-white/10 px-3 py-2">
-			<span class="text-sm text-zinc-400">Settings</span>
-			<div class="flex items-center gap-1">
-				<button
-					type="button"
-					:class="[
-						'rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors',
-						activeSettingsTab === 'project-info'
-							? 'bg-blue-500/15 text-blue-400'
-							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
-					]"
-					@click="activeSettingsTab = 'project-info'"
-				>
-					Info
-				</button>
-				<button
-					type="button"
-					:class="[
-						'rounded px-1.5 py-0.5 text-[11px] font-medium transition-colors',
-						activeSettingsTab === 'background'
-							? 'bg-blue-500/15 text-blue-400'
-							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300',
-					]"
-					@click="activeSettingsTab = 'background'"
-				>
-					Background
-				</button>
-			</div>
-		</div>
+		<PanelHeader title="Settings">
+			<SegmentedControl v-model="activeSettingsTab" :options="settingsTabs" size="sm" />
+		</PanelHeader>
 
-		<!-- Project Info -->
+		<!-- Project info -->
 		<div v-if="activeSettingsTab === 'project-info'" class="flex-1 overflow-y-auto">
-			<!-- Name -->
-			<div class="px-3 pb-1 pt-3">
-				<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Name</span>
-			</div>
-			<div class="border-b border-white/5 px-3 py-1.5">
-				<input
-					v-if="editingName"
-					v-model="nameInput"
-					class="w-full bg-transparent text-xs text-zinc-100 outline-none"
-					autofocus
-					@blur="commitName"
-					@keydown.enter="commitName"
-					@keydown.escape="editingName = false"
-				/>
-				<button
-					v-else
-					type="button"
-					class="w-full text-left text-xs text-zinc-200 hover:text-zinc-100"
-					@click="startEditingName"
-				>
-					{{ activeProject?.metadata?.name ?? 'Untitled' }}
-				</button>
-			</div>
-
-			<!-- Aspect ratio -->
-			<div class="px-3 pb-1 pt-3">
-				<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">{{ isImageMode ? 'Canvas size' : 'Aspect ratio' }}</span>
-			</div>
-			<div class="border-b border-white/5 px-3 pb-3">
-				<div class="grid grid-cols-3 gap-1.5 pt-2">
+			<InspectorSection title="Project">
+				<InspectorField label="Name">
+					<Input
+						v-if="editingName"
+						v-model="nameInput"
+						class="h-7 px-2 text-xs"
+						v-focus
+						aria-label="Project name"
+						autofocus
+						@blur="commitName"
+						@keydown.enter="commitName"
+						@keydown.escape="editingName = false"
+					/>
 					<button
+						v-else
+						type="button"
+						class="group flex h-7 w-full min-w-0 items-center gap-2 rounded-md border border-line bg-surface-raised px-2 text-left text-xs text-fg transition-colors hover:border-line-strong focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
+						title="Rename project"
+						@click="startEditingName"
+					>
+						<span class="min-w-0 flex-1 truncate">{{ activeProject?.metadata?.name ?? 'Untitled' }}</span>
+						<Pencil class="size-3 shrink-0 text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100" />
+					</button>
+				</InspectorField>
+			</InspectorSection>
+
+			<!-- Aspect ratio / canvas size -->
+			<InspectorSection :title="isImageMode ? 'Canvas size' : 'Aspect ratio'" :flush="isImageMode">
+				<template #actions>
+					<span class="tabular pr-1 text-2xs text-fg-subtle">{{ currentCanvasSize.width }} × {{ currentCanvasSize.height }}</span>
+				</template>
+				<div class="grid gap-1.5" :class="isImageMode ? 'grid-cols-2' : 'grid-cols-3'">
+					<OptionChip
 						v-for="preset in canvasPresets"
 						:key="preset.label"
-						type="button"
+						:active="currentCanvasSize.width === preset.width && currentCanvasSize.height === preset.height"
 						:title="(preset as any).desc || preset.label"
-						:class="[
-							'rounded-md border px-3 py-1.5 text-xs transition-colors',
-							currentCanvasSize.width === preset.width && currentCanvasSize.height === preset.height
-								? 'border-white/40 text-zinc-100'
-								: 'border-white/10 text-zinc-500 hover:border-white/20 hover:text-zinc-300',
-						]"
+						class="px-1.5"
 						@click="handleAspectRatioChange(preset)"
 					>
-						{{ preset.label }}
-					</button>
+						<span class="truncate">{{ preset.label }}</span>
+					</OptionChip>
 				</div>
-				<!-- Image mode: show current dimensions + custom size -->
-				<div v-if="isImageMode" class="mt-2 space-y-2">
-					<p class="text-zinc-500 text-[10px]">{{ currentCanvasSize.width }} × {{ currentCanvasSize.height }}px</p>
+				<!-- Image mode: custom size -->
+				<InspectorField v-if="isImageMode" label="Custom size">
 					<div class="flex items-center gap-1.5">
-						<input
-							v-model="customWidth"
-							type="number"
-							placeholder="W"
-							min="1"
-							max="7680"
-							class="w-16 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200"
+						<NumberBox
+							prefix="W"
+							:value="customWidth"
+							:min="1"
+							:max="7680"
+							:placeholder="String(currentCanvasSize.width)"
+							aria-label="Custom width"
+							class="flex-1"
+							@input="(v) => (customWidth = v)"
 						/>
-						<span class="text-zinc-500 text-xs">×</span>
-						<input
-							v-model="customHeight"
-							type="number"
-							placeholder="H"
-							min="1"
-							max="7680"
-							class="w-16 rounded border border-white/10 bg-white/5 px-2 py-1 text-xs text-zinc-200"
+						<span class="shrink-0 text-xs text-fg-subtle">×</span>
+						<NumberBox
+							prefix="H"
+							:value="customHeight"
+							:min="1"
+							:max="7680"
+							:placeholder="String(currentCanvasSize.height)"
+							aria-label="Custom height"
+							class="flex-1"
+							@input="(v) => (customHeight = v)"
 						/>
-						<button
-							type="button"
-							class="rounded border border-white/10 px-2 py-1 text-xs text-zinc-300 hover:bg-white/5 transition-colors"
-							@click="applyCustomSize"
-						>
-							Apply
-						</button>
+						<Button variant="secondary" size="sm" class="shrink-0" @click="applyCustomSize">Apply</Button>
 					</div>
-				</div>
-			</div>
+				</InspectorField>
+			</InspectorSection>
 
 			<!-- Frame rate -->
-			<div v-if="!isImageMode" class="px-3 pb-1 pt-3">
-				<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Frame rate</span>
-			</div>
-			<div v-if="!isImageMode" class="px-3 pb-3">
-				<div class="grid grid-cols-3 gap-1.5 pt-2">
-					<button
+			<InspectorSection v-if="!isImageMode" title="Frame rate" flush>
+				<template #actions>
+					<span class="pr-1 text-2xs text-fg-subtle">fps</span>
+				</template>
+				<div class="grid grid-cols-5 gap-1.5">
+					<OptionChip
 						v-for="preset in fpsPresets"
 						:key="preset.value"
-						type="button"
-						:class="[
-							'rounded-md border px-3 py-1.5 text-xs transition-colors',
-							currentFps === Number(preset.value)
-								? 'border-white/40 text-zinc-100'
-								: 'border-white/10 text-zinc-500 hover:border-white/20 hover:text-zinc-300',
-						]"
+						:active="currentFps === Number(preset.value)"
+						:title="preset.label"
+						class="tabular px-1"
 						@click="handleFpsChange(Number(preset.value))"
 					>
-						{{ preset.label }}
-					</button>
+						{{ preset.value }}
+					</OptionChip>
 				</div>
-			</div>
+			</InspectorSection>
 		</div>
 
 		<!-- Background -->
 		<div v-else class="flex-1 overflow-y-auto">
-			<!-- Blur -->
-			<div class="px-3 pb-1 pt-3">
-				<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Blur</span>
-			</div>
-			<div class="border-b border-white/5 px-3 pb-3">
-				<div class="grid grid-cols-4 gap-1.5 pt-2">
-					<button
+			<InspectorSection title="Blur">
+				<div class="grid grid-cols-4 gap-1.5">
+					<AssetTile
 						v-for="blur in blurPresets"
 						:key="blur.value"
-						type="button"
-						:class="[
-							'aspect-square rounded-sm border overflow-hidden relative',
-							isBlurBg && currentBlurIntensity === blur.value ? 'border-white/40 border-2' : 'border-white/10 hover:border-white/20',
-						]"
+						aspect="1"
+						hide-check
+						:selected="isBlurBg && currentBlurIntensity === blur.value"
+						:title="`${blur.label} blur`"
 						@click="handleBackgroundBlur(blur.value)"
 					>
-						<div class="absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-500" :style="{ filter: `blur(${blur.value}px)` }" />
-						<span class="absolute right-1 bottom-1 rounded bg-black/50 px-1 text-[10px] text-white">{{ blur.label }}</span>
-					</button>
+						<!-- Sample image blurred at the preset strength -->
+						<img
+							src="/editor/stock/city-sunset.jpg"
+							alt=""
+							draggable="false"
+							class="size-full scale-125 object-cover"
+							:style="{ filter: `blur(${blur.value / 3}px)` }"
+						/>
+						<template #footer>
+							<p
+								class="truncate px-1 py-1 text-center text-2xs leading-4"
+								:class="isBlurBg && currentBlurIntensity === blur.value ? 'text-fg' : 'text-fg-muted'"
+							>
+								{{ blur.label }}
+							</p>
+						</template>
+					</AssetTile>
 				</div>
-			</div>
+			</InspectorSection>
 
-			<!-- Colors -->
-			<div class="px-3 pb-1 pt-3">
-				<span class="text-[10px] font-medium uppercase tracking-wider text-zinc-500">Colors</span>
-			</div>
-			<div class="px-3 pb-3">
-				<div class="grid grid-cols-5 gap-1.5 pt-2">
+			<InspectorSection title="Color" flush>
+				<div class="grid grid-cols-5 gap-1.5">
+					<!-- Swatches show the background colors themselves (content, not chrome) -->
 					<button
 						v-for="color in solidColors"
 						:key="color"
 						type="button"
+						:title="color"
+						:aria-label="`Background color ${color}`"
+						:aria-pressed="isColorBg && currentBgColor === color"
 						:class="[
-							'aspect-square w-full rounded-sm border',
-							isColorBg && currentBgColor === color ? 'border-white/60 border-2' : 'border-white/10 hover:border-white/20',
+							'aspect-square w-full rounded-md border border-line-strong transition-[border-color,box-shadow] focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none',
+							isColorBg && currentBgColor === color
+								? 'shadow-[0_0_0_2px_var(--panel),0_0_0_4px_var(--brand)]'
+								: 'hover:border-fg-subtle',
 						]"
 						:style="{ backgroundColor: color }"
 						@click="handleBackgroundColor(color)"
 					/>
 				</div>
-			</div>
+			</InspectorSection>
 		</div>
 	</div>
 </template>

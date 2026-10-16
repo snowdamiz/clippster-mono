@@ -1,452 +1,282 @@
 <template>
-  <div class="admin-user-profile">
-    <PageLayout
-      :title="affiliate ? `Affiliate: ${affiliate.referral_code}` : 'Affiliate Detail'"
-      description="Detailed affiliate information and management"
-      :show-header="true"
-      :show-back-button="true"
-      :icon="Handshake"
-      :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Affiliates', path: '/admin/affiliates' }, { label: affiliate?.referral_code || 'Detail' }]"
-    >
-      <!-- Loading State -->
-      <div v-if="loading" class="user-content user-content--loading">
-        <div class="loading-spinner">
-          <Loader2 class="loading-spinner__icon" />
+  <PageLayout
+    :title="affiliate ? affiliate.referral_code : 'Affiliate'"
+    description="Detailed affiliate information and management"
+    :icon="Handshake"
+    :breadcrumbs="[
+      { label: 'Admin', path: '/admin' },
+      { label: 'Affiliates', path: '/admin/affiliates' },
+      { label: affiliate?.referral_code || 'Detail' },
+    ]"
+  >
+    <!-- Loading -->
+    <div v-if="loading && !affiliate" class="flex flex-col gap-4 px-5 py-4" aria-busy="true">
+      <div class="flex items-center gap-3.5 border-b border-line-subtle pb-4">
+        <div class="skeleton size-10 rounded-lg" />
+        <div class="flex flex-col gap-2">
+          <div class="skeleton h-4 w-40" />
+          <div class="skeleton h-3 w-28" />
         </div>
       </div>
+      <div class="grid items-start gap-4 @3xl:grid-cols-[minmax(0,1fr)_300px]">
+        <div class="skeleton h-72 rounded-[var(--radius-card)]" />
+        <div class="skeleton h-40 rounded-[var(--radius-card)]" />
+      </div>
+    </div>
 
-      <!-- Error State -->
-      <div v-else-if="error" class="user-content user-content--empty">
-        <div class="empty-state">
-          <div class="empty-state__icon-wrapper">
-            <AlertTriangle class="empty-state__icon" />
+    <!-- Error -->
+    <EmptyState v-else-if="error" :icon="AlertTriangle" tone="danger" title="Failed to load affiliate" :description="error">
+      <Button variant="secondary" @click="fetchAffiliate">Try again</Button>
+    </EmptyState>
+
+    <!-- Main content -->
+    <div v-else-if="affiliate" class="@container flex animate-enter flex-col gap-4 px-5 py-4">
+      <AdminDetailHeader
+        :title="affiliate.referral_code"
+        :subtitle="affiliate.user?.name || affiliate.user?.email || 'No user info'"
+        :icon="Handshake"
+        avatar-shape="square"
+        :stats="[
+          { label: 'Referrals', value: referrals.length },
+          { label: 'Earned', value: `$${totalEarned}` },
+          { label: 'Pending', value: `$${totalPending}` },
+        ]"
+      >
+        <template #badges>
+          <Badge :variant="statusVariant(affiliate.status)">{{ formatStatus(affiliate.status) }}</Badge>
+        </template>
+        <template #meta>
+          <span>Created {{ formatDate(affiliate.inserted_at) }}</span>
+          <span v-if="affiliate.user?.id">User #{{ affiliate.user.id }}</span>
+        </template>
+        <template #actions>
+          <Button variant="ghost" size="sm" :title="refCodeCopied ? 'Copied!' : 'Copy code'" @click="copyRefCode">
+            <Check v-if="refCodeCopied" />
+            <Copy v-else />
+            {{ refCodeCopied ? 'Copied' : 'Copy code' }}
+          </Button>
+          <Button v-if="affiliate.status !== 'active'" variant="secondary" size="sm" @click="handleActivate">
+            <Check />
+            Activate
+          </Button>
+          <Button v-else variant="secondary" size="sm" @click="handleDeactivate">
+            <Ban />
+            Deactivate
+          </Button>
+        </template>
+      </AdminDetailHeader>
+
+      <div class="grid items-start gap-4 @3xl:grid-cols-[minmax(0,1fr)_300px]">
+        <!-- Rates & discounts -->
+        <SectionCard title="Commission & discounts" :icon="Percent" body-class="flex flex-col gap-5 py-4">
+          <div class="flex flex-col gap-3">
+            <p class="eyebrow">Commission</p>
+            <div class="grid grid-cols-2 gap-3">
+              <Field label="Signup commission (%)">
+                <Input v-model="editForm.signup_commission_pct" type="number" step="0.1" />
+              </Field>
+              <Field label="Recurring commission (%)">
+                <Input v-model="editForm.recurring_commission_pct" type="number" step="0.1" />
+              </Field>
+            </div>
+            <label class="flex items-center gap-2 text-sm text-fg">
+              <Checkbox v-model="editForm.credit_pack_commission_enabled" />
+              Enable credit pack commission
+            </label>
+            <Field v-if="editForm.credit_pack_commission_enabled" label="Credit pack commission (%)" class="max-w-[50%]">
+              <Input v-model="editForm.credit_pack_commission_pct" type="number" step="0.1" />
+            </Field>
+            <Field label="Notes">
+              <Textarea v-model="editForm.notes" rows="3" />
+            </Field>
           </div>
-          <h3 class="empty-state__title">Failed to load affiliate</h3>
-          <p class="empty-state__description">{{ error }}</p>
-          <button class="btn-retry" @click="fetchAffiliate">Try Again</button>
-        </div>
+
+          <div class="flex flex-col gap-3 border-t border-line-subtle pt-4">
+            <p class="eyebrow">Referred-user discount</p>
+            <Field inline label="Discount for referred users" hint="Applied to subscriptions bought with this code">
+              <Switch v-model="editForm.discount_enabled" aria-label="Discount for referred users" />
+            </Field>
+
+            <template v-if="editForm.discount_enabled">
+              <Field label="Discount type">
+                <CustomDropdown v-model="editForm.discount_type" :options="discountTypeOptions" placeholder="Select type…" />
+              </Field>
+              <div class="grid grid-cols-2 gap-3">
+                <Field
+                  v-if="editForm.discount_type === 'one_time' || editForm.discount_type === 'tiered'"
+                  label="First month discount (%)"
+                  hint="Applied to the first month's subscription"
+                >
+                  <Input v-model="editForm.first_month_discount_pct" type="number" step="0.1" min="0" max="100" placeholder="e.g. 10" />
+                </Field>
+                <Field
+                  v-if="editForm.discount_type === 'recurring' || editForm.discount_type === 'tiered'"
+                  label="Recurring discount (%)"
+                  :hint="editForm.discount_type === 'tiered' ? 'Applied to subsequent months' : 'Applied every month'"
+                >
+                  <Input v-model="editForm.recurring_discount_pct" type="number" step="0.1" min="0" max="100" placeholder="e.g. 5" />
+                </Field>
+              </div>
+
+              <div v-if="editForm.discount_type" class="text-sm">
+                <p class="mb-1 text-xs font-medium text-fg-muted">Preview</p>
+                <ul class="flex flex-col gap-1 text-fg-muted">
+                  <template v-if="editForm.discount_type === 'one_time'">
+                    <li>First month: <span class="font-medium text-success">{{ editForm.first_month_discount_pct || 0 }}% off</span></li>
+                    <li>Subsequent months: <span class="font-medium text-fg">Full price</span></li>
+                  </template>
+                  <li v-else-if="editForm.discount_type === 'recurring'">
+                    Every month: <span class="font-medium text-success">{{ editForm.recurring_discount_pct || 0 }}% off</span>
+                  </li>
+                  <template v-else-if="editForm.discount_type === 'tiered'">
+                    <li>First month: <span class="font-medium text-success">{{ editForm.first_month_discount_pct || 0 }}% off</span></li>
+                    <li>Subsequent months: <span class="font-medium text-success">{{ editForm.recurring_discount_pct || 0 }}% off</span></li>
+                  </template>
+                </ul>
+              </div>
+            </template>
+          </div>
+
+          <template #footer>
+            <Button variant="primary" size="sm" :loading="saving" :disabled="saving" @click="handleSave">Save changes</Button>
+          </template>
+        </SectionCard>
+
+        <!-- Side column -->
+        <aside class="flex min-w-0 flex-col gap-4">
+          <SectionCard title="Payout info" :icon="Wallet" body-class="py-1">
+            <InfoRow label="Method"><span class="capitalize">{{ affiliate.payout_method || 'Not set' }}</span></InfoRow>
+            <InfoRow v-if="affiliate.payout_method === 'crypto'" label="USDC address" mono>
+              <span class="truncate" :title="affiliate.solana_usdc_address || undefined">{{ affiliate.solana_usdc_address || 'Not set' }}</span>
+            </InfoRow>
+            <InfoRow v-if="affiliate.payout_method === 'paypal'" label="PayPal email">
+              <span class="truncate">{{ affiliate.paypal_email || 'Not set' }}</span>
+            </InfoRow>
+          </SectionCard>
+
+          <SectionCard title="Details" :icon="Info" body-class="py-1">
+            <InfoRow label="Affiliate ID" mono>{{ affiliate.id }}</InfoRow>
+            <InfoRow label="User ID" mono>{{ affiliate.user?.id }}</InfoRow>
+            <InfoRow label="Created">{{ formatFullDate(affiliate.inserted_at) }}</InfoRow>
+            <InfoRow v-if="affiliate.updated_at" label="Last updated">{{ formatFullDate(affiliate.updated_at) }}</InfoRow>
+          </SectionCard>
+
+          <SectionCard title="Record payout" :icon="DollarSign" body-class="flex flex-col gap-3">
+            <div class="grid grid-cols-2 gap-3">
+              <Field label="Month">
+                <Input v-model="payoutForm.period_month" type="number" min="1" max="12" />
+              </Field>
+              <Field label="Year">
+                <Input v-model="payoutForm.period_year" type="number" min="2025" />
+              </Field>
+            </div>
+            <Field label="Manual amount (USD)" hint="Only for testing or manual payouts without commissions">
+              <Input
+                :model-value="payoutForm.manual_amount ?? ''"
+                type="number"
+                step="0.01"
+                min="0"
+                placeholder="Calculated amount"
+                @update:model-value="(v) => (payoutForm.manual_amount = v === '' ? null : Number(v))"
+              />
+            </Field>
+            <Field label="Transaction ID">
+              <Input v-model="payoutForm.transaction_id" placeholder="Tx hash or PayPal ID" />
+            </Field>
+            <Field label="Proof screenshot">
+              <input
+                type="file"
+                accept="image/*"
+                class="block w-full text-xs text-fg-muted file:mr-2.5 file:h-7 file:cursor-pointer file:rounded-md file:border file:border-line file:bg-surface-raised file:px-2.5 file:text-xs file:font-medium file:text-fg hover:file:bg-surface-hover"
+                @change="handleScreenshotChange"
+              />
+            </Field>
+            <Field label="Notes">
+              <Textarea v-model="payoutForm.notes" rows="2" placeholder="Optional notes…" />
+            </Field>
+            <template #footer>
+              <Button variant="secondary" size="sm" :loading="payingOut" :disabled="payingOut" @click="handleRecordPayout">
+                Record payout
+              </Button>
+            </template>
+          </SectionCard>
+        </aside>
       </div>
 
-      <!-- Main Content -->
-      <div v-else-if="affiliate" class="user-content">
-        <!-- Affiliate Header -->
-        <header class="user-header">
-          <div class="user-header__main">
-            <div class="user-avatar">
-              <Handshake class="user-avatar__fallback" />
-            </div>
-            <div class="user-meta">
-              <div class="user-meta__top">
-                <h1 class="user-name">{{ affiliate.referral_code }}</h1>
-                <span :class="['status-badge', `status-badge--${affiliate.status}`]">
-                  {{ affiliate.status }}
-                </span>
-              </div>
-              <p class="user-bio">{{ affiliate.user?.name || affiliate.user?.email || 'No user info' }}</p>
-              <div class="ref-link">
-                <Hash :size="14" class="ref-link__icon" />
-                <span class="ref-link__url">{{ affiliate.referral_code }}</span>
-                <button class="ref-link__copy" @click="copyRefCode" :title="refCodeCopied ? 'Copied!' : 'Copy code'">
-                  <Check v-if="refCodeCopied" :size="14" />
-                  <Copy v-else :size="14" />
-                </button>
-              </div>
-            </div>
-          </div>
-          <div class="user-stats">
-            <div class="stat">
-              <span class="stat__value">{{ referrals.length }}</span>
-              <span class="stat__label">Referrals</span>
-            </div>
-            <div class="stat">
-              <span class="stat__value stat__value--green">${{ totalEarned }}</span>
-              <span class="stat__label">Earned</span>
-            </div>
-            <div class="stat">
-              <span class="stat__value stat__value--amber">${{ totalPending }}</span>
-              <span class="stat__label">Pending</span>
-            </div>
-            <div class="stat">
-              <span class="stat__value">{{ formatDate(affiliate.inserted_at) }}</span>
-              <span class="stat__label">Created</span>
-            </div>
-          </div>
-        </header>
+      <!-- Referrals -->
+      <SectionCard v-if="referrals.length > 0" title="Referrals" :count="referrals.length" :icon="Users" flush>
+        <DataTable :columns="referralColumns" :rows="referrals" row-key="id" bare>
+          <template #cell-date="{ row: r }">
+            <span class="truncate text-xs text-fg-muted">{{ formatDate(r.inserted_at) }}</span>
+          </template>
+          <template #cell-type="{ row: r }">
+            <Badge variant="neutral">{{ formatEventType(r.event_type) }}</Badge>
+          </template>
+          <template #cell-user="{ row: r }">
+            <span class="block truncate">{{ r.referred_user?.email || r.referred_user?.name || 'N/A' }}</span>
+          </template>
+          <template #cell-amount="{ row: r }">
+            <span class="tabular">${{ r.amount_usd.toFixed(2) }}</span>
+          </template>
+          <template #cell-rate="{ row: r }">
+            <span class="tabular text-fg-muted">{{ r.commission_pct }}%</span>
+          </template>
+          <template #cell-commission="{ row: r }">
+            <span class="tabular text-success">${{ r.commission_usd.toFixed(2) }}</span>
+          </template>
+          <template #cell-status="{ row: r }">
+            <Badge :variant="statusVariant(r.status)">{{ formatStatus(r.status) }}</Badge>
+          </template>
+        </DataTable>
+      </SectionCard>
 
-        <!-- Two Column Layout -->
-        <div class="main-layout">
-          <!-- Left Column -->
-          <div class="main-column">
-            <!-- Actions Section -->
-            <section class="section">
-              <div class="section__header">
-                <div class="section__header-icon">
-                  <Settings />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section__title">Affiliate Actions</h2>
-                  <p class="section__subtitle">Manage affiliate status and settings</p>
-                </div>
-              </div>
-              
-              <!-- Status Group -->
-              <div class="action-group">
-                <div class="action-group__label">Status</div>
-                <div class="action-group__buttons">
-                  <button @click="handleActivate" v-if="affiliate.status !== 'active'" class="action-btn action-btn--success">
-                    <Check :size="18" />
-                    <span>Activate Affiliate</span>
-                  </button>
-                  <button @click="handleDeactivate" v-if="affiliate.status === 'active'" class="action-btn action-btn--warning">
-                    <Ban :size="18" />
-                    <span>Deactivate Affiliate</span>
-                  </button>
-                </div>
-              </div>
-            </section>
-
-            <!-- Commission Rates Section -->
-            <section class="section">
-              <div class="section__header">
-                <div class="section__header-icon section__header-icon--green">
-                  <DollarSign />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section__title">Commission Rates</h2>
-                  <p class="section__subtitle">Configure affiliate earnings</p>
-                </div>
-              </div>
-              
-              <div class="form-grid">
-                <div class="form-group">
-                  <label class="form-label">Signup Commission %</label>
-                  <input v-model="editForm.signup_commission_pct" type="number" step="0.1" class="form-input" />
-                </div>
-                <div class="form-group">
-                  <label class="form-label">Recurring Commission %</label>
-                  <input v-model="editForm.recurring_commission_pct" type="number" step="0.1" class="form-input" />
-                </div>
-                <div class="form-group form-group--full">
-                  <label class="checkbox-label">
-                    <input v-model="editForm.credit_pack_commission_enabled" type="checkbox" class="checkbox-input" />
-                    Enable Credit Pack Commission
-                  </label>
-                </div>
-                <div v-if="editForm.credit_pack_commission_enabled" class="form-group">
-                  <label class="form-label">Credit Pack Commission %</label>
-                  <input v-model="editForm.credit_pack_commission_pct" type="number" step="0.1" class="form-input" />
-                </div>
-                <div class="form-group form-group--full">
-                  <label class="form-label">Notes</label>
-                  <textarea v-model="editForm.notes" class="form-textarea" rows="3"></textarea>
-                </div>
-              </div>
-              <button class="btn-primary" :disabled="saving" @click="handleSave">
-                <Loader2 v-if="saving" class="btn-icon btn-icon--spin" />
-                Save Changes
-              </button>
-            </section>
-
-            <!-- User Discount Settings Section -->
-            <section class="section">
-              <div class="section__header">
-                <div class="section__header-icon section__header-icon--purple">
-                  <Percent />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section__title">User Discount Settings</h2>
-                  <p class="section__subtitle">Configure discounts for referred users</p>
-                </div>
-              </div>
-              
-              <div class="form-grid">
-                <div class="form-group form-group--full">
-                  <label class="checkbox-label">
-                    <input v-model="editForm.discount_enabled" type="checkbox" class="checkbox-input" />
-                    Enable Discount for Referred Users
-                  </label>
-                </div>
-                
-                <template v-if="editForm.discount_enabled">
-                  <div class="form-group form-group--full">
-                    <label class="form-label">Discount Type</label>
-                    <div class="relative">
-                      <button
-                        @click="showDiscountTypeDropdown = !showDiscountTypeDropdown"
-                        class="dropdown-select"
-                      >
-                        <span class="truncate">
-                          {{ discountTypeLabel || 'Select type...' }}
-                        </span>
-                        <ChevronDown
-                          class="dropdown-select__icon"
-                          :class="{ 'dropdown-select__icon--open': showDiscountTypeDropdown }"
-                        />
-                      </button>
-
-                      <div v-if="showDiscountTypeDropdown" class="dropdown-menu">
-                        <button
-                          @click="selectDiscountType('')"
-                          class="dropdown-item"
-                          :class="{ 'dropdown-item--selected': !editForm.discount_type }"
-                        >
-                          Select type...
-                        </button>
-                        <button
-                          @click="selectDiscountType('one_time')"
-                          class="dropdown-item"
-                          :class="{ 'dropdown-item--selected': editForm.discount_type === 'one_time' }"
-                        >
-                          One-time (First month only)
-                        </button>
-                        <button
-                          @click="selectDiscountType('recurring')"
-                          class="dropdown-item"
-                          :class="{ 'dropdown-item--selected': editForm.discount_type === 'recurring' }"
-                        >
-                          Recurring (Every month)
-                        </button>
-                        <button
-                          @click="selectDiscountType('tiered')"
-                          class="dropdown-item"
-                          :class="{ 'dropdown-item--selected': editForm.discount_type === 'tiered' }"
-                        >
-                          Tiered (Different first & recurring)
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-
-                  <div v-if="editForm.discount_type === 'one_time' || editForm.discount_type === 'tiered'" class="form-group">
-                    <label class="form-label">First Month Discount %</label>
-                    <input v-model="editForm.first_month_discount_pct" type="number" step="0.1" min="0" max="100" class="form-input" placeholder="e.g., 10" />
-                    <span class="form-help">Discount applied to the first month's subscription</span>
-                  </div>
-
-                  <div v-if="editForm.discount_type === 'recurring' || editForm.discount_type === 'tiered'" class="form-group">
-                    <label class="form-label">Recurring Discount %</label>
-                    <input v-model="editForm.recurring_discount_pct" type="number" step="0.1" min="0" max="100" class="form-input" placeholder="e.g., 5" />
-                    <span class="form-help">
-                      {{ editForm.discount_type === 'tiered' ? 'Discount applied to subsequent months' : 'Discount applied every month' }}
-                    </span>
-                  </div>
-
-                  <div v-if="editForm.discount_type" class="form-group form-group--full">
-                    <div class="discount-preview">
-                      <h4 class="discount-preview__title">Preview</h4>
-                      <div class="discount-preview__content">
-                        <template v-if="editForm.discount_type === 'one_time'">
-                          <p>✓ First month: <strong>{{ editForm.first_month_discount_pct || 0 }}% off</strong></p>
-                          <p>• Subsequent months: <strong>Full price</strong></p>
-                        </template>
-                        <template v-else-if="editForm.discount_type === 'recurring'">
-                          <p>✓ Every month: <strong>{{ editForm.recurring_discount_pct || 0 }}% off</strong></p>
-                        </template>
-                        <template v-else-if="editForm.discount_type === 'tiered'">
-                          <p>✓ First month: <strong>{{ editForm.first_month_discount_pct || 0 }}% off</strong></p>
-                          <p>✓ Subsequent months: <strong>{{ editForm.recurring_discount_pct || 0 }}% off</strong></p>
-                        </template>
-                      </div>
-                    </div>
-                  </div>
-                </template>
-              </div>
-              <button class="btn-primary" :disabled="saving" @click="handleSave">
-                <Loader2 v-if="saving" class="btn-icon btn-icon--spin" />
-                Save Changes
-              </button>
-            </section>
-
-            <!-- Referrals Section -->
-            <section v-if="referrals.length > 0" class="section">
-              <div class="section__header">
-                <div class="section__header-icon section__header-icon--blue">
-                  <Users />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section__title">Referrals</h2>
-                  <p class="section__subtitle">{{ referrals.length }} total referrals</p>
-                </div>
-              </div>
-              <div class="data-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Date</th>
-                      <th>Type</th>
-                      <th>User</th>
-                      <th>Amount</th>
-                      <th>Rate</th>
-                      <th>Commission</th>
-                      <th>Status</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="r in referrals" :key="r.id">
-                      <td>{{ formatDate(r.inserted_at) }}</td>
-                      <td><span class="event-type">{{ formatEventType(r.event_type) }}</span></td>
-                      <td>{{ r.referred_user?.email || r.referred_user?.name || 'N/A' }}</td>
-                      <td>${{ r.amount_usd.toFixed(2) }}</td>
-                      <td>{{ r.commission_pct }}%</td>
-                      <td class="text-green">${{ r.commission_usd.toFixed(2) }}</td>
-                      <td><span :class="['ref-status', `ref-status--${r.status}`]">{{ r.status }}</span></td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </section>
-
-            <!-- Payouts Section -->
-            <section v-if="payouts.length > 0" class="section">
-              <div class="section__header">
-                <div class="section__header-icon">
-                  <CreditCard />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section__title">Payout History</h2>
-                  <p class="section__subtitle">{{ payouts.length }} total payouts</p>
-                </div>
-              </div>
-              <div class="data-table">
-                <table>
-                  <thead>
-                    <tr>
-                      <th>Period</th>
-                      <th>Amount</th>
-                      <th>Method</th>
-                      <th>Transaction ID</th>
-                      <th>Status</th>
-                      <th>Paid At</th>
-                      <th>Proof</th>
-                    </tr>
-                  </thead>
-                  <tbody>
-                    <tr v-for="p in payouts" :key="p.id">
-                      <td>{{ p.period_month }}/{{ p.period_year }}</td>
-                      <td class="text-green">${{ p.amount_usd.toFixed(2) }}</td>
-                      <td>{{ p.payout_method }}</td>
-                      <td class="text-mono">{{ p.transaction_id || '—' }}</td>
-                      <td><span :class="['ref-status', `ref-status--${p.status}`]">{{ p.status }}</span></td>
-                      <td>{{ p.paid_at ? formatDate(p.paid_at) : '—' }}</td>
-                      <td>
-                        <a v-if="p.proof_screenshot_url" :href="p.proof_screenshot_url" target="_blank" class="proof-link">View</a>
-                        <span v-else>—</span>
-                      </td>
-                    </tr>
-                  </tbody>
-                </table>
-              </div>
-            </section>
-          </div>
-
-          <!-- Right Sidebar -->
-          <aside class="sidebar-column">
-            <!-- Payout Info Card -->
-            <div class="sidebar-card">
-              <div class="sidebar-card__header">
-                <Wallet class="sidebar-card__icon" />
-                <h3 class="sidebar-card__title">Payout Info</h3>
-              </div>
-              <div class="sidebar-card__content">
-                <div class="info-list">
-                  <div class="info-list-item">
-                    <div class="info-list-item__label">Method</div>
-                    <div class="info-list-item__value">{{ affiliate.payout_method || 'Not set' }}</div>
-                  </div>
-                  <div v-if="affiliate.payout_method === 'crypto'" class="info-list-item">
-                    <div class="info-list-item__label">USDC Address</div>
-                    <div class="info-list-item__value info-list-item__value--mono">{{ affiliate.solana_usdc_address || 'Not set' }}</div>
-                  </div>
-                  <div v-if="affiliate.payout_method === 'paypal'" class="info-list-item">
-                    <div class="info-list-item__label">PayPal Email</div>
-                    <div class="info-list-item__value">{{ affiliate.paypal_email || 'Not set' }}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Details Card -->
-            <div class="sidebar-card">
-              <div class="sidebar-card__header">
-                <Info class="sidebar-card__icon" />
-                <h3 class="sidebar-card__title">Details</h3>
-              </div>
-              <div class="sidebar-card__content">
-                <div class="info-list">
-                  <div class="info-list-item">
-                    <div class="info-list-item__label">Affiliate ID</div>
-                    <div class="info-list-item__value info-list-item__value--mono">{{ affiliate.id }}</div>
-                  </div>
-                  <div class="info-list-item">
-                    <div class="info-list-item__label">User ID</div>
-                    <div class="info-list-item__value info-list-item__value--mono">{{ affiliate.user?.id }}</div>
-                  </div>
-                  <div class="info-list-item">
-                    <div class="info-list-item__label">Created</div>
-                    <div class="info-list-item__value">{{ formatFullDate(affiliate.inserted_at) }}</div>
-                  </div>
-                  <div v-if="affiliate.updated_at" class="info-list-item">
-                    <div class="info-list-item__label">Last Updated</div>
-                    <div class="info-list-item__value">{{ formatFullDate(affiliate.updated_at) }}</div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Record Payout Card -->
-            <div class="sidebar-card">
-              <div class="sidebar-card__header">
-                <DollarSign class="sidebar-card__icon" />
-                <h3 class="sidebar-card__title">Record Payout</h3>
-              </div>
-              <div class="sidebar-card__content">
-                <div class="form-grid">
-                  <div class="form-group">
-                    <label class="form-label">Period Month</label>
-                    <input v-model="payoutForm.period_month" type="number" min="1" max="12" class="form-input" />
-                  </div>
-                  <div class="form-group">
-                    <label class="form-label">Period Year</label>
-                    <input v-model="payoutForm.period_year" type="number" min="2025" class="form-input" />
-                  </div>
-                  <div class="form-group form-group--full">
-                    <label class="form-label">Manual Amount (USD)</label>
-                    <input v-model="payoutForm.manual_amount" type="number" step="0.01" min="0" class="form-input" placeholder="Leave empty to use calculated amount" />
-                    <span class="form-help">Only use this for testing or manual payouts without commissions</span>
-                  </div>
-                  <div class="form-group form-group--full">
-                    <label class="form-label">Transaction ID</label>
-                    <input v-model="payoutForm.transaction_id" type="text" class="form-input" placeholder="Blockchain tx hash or PayPal ID" />
-                  </div>
-                  <div class="form-group form-group--full">
-                    <label class="form-label">Proof Screenshot</label>
-                    <input type="file" accept="image/*" class="form-input" @change="handleScreenshotChange" />
-                  </div>
-                  <div class="form-group form-group--full">
-                    <label class="form-label">Notes</label>
-                    <textarea v-model="payoutForm.notes" class="form-textarea" rows="2" placeholder="Optional notes..."></textarea>
-                  </div>
-                </div>
-                <button class="btn-primary" :disabled="payingOut" @click="handleRecordPayout">
-                  <Loader2 v-if="payingOut" class="btn-icon btn-icon--spin" />
-                  Record Payout
-                </button>
-              </div>
-            </div>
-          </aside>
-        </div>
-      </div>
-    </PageLayout>
-  </div>
+      <!-- Payouts -->
+      <SectionCard v-if="payouts.length > 0" title="Payout history" :count="payouts.length" :icon="CreditCard" flush>
+        <DataTable :columns="payoutColumns" :rows="payouts" row-key="id" bare>
+          <template #cell-period="{ row: p }">
+            <span class="tabular">{{ p.period_month }}/{{ p.period_year }}</span>
+          </template>
+          <template #cell-amount="{ row: p }">
+            <span class="tabular text-success">${{ p.amount_usd.toFixed(2) }}</span>
+          </template>
+          <template #cell-method="{ row: p }">
+            <span class="truncate capitalize text-fg-muted">{{ p.payout_method }}</span>
+          </template>
+          <template #cell-transaction="{ row: p }">
+            <code class="block truncate font-mono text-xs text-fg-muted" :title="p.transaction_id || undefined">
+              {{ p.transaction_id || '—' }}
+            </code>
+          </template>
+          <template #cell-status="{ row: p }">
+            <Badge :variant="statusVariant(p.status)">{{ formatStatus(p.status) }}</Badge>
+          </template>
+          <template #cell-paid="{ row: p }">
+            <span class="truncate text-xs text-fg-muted">{{ p.paid_at ? formatDate(p.paid_at) : '—' }}</span>
+          </template>
+          <template #cell-proof="{ row: p }">
+            <a
+              v-if="p.proof_screenshot_url"
+              :href="p.proof_screenshot_url"
+              target="_blank"
+              :class="buttonVariants({ variant: 'link', size: 'sm' })"
+            >
+              View
+            </a>
+            <span v-else class="text-fg-subtle">—</span>
+          </template>
+        </DataTable>
+      </SectionCard>
+    </div>
+  </PageLayout>
 </template>
 
 <script setup lang="ts">
+  import { confirmDialog } from '@/composables/useDialogs';
   import { ref, reactive, onMounted, computed } from 'vue';
   import { useRoute } from 'vue-router';
   import { formatDate as fmtDate, formatDateTime } from '@/utils/dateTimeUtils';
   import {
     Handshake,
-    Loader2,
     AlertTriangle,
     Ban,
     Check,
@@ -456,12 +286,26 @@
     CreditCard,
     Wallet,
     Info,
-    Settings,
-    ChevronDown,
-    Hash,
     Copy,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
+  import { Badge } from '@/components/ui/badge';
+  import { Button, buttonVariants } from '@/components/ui/button';
+  import { Checkbox } from '@/components/ui/checkbox';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
+  import { Switch } from '@/components/ui/switch';
+  import { Textarea } from '@/components/ui/textarea';
+  import {
+    AdminDetailHeader,
+    formatStatus,
+    statusVariant,
+  } from '@/components/admin/shared';
+  import { SectionCard } from '@/components/ui/section-card';
+  import { InfoRow } from '@/components/ui/info-list';
+  import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
   import {
     getAffiliate,
     updateAffiliate,
@@ -483,8 +327,34 @@
   const affiliate = ref<Affiliate | null>(null);
   const referrals = ref<AffiliateReferral[]>([]);
   const payouts = ref<AffiliatePayout[]>([]);
-  const showDiscountTypeDropdown = ref(false);
   const refCodeCopied = ref(false);
+
+  const referralColumns: DataTableColumn[] = [
+    { key: 'date', label: 'Date', width: '104px' },
+    { key: 'type', label: 'Type', width: '104px' },
+    { key: 'user', label: 'User' },
+    { key: 'amount', label: 'Amount', width: '88px', align: 'right' },
+    { key: 'rate', label: 'Rate', width: '64px', align: 'right', hideBelow: 'md' },
+    { key: 'commission', label: 'Commission', width: '104px', align: 'right' },
+    { key: 'status', label: 'Status', width: '100px' },
+  ];
+
+  const payoutColumns: DataTableColumn[] = [
+    { key: 'period', label: 'Period', width: '80px' },
+    { key: 'amount', label: 'Amount', width: '96px', align: 'right' },
+    { key: 'method', label: 'Method', width: '96px' },
+    { key: 'transaction', label: 'Transaction ID', hideBelow: 'md' },
+    { key: 'status', label: 'Status', width: '100px' },
+    { key: 'paid', label: 'Paid', width: '104px' },
+    { key: 'proof', label: 'Proof', width: '64px' },
+  ];
+
+  const discountTypeOptions = [
+    { label: 'Select type…', value: '' },
+    { label: 'One-time (first month only)', value: 'one_time' },
+    { label: 'Recurring (every month)', value: 'recurring' },
+    { label: 'Tiered (different first & recurring)', value: 'tiered' },
+  ];
 
   const totalEarned = computed(() => {
     return referrals.value
@@ -532,20 +402,6 @@
     notes: '',
     screenshot: null as File | null,
   });
-
-  const discountTypeLabel = computed(() => {
-    const types: Record<string, string> = {
-      one_time: 'One-time (First month only)',
-      recurring: 'Recurring (Every month)',
-      tiered: 'Tiered (Different first & recurring)',
-    };
-    return types[editForm.discount_type] || '';
-  });
-
-  function selectDiscountType(type: string) {
-    editForm.discount_type = type;
-    showDiscountTypeDropdown.value = false;
-  }
 
   async function fetchAffiliate() {
     loading.value = true;
@@ -600,7 +456,7 @@
   }
 
   async function handleDeactivate() {
-    if (!confirm('Deactivate this affiliate?')) return;
+    if (!(await confirmDialog({ title: 'Deactivate affiliate?', message: 'Their code stops earning commission until reactivated.', confirmText: 'Deactivate', variant: 'destructive' }))) return;
     try {
       const result = await deactivateAffiliate(affiliateId);
       if (result.success) await fetchAffiliate();
@@ -674,815 +530,3 @@
     fetchAffiliate();
   });
 </script>
-
-<style scoped>
-/* ===== Base Styles from AdminUserProfile ===== */
-.admin-user-profile {
-  width: 100%;
-  min-height: 100%;
-}
-
-.user-content {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-  padding: 1.5rem;
-  max-width: 1400px;
-  margin: 0 auto;
-  width: 100%;
-}
-
-.user-content--loading,
-.user-content--empty {
-  justify-content: center;
-  align-items: center;
-  min-height: 400px;
-}
-
-.loading-spinner {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-
-.loading-spinner__icon {
-  width: 40px;
-  height: 40px;
-  color: var(--sidebar-text-muted);
-  animation: spin 1s linear infinite;
-}
-
-.empty-state {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  text-align: center;
-}
-
-.empty-state__icon-wrapper {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 72px;
-  height: 72px;
-  background-color: var(--sidebar-hover);
-  border-radius: 16px;
-  margin-bottom: 1.5rem;
-}
-
-.empty-state__icon {
-  width: 36px;
-  height: 36px;
-  color: var(--sidebar-text-muted);
-}
-
-.empty-state__title {
-  font-size: 1.125rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0 0 0.5rem;
-}
-
-.empty-state__description {
-  font-size: 0.875rem;
-  color: var(--sidebar-text-muted);
-  margin: 0 0 1.5rem;
-  max-width: 320px;
-  line-height: 1.5;
-}
-
-.user-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 2rem;
-}
-
-@media (max-width: 640px) {
-  .user-header {
-    flex-direction: column;
-  }
-}
-
-.user-header__main {
-  display: flex;
-  align-items: flex-start;
-  gap: 1.25rem;
-  flex: 1;
-}
-
-.user-avatar {
-  position: relative;
-  width: 72px;
-  height: 72px;
-  border-radius: 12px;
-  background: var(--sidebar-surface);
-  overflow: hidden;
-  flex-shrink: 0;
-}
-
-.user-avatar__img {
-  width: 100%;
-  height: 100%;
-  object-fit: cover;
-}
-
-.user-avatar__fallback {
-  width: 100%;
-  height: 100%;
-  padding: 16px;
-  color: var(--sidebar-text-muted);
-}
-
-.user-meta {
-  flex: 1;
-  min-width: 0;
-}
-
-.user-meta__top {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  flex-wrap: wrap;
-  margin-bottom: 0.375rem;
-}
-
-.user-name {
-  font-size: 1.25rem;
-  font-weight: 700;
-  color: var(--sidebar-text);
-  margin: 0;
-  letter-spacing: -0.02em;
-}
-
-.status-badge {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  padding: 0.25rem 0.625rem;
-  border-radius: 9999px;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.status-badge--active {
-  background: rgba(16, 185, 129, 0.15);
-  color: #10b981;
-}
-
-.status-badge--suspended {
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
-}
-
-.status-badge--deactivated {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
-.user-bio {
-  font-size: 0.8125rem;
-  color: var(--sidebar-text-muted);
-  margin: 0;
-  line-height: 1.5;
-  max-width: 420px;
-}
-
-.ref-link {
-  display: inline-flex;
-  align-items: center;
-  gap: 0.375rem;
-  margin-top: 0.5rem;
-  padding: 0.3rem 0.625rem;
-  background: rgba(6, 182, 212, 0.08);
-  border: 1px solid rgba(6, 182, 212, 0.2);
-  border-radius: 6px;
-  max-width: 100%;
-}
-
-.ref-link__icon {
-  color: rgba(6, 182, 212, 0.7);
-  flex-shrink: 0;
-}
-
-.ref-link__url {
-  font-size: 0.75rem;
-  font-family: 'SF Mono', 'Fira Code', monospace;
-  color: rgba(6, 182, 212, 0.9);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
-}
-
-.ref-link__copy {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 24px;
-  height: 24px;
-  border: none;
-  border-radius: 4px;
-  background: transparent;
-  color: var(--sidebar-text-muted);
-  cursor: pointer;
-  flex-shrink: 0;
-  transition: all 150ms ease;
-}
-
-.ref-link__copy:hover {
-  background: rgba(255, 255, 255, 0.08);
-  color: var(--sidebar-text);
-}
-
-.stat__value--green {
-  color: #10b981;
-}
-
-.stat__value--amber {
-  color: #f59e0b;
-}
-
-.user-stats {
-  display: flex;
-  gap: 2rem;
-}
-
-.stat {
-  text-align: center;
-}
-
-.stat__value {
-  display: block;
-  font-size: 1.5rem;
-  font-weight: 700;
-  color: var(--sidebar-text);
-  font-variant-numeric: tabular-nums;
-  line-height: 1;
-}
-
-.stat__label {
-  display: block;
-  font-size: 0.5625rem;
-  color: var(--sidebar-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-top: 0.25rem;
-}
-
-.main-layout {
-  display: grid;
-  grid-template-columns: 1fr 380px;
-  gap: 1.5rem;
-  align-items: start;
-}
-
-@media (max-width: 1024px) {
-  .main-layout {
-    grid-template-columns: 1fr;
-  }
-}
-
-.main-column {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-.section {
-  background-color: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 10px;
-  padding: 1.25rem;
-}
-
-.section__header {
-  display: flex;
-  align-items: center;
-  gap: 0.875rem;
-  margin-bottom: 1.25rem;
-}
-
-.section__header-icon {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  width: 44px;
-  height: 44px;
-  border-radius: 10px;
-  background-color: rgba(6, 182, 212, 0.15);
-  color: var(--sidebar-accent);
-  flex-shrink: 0;
-}
-
-.section__header-icon svg {
-  width: 20px;
-  height: 20px;
-}
-
-.section__header-text {
-  flex: 1;
-  min-width: 0;
-}
-
-.section__title {
-  font-size: 1.0625rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0;
-  letter-spacing: -0.01em;
-}
-
-.section__subtitle {
-  font-size: 0.75rem;
-  color: var(--sidebar-text-muted);
-  margin: 0.1875rem 0 0;
-}
-
-.action-group {
-  margin-bottom: 1.5rem;
-}
-
-.action-group:last-child {
-  margin-bottom: 0;
-}
-
-.action-group__label {
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: var(--sidebar-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  margin-bottom: 0.75rem;
-}
-
-.action-group__buttons {
-  display: flex;
-  flex-direction: column;
-  gap: 0.625rem;
-}
-
-.action-btn {
-  display: flex;
-  align-items: center;
-  gap: 0.75rem;
-  padding: 0.875rem 1rem;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 500;
-  cursor: pointer;
-  transition: all 150ms ease;
-  border: 1px solid var(--sidebar-border);
-  background: var(--sidebar-hover);
-  color: var(--sidebar-text);
-  width: 100%;
-  text-align: left;
-}
-
-.action-btn:hover:not(:disabled) {
-  background: var(--sidebar-surface);
-  border-color: var(--sidebar-accent);
-  color: var(--sidebar-accent);
-}
-
-.action-btn svg {
-  flex-shrink: 0;
-  opacity: 0.7;
-  transition: opacity 150ms ease;
-}
-
-.action-btn:hover:not(:disabled) svg {
-  opacity: 1;
-}
-
-.action-btn--success {
-  background: rgba(16, 185, 129, 0.1);
-  border-color: rgba(16, 185, 129, 0.3);
-  color: #10b981;
-}
-
-.action-btn--success:hover:not(:disabled) {
-  background: rgba(16, 185, 129, 0.15);
-  border-color: #10b981;
-}
-
-.action-btn--warning {
-  background: rgba(245, 158, 11, 0.1);
-  border-color: rgba(245, 158, 11, 0.3);
-  color: #f59e0b;
-}
-
-.action-btn--warning:hover:not(:disabled) {
-  background: rgba(245, 158, 11, 0.15);
-  border-color: #f59e0b;
-}
-
-/* Additional styles for dropdown matching ClipDetectionConfirmDialog */
-.dropdown-select {
-  width: 100%;
-  padding: 0.75rem 1rem;
-  font-size: 0.875rem;
-  background-color: var(--sidebar-hover);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 8px;
-  color: var(--sidebar-text);
-  transition: all 150ms ease;
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  cursor: pointer;
-  text-align: left;
-}
-
-.dropdown-select:hover {
-  border-color: rgba(255, 255, 255, 0.1);
-}
-
-.dropdown-select__icon {
-  width: 16px;
-  height: 16px;
-  transition: transform 150ms ease;
-  flex-shrink: 0;
-}
-
-.dropdown-select__icon--open {
-  transform: rotate(180deg);
-}
-
-.dropdown-menu {
-  position: absolute;
-  top: calc(100% + 0.5rem);
-  left: 0;
-  right: 0;
-  background-color: var(--sidebar-surface);
-  border: 1px solid var(--sidebar-border);
-  border-radius: 8px;
-  overflow: hidden;
-  z-index: 10;
-  max-height: 12rem;
-  overflow-y: auto;
-}
-
-.dropdown-menu::-webkit-scrollbar {
-  width: 6px;
-}
-
-.dropdown-menu::-webkit-scrollbar-track {
-  background: transparent;
-}
-
-.dropdown-menu::-webkit-scrollbar-thumb {
-  background-color: rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
-}
-
-.dropdown-item {
-  display: block;
-  width: 100%;
-  text-align: left;
-  padding: 0.625rem 0.75rem;
-  font-size: 0.875rem;
-  color: var(--sidebar-text);
-  transition: background-color 150ms ease;
-  border: none;
-  background: transparent;
-  cursor: pointer;
-}
-
-.dropdown-item:hover {
-  background-color: var(--sidebar-hover);
-}
-
-.dropdown-item--selected {
-  background-color: rgba(6, 182, 212, 0.15);
-  color: var(--sidebar-accent);
-}
-
-.section__header-icon--green {
-  background-color: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
-}
-
-.section__header-icon--purple {
-  background-color: rgba(139, 92, 246, 0.15);
-  color: #a78bfa;
-}
-
-.section__header-icon--blue {
-  background-color: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
-}
-
-.form-grid {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 1rem;
-  margin-bottom: 1rem;
-}
-
-.form-group {
-  display: flex;
-  flex-direction: column;
-  gap: 0.375rem;
-}
-
-.form-group--full {
-  grid-column: 1 / -1;
-}
-
-.form-label {
-  font-size: 0.875rem;
-  font-weight: 500;
-  color: var(--sidebar-text);
-}
-
-.form-input,
-.form-textarea {
-  padding: 0.75rem 1rem;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  border: 1px solid var(--sidebar-border);
-  background: var(--sidebar-hover);
-  color: var(--sidebar-text);
-  outline: none;
-  transition: border-color 150ms ease;
-}
-
-.form-input:focus,
-.form-textarea:focus {
-  border-color: var(--sidebar-accent);
-  box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
-}
-
-.form-textarea {
-  resize: vertical;
-  font-family: inherit;
-}
-
-.form-help {
-  font-size: 0.6875rem;
-  color: var(--sidebar-text-muted);
-  margin-top: 0.125rem;
-}
-
-.checkbox-label {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  font-size: 0.875rem;
-  color: var(--sidebar-text);
-  cursor: pointer;
-}
-
-.checkbox-input {
-  accent-color: var(--sidebar-accent);
-}
-
-.btn-primary,
-.btn-retry {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
-  padding: 0.75rem 1.25rem;
-  border-radius: 8px;
-  font-size: 0.875rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 150ms ease;
-  border: none;
-  background: var(--sidebar-accent);
-  color: var(--sidebar-bg);
-  width: fit-content;
-}
-
-.btn-primary:hover,
-.btn-retry:hover {
-  opacity: 0.9;
-}
-
-.btn-primary:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.btn-icon {
-  width: 14px;
-  height: 14px;
-}
-
-.btn-icon--spin {
-  animation: spin 1s linear infinite;
-}
-
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.discount-preview {
-  padding: 1rem;
-  border-radius: 8px;
-  background: rgba(168, 85, 247, 0.05);
-  border: 1px solid rgba(168, 85, 247, 0.2);
-}
-
-.discount-preview__title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0 0 0.75rem;
-}
-
-.discount-preview__content p {
-  font-size: 0.8125rem;
-  color: var(--sidebar-text);
-  margin: 0.375rem 0;
-  line-height: 1.5;
-}
-
-.discount-preview__content strong {
-  color: #a855f7;
-  font-weight: 600;
-}
-
-.data-table {
-  border-radius: 10px;
-  border: 1px solid var(--sidebar-border);
-  overflow: hidden;
-}
-
-.data-table table {
-  width: 100%;
-  border-collapse: collapse;
-}
-
-.data-table thead {
-  background: var(--sidebar-hover);
-}
-
-.data-table th {
-  padding: 0.75rem 1rem;
-  text-align: left;
-  font-size: 0.6875rem;
-  font-weight: 600;
-  color: var(--sidebar-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-  white-space: nowrap;
-}
-
-.data-table tbody tr {
-  border-top: 1px solid var(--sidebar-border);
-  transition: background 150ms ease;
-}
-
-.data-table tbody tr:hover {
-  background: var(--sidebar-hover);
-}
-
-.data-table td {
-  padding: 0.75rem 1rem;
-  font-size: 0.8125rem;
-  color: var(--sidebar-text);
-  white-space: nowrap;
-}
-
-.text-green {
-  color: #22c55e;
-}
-
-.text-mono {
-  font-family: monospace;
-  font-size: 0.75rem;
-}
-
-.event-type {
-  font-size: 0.75rem;
-  padding: 0.125rem 0.5rem;
-  border-radius: 4px;
-  background: var(--sidebar-hover);
-}
-
-.ref-status {
-  display: inline-block;
-  padding: 0.125rem 0.5rem;
-  border-radius: 9999px;
-  font-size: 0.625rem;
-  font-weight: 600;
-  text-transform: uppercase;
-}
-
-.ref-status--pending {
-  background: rgba(245, 158, 11, 0.15);
-  color: #f59e0b;
-}
-
-.ref-status--confirmed {
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
-}
-
-.ref-status--paid,
-.ref-status--completed {
-  background: rgba(34, 197, 94, 0.15);
-  color: #22c55e;
-}
-
-.ref-status--cancelled,
-.ref-status--failed {
-  background: rgba(239, 68, 68, 0.15);
-  color: #ef4444;
-}
-
-.ref-status--processing {
-  background: rgba(59, 130, 246, 0.15);
-  color: #3b82f6;
-}
-
-.proof-link {
-  color: #a855f7;
-  text-decoration: none;
-  font-size: 0.8125rem;
-}
-
-.proof-link:hover {
-  text-decoration: underline;
-}
-
-.sidebar-column {
-  display: flex;
-  flex-direction: column;
-  gap: 1rem;
-  position: sticky;
-  top: 1.5rem;
-}
-
-.sidebar-card {
-  border-radius: 10px;
-  border: 1px solid var(--sidebar-border);
-  background: var(--sidebar-surface);
-  overflow: hidden;
-}
-
-.sidebar-card__header {
-  display: flex;
-  align-items: center;
-  gap: 0.625rem;
-  padding: 1rem 1.25rem;
-  border-bottom: 1px solid var(--sidebar-border);
-}
-
-.sidebar-card__icon {
-  width: 18px;
-  height: 18px;
-  color: var(--sidebar-text-muted);
-  flex-shrink: 0;
-}
-
-.sidebar-card__title {
-  font-size: 0.875rem;
-  font-weight: 600;
-  color: var(--sidebar-text);
-  margin: 0;
-}
-
-.sidebar-card__content {
-  padding: 1.25rem;
-}
-
-.info-list {
-  display: flex;
-  flex-direction: column;
-  gap: 0.875rem;
-}
-
-.info-list-item {
-  display: flex;
-  flex-direction: column;
-  gap: 0.25rem;
-}
-
-.info-list-item__label {
-  font-size: 0.6875rem;
-  font-weight: 500;
-  color: var(--sidebar-text-muted);
-  text-transform: uppercase;
-  letter-spacing: 0.03em;
-}
-
-.info-list-item__value {
-  font-size: 0.8125rem;
-  color: var(--sidebar-text);
-  font-weight: 500;
-  word-break: break-word;
-}
-
-.info-list-item__value--mono {
-  font-family: monospace;
-  font-size: 0.75rem;
-}
-</style>

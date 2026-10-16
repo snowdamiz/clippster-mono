@@ -1,128 +1,93 @@
 <template>
-  <Teleport to="body">
-    <Transition name="prompt-modal">
-      <div v-if="show" class="prompt-modal__overlay" @click.self="closeDialog">
-        <Transition name="prompt-dialog" appear>
-          <div class="prompt-modal">
-            <!-- Accent Bar -->
-            <div class="prompt-modal__accent" />
+  <Modal
+    :open="show"
+    :title="isSystemPrompt ? 'View system prompt' : isEditing ? 'Edit prompt' : 'New prompt'"
+    :description="
+      isSystemPrompt
+        ? 'System prompts are read-only and cannot be modified'
+        : isEditing
+          ? 'Update your AI prompt template'
+          : 'Create a new AI prompt template for clip detection'
+    "
+    :icon="isSystemPrompt ? Lock : isEditing ? Pencil : MessageSquarePlus"
+    size="lg"
+    :dismissible="!saving"
+    :hide-close="saving"
+    @close="closeDialog"
+  >
+    <div class="flex flex-col gap-4">
+      <Field label="Name" for="prompt-name" :required="!isSystemPrompt">
+        <template #label-end>
+          <span v-if="!isSystemPrompt" class="tabular text-2xs text-fg-subtle">{{ formData.name.length }}/100</span>
+        </template>
+        <Input
+          id="prompt-name"
+          ref="nameInput"
+          v-model="formData.name"
+          type="text"
+          maxlength="100"
+          placeholder="e.g., Viral Shorts Creator"
+          class="disabled:cursor-default disabled:opacity-100 disabled:text-fg-muted"
+          :readonly="isSystemPrompt"
+          :disabled="isSystemPrompt"
+        />
+      </Field>
 
-            <!-- Header -->
-            <div class="prompt-modal__header">
-              <button class="prompt-modal__close" @click="closeDialog" title="Close">
-                <X :size="18" />
-              </button>
-              <div class="prompt-modal__icon">
-                <component :is="isEditing ? Pencil : MessageSquarePlus" :size="24" />
-              </div>
-              <h2 class="prompt-modal__title">
-                {{ isSystemPrompt ? 'View System Prompt' : isEditing ? 'Edit Prompt' : 'Create Prompt' }}
-              </h2>
-              <p class="prompt-modal__subtitle">
-                {{
-                  isSystemPrompt ? 'System prompts are read-only and cannot be modified' : isEditing ? 'Update your AI prompt template' : 'Create a new AI prompt template for clip detection'
-                }}
-              </p>
-            </div>
+      <Field
+        label="Content"
+        for="prompt-content"
+        :required="!isSystemPrompt"
+        :hint="
+          isSystemPrompt
+            ? undefined
+            : 'Be specific about the task, include context about video style, and test your prompts iteratively.'
+        "
+      >
+        <Textarea
+          id="prompt-content"
+          v-model="formData.content"
+          rows="10"
+          placeholder="Write your AI prompt here... Be specific about the task and desired output."
+          class="h-[min(260px,calc(100vh-24rem))] min-h-[140px] resize-y font-mono text-xs leading-5 disabled:cursor-text disabled:opacity-100 disabled:text-fg-muted"
+          :readonly="isSystemPrompt"
+          :disabled="isSystemPrompt"
+        />
+      </Field>
 
-            <!-- Content -->
-            <div class="prompt-content">
-              <!-- Form Fields -->
-              <div class="prompt-section">
-                <h3 class="prompt-section__title">Prompt Details</h3>
-                <div class="prompt-section__items">
-                  <div class="prompt-field">
-                    <div class="prompt-field__header">
-                      <label for="prompt-name" class="prompt-field__label">
-                        Name
-                        <span class="prompt-field__required">*</span>
-                      </label>
-                      <span class="prompt-field__counter">{{ formData.name.length }}/100</span>
-                    </div>
-                    <input
-                      id="prompt-name"
-                      ref="nameInput"
-                      v-model="formData.name"
-                      type="text"
-                      maxlength="100"
-                      placeholder="e.g., Viral Shorts Creator"
-                      class="prompt-field__input"
-                      :readonly="isSystemPrompt"
-                      :disabled="isSystemPrompt"
-                    />
-                  </div>
+      <Field v-if="!isSystemPrompt" label="Start from a template">
+        <div class="flex flex-wrap gap-1.5">
+          <Button
+            v-for="(template, index) in templates"
+            :key="index"
+            type="button"
+            variant="secondary"
+            size="sm"
+            @click="loadTemplate(template)"
+          >
+            <FileText />
+            {{ template.name }}
+          </Button>
+        </div>
+      </Field>
+    </div>
 
-                  <div class="prompt-field">
-                    <label for="prompt-content" class="prompt-field__label">
-                      Content
-                      <span class="prompt-field__required">*</span>
-                    </label>
-                    <textarea
-                      id="prompt-content"
-                      v-model="formData.content"
-                      rows="10"
-                      placeholder="Write your AI prompt here... Be specific about the task and desired output."
-                      class="prompt-field__textarea"
-                      :readonly="isSystemPrompt"
-                      :disabled="isSystemPrompt"
-                    />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Quick Templates -->
-              <div v-if="!isSystemPrompt" class="prompt-section">
-                <h3 class="prompt-section__title">Quick Templates</h3>
-                <div class="prompt-templates">
-                  <button
-                    v-for="(template, index) in templates"
-                    :key="index"
-                    type="button"
-                    @click="loadTemplate(template)"
-                    class="prompt-template-btn"
-                  >
-                    <div class="prompt-template-btn__content">
-                      <FileText :size="14" class="prompt-template-btn__icon" />
-                      <span class="prompt-template-btn__name">{{ template.name }}</span>
-                    </div>
-                    <ArrowRight :size="14" class="prompt-template-btn__arrow" />
-                  </button>
-                </div>
-              </div>
-
-              <!-- Tips -->
-              <div v-if="!isSystemPrompt" class="prompt-tips">
-                <div class="prompt-tips__icon">
-                  <Lightbulb :size="14" />
-                </div>
-                <p class="prompt-tips__text">
-                  <strong>Tip:</strong>
-                  Be specific about the task, include context about video style, and test your prompts iteratively.
-                </p>
-              </div>
-            </div>
-
-            <!-- Footer -->
-            <div class="prompt-modal__footer">
-              <button type="button" @click="closeDialog" :disabled="saving" class="prompt-btn prompt-btn--secondary">
-                {{ isSystemPrompt ? 'Close' : 'Cancel' }}
-              </button>
-              <button v-if="!isSystemPrompt" @click="handleSubmit" :disabled="!isValid || saving" class="prompt-btn prompt-btn--primary">
-                <Loader2 v-if="saving" :size="16" class="animate-spin" />
-                <Save v-else :size="16" />
-                {{ saving ? 'Saving...' : isEditing ? 'Update Prompt' : 'Create Prompt' }}
-              </button>
-            </div>
-          </div>
-        </Transition>
-      </div>
-    </Transition>
-  </Teleport>
+    <template #footer>
+      <Button variant="ghost" :disabled="saving" @click="closeDialog">{{ isSystemPrompt ? 'Close' : 'Cancel' }}</Button>
+      <Button v-if="!isSystemPrompt" variant="primary" :disabled="!isValid || saving" :loading="saving" @click="handleSubmit">
+        {{ saving ? 'Saving…' : isEditing ? 'Save changes' : 'Create prompt' }}
+      </Button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, watch, nextTick } from 'vue';
-  import { X, MessageSquarePlus, Pencil, Save, Loader2, FileText, ArrowRight, Lightbulb } from 'lucide-vue-next';
+  import { MessageSquarePlus, Pencil, Lock, FileText } from 'lucide-vue-next';
+  import { Modal } from '@/components/ui/modal';
+  import { Button } from '@/components/ui/button';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
+  import { Textarea } from '@/components/ui/textarea';
   import { createPrompt, updatePrompt, type Prompt } from '@/services/database';
   import { useToast } from '@/composables/useToast';
 
@@ -139,7 +104,7 @@
 
   const { success, error } = useToast();
 
-  const nameInput = ref<HTMLInputElement | null>(null);
+  const nameInput = ref<{ $el?: HTMLInputElement } | null>(null);
   const saving = ref(false);
   const formData = ref({
     name: '',
@@ -321,7 +286,7 @@ Urgency: "holy shit", "no way", "wait what", "are you serious", "did you see"
           };
         }
         await nextTick();
-        nameInput.value?.focus();
+        nameInput.value?.$el?.focus?.();
       }
     }
   );
@@ -359,386 +324,3 @@ Urgency: "holy shit", "no way", "wait what", "are you serious", "did you see"
     }
   }
 </script>
-
-<style scoped>
-  /* ===== Modal Overlay ===== */
-  .prompt-modal__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 60;
-  }
-
-  /* ===== Modal Container ===== */
-  .prompt-modal {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 600px;
-    margin: 1rem;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  }
-
-  /* ===== Accent Bar ===== */
-  .prompt-modal__accent {
-    height: 3px;
-    flex-shrink: 0;
-    background: linear-gradient(90deg, #06b6d4, #0ea5e9, #3b82f6);
-  }
-
-  /* ===== Header ===== */
-  .prompt-modal__header {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1.5rem 1.5rem 1rem;
-    text-align: center;
-  }
-
-  .prompt-modal__close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .prompt-modal__close:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .prompt-modal__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 12px;
-    margin-bottom: 0.875rem;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: #06b6d4;
-  }
-
-  .prompt-modal__title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.02em;
-  }
-
-  .prompt-modal__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  /* ===== Content Area ===== */
-  .prompt-content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0.5rem 1.5rem 1.5rem;
-  }
-
-  .prompt-content::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .prompt-content::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .prompt-content::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  .prompt-content::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.25);
-  }
-
-  /* ===== Sections ===== */
-  .prompt-section {
-    margin-bottom: 1.25rem;
-  }
-
-  .prompt-section:last-of-type {
-    margin-bottom: 1rem;
-  }
-
-  .prompt-section__title {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 0.625rem;
-  }
-
-  .prompt-section__items {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  /* ===== Form Fields ===== */
-  .prompt-field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .prompt-field__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-  }
-
-  .prompt-field__label {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .prompt-field__required {
-    color: #ef4444;
-    margin-left: 0.125rem;
-  }
-
-  .prompt-field__counter {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .prompt-field__input,
-  .prompt-field__textarea {
-    width: 100%;
-    padding: 0.625rem 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .prompt-field__input::placeholder,
-  .prompt-field__textarea::placeholder {
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  .prompt-field__input:focus,
-  .prompt-field__textarea:focus {
-    outline: none;
-    border-color: transparent;
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
-  }
-
-  .prompt-field__textarea {
-    resize: vertical;
-    min-height: 120px;
-    font-family: 'JetBrains Mono', 'SF Mono', 'Fira Code', monospace;
-    font-size: 0.8125rem;
-    line-height: 1.6;
-  }
-
-  /* ===== Templates ===== */
-  .prompt-templates {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .prompt-template-btn {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .prompt-template-btn:hover {
-    background-color: var(--sidebar-active);
-    border-color: rgba(6, 182, 212, 0.3);
-  }
-
-  .prompt-template-btn__content {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-  }
-
-  .prompt-template-btn__icon {
-    color: var(--sidebar-text-muted);
-  }
-
-  .prompt-template-btn__name {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .prompt-template-btn__arrow {
-    color: var(--sidebar-text-muted);
-    transition: transform 150ms ease;
-  }
-
-  .prompt-template-btn:hover .prompt-template-btn__arrow {
-    transform: translateX(2px);
-    color: #06b6d4;
-  }
-
-  /* ===== Tips ===== */
-  .prompt-tips {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.625rem;
-    padding: 0.875rem;
-    background-color: rgba(6, 182, 212, 0.08);
-    border: 1px solid rgba(6, 182, 212, 0.15);
-    border-radius: 8px;
-  }
-
-  .prompt-tips__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    background-color: rgba(6, 182, 212, 0.15);
-    border-radius: 6px;
-    color: #06b6d4;
-    flex-shrink: 0;
-  }
-
-  .prompt-tips__text {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    line-height: 1.5;
-    margin: 0;
-  }
-
-  .prompt-tips__text strong {
-    color: var(--sidebar-text);
-    font-weight: 600;
-  }
-
-  /* ===== Footer ===== */
-  .prompt-modal__footer {
-    display: flex;
-    align-items: center;
-    justify-content: flex-end;
-    gap: 0.75rem;
-    padding: 1rem 1.5rem;
-    border-top: 1px solid var(--sidebar-border);
-    background-color: rgba(0, 0, 0, 0.2);
-  }
-
-  /* ===== Buttons ===== */
-  .prompt-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1.25rem;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-    border: none;
-  }
-
-  .prompt-btn--secondary {
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    color: var(--sidebar-text-muted);
-  }
-
-  .prompt-btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-text);
-  }
-
-  .prompt-btn--primary {
-    background: linear-gradient(135deg, #06b6d4, #0ea5e9);
-    color: white;
-  }
-
-  .prompt-btn--primary:hover:not(:disabled) {
-    background: linear-gradient(135deg, #0891b2, #0284c7);
-  }
-
-  .prompt-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* ===== Modal Animations ===== */
-  .prompt-modal-enter-active,
-  .prompt-modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .prompt-modal-enter-from,
-  .prompt-modal-leave-to {
-    opacity: 0;
-  }
-
-  .prompt-dialog-enter-active {
-    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .prompt-dialog-leave-active {
-    transition: all 150ms ease-in;
-  }
-
-  .prompt-dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.96) translateY(8px);
-  }
-
-  .prompt-dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* ===== Utility Classes ===== */
-  .animate-spin {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-</style>

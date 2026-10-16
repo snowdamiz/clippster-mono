@@ -1,491 +1,334 @@
 <template>
-  <div class="clipper-public-profile-page">
+  <div class="h-full w-full">
     <PageLayout
-      :title="profile?.display_name || 'Clipper Profile'"
+      :title="profile?.display_name || 'Clipper profile'"
       description=""
       :show-header="true"
       :icon="UserCircle"
       :breadcrumbs="breadcrumbs"
     >
       <template #actions>
-        <div v-if="profile" class="profile-header-actions">
-          <button v-if="authStore.isAuthenticated" @click="openEndorsementDialog" class="profile-action-btn profile-action-btn--outline">
-            <Star class="profile-action-btn__icon" />
+        <template v-if="profile">
+          <Button v-if="authStore.isAuthenticated" variant="secondary" size="sm" @click="openEndorsementDialog">
+            <Star />
             Endorse
-          </button>
-          <button
-            v-if="profile.slug"
-            @click="copyProfileLink"
-            class="profile-action-btn profile-action-btn--outline"
-          >
-            <Share2 class="profile-action-btn__icon" />
+          </Button>
+          <Button v-if="profile.slug" variant="ghost" size="sm" @click="copyProfileLink">
+            <Share2 />
             Share
-          </button>
-        </div>
+          </Button>
+        </template>
       </template>
-      <!-- Loading State -->
-      <div v-if="loading" class="profile-content profile-content--loading">
-        <div class="loading-spinner">
-          <Loader2 class="loading-spinner__icon" />
-        </div>
-      </div>
 
-      <!-- Not Found State -->
-      <div v-else-if="!profile" class="profile-content profile-content--empty">
-        <div class="empty-state">
-          <div class="empty-state__icon-wrapper">
-            <UserCircle class="empty-state__icon" />
+      <div class="@container flex flex-1 flex-col px-5 py-4">
+        <!-- Loading (first load only; refetches keep the profile on screen) -->
+        <div v-if="loading && !profile" class="flex flex-col gap-4" aria-busy="true">
+          <div class="flex items-start gap-4 pb-4">
+            <div class="skeleton size-11 shrink-0 rounded-full" />
+            <div class="flex flex-1 flex-col gap-2 pt-0.5">
+              <div class="skeleton h-4 w-40" />
+              <div class="skeleton h-3 w-56" />
+              <div class="skeleton h-3.5 w-full max-w-[520px]" />
+            </div>
+            <div class="skeleton hidden h-10 w-[440px] @4xl:block" />
           </div>
-          <h3 class="empty-state__title">Profile not found</h3>
-          <p class="empty-state__description">This clipper profile doesn't exist or is private</p>
-        </div>
-      </div>
-
-      <!-- Profile Content -->
-      <div v-else class="org-profile">
-        <div class="org-hero">
-          <div class="org-hero__banner"></div>
-          <div class="org-hero__content">
-            <div class="org-hero__avatar">
-              <img v-if="profile.avatar_url" :src="profile.avatar_url" class="org-hero__avatar-img" />
-              <UserCircle v-else class="org-hero__avatar-fallback" />
-              <div v-if="profile.is_verified" class="profile-avatar__verified">
-                <CheckCircle />
-              </div>
-            </div>
-            <div class="org-hero__info">
-              <div class="profile-name-row">
-                <h1 class="org-hero__name">{{ profile.display_name || 'Unnamed Clipper' }}</h1>
-                <div class="profile-badges">
-                  <span v-if="profile.looking_for_work" class="status-badge status-badge--available">
-                    <span class="status-badge__dot"></span>
-                    Looking for Work
-                  </span>
-                  <span v-if="profile.is_affiliate" class="status-badge status-badge--affiliate">
-                    <Handshake :size="12" />
-                    Affiliate
-                  </span>
-                  <span v-if="isOnline(profile.user?.last_active_at)" class="status-badge status-badge--online">
-                    <span class="status-badge__dot"></span>
-                    Online
-                  </span>
-                  <span v-else-if="profile.user?.last_active_at" class="status-badge status-badge--offline">
-                    {{ formatLastActive(profile.user.last_active_at) }}
-                  </span>
-                  <div v-for="badge in profile.badges" :key="badge.id" class="profile-badge">
-                    <Badge :class="getBadgeColor(badge.badge_type)">
-                      {{ getBadgeLabel(badge.badge_type) }}
-                    </Badge>
-                  </div>
-                </div>
-              </div>
-              <div v-if="profile.specialty_tags?.length" class="org-hero__tags">
-                <span v-for="tag in profile.specialty_tags.slice(0, 6)" :key="tag" class="org-hero__tag">
-                  {{ getSpecialtyTagLabel(tag) }}
-                </span>
-              </div>
-            </div>
+          <div class="grid grid-cols-1 gap-4 @3xl:grid-cols-[minmax(0,1fr)_17rem]">
+            <div class="skeleton h-44 rounded-xl" />
+            <div class="skeleton h-44 rounded-xl" />
           </div>
         </div>
 
-        <div class="org-stats-grid" :class="{ 'org-stats-grid--four': profile.total_views }">
-          <div class="org-stat-card">
-            <div class="org-stat-card__icon org-stat-card__icon--violet">
-              <Megaphone :size="18" />
-            </div>
-            <div class="org-stat-card__content">
-              <span class="org-stat-card__value">{{ profile.total_campaigns_completed }}</span>
-              <span class="org-stat-card__label">Campaigns</span>
-            </div>
-          </div>
-          <div class="org-stat-card">
-            <div class="org-stat-card__icon org-stat-card__icon--cyan">
-              <Video :size="18" />
-            </div>
-            <div class="org-stat-card__content">
-              <span class="org-stat-card__value">{{ profile.total_clips_delivered }}</span>
-              <span class="org-stat-card__label">Clips Delivered</span>
-            </div>
-          </div>
-          <div class="org-stat-card">
-            <div class="org-stat-card__icon org-stat-card__icon--amber">
-              <Award :size="18" />
-            </div>
-            <div class="org-stat-card__content">
-              <span class="org-stat-card__value">{{ profile.total_endorsements }}</span>
-              <span class="org-stat-card__label">Endorsements</span>
-            </div>
-          </div>
-          <div v-if="profile.total_views" class="org-stat-card">
-            <div class="org-stat-card__icon org-stat-card__icon--green">
-              <Eye :size="18" />
-            </div>
-            <div class="org-stat-card__content">
-              <span class="org-stat-card__value">{{ formatViews(profile.total_views) }}</span>
-              <span class="org-stat-card__label">Total Views</span>
-            </div>
-          </div>
-        </div>
+        <!-- Not found -->
+        <EmptyState
+          v-else-if="!profile"
+          :icon="UserCircle"
+          title="Profile not found"
+          description="This clipper profile doesn't exist or is private."
+        />
 
-        <!-- Two Column Layout -->
-        <div class="org-grid">
-          <!-- Left Column -->
-          <div class="main-column">
-            <!-- About (bio only — matches org public profile) -->
-            <section v-if="profile.bio?.trim()" class="section section--about">
-              <div class="section__header">
-                <div class="section__header-text">
-                  <h2 class="section__title">About</h2>
-                </div>
-              </div>
-              <p class="section__bio">{{ profile.bio }}</p>
-            </section>
+        <!-- Profile -->
+        <div v-else class="flex animate-enter flex-col gap-5">
+          <ProfileHeader
+            :name="profile.display_name || 'Unnamed clipper'"
+            :avatar="profile.avatar_url"
+            :subtitle="profile.bio?.trim() || null"
+            :verified="profile.is_verified"
+            class="border-b border-line-subtle pb-4"
+          >
+            <template #badges>
+              <Badge v-if="profile.looking_for_work" variant="success">
+                <span class="size-1.5 rounded-full bg-current" />
+                Looking for work
+              </Badge>
+              <Badge v-if="profile.is_affiliate"><Handshake />Affiliate</Badge>
+              <Badge v-for="badge in profile.badges" :key="badge.id" variant="brand">
+                {{ getBadgeLabel(badge.badge_type) }}
+              </Badge>
+            </template>
+            <template #meta>
+              <span v-if="profile.experience_level" class="flex items-center gap-1.5">
+                <Briefcase class="size-3.5 text-fg-subtle" />
+                {{ getExperienceLevelLabel(profile.experience_level) }}
+              </span>
+              <span v-if="isOnline(profile.user?.last_active_at)" class="flex items-center gap-1.5 text-success">
+                <span class="size-1.5 rounded-full bg-success" />
+                Online
+              </span>
+              <span v-else-if="profile.user?.last_active_at" class="flex items-center gap-1.5">
+                <Clock class="size-3.5 text-fg-subtle" />
+                {{ formatLastActive(profile.user.last_active_at) }}
+              </span>
+            </template>
+            <template v-if="profile.specialty_tags?.length">
+              <Badge v-for="tag in profile.specialty_tags.slice(0, 6)" :key="tag">{{ getSpecialtyTagLabel(tag) }}</Badge>
+            </template>
+            <template #aside>
+              <StatGrid size="sm" :items="profileStats" class="w-full max-w-[440px] shrink-0 self-center" />
+            </template>
+          </ProfileHeader>
 
-            <!-- Portfolio Section -->
-            <section v-if="profile.portfolio_clips?.length" class="section">
-              <div class="section__header">
-                <div class="section__header-icon section__header-icon--cyan">
-                  <Video />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section__title">Portfolio</h2>
-                  <p class="section__subtitle">{{ profile.portfolio_clips.length }} clips</p>
-                </div>
-              </div>
-              <div class="portfolio-grid">
-                <div v-for="clip in profile.portfolio_clips" :key="clip.id" class="portfolio-item">
-                  <div class="portfolio-item__thumbnail">
-                    <img v-if="thumbnailUrls.get(clip.id) || clip.thumbnail_url" :src="thumbnailUrls.get(clip.id) || clip.thumbnail_url || undefined" class="portfolio-item__thumbnail-img" />
-                    <div v-else class="portfolio-item__thumbnail-placeholder">
-                      <Video class="portfolio-item__thumbnail-icon" />
-                    </div>
-                    <button
-                      @click="openVideoPlayer(clip)"
-                      class="portfolio-item__overlay"
+          <div class="grid grid-cols-1 items-start gap-5 @3xl:grid-cols-[minmax(0,1fr)_17rem]">
+            <!-- Main column -->
+            <div class="flex min-w-0 flex-col gap-5">
+              <section v-if="profile.portfolio_clips?.length" class="flex flex-col gap-2.5">
+                <SectionHeader title="Portfolio" :count="profile.portfolio_clips.length" />
+                <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
+                  <button
+                    v-for="clip in profile.portfolio_clips"
+                    :key="clip.id"
+                    type="button"
+                    class="group flex min-w-0 flex-col gap-1.5 text-left"
+                    @click="openVideoPlayer(clip)"
+                  >
+                    <div
+                      class="relative aspect-video w-full overflow-hidden rounded-lg border border-line-subtle bg-surface-sunken transition-colors group-hover:border-line-strong"
                     >
-                      <div class="portfolio-item__play">
-                        <Play class="portfolio-item__play-icon" />
-                      </div>
-                    </button>
-                  </div>
-                  <div class="portfolio-item__info">
-                    <div class="portfolio-item__title">{{ clip.title || 'Untitled' }}</div>
-                  </div>
-                </div>
-              </div>
-            </section>
-
-            <!-- Endorsements Section -->
-            <section v-if="profile.endorsements?.length" class="section">
-              <div class="section__header">
-                <div class="section__header-icon section__header-icon--cyan">
-                  <Award />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section__title">Endorsements</h2>
-                  <p class="section__subtitle">{{ profile.endorsements.length }} reviews</p>
-                </div>
-              </div>
-              <div class="endorsements-list">
-                <div v-for="endorsement in profile.endorsements" :key="endorsement.id" class="endorsement-card">
-                  <div class="endorsement-card__header">
-                    <div class="endorsement-card__org">
-                      <div class="endorsement-card__org-logo">
-                        <Building2 />
-                      </div>
-                      <div class="endorsement-card__org-info">
-                        <div class="endorsement-card__org-name">
-                          {{ endorsement.organization?.name || 'Organization' }}
-                        </div>
-                        <div v-if="endorsement.endorsed_by?.name" class="endorsement-card__org-by">
-                          by {{ endorsement.endorsed_by.name }}
-                        </div>
-                      </div>
-                    </div>
-                    <div v-if="endorsement.rating" class="endorsement-card__rating">
-                      <Star
-                        v-for="i in endorsement.rating"
-                        :key="i"
-                        class="endorsement-card__rating-star"
+                      <img
+                        v-if="thumbnailUrls.get(clip.id) || clip.thumbnail_url"
+                        :src="thumbnailUrls.get(clip.id) || clip.thumbnail_url || undefined"
+                        alt=""
+                        class="size-full object-cover"
                       />
+                      <div v-else class="grid size-full place-items-center">
+                        <Video class="size-5 text-fg-disabled" />
+                      </div>
+                      <div class="absolute inset-0 grid place-items-center bg-black/0 transition-colors group-hover:bg-black/35">
+                        <span
+                          class="grid size-8 place-items-center rounded-full bg-[var(--overlay)] text-fg opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100"
+                        >
+                          <Play class="ml-0.5 size-3.5 fill-current" />
+                        </span>
+                      </div>
                     </div>
-                  </div>
-                  <p v-if="endorsement.content" class="endorsement-card__content">"{{ endorsement.content }}"</p>
+                    <p class="truncate text-xs font-medium text-fg">{{ clip.title || 'Untitled' }}</p>
+                  </button>
                 </div>
-              </div>
-            </section>
-          </div>
+              </section>
 
-          <!-- Right Sidebar -->
-          <aside class="sidebar-column">
-            <!-- Skills & Expertise -->
-            <div v-if="profile.content_style_tags?.length" class="sidebar-card">
-              <div class="sidebar-card__header">
-                <Sparkles class="sidebar-card__icon" />
-                <h3 class="sidebar-card__title">Content Style</h3>
-              </div>
-              <div class="sidebar-card__content">
-                <div class="tag-list">
-                  <span v-for="tag in profile.content_style_tags" :key="tag" class="tag tag--style">
-                    {{ getContentStyleTagLabel(tag) }}
-                  </span>
-                </div>
-              </div>
+              <section v-if="profile.endorsements?.length" class="flex flex-col gap-2.5">
+                <SectionHeader title="Endorsements" :count="profile.endorsements.length" />
+                <ul class="divide-y divide-line-subtle overflow-hidden rounded-xl border border-line-subtle bg-surface">
+                  <li v-for="endorsement in profile.endorsements" :key="endorsement.id" class="flex flex-col gap-1.5 px-4 py-2.5">
+                    <div class="flex items-center gap-3">
+                      <Avatar :name="endorsement.organization?.name" :icon="Building2" size="sm" shape="square" />
+                      <p class="min-w-0 flex-1 truncate text-sm font-medium text-fg">
+                        {{ endorsement.organization?.name || 'Organization' }}
+                        <span v-if="endorsement.endorsed_by?.name" class="text-xs font-normal text-fg-muted">
+                          · by {{ endorsement.endorsed_by.name }}
+                        </span>
+                      </p>
+                      <div v-if="endorsement.rating" class="flex shrink-0 items-center gap-0.5" :title="`${endorsement.rating} / 5`">
+                        <Star
+                          v-for="i in 5"
+                          :key="i"
+                          class="size-3.5"
+                          :class="i <= endorsement.rating ? 'fill-warning text-warning' : 'text-fg-disabled'"
+                        />
+                      </div>
+                    </div>
+                    <p v-if="endorsement.content" class="pl-10 text-sm text-fg-muted">“{{ endorsement.content }}”</p>
+                  </li>
+                </ul>
+              </section>
+
+              <EmptyState
+                v-if="!profile.portfolio_clips?.length && !profile.endorsements?.length"
+                size="sm"
+                :icon="UserCircle"
+                title="Nothing here yet"
+                description="This clipper hasn't added portfolio clips or received endorsements yet."
+              />
             </div>
 
-            <!-- Connected Accounts -->
-            <div v-if="profile.social_accounts?.length" class="sidebar-card">
-              <div class="sidebar-card__header">
-                <Users class="sidebar-card__icon" />
-                <h3 class="sidebar-card__title">Connected Accounts</h3>
-              </div>
-              <div class="sidebar-card__content">
-                <div class="connected-accounts-list">
-                  <a
+            <!-- Side column: one frame, sections divided by hairlines -->
+            <aside
+              v-if="hasAside"
+              class="min-w-0 divide-y divide-line-subtle overflow-hidden rounded-xl border border-line-subtle bg-surface"
+            >
+              <ProfileAsideSection v-if="professionalRows.length" title="Professional" :icon="Briefcase">
+                <InfoList compact :rows="professionalRows" />
+              </ProfileAsideSection>
+
+              <ProfileAsideSection v-if="profile.content_style_tags?.length" title="Content style" :icon="Sparkles">
+                <div class="flex flex-wrap gap-1">
+                  <Badge v-for="tag in profile.content_style_tags" :key="tag">{{ getContentStyleTagLabel(tag) }}</Badge>
+                </div>
+              </ProfileAsideSection>
+
+              <!-- Connected accounts -->
+              <ProfileAsideSection v-if="profile.social_accounts?.length" title="Connected accounts" :icon="Users">
+                <div class="flex flex-col">
+                  <LinkRow
                     v-for="(account, idx) in profile.social_accounts"
                     :key="idx"
-                    :href="getAccountUrl(account) || '#'"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="connected-account"
-                    :class="{ 'connected-account--no-link': !getAccountUrl(account) }"
+                    :title="account.username ? `@${account.username}` : getPlatformLabel(account.platform)"
+                    :subtitle="getPlatformLabel(account.platform)"
+                    :href="getAccountUrl(account)"
                   >
-                    <div class="connected-account__left">
-                      <img
+                    <template #leading>
+                      <Avatar
                         v-if="account.profile_image_url"
                         :src="account.profile_image_url"
-                        class="connected-account__avatar"
+                        :name="account.username"
+                        size="sm"
                       />
-                      <div v-else class="connected-account__avatar-fallback">
-                        <component :is="getPlatformIcon(account.platform)" class="connected-account__avatar-icon" />
-                      </div>
-                      <div class="connected-account__info">
-                        <div class="connected-account__username">
-                          {{ account.username ? `@${account.username}` : getPlatformLabel(account.platform) }}
-                          <CheckCircle v-if="account.is_verified" class="connected-account__verified" />
-                        </div>
-                        <div class="connected-account__platform">{{ getPlatformLabel(account.platform) }}</div>
-                      </div>
-                    </div>
-                    <div class="connected-account__right">
-                      <ExternalLink v-if="getAccountUrl(account)" class="connected-account__link-icon" />
-                    </div>
-                  </a>
+                      <PlatformLogo v-else :platform="account.platform" size="md" />
+                    </template>
+                    <template #title-end>
+                      <BadgeCheck v-if="account.is_verified" class="size-3.5 shrink-0 text-brand" aria-label="Verified" />
+                    </template>
+                  </LinkRow>
                 </div>
-              </div>
-            </div>
+              </ProfileAsideSection>
 
-            <!-- Platforms (fallback when no connected accounts) -->
-            <div v-else-if="profile.preferred_platforms?.length" class="sidebar-card">
-              <div class="sidebar-card__header">
-                <Monitor class="sidebar-card__icon" />
-                <h3 class="sidebar-card__title">Platforms</h3>
-              </div>
-              <div class="sidebar-card__content">
-                <div class="platform-list">
-                  <div v-for="platform in profile.preferred_platforms" :key="platform" class="platform-item">
-                    <component :is="getPlatformIcon(platform)" class="platform-item__icon" />
-                    <span class="platform-item__name">{{ getPlatformLabel(platform) }}</span>
-                  </div>
+              <!-- Platforms (fallback when no connected accounts) -->
+              <ProfileAsideSection v-else-if="profile.preferred_platforms?.length" title="Platforms" :icon="Monitor">
+                <div class="flex flex-wrap gap-1">
+                  <Badge v-for="platform in profile.preferred_platforms" :key="platform" size="md">
+                    <PlatformLogo :platform="platform" size="xs" />
+                    {{ getPlatformLabel(platform) }}
+                  </Badge>
                 </div>
-              </div>
-            </div>
+              </ProfileAsideSection>
 
-            <!-- Channel Links -->
-            <div v-if="profile.channel_links?.length" class="sidebar-card">
-              <div class="sidebar-card__header">
-                <Link class="sidebar-card__icon" />
-                <h3 class="sidebar-card__title">Social Channels</h3>
-              </div>
-              <div class="sidebar-card__content">
-                <div class="channel-list">
-                  <a
+              <!-- Channel links -->
+              <ProfileAsideSection v-if="profile.channel_links?.length" title="Social channels" :icon="Link">
+                <div class="flex flex-col">
+                  <LinkRow
                     v-for="link in profile.channel_links"
                     :key="link.id"
+                    :title="link.username || getPlatformLabel(link.platform)"
+                    :subtitle="getPlatformLabel(link.platform)"
                     :href="link.url"
-                    target="_blank"
-                    class="channel-item"
                   >
-                    <component :is="getPlatformIcon(link.platform)" class="channel-item__icon" />
-                    <span class="channel-item__username">{{ link.username || getPlatformLabel(link.platform) }}</span>
-                    <ExternalLink class="channel-item__external" />
-                  </a>
+                    <template #leading>
+                      <PlatformLogo :platform="link.platform" size="md" />
+                    </template>
+                  </LinkRow>
                 </div>
-              </div>
-            </div>
-
-            <div
-              v-if="
-                profile.experience_level ||
-                profile.timezone ||
-                profile.response_time_hours != null ||
-                (profile.languages?.length ?? 0) > 0
-              "
-              class="sidebar-card"
-            >
-              <div class="sidebar-card__header">
-                <Briefcase class="sidebar-card__icon" />
-                <h3 class="sidebar-card__title">Professional</h3>
-              </div>
-              <div class="sidebar-card__content">
-                <div class="clipper-profile-locale">
-                  <div v-if="profile.experience_level" class="clipper-profile-locale__row">
-                    <span class="clipper-profile-locale__label">Experience</span>
-                    <span class="clipper-profile-locale__value">{{ getExperienceLevelLabel(profile.experience_level) }}</span>
-                  </div>
-                  <div v-if="profile.timezone" class="clipper-profile-locale__row">
-                    <span class="clipper-profile-locale__label">Timezone</span>
-                    <span class="clipper-profile-locale__value">{{ formatTimezoneForDisplay(profile.timezone) }}</span>
-                  </div>
-                  <div v-if="profile.response_time_hours != null" class="clipper-profile-locale__row">
-                    <span class="clipper-profile-locale__label">Response time</span>
-                    <span class="clipper-profile-locale__value">~{{ profile.response_time_hours }} hours</span>
-                  </div>
-                  <div
-                    v-for="(lang, i) in profile.languages || []"
-                    :key="lang"
-                    class="clipper-profile-locale__row"
-                  >
-                    <span
-                      class="clipper-profile-locale__label"
-                      :class="{ 'clipper-profile-locale__label--continued': i > 0 }"
-                    >
-                      {{ i === 0 ? 'Languages' : '\u00a0' }}
-                    </span>
-                    <span class="clipper-profile-locale__value">{{ getLanguageName(lang) }}</span>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </aside>
+              </ProfileAsideSection>
+            </aside>
+          </div>
         </div>
       </div>
     </PageLayout>
 
-    <!-- Video Player Modal -->
-    <Teleport to="body">
-      <Transition name="video-modal">
-        <div v-if="showVideoPlayer && selectedClip" class="video-modal__overlay" @click.self="closeVideoPlayer">
-          <div class="video-modal">
-            <div class="video-modal__header">
-              <span class="video-modal__title">{{ selectedClip.title || 'Untitled' }}</span>
-              <button class="video-modal__close" @click="closeVideoPlayer">
-                <X :size="18" />
-              </button>
-            </div>
-            <div class="video-modal__body">
-              <div v-if="loadingVideo" class="video-modal__loading">
-                <div class="video-modal__spinner"></div>
-              </div>
-              <video
-                v-else-if="videoPlaybackUrl"
-                :src="videoPlaybackUrl"
-                controls
-                autoplay
-                :controlsList="canDownloadClips ? '' : 'nodownload'"
-                :disablePictureInPicture="!canDownloadClips"
-                @contextmenu.prevent="!canDownloadClips"
-                class="video-modal__video"
-                @click.stop
+    <!-- Video player -->
+    <Modal
+      :open="showVideoPlayer && !!selectedClip"
+      :title="selectedClip?.title || 'Untitled'"
+      size="xl"
+      flush
+      @close="closeVideoPlayer"
+    >
+      <div class="aspect-video w-full bg-black">
+        <div v-if="loadingVideo" class="grid size-full place-items-center">
+          <Loader2 class="size-6 animate-spin text-fg-muted" />
+        </div>
+        <video
+          v-else-if="videoPlaybackUrl"
+          :src="videoPlaybackUrl"
+          controls
+          autoplay
+          :controlsList="canDownloadClips ? '' : 'nodownload'"
+          :disablePictureInPicture="!canDownloadClips"
+          class="block size-full"
+          @contextmenu.prevent="!canDownloadClips"
+          @click.stop
+        />
+      </div>
+    </Modal>
+
+    <!-- Endorsement dialog -->
+    <Modal
+      v-model:open="showEndorsementDialog"
+      :title="`Endorse ${profile?.display_name || 'clipper'}`"
+      description="Leave a public endorsement for this clipper."
+      :icon="Award"
+      size="md"
+      :dismissible="!submittingEndorsement"
+      :hide-close="submittingEndorsement"
+    >
+      <div class="flex flex-col gap-4">
+        <Alert v-if="!authStore.user?.owned_organization_id" variant="warning">
+          <Building2 />
+          <AlertTitle>Organization required</AlertTitle>
+          <AlertDescription>
+            You must own an organization to endorse clippers. Endorsements represent your organization's working
+            relationship with this clipper.
+          </AlertDescription>
+        </Alert>
+
+        <Field label="Rating">
+          <div class="flex items-center gap-1" role="radiogroup" aria-label="Rating">
+            <button
+              v-for="i in 5"
+              :key="i"
+              type="button"
+              role="radio"
+              :aria-checked="endorsementRating === i"
+              :aria-label="`${i} star${i > 1 ? 's' : ''}`"
+              class="grid size-8 place-items-center rounded-md transition-colors hover:bg-surface-hover"
+              @click="endorsementRating = i"
+            >
+              <Star
+                class="size-5 transition-colors"
+                :class="i <= endorsementRating ? 'fill-warning text-warning' : 'text-fg-disabled'"
               />
-            </div>
+            </button>
           </div>
-        </div>
-      </Transition>
-    </Teleport>
+        </Field>
 
-    <!-- Endorsement Dialog -->
-    <Teleport to="body">
-      <Transition name="endorse-modal">
-        <div v-if="showEndorsementDialog" class="endorse-dialog__overlay" @click.self="showEndorsementDialog = false">
-          <Transition name="endorse-dialog" appear>
-            <div v-if="showEndorsementDialog" class="endorse-dialog" role="dialog" aria-modal="true">
-              <!-- Accent bar -->
-              <div class="endorse-dialog__accent"></div>
+        <Field label="Endorsement" hint="Optional">
+          <template #label-end>
+            <span class="tabular text-2xs text-fg-subtle">{{ endorsementContent.length }}/300</span>
+          </template>
+          <Textarea
+            v-model="endorsementContent"
+            placeholder="Great clipper! Delivered high-quality content on time…"
+            rows="3"
+            maxlength="300"
+          />
+        </Field>
 
-              <!-- Header -->
-              <div class="endorse-dialog__header">
-                <button class="endorse-dialog__close" @click="showEndorsementDialog = false" :disabled="submittingEndorsement" title="Close">
-                  <X :size="18" />
-                </button>
-                <div class="endorse-dialog__icon">
-                  <Award :size="24" />
-                </div>
-                <h2 class="endorse-dialog__title">Endorse {{ profile?.display_name }}</h2>
-                <p class="endorse-dialog__subtitle">Leave a public endorsement for this clipper</p>
-              </div>
+        <Alert v-if="endorsementError" variant="destructive">
+          <AlertCircle />
+          <AlertDescription class="text-fg">{{ endorsementError }}</AlertDescription>
+        </Alert>
+      </div>
 
-              <!-- Content -->
-              <div class="endorse-dialog__content">
-                <!-- No org warning -->
-                <div v-if="!authStore.user?.owned_organization_id" class="endorse-dialog__alert endorse-dialog__alert--warning">
-                  <Building2 :size="16" />
-                  <div class="flex-1">
-                    <p class="font-medium text-xs mb-0.5">Organization Required</p>
-                    <p class="text-[10px] opacity-80">You must own an organization to endorse clippers. Endorsements represent your organization's working relationship with this clipper.</p>
-                  </div>
-                </div>
-
-                <!-- Rating -->
-                <div class="endorse-dialog__field">
-                  <label class="endorse-dialog__label">Rating</label>
-                  <div class="endorse-dialog__stars">
-                    <button
-                      v-for="i in 5"
-                      :key="i"
-                      @click="endorsementRating = i"
-                      class="endorse-dialog__star-btn"
-                    >
-                      <Star
-                        :size="28"
-                        :class="i <= endorsementRating ? 'endorse-dialog__star--filled' : 'endorse-dialog__star--empty'"
-                      />
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Content -->
-                <div class="endorse-dialog__field">
-                  <label class="endorse-dialog__label">Endorsement <span class="endorse-dialog__optional">(optional)</span></label>
-                  <textarea
-                    v-model="endorsementContent"
-                    class="endorse-dialog__textarea"
-                    placeholder="Great clipper! Delivered high-quality content on time..."
-                    rows="3"
-                    maxlength="300"
-                  />
-                  <p class="endorse-dialog__char-count">{{ endorsementContent.length }}/300</p>
-                </div>
-
-                <!-- Error -->
-                <div v-if="endorsementError" class="endorse-dialog__alert endorse-dialog__alert--error">
-                  <p class="text-xs">{{ endorsementError }}</p>
-                </div>
-              </div>
-
-              <!-- Footer -->
-              <div class="endorse-dialog__footer">
-                <button
-                  @click="showEndorsementDialog = false"
-                  :disabled="submittingEndorsement"
-                  class="endorse-dialog__btn endorse-dialog__btn--secondary"
-                >
-                  Cancel
-                </button>
-                <button
-                  @click="submitEndorsement"
-                  :disabled="submittingEndorsement || endorsementRating === 0 || !authStore.user?.owned_organization_id"
-                  class="endorse-dialog__btn endorse-dialog__btn--primary"
-                >
-                  <Loader2 v-if="submittingEndorsement" :size="16" class="endorse-dialog__spinner" />
-                  {{ submittingEndorsement ? 'Submitting...' : 'Submit Endorsement' }}
-                </button>
-              </div>
-            </div>
-          </Transition>
-        </div>
-      </Transition>
-    </Teleport>
+      <template #footer>
+        <Button variant="ghost" :disabled="submittingEndorsement" @click="showEndorsementDialog = false">Cancel</Button>
+        <Button
+          variant="primary"
+          :loading="submittingEndorsement"
+          :disabled="endorsementRating === 0 || !authStore.user?.owned_organization_id"
+          @click="submitEndorsement"
+        >
+          {{ submittingEndorsement ? 'Submitting…' : 'Submit endorsement' }}
+        </Button>
+      </template>
+    </Modal>
   </div>
 </template>
 
@@ -494,34 +337,43 @@
   import { useAuthStore } from '@/stores/auth';
   import { useRoute } from 'vue-router';
   import {
-    UserCircle,
-    CheckCircle,
-    Star,
-    ExternalLink,
-    Video,
-    Play,
-    Loader2,
-    Music2,
-    Instagram,
-    Twitter,
-    Youtube,
-    Twitch,
-    Link2,
+    AlertCircle,
     Award,
-    Building2,
-    Sparkles,
-    Monitor,
+    BadgeCheck,
     Briefcase,
-    Link,
-    Handshake,
-    Share2,
-    X,
+    Building2,
+    Clock,
     Eye,
-    Users,
+    Handshake,
+    Link,
+    Loader2,
     Megaphone,
+    Monitor,
+    Play,
+    Share2,
+    Sparkles,
+    Star,
+    UserCircle,
+    Users,
+    Video,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
   import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Field } from '@/components/ui/field';
+  import { Modal } from '@/components/ui/modal';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { StatGrid, type StatItem } from '@/components/ui/stat-card';
+  import { Textarea } from '@/components/ui/textarea';
+  import { InfoList, type InfoListItem } from '@/components/ui/info-list';
+  import LinkRow from '@/components/directory/LinkRow.vue';
+  import { Avatar } from '@/components/ui/avatar';
+  import { PlatformLogo } from '@/components/ui/platform-logo';
+  import ProfileHeader from '@/components/directory/ProfileHeader.vue';
+  import ProfileAsideSection from '@/components/directory/ProfileAsideSection.vue';
+  import { formatCompact } from '@/components/campaigns/campaignDisplay';
   import {
     getClipperBySlug,
     createEndorsement,
@@ -533,7 +385,6 @@
     getPlatformLabel,
     getLanguageName,
     getBadgeLabel,
-    getBadgeColor,
     getPublicPortfolioClipPresignedUrl,
     getPublicPortfolioClipThumbnailPresignedUrl,
   } from '@/services/clipperProfilesApi';
@@ -563,12 +414,48 @@
         crumbs.push({ label: 'Back', path: from });
       }
     } else if (from.includes('/clippers')) {
-      crumbs.push({ label: 'Clipper Directory', path: '/clippers' });
+      crumbs.push({ label: 'Clipper directory', path: '/clippers' });
     } else {
       crumbs.push({ label: 'Back', path: from });
     }
     crumbs.push({ label: profile.value?.display_name || 'Profile' });
     return crumbs;
+  });
+
+  /** Experience, timezone, response time and languages as label/value rows. */
+  const professionalRows = computed<InfoListItem[]>(() => {
+    const p = profile.value;
+    if (!p) return [];
+    const rows: InfoListItem[] = [];
+    if (p.experience_level) rows.push({ label: 'Experience', value: getExperienceLevelLabel(p.experience_level) });
+    if (p.timezone) rows.push({ label: 'Timezone', value: formatTimezoneForDisplay(p.timezone) });
+    if (p.response_time_hours != null) rows.push({ label: 'Response time', value: `~${p.response_time_hours} hours` });
+    if (p.languages?.length) rows.push({ label: 'Languages', value: p.languages.map(getLanguageName).join(', ') });
+    return rows;
+  });
+
+  /** Key figures shown in the header strip (total views only once there are some). */
+  const profileStats = computed<StatItem[]>(() => {
+    const p = profile.value;
+    if (!p) return [];
+    const stats: StatItem[] = [
+      { label: 'Campaigns', value: p.total_campaigns_completed },
+      { label: 'Clips delivered', value: p.total_clips_delivered },
+      { label: 'Endorsements', value: p.total_endorsements },
+    ];
+    if (p.total_views) stats.push({ label: 'Total views', value: formatViews(p.total_views) });
+    return stats;
+  });
+
+  const hasAside = computed(() => {
+    const p = profile.value;
+    return !!(
+      professionalRows.value.length ||
+      p?.content_style_tags?.length ||
+      p?.social_accounts?.length ||
+      p?.preferred_platforms?.length ||
+      p?.channel_links?.length
+    );
   });
 
   // Check if current user is an organization owner (can download clips)
@@ -611,7 +498,7 @@
   // Load presigned URLs for portfolio clip thumbnails
   const loadThumbnailUrls = async () => {
     if (!profile.value?.portfolio_clips?.length || !profile.value.slug) return;
-    
+
     for (const clip of profile.value.portfolio_clips) {
       if (clip.thumbnail_url) {
         try {
@@ -638,7 +525,7 @@
     const url = `${landingUrl}/clippers/${profile.value?.slug}`;
     navigator.clipboard.writeText(url).then(() => {
       toast({
-        title: 'Link Copied',
+        title: 'Link copied',
         description: 'Profile link copied to clipboard',
       });
     });
@@ -672,7 +559,7 @@
 
       if (response.success) {
         toast({
-          title: 'Endorsement Submitted',
+          title: 'Endorsement submitted',
           description: "Your endorsement has been added to this clipper's profile.",
         });
         showEndorsementDialog.value = false;
@@ -689,19 +576,15 @@
     }
   };
 
-  const formatViews = (views: number): string => {
-    if (views >= 1000000) return (views / 1000000).toFixed(1) + 'M';
-    if (views >= 1000) return (views / 1000).toFixed(1) + 'K';
-    return views.toString();
-  };
+  const formatViews = (views: number): string => formatCompact(views);
 
   const getAccountUrl = (account: any): string | null => {
     // Use profile_url if available
     if (account.profile_url) return account.profile_url;
-    
+
     // Fallback: construct URL from platform and username
     if (!account.username) return null;
-    
+
     const username = account.username.replace('@', '');
     switch (account.platform.toLowerCase()) {
       case 'instagram':
@@ -722,21 +605,12 @@
     }
   };
 
-  const getPlatformIcon = (platform: string) => {
-    const icons: Record<string, typeof Music2> = {
-      tiktok: Music2,
-      instagram: Instagram,
-      x: Twitter,
-      youtube: Youtube,
-      twitch: Twitch,
-      kick: Music2,
-    };
-    return icons[platform] || Link2;
-  };
-
   const loadProfile = async () => {
     const slug = route.params.slug as string;
-    if (!slug) return;
+    if (!slug) {
+      loading.value = false;
+      return;
+    }
 
     loading.value = true;
     try {
@@ -753,1827 +627,5 @@
     }
   };
 
-  onMounted(async () => {
-    const slug = route.params.slug as string;
-    try {
-      const data = await getClipperBySlug(slug);
-      if (data.success && data.profile) {
-        profile.value = data.profile;
-        // Load presigned URLs for thumbnails
-        await loadThumbnailUrls();
-      }
-    } catch (error) {
-      console.error('Failed to load profile:', error);
-    } finally {
-      loading.value = false;
-    }
-  });
+  onMounted(loadProfile);
 </script>
-
-<style scoped>
-  /* ===== Page Container ===== */
-  .clipper-public-profile-page {
-    width: 100%;
-    min-height: 100%;
-    /* Match landing clipper public profile (ClipperPublicProfilePage.css) */
-    --sidebar-bg: #0a0a0b;
-    --sidebar-surface: #141416;
-    --sidebar-border: #27272a;
-    --sidebar-hover: #1f1f23;
-    --sidebar-active: #3f3f46;
-    --sidebar-text: #fafafa;
-    --sidebar-text-muted: #a1a1aa;
-    --org-profile-accent: #14b8db;
-    --org-profile-accent-rgb: 20, 184, 219;
-    --sidebar-accent: #14b8db;
-    background: var(--sidebar-bg);
-  }
-
-  .profile-content {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    max-width: 1100px;
-    margin: 0 auto;
-    width: 100%;
-    padding: 0 1.5rem 2rem;
-    box-sizing: border-box;
-  }
-
-  .profile-content--loading,
-  .profile-content--empty {
-    justify-content: center;
-    align-items: center;
-    min-height: 400px;
-  }
-
-  /* ===== Loading State ===== */
-  .loading-spinner {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .loading-spinner__icon {
-    width: 40px;
-    height: 40px;
-    color: var(--sidebar-text-muted);
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  /* ===== Empty State ===== */
-  .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-  }
-
-  .empty-state__icon-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 72px;
-    height: 72px;
-    background-color: var(--sidebar-hover);
-    border-radius: 16px;
-    margin-bottom: 1.5rem;
-  }
-
-  .empty-state__icon {
-    width: 36px;
-    height: 36px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .empty-state__title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
-  }
-
-  .empty-state__description {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    max-width: 320px;
-    line-height: 1.5;
-  }
-
-  /* ===== Organization-style profile shell (matches OrgPublicProfilePage) ===== */
-  .org-profile {
-    display: flex;
-    flex-direction: column;
-    gap: 0;
-    max-width: 1100px;
-    margin: 0 auto;
-    width: 100%;
-    padding: 0 1.5rem 2rem;
-    box-sizing: border-box;
-  }
-
-  .org-hero {
-    position: relative;
-    margin-bottom: 0;
-    padding-bottom: 1.75rem;
-  }
-
-  .org-hero__banner {
-    height: 120px;
-    /* Same gradient as OrgPublicProfilePage / landing clipper */
-    background: linear-gradient(135deg, #0e7490 0%, #0ea0c0 25%, #14b8db 50%, #0b9fbf 75%, #164e63 100%);
-    background-size: 200% 200%;
-    border-radius: 14px 14px 0 0;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .org-hero__banner::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(ellipse 80% 50% at 20% 100%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
-      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 40%);
-  }
-
-  .org-hero__banner::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 52px;
-    background: linear-gradient(to top, var(--sidebar-surface) 0%, transparent 100%);
-  }
-
-  .org-hero__content {
-    display: flex;
-    align-items: flex-start;
-    gap: 1.25rem;
-    padding: 0 1.5rem;
-    margin-top: -48px;
-    position: relative;
-    z-index: 1;
-  }
-
-  .org-hero__avatar {
-    position: relative;
-    width: 96px;
-    height: 96px;
-    border-radius: 14px;
-    background: var(--sidebar-surface);
-    border: 4px solid var(--sidebar-surface);
-    overflow: hidden;
-    flex-shrink: 0;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  }
-
-  .org-hero__avatar-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .org-hero__avatar-fallback {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    padding: 24px;
-  }
-
-  .org-hero__info {
-    flex: 1;
-    min-width: 0;
-    padding-top: 0.375rem;
-    padding-bottom: 0.25rem;
-  }
-
-  .org-hero__name {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
-  }
-
-  .org-hero__tagline {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 0.625rem;
-    line-height: 1.5;
-  }
-
-  .org-hero__tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.375rem;
-  }
-
-  .org-hero__tag {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.25rem 0.625rem;
-    background: rgba(20, 184, 219, 0.1);
-    border: 1px solid rgba(20, 184, 219, 0.2);
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    color: #14b8db;
-    letter-spacing: 0.01em;
-  }
-
-  .org-stats-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 0.75rem;
-    margin-top: 0.25rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .org-stats-grid--four {
-    grid-template-columns: repeat(4, 1fr);
-  }
-
-  @media (max-width: 900px) {
-    .org-stats-grid--four {
-      grid-template-columns: repeat(2, 1fr);
-    }
-
-    .org-stats-grid:not(.org-stats-grid--four) {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (max-width: 640px) {
-    .org-hero {
-      padding-bottom: 1.5rem;
-    }
-
-    .org-hero__banner {
-      height: 100px;
-    }
-
-    .org-hero__content {
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      margin-top: -40px;
-      padding: 0 1rem;
-    }
-
-    .org-hero__avatar {
-      width: 88px;
-      height: 88px;
-    }
-
-    .org-hero__info {
-      padding-top: 0.5rem;
-      padding-bottom: 0;
-    }
-
-    .org-hero__name {
-      font-size: 1.25rem;
-    }
-
-    .org-hero__tags {
-      justify-content: center;
-    }
-
-    .org-stats-grid,
-    .org-stats-grid--four {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  .org-stat-card {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1rem;
-    background: var(--sidebar-surface);
-    border: 1px solid rgba(20, 184, 219, 0.15);
-    border-radius: 12px;
-    transition: all 200ms ease;
-  }
-
-  .org-stat-card:hover {
-    border-color: rgba(20, 184, 219, 0.4);
-    box-shadow: 0 0 20px rgba(20, 184, 219, 0.1);
-  }
-
-  .org-stat-card__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    flex-shrink: 0;
-  }
-
-  .org-stat-card__icon--cyan {
-    background: rgba(20, 184, 219, 0.15);
-    color: #14b8db;
-  }
-
-  .org-stat-card__icon--green {
-    background: rgba(52, 211, 153, 0.15);
-    color: #34d399;
-  }
-
-  .org-stat-card__icon--violet {
-    background: rgba(167, 139, 250, 0.15);
-    color: #a78bfa;
-  }
-
-  .org-stat-card__icon--amber {
-    background: rgba(251, 191, 36, 0.15);
-    color: #fbbf24;
-  }
-
-  .org-stat-card__content {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .org-stat-card__value {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    line-height: 1.2;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .org-stat-card__label {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  .profile-avatar__verified {
-    position: absolute;
-    bottom: -3px;
-    right: -3px;
-    width: 28px;
-    height: 28px;
-    background: linear-gradient(135deg, #14b8db 0%, #0e7490 100%);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 3px solid var(--sidebar-surface);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  }
-
-  .profile-avatar__verified svg {
-    width: 14px;
-    height: 14px;
-    color: white;
-  }
-
-  .profile-name-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    margin-bottom: 0.75rem;
-  }
-
-  @media (max-width: 640px) {
-    .profile-name-row {
-      justify-content: center;
-    }
-  }
-
-  .profile-badges {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  .status-badge--available {
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
-
-  .status-badge--affiliate {
-    background: rgba(59, 130, 246, 0.15);
-    color: #3b82f6;
-  }
-
-  .status-badge--online {
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
-
-  .status-badge--offline {
-    background: rgba(107, 114, 128, 0.15);
-    color: #9ca3af;
-  }
-
-  .status-badge__dot {
-    width: 6px;
-    height: 6px;
-    background: currentColor;
-    border-radius: 50%;
-    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-
-  .profile-badge {
-    display: inline-block;
-  }
-
-  /* Header Action Buttons */
-  .profile-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .profile-action-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    height: 32px;
-    padding: 0 0.875rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .profile-action-btn--primary {
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border: none;
-  }
-
-  .profile-action-btn--primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .profile-action-btn--outline {
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    color: var(--sidebar-text);
-  }
-
-  .profile-action-btn--outline:hover:not(:disabled) {
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-accent);
-  }
-
-  .profile-action-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .profile-action-btn__icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* ===== Main Layout ===== */
-  .org-grid {
-    display: grid;
-    grid-template-columns: 1fr 300px;
-    gap: 1.5rem;
-    align-items: start;
-    width: 100%;
-    min-width: 0;
-    padding: 0;
-    margin: 0;
-  }
-
-  @media (max-width: 1024px) {
-    .org-grid {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  /* ===== Main Column ===== */
-  .main-column {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-
-  /* ===== Section ===== */
-  .section {
-    background-color: var(--sidebar-surface);
-    border: 1px solid rgba(20, 184, 219, 0.15);
-    border-radius: 14px;
-    padding: 0;
-    overflow: hidden;
-    transition: border-color 200ms ease, box-shadow 200ms ease;
-  }
-
-  .section:hover {
-    border-color: rgba(20, 184, 219, 0.3);
-    box-shadow: 0 0 24px rgba(20, 184, 219, 0.08);
-  }
-
-  .section__header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1.5rem;
-    border-bottom: 1px solid rgba(20, 184, 219, 0.1);
-    background: linear-gradient(90deg, rgba(20, 184, 219, 0.04) 0%, transparent 50%);
-  }
-
-  .section--about .section__header {
-    padding: 1rem 1.25rem;
-  }
-
-  .section__header-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    background-color: rgba(20, 184, 219, 0.15);
-    color: var(--sidebar-accent);
-    flex-shrink: 0;
-  }
-
-  .section__header-icon svg {
-    width: 22px;
-    height: 22px;
-  }
-
-  .section__header-icon--cyan {
-    background-color: rgba(20, 184, 219, 0.15);
-    color: #14b8db;
-  }
-
-  .section__header-text {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .section__title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.02em;
-  }
-
-  .section__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  .section__bio {
-    margin: 0;
-    padding: 0 1.5rem 1.5rem;
-    font-size: 0.9375rem;
-    line-height: 1.65;
-    color: var(--sidebar-text-muted);
-    white-space: pre-wrap;
-  }
-
-  .section--about .section__bio {
-    padding: 1.25rem;
-  }
-
-  .clipper-profile-locale {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .clipper-profile-locale__row {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    padding: 0.625rem 0.75rem;
-    background: var(--sidebar-hover);
-    border-radius: 8px;
-    border: 1px solid rgba(20, 184, 219, 0.12);
-  }
-
-  .clipper-profile-locale__label {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .clipper-profile-locale__label--continued {
-    visibility: hidden;
-  }
-
-  .clipper-profile-locale__value {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  /* About Section */
-  .about-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-    gap: 1rem;
-    padding: 1.5rem;
-  }
-
-  .about-item {
-    display: flex;
-    align-items: flex-start;
-    gap: 1rem;
-    padding: 1.25rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    transition: all 150ms ease;
-  }
-
-  .about-item:hover {
-    background: var(--sidebar-active);
-    border-color: rgba(20, 184, 219, 0.3);
-  }
-
-  .about-item__icon {
-    width: 20px;
-    height: 20px;
-    color: var(--sidebar-accent);
-    flex-shrink: 0;
-    margin-top: 0.125rem;
-  }
-
-  .about-item__content {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .about-item__label {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: 0.25rem;
-  }
-
-  .about-item__value {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  /* Portfolio Section */
-  .portfolio-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
-    gap: 1.25rem;
-    padding: 1.5rem;
-  }
-
-  .portfolio-item {
-    border-radius: 12px;
-    overflow: hidden;
-    background: var(--sidebar-bg);
-    border: 1px solid var(--sidebar-border);
-    transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
-    cursor: pointer;
-  }
-
-  .portfolio-item:hover {
-    border-color: var(--sidebar-accent);
-    transform: translateY(-4px);
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.3), 0 0 0 1px rgba(20, 184, 219, 0.2);
-  }
-
-  .portfolio-item__thumbnail {
-    position: relative;
-    aspect-ratio: 16 / 9;
-    background: var(--sidebar-hover);
-    overflow: hidden;
-  }
-
-  .portfolio-item__thumbnail-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-    transition: transform 300ms ease;
-  }
-
-  .portfolio-item:hover .portfolio-item__thumbnail-img {
-    transform: scale(1.05);
-  }
-
-  .portfolio-item__thumbnail-placeholder {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .portfolio-item__thumbnail-icon {
-    width: 32px;
-    height: 32px;
-    color: var(--sidebar-text-muted);
-    opacity: 0.3;
-  }
-
-  .portfolio-item__overlay {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.8) 0%, rgba(0, 0, 0, 0.4) 50%, transparent 100%);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0;
-    transition: opacity 200ms ease;
-    border: none;
-    cursor: pointer;
-    width: 100%;
-  }
-
-  .portfolio-item:hover .portfolio-item__overlay {
-    opacity: 1;
-  }
-
-  .portfolio-item__play {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 64px;
-    height: 64px;
-    background: var(--sidebar-accent);
-    border: 3px solid white;
-    border-radius: 50%;
-    transition: all 200ms cubic-bezier(0.4, 0, 0.2, 1);
-    box-shadow: 0 8px 16px rgba(0, 0, 0, 0.3);
-  }
-
-  .portfolio-item:hover .portfolio-item__play {
-    transform: scale(1.15);
-    box-shadow: 0 12px 24px rgba(0, 0, 0, 0.4);
-  }
-
-  .portfolio-item__play-icon {
-    width: 20px;
-    height: 20px;
-    color: white;
-    margin-left: 2px;
-  }
-
-  .portfolio-item__info {
-    padding: 1rem;
-    background: var(--sidebar-surface);
-  }
-
-  .portfolio-item__title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    letter-spacing: -0.01em;
-  }
-
-  /* Video Player Modal */
-  .video-modal__overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.85);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 1000;
-    padding: 1.5rem;
-  }
-
-  .video-modal {
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    overflow: hidden;
-    width: 100%;
-    max-width: 900px;
-    box-shadow: 0 24px 64px rgba(0, 0, 0, 0.6);
-  }
-
-  .video-modal__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.875rem 1rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .video-modal__title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .video-modal__close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    background: transparent;
-    border: none;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: all 150ms ease;
-  }
-
-  .video-modal__close:hover {
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .video-modal__body {
-    background: #000;
-    aspect-ratio: 16 / 9;
-  }
-
-  .video-modal__video {
-    width: 100%;
-    height: 100%;
-    display: block;
-  }
-
-  .video-modal__loading {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #000;
-  }
-
-  .video-modal__spinner {
-    width: 36px;
-    height: 36px;
-    border: 3px solid rgba(255, 255, 255, 0.15);
-    border-top-color: var(--sidebar-accent);
-    border-radius: 50%;
-    animation: video-spin 0.7s linear infinite;
-  }
-
-  @keyframes video-spin {
-    to { transform: rotate(360deg); }
-  }
-
-  .video-modal-enter-active,
-  .video-modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .video-modal-enter-from,
-  .video-modal-leave-to {
-    opacity: 0;
-  }
-
-  /* Endorsements Section */
-  .endorsements-list {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1.5rem;
-  }
-
-  .endorsement-card {
-    padding: 1.5rem;
-    background: var(--sidebar-bg);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    transition: all 150ms ease;
-  }
-
-  .endorsement-card:hover {
-    background: var(--sidebar-hover);
-    border-color: rgba(20, 184, 219, 0.3);
-  }
-
-  .endorsement-card__header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    margin-bottom: 0.75rem;
-  }
-
-  .endorsement-card__org {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .endorsement-card__org-logo {
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    background: var(--sidebar-surface);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .endorsement-card__org-logo svg {
-    width: 18px;
-    height: 18px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .endorsement-card__org-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .endorsement-card__org-name {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin-bottom: 0.125rem;
-  }
-
-  .endorsement-card__org-by {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .endorsement-card__rating {
-    display: flex;
-    gap: 0.125rem;
-  }
-
-  .endorsement-card__rating-star {
-    width: 16px;
-    height: 16px;
-    color: #fbbf24;
-    fill: #fbbf24;
-  }
-
-  .endorsement-card__content {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    line-height: 1.6;
-    font-style: italic;
-    margin: 0;
-  }
-
-  /* ===== Sidebar Column ===== */
-  .sidebar-column {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-    position: sticky;
-    top: 1.5rem;
-  }
-
-  @media (max-width: 1024px) {
-    .sidebar-column {
-      position: static;
-    }
-  }
-
-  /* Sidebar Card */
-  .sidebar-card {
-    background-color: var(--sidebar-surface);
-    border: 1px solid rgba(20, 184, 219, 0.15);
-    border-radius: 14px;
-    overflow: hidden;
-    transition: border-color 200ms ease, box-shadow 200ms ease;
-  }
-
-  .sidebar-card:hover {
-    border-color: rgba(20, 184, 219, 0.3);
-    box-shadow: 0 0 24px rgba(20, 184, 219, 0.08);
-  }
-
-  .sidebar-card__header {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1.25rem;
-    border-bottom: 1px solid rgba(20, 184, 219, 0.1);
-    background: linear-gradient(to bottom, rgba(20, 184, 219, 0.03), transparent);
-  }
-
-  .sidebar-card__icon {
-    width: 20px;
-    height: 20px;
-    color: var(--sidebar-accent);
-  }
-
-  .sidebar-card__title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .sidebar-card__content {
-    padding: 1.25rem;
-  }
-
-  /* Tag Groups */
-  .tag-group {
-    margin-bottom: 1rem;
-  }
-
-  .tag-group:last-child {
-    margin-bottom: 0;
-  }
-
-  .tag-group__label {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-bottom: 0.625rem;
-  }
-
-  .tag-list {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .tag {
-    padding: 0.375rem 0.625rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 500;
-  }
-
-  .tag--specialty {
-    background: rgba(20, 184, 219, 0.12);
-    color: var(--sidebar-accent);
-  }
-
-  .tag--style {
-    background: rgba(59, 130, 246, 0.12);
-    color: #3b82f6;
-  }
-
-  /* Connected Accounts */
-  .connected-accounts-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .connected-account {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.75rem;
-    padding: 0.625rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    text-decoration: none;
-    transition: all 150ms ease;
-  }
-
-  .connected-account:hover:not(.connected-account--no-link) {
-    background: var(--sidebar-active);
-    border-color: var(--sidebar-accent);
-  }
-
-  .connected-account--no-link {
-    cursor: default;
-  }
-
-  .connected-account__left {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    min-width: 0;
-  }
-
-  .connected-account__avatar {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    object-fit: cover;
-    flex-shrink: 0;
-  }
-
-  .connected-account__avatar-fallback {
-    width: 32px;
-    height: 32px;
-    border-radius: 50%;
-    background: var(--sidebar-surface);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .connected-account__avatar-icon {
-    width: 16px;
-    height: 16px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .connected-account__info {
-    min-width: 0;
-  }
-
-  .connected-account__username {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .connected-account__verified {
-    width: 12px;
-    height: 12px;
-    color: var(--sidebar-accent);
-    flex-shrink: 0;
-  }
-
-  .connected-account__platform {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .connected-account__right {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-shrink: 0;
-  }
-
-  .connected-account__link-icon {
-    width: 14px;
-    height: 14px;
-    color: var(--sidebar-text-muted);
-    opacity: 0.5;
-  }
-
-  /* Platform List */
-  .platform-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-  }
-
-  .platform-item {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.625rem;
-    background: var(--sidebar-hover);
-    border-radius: 6px;
-  }
-
-  .platform-item__icon {
-    width: 18px;
-    height: 18px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .platform-item__name {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-  }
-
-  /* Language List */
-  .language-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .language-item {
-    padding: 0.625rem;
-    background: var(--sidebar-hover);
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-  }
-
-  /* Channel List */
-  .channel-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .channel-item {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.75rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    text-decoration: none;
-    transition: all 150ms ease;
-  }
-
-  .channel-item:hover {
-    background: var(--sidebar-active);
-    border-color: var(--sidebar-accent);
-  }
-
-  .channel-item__icon {
-    width: 18px;
-    height: 18px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .channel-item__username {
-    flex: 1;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .channel-item__external {
-    width: 14px;
-    height: 14px;
-    color: var(--sidebar-text-muted);
-    opacity: 0.5;
-  }
-
-  /* ===== Responsive ===== */
-  @media (max-width: 768px) {
-    .org-profile {
-      padding: 0 1rem 1.5rem;
-    }
-
-    .profile-header-actions {
-      flex-wrap: wrap;
-      width: 100%;
-    }
-
-    .profile-action-btn {
-      flex: 1;
-      min-width: fit-content;
-      justify-content: center;
-      font-size: 0.75rem;
-      height: 36px;
-      padding: 0 0.75rem;
-    }
-
-    .profile-action-btn__icon {
-      width: 14px;
-      height: 14px;
-    }
-
-    .portfolio-grid {
-      grid-template-columns: repeat(2, 1fr);
-      gap: 0.875rem;
-      padding: 1rem;
-    }
-
-    .about-grid {
-      grid-template-columns: 1fr;
-      gap: 0.75rem;
-      padding: 1rem;
-    }
-
-    .about-item {
-      padding: 1rem;
-    }
-
-    .endorsements-list {
-      padding: 1rem;
-      gap: 0.875rem;
-    }
-
-    .endorsement-card {
-      padding: 1rem;
-    }
-
-    .section__header {
-      padding: 1rem;
-      gap: 0.75rem;
-    }
-
-    .section--about .section__header {
-      padding: 0.875rem 1rem;
-    }
-
-    .section--about .section__bio {
-      padding: 1rem;
-    }
-
-    .section__header-icon {
-      width: 40px;
-      height: 40px;
-    }
-
-    .section__header-icon svg {
-      width: 18px;
-      height: 18px;
-    }
-
-    .section__title {
-      font-size: 1rem;
-    }
-
-    .section__subtitle {
-      font-size: 0.75rem;
-    }
-
-    .sidebar-card__content {
-      padding: 1rem;
-    }
-
-    .sidebar-card__header {
-      padding: 1rem;
-    }
-
-    .video-modal__overlay {
-      padding: 1rem;
-    }
-
-    .org-grid {
-      gap: 1rem;
-    }
-  }
-
-  @media (max-width: 480px) {
-    .org-profile {
-      padding: 0 0.75rem 1rem;
-    }
-
-    .profile-header-actions {
-      gap: 0.375rem;
-    }
-
-    .profile-action-btn {
-      font-size: 0.6875rem;
-      height: 32px;
-      padding: 0 0.625rem;
-    }
-
-    .profile-action-btn__icon {
-      width: 12px;
-      height: 12px;
-    }
-
-    .portfolio-grid {
-      grid-template-columns: 1fr;
-      gap: 0.75rem;
-      padding: 0.875rem;
-    }
-
-    .portfolio-item__play {
-      width: 56px;
-      height: 56px;
-    }
-
-    .portfolio-item__play-icon {
-      width: 18px;
-      height: 18px;
-    }
-
-    .about-grid {
-      padding: 0.875rem;
-      gap: 0.625rem;
-    }
-
-    .about-item {
-      padding: 0.875rem;
-      gap: 0.75rem;
-    }
-
-    .endorsements-list {
-      padding: 0.875rem;
-      gap: 0.75rem;
-    }
-
-    .endorsement-card {
-      padding: 0.875rem;
-    }
-
-    .endorsement-card__header {
-      flex-direction: column;
-      align-items: flex-start;
-      gap: 0.625rem;
-    }
-
-    .section__header {
-      padding: 0.875rem;
-      gap: 0.625rem;
-    }
-
-    .section--about .section__header {
-      padding: 0.75rem 0.875rem;
-    }
-
-    .section--about .section__bio {
-      padding: 0.875rem;
-    }
-
-    .section__header-icon {
-      width: 36px;
-      height: 36px;
-    }
-
-    .section__header-icon svg {
-      width: 16px;
-      height: 16px;
-    }
-
-    .section__title {
-      font-size: 0.9375rem;
-    }
-
-    .sidebar-card__content {
-      padding: 0.875rem;
-    }
-
-    .sidebar-card__header {
-      padding: 0.875rem;
-    }
-
-    .connected-account {
-      padding: 0.5rem;
-      gap: 0.5rem;
-    }
-
-    .tag-list {
-      gap: 0.375rem;
-    }
-
-    .tag {
-      font-size: 0.6875rem;
-      padding: 0.3125rem 0.5rem;
-    }
-
-    .video-modal__overlay {
-      padding: 0.5rem;
-    }
-
-    .video-modal {
-      border-radius: 8px;
-    }
-
-    .org-grid {
-      gap: 0.875rem;
-    }
-
-    .endorse-dialog {
-      margin: 0.5rem;
-      max-height: 90vh;
-    }
-
-    .endorse-dialog__header {
-      padding: 1rem 1rem 0.75rem;
-    }
-
-    .endorse-dialog__content {
-      padding: 0.5rem 1rem 1rem;
-    }
-
-    .endorse-dialog__footer {
-      padding: 1rem;
-      flex-direction: column;
-    }
-
-    .endorse-dialog__btn {
-      width: 100%;
-    }
-  }
-
-  /* ===== Endorsement Dialog ===== */
-  .endorse-dialog__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-  }
-
-  .endorse-dialog {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 440px;
-    margin: 1rem;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .endorse-dialog__accent {
-    height: 3px;
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(20, 184, 219, 0.5));
-    flex-shrink: 0;
-  }
-
-  .endorse-dialog__header {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1.5rem 1.5rem 1rem;
-    text-align: center;
-  }
-
-  .endorse-dialog__close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .endorse-dialog__close:hover:not(:disabled) {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .endorse-dialog__close:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .endorse-dialog__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 12px;
-    background-color: rgba(20, 184, 219, 0.15);
-    color: var(--sidebar-accent);
-    margin-bottom: 0.875rem;
-  }
-
-  .endorse-dialog__title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.02em;
-  }
-
-  .endorse-dialog__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  .endorse-dialog__content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0.5rem 1.5rem 1.5rem;
-  }
-
-  .endorse-dialog__content::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .endorse-dialog__content::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .endorse-dialog__content::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  .endorse-dialog__field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-bottom: 1rem;
-  }
-
-  .endorse-dialog__label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .endorse-dialog__optional {
-    font-size: 0.75rem;
-    font-weight: 400;
-    color: var(--sidebar-text-muted);
-  }
-
-  .endorse-dialog__stars {
-    display: flex;
-    gap: 0.25rem;
-  }
-
-  .endorse-dialog__star-btn {
-    background: transparent;
-    border: none;
-    padding: 0.25rem;
-    cursor: pointer;
-    border-radius: 6px;
-    transition: transform 150ms ease;
-  }
-
-  .endorse-dialog__star-btn:hover {
-    transform: scale(1.15);
-  }
-
-  .endorse-dialog__star--filled {
-    color: #f59e0b;
-    fill: #f59e0b;
-  }
-
-  .endorse-dialog__star--empty {
-    color: var(--sidebar-text-muted);
-  }
-
-  .endorse-dialog__textarea {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    resize: vertical;
-    font-family: inherit;
-    transition: all 150ms ease;
-  }
-
-  .endorse-dialog__textarea::placeholder {
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  .endorse-dialog__textarea:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(20, 184, 219, 0.15);
-  }
-
-  .endorse-dialog__char-count {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    text-align: right;
-    margin: 0;
-  }
-
-  .endorse-dialog__alert {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.875rem;
-    border-radius: 8px;
-    margin-bottom: 1rem;
-  }
-
-  .endorse-dialog__alert--warning {
-    background-color: rgba(245, 158, 11, 0.08);
-    border: 1px solid rgba(245, 158, 11, 0.2);
-    color: #fbbf24;
-  }
-
-  .endorse-dialog__alert--error {
-    background-color: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    color: #f87171;
-  }
-
-  .endorse-dialog__footer {
-    display: flex;
-    gap: 0.625rem;
-    padding: 1.25rem 1.5rem;
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  .endorse-dialog__btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .endorse-dialog__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .endorse-dialog__btn--secondary {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-    border: 1px solid var(--sidebar-border);
-  }
-
-  .endorse-dialog__btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .endorse-dialog__btn--primary {
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0e7490 100%);
-    color: #000;
-  }
-
-  .endorse-dialog__btn--primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .endorse-dialog__spinner {
-    animation: spin 1s linear infinite;
-  }
-
-  /* ===== Dialog Transitions ===== */
-  .endorse-modal-enter-active,
-  .endorse-modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .endorse-modal-enter-from,
-  .endorse-modal-leave-to {
-    opacity: 0;
-  }
-
-  .endorse-dialog-enter-active,
-  .endorse-dialog-leave-active {
-    transition: opacity 200ms ease, transform 200ms ease;
-  }
-
-  .endorse-dialog-enter-from,
-  .endorse-dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.95) translateY(8px);
-  }
-</style>

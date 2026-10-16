@@ -22,6 +22,7 @@
     getTimelinePaddingPx,
     canTracktHaveAudio,
     canTrackBeHidden,
+    getTrackBorderColor,
   } from '../../lib/timeline';
   import type { TrackType } from '../../types/timeline';
   import type { SnapPoint } from '../../composables/timeline/useTimelineSnapping';
@@ -54,7 +55,6 @@
     Sparkles,
     MessageSquare,
   } from 'lucide-vue-next';
-  import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
   import { useToast } from '@/composables/useToast';
 
   const tracksContainerHeight = { min: 0 };
@@ -102,15 +102,8 @@
   }
 
   function getTrackAccentColor(type: TrackType): string {
-    const colors: Record<TrackType, string> = {
-      video: '#71717a',
-      text: '#7CCDB8',
-      audio: '#A87BD4',
-      sticker: '#F59E0B',
-      effect: '#E040FB',
-      caption: '#38BDF8',
-    };
-    return colors[type];
+    // Same palette as the clips (TRACK_COLORS); video clips are neutral so use muted text.
+    return type === 'video' ? 'var(--fg-muted)' : getTrackBorderColor({ type });
   }
 
   function getTrackPaddingY(type: TrackType): string {
@@ -299,8 +292,8 @@
   const INSERT_GAP_SIZE = 20;
 
   const DROP_COLORS: Record<string, string> = {
-    video: '#3b82f6', image: '#3b82f6', audio: '#22c55e',
-    text: '#f59e0b', sticker: '#ec4899', effect: '#a855f7',
+    video: 'var(--brand)', image: 'var(--brand)', audio: 'var(--track-audio)',
+    text: 'var(--track-text)', sticker: 'var(--track-sticker)', effect: '#E040FB',
   };
 
   const activeNewTrackDrop = computed(() => {
@@ -315,8 +308,8 @@
 
   const insertIndicatorColor = computed(() => {
     const type = activeNewTrackDrop.value?.elementType;
-    if (!type) return '#3b82f6';
-    return DROP_COLORS[type] ?? '#3b82f6';
+    if (!type) return 'var(--brand)';
+    return DROP_COLORS[type] ?? 'var(--brand)';
   });
 
   function getTrackTopWithInsertGap(trackIndex: number): number {
@@ -639,7 +632,7 @@
 
 <template>
   <section
-    class="relative flex h-full flex-col overflow-hidden rounded-sm bg-[#18181b]"
+    class="relative flex h-full flex-col overflow-hidden bg-panel"
     aria-label="Timeline"
     @dragover.prevent
     @drop="handleFileDrop"
@@ -674,13 +667,13 @@
 
       <div class="flex flex-1 overflow-hidden">
         <!-- Track labels sidebar -->
-        <div class="flex w-44 shrink-0 flex-col border-r border-white/10 bg-[#18181b]" @wheel.prevent="onTrackLabelsWheel">
+        <div class="flex w-44 shrink-0 flex-col border-r border-line-subtle bg-panel" @wheel.prevent="onTrackLabelsWheel">
           <!-- Header — same h-4 as TimelineRuler so track list starts at identical offset -->
-          <div class="flex h-4 shrink-0 items-end justify-between bg-[#18181b] pb-px pl-3 pr-1 mt-2">
-            <span class="text-[10px] font-semibold uppercase tracking-widest text-white/25">Tracks</span>
+          <div class="mt-2 flex h-4 shrink-0 items-end justify-between pb-px pl-3 pr-1">
+            <span class="eyebrow leading-none">Tracks</span>
             <div class="flex items-center gap-0.5">
               <button
-                class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-white/10 hover:text-zinc-300"
+                class="flex h-4 items-center gap-0.5 rounded px-1 text-2xs font-semibold leading-none text-fg-subtle transition-colors hover:bg-surface-hover hover:text-fg"
                 @click="addTrack('video')"
                 title="Add video track"
               >
@@ -688,7 +681,7 @@
                 V
               </button>
               <button
-                class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-white/10 hover:text-zinc-300"
+                class="flex h-4 items-center gap-0.5 rounded px-1 text-2xs font-semibold leading-none text-fg-subtle transition-colors hover:bg-surface-hover hover:text-fg"
                 @click="addTrack('audio')"
                 title="Add audio track"
               >
@@ -696,7 +689,7 @@
                 A
               </button>
               <button
-                class="flex items-center gap-0.5 rounded px-1.5 py-0.5 text-[10px] font-semibold text-zinc-600 transition-colors hover:bg-white/10 hover:text-zinc-300"
+                class="flex h-4 items-center gap-0.5 rounded px-1 text-2xs font-semibold leading-none text-fg-subtle transition-colors hover:bg-surface-hover hover:text-fg"
                 @click="addTrack('text')"
                 title="Add text track"
               >
@@ -718,7 +711,7 @@
                   :class="{
                     'flex-col items-start justify-center gap-1.5': track.type === 'video',
                     'flex-row items-center': track.type !== 'video',
-                    'bg-primary/10': trackDragOverId === track.id,
+                    'bg-brand-soft': trackDragOverId === track.id,
                     'cursor-move': !('isMain' in track && track.isMain),
                     'cursor-not-allowed opacity-60': 'isMain' in track && track.isMain && trackDragId,
                   }"
@@ -731,52 +724,46 @@
                   <!-- Drop indicator -->
                   <div
                     v-if="trackDragOverId === track.id"
-                    class="absolute left-0 right-0 top-0 z-10 h-0.5 bg-primary"
-                  />
-
-                  <!-- Left accent bar -->
-                  <div
-                    class="absolute left-0 inset-y-1.5 w-[3px] rounded-r-sm"
-                    :style="{ background: getTrackAccentColor(track.type) }"
+                    class="absolute left-0 right-0 top-0 z-10 h-0.5 bg-brand"
                   />
 
                   <!-- Row 1: icon + name -->
                   <div
-                    class="flex min-w-0 items-center gap-1.5 pl-4"
+                    class="flex min-w-0 items-center gap-1.5 pl-3"
                     :class="track.type === 'video' ? 'pr-2' : 'flex-1 pr-1'"
                   >
                     <Film
                       v-if="track.type === 'video'"
-                      class="size-3.5 shrink-0 opacity-50"
+                      class="size-3.5 shrink-0 opacity-80"
                       :style="{ color: getTrackAccentColor(track.type) }"
                     />
                     <Music
                       v-else-if="track.type === 'audio'"
-                      class="size-3.5 shrink-0 opacity-50"
+                      class="size-3.5 shrink-0 opacity-80"
                       :style="{ color: getTrackAccentColor(track.type) }"
                     />
                     <Type
                       v-else-if="track.type === 'text'"
-                      class="size-3.5 shrink-0 opacity-50"
+                      class="size-3.5 shrink-0 opacity-80"
                       :style="{ color: getTrackAccentColor(track.type) }"
                     />
                     <Smile
                       v-else-if="track.type === 'sticker'"
-                      class="size-3.5 shrink-0 opacity-50"
+                      class="size-3.5 shrink-0 opacity-80"
                       :style="{ color: getTrackAccentColor(track.type) }"
                     />
                     <Sparkles
                       v-else-if="track.type === 'effect'"
-                      class="size-3.5 shrink-0 opacity-50"
+                      class="size-3.5 shrink-0 opacity-80"
                       :style="{ color: getTrackAccentColor(track.type) }"
                     />
                     <MessageSquare
                       v-else
-                      class="size-3.5 shrink-0 opacity-50"
+                      class="size-3.5 shrink-0 opacity-80"
                       :style="{ color: getTrackAccentColor(track.type) }"
                     />
                     <span
-                      class="min-w-0 flex-1 truncate text-[11px] font-medium leading-none text-white/60 transition-colors group-hover:text-white/85 cursor-pointer"
+                      class="min-w-0 flex-1 cursor-pointer truncate text-2xs font-medium leading-none text-fg-muted transition-colors group-hover:text-fg"
                       title="Select all elements in track"
                       @click="selectAllInTrack({ trackId: track.id })"
                     >
@@ -785,12 +772,12 @@
                   </div>
 
                   <!-- Row 2: control buttons -->
-                  <div class="flex items-center gap-0.5 pr-1" :class="track.type === 'video' ? 'pl-3' : 'pl-1'">
+                  <div class="flex items-center gap-0.5 pr-1" :class="track.type === 'video' ? 'pl-2' : 'pl-1'">
                     <!-- Cover (main video track only) -->
                     <button
                       v-if="'isMain' in track && track.isMain"
                       type="button"
-                      class="rounded p-1 text-zinc-600 transition-colors hover:bg-white/10 hover:text-[#0ea5e9] disabled:pointer-events-none disabled:opacity-40"
+                      class="grid size-6 place-items-center rounded text-fg-subtle transition-colors hover:bg-surface-hover hover:text-fg disabled:pointer-events-none disabled:opacity-40"
                       :disabled="!track.elements.length"
                       @click.stop="openCoverEditor"
                       title="Set export cover image to the frame at the current playhead"
@@ -799,8 +786,8 @@
                     </button>
                     <!-- Lock -->
                     <button
-                      class="rounded p-1 transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:opacity-40"
-                      :class="track.locked ? 'text-yellow-400' : 'text-zinc-600 hover:text-zinc-300'"
+                      class="grid size-6 place-items-center rounded transition-colors hover:bg-surface-hover disabled:pointer-events-none disabled:opacity-40"
+                      :class="track.locked ? 'text-warning' : 'text-fg-subtle hover:text-fg'"
                       :disabled="!track.elements.length"
                       @click="toggleTrackLock(track.id)"
                       :title="track.locked ? 'Unlock track' : 'Lock track'"
@@ -811,8 +798,8 @@
                     <!-- Mute -->
                     <button
                       v-if="canTracktHaveAudio(track)"
-                      class="rounded p-1 transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:opacity-40"
-                      :class="track.muted ? 'text-red-400' : 'text-zinc-600 hover:text-zinc-300'"
+                      class="grid size-6 place-items-center rounded transition-colors hover:bg-surface-hover disabled:pointer-events-none disabled:opacity-40"
+                      :class="track.muted ? 'text-danger' : 'text-fg-subtle hover:text-fg'"
                       :disabled="!track.elements.length"
                       @click="toggleTrackMute(track.id)"
                       :title="track.muted ? 'Unmute' : 'Mute'"
@@ -823,8 +810,8 @@
                     <!-- Visibility -->
                     <button
                       v-if="canTrackBeHidden(track)"
-                      class="rounded p-1 transition-colors hover:bg-white/10 disabled:pointer-events-none disabled:opacity-40"
-                      :class="'hidden' in track && track.hidden ? 'text-red-400' : 'text-zinc-600 hover:text-zinc-300'"
+                      class="grid size-6 place-items-center rounded transition-colors hover:bg-surface-hover disabled:pointer-events-none disabled:opacity-40"
+                      :class="'hidden' in track && track.hidden ? 'text-danger' : 'text-fg-subtle hover:text-fg'"
                       :disabled="!track.elements.length"
                       @click="toggleTrackVisibility(track.id)"
                       :title="'hidden' in track && track.hidden ? 'Show' : 'Hide'"
@@ -835,7 +822,7 @@
                     <!-- Delete (non-main, reveals on hover) -->
                     <button
                       v-if="!('isMain' in track && track.isMain)"
-                      class="rounded p-1 text-zinc-700 transition-all hover:bg-white/10 hover:text-red-400 opacity-0 group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-0"
+                      class="grid size-6 place-items-center rounded text-fg-subtle opacity-0 transition-all hover:bg-danger-soft hover:text-danger group-hover:opacity-100 disabled:pointer-events-none disabled:opacity-0"
                       :disabled="!track.elements.length"
                       @click="removeTrack(track.id)"
                       title="Remove track"
@@ -869,7 +856,7 @@
           >
             <div class="relative" :style="{ width: `${dynamicTimelineWidth}px` }">
               <!-- Sticky header: ruler + bookmarks -->
-              <div ref="timelineHeaderRef" class="sticky top-0 z-30 flex flex-col bg-[#18181b]">
+              <div ref="timelineHeaderRef" class="sticky top-0 z-30 flex flex-col bg-panel">
                 <TimelineRuler
                   :zoom-level="zoomLevel"
                   :dynamic-timeline-width="dynamicTimelineWidth"
@@ -1000,7 +987,7 @@
                       @click.stop="selectTransition({ transitionId: badge.transitionId })"
                     >
                       <span class="pointer-events-none absolute inset-y-0 left-1/2 w-px bg-[#E040FB]/80" />
-                      <span class="pointer-events-none flex items-center gap-0.5 rounded-full bg-[#1a0a1e]/90 px-1.5 py-0.5 text-[9px] font-medium text-[#E040FB] shadow-md">
+                      <span class="pointer-events-none flex items-center gap-0.5 rounded-full bg-canvas/90 px-1.5 py-0.5 text-[9px] font-medium text-[#E040FB]">
                         <ArrowRightLeft class="size-2.5" />
                         <span class="max-w-[52px] truncate capitalize">{{ badge.label }}</span>
                       </span>
@@ -1010,7 +997,7 @@
                   <!-- Transition drop preview: centered across outgoing + incoming clips -->
                   <div
                     v-if="transitionDropVisual && transitionDropVisual.trackId === track.id"
-                    class="pointer-events-none absolute z-50 flex items-center justify-center overflow-hidden rounded-md border-2 border-[#E040FB] bg-[#E040FB]/20 shadow-[0_0_10px_rgba(224,64,251,0.45)]"
+                    class="pointer-events-none absolute z-50 flex items-center justify-center overflow-hidden rounded-md border-2 border-[#E040FB] bg-[#E040FB]/20"
                     :style="{
                       left: `${transitionDropVisual.left}px`,
                       width: `${transitionDropVisual.width}px`,
@@ -1019,10 +1006,8 @@
                       transform: 'translateY(-50%)',
                     }"
                   >
-                    <div class="absolute inset-y-0 left-0 w-1/2 bg-gradient-to-r from-[#E040FB]/5 to-[#E040FB]/30" />
-                    <div class="absolute inset-y-0 right-0 w-1/2 bg-gradient-to-l from-[#E040FB]/5 to-[#E040FB]/30" />
                     <div class="absolute inset-y-0 left-1/2 w-0.5 -translate-x-1/2 bg-[#E040FB]" />
-                    <div class="relative flex max-w-full items-center gap-1 rounded-full bg-[#1a0a1e]/90 px-2 py-1 text-[9px] font-semibold text-white">
+                    <div class="relative flex max-w-full items-center gap-1 rounded-full bg-canvas/90 px-2 py-1 text-[9px] font-semibold text-fg">
                       <ArrowRightLeft class="size-3 shrink-0 text-[#E040FB]" />
                       <span class="truncate">{{ transitionDropVisual.label }}</span>
                     </div>

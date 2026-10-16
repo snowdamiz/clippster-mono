@@ -1,28 +1,22 @@
 <template>
+  <!-- Shared with apps/web: plain scoped CSS on tokens (no Tailwind/ui primitives). Region color is user data. -->
   <div
     ref="regionRef"
-    class="poi-region absolute cursor-move select-none group"
+    class="poi-region"
     :class="{ 'is-selected': isSelected }"
     :style="regionStyle"
     @mousedown.stop="onDragStart"
   >
     <!-- Region border with dashed style — only visible when selected or hovered -->
     <div
-      class="absolute inset-0 border border-dashed transition-all"
+      class="poi-region__outline poi-region__reveal"
       :style="{ borderColor: color, borderRadius: cornerRadiusPx ? `${cornerRadiusPx}px` : undefined }"
-      :class="{
-        'ring-1 ring-white/30': isSelected,
-        'rounded': !cornerRadiusPx,
-        'opacity-0 group-hover:opacity-100': !isSelected,
-        'opacity-100': isSelected,
-      }"
     />
 
     <!-- Label badge — visible on hover or when selected -->
     <div
       v-if="label"
-      class="absolute -top-5 left-1 px-1.5 py-0.5 text-[10px] font-medium rounded whitespace-nowrap transition-opacity"
-      :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+      class="poi-region__label poi-region__reveal"
       :style="{ backgroundColor: color, color: getContrastColor(color) }"
     >
       {{ label }}
@@ -31,64 +25,55 @@
     <!-- Delete button (center, shows on hover) -->
     <button
       v-if="showControls"
-      class="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-6 h-6 rounded-full bg-red-500/90 hover:bg-red-600 flex items-center justify-center text-white shadow-lg z-10 transition-all opacity-0 group-hover:opacity-100 scale-75 group-hover:scale-100"
+      type="button"
+      class="poi-region__delete"
+      title="Remove region"
+      aria-label="Remove region"
       @mousedown.stop
       @click.stop="$emit('delete')"
-      title="Remove region"
     >
-      <XIcon class="w-3.5 h-3.5" />
+      <XIcon :size="13" />
     </button>
 
     <!-- Resize handles — only visible on hover or when selected -->
     <template v-if="resizable && showResizeHandles">
-      <!-- Corner handles -->
       <div
-        class="resize-handle absolute -top-1 -left-1 w-2.5 h-2.5 rounded-full cursor-nw-resize transition-opacity"
-        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+        class="resize-handle poi-region__handle poi-region__handle--corner poi-region__handle--nw"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'nw')"
       />
       <div
-        class="resize-handle absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full cursor-ne-resize transition-opacity"
-        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+        class="resize-handle poi-region__handle poi-region__handle--corner poi-region__handle--ne"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'ne')"
       />
       <div
-        class="resize-handle absolute -bottom-1 -left-1 w-2.5 h-2.5 rounded-full cursor-sw-resize transition-opacity"
-        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+        class="resize-handle poi-region__handle poi-region__handle--corner poi-region__handle--sw"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'sw')"
       />
       <div
-        class="resize-handle absolute -bottom-1 -right-1 w-2.5 h-2.5 rounded-full cursor-se-resize transition-opacity"
-        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+        class="resize-handle poi-region__handle poi-region__handle--corner poi-region__handle--se"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'se')"
       />
-
-      <!-- Edge handles -->
       <div
-        class="resize-handle absolute -top-0.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full cursor-n-resize transition-opacity"
-        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+        class="resize-handle poi-region__handle poi-region__handle--edge poi-region__handle--n"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'n')"
       />
       <div
-        class="resize-handle absolute -bottom-0.5 left-1/2 -translate-x-1/2 w-4 h-1.5 rounded-full cursor-s-resize transition-opacity"
-        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+        class="resize-handle poi-region__handle poi-region__handle--edge poi-region__handle--s"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 's')"
       />
       <div
-        class="resize-handle absolute top-1/2 -left-0.5 -translate-y-1/2 w-1.5 h-4 rounded-full cursor-w-resize transition-opacity"
-        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+        class="resize-handle poi-region__handle poi-region__handle--edge poi-region__handle--w"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'w')"
       />
       <div
-        class="resize-handle absolute top-1/2 -right-0.5 -translate-y-1/2 w-1.5 h-4 rounded-full cursor-e-resize transition-opacity"
-        :class="isSelected ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+        class="resize-handle poi-region__handle poi-region__handle--edge poi-region__handle--e"
         :style="{ backgroundColor: color }"
         @mousedown.stop="onResizeStart($event, 'e')"
       />
@@ -367,7 +352,10 @@
 
 <style scoped>
   .poi-region {
+    position: absolute;
     z-index: 10;
+    cursor: move;
+    user-select: none;
   }
 
   /* Tab-selected region must win hit-testing over overlapping siblings */
@@ -383,15 +371,159 @@
     z-index: 30;
   }
 
-  .resize-handle {
-    opacity: 0.7;
+  /* Chrome that appears on hover, and stays while selected */
+  .poi-region__reveal,
+  .poi-region__handle {
+    opacity: 0;
     transition:
-      opacity 0.15s,
-      transform 0.15s;
+      opacity 0.15s ease,
+      transform 0.15s ease;
   }
 
-  .resize-handle:hover {
+  .poi-region:hover .poi-region__reveal,
+  .poi-region.is-selected .poi-region__reveal {
+    opacity: 1;
+  }
+
+  .poi-region__outline {
+    position: absolute;
+    inset: 0;
+    border: 1px dashed;
+    border-radius: 4px;
+  }
+
+  .poi-region.is-selected .poi-region__outline {
+    border-style: solid;
+    box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
+  }
+
+  .poi-region__label {
+    position: absolute;
+    top: -20px;
+    left: 4px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    font-size: var(--text-2xs);
+    font-weight: 500;
+    line-height: var(--text-2xs--line-height);
+    white-space: nowrap;
+  }
+
+  .poi-region__delete {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    z-index: 10;
+    display: grid;
+    width: 24px;
+    height: 24px;
+    place-items: center;
+    padding: 0;
+    border: none;
+    border-radius: 50%;
+    background: var(--surface-raised);
+    color: var(--fg-muted);
+    box-shadow: var(--shadow-md);
+    cursor: pointer;
+    opacity: 0;
+    transform: translate(-50%, -50%) scale(0.8);
+    transition:
+      opacity 0.15s ease,
+      transform 0.15s ease,
+      background-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  .poi-region:hover .poi-region__delete {
+    opacity: 1;
+    transform: translate(-50%, -50%) scale(1);
+  }
+
+  .poi-region__delete:hover {
+    background: var(--danger-solid);
+    color: #fff;
+  }
+
+  /* Resize handles (filled with the region color, outlined for contrast) */
+  .poi-region__handle {
+    position: absolute;
+    border: 1px solid rgba(0, 0, 0, 0.45);
+    border-radius: 999px;
+  }
+
+  .poi-region:hover .poi-region__handle {
+    opacity: 0.85;
+  }
+
+  .poi-region.is-selected .poi-region__handle {
+    opacity: 1;
+  }
+
+  .poi-region__handle:hover {
     opacity: 1;
     transform: scale(1.3);
+  }
+
+  .poi-region__handle--corner {
+    width: 10px;
+    height: 10px;
+  }
+
+  .poi-region__handle--nw {
+    top: -5px;
+    left: -5px;
+    cursor: nw-resize;
+  }
+
+  .poi-region__handle--ne {
+    top: -5px;
+    right: -5px;
+    cursor: ne-resize;
+  }
+
+  .poi-region__handle--sw {
+    bottom: -5px;
+    left: -5px;
+    cursor: sw-resize;
+  }
+
+  .poi-region__handle--se {
+    bottom: -5px;
+    right: -5px;
+    cursor: se-resize;
+  }
+
+  .poi-region__handle--edge.poi-region__handle--n,
+  .poi-region__handle--edge.poi-region__handle--s {
+    left: calc(50% - 8px);
+    width: 16px;
+    height: 6px;
+  }
+
+  .poi-region__handle--edge.poi-region__handle--w,
+  .poi-region__handle--edge.poi-region__handle--e {
+    top: calc(50% - 8px);
+    width: 6px;
+    height: 16px;
+  }
+
+  .poi-region__handle--n {
+    top: -3px;
+    cursor: n-resize;
+  }
+
+  .poi-region__handle--s {
+    bottom: -3px;
+    cursor: s-resize;
+  }
+
+  .poi-region__handle--w {
+    left: -3px;
+    cursor: w-resize;
+  }
+
+  .poi-region__handle--e {
+    right: -3px;
+    cursor: e-resize;
   }
 </style>

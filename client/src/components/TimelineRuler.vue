@@ -1,35 +1,32 @@
 <template>
   <div
-    class="h-8 border-b border-border/30 flex items-center bg-gradient-to-b from-[#141416] to-[#0d0d0e] px-2 sticky top-0 z-50 backdrop-blur-sm timeline-ruler sticky-ruler"
+    class="sticky top-0 z-50 flex h-7 select-none items-stretch border-b border-line-subtle bg-surface px-2"
     @wheel="onRulerWheel"
     title="Scroll to zoom"
   >
-    <!-- Track label spacer -->
-    <div class="w-16 pr-2 flex items-center justify-center border-r border-white/[0.04]">
-      <span class="text-[10px] text-white/40 font-medium tracking-wide">Time</span>
+    <!-- Track label spacer (keeps ruler aligned with the 72px track labels) -->
+    <div class="sticky left-0 z-10 -ml-2 flex w-18 shrink-0 items-center border-r border-line-subtle bg-surface pl-3">
+      <span class="eyebrow">Time</span>
     </div>
     <!-- Timestamp ruler -->
-    <div class="flex-1 relative h-full flex items-center">
-      <!-- Timestamp markers -->
-      <div
-        v-for="timestamp in generatedTimestamps"
-        :key="timestamp.time"
-        class="absolute flex flex-col items-center"
-        :style="{
-          left: `${timestamp.position}%`,
-          transform: 'translateX(-50%)',
-        }"
-      >
-        <!-- Tick mark -->
-        <div class="w-px bg-foreground/20 timeline-tick" :class="timestamp.isMajor ? 'h-4' : 'h-2'"></div>
-        <!-- Time label -->
+    <div class="relative flex-1">
+      <template v-for="timestamp in generatedTimestamps" :key="timestamp.time">
+        <div
+          class="absolute bottom-0 w-px"
+          :class="timestamp.isMajor ? 'h-2 bg-line-strong' : 'h-1 bg-line'"
+          :style="{ left: `${timestamp.position}%` }"
+        ></div>
         <span
           v-if="timestamp.isMajor"
-          class="text-xs text-foreground/40 whitespace-nowrap font-normal mt-1 timeline-label pb-2"
+          class="tabular absolute bottom-2.5 whitespace-nowrap text-2xs leading-none text-fg-subtle"
+          :style="{
+            left: `${timestamp.position}%`,
+            transform: timestamp.position < 1 ? 'translateX(3px)' : 'translateX(-50%)',
+          }"
         >
           {{ timestamp.label }}
         </span>
-      </div>
+      </template>
     </div>
   </div>
 </template>
@@ -60,37 +57,3 @@
     emit('rulerWheel', event);
   }
 </script>
-
-<style scoped>
-  /* Timeline ruler styling */
-  .timeline-ruler {
-    background: rgba(20, 20, 22, 0.8);
-    backdrop-filter: blur(8px);
-    border-bottom: 1px solid rgba(255, 255, 255, 0.1);
-    user-select: none;
-  }
-
-  .timeline-tick {
-    transition: all 0.2s ease;
-  }
-
-  .timeline-tick:hover {
-    background: rgba(255, 255, 255, 0.6);
-  }
-
-  .timeline-label {
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.8);
-    transition: all 0.2s ease;
-  }
-
-  .timeline-label:hover {
-    color: rgba(255, 255, 255, 0.8);
-  }
-
-  /* Sticky ruler positioning */
-  .sticky-ruler {
-    position: sticky;
-    top: 0;
-    z-index: 50;
-  }
-</style>

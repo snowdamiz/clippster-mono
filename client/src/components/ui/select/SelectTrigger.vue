@@ -18,7 +18,7 @@
     v-bind="forwardedProps"
     :class="
       cn(
-        'flex h-9 w-full items-center justify-between whitespace-nowrap rounded-md border border-input bg-transparent px-3 py-2 text-sm shadow-sm ring-offset-background data-[placeholder]:text-muted-foreground focus:outline-none focus:ring-1 focus:ring-ring disabled:cursor-not-allowed disabled:opacity-50 [&>span]:truncate text-start',
+        'flex h-[var(--control-md)] w-full items-center justify-between gap-2 whitespace-nowrap rounded-[var(--radius-control)] border border-line bg-surface-raised px-2.5 text-sm text-fg transition-[border-color,box-shadow] hover:border-line-strong data-[placeholder]:text-fg-subtle focus:outline-none focus-visible:border-brand-line focus-visible:shadow-[0_0_0_3px_var(--brand-soft)] data-[state=open]:border-line-strong disabled:cursor-not-allowed disabled:opacity-50 [&>span]:truncate text-start',
         props.class
       )
     "

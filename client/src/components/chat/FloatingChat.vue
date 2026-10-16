@@ -1,37 +1,36 @@
 <script setup lang="ts">
 import { useChatPopout } from '@/composables/useChatPopout';
-import ChatFab from './ChatFab.vue';
 import ChatPopover from './ChatPopover.vue';
 import ChatWindow from './ChatWindow.vue';
 
-const { isVisible, showFab, isPopoverOpen, openChatWindowIds } = useChatPopout();
+// The chat entry point lives in the title bar (and in editor headers), so the
+// popover drops down from the top-right instead of floating over page content.
+const { isVisible, isPopoverOpen, openChatWindowIds } = useChatPopout();
 </script>
 
 <template>
-  <div v-if="isVisible" class="floating-chat">
-    <!-- Chat Windows (stacked from right to left) -->
-    <ChatWindow
-      v-for="(convId, idx) in openChatWindowIds"
-      :key="convId"
-      :conversation-id="convId"
-      :index="idx"
-    />
-
-    <!-- Popover (above FAB) -->
+  <template v-if="isVisible">
     <Transition name="popover">
-      <ChatPopover v-if="isPopoverOpen" class="floating-chat__popover" />
+      <ChatPopover v-if="isPopoverOpen" class="fixed right-3 top-[calc(var(--titlebar-height)+6px)] z-[10001]" />
     </Transition>
 
-    <!-- FAB (only show if not on a page with header FAB) -->
-    <ChatFab v-if="showFab" class="floating-chat__fab" />
-  </div>
+    <!-- Chat windows (stacked from right to left) -->
+    <div class="floating-chat">
+      <ChatWindow
+        v-for="(convId, idx) in openChatWindowIds"
+        :key="convId"
+        :conversation-id="convId"
+        :index="idx"
+      />
+    </div>
+  </template>
 </template>
 
 <style scoped>
 .floating-chat {
   position: fixed;
-  bottom: 20px;
-  right: 20px;
+  bottom: 16px;
+  right: 16px;
   z-index: 10001;
   display: flex;
   flex-direction: column;
@@ -44,11 +43,6 @@ const { isVisible, showFab, isPopoverOpen, openChatWindowIds } = useChatPopout()
   pointer-events: auto;
 }
 
-.floating-chat__popover {
-  margin-bottom: 4px;
-}
-
-/* Popover transition */
 .popover-enter-active {
   transition: opacity 0.15s ease, transform 0.15s ease;
 }
@@ -57,13 +51,9 @@ const { isVisible, showFab, isPopoverOpen, openChatWindowIds } = useChatPopout()
   transition: opacity 0.1s ease, transform 0.1s ease;
 }
 
-.popover-enter-from {
-  opacity: 0;
-  transform: translateY(8px) scale(0.95);
-}
-
+.popover-enter-from,
 .popover-leave-to {
   opacity: 0;
-  transform: translateY(8px) scale(0.95);
+  transform: translateY(-6px) scale(0.98);
 }
 </style>

@@ -9,29 +9,43 @@
   import { checkSupportConversation, getOrCreateSupportConversation, uploadMessageAttachments, getAttachmentDownloadUrl } from '@/services/messagingApi';
   import { compressImages, validateImageFile, formatFileSize } from '@/utils/imageCompression';
   import PageLayout from '@/components/PageLayout.vue';
+  import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import ConversationAvatar from '@/components/messaging/ConversationAvatar.vue';
+  import ConversationRow from '@/components/messaging/ConversationRow.vue';
+  import MessageBubble from '@/components/messaging/MessageBubble.vue';
+  import MessageComposer from '@/components/messaging/MessageComposer.vue';
+  import TypingIndicator from '@/components/messaging/TypingIndicator.vue';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
+  import { Modal } from '@/components/ui/modal';
+  import { SearchField } from '@/components/ui/search-field';
+  import { SegmentedControl } from '@/components/ui/segmented-control';
+  import {
+    DropdownMenu,
+    DropdownMenuContent,
+    DropdownMenuItem,
+    DropdownMenuSeparator,
+    DropdownMenuTrigger,
+  } from '@/components/ui/dropdown-menu';
   import {
     MessageSquare,
-    Search,
-    Plus,
-    X,
-    Send,
+    MessageSquarePlus,
+    SquarePen,
     Bell,
     BellOff,
     Users,
     User,
     Check,
-    Pencil,
     Trash2,
     Loader2,
-    Megaphone,
-    MoreVertical,
+    MoreHorizontal,
     UserMinus,
     LogOut,
-    MessagesSquare,
-    Headset,
-    Paperclip,
     Download,
-    Image as ImageIcon,
+    SearchX,
   } from 'lucide-vue-next';
 
   const messagingStore = useMessagingStore();
@@ -442,7 +456,7 @@
 
   function deleteMessage(messageId: number) {
     showConfirm({
-      title: 'Delete Message',
+      title: 'Delete message',
       message: 'Are you sure you want to delete this message?',
       confirmText: 'Delete',
       confirmVariant: 'danger',
@@ -573,7 +587,7 @@
     closeConversationMenu();
 
     showConfirm({
-      title: 'Delete Conversation',
+      title: 'Delete conversation',
       message: 'Are you sure you want to delete this conversation? This cannot be undone.',
       confirmText: 'Delete',
       confirmVariant: 'danger',
@@ -601,7 +615,7 @@
     const conversationId = messagingStore.activeConversation.id;
 
     showConfirm({
-      title: 'Remove Participant',
+      title: 'Remove participant',
       message: `Are you sure you want to remove ${name} from this conversation?`,
       confirmText: 'Remove',
       confirmVariant: 'danger',
@@ -670,7 +684,7 @@
     closeConversationMenu();
 
     showConfirm({
-      title: 'Leave Conversation',
+      title: 'Leave conversation',
       message: 'Are you sure you want to leave this conversation? You will no longer receive messages.',
       confirmText: 'Leave',
       confirmVariant: 'danger',
@@ -772,2839 +786,418 @@
     link.download = filename;
     link.click();
   }
+
+  // ── Presentation helpers (layout only) ────────────────────────────────
+  const conversationTypeOptions = [
+    { value: 'direct' as const, label: 'Direct message', icon: User },
+    { value: 'group' as const, label: 'Group chat', icon: Users },
+  ];
+
+  function setNewConversationType(type: 'direct' | 'group') {
+    newConversationType.value = type;
+    selectedUserIds.value = [];
+  }
+
+  const activeConversationSubtitle = computed(() => {
+    const conv = messagingStore.activeConversation;
+    if (!conv) return '';
+    if (conv.type === 'direct') return 'Direct message';
+    if (conv.type === 'group') return `${conv.participants.length} members`;
+    if (conv.type === 'support') return 'Clippster support team';
+    return 'Announcement';
+  });
+
+  function messageTime(message: Message): string {
+    return (message as any).insertedAt || (message as any).inserted_at || '';
+  }
+
+  function dayKey(dateString: string): string {
+    const d = new Date(dateString);
+    return `${d.getFullYear()}-${d.getMonth()}-${d.getDate()}`;
+  }
+
+  /** "Today" / "Yesterday" / "Mon, Oct 6" divider above the first message of each day. */
+  function dayDividerLabel(index: number): string | null {
+    const current = messageTime(sortedMessages.value[index]);
+    if (!current) return null;
+    const previous = index > 0 ? messageTime(sortedMessages.value[index - 1]) : '';
+    if (previous && dayKey(previous) === dayKey(current)) return null;
+    const date = new Date(current);
+    const today = new Date();
+    const yesterday = new Date();
+    yesterday.setDate(today.getDate() - 1);
+    if (dayKey(current) === dayKey(today.toISOString())) return 'Today';
+    if (dayKey(current) === dayKey(yesterday.toISOString())) return 'Yesterday';
+    return date.toLocaleDateString(undefined, {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      ...(date.getFullYear() !== today.getFullYear() ? { year: 'numeric' } : {}),
+    });
+  }
+
+  /** Sender names only in group-style chats, and only when the sender changes. */
+  function showSenderName(index: number): boolean {
+    if (messagingStore.activeConversation?.type === 'direct') return false;
+    const message = sortedMessages.value[index];
+    const previous = sortedMessages.value[index - 1];
+    return !previous || previous.senderId !== message.senderId || previous.messageType === 'system' || !!dayDividerLabel(index);
+  }
+
+  function participantUserId(participant: any): number {
+    return participant.userId ?? participant.user_id;
+  }
 </script>
 
 <template>
-  <div class="messages">
-    <PageLayout
-      title="Messages"
-      description="Chat with your team and organization members"
-      :show-header="true"
-      :icon="MessageSquare"
-    >
-      <template #actions>
-        <button @click="openNewConversationDialog" class="messages-header__new-btn">
-          <Plus class="messages-header__new-btn-icon" />
-          New Conversation
-        </button>
-      </template>
-
-      <div class="messages__content">
-        <!-- Page Heading -->
-        <div class="messages__heading">
-          <h1 class="messages__title">Messages</h1>
-          <p class="messages__subtitle">Chat with your team and organization members</p>
+  <PageLayout title="Messages" description="Chat with your team and organization members" :icon="MessageSquare">
+    <div class="flex min-h-0 flex-1">
+      <!-- ── Conversation list pane ─────────────────────────────────── -->
+      <aside class="flex w-[clamp(220px,32%,320px)] shrink-0 flex-col border-r border-line-subtle">
+        <div class="flex h-12 shrink-0 items-center gap-1.5 border-b border-line-subtle px-3">
+          <SearchField v-model="searchQuery" placeholder="Search conversations" size="sm" />
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            aria-label="New conversation"
+            title="New conversation"
+            @click="openNewConversationDialog"
+          >
+            <SquarePen />
+          </Button>
         </div>
 
-        <!-- Main Messages Container -->
-        <div class="messages__main">
-          <!-- Conversations Panel (Left) -->
-          <div class="messages-panel">
-            <div class="messages-panel__inner">
-              <!-- Panel Header -->
-              <div class="messages-panel__header">
-                <div class="messages-panel__header-left">
-                  <div class="messages-panel__header-icon">
-                    <MessagesSquare />
-                  </div>
-                  <div class="messages-panel__header-text">
-                    <h2 class="messages-panel__title">Conversations</h2>
-                    <p class="messages-panel__subtitle">
-                      {{ filteredConversations.length }} {{ filteredConversations.length === 1 ? 'chat' : 'chats' }}
-                    </p>
-                  </div>
-                </div>
-                <button @click="openNewConversationDialog" class="messages-panel__new-btn" title="New conversation">
-                  <Plus class="messages-panel__new-btn-icon" />
-                </button>
-              </div>
-
-              <!-- Search Box -->
-              <div class="messages-panel__search">
-                <Search class="messages-panel__search-icon" />
-                <input
-                  v-model="searchQuery"
-                  type="text"
-                  placeholder="Search conversations..."
-                  class="messages-panel__search-input"
-                />
-              </div>
-
-              <!-- Conversations List -->
-              <div class="messages-panel__list">
-                <!-- Loading Skeleton -->
-                <template v-if="messagingStore.isLoading">
-                  <div v-for="i in 4" :key="i" class="messages-conv-skeleton">
-                    <div class="messages-conv-skeleton__avatar"></div>
-                    <div class="messages-conv-skeleton__content">
-                      <div class="messages-conv-skeleton__line messages-conv-skeleton__line--name"></div>
-                      <div class="messages-conv-skeleton__line messages-conv-skeleton__line--preview"></div>
-                    </div>
-                  </div>
-                </template>
-
-                <!-- Conversations -->
-                <template v-else>
-                  <!-- Pinned Support Chat (always visible) -->
-                  <div
-                    class="messages-conv messages-conv--pinned"
-                    :class="{
-                      'messages-conv--active': supportConversation && supportConversation.id === messagingStore.activeConversationId,
-                      'messages-conv--unread': supportConversation && getUnreadCount(supportConversation.id) > 0,
-                    }"
-                    @click="selectSupportConversation"
-                  >
-                    <div
-                      class="messages-conv__indicator"
-                      :class="{
-                        'messages-conv__indicator--active': supportConversation && supportConversation.id === messagingStore.activeConversationId,
-                        'messages-conv__indicator--unread':
-                          supportConversation && getUnreadCount(supportConversation.id) > 0 && supportConversation.id !== messagingStore.activeConversationId,
-                      }"
-                    ></div>
-                    <div class="messages-conv__inner">
-                      <div class="messages-conv__avatar-wrapper">
-                        <div class="messages-conv__avatar messages-conv__avatar--support">
-                          <Headset class="messages-conv__avatar-icon" />
-                        </div>
-                      </div>
-                      <div class="messages-conv__content">
-                        <div class="messages-conv__header">
-                          <span class="messages-conv__name">Clippster Customer Support</span>
-                          <span v-if="supportConversation" class="messages-conv__time">{{ formatTime(supportConversation.lastMessageAt) }}</span>
-                        </div>
-                        <div class="messages-conv__footer">
-                          <span class="messages-conv__preview">{{ supportConversation?.lastMessagePreview || 'Get help from our support team' }}</span>
-                          <span v-if="supportConversation && getUnreadCount(supportConversation.id) > 0" class="messages-conv__badge">
-                            {{ getUnreadCount(supportConversation.id) > 99 ? '99+' : getUnreadCount(supportConversation.id) }}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                  <!-- Regular Conversations -->
-                  <div
-                    v-for="conv in filteredConversations"
-                    :key="conv.id"
-                    class="messages-conv"
-                    :class="{
-                      'messages-conv--active': conv.id === messagingStore.activeConversationId,
-                      'messages-conv--unread': getUnreadCount(conv.id) > 0,
-                    }"
-                    @click="selectConversation(conv.id)"
-                  >
-                    <div
-                      class="messages-conv__indicator"
-                      :class="{
-                        'messages-conv__indicator--active': conv.id === messagingStore.activeConversationId,
-                        'messages-conv__indicator--unread':
-                          getUnreadCount(conv.id) > 0 && conv.id !== messagingStore.activeConversationId,
-                      }"
-                    ></div>
-                    <div class="messages-conv__inner">
-                      <!-- Avatar -->
-                      <div class="messages-conv__avatar-wrapper">
-                        <div
-                          class="messages-conv__avatar"
-                          :class="{
-                            'messages-conv__avatar--direct': conv.type === 'direct',
-                            'messages-conv__avatar--group': conv.type === 'group',
-                            'messages-conv__avatar--announcement': conv.type === 'announcement',
-                            'messages-conv__avatar--support': conv.type === 'support',
-                          }"
-                        >
-                          <img
-                            v-if="getConversationAvatar(conv)"
-                            :src="getConversationAvatar(conv)!"
-                            alt=""
-                            class="messages-conv__avatar-img"
-                          />
-                          <Headset v-else-if="conv.type === 'support'" class="messages-conv__avatar-icon" />
-                          <Users v-else-if="conv.type === 'group'" class="messages-conv__avatar-icon" />
-                          <Megaphone v-else-if="conv.type === 'announcement'" class="messages-conv__avatar-icon" />
-                          <span v-else class="messages-conv__avatar-initial">
-                            {{ getConversationName(conv).charAt(0).toUpperCase() }}
-                          </span>
-                        </div>
-                      </div>
-
-                      <!-- Content -->
-                      <div class="messages-conv__content">
-                        <div class="messages-conv__header">
-                          <span class="messages-conv__name">{{ getConversationName(conv) }}</span>
-                          <span class="messages-conv__time">{{ formatTime(conv.lastMessageAt) }}</span>
-                        </div>
-                        <div class="messages-conv__footer">
-                          <span class="messages-conv__preview">{{ conv.lastMessagePreview || 'No messages yet' }}</span>
-                          <span v-if="getUnreadCount(conv.id) > 0" class="messages-conv__badge">
-                            {{ getUnreadCount(conv.id) > 99 ? '99+' : getUnreadCount(conv.id) }}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-
-                </template>
+        <div class="min-h-0 flex-1 overflow-y-auto p-2">
+          <!-- Loading skeleton (first load only; re-initialising keeps the list) -->
+          <div v-if="messagingStore.isLoading && messagingStore.conversationList.length === 0" class="flex flex-col gap-1">
+            <div v-for="i in 5" :key="i" class="flex items-center gap-2.5 px-2.5 py-2">
+              <div class="skeleton size-9 shrink-0 !rounded-full" />
+              <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+                <div class="skeleton h-3 w-2/5" />
+                <div class="skeleton h-2.5 w-4/5" />
               </div>
             </div>
           </div>
 
-          <!-- Chat Panel (Right) -->
-          <div class="messages-chat">
-            <div class="messages-chat__inner">
-              <template v-if="messagingStore.activeConversation">
-                <!-- Chat Header -->
-                <div class="messages-chat__header">
-                  <div class="messages-chat__header-left">
-                    <div
-                      class="messages-chat__avatar"
-                      :class="{
-                        'messages-chat__avatar--direct': messagingStore.activeConversation.type === 'direct',
-                        'messages-chat__avatar--group': messagingStore.activeConversation.type === 'group',
-                        'messages-chat__avatar--announcement':
-                          messagingStore.activeConversation.type === 'announcement',
-                        'messages-chat__avatar--support': messagingStore.activeConversation.type === 'support',
-                      }"
-                    >
-                      <img
-                        v-if="getConversationAvatar(messagingStore.activeConversation)"
-                        :src="getConversationAvatar(messagingStore.activeConversation)!"
-                        alt=""
-                        class="messages-chat__avatar-img"
-                      />
-                      <Headset
-                        v-else-if="messagingStore.activeConversation.type === 'support'"
-                        class="messages-chat__avatar-icon"
-                      />
-                      <Users
-                        v-else-if="messagingStore.activeConversation.type === 'group'"
-                        class="messages-chat__avatar-icon"
-                      />
-                      <Megaphone
-                        v-else-if="messagingStore.activeConversation.type === 'announcement'"
-                        class="messages-chat__avatar-icon"
-                      />
-                      <span v-else class="messages-chat__avatar-initial">
-                        {{ getConversationName(messagingStore.activeConversation).charAt(0).toUpperCase() }}
-                      </span>
-                    </div>
-                    <div class="messages-chat__header-info">
-                      <h3 class="messages-chat__name">
-                        {{ getConversationName(messagingStore.activeConversation) }}
-                      </h3>
-                      <p class="messages-chat__meta">
-                        {{
-                          messagingStore.activeConversation.type === 'direct'
-                            ? 'Direct message'
-                            : messagingStore.activeConversation.type === 'group'
-                              ? `${messagingStore.activeConversation.participants.length} members`
-                              : 'Announcement'
-                        }}
-                      </p>
-                    </div>
-                  </div>
+          <div v-else class="flex animate-fade-in flex-col gap-0.5">
+            <!-- Pinned support chat (always visible) -->
+            <ConversationRow
+              v-if="!searchQuery"
+              name="Clippster Customer Support"
+              type="support"
+              pinned
+              :preview="supportConversation?.lastMessagePreview || 'Get help from our support team'"
+              :time="supportConversation?.lastMessageAt ? formatConversationDate(supportConversation.lastMessageAt) : ''"
+              :unread="supportConversation ? getUnreadCount(supportConversation.id) : 0"
+              :active="!!supportConversation && supportConversation.id === messagingStore.activeConversationId"
+              @select="selectSupportConversation"
+            />
+            <div v-if="!searchQuery && filteredConversations.length > 0" class="mx-2.5 my-1 h-px bg-line-subtle" />
 
-                  <div class="messages-chat__header-actions">
-                    <button
-                      class="messages-chat__action-btn"
-                      :class="{ 'messages-chat__action-btn--muted': messagingStore.activeConversation.muted }"
-                      @click="messagingStore.toggleMute(messagingStore.activeConversation.id)"
-                      :title="messagingStore.activeConversation.muted ? 'Unmute' : 'Mute'"
-                    >
-                      <BellOff v-if="messagingStore.activeConversation.muted" class="messages-chat__action-icon" />
-                      <Bell v-else class="messages-chat__action-icon" />
-                    </button>
-                    <button
-                      ref="menuButtonRef"
-                      @click="toggleConversationMenu"
-                      class="messages-chat__action-btn"
-                      title="Conversation options"
-                    >
-                      <MoreVertical class="messages-chat__action-icon" />
-                    </button>
-                  </div>
-                </div>
+            <ConversationRow
+              v-for="conv in filteredConversations"
+              :key="conv.id"
+              :name="getConversationName(conv)"
+              :type="conv.type"
+              :avatar-url="getConversationAvatar(conv)"
+              :preview="conv.lastMessagePreview"
+              :time="conv.lastMessageAt ? formatConversationDate(conv.lastMessageAt) : ''"
+              :unread="getUnreadCount(conv.id)"
+              :muted="conv.muted"
+              :active="conv.id === messagingStore.activeConversationId"
+              @select="selectConversation(conv.id)"
+            />
 
-                <!-- Messages Container -->
-                <div ref="messagesContainer" class="messages-chat__messages" @scroll="handleScroll">
-                  <!-- Loading Messages -->
-                  <div v-if="messagingStore.isLoadingMessages" class="messages-chat__loading">
-                    <Loader2 class="messages-chat__loading-spinner" />
-                  </div>
+            <EmptyState
+              v-if="searchQuery && filteredConversations.length === 0"
+              size="sm"
+              :icon="SearchX"
+              title="No matches"
+              :description="`No conversations match “${searchQuery}”.`"
+            />
+            <EmptyState
+              v-else-if="!searchQuery && filteredConversations.length === 0"
+              size="sm"
+              title="No conversations yet"
+              description="Start a direct message or a group chat."
+            />
+          </div>
+        </div>
+      </aside>
 
-                  <!-- Messages List -->
-                  <div
-                    v-for="message in sortedMessages"
-                    :key="message.id"
-                    class="message-row"
-                    :class="{ 'message-row--sent': message.senderId === authStore.user?.id }"
+      <!-- ── Chat pane ──────────────────────────────────────────────── -->
+      <section class="flex min-w-0 flex-1 flex-col">
+        <template v-if="messagingStore.activeConversation">
+          <!-- Chat header -->
+          <header class="flex h-12 shrink-0 items-center gap-2.5 border-b border-line-subtle px-4">
+            <ConversationAvatar
+              :name="getConversationName(messagingStore.activeConversation)"
+              :src="getConversationAvatar(messagingStore.activeConversation)"
+              :type="messagingStore.activeConversation.type"
+              size="sm"
+            />
+            <div class="min-w-0 flex-1">
+              <h2 class="truncate text-sm font-semibold text-fg">
+                {{ getConversationName(messagingStore.activeConversation) }}
+              </h2>
+              <p class="truncate text-xs text-fg-subtle">{{ activeConversationSubtitle }}</p>
+            </div>
+            <div class="flex shrink-0 items-center gap-0.5">
+              <Button
+                variant="ghost"
+                size="icon-sm"
+                :class="{ '!text-warning': messagingStore.activeConversation.muted }"
+                :aria-label="messagingStore.activeConversation.muted ? 'Unmute' : 'Mute'"
+                :title="messagingStore.activeConversation.muted ? 'Unmute' : 'Mute'"
+                @click="messagingStore.toggleMute(messagingStore.activeConversation.id)"
+              >
+                <BellOff v-if="messagingStore.activeConversation.muted" />
+                <Bell v-else />
+              </Button>
+              <DropdownMenu v-model:open="showConversationMenu">
+                <DropdownMenuTrigger as-child>
+                  <Button variant="ghost" size="icon-sm" aria-label="Conversation options" title="Conversation options">
+                    <MoreHorizontal />
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" class="min-w-48">
+                  <DropdownMenuItem
+                    v-if="messagingStore.activeConversation.type === 'group' && isConversationAdmin"
+                    @click="openParticipantsDialog"
                   >
-                    <div
-                      class="message-col"
-                      :class="{
-                        'message-col--sent': message.senderId === authStore.user?.id,
-                        'message-col--received': message.senderId !== authStore.user?.id,
-                      }"
+                    <Users />
+                    Manage participants
+                  </DropdownMenuItem>
+                  <DropdownMenuItem v-if="!isConversationCreator" @click="handleLeaveConversation">
+                    <LogOut />
+                    Leave conversation
+                  </DropdownMenuItem>
+                  <template v-if="isConversationCreator">
+                    <DropdownMenuSeparator v-if="messagingStore.activeConversation.type === 'group' && isConversationAdmin" />
+                    <DropdownMenuItem
+                      class="text-danger focus:bg-danger-soft [&>svg]:!text-danger"
+                      :disabled="isDeletingConversation"
+                      @click="handleDeleteConversation"
                     >
-                      <!-- Sender Name -->
-                      <span
-                        v-if="message.senderId !== authStore.user?.id && message.sender"
-                        class="message-bubble__sender"
-                      >
-                        {{ message.sender.displayName || 'Unknown' }}
-                      </span>
+                      <Loader2 v-if="isDeletingConversation" class="animate-spin" />
+                      <Trash2 v-else />
+                      Delete conversation
+                    </DropdownMenuItem>
+                  </template>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            </div>
+          </header>
 
-                      <div
-                        class="message-bubble"
-                        :class="{
-                          'message-bubble--sent': message.senderId === authStore.user?.id,
-                          'message-bubble--received': message.senderId !== authStore.user?.id,
-                          'message-bubble--deleted': !!message.deletedAt,
-                        }"
-                      >
-                        <!-- Edit Mode -->
-                        <template v-if="editingMessageId === message.id">
-                          <textarea
-                            v-model="editContent"
-                            @keydown.enter.exact.prevent="saveEdit"
-                            @keydown.escape="cancelEdit"
-                            class="message-bubble__edit-input"
-                            rows="2"
-                          ></textarea>
-                          <div class="message-bubble__edit-actions">
-                            <button @click="saveEdit" class="message-bubble__edit-btn message-bubble__edit-btn--save">
-                              Save
-                            </button>
-                            <button @click="cancelEdit" class="message-bubble__edit-btn message-bubble__edit-btn--cancel">
-                              Cancel
-                            </button>
-                          </div>
-                        </template>
+          <!-- Messages -->
+          <div ref="messagesContainer" class="min-h-0 flex-1 overflow-y-auto px-4 py-4" @scroll="handleScroll">
+            <!-- Delayed like a skeleton so fast loads never flash the spinner -->
+            <div v-if="messagingStore.isLoadingMessages" class="skeleton-group flex justify-center py-6">
+              <Loader2 class="size-5 animate-spin text-fg-subtle" />
+            </div>
 
-                        <!-- Message Content -->
-                        <template v-else>
-                          <p v-if="message.deletedAt" class="message-bubble__deleted">Message deleted</p>
-                          <p v-else-if="message.content" class="message-bubble__content">{{ message.content }}</p>
-                          
-                          <!-- Message Attachments -->
-                          <div v-if="message.attachments && message.attachments.length > 0" class="message-bubble__attachments">
-                            <div
-                              v-for="attachment in message.attachments"
-                              :key="attachment.id"
-                              class="message-attachment"
-                              @click="openImageViewer(attachment.url, attachment.filename)"
-                            >
-                              <img
-                                :src="attachment.thumbnailUrl || attachment.url"
-                                :alt="attachment.filename"
-                                class="message-attachment__img"
-                              />
-                              <div class="message-attachment__overlay">
-                                <ImageIcon :size="24" />
-                              </div>
-                            </div>
-                          </div>
-                        </template>
-
-                        <!-- Message Actions -->
-                        <div
-                          v-if="
-                            message.senderId === authStore.user?.id &&
-                            !message.deletedAt &&
-                            editingMessageId !== message.id
-                          "
-                          class="message-bubble__actions"
-                        >
-                          <button @click="startEdit(message)" class="message-bubble__action" title="Edit">
-                            <Pencil class="message-bubble__action-icon" />
-                          </button>
-                          <button
-                            @click="deleteMessage(message.id)"
-                            class="message-bubble__action message-bubble__action--delete"
-                            title="Delete"
-                          >
-                            <Trash2 class="message-bubble__action-icon" />
-                          </button>
-                        </div>
-                      </div>
-
-                      <!-- Meta Info (outside bubble) -->
-                      <span class="message-bubble__meta">
-                        {{ formatMessageTime(message.insertedAt) }}
-                        <span v-if="message.editedAt && !message.deletedAt" class="message-bubble__edited">(edited)</span>
-                        <span
-                          v-if="message.senderId === authStore.user?.id && !message.deletedAt"
-                          class="message-bubble__status"
-                          :class="{
-                            'message-bubble__status--read': message.readBy && message.readBy.length > 1,
-                          }"
-                        >
-                          {{ message.readBy && message.readBy.length > 1 ? '• Read' : '• Sent' }}
-                        </span>
-                      </span>
-                    </div>
-                  </div>
-
-                  <!-- Typing Indicator -->
-                  <div v-if="typingUserNames.length > 0" class="messages-chat__typing">
-                    <div class="messages-chat__typing-dots">
-                      <span class="messages-chat__typing-dot" style="animation-delay: 0ms"></span>
-                      <span class="messages-chat__typing-dot" style="animation-delay: 150ms"></span>
-                      <span class="messages-chat__typing-dot" style="animation-delay: 300ms"></span>
-                    </div>
-                    <span class="messages-chat__typing-text">
-                      {{ typingUserNames.join(', ') }} {{ typingUserNames.length === 1 ? 'is' : 'are' }} typing...
-                    </span>
-                  </div>
+            <!-- Keyed by conversation so switching threads eases in -->
+            <div :key="messagingStore.activeConversation.id" class="mx-auto flex max-w-[860px] animate-enter flex-col gap-2">
+              <template v-for="(message, index) in sortedMessages" :key="message.id">
+                <div v-if="dayDividerLabel(index)" class="flex items-center gap-3 py-2">
+                  <div class="h-px flex-1 bg-line-subtle" />
+                  <span class="text-2xs font-medium text-fg-subtle">{{ dayDividerLabel(index) }}</span>
+                  <div class="h-px flex-1 bg-line-subtle" />
                 </div>
-
-                <!-- Message Input -->
-                <div class="messages-chat__input-wrapper">
-                  <!-- Attachment Preview -->
-                  <div v-if="attachmentPreviews.length > 0" class="messages-chat__attachments-preview">
-                    <div
-                      v-for="(preview, index) in attachmentPreviews"
-                      :key="index"
-                      class="attachment-preview"
-                    >
-                      <img :src="preview.url" :alt="preview.name" class="attachment-preview__img" />
-                      <div class="attachment-preview__info">
-                        <span class="attachment-preview__name">{{ preview.name }}</span>
-                        <span class="attachment-preview__size">{{ preview.size }}</span>
-                      </div>
-                      <button @click="removeAttachment(index)" class="attachment-preview__remove">
-                        <X :size="16" />
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="messages-chat__input-area">
-                    <button
-                      @click="handleAttachClick"
-                      class="messages-chat__attach-btn"
-                      title="Attach image"
-                      :disabled="isUploadingAttachments"
-                    >
-                      <Paperclip class="messages-chat__attach-icon" />
-                    </button>
-                    <textarea
-                      v-model="messageInput"
-                      placeholder="Write a message..."
-                      rows="1"
-                      @keydown="handleInputKeydown"
-                      @input="handleTyping"
-                      @paste="handlePaste"
-                      class="messages-chat__input"
-                    ></textarea>
-                    <button
-                      class="messages-chat__send-btn"
-                      :class="{ 'messages-chat__send-btn--disabled': !messageInput.trim() && selectedAttachments.length === 0 }"
-                      :disabled="(!messageInput.trim() && selectedAttachments.length === 0) || isUploadingAttachments"
-                      @click="sendMessage"
-                    >
-                      <Loader2 v-if="isUploadingAttachments" class="messages-chat__send-icon messages-chat__send-icon--loading" />
-                      <Send v-else class="messages-chat__send-icon" />
-                    </button>
-                  </div>
-                </div>
+                <MessageBubble
+                  :message="message"
+                  :is-own-message="message.senderId === authStore.user?.id"
+                  :is-editing="editingMessageId === message.id"
+                  :edit-content="editContent"
+                  :show-sender="showSenderName(index)"
+                  @edit="startEdit(message)"
+                  @delete="deleteMessage(message.id)"
+                  @update:edit-content="editContent = $event"
+                  @save-edit="saveEdit"
+                  @cancel-edit="cancelEdit"
+                  @open-attachment="(a) => openImageViewer(a.url, a.filename)"
+                />
               </template>
 
-              <!-- No Conversation Selected -->
-              <div v-else class="messages-chat__empty">
-                <div class="messages-chat__empty-icon">
-                  <MessageSquare />
-                </div>
-                <h2 class="messages-chat__empty-title">Select a conversation</h2>
-                <p class="messages-chat__empty-text">Choose from your existing conversations or start a new one</p>
-              </div>
+              <TypingIndicator v-if="typingUserNames.length > 0" :user-names="typingUserNames" />
             </div>
           </div>
+
+          <!-- Composer -->
+          <MessageComposer
+            v-model="messageInput"
+            :attachments="attachmentPreviews"
+            :uploading="isUploadingAttachments"
+            @keydown="handleInputKeydown"
+            @input="handleTyping"
+            @paste="handlePaste"
+            @attach="handleAttachClick"
+            @send="sendMessage"
+            @remove-attachment="removeAttachment"
+          />
+        </template>
+
+        <!-- No conversation selected -->
+        <EmptyState
+          v-else
+          :icon="MessageSquare"
+          title="Select a conversation"
+          description="Choose a conversation from the list or start a new one."
+        >
+          <Button variant="secondary" @click="openNewConversationDialog">
+            <MessageSquarePlus />
+            New conversation
+          </Button>
+        </EmptyState>
+      </section>
+    </div>
+
+  <!-- New conversation -->
+  <Modal
+    :open="showNewConversationDialog"
+    title="New conversation"
+    description="Message someone directly or start a group chat."
+    :icon="MessageSquarePlus"
+    size="md"
+    body-class="flex flex-col gap-4"
+    @close="closeNewConversationDialog"
+  >
+    <SegmentedControl
+      :model-value="newConversationType"
+      :options="conversationTypeOptions"
+      block
+      @update:model-value="setNewConversationType"
+    />
+
+    <Field v-if="newConversationType === 'group'" label="Group name">
+      <Input v-model="newGroupName" placeholder="e.g. Highlights team" />
+    </Field>
+
+    <Field :label="newConversationType === 'direct' ? 'Recipient' : 'Members'">
+      <SearchField v-model="memberSearchQuery" placeholder="Search people by name or email" :loading="isSearchingUsers" autofocus />
+    </Field>
+
+    <div class="-mx-1 flex min-h-[176px] flex-col gap-0.5">
+      <button
+        v-for="user in filteredMembers"
+        :key="user.id"
+        type="button"
+        class="flex w-full items-center gap-2.5 rounded-lg px-2 py-1.5 text-left transition-colors"
+        :class="selectedUserIds.includes(user.id) ? 'bg-brand-soft' : 'hover:bg-surface-hover'"
+        :aria-pressed="selectedUserIds.includes(user.id)"
+        @click="toggleUserSelection(user.id)"
+      >
+        <ConversationAvatar :name="user.name || user.email" :src="user.avatar_url" type="user" size="sm" />
+        <span class="min-w-0 flex-1">
+          <span class="block truncate text-sm font-medium text-fg">{{ user.name || user.email }}</span>
+          <span class="block truncate text-xs text-fg-subtle">
+            {{ user.account_type === 'organization' ? 'Organization' : 'User' }}
+          </span>
+        </span>
+        <span
+          class="grid size-4 shrink-0 place-items-center border transition-colors"
+          :class="[
+            newConversationType === 'direct' ? 'rounded-full' : 'rounded',
+            selectedUserIds.includes(user.id) ? 'border-brand bg-brand text-brand-fg' : 'border-line-strong',
+          ]"
+        >
+          <Check v-if="selectedUserIds.includes(user.id)" class="size-3" :stroke-width="3" />
+        </span>
+      </button>
+
+      <p
+        v-if="filteredMembers.length === 0 && !isSearchingUsers && memberSearchQuery.trim().length >= 2"
+        class="py-8 text-center text-sm text-fg-muted"
+      >
+        No users found
+      </p>
+      <p v-if="memberSearchQuery.trim().length < 2 && !isSearchingUsers" class="py-8 text-center text-sm text-fg-subtle">
+        Type at least 2 characters to search
+      </p>
+    </div>
+
+    <template #footer>
+      <span v-if="newConversationType === 'group' && selectedUserIds.length" class="mr-auto text-xs text-fg-muted">
+        {{ selectedUserIds.length }} selected
+      </span>
+      <Button variant="ghost" @click="closeNewConversationDialog">Cancel</Button>
+      <Button variant="primary" :disabled="!canCreateConversation" @click="createConversation">Create</Button>
+    </template>
+  </Modal>
+
+  <!-- Confirmation -->
+  <ConfirmationModal
+    :show="showConfirmDialog"
+    :title="confirmDialogConfig.title"
+    :message="confirmDialogConfig.message"
+    suffix=""
+    :confirm-text="confirmDialogConfig.confirmText"
+    :variant="confirmDialogConfig.confirmVariant === 'danger' ? 'destructive' : 'default'"
+    :show-cannot-undone-text="false"
+    @close="closeConfirmDialog"
+    @confirm="handleConfirm"
+  />
+
+  <!-- Image viewer -->
+  <Modal :open="showImageViewer" :title="viewerImageFilename || 'Image'" size="xl" flush @close="closeImageViewer">
+    <div class="grid place-items-center bg-surface-sunken p-3">
+      <img :src="viewerImageUrl" :alt="viewerImageFilename" class="max-h-[70vh] max-w-full rounded-lg object-contain" />
+    </div>
+    <template #footer>
+      <Button variant="ghost" @click="closeImageViewer">Close</Button>
+      <Button variant="secondary" @click="downloadImage(viewerImageUrl, viewerImageFilename)">
+        <Download />
+        Download
+      </Button>
+    </template>
+  </Modal>
+
+  <!-- Participants -->
+  <Modal
+    :open="showParticipantsDialog && !!messagingStore.activeConversation"
+    title="Participants"
+    :description="messagingStore.activeConversation ? `${messagingStore.activeConversation.participants.length} members` : undefined"
+    :icon="Users"
+    size="sm"
+    @close="closeParticipantsDialog"
+  >
+    <div v-if="messagingStore.activeConversation" class="-mx-1 flex flex-col gap-0.5">
+      <div
+        v-for="participant in messagingStore.activeConversation.participants"
+        :key="participant.userId"
+        class="flex items-center gap-2.5 rounded-lg px-2 py-1.5"
+      >
+        <ConversationAvatar
+          :name="getParticipantDisplayName(participant)"
+          :src="getParticipantAvatarUrl(participant)"
+          type="user"
+          size="sm"
+        />
+        <div class="min-w-0 flex-1">
+          <div class="flex min-w-0 items-center gap-1.5">
+            <span class="truncate text-sm font-medium text-fg">{{ getParticipantDisplayName(participant) }}</span>
+            <span v-if="participantUserId(participant) === authStore.user?.id" class="shrink-0 text-xs text-fg-subtle">
+              (you)
+            </span>
+            <Badge v-if="participant.role === 'admin'" variant="brand">Admin</Badge>
+          </div>
+          <p class="truncate text-xs text-fg-subtle">Joined {{ formatConversationDate(participant.joinedAt) }}</p>
         </div>
+        <Button
+          v-if="canKickParticipant(participant)"
+          variant="ghost"
+          size="icon-sm"
+          class="hover:!bg-danger-soft hover:!text-danger"
+          aria-label="Remove from conversation"
+          title="Remove from conversation"
+          :disabled="isKickingUser === participantUserId(participant)"
+          @click="handleKickParticipant(participantUserId(participant))"
+        >
+          <Loader2 v-if="isKickingUser === participantUserId(participant)" class="animate-spin" />
+          <UserMinus v-else />
+        </Button>
       </div>
-    </PageLayout>
-
-    <!-- New Conversation Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showNewConversationDialog" class="messages-modal__overlay" @click.self="closeNewConversationDialog">
-          <Transition name="dialog" appear>
-            <div class="messages-modal messages-modal--new-conversation">
-              <div class="messages-modal__accent"></div>
-
-              <!-- Header -->
-              <div class="messages-modal__header messages-modal__header--centered">
-                <button @click="closeNewConversationDialog" class="messages-modal__close messages-modal__close--corner">
-                  <X />
-                </button>
-                <div class="messages-modal__icon messages-modal__icon--large">
-                  <MessageSquare />
-                </div>
-                <h2 class="messages-modal__title">New Conversation</h2>
-              </div>
-
-              <!-- Type Tabs -->
-              <div class="messages-modal__tabs-nav">
-                <button
-                  @click="
-                    newConversationType = 'direct';
-                    selectedUserIds = [];
-                  "
-                  class="messages-modal__tabs-item"
-                  :class="{ 'messages-modal__tabs-item--active': newConversationType === 'direct' }"
-                >
-                  <User :size="14" />
-                  <span>Direct Message</span>
-                </button>
-                <button
-                  @click="
-                    newConversationType = 'group';
-                    selectedUserIds = [];
-                  "
-                  class="messages-modal__tabs-item"
-                  :class="{ 'messages-modal__tabs-item--active': newConversationType === 'group' }"
-                >
-                  <Users :size="14" />
-                  <span>Group Chat</span>
-                </button>
-              </div>
-
-              <!-- Content -->
-              <div class="messages-modal__body messages-modal__body--scrollable">
-                <!-- Group Name Input -->
-                <div v-if="newConversationType === 'group'" class="messages-modal__field">
-                  <label class="messages-modal__label">Group Name</label>
-                  <input
-                    v-model="newGroupName"
-                    type="text"
-                    placeholder="Enter group name..."
-                    class="messages-modal__input"
-                  />
-                </div>
-
-                <!-- Member Search -->
-                <div class="messages-modal__field">
-                  <label class="messages-modal__label">
-                    {{ newConversationType === 'direct' ? 'Select User' : 'Select Members' }}
-                  </label>
-                  <div class="messages-modal__search">
-                    <Search class="messages-modal__search-icon" />
-                    <input
-                      v-model="memberSearchQuery"
-                      type="text"
-                      placeholder="Search members..."
-                      class="messages-modal__search-input"
-                    />
-                  </div>
-                </div>
-
-                <!-- Members List -->
-                <div class="messages-modal__members">
-                  <div
-                    v-for="user in filteredMembers"
-                    :key="user.id"
-                    class="messages-modal__member"
-                    :class="{ 'messages-modal__member--selected': selectedUserIds.includes(user.id) }"
-                    @click="toggleUserSelection(user.id)"
-                  >
-                    <div class="messages-modal__member-avatar">
-                      <img v-if="user.avatar_url" :src="user.avatar_url" alt="" class="messages-modal__member-img" />
-                      <span v-else class="messages-modal__member-initial">
-                        {{ (user.name || user.email).charAt(0).toUpperCase() }}
-                      </span>
-                    </div>
-                    <div class="messages-modal__member-info">
-                      <p class="messages-modal__member-name">{{ user.name || user.email }}</p>
-                      <p class="messages-modal__member-org">{{ user.account_type === 'organization' ? 'Organization' : 'User' }}</p>
-                    </div>
-                    <div v-if="selectedUserIds.includes(user.id)" class="messages-modal__member-check">
-                      <Check />
-                    </div>
-                  </div>
-
-                  <!-- No Results -->
-                  <div v-if="filteredMembers.length === 0 && !isSearchingUsers && memberSearchQuery.trim().length >= 2" class="messages-modal__members-empty">
-                    No users found
-                  </div>
-
-                  <!-- Search Prompt -->
-                  <div v-if="memberSearchQuery.trim().length < 2 && !isSearchingUsers" class="messages-modal__members-empty">
-                    Type at least 2 characters to search
-                  </div>
-
-                  <!-- Loading -->
-                  <div v-if="isSearchingUsers" class="messages-modal__members-loading">
-                    <Loader2 class="messages-modal__members-spinner" />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Footer -->
-              <div class="messages-modal__footer">
-                <button @click="closeNewConversationDialog" class="messages-modal__btn messages-modal__btn--secondary">
-                  Cancel
-                </button>
-                <button
-                  @click="createConversation"
-                  :disabled="!canCreateConversation"
-                  class="messages-modal__btn messages-modal__btn--primary"
-                  :class="{ 'messages-modal__btn--disabled': !canCreateConversation }"
-                >
-                  Create
-                </button>
-              </div>
-            </div>
-          </Transition>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- Conversation Menu Dropdown -->
-    <Teleport to="body">
-      <div v-if="showConversationMenu" class="messages-dropdown__backdrop" @click="closeConversationMenu"></div>
-
-      <Transition name="fade">
-        <div
-          v-if="showConversationMenu && messagingStore.activeConversation"
-          class="messages-dropdown"
-          :style="{ top: menuPosition.top + 'px', right: menuPosition.right + 'px' }"
-        >
-          <!-- Manage Participants (group chats only) -->
-          <button
-            v-if="messagingStore.activeConversation.type === 'group' && isConversationAdmin"
-            @click="openParticipantsDialog"
-            class="messages-dropdown__item"
-          >
-            <Users class="messages-dropdown__item-icon" />
-            Manage Participants
-          </button>
-
-          <!-- Leave Conversation (any type, not creator) -->
-          <button v-if="!isConversationCreator" @click="handleLeaveConversation" class="messages-dropdown__item">
-            <LogOut class="messages-dropdown__item-icon" />
-            Leave Conversation
-          </button>
-
-          <!-- Delete Conversation (creator only) -->
-          <button
-            v-if="isConversationCreator"
-            @click="handleDeleteConversation"
-            class="messages-dropdown__item messages-dropdown__item--danger"
-            :disabled="isDeletingConversation"
-          >
-            <Loader2 v-if="isDeletingConversation" class="messages-dropdown__item-icon messages-dropdown__spinner" />
-            <Trash2 v-else class="messages-dropdown__item-icon" />
-            Delete Conversation
-          </button>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- Confirmation Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showConfirmDialog" class="messages-modal__overlay" @click.self="closeConfirmDialog">
-          <Transition name="dialog" appear>
-            <div class="messages-modal messages-modal--confirm">
-              <div
-                class="messages-modal__accent"
-                :class="{
-                  'messages-modal__accent--danger': confirmDialogConfig.confirmVariant === 'danger',
-                }"
-              ></div>
-
-              <!-- Header -->
-              <div class="messages-modal__confirm-header">
-                <div
-                  class="messages-modal__icon"
-                  :class="{ 'messages-modal__icon--danger': confirmDialogConfig.confirmVariant === 'danger' }"
-                >
-                  <Trash2 v-if="confirmDialogConfig.confirmVariant === 'danger'" />
-                  <MessageSquare v-else />
-                </div>
-                <h2 class="messages-modal__title">{{ confirmDialogConfig.title }}</h2>
-              </div>
-
-              <!-- Content -->
-              <div class="messages-modal__confirm-body">
-                <p class="messages-modal__confirm-text">{{ confirmDialogConfig.message }}</p>
-              </div>
-
-              <!-- Footer -->
-              <div class="messages-modal__footer">
-                <button @click="closeConfirmDialog" class="messages-modal__btn messages-modal__btn--secondary">
-                  Cancel
-                </button>
-                <button
-                  @click="handleConfirm"
-                  class="messages-modal__btn"
-                  :class="
-                    confirmDialogConfig.confirmVariant === 'danger'
-                      ? 'messages-modal__btn--danger'
-                      : 'messages-modal__btn--primary'
-                  "
-                >
-                  {{ confirmDialogConfig.confirmText }}
-                </button>
-              </div>
-            </div>
-          </Transition>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- Image Viewer Modal -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showImageViewer" class="image-viewer__overlay" @click="closeImageViewer">
-          <div class="image-viewer__container" @click.stop>
-            <button @click="closeImageViewer" class="image-viewer__close">
-              <X :size="24" />
-            </button>
-            <button @click="downloadImage(viewerImageUrl, viewerImageFilename)" class="image-viewer__download">
-              <Download :size="20" />
-              Download
-            </button>
-            <img :src="viewerImageUrl" :alt="viewerImageFilename" class="image-viewer__image" />
-            <div class="image-viewer__filename">{{ viewerImageFilename }}</div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- Participants Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div
-          v-if="showParticipantsDialog && messagingStore.activeConversation"
-          class="messages-modal__overlay"
-          @click.self="closeParticipantsDialog"
-        >
-          <Transition name="dialog" appear>
-            <div class="messages-modal messages-modal--participants">
-              <div class="messages-modal__accent messages-modal__accent--participants"></div>
-
-              <!-- Header -->
-              <div class="messages-modal__header">
-                <div class="messages-modal__header-left">
-                  <div class="messages-modal__icon messages-modal__icon--participants">
-                    <Users />
-                  </div>
-                  <h2 class="messages-modal__title">Participants</h2>
-                </div>
-                <button @click="closeParticipantsDialog" class="messages-modal__close">
-                  <X />
-                </button>
-              </div>
-
-              <!-- Content -->
-              <div class="messages-modal__participants-list">
-                <div
-                  v-for="participant in messagingStore.activeConversation.participants"
-                  :key="participant.userId"
-                  class="messages-modal__participant"
-                >
-                  <div class="messages-modal__participant-avatar">
-                    <img
-                      v-if="getParticipantAvatarUrl(participant)"
-                      :src="getParticipantAvatarUrl(participant)!"
-                      alt=""
-                      class="messages-modal__participant-img"
-                    />
-                    <span v-else class="messages-modal__participant-initial">
-                      {{ getParticipantDisplayName(participant).charAt(0).toUpperCase() }}
-                    </span>
-                  </div>
-                  <div class="messages-modal__participant-info">
-                    <div class="messages-modal__participant-name-row">
-                      <p class="messages-modal__participant-name">
-                        {{ getParticipantDisplayName(participant) }}
-                        <span
-                          v-if="((participant as any).userId ?? (participant as any).user_id) === authStore.user?.id"
-                          class="messages-modal__participant-you"
-                        >
-                          (you)
-                        </span>
-                      </p>
-                      <span v-if="participant.role === 'admin'" class="messages-modal__participant-badge">Admin</span>
-                    </div>
-                    <p class="messages-modal__participant-joined">Joined {{ formatTime(participant.joinedAt) }}</p>
-                  </div>
-
-                  <!-- Kick Button -->
-                  <button
-                    v-if="canKickParticipant(participant)"
-                    @click="handleKickParticipant((participant as any).userId ?? (participant as any).user_id)"
-                    :disabled="isKickingUser === ((participant as any).userId ?? (participant as any).user_id)"
-                    class="messages-modal__participant-kick"
-                    title="Remove from conversation"
-                  >
-                    <Loader2
-                      v-if="isKickingUser === ((participant as any).userId ?? (participant as any).user_id)"
-                      class="messages-modal__participant-kick-spinner"
-                    />
-                    <UserMinus v-else class="messages-modal__participant-kick-icon" />
-                  </button>
-                </div>
-              </div>
-
-              <!-- Footer -->
-              <div class="messages-modal__footer messages-modal__footer--single">
-                <button @click="closeParticipantsDialog" class="messages-modal__btn messages-modal__btn--secondary">
-                  Close
-                </button>
-              </div>
-            </div>
-          </Transition>
-        </div>
-      </Transition>
-    </Teleport>
-  </div>
+    </div>
+  </Modal>
+  </PageLayout>
 </template>
-
-<style scoped>
-  /* ===== Header Actions ===== */
-  .messages-header__new-btn {
-    height: 32px;
-    padding: 0 0.75rem;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border: none;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .messages-header__new-btn:hover {
-    opacity: 0.9;
-  }
-
-  .messages-header__new-btn-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* ===== Page Container ===== */
-  .messages {
-    width: 100%;
-    height: 100%;
-  }
-
-  .messages__content {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    padding: 1.5rem;
-    padding-bottom: 2rem;
-    max-width: 1600px;
-    margin: 0 auto;
-    width: 100%;
-    height: 100%;
-    box-sizing: border-box;
-  }
-
-  /* ===== Page Heading ===== */
-  .messages__heading {
-    flex-shrink: 0;
-  }
-
-  .messages__title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.2rem;
-    letter-spacing: -0.02em;
-  }
-
-  .messages__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  /* ===== Main Container ===== */
-  .messages__main {
-    display: flex;
-    gap: 1rem;
-    flex: 1;
-    min-height: 0;
-    margin-top: 0.8rem;
-    overflow: hidden;
-  }
-
-  /* ===== Conversations Panel ===== */
-  .messages-panel {
-    width: 320px;
-    flex-shrink: 0;
-    display: flex;
-    background-color: var(--sidebar-surface);
-    border-radius: 10px;
-    overflow: hidden;
-  }
-
-  .messages-panel__inner {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .messages-panel__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.875rem;
-    padding: 1.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .messages-panel__header-left {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-  }
-
-  .messages-panel__header-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background-color: rgba(6, 182, 212, 0.15);
-    flex-shrink: 0;
-  }
-
-  .messages-panel__header-icon svg {
-    width: 20px;
-    height: 20px;
-    color: var(--sidebar-accent);
-    stroke: var(--sidebar-accent);
-  }
-
-  .messages-panel__title {
-    font-size: 1.0625rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .messages-panel__subtitle {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-  }
-
-  .messages-panel__new-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .messages-panel__new-btn:hover {
-    opacity: 0.9;
-    transform: translateY(-1px);
-  }
-
-  .messages-panel__new-btn-icon {
-    width: 18px;
-    height: 18px;
-  }
-
-  /* Search */
-  .messages-panel__search {
-    position: relative;
-    padding: 0.75rem 1.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .messages-panel__search-icon {
-    position: absolute;
-    left: 1.75rem;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 14px;
-    height: 14px;
-    color: var(--sidebar-text-muted);
-    pointer-events: none;
-  }
-
-  .messages-panel__search-input {
-    width: 100%;
-    height: 36px;
-    padding-left: 2rem;
-    padding-right: 0.75rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid transparent;
-    border-radius: 8px;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .messages-panel__search-input::placeholder {
-    color: var(--sidebar-text-muted);
-  }
-
-  .messages-panel__search-input:hover {
-    border-color: var(--sidebar-border);
-  }
-
-  .messages-panel__search-input:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    background-color: var(--sidebar-surface);
-  }
-
-  /* Conversations List */
-  .messages-panel__list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0.5rem;
-  }
-
-  .messages-panel__list::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .messages-panel__list::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .messages-panel__list::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  /* Conversation Item */
-  .messages-conv {
-    display: flex;
-    margin-bottom: 0.375rem;
-    background-color: transparent;
-    border: 1px solid transparent;
-    border-radius: 8px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .messages-conv:hover {
-    background-color: var(--sidebar-hover);
-  }
-
-  .messages-conv--active {
-    background-color: var(--sidebar-active);
-  }
-
-  .messages-conv__indicator {
-    width: 3px;
-    flex-shrink: 0;
-    background-color: transparent;
-    border-radius: 3px 0 0 3px;
-  }
-
-  .messages-conv__indicator--active {
-    background-color: var(--sidebar-accent);
-  }
-
-  .messages-conv__indicator--unread {
-    background-color: #ef4444;
-  }
-
-  .messages-conv__inner {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
-  }
-
-  .messages-conv__avatar-wrapper {
-    position: relative;
-    flex-shrink: 0;
-  }
-
-  .messages-conv__avatar {
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: white;
-  }
-
-  .messages-conv__avatar--direct {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-  }
-
-  .messages-conv__avatar--group {
-    background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
-  }
-
-  .messages-conv__avatar--announcement {
-    background: linear-gradient(135deg, #f59e0b 0%, #f97316 100%);
-  }
-
-  .messages-conv--pinned {
-    border-bottom: 2px solid rgba(139, 92, 246, 0.3);
-    margin-bottom: 0.75rem;
-    padding-bottom: 0.75rem;
-  }
-
-  .messages-conv__avatar--support {
-    background: linear-gradient(135deg, #8b5cf6 0%, #a855f7 100%);
-  }
-
-  .messages-conv__avatar-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .messages-conv__avatar-icon {
-    width: 20px;
-    height: 20px;
-  }
-
-  .messages-conv__avatar-initial {
-    font-size: 1rem;
-    font-weight: 600;
-  }
-
-  .messages-conv__content {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .messages-conv__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-
-  .messages-conv__name {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .messages-conv__time {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    flex-shrink: 0;
-  }
-
-  .messages-conv__footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-
-  .messages-conv__preview {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    flex: 1;
-  }
-
-  .messages-conv__badge {
-    min-width: 18px;
-    height: 18px;
-    padding: 0 5px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.625rem;
-    font-weight: 700;
-    background-color: #ef4444;
-    color: white;
-    border-radius: 9px;
-    flex-shrink: 0;
-  }
-
-  /* Empty State */
-  .messages-panel__empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem 1.5rem;
-    text-align: center;
-  }
-
-  .messages-panel__empty-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 56px;
-    height: 56px;
-    background-color: var(--sidebar-hover);
-    border-radius: 12px;
-    margin-bottom: 1rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .messages-panel__empty-icon svg {
-    width: 24px;
-    height: 24px;
-  }
-
-  .messages-panel__empty-title {
-    font-size: 0.9375rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    margin: 0 0 0.25rem;
-  }
-
-  .messages-panel__empty-text {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 1.25rem;
-  }
-
-  .messages-panel__empty-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.625rem 1rem;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border: none;
-    border-radius: 8px;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .messages-panel__empty-btn:hover {
-    opacity: 0.9;
-  }
-
-  .messages-panel__empty-btn-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* Skeleton Loading */
-  .messages-conv-skeleton {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    margin-bottom: 0.375rem;
-  }
-
-  .messages-conv-skeleton__avatar {
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-  }
-
-  .messages-conv-skeleton__content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .messages-conv-skeleton__line {
-    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    border-radius: 4px;
-  }
-
-  .messages-conv-skeleton__line--name {
-    height: 14px;
-    width: 60%;
-  }
-
-  .messages-conv-skeleton__line--preview {
-    height: 12px;
-    width: 80%;
-  }
-
-  /* ===== Chat Panel ===== */
-  .messages-chat {
-    flex: 1;
-    display: flex;
-    background-color: var(--sidebar-surface);
-    border-radius: 10px;
-    overflow: hidden;
-  }
-
-  .messages-chat__inner {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  /* Chat Header */
-  .messages-chat__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    padding: 10px 14px;
-    border-bottom: 1px solid var(--sidebar-border, #1f1f23);
-    background-color: var(--sidebar-bg, #0a0a0b);
-  }
-
-  .messages-chat__header-left {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-  }
-
-  .messages-chat__avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    font-size: 14px;
-    font-weight: 600;
-    color: white;
-    flex-shrink: 0;
-    background: rgba(255, 255, 255, 0.08);
-  }
-
-  .messages-chat__avatar--direct {
-    background: var(--sidebar-accent, #0ea5e9);
-  }
-
-  .messages-chat__avatar--group {
-    background: #2563eb;
-  }
-
-  .messages-chat__avatar--announcement {
-    background: #dc2626;
-  }
-
-  .messages-chat__avatar--support {
-    background: #16a34a;
-  }
-
-  .messages-chat__avatar-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .messages-chat__avatar-icon {
-    width: 20px;
-    height: 20px;
-  }
-
-  .messages-chat__avatar-initial {
-    font-size: 1rem;
-    font-weight: 600;
-  }
-
-  .messages-chat__header-info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .messages-chat__name {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .messages-chat__meta {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  .messages-chat__header-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .messages-chat__action-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: transparent;
-    color: var(--sidebar-text-muted, #71717a);
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .messages-chat__action-btn:hover {
-    background: var(--sidebar-hover, rgba(255, 255, 255, 0.05));
-    color: var(--sidebar-text, #fafafa);
-  }
-
-  .messages-chat__action-btn--muted {
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-  }
-
-  .messages-chat__action-btn--muted:hover {
-    background-color: rgba(245, 158, 11, 0.25);
-  }
-
-  .messages-chat__action-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  /* Messages Container */
-  .messages-chat__messages {
-    flex: 1;
-    overflow-y: auto;
-    padding: 12px;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-  }
-
-  .messages-chat__messages::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .messages-chat__messages::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .messages-chat__messages::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  .messages-chat__loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-  }
-
-  .messages-chat__loading-spinner {
-    width: 24px;
-    height: 24px;
-    color: var(--sidebar-accent);
-    animation: spin 0.8s linear infinite;
-  }
-
-  /* Message Row */
-  .message-row {
-    display: flex;
-    justify-content: flex-start;
-  }
-
-  .message-row--sent {
-    justify-content: flex-end;
-  }
-
-  /* Message Column (wraps bubble + meta) */
-  .message-col {
-    max-width: 80%;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .message-col--sent {
-    align-items: flex-end;
-  }
-
-  .message-col--received {
-    align-items: flex-start;
-  }
-
-  /* Message Bubble */
-  .message-bubble {
-    position: relative;
-    padding: 8px 12px;
-    border-radius: 14px;
-  }
-
-  .message-bubble--sent {
-    background: var(--sidebar-accent, #0ea5e9);
-    color: white;
-    border-bottom-right-radius: 4px;
-  }
-
-  .message-bubble--received {
-    background-color: rgba(255, 255, 255, 0.06);
-    color: var(--sidebar-text);
-    border-bottom-left-radius: 4px;
-  }
-
-  .message-bubble--deleted {
-    background-color: rgba(255, 255, 255, 0.06);
-    opacity: 0.6;
-  }
-
-  .message-bubble__sender {
-    font-size: 11px;
-    font-weight: 500;
-    color: var(--sidebar-text-muted, #71717a);
-    margin-bottom: 2px;
-  }
-
-  .message-bubble__content {
-    font-size: 13px;
-    line-height: 1.4;
-    white-space: pre-wrap;
-    word-break: break-word;
-    margin: 0;
-  }
-
-  .message-bubble__deleted {
-    font-size: 13px;
-    font-style: italic;
-    color: var(--sidebar-text-muted, #71717a);
-    margin: 0;
-  }
-
-  .message-bubble__meta {
-    font-size: 10px;
-    color: var(--sidebar-text-muted, #71717a);
-    margin-top: 2px;
-    padding: 0 2px;
-  }
-
-  .message-col--sent .message-bubble__meta {
-    color: var(--sidebar-text-muted, #71717a);
-  }
-
-  .message-bubble__edited {
-    font-style: italic;
-  }
-
-  .message-bubble__status {
-    margin-left: 2px;
-    opacity: 0.7;
-  }
-
-  .message-col--sent .message-bubble__status {
-    color: var(--sidebar-text-muted, #71717a);
-  }
-
-  .message-bubble__status--read {
-    color: #fef08a;
-    opacity: 1;
-    font-weight: 600;
-  }
-
-  /* Message Edit */
-  .message-bubble__edit-input {
-    width: 100%;
-    padding: 0.5rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    resize: none;
-  }
-
-  .message-bubble__edit-input:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-  }
-
-  .message-bubble__edit-actions {
-    display: flex;
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-  }
-
-  .message-bubble__edit-btn {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .message-bubble__edit-btn--save {
-    background-color: #10b981;
-    color: white;
-  }
-
-  .message-bubble__edit-btn--save:hover {
-    background-color: #059669;
-  }
-
-  .message-bubble__edit-btn--cancel {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .message-bubble__edit-btn--cancel:hover {
-    background-color: var(--sidebar-active);
-  }
-
-  /* Message Actions */
-  .message-bubble__actions {
-    position: absolute;
-    left: -60px;
-    top: 50%;
-    transform: translateY(-50%);
-    display: flex;
-    gap: 0.25rem;
-    opacity: 0;
-    transition: opacity 150ms ease;
-  }
-
-  .message-bubble:hover .message-bubble__actions {
-    opacity: 1;
-  }
-
-  .message-bubble__action {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    background: transparent;
-    color: var(--sidebar-text-muted, #71717a);
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: background 0.15s, color 0.15s;
-  }
-
-  .message-bubble__action:hover {
-    background: var(--sidebar-hover, rgba(255, 255, 255, 0.05));
-    color: var(--sidebar-text, #fafafa);
-  }
-
-  .message-bubble__action--delete:hover {
-    background-color: #ef4444;
-    color: white;
-  }
-
-  .message-bubble__action-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* Typing Indicator */
-  .messages-chat__typing {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0;
-  }
-
-  .messages-chat__typing-dots {
-    display: flex;
-    gap: 0.25rem;
-  }
-
-  .messages-chat__typing-dot {
-    width: 6px;
-    height: 6px;
-    background-color: var(--sidebar-text-muted);
-    border-radius: 50%;
-    animation: bounce 1.4s ease-in-out infinite;
-  }
-
-  .messages-chat__typing-text {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    font-style: italic;
-  }
-
-  /* Input Area */
-  .messages-chat__input-area {
-    display: flex;
-    align-items: flex-end;
-    gap: 8px;
-    padding: 10px 14px;
-    border-top: 1px solid var(--sidebar-border, #1f1f23);
-    background-color: var(--sidebar-surface, #141416);
-  }
-
-  .messages-chat__input {
-    flex: 1;
-    padding: 8px 12px;
-    background-color: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--sidebar-border, #1f1f23);
-    border-radius: 8px;
-    font-size: 13px;
-    font-family: inherit;
-    color: var(--sidebar-text, #fafafa);
-    resize: none;
-    max-height: 120px;
-    line-height: 1.4;
-    outline: none;
-    transition: border-color 150ms ease;
-  }
-
-  .messages-chat__input::placeholder {
-    color: var(--sidebar-text-muted, #71717a);
-  }
-
-  .messages-chat__input:hover {
-    border-color: var(--sidebar-border, #1f1f23);
-  }
-
-  .messages-chat__input:focus {
-    outline: none;
-    border-color: var(--sidebar-accent, #0ea5e9);
-  }
-
-  .messages-chat__send-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 38px;
-    height: 38px;
-    background: var(--sidebar-accent, #0ea5e9);
-    color: white;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: background 150ms ease, opacity 150ms ease;
-    flex-shrink: 0;
-  }
-
-  .messages-chat__send-btn:hover:not(:disabled) {
-    background: #0284c7;
-  }
-
-  .messages-chat__send-btn--disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .messages-chat__send-icon {
-    width: 20px;
-    height: 20px;
-  }
-
-  /* Empty State */
-  .messages-chat__empty {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 2rem;
-    text-align: center;
-  }
-
-  .messages-chat__empty-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 72px;
-    height: 72px;
-    background-color: var(--sidebar-hover);
-    border-radius: 16px;
-    margin-bottom: 1.5rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .messages-chat__empty-icon svg {
-    width: 32px;
-    height: 32px;
-  }
-
-  .messages-chat__empty-title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
-  }
-
-  .messages-chat__empty-text {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    max-width: 280px;
-  }
-
-  /* ===== Modal Styles ===== */
-  .messages-modal__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 60;
-  }
-
-  .messages-modal {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 420px;
-    margin: 1rem;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .messages-modal--confirm {
-    max-width: 380px;
-  }
-
-  .messages-modal--participants {
-    max-width: 420px;
-  }
-
-  .messages-modal--new-conversation {
-    max-width: 480px;
-  }
-
-  .messages-modal--new-conversation .messages-modal__accent {
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
-  }
-
-  .messages-modal--new-conversation .messages-modal__icon {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-  }
-
-  .messages-modal__accent {
-    height: 3px;
-    background: linear-gradient(90deg, #6366f1, #8b5cf6, #a855f7);
-    flex-shrink: 0;
-  }
-
-  .messages-modal__accent--danger {
-    background: linear-gradient(90deg, #ef4444, #f43f5e, #ec4899);
-  }
-
-  .messages-modal__accent--participants {
-    background: linear-gradient(90deg, #10b981, #14b8a6, #06b6d4);
-  }
-
-  .messages-modal__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .messages-modal__header--centered {
-    position: relative;
-    flex-direction: column;
-    align-items: center;
-    padding: 1.5rem 1.5rem 1rem;
-    text-align: center;
-    border-bottom: none;
-  }
-
-  .messages-modal__header-left {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .messages-modal__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    background-color: rgba(99, 102, 241, 0.15);
-    color: #818cf8;
-    border-radius: 10px;
-  }
-
-  .messages-modal__icon svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .messages-modal__icon--large {
-    width: 52px;
-    height: 52px;
-    border-radius: 12px;
-    margin-bottom: 0.875rem;
-  }
-
-  .messages-modal__icon--large svg {
-    width: 24px;
-    height: 24px;
-  }
-
-  .messages-modal__icon--danger {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-  }
-
-  .messages-modal__icon--participants {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #34d399;
-  }
-
-  .messages-modal__title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .messages-modal__header--centered .messages-modal__title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
-  }
-
-  .messages-modal__close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: transparent;
-    color: var(--sidebar-text-muted);
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .messages-modal__close:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .messages-modal__close svg {
-    width: 18px;
-    height: 18px;
-  }
-
-  .messages-modal__close--corner {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    border-radius: 6px;
-  }
-
-  .messages-modal__body {
-    flex: 1;
-    overflow-y: auto;
-    padding: 1.25rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  .messages-modal__body--scrollable {
-    padding: 1.25rem 1.5rem 1.5rem;
-  }
-
-  .messages-modal__body--scrollable::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .messages-modal__body--scrollable::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .messages-modal__body--scrollable::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  .messages-modal__body--scrollable::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.25);
-  }
-
-  /* Tabs Navigation (Modern Style) */
-  .messages-modal__tabs-nav {
-    display: flex;
-    gap: 0.375rem;
-    padding: 0 1.5rem;
-    overflow-x: auto;
-    flex-shrink: 0;
-  }
-
-  .messages-modal__tabs-nav::-webkit-scrollbar {
-    height: 0;
-  }
-
-  .messages-modal__tabs-item {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.75rem;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-    white-space: nowrap;
-  }
-
-  .messages-modal__tabs-item:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .messages-modal__tabs-item--active {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-  }
-
-  .messages-modal__tabs-item--active:hover {
-    background-color: rgba(6, 182, 212, 0.2);
-    color: var(--sidebar-accent);
-  }
-
-  /* Legacy Tabs (for other modals) */
-  .messages-modal__tabs {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .messages-modal__tab {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .messages-modal__tab:hover {
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-text);
-  }
-
-  .messages-modal__tab--active {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: white;
-    border-color: transparent;
-  }
-
-  .messages-modal__tab-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  /* Fields */
-  .messages-modal__field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .messages-modal__label {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .messages-modal__input {
-    width: 100%;
-    padding: 0.75rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid transparent;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .messages-modal__input::placeholder {
-    color: var(--sidebar-text-muted);
-  }
-
-  .messages-modal__input:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    background-color: var(--sidebar-surface);
-  }
-
-  .messages-modal--new-conversation .messages-modal__input:focus,
-  .messages-modal--new-conversation .messages-modal__search-input:focus {
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 3px rgba(6, 182, 212, 0.1);
-  }
-
-  /* Search */
-  .messages-modal__search {
-    position: relative;
-  }
-
-  .messages-modal__search-icon {
-    position: absolute;
-    left: 0.75rem;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 14px;
-    height: 14px;
-    color: var(--sidebar-text-muted);
-    pointer-events: none;
-  }
-
-  .messages-modal__search-input {
-    width: 100%;
-    padding: 0.75rem 0.75rem 0.75rem 2.25rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid transparent;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .messages-modal__search-input::placeholder {
-    color: var(--sidebar-text-muted);
-  }
-
-  .messages-modal__search-input:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    background-color: var(--sidebar-surface);
-  }
-
-  /* Members List */
-  .messages-modal__members {
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    overflow: hidden;
-    max-height: 256px;
-    overflow-y: auto;
-  }
-
-  .messages-modal__member {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.875rem 1rem;
-    cursor: pointer;
-    transition: all 150ms ease;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .messages-modal__member:last-child {
-    border-bottom: none;
-  }
-
-  .messages-modal__member:hover {
-    background-color: var(--sidebar-hover);
-  }
-
-  .messages-modal__member--selected {
-    background-color: rgba(6, 182, 212, 0.1);
-  }
-
-  .messages-modal__member-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, var(--sidebar-hover) 0%, var(--sidebar-surface) 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    flex-shrink: 0;
-  }
-
-  .messages-modal__member-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .messages-modal__member-initial {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .messages-modal__member-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .messages-modal__member-name {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .messages-modal__member-org {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-  }
-
-  .messages-modal__member-check {
-    width: 24px;
-    height: 24px;
-    background-color: var(--sidebar-accent);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .messages-modal__member-check svg {
-    width: 14px;
-    height: 14px;
-    color: white;
-  }
-
-  .messages-modal__members-empty {
-    padding: 2rem;
-    text-align: center;
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .messages-modal__members-loading {
-    padding: 2rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .messages-modal__members-spinner {
-    width: 20px;
-    height: 20px;
-    color: var(--sidebar-accent);
-    animation: spin 0.8s linear infinite;
-  }
-
-  /* Footer */
-  .messages-modal__footer {
-    display: flex;
-    gap: 0.75rem;
-    padding: 1.25rem;
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  .messages-modal__footer--single {
-    justify-content: center;
-  }
-
-  .messages-modal__btn {
-    flex: 1;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .messages-modal__btn--primary {
-    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
-    color: #000;
-  }
-
-  .messages-modal__btn--primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .messages-modal--new-conversation .messages-modal__btn--primary {
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-  }
-
-  .messages-modal--new-conversation .messages-modal__btn--primary:hover:not(:disabled) {
-    opacity: 0.9;
-    box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
-  }
-
-  .messages-modal__btn--secondary {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-    border: 1px solid var(--sidebar-border);
-  }
-
-  .messages-modal__btn--secondary:hover {
-    background-color: var(--sidebar-active);
-  }
-
-  .messages-modal__btn--danger {
-    background: linear-gradient(135deg, #ef4444 0%, #f43f5e 100%);
-    color: white;
-  }
-
-  .messages-modal__btn--danger:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .messages-modal__btn--disabled {
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    cursor: not-allowed;
-  }
-
-  /* Confirm Dialog */
-  .messages-modal__confirm-header {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1.25rem 1.25rem 0;
-  }
-
-  .messages-modal__confirm-body {
-    padding: 1.25rem;
-  }
-
-  .messages-modal__confirm-text {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    line-height: 1.6;
-    margin: 0;
-  }
-
-  /* Participants */
-  .messages-modal__participants-list {
-    flex: 1;
-    overflow-y: auto;
-    padding: 1.25rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .messages-modal__participant {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 10px;
-  }
-
-  .messages-modal__participant-avatar {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background: linear-gradient(135deg, var(--sidebar-border) 0%, var(--sidebar-surface) 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    overflow: hidden;
-    flex-shrink: 0;
-  }
-
-  .messages-modal__participant-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .messages-modal__participant-initial {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .messages-modal__participant-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .messages-modal__participant-name-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .messages-modal__participant-name {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .messages-modal__participant-you {
-    color: var(--sidebar-text-muted);
-    font-weight: 400;
-  }
-
-  .messages-modal__participant-badge {
-    padding: 0.125rem 0.375rem;
-    font-size: 0.625rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    background-color: rgba(99, 102, 241, 0.15);
-    color: #818cf8;
-    border-radius: 4px;
-  }
-
-  .messages-modal__participant-joined {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-  }
-
-  .messages-modal__participant-kick {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: transparent;
-    color: var(--sidebar-text-muted);
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .messages-modal__participant-kick:hover:not(:disabled) {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-  }
-
-  .messages-modal__participant-kick:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .messages-modal__participant-kick-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  .messages-modal__participant-kick-spinner {
-    width: 16px;
-    height: 16px;
-    animation: spin 0.8s linear infinite;
-  }
-
-  /* ===== Dropdown Menu ===== */
-  .messages-dropdown__backdrop {
-    position: fixed;
-    inset: 0;
-    z-index: 55;
-  }
-
-  .messages-dropdown {
-    position: fixed;
-    width: 200px;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    padding: 0.25rem;
-    z-index: 56;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5);
-  }
-
-  .messages-dropdown__item {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    width: 100%;
-    padding: 0.625rem 0.75rem;
-    background: transparent;
-    color: var(--sidebar-text);
-    border: none;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .messages-dropdown__item:hover {
-    background-color: var(--sidebar-hover);
-  }
-
-  .messages-dropdown__item--danger {
-    color: #f87171;
-  }
-
-  .messages-dropdown__item--danger:hover {
-    background-color: rgba(248, 113, 113, 0.1);
-  }
-
-  .messages-dropdown__item-icon {
-    width: 16px;
-    height: 16px;
-    flex-shrink: 0;
-  }
-
-  .messages-dropdown__spinner {
-    animation: spin 0.8s linear infinite;
-  }
-
-  /* ===== Animations ===== */
-  @keyframes shimmer {
-    0% {
-      background-position: -200% 0;
-    }
-    100% {
-      background-position: 200% 0;
-    }
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  @keyframes bounce {
-    0%,
-    80%,
-    100% {
-      transform: scale(0);
-    }
-    40% {
-      transform: scale(1);
-    }
-  }
-
-  /* Modal Transitions */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 0.2s ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  .dialog-enter-active {
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 0.15s ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.96) translateY(8px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* Fade Transition */
-  .fade-enter-active,
-  .fade-leave-active {
-    transition: opacity 0.15s ease;
-  }
-
-  .fade-enter-from,
-  .fade-leave-to {
-    opacity: 0;
-  }
-
-  /* ===== Attachment Styles ===== */
-  .messages-chat__input-wrapper {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .messages-chat__attachments-preview {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    background-color: var(--sidebar-surface);
-    border-radius: 8px;
-  }
-
-  .attachment-preview {
-    position: relative;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 6px;
-    max-width: 250px;
-  }
-
-  .attachment-preview__img {
-    width: 48px;
-    height: 48px;
-    object-fit: cover;
-    border-radius: 4px;
-  }
-
-  .attachment-preview__info {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .attachment-preview__name {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .attachment-preview__size {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .attachment-preview__remove {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 24px;
-    height: 24px;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .attachment-preview__remove:hover {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-  }
-
-  .messages-chat__attach-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 38px;
-    height: 38px;
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    color: var(--sidebar-text-muted, #71717a);
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: color 0.15s ease, background 0.15s ease;
-  }
-
-  .messages-chat__attach-btn:hover:not(:disabled) {
-    background: var(--sidebar-hover, rgba(255, 255, 255, 0.05));
-    color: var(--sidebar-text, #fafafa);
-  }
-
-  .messages-chat__attach-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .messages-chat__attach-icon {
-    width: 18px;
-    height: 18px;
-  }
-
-  .messages-chat__send-icon--loading {
-    animation: spin 0.8s linear infinite;
-  }
-
-  .message-bubble__attachments {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(150px, 200px));
-    gap: 0.5rem;
-    margin-top: 0.5rem;
-    width: fit-content;
-    max-width: 100%;
-  }
-  
-  /* When message has only attachments (no text), don't expand bubble */
-  .messages-chat__message-content:has(.message-bubble__attachments):not(:has(p:not(:empty))) {
-    width: fit-content;
-    max-width: min(500px, 70%);
-  }
-
-  .message-attachment {
-    position: relative;
-    aspect-ratio: 1;
-    border-radius: 8px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: transform 0.15s ease;
-  }
-
-  .message-attachment:hover {
-    transform: scale(1.02);
-  }
-
-  .message-attachment__img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .message-attachment__overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(0, 0, 0, 0);
-    color: white;
-    opacity: 0;
-    transition: all 0.15s ease;
-  }
-
-  .message-attachment:hover .message-attachment__overlay {
-    background-color: rgba(0, 0, 0, 0.4);
-    opacity: 1;
-  }
-
-  /* ===== Image Viewer Modal ===== */
-  .image-viewer__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.9);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-    padding: 2rem;
-  }
-
-  .image-viewer__container {
-    position: relative;
-    max-width: 90vw;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1rem;
-    padding-top: 3.5rem;
-  }
-
-  .image-viewer__close {
-    position: absolute;
-    top: 0;
-    right: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    background-color: rgba(255, 255, 255, 0.1);
-    border: none;
-    border-radius: 8px;
-    color: white;
-    cursor: pointer;
-    transition: background-color 0.15s ease;
-    z-index: 10;
-  }
-
-  .image-viewer__close:hover {
-    background-color: rgba(255, 255, 255, 0.2);
-  }
-
-  .image-viewer__download {
-    position: absolute;
-    top: 0;
-    right: 3rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    background-color: rgba(255, 255, 255, 0.1);
-    border: none;
-    border-radius: 8px;
-    color: white;
-    font-size: 0.875rem;
-    cursor: pointer;
-    transition: background-color 0.15s ease;
-    z-index: 10;
-  }
-
-  .image-viewer__download:hover {
-    background-color: rgba(255, 255, 255, 0.2);
-  }
-
-  .image-viewer__image {
-    max-width: 100%;
-    max-height: calc(90vh - 6rem);
-    object-fit: contain;
-    border-radius: 8px;
-  }
-
-  .image-viewer__filename {
-    color: white;
-    font-size: 0.875rem;
-    text-align: center;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-</style>

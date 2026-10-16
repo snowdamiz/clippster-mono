@@ -1,55 +1,60 @@
-<template><ClipBuildSettingsView :model="viewModel"><template #ManualPOIEditor><ManualPOIEditor
-      v-model="showManualPOIEditor"
-      :initial-config="getConfigForRatio(editingAspectRatio)"
-      :target-aspect-ratio="editingAspectRatio"
-      :source-aspect-ratio="'16:9'"
-      :thumbnail-url="videoFrameUrl || thumbnailUrl"
-      :video-path="videoPath"
-      :clip-start-time="clipStartTime"
-      :clip-end-time="clipEndTime"
-      :watermark-settings="watermarkSettings"
-      :layout-overlays="vodPresetConfig?.layoutOverlays"
-      :overlay-preview-urls="overlayPreviewUrls"
-      :subtitle-settings="subtitleSettingsForPOIEditor"
-      :subtitle-position-override="getSubtitlePositionForRatio(editingAspectRatio)"
-      :transcript-words="transcriptWords"
-      :transcript-segments="transcriptSegments"
-      :is-subtitle-transcribing="poiSubtitleTranscribing"
-      :subtitle-transcribe-progress="poiSubtitleTranscribeProgress"
-      :subtitle-transcribe-stage="poiSubtitleTranscribeStage"
-      :subtitle-transcribe-message="poiSubtitleTranscribeMessage"
-      :clip-id="clip?.id ?? null"
-      :project-id="clipProjectId"
-      :clip-text-overlay-json="clipTextOverlayRaw"
-      @confirm="onManualConfigConfirm"
-      @subtitlePositionChange="onSubtitlePositionChange"
-      @subtitleSettingsChange="onSubtitleSettingsChange"
-      @clip-text-overlay-change="onClipTextOverlayChange"
-      @request-subtitle-transcription="onRequestSubtitleTranscription"
-    /></template>
-<template #SubtitleAdjustmentDialog><SubtitleAdjustmentDialog
-      v-model="showSubtitleAdjustmentDialog"
-      :aspect-ratio="editingSubtitleRatio"
-      :subtitle-settings="subtitleSettings"
-      :initial-override="subtitleOverrides[editingSubtitleRatio as keyof SubtitleOverrides]"
-      :thumbnail-url="videoFrameUrl || thumbnailUrl"
-      :video-path="videoPath"
-      :clip-start-time="clipStartTime"
-      :clip-end-time="clipEndTime"
-      @confirm="onSubtitleOverrideConfirm"
-    /></template></ClipBuildSettingsView></template>
+<template>
+  <ClipBuildSettingsView :model="viewModel">
+    <template #ManualPOIEditor>
+      <ManualPOIEditor
+        v-model="showManualPOIEditor"
+        :initial-config="getConfigForRatio(editingAspectRatio)"
+        :target-aspect-ratio="editingAspectRatio"
+        :source-aspect-ratio="'16:9'"
+        :thumbnail-url="videoFrameUrl || thumbnailUrl"
+        :video-path="videoPath"
+        :clip-start-time="clipStartTime"
+        :clip-end-time="clipEndTime"
+        :watermark-settings="watermarkSettings"
+        :layout-overlays="vodPresetConfig?.layoutOverlays"
+        :overlay-preview-urls="overlayPreviewUrls"
+        :subtitle-settings="subtitleSettingsForPOIEditor"
+        :subtitle-position-override="getSubtitlePositionForRatio(editingAspectRatio)"
+        :transcript-words="transcriptWords"
+        :transcript-segments="transcriptSegments"
+        :is-subtitle-transcribing="poiSubtitleTranscribing"
+        :subtitle-transcribe-progress="poiSubtitleTranscribeProgress"
+        :subtitle-transcribe-stage="poiSubtitleTranscribeStage"
+        :subtitle-transcribe-message="poiSubtitleTranscribeMessage"
+        :clip-id="clip?.id ?? null"
+        :project-id="clipProjectId"
+        :clip-text-overlay-json="clipTextOverlayRaw"
+        @confirm="onManualConfigConfirm"
+        @subtitlePositionChange="onSubtitlePositionChange"
+        @subtitleSettingsChange="onSubtitleSettingsChange"
+        @clip-text-overlay-change="onClipTextOverlayChange"
+        @request-subtitle-transcription="onRequestSubtitleTranscription"
+      />
+    </template>
+    <template #SubtitleAdjustmentDialog>
+      <SubtitleAdjustmentDialog
+        v-model="showSubtitleAdjustmentDialog"
+        :aspect-ratio="editingSubtitleRatio"
+        :subtitle-settings="subtitleSettings"
+        :initial-override="subtitleOverrides[editingSubtitleRatio as keyof SubtitleOverrides]"
+        :thumbnail-url="videoFrameUrl || thumbnailUrl"
+        :video-path="videoPath"
+        :clip-start-time="clipStartTime"
+        :clip-end-time="clipEndTime"
+        @confirm="onSubtitleOverrideConfirm"
+      />
+    </template>
+  </ClipBuildSettingsView>
+</template>
 
 <script setup lang="ts">
   import { ref, reactive, toRefs, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import {
     WrenchIcon,
     CheckIcon,
-    X,
-    ChevronDown,
     ChevronRightIcon,
     SparklesIcon,
     PencilRulerIcon,
-    Type,
     ArrowLeftIcon,
     ArrowRightIcon,
     LayoutGridIcon,
@@ -60,6 +65,8 @@
     Megaphone,
     Globe,
     User,
+    Film,
+    Loader2,
   } from 'lucide-vue-next';
   import { useClipBuildNavigation, type ClipBuildStep as StepId } from '@/composables/useClipBuildNavigation';
   import ClipBuildSettingsView from './ClipBuildSettingsView.vue';
@@ -77,11 +84,16 @@
   import ManualPOIEditor from './poi/ManualPOIEditor.vue';
   import { parseClipTextOverlayJson } from '@/utils/clipTextBox';
   import SubtitleAdjustmentDialog from './SubtitleAdjustmentDialog.vue';
-  import {
-    getMyGlobalBrandingCampaigns,
-    getCampaignsByCreatorProfile,
-    type Campaign,
-  } from '@/services/campaignApi';
+  import BuildTargetRow from './builds/BuildTargetRow.vue';
+  import IntroOutroSelect from './builds/IntroOutroSelect.vue';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Field } from '@/components/ui/field';
+  import { Modal } from '@/components/ui/modal';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
+  import { getMyGlobalBrandingCampaigns, getCampaignsByCreatorProfile, type Campaign } from '@/services/campaignApi';
   import { type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
   import type {
     ManualFramingConfig,
@@ -107,6 +119,11 @@
   }
 
   // Step definitions
+
+  // Current step state
+
+  // Aspect ratio choices on the Platforms step (preview box size in px)
+
   const props = defineProps<{
     modelValue: boolean;
     clip: ClipWithVersion | null;
@@ -211,11 +228,11 @@
     selected: boolean;
     aspectRatios: string[];
   }
-  
+
   const availableOrgs = ref<OrgSelection[]>([]);
   const availableCampaignSelections = ref<CampaignSelection[]>([]);
   const loadingOrgsAndCampaigns = ref(false);
-  
+
   // Legacy campaign selection state (kept for backward compatibility)
   const isForCampaign = ref(false);
   const availableCampaigns = ref<Campaign[]>([]);
@@ -279,19 +296,13 @@
     () => localSubtitleTranscribing.value || Boolean(props.isSubtitleTranscribing)
   );
   const poiSubtitleTranscribeProgress = computed(() =>
-    localSubtitleTranscribing.value
-      ? localSubtitleTranscribeProgress.value
-      : props.subtitleTranscribeProgress || 0
+    localSubtitleTranscribing.value ? localSubtitleTranscribeProgress.value : props.subtitleTranscribeProgress || 0
   );
   const poiSubtitleTranscribeStage = computed(() =>
-    localSubtitleTranscribing.value
-      ? localSubtitleTranscribeStage.value
-      : props.subtitleTranscribeStage || ''
+    localSubtitleTranscribing.value ? localSubtitleTranscribeStage.value : props.subtitleTranscribeStage || ''
   );
   const poiSubtitleTranscribeMessage = computed(() =>
-    localSubtitleTranscribing.value
-      ? localSubtitleTranscribeMessage.value
-      : props.subtitleTranscribeMessage || ''
+    localSubtitleTranscribing.value ? localSubtitleTranscribeMessage.value : props.subtitleTranscribeMessage || ''
   );
 
   /** True when the clip's extracted MP4 is the full playable source (0-based). */
@@ -323,10 +334,7 @@
       const targetPath = normalizePathForCompare(clip.file_path);
       const rawVideo = rawVideos.find((rv) => normalizePathForCompare(rv.file_path) === targetPath);
       if (!rawVideo) {
-        console.warn(
-          '[ClipBuildSettingsDialog] No raw video matched self-contained clip file_path:',
-          clip.file_path
-        );
+        console.warn('[ClipBuildSettingsDialog] No raw video matched self-contained clip file_path:', clip.file_path);
         return;
       }
       const transcript = await getTranscriptByRawVideoId(rawVideo.id);
@@ -432,35 +440,39 @@
   const subtitleOverrides = ref<SubtitleOverrides>({});
   const showSubtitleAdjustmentDialog = ref(false);
   const editingSubtitleRatio = ref<string>('16:9');
-  
+
   // Local mutable copy of subtitle settings (can be updated from ManualPOIEditor)
   const localSubtitleSettings = ref<SubtitleSettings | null>(null);
-  
+
   // Initialize and sync local subtitle settings from prop
-  watch(() => props.subtitleSettings, (settings) => {
-    if (settings) {
-      // Always sync from prop to ensure we have latest data
-      localSubtitleSettings.value = { ...settings };
-      console.log('[ClipBuildSettingsDialog] Synced local subtitle settings from prop:', {
-        animationStyle: localSubtitleSettings.value.animationStyle,
-        border1Width: localSubtitleSettings.value.border1Width,
-        border2Width: localSubtitleSettings.value.border2Width
-      });
-    }
-  }, { immediate: true, deep: true });
-  
+  watch(
+    () => props.subtitleSettings,
+    (settings) => {
+      if (settings) {
+        // Always sync from prop to ensure we have latest data
+        localSubtitleSettings.value = { ...settings };
+        console.log('[ClipBuildSettingsDialog] Synced local subtitle settings from prop:', {
+          animationStyle: localSubtitleSettings.value.animationStyle,
+          border1Width: localSubtitleSettings.value.border1Width,
+          border2Width: localSubtitleSettings.value.border2Width,
+        });
+      }
+    },
+    { immediate: true, deep: true }
+  );
+
   // Use local settings if available, otherwise fall back to prop
   const effectiveSubtitleSettings = computed(() => localSubtitleSettings.value || props.subtitleSettings);
-  
+
   // Compute subtitle settings for POI editor, merging per-ratio overrides
   // This ensures the POI editor shows the correct settings for the current ratio
   const subtitleSettingsForPOIEditor = computed((): SubtitleSettings | null => {
     const base = effectiveSubtitleSettings.value;
     if (!base) return null;
-    
+
     const ratio = editingAspectRatio.value;
     const ratioOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides];
-    
+
     if (ratioOverride) {
       // Merge per-ratio override into base settings, excluding position (different types)
       const { position: _xyPos, ...overrideWithoutPosition } = ratioOverride;
@@ -473,7 +485,7 @@
       });
       return merged;
     }
-    
+
     return base;
   });
 
@@ -511,7 +523,22 @@
   });
 
   // Visible steps (framing step shown when portrait ratios selected OR subtitles OR clip text box)
-  const { currentStep, visibleSteps, currentStepIndex, isFirstStep, isLastStep, canProceed, isStepCompleted, canNavigateToStep, goToStep, nextStep, previousStep } = useClipBuildNavigation(selectedRatios, () => hasPortraitRatio.value || hasSubtitlesEnabled.value || hasClipTextBoxEnabled.value);
+  const {
+    currentStep,
+    visibleSteps,
+    currentStepIndex,
+    isFirstStep,
+    isLastStep,
+    canProceed,
+    isStepCompleted,
+    canNavigateToStep,
+    goToStep,
+    nextStep,
+    previousStep,
+  } = useClipBuildNavigation(
+    selectedRatios,
+    () => hasPortraitRatio.value || hasSubtitlesEnabled.value || hasClipTextBoxEnabled.value
+  );
 
   // Get selected portrait ratios that need configuration
   const selectedPortraitRatios = computed(() => {
@@ -526,8 +553,7 @@
     const clipText = parseClipTextOverlayJson(clipTextOverlayRaw.value);
     const hasClipTextForRatio =
       !!clipText?.enabled &&
-      (Object.keys(clipText.perRatioConfigs ?? {}).length === 0 ||
-        Boolean(clipText.perRatioConfigs?.[ratio]));
+      (Object.keys(clipText.perRatioConfigs ?? {}).length === 0 || Boolean(clipText.perRatioConfigs?.[ratio]));
     return hasFraming || hasClipTextForRatio;
   }
 
@@ -543,7 +569,7 @@
     console.log('[ClipBuildSettingsDialog] Opening POI editor for ratio:', ratio);
     console.log('[ClipBuildSettingsDialog] Config for ratio:', config);
     console.log('[ClipBuildSettingsDialog] All manualFramingConfigs:', manualFramingConfigs.value);
-    
+
     // Always reload so a prior clip's cached path cannot leak into POI editor.
     await loadVideoFrame();
 
@@ -620,8 +646,7 @@
     ensureSubtitlePositionOverrideForRatio(editingAspectRatio.value);
 
     try {
-      const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } =
-        await import('@/services/database/clips');
+      const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import('@/services/database/clips');
       await updateClipFullSubtitleSettings(props.clip.id, enabledSettings);
       await updateClipSubtitlePosition(
         props.clip.id,
@@ -659,7 +684,7 @@
       ? Math.max(0, getSelfContainedClipDuration(props.clip) || clipDuration.value || 0)
       : 0;
     if (clipSeconds <= 0) {
-      showErrorToast('Transcript Unavailable', 'Could not determine this clip\'s duration.');
+      showErrorToast('Transcript Unavailable', "Could not determine this clip's duration.");
       return;
     }
     if (clipSeconds > FREE_CLIP_MAX_SECONDS) {
@@ -670,7 +695,11 @@
       return;
     }
 
-    const { transcribeProject, progress: tProgress, cancelTranscription } = useTranscriptionOnly({
+    const {
+      transcribeProject,
+      progress: tProgress,
+      cancelTranscription,
+    } = useTranscriptionOnly({
       showSuccessToast: false,
       showErrorToast: true,
       showChunkCompletionToast: false,
@@ -757,30 +786,10 @@
         },
         positionPercentage: DEFAULT_POI_SUBTITLE_POSITION.y,
         maxWidth: existingOverride?.maxWidth ?? DEFAULT_POI_SUBTITLE_POSITION.width,
-        fontSize:
-          existingOverride?.fontSize ??
-          effectiveSubtitleSettings.value.fontSize ??
-          32,
+        fontSize: existingOverride?.fontSize ?? effectiveSubtitleSettings.value.fontSize ?? 32,
       },
     };
   }
-  const introButtonRef = ref<HTMLElement | null>(null);
-  const outroButtonRef = ref<HTMLElement | null>(null);
-  const introDropdownRef = ref<HTMLElement | null>(null);
-  const outroDropdownRef = ref<HTMLElement | null>(null);
-  const introDropdownPosition = ref<{ top: string; left: string; width: string; maxHeight: string }>({
-    top: '0px',
-    left: '0px',
-    width: '0px',
-    maxHeight: '192px',
-  });
-  const outroDropdownPosition = ref<{ top: string; left: string; width: string; maxHeight: string }>({
-    top: '0px',
-    left: '0px',
-    width: '0px',
-    maxHeight: '192px',
-  });
-
   // Computed
   const clipDuration = computed(() => {
     if (!props.clip?.current_version_end_time || !props.clip?.current_version_start_time) {
@@ -918,8 +927,7 @@
 
   // Handle case where framing step becomes hidden while user is on it
   watch(
-    () =>
-      hasPortraitRatio.value || hasSubtitlesEnabled.value || hasClipTextBoxEnabled.value,
+    () => hasPortraitRatio.value || hasSubtitlesEnabled.value || hasClipTextBoxEnabled.value,
     (showFramingStep) => {
       if (!showFramingStep && currentStep.value === 'framing') {
         // Skip to export step if framing step is no longer needed
@@ -960,7 +968,7 @@
         width: override.maxWidth,
       };
     }
-    
+
     return { ...DEFAULT_POI_SUBTITLE_POSITION };
   }
 
@@ -1001,20 +1009,21 @@
       ...subtitleOverrides.value,
       [ratio]: newOverride,
     };
-    
+
     // Save position to database so it persists
     if (props.clip?.id) {
       try {
         const { getClip, saveSubtitleSettings } = await import('@/services/database/clips');
         const dbClip = await getClip(props.clip.id);
         let currentSettings: any = null;
-        
+
         if (dbClip?.subtitle_settings) {
-          currentSettings = typeof dbClip.subtitle_settings === 'string' 
-            ? JSON.parse(dbClip.subtitle_settings)
-            : dbClip.subtitle_settings;
+          currentSettings =
+            typeof dbClip.subtitle_settings === 'string'
+              ? JSON.parse(dbClip.subtitle_settings)
+              : dbClip.subtitle_settings;
         }
-        
+
         // Merge position into perRatioConfigs
         const perRatioConfigs: Record<string, any> = {
           ...(currentSettings?.perRatioConfigs || {}),
@@ -1025,12 +1034,12 @@
           positionPercentage: newOverride.positionPercentage,
           maxWidth: newOverride.maxWidth,
         };
-        
+
         const settingsToSave = {
           ...(currentSettings || effectiveSubtitleSettings.value || {}),
           perRatioConfigs,
         };
-        
+
         await saveSubtitleSettings(props.clip.id, settingsToSave);
         console.log('[ClipBuildSettingsDialog] Saved subtitle position to database:', {
           clipId: props.clip.id,
@@ -1056,16 +1065,16 @@
       selectedPresetId: settings.selectedPresetId,
       ratio,
     });
-    
+
     // IMPORTANT: Only update localSubtitleSettings (base settings) if editing 16:9
     // For other ratios, we only update the per-ratio override to preserve base settings
     if (ratio === '16:9') {
       localSubtitleSettings.value = { ...settings };
     }
-    
+
     // Update the override for this specific ratio
     const existingOverride: Partial<SubtitleOverride> = subtitleOverrides.value[ratio as keyof SubtitleOverrides] || {};
-    
+
     // Store ALL visual properties that changed so Rust can apply them via per_ratio_override JSON
     // The Rust code reads these fields from the JSON even though TypeScript SubtitleOverride doesn't define them
     // IMPORTANT: Preserve position/maxWidth from existing override if user dragged the subtitle
@@ -1078,7 +1087,9 @@
         fontSize: settings.fontSize,
         // Only update position fields if NOT already set by user dragging
         // (existingOverride.position indicates user has dragged the subtitle)
-        positionPercentage: existingOverride.position ? existingOverride.positionPercentage : settings.positionPercentage,
+        positionPercentage: existingOverride.position
+          ? existingOverride.positionPercentage
+          : settings.positionPercentage,
         maxWidth: existingOverride.maxWidth ?? settings.maxWidth,
         position: existingOverride.position, // Preserve user's dragged position
         presetId: settings.selectedPresetId || undefined,
@@ -1103,43 +1114,44 @@
         backgroundEnabled: settings.backgroundEnabled,
       } as any, // Cast to any since we're extending SubtitleOverride with extra fields
     };
-    
+
     // Save per-ratio override to database (don't overwrite base settings!)
     if (props.clip?.id) {
       try {
         const { getClip, saveSubtitleSettings } = await import('@/services/database/clips');
-        
+
         // Load current clip data from database to get existing subtitle_settings
         const dbClip = await getClip(props.clip.id);
         let currentSettings: any = null;
-        
+
         if (dbClip?.subtitle_settings) {
-          currentSettings = typeof dbClip.subtitle_settings === 'string' 
-            ? JSON.parse(dbClip.subtitle_settings)
-            : dbClip.subtitle_settings;
+          currentSettings =
+            typeof dbClip.subtitle_settings === 'string'
+              ? JSON.parse(dbClip.subtitle_settings)
+              : dbClip.subtitle_settings;
         }
-        
+
         console.log('[ClipBuildSettingsDialog] Current settings from DB:', {
           hasSettings: !!currentSettings,
           baseAnimationStyle: currentSettings?.animationStyle,
           hasPerRatioConfigs: !!currentSettings?.perRatioConfigs,
-          existingRatios: currentSettings?.perRatioConfigs ? Object.keys(currentSettings.perRatioConfigs) : []
+          existingRatios: currentSettings?.perRatioConfigs ? Object.keys(currentSettings.perRatioConfigs) : [],
         });
-        
+
         // Build perRatioConfigs by merging existing with new overrides
         const perRatioConfigs: Record<string, any> = {
           ...(currentSettings?.perRatioConfigs || {}),
           ...subtitleOverrides.value,
         };
-        
+
         // If we have current settings, use them as base; otherwise use the incoming settings
         const baseSettings = currentSettings || settings;
-        
+
         const settingsToSave = {
           ...baseSettings,
           perRatioConfigs: Object.keys(perRatioConfigs).length > 0 ? perRatioConfigs : undefined,
         };
-        
+
         await saveSubtitleSettings(props.clip.id, settingsToSave);
         console.log('[ClipBuildSettingsDialog] Saved per-ratio subtitle override to database:', {
           clipId: props.clip.id,
@@ -1224,26 +1236,6 @@
     const target = event.target as Node;
 
     if (
-      showIntroDropdown.value &&
-      introButtonRef.value &&
-      !introButtonRef.value.contains(target) &&
-      introDropdownRef.value &&
-      !introDropdownRef.value.contains(target)
-    ) {
-      showIntroDropdown.value = false;
-    }
-
-    if (
-      showOutroDropdown.value &&
-      outroButtonRef.value &&
-      !outroButtonRef.value.contains(target) &&
-      outroDropdownRef.value &&
-      !outroDropdownRef.value.contains(target)
-    ) {
-      showOutroDropdown.value = false;
-    }
-
-    if (
       showCampaignDropdown.value &&
       campaignButtonRef.value &&
       !campaignButtonRef.value.contains(target) &&
@@ -1305,60 +1297,6 @@
       width,
       maxHeight,
     };
-  }
-
-  async function toggleIntroDropdown() {
-    console.log('[ClipBuildSettingsDialog] toggleIntroDropdown called');
-    console.log('[ClipBuildSettingsDialog] hasOrgOrCampaignSelected:', hasOrgOrCampaignSelected.value);
-    console.log('[ClipBuildSettingsDialog] intros.value.length:', intros.value.length);
-    
-    // Wait for next tick to ensure button ref is available after template renders
-    await nextTick();
-    
-    if (!introButtonRef.value) {
-      console.warn('[ClipBuildSettingsDialog] Intro button ref not available');
-      return;
-    }
-    
-    console.log('[ClipBuildSettingsDialog] Calculating intro dropdown position...');
-    introDropdownPosition.value = calculateDropdownPosition(introButtonRef.value);
-    console.log('[ClipBuildSettingsDialog] Intro dropdown position:', {
-      top: introDropdownPosition.value.top,
-      left: introDropdownPosition.value.left,
-      width: introDropdownPosition.value.width,
-      maxHeight: introDropdownPosition.value.maxHeight
-    });
-    
-    showIntroDropdown.value = !showIntroDropdown.value;
-    console.log('[ClipBuildSettingsDialog] showIntroDropdown.value:', showIntroDropdown.value);
-    showOutroDropdown.value = false;
-  }
-
-  async function toggleOutroDropdown() {
-    console.log('[ClipBuildSettingsDialog] toggleOutroDropdown called');
-    console.log('[ClipBuildSettingsDialog] hasOrgOrCampaignSelected:', hasOrgOrCampaignSelected.value);
-    console.log('[ClipBuildSettingsDialog] outros.value.length:', outros.value.length);
-    
-    // Wait for next tick to ensure button ref is available after template renders
-    await nextTick();
-    
-    if (!outroButtonRef.value) {
-      console.warn('[ClipBuildSettingsDialog] Outro button ref not available');
-      return;
-    }
-    
-    console.log('[ClipBuildSettingsDialog] Calculating outro dropdown position...');
-    outroDropdownPosition.value = calculateDropdownPosition(outroButtonRef.value);
-    console.log('[ClipBuildSettingsDialog] Outro dropdown position:', {
-      top: outroDropdownPosition.value.top,
-      left: outroDropdownPosition.value.left,
-      width: outroDropdownPosition.value.width,
-      maxHeight: outroDropdownPosition.value.maxHeight
-    });
-    
-    showOutroDropdown.value = !showOutroDropdown.value;
-    console.log('[ClipBuildSettingsDialog] showOutroDropdown.value:', showOutroDropdown.value);
-    showIntroDropdown.value = false;
   }
 
   async function loadIntroOutros() {
@@ -1493,7 +1431,6 @@
     }
   }
 
-
   function formatDuration(seconds: number): string {
     if (!seconds) return '0:00';
     const mins = Math.floor(seconds / 60);
@@ -1524,25 +1461,20 @@
           selected: false,
           aspectRatios: [],
         }));
-        console.log(
-          '[ClipBuildSettingsDialog] Eligible orgs for build:',
-          eligible.length,
-          'project:',
-          projectId
-        );
+        console.log('[ClipBuildSettingsDialog] Eligible orgs for build:', eligible.length, 'project:', projectId);
       } else {
         availableOrgs.value = [];
       }
 
       // Fetch campaigns (global branding + creator-profile-specific)
       const campaignResults: Campaign[] = [];
-      
+
       // Global branding campaigns
       const globalRes = await getMyGlobalBrandingCampaigns();
       if (globalRes.success && globalRes.campaigns) {
         campaignResults.push(...globalRes.campaigns);
       }
-      
+
       // Profile-specific campaigns
       if (props.creatorProfileServerId) {
         const profileRes = await getCampaignsByCreatorProfile(props.creatorProfileServerId);
@@ -1554,17 +1486,17 @@
           }
         }
       }
-      
+
       // Convert to CampaignSelection format
-      availableCampaignSelections.value = campaignResults.map(campaign => ({
+      availableCampaignSelections.value = campaignResults.map((campaign) => ({
         campaign,
         selected: false,
         aspectRatios: [],
       }));
-      
+
       // Also set legacy availableCampaigns for backward compatibility
       availableCampaigns.value = campaignResults;
-      
+
       console.log('[ClipBuildSettingsDialog] Found', campaignResults.length, 'campaigns');
     } catch (e) {
       console.warn('[ClipBuildSettingsDialog] Failed to load orgs/campaigns:', e);
@@ -1575,7 +1507,7 @@
       loadingOrgsAndCampaigns.value = false;
     }
   }
-  
+
   async function syncBrandingPreviewFromSelection() {
     if (!hasOrgOrCampaignSelected.value) {
       selectedIntro.value = props.defaultIntro ? (props.defaultIntro as IntroOutroItem) : null;
@@ -1583,11 +1515,8 @@
       return;
     }
 
-    const selectedCampaign =
-      availableCampaignSelections.value.find((c) => c.selected)?.campaign ?? null;
-    const selectedOrg = selectedCampaign
-      ? null
-      : availableOrgs.value.find((o) => o.selected)?.serverProfile ?? null;
+    const selectedCampaign = availableCampaignSelections.value.find((c) => c.selected)?.campaign ?? null;
+    const selectedOrg = selectedCampaign ? null : (availableOrgs.value.find((o) => o.selected)?.serverProfile ?? null);
 
     try {
       const branding = await resolveSelectionBrandingPreview(selectedOrg, selectedCampaign);
@@ -1607,7 +1536,7 @@
     }
     void syncBrandingPreviewFromSelection();
   }
-  
+
   // Toggle aspect ratio for org
   function toggleOrgAspectRatio(orgIndex: number, ratio: string) {
     const org = availableOrgs.value[orgIndex];
@@ -1618,7 +1547,7 @@
       org.aspectRatios.push(ratio);
     }
   }
-  
+
   // Toggle campaign selection
   function toggleCampaignSelection(index: number) {
     const campaign = availableCampaignSelections.value[index];
@@ -1628,7 +1557,7 @@
     }
     void syncBrandingPreviewFromSelection();
   }
-  
+
   // Toggle aspect ratio for campaign
   function toggleCampaignAspectRatio(campaignIndex: number, ratio: string) {
     const campaign = availableCampaignSelections.value[campaignIndex];
@@ -1639,21 +1568,24 @@
       campaign.aspectRatios.push(ratio);
     }
   }
-  
+
   // Check if we have multiple aspect ratios selected (show nested selectors)
   const hasMultipleAspectRatios = computed(() => selectedRatios.value.length > 1);
-  
+
   // Check if any org or campaign is selected (for disabling intro/outro)
   const hasOrgOrCampaignSelected = computed(() => {
-    const hasSelectedOrg = availableOrgs.value.some(org => org.selected);
-    const hasSelectedCampaign = availableCampaignSelections.value.some(c => c.selected);
+    const hasSelectedOrg = availableOrgs.value.some((org) => org.selected);
+    const hasSelectedCampaign = availableCampaignSelections.value.some((c) => c.selected);
     const result = hasSelectedOrg || hasSelectedCampaign;
     console.log('[ClipBuildSettingsDialog] hasOrgOrCampaignSelected computed:', {
       hasSelectedOrg,
       hasSelectedCampaign,
       result,
-      availableOrgs: availableOrgs.value.map(o => ({ name: o.organizationName, selected: o.selected })),
-      availableCampaigns: availableCampaignSelections.value.map(c => ({ title: c.campaign.title, selected: c.selected }))
+      availableOrgs: availableOrgs.value.map((o) => ({ name: o.organizationName, selected: o.selected })),
+      availableCampaigns: availableCampaignSelections.value.map((c) => ({
+        title: c.campaign.title,
+        selected: c.selected,
+      })),
     });
     return result;
   });
@@ -1688,11 +1620,7 @@
 
   const showPersonalBrandingSection = computed(() => {
     if (!personalCreatorProfile.value) return false;
-    return (
-      personalBrandingHasWatermark.value ||
-      personalBrandingHasIntro.value ||
-      personalBrandingHasOutro.value
-    );
+    return personalBrandingHasWatermark.value || personalBrandingHasIntro.value || personalBrandingHasOutro.value;
   });
 
   const personalCreatorAvatarUrl = computed(() => {
@@ -1710,47 +1638,64 @@
       return null;
     }
   });
-  
+
+  // Short status line shown next to the step counter in the footer
+
   // Get total number of builds that will be created
   // Must match the logic in confirmBuild() - when nested aspectRatios is empty, use selectedRatios
   const totalBuildsCount = computed(() => {
     let count = 0;
-    
+
     console.log('[BuildDialog] Calculating totalBuildsCount...');
     console.log('[BuildDialog] hasMultipleAspectRatios:', hasMultipleAspectRatios.value);
     console.log('[BuildDialog] selectedRatios:', selectedRatios.value);
-    console.log('[BuildDialog] availableOrgs:', availableOrgs.value.map(o => ({ name: o.organizationName, selected: o.selected, aspectRatios: o.aspectRatios })));
-    console.log('[BuildDialog] availableCampaignSelections:', availableCampaignSelections.value.map(c => ({ name: c.campaign.title, selected: c.selected, aspectRatios: c.aspectRatios })));
-    
+    console.log(
+      '[BuildDialog] availableOrgs:',
+      availableOrgs.value.map((o) => ({ name: o.organizationName, selected: o.selected, aspectRatios: o.aspectRatios }))
+    );
+    console.log(
+      '[BuildDialog] availableCampaignSelections:',
+      availableCampaignSelections.value.map((c) => ({
+        name: c.campaign.title,
+        selected: c.selected,
+        aspectRatios: c.aspectRatios,
+      }))
+    );
+
     // Count org builds (each org × each aspect ratio = 1 build)
     for (const org of availableOrgs.value) {
       if (org.selected) {
         // If multiple aspect ratios mode and user selected specific ratios, use those
         // Otherwise fall back to all selected ratios (same as confirmBuild)
-        const ratios = hasMultipleAspectRatios.value && org.aspectRatios.length > 0 
-          ? org.aspectRatios 
-          : selectedRatios.value;
+        const ratios =
+          hasMultipleAspectRatios.value && org.aspectRatios.length > 0 ? org.aspectRatios : selectedRatios.value;
         console.log(`[BuildDialog] Org "${org.organizationName}" selected, ratios:`, ratios, 'adding', ratios.length);
         count += ratios.length;
       }
     }
-    
+
     // Count campaign builds
     for (const campaign of availableCampaignSelections.value) {
       if (campaign.selected) {
-        const ratios = hasMultipleAspectRatios.value && campaign.aspectRatios.length > 0 
-          ? campaign.aspectRatios 
-          : selectedRatios.value;
-        console.log(`[BuildDialog] Campaign "${campaign.campaign.title}" selected, ratios:`, ratios, 'adding', ratios.length);
+        const ratios =
+          hasMultipleAspectRatios.value && campaign.aspectRatios.length > 0
+            ? campaign.aspectRatios
+            : selectedRatios.value;
+        console.log(
+          `[BuildDialog] Campaign "${campaign.campaign.title}" selected, ratios:`,
+          ratios,
+          'adding',
+          ratios.length
+        );
         count += ratios.length;
       }
     }
-    
+
     // If no org/campaign selected, it's a personal build (one per selected ratio)
     if (count === 0) {
       count = selectedRatios.value.length;
     }
-    
+
     console.log('[BuildDialog] Total build count:', count);
     return count;
   });
@@ -1849,14 +1794,13 @@
 
     // Build targets from multi-select (orgs and campaigns with their aspect ratios)
     const buildTargets: BuildTarget[] = [];
-    
+
     // Add org build targets
     for (const org of availableOrgs.value) {
       if (org.selected) {
-        const ratios = hasMultipleAspectRatios.value && org.aspectRatios.length > 0 
-          ? org.aspectRatios 
-          : [...selectedRatios.value];
-        
+        const ratios =
+          hasMultipleAspectRatios.value && org.aspectRatios.length > 0 ? org.aspectRatios : [...selectedRatios.value];
+
         for (const ratio of ratios) {
           buildTargets.push({
             type: 'org',
@@ -1870,15 +1814,16 @@
         }
       }
     }
-    
+
     // Add campaign build targets
     for (const campaignSel of availableCampaignSelections.value) {
       if (campaignSel.selected) {
         // If multiple aspect ratios, use selected ones; otherwise use all selected ratios
-        const ratios = hasMultipleAspectRatios.value && campaignSel.aspectRatios.length > 0 
-          ? campaignSel.aspectRatios 
-          : [...selectedRatios.value];
-        
+        const ratios =
+          hasMultipleAspectRatios.value && campaignSel.aspectRatios.length > 0
+            ? campaignSel.aspectRatios
+            : [...selectedRatios.value];
+
         // Create one build target per aspect ratio
         for (const ratio of ratios) {
           buildTargets.push({
@@ -1905,7 +1850,11 @@
           selectedPlatforms: new Map(),
         });
       }
-      console.log('[ClipBuildSettingsDialog] No orgs/campaigns selected, created', buildTargets.length, 'personal build targets');
+      console.log(
+        '[ClipBuildSettingsDialog] No orgs/campaigns selected, created',
+        buildTargets.length,
+        'personal build targets'
+      );
     }
 
     const selectedCampaignTargets = availableCampaignSelections.value.filter((campaignSel) => campaignSel.selected);
@@ -1923,28 +1872,114 @@
       manualFramingConfig: finalManualConfig ?? undefined,
       manualFramingConfigs: finalManualConfigs,
       subtitleOverrides: finalSubtitleOverrides,
-      layoutOverlays: props.vodPresetConfig?.layoutOverlays?.length
-        ? props.vodPresetConfig.layoutOverlays
-        : undefined,
+      layoutOverlays: props.vodPresetConfig?.layoutOverlays?.length ? props.vodPresetConfig.layoutOverlays : undefined,
       // Multi-build targets (always populated — personal targets as fallback)
       buildTargets: buildTargets,
       // Legacy single campaign fields (kept for backward compatibility)
-      campaignId: singleSelectedCampaign?.id ?? (isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.id : null),
+      campaignId:
+        singleSelectedCampaign?.id ??
+        (isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.id : null),
       selectedCampaign: singleSelectedCampaign ?? (isForCampaign.value ? selectedCampaign.value : null),
-      campaignBrandingProfileId: singleSelectedCampaign?.branding_profile_id
-        ?? (isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.branding_profile_id : null),
-      brandingType: singleSelectedCampaign ? 'campaign' : (isForCampaign.value && selectedCampaign.value ? 'campaign' : 'personal'),
+      campaignBrandingProfileId:
+        singleSelectedCampaign?.branding_profile_id ??
+        (isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.branding_profile_id : null),
+      brandingType: singleSelectedCampaign
+        ? 'campaign'
+        : isForCampaign.value && selectedCampaign.value
+          ? 'campaign'
+          : 'personal',
     };
 
     console.log('[ClipBuildSettingsDialog] Emitting confirm with buildTargets:', buildTargets.length, 'targets');
     console.log('[ClipBuildSettingsDialog] Build targets:', buildTargets);
     emit('confirm', settings);
-    
+
     // In publish mode, keep dialog open and wait for build completion
     // The parent component will handle the build and emit build-complete event
     if (!props.publishMode) {
       close();
     }
   }
-const viewModel = reactive({ introButtonRef, introDropdownRef, outroButtonRef, outroDropdownRef, ...toRefs(props), availableCampaignSelections, availableOrgs, canNavigateToStep, canProceed, clipDuration, clipEndTime, clipProjectId, clipStartTime, clipTextOverlayRaw, close, confirmBuild, currentStep, currentStepIndex, editingAspectRatio, editingSubtitleRatio, formatDuration, frameRate, framingMode, getConfigForRatio, getSubtitlePositionForRatio, goToStep, hasMultipleAspectRatios, hasOrgOrCampaignSelected, hasPortraitRatio, introDropdownPosition, intros, isFirstStep, isFreeTier, isLastStep, isRatioConfigured, isStepCompleted, loadingAssets, loadingVideoFrame, nextStep, onClipTextOverlayChange, onManualConfigConfirm, onRequestSubtitleTranscription, onSubtitleOverrideConfirm, onSubtitlePositionChange, onSubtitleSettingsChange, openPOIEditorForRatio, outputFormat, outroDropdownPosition, outros, overlayPreviewUrls, personalBrandingHasIntro, personalBrandingHasOutro, personalBrandingHasWatermark, personalCreatorAvatarUrl, personalCreatorProfile, poiSubtitleTranscribeMessage, poiSubtitleTranscribeProgress, poiSubtitleTranscribeStage, poiSubtitleTranscribing, previousStep, quality, selectIntro, selectOutro, selectedIntro, selectedOutro, selectedPortraitRatios, selectedRatios, showIntroDropdown, showManualPOIEditor, showOutroDropdown, showPersonalBrandingSection, showSubtitleAdjustmentDialog, subtitleOverrides, subtitleSettingsForPOIEditor, toggleCampaignAspectRatio, toggleCampaignSelection, toggleIntroDropdown, toggleOrgAspectRatio, toggleOrgSelection, toggleOutroDropdown, toggleRatio, totalBuildsCount, totalDuration, transcriptSegments, transcriptWords, videoFrameUrl, videoPath, visibleSteps });
+  const viewModel = reactive({
+    ...toRefs(props),
+    availableCampaignSelections,
+    availableOrgs,
+    canNavigateToStep,
+    canProceed,
+    clipDuration,
+    clipEndTime,
+    clipProjectId,
+    clipStartTime,
+    clipTextOverlayRaw,
+    close,
+    confirmBuild,
+    currentStep,
+    currentStepIndex,
+    editingAspectRatio,
+    editingSubtitleRatio,
+    formatDuration,
+    frameRate,
+    framingMode,
+    getConfigForRatio,
+    getSubtitlePositionForRatio,
+    goToStep,
+    hasMultipleAspectRatios,
+    hasOrgOrCampaignSelected,
+    hasPortraitRatio,
+    intros,
+    isFirstStep,
+    isFreeTier,
+    isLastStep,
+    isRatioConfigured,
+    isStepCompleted,
+    loadingAssets,
+    loadingVideoFrame,
+    nextStep,
+    onClipTextOverlayChange,
+    onManualConfigConfirm,
+    onRequestSubtitleTranscription,
+    onSubtitleOverrideConfirm,
+    onSubtitlePositionChange,
+    onSubtitleSettingsChange,
+    openPOIEditorForRatio,
+    outputFormat,
+    outros,
+    overlayPreviewUrls,
+    personalBrandingHasIntro,
+    personalBrandingHasOutro,
+    personalBrandingHasWatermark,
+    personalCreatorAvatarUrl,
+    personalCreatorProfile,
+    poiSubtitleTranscribeMessage,
+    poiSubtitleTranscribeProgress,
+    poiSubtitleTranscribeStage,
+    poiSubtitleTranscribing,
+    previousStep,
+    quality,
+    selectIntro,
+    selectOutro,
+    selectedIntro,
+    selectedOutro,
+    selectedPortraitRatios,
+    selectedRatios,
+    showIntroDropdown,
+    showManualPOIEditor,
+    showOutroDropdown,
+    showPersonalBrandingSection,
+    showSubtitleAdjustmentDialog,
+    subtitleOverrides,
+    subtitleSettingsForPOIEditor,
+    toggleCampaignAspectRatio,
+    toggleCampaignSelection,
+    toggleOrgAspectRatio,
+    toggleOrgSelection,
+    toggleRatio,
+    totalBuildsCount,
+    totalDuration,
+    transcriptSegments,
+    transcriptWords,
+    videoFrameUrl,
+    videoPath,
+    visibleSteps,
+  });
 </script>

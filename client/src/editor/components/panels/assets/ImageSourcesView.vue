@@ -12,15 +12,22 @@ import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { invoke } from "@tauri-apps/api/core";
 import { readFile } from "@tauri-apps/plugin-fs";
 import { fileNameFromPathOrName } from "@/utils/fsNames";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
+import PanelHeader from "../../chrome/PanelHeader.vue";
+import { AssetGrid, AssetListRow, AssetTile, InspectorField, SliderField } from "../shared";
+import PanelSearchBar from "./PanelSearchBar.vue";
 import {
 	Upload,
 	Image,
 	Film,
-	Search,
 	Loader2,
 	Plus,
-	Clock,
-	Link2,
+	X,
+	Camera,
+	SearchX,
 	ClipboardPaste,
 } from "lucide-vue-next";
 
@@ -37,6 +44,13 @@ const { editor, version } = useEditor({
 const { isExtracting, extractFrame, extractFrameAsDataUrl } = useFrameExtractor();
 
 const activeSubTab = ref<"upload" | "clips" | "gallery" | "url" | "paste">("upload");
+const subTabs: SegmentedOption<"upload" | "clips" | "gallery" | "url" | "paste">[] = [
+	{ value: "upload", label: "Upload", title: "Upload from your computer" },
+	{ value: "url", label: "URL", title: "Import from a URL" },
+	{ value: "paste", label: "Paste", title: "Paste from the clipboard" },
+	{ value: "clips", label: "Clips", title: "Frames from built clips" },
+	{ value: "gallery", label: "Gallery", title: "Saved images" },
+];
 const clips = ref<Clip[]>([]);
 const galleryImages = ref<ImageAsset[]>([]);
 const searchQuery = ref("");
@@ -500,7 +514,7 @@ function formatDuration(seconds: number | null): string {
 </script>
 
 <template>
-	<div class="flex h-full flex-col bg-[#1e1e1e]">
+	<div class="flex h-full flex-col">
 		<input
 			ref="fileInputRef"
 			type="file"
@@ -510,34 +524,20 @@ function formatDuration(seconds: number | null): string {
 			@change="onLocalFileInputChange"
 		/>
 
-		<div class="grid shrink-0 grid-cols-5 border-b border-black/40 bg-[#2a2a2a]">
-			<button
-				v-for="tab in ([
-					{ key: 'upload', label: 'Upload', icon: Upload },
-					{ key: 'url', label: 'URL', icon: Link2 },
-					{ key: 'paste', label: 'Paste', icon: ClipboardPaste },
-					{ key: 'clips', label: 'Clips', icon: Film },
-					{ key: 'gallery', label: 'Gallery', icon: Image },
-				] as const)"
-				:key="tab.key"
-				type="button"
-				:title="tab.label"
-				:class="[
-					'flex min-w-0 flex-col items-center justify-center gap-0.5 px-0.5 py-1.5 text-[9px] leading-none transition-colors',
-					activeSubTab === tab.key
-						? 'bg-[#1e1e1e] text-zinc-100'
-						: 'text-zinc-500 hover:text-zinc-300',
-				]"
-				@click="activeSubTab = tab.key"
-			>
-				<component :is="tab.icon" class="size-3.5 shrink-0" />
-				<span class="w-full truncate text-center">{{ tab.label }}</span>
-			</button>
-		</div>
+		<PanelHeader class="px-1.5">
+			<SegmentedControl
+				v-model="activeSubTab"
+				:options="subTabs"
+				size="sm"
+				block
+				class="[&>button]:min-w-0 [&>button]:px-1"
+			/>
+		</PanelHeader>
 
+		<!-- Upload tab -->
 		<div
 			v-if="activeSubTab === 'upload'"
-			class="flex flex-1 flex-col overflow-hidden"
+			class="flex flex-1 flex-col overflow-y-auto p-3"
 			@dragenter="onPanelDragEnter"
 			@dragover="onPanelDragOver"
 			@dragleave="onPanelDragLeave"
@@ -547,190 +547,208 @@ function formatDuration(seconds: number | null): string {
 				type="button"
 				:disabled="isProcessing"
 				:class="[
-					'm-2 flex shrink-0 flex-col items-center justify-center gap-2 rounded-md border-2 border-dashed px-3 py-6 text-center transition-colors',
-					isDragOver
-						? 'border-[#4693e0] bg-[#4693e0]/15'
-						: 'border-white/20 bg-white/[0.03] hover:border-[#4693e0]/60 hover:bg-[#4693e0]/10',
-					isProcessing ? 'opacity-50' : 'cursor-pointer',
+					'flex w-full shrink-0 flex-col items-center justify-center rounded-lg border border-dashed transition-colors focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none',
+					isDragOver ? 'border-brand-line bg-brand-soft' : 'border-line hover:border-line-strong hover:bg-surface-hover',
+					isProcessing ? 'cursor-wait opacity-60' : 'cursor-pointer',
+					uploadedImages.length === 0 && 'flex-1',
 				]"
 				@click="handleUpload"
 			>
-				<Loader2 v-if="isProcessing" class="size-7 animate-spin text-[#4693e0]" />
-				<Upload v-else class="size-7 text-[#4693e0]" />
-				<span class="break-words text-[12px] font-medium text-zinc-100">
-					{{ isProcessing ? "Uploading…" : isDragOver ? "Drop images here" : "Click to upload from your computer" }}
-				</span>
-				<span class="break-words text-[10px] text-zinc-500">PNG, JPG, WebP, GIF · or drag files here</span>
+				<EmptyState
+					size="sm"
+					:icon="isProcessing ? Loader2 : Upload"
+					:tone="isDragOver ? 'brand' : 'neutral'"
+					:title="isProcessing ? 'Uploading…' : isDragOver ? 'Drop images here' : 'Upload from your computer'"
+					:description="isProcessing ? undefined : 'PNG, JPG, WebP, GIF · or drag files here'"
+					:class="['py-6', isProcessing && '[&_svg]:animate-spin']"
+				/>
 			</button>
 
-			<div class="min-h-0 flex-1 overflow-y-auto px-2 pb-2">
-				<p v-if="uploadedImages.length > 0" class="mb-1.5 text-[10px] text-zinc-500">
-					Project images · click to add again
-				</p>
-				<div
-					v-if="uploadedImages.length > 0"
-					class="grid gap-1.5"
-					style="grid-template-columns: repeat(auto-fill, minmax(72px, 1fr))"
-				>
-					<div
+			<template v-if="uploadedImages.length > 0">
+				<p class="mb-2 mt-3 text-2xs text-fg-subtle">Project images · click to add again</p>
+				<AssetGrid :min="72">
+					<AssetTile
 						v-for="item in uploadedImages"
 						:key="item.id"
-						class="group relative cursor-pointer overflow-hidden rounded-sm border border-black/40 bg-[#141414] text-left hover:border-[#4693e0]"
+						as="div"
+						aspect="1"
+						:label="item.name"
+						class="cursor-pointer"
+						role="button"
+						tabindex="0"
 						:title="`${item.name} — click to add to canvas`"
 						@click="addAssetToCanvas(item.id)"
+						@keydown.enter="addAssetToCanvas(item.id)"
 					>
-						<div class="aspect-square">
-							<img
-								v-if="item.url || item.thumbnailUrl"
-								:src="item.url || item.thumbnailUrl"
-								:alt="item.name"
-								class="size-full object-cover"
-								draggable="false"
-							/>
-							<Image v-else class="size-full p-4 text-zinc-700" />
+						<img
+							v-if="item.url || item.thumbnailUrl"
+							:src="item.url || item.thumbnailUrl"
+							:alt="item.name"
+							class="size-full object-cover"
+							draggable="false"
+						/>
+						<div v-else class="flex size-full items-center justify-center">
+							<Image class="size-6 text-fg-subtle" />
 						</div>
-						<div class="truncate px-1 py-0.5 text-[9px] text-zinc-400">{{ item.name }}</div>
-						<button
-							type="button"
-							class="absolute top-0.5 right-0.5 hidden rounded bg-black/60 px-1 text-[10px] text-white group-hover:block"
-							:aria-label="`Remove ${item.name}`"
-							@click.stop="removeUploadedAsset(item.id)"
-						>
-							✕
-						</button>
-					</div>
-				</div>
-			</div>
+						<template #actions>
+							<button
+								type="button"
+								class="grid size-5 place-items-center rounded bg-black/60 text-white/85 transition-colors hover:bg-danger-solid hover:text-white"
+								:title="`Remove ${item.name}`"
+								:aria-label="`Remove ${item.name}`"
+								@click.stop="removeUploadedAsset(item.id)"
+							>
+								<X class="size-3" />
+							</button>
+						</template>
+					</AssetTile>
+				</AssetGrid>
+			</template>
 		</div>
 
 		<!-- URL tab -->
-		<div v-else-if="activeSubTab === 'url'" class="flex flex-1 flex-col gap-3 p-3">
-			<p class="text-[11px] text-zinc-500">Fetch an image from a public URL</p>
-			<input
-				v-model="urlInput"
-				type="url"
-				placeholder="https://example.com/image.jpg"
-				class="w-full rounded-sm border border-white/10 bg-white/5 px-3 py-2 text-xs text-zinc-200 outline-none focus:border-[#4693e0]/50"
-				@keydown.enter="handleUrlImport"
-			/>
-			<p v-if="urlError" class="text-[10px] text-red-400">{{ urlError }}</p>
-			<button
-				type="button"
-				class="rounded-sm bg-[#4693e0] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#5aa0e6] disabled:opacity-50"
+		<div v-else-if="activeSubTab === 'url'" class="flex-1 space-y-3 overflow-y-auto p-3">
+			<InspectorField label="Image URL" for="image-source-url">
+				<Input
+					id="image-source-url"
+					v-model="urlInput"
+					type="url"
+					placeholder="https://example.com/image.jpg"
+					class="h-7 px-2 text-xs"
+					:aria-invalid="urlError ? true : undefined"
+					@keydown.enter="handleUrlImport"
+				/>
+				<p v-if="urlError" class="text-2xs text-danger">{{ urlError }}</p>
+				<p v-else class="text-2xs text-fg-subtle">Fetch an image from a public URL.</p>
+			</InspectorField>
+			<Button
+				variant="primary"
+				size="sm"
+				block
 				:disabled="isProcessing || !urlInput.trim()"
 				@click="handleUrlImport"
 			>
+				<Loader2 v-if="isProcessing" class="animate-spin" />
+				<Plus v-else />
 				{{ isProcessing ? 'Importing…' : 'Add to canvas' }}
-			</button>
+			</Button>
 		</div>
 
 		<!-- Paste tab -->
-		<div
-			v-else-if="activeSubTab === 'paste'"
-			class="flex flex-1 flex-col items-center justify-center gap-2 p-6 outline-none"
-			tabindex="0"
-			@paste="handlePaste"
-			@click="($event.currentTarget as HTMLElement).focus()"
-		>
-			<ClipboardPaste class="size-8 text-zinc-500" />
-			<p class="text-sm text-zinc-400 text-center">{{ pasteHint }}</p>
-			<p class="text-[10px] text-zinc-600">Supports clipboard images and image URLs</p>
+		<div v-else-if="activeSubTab === 'paste'" class="flex flex-1 flex-col p-3">
+			<div
+				class="flex flex-1 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed border-line outline-none transition-colors hover:border-line-strong focus:border-brand-line focus:bg-brand-soft"
+				tabindex="0"
+				@paste="handlePaste"
+				@click="($event.currentTarget as HTMLElement).focus()"
+			>
+				<EmptyState
+					size="sm"
+					:icon="ClipboardPaste"
+					:title="pasteHint"
+					description="Supports clipboard images and image URLs."
+				/>
+			</div>
 		</div>
 
 		<!-- Clips tab -->
 		<div v-else-if="activeSubTab === 'clips'" class="flex flex-1 flex-col overflow-hidden">
-			<!-- Search -->
-			<div class="flex items-center gap-2 border-b border-white/10 px-3 py-2">
-				<Search class="size-3.5 text-zinc-500" />
-				<input
-					v-model="searchQuery"
-					type="text"
-					placeholder="Search clips..."
-					class="flex-1 bg-transparent text-xs text-zinc-200 outline-none placeholder:text-zinc-600"
-				/>
-			</div>
+			<PanelSearchBar v-model="searchQuery" placeholder="Search clips…" />
 
-			<!-- Frame extractor overlay -->
-			<div v-if="selectedClipForFrame" class="flex flex-col gap-3 p-3 border-b border-white/10 bg-white/5">
-				<div class="flex items-center justify-between">
-					<span class="text-xs text-zinc-300 font-medium">Extract Frame</span>
-					<button
-						type="button"
-						class="text-xs text-zinc-500 hover:text-zinc-300"
-						@click="selectedClipForFrame = null"
-					>✕</button>
-				</div>
-				<div v-if="framePreviewUrl" class="aspect-video w-full overflow-hidden rounded bg-zinc-800">
-					<img :src="framePreviewUrl" class="size-full object-contain" />
-				</div>
-				<div class="flex items-center gap-2">
-					<Clock class="size-3 text-zinc-500" />
-					<input
-						v-model.number="frameTimestamp"
-						type="range"
+			<div class="flex-1 overflow-y-auto">
+				<!-- Frame extractor -->
+				<div v-if="selectedClipForFrame" class="space-y-2.5 border-b border-line-subtle p-3">
+					<div class="flex items-center gap-2">
+						<div class="min-w-0 flex-1">
+							<p class="truncate text-xs font-semibold text-fg">Extract frame</p>
+							<p class="truncate text-2xs text-fg-subtle">{{ getClipName(selectedClipForFrame) }}</p>
+						</div>
+						<Button
+							variant="ghost"
+							size="icon-xs"
+							title="Close"
+							aria-label="Close frame extractor"
+							@click="selectedClipForFrame = null"
+						>
+							<X />
+						</Button>
+					</div>
+					<div class="aspect-video w-full overflow-hidden rounded-md bg-surface-sunken">
+						<img v-if="framePreviewUrl" :src="framePreviewUrl" alt="Frame preview" class="size-full object-contain" />
+						<div v-else class="flex size-full items-center justify-center">
+							<Loader2 v-if="isExtracting" class="size-4 animate-spin text-fg-subtle" />
+							<Film v-else class="size-5 text-fg-subtle" />
+						</div>
+					</div>
+					<SliderField
+						label="Timestamp"
+						:model-value="frameTimestamp"
 						:min="0"
 						:max="selectedClipForFrame.built_duration || 60"
 						:step="0.1"
-						class="flex-1"
+						:readout="`${frameTimestamp.toFixed(1)}s`"
+						@update:model-value="(v) => (frameTimestamp = v)"
 						@change="updateFramePreview"
 					/>
-					<span class="text-[10px] text-zinc-500 w-8 text-right">{{ frameTimestamp.toFixed(1) }}s</span>
+					<Button variant="primary" size="sm" block :disabled="isExtracting" @click="addExtractedFrame">
+						<Loader2 v-if="isExtracting" class="animate-spin" />
+						<Plus v-else />
+						Add to canvas
+					</Button>
 				</div>
-				<button
-					type="button"
-					class="flex items-center justify-center gap-1 rounded-sm bg-[#4693e0] px-3 py-1.5 text-xs text-white hover:bg-[#5aa0e6] transition-colors"
-					:disabled="isExtracting"
-					@click="addExtractedFrame"
-				>
-					<Loader2 v-if="isExtracting" class="size-3 animate-spin" />
-					<Plus v-else class="size-3" />
-					Add to Canvas
-				</button>
-			</div>
 
-			<!-- Clip list -->
-			<div class="flex-1 overflow-y-auto p-2 space-y-1">
-				<div v-if="filteredClips.length === 0" class="flex items-center justify-center h-20 text-zinc-600 text-xs">
-					No built clips found
-				</div>
-				<div
-					v-for="clip in filteredClips"
-					:key="clip.id"
-					class="group flex items-center gap-2 rounded-md p-1.5 hover:bg-white/5 cursor-pointer"
-				>
-					<div class="size-10 shrink-0 overflow-hidden rounded bg-zinc-800">
-						<img
-							v-if="thumbnailCache.get(clip.id)"
-							:src="thumbnailCache.get(clip.id)"
-							:alt="getClipName(clip)"
-							class="size-full object-cover"
-						/>
-						<div v-else class="flex size-full items-center justify-center">
-							<Film class="size-4 text-zinc-600" />
-						</div>
-					</div>
-					<div class="min-w-0 flex-1">
-						<div class="truncate text-xs text-zinc-200">{{ getClipName(clip) }}</div>
-						<div class="text-[10px] text-zinc-500">{{ formatDuration(clip.built_duration) }}</div>
-					</div>
-					<div class="hidden group-hover:flex items-center gap-1">
-						<button
-							v-if="clip.built_thumbnail_path"
-							type="button"
-							class="rounded bg-white/10 px-1.5 py-0.5 text-[10px] text-zinc-300 hover:bg-white/20"
-							title="Use thumbnail"
-							@click.stop="addClipThumbnail(clip)"
+				<!-- Clip list -->
+				<div class="p-3">
+					<EmptyState
+						v-if="filteredClips.length === 0"
+						size="sm"
+						:icon="searchQuery.trim() ? SearchX : Film"
+						title="No built clips found"
+						:description="searchQuery.trim() ? 'Try a different search term.' : 'Built clips appear here so you can grab frames.'"
+					/>
+					<div v-else class="-mx-1 space-y-px">
+						<AssetListRow
+							v-for="clip in filteredClips"
+							:key="clip.id"
+							:title="getClipName(clip)"
+							:meta="formatDuration(clip.built_duration)"
+							:selected="selectedClipForFrame?.id === clip.id"
 						>
-							Thumb
-						</button>
-						<button
-							type="button"
-							class="rounded-sm bg-[#4693e0]/90 px-1.5 py-0.5 text-[10px] text-white hover:bg-[#4693e0]"
-							title="Extract frame"
-							@click.stop="openFrameExtractor(clip)"
-						>
-							Frame
-						</button>
+							<template #leading>
+								<div class="size-8 overflow-hidden rounded-md bg-surface-sunken">
+									<img
+										v-if="thumbnailCache.get(clip.id)"
+										:src="thumbnailCache.get(clip.id)"
+										:alt="getClipName(clip)"
+										class="size-full object-cover"
+									/>
+									<div v-else class="flex size-full items-center justify-center">
+										<Film class="size-4 text-fg-subtle" />
+									</div>
+								</div>
+							</template>
+							<template #trailing>
+								<Button
+									v-if="clip.built_thumbnail_path"
+									variant="ghost"
+									size="icon-xs"
+									title="Use thumbnail"
+									aria-label="Add the clip thumbnail to the canvas"
+									@click.stop="addClipThumbnail(clip)"
+								>
+									<Image />
+								</Button>
+								<Button
+									variant="ghost"
+									size="icon-xs"
+									title="Extract frame"
+									aria-label="Extract a frame from this clip"
+									@click.stop="openFrameExtractor(clip)"
+								>
+									<Camera />
+								</Button>
+							</template>
+						</AssetListRow>
 					</div>
 				</div>
 			</div>
@@ -738,50 +756,37 @@ function formatDuration(seconds: number | null): string {
 
 		<!-- Gallery tab -->
 		<div v-else-if="activeSubTab === 'gallery'" class="flex flex-1 flex-col overflow-hidden">
-			<div class="flex items-center gap-2 border-b border-white/10 px-3 py-2">
-				<Search class="size-3.5 text-zinc-500" />
-				<input
-					v-model="searchQuery"
-					type="text"
-					placeholder="Search images..."
-					class="flex-1 bg-transparent text-xs text-zinc-200 outline-none placeholder:text-zinc-600"
-				/>
-			</div>
+			<PanelSearchBar v-model="searchQuery" placeholder="Search images…" />
 
-			<div class="flex-1 overflow-y-auto p-2">
-				<div v-if="filteredGallery.length === 0" class="flex items-center justify-center h-20 text-zinc-600 text-xs">
-					No saved images yet
-				</div>
-				<div
-					v-else
-					class="grid gap-2"
-					style="grid-template-columns: repeat(auto-fill, minmax(80px, 1fr))"
-				>
-					<div
+			<div class="flex-1 overflow-y-auto p-3">
+				<EmptyState
+					v-if="filteredGallery.length === 0"
+					size="sm"
+					:icon="searchQuery.trim() ? SearchX : Image"
+					:title="searchQuery.trim() ? 'No images found' : 'No saved images yet'"
+					:description="searchQuery.trim() ? 'Try a different search term.' : undefined"
+				/>
+				<AssetGrid v-else :min="80">
+					<AssetTile
 						v-for="img in filteredGallery"
 						:key="img.id"
-						class="group relative cursor-pointer overflow-hidden rounded-sm border border-black/40 hover:border-[#4693e0] transition-colors"
-						@dblclick="addGalleryImage(img)"
+						aspect="1"
+						:label="img.name"
+						:title="`Add ${img.name} to canvas`"
+						@click="addGalleryImage(img)"
 					>
-						<div class="aspect-square bg-zinc-800">
-							<img
-								v-if="thumbnailCache.get(img.id)"
-								:src="thumbnailCache.get(img.id)"
-								:alt="img.name"
-								class="size-full object-cover"
-							/>
-							<Image v-else class="size-full p-4 text-zinc-700" />
+						<img
+							v-if="thumbnailCache.get(img.id)"
+							:src="thumbnailCache.get(img.id)"
+							:alt="img.name"
+							class="size-full object-cover"
+							draggable="false"
+						/>
+						<div v-else class="flex size-full items-center justify-center">
+							<Image class="size-6 text-fg-subtle" />
 						</div>
-						<div class="truncate px-1.5 py-1 text-[10px] text-zinc-400">{{ img.name }}</div>
-						<button
-							type="button"
-							class="absolute inset-0 hidden items-center justify-center bg-black/50 group-hover:flex"
-							@click="addGalleryImage(img)"
-						>
-							<Plus class="size-5 text-white" />
-						</button>
-					</div>
-				</div>
+					</AssetTile>
+				</AssetGrid>
 			</div>
 		</div>
 	</div>

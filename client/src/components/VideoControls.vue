@@ -1,79 +1,68 @@
 <template>
   <div
     v-if="videoSrc && !videoLoading"
-    class="bg-black/40 backdrop-blur-sm rounded-lg border border-white/[0.04] mt-1.5 relative z-20"
+    class="relative z-20 mt-1.5 flex h-10 items-center justify-between gap-2 rounded-lg border border-line-subtle bg-surface px-1.5"
   >
-    <!-- Control Buttons and Time Display -->
-    <div class="flex items-center justify-between px-1.5 py-1.5">
-      <!-- Left Controls -->
-      <div class="flex items-center gap-1">
-        <!-- Go to Beginning Button -->
-        <button
-          @click="goToBeginning"
-          class="p-2.5 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group"
-          title="Go to Beginning"
-        >
-          <SkipBack class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
-        </button>
-        <!-- Play/Pause Button -->
-        <button
-          @click="togglePlayPause"
-          class="p-2.5 hover:bg-white/[0.08] rounded-lg transition-all duration-200 group"
-          title="Play/Pause (Space)"
-        >
-          <Play v-if="!isPlaying" class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
-          <Pause v-else class="h-4 w-4 text-white/60 group-hover:text-white transition-colors" />
-        </button>
-        <!-- Time Display -->
+    <!-- Left Controls -->
+    <div class="flex min-w-0 items-center gap-0.5">
+      <button type="button" :class="iconButton" title="Go to beginning" aria-label="Go to beginning" @click="goToBeginning">
+        <SkipBack />
+      </button>
+      <button
+        type="button"
+        :class="[iconButton, 'text-fg']"
+        :title="isPlaying ? 'Pause (Space)' : 'Play (Space)'"
+        :aria-label="isPlaying ? 'Pause' : 'Play'"
+        @click="togglePlayPause"
+      >
+        <Play v-if="!isPlaying" class="fill-current" />
+        <Pause v-else class="fill-current" />
+      </button>
+      <!-- Time Display -->
+      <div class="ml-1.5 whitespace-nowrap font-mono text-xs tabular-nums">
+        <span class="text-fg">{{ formatDuration(currentTime) }}</span>
+        <span class="mx-1 text-fg-disabled">/</span>
+        <span class="text-fg-subtle">{{ formatDuration(duration) }}</span>
+      </div>
+    </div>
+    <!-- Right Controls -->
+    <div class="flex shrink-0 items-center gap-0.5">
+      <button
+        type="button"
+        :class="iconButton"
+        :title="isMuted || volume === 0 ? 'Unmute' : 'Mute'"
+        :aria-label="isMuted || volume === 0 ? 'Unmute' : 'Mute'"
+        @click="toggleMute"
+      >
+        <VolumeX v-if="isMuted || volume === 0" />
+        <Volume2 v-else />
+      </button>
+      <div class="relative mr-2 hidden h-1 w-20 rounded-full bg-line-strong sm:block">
         <div
-          class="text-white/80 text-xs font-mono bg-white/[0.04] px-3 py-2 rounded-lg ml-1 tabular-nums tracking-tight"
-        >
-          <span class="text-white/90">{{ formatDuration(currentTime) }}</span>
-          <span class="text-white/40 mx-1">/</span>
-          <span class="text-white/50">{{ formatDuration(duration) }}</span>
-        </div>
+          class="absolute left-0 top-0 h-full rounded-full bg-fg-muted transition-[width] duration-150"
+          :style="{ width: `${volume * 100}%` }"
+        ></div>
+        <input
+          v-model="localVolume"
+          type="range"
+          min="0"
+          max="1"
+          step="0.05"
+          aria-label="Volume"
+          class="slider absolute inset-x-0 top-1/2 z-10 h-4 w-full -translate-y-1/2 cursor-pointer"
+          @input="updateVolume"
+        />
       </div>
-      <!-- Right Controls -->
-      <div class="flex items-center gap-2 pr-1">
-        <!-- Volume Control -->
-        <div class="flex items-center gap-2 px-2 py-1.5">
-          <button
-            @click="toggleMute"
-            class="p-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group"
-            title="Mute/Unmute"
-          >
-            <VolumeX
-              v-if="isMuted || volume === 0"
-              class="h-4 w-4 text-white/50 group-hover:text-white/80 transition-colors"
-            />
-            <Volume2 v-else class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
-          </button>
-          <div class="relative hidden sm:block w-24 h-1 bg-white/10 rounded-full">
-            <div
-              class="absolute left-0 top-0 h-full bg-white/40 rounded-full transition-all duration-150"
-              :style="{ width: `${volume * 100}%` }"
-            ></div>
-            <input
-              v-model="localVolume"
-              type="range"
-              min="0"
-              max="1"
-              step="0.05"
-              class="absolute inset-0 w-full h-full cursor-pointer slider z-10 pt-0.5"
-              @input="updateVolume"
-            />
-          </div>
-        </div>
-        <!-- Fullscreen Button -->
-        <button
-          @click="toggleFullscreen"
-          class="p-1.5 rounded-md hover:bg-white/[0.08] transition-all duration-200 group ml-1"
-          :title="isFullscreen ? 'Exit Fullscreen (F)' : 'Fullscreen (F)'"
-        >
-          <Minimize2 v-if="isFullscreen" class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
-          <Maximize2 v-else class="h-4 w-4 text-white/60 group-hover:text-white/90 transition-colors" />
-        </button>
-      </div>
+      <button
+        type="button"
+        :class="iconButton"
+        :title="isFullscreen ? 'Exit fullscreen (F)' : 'Fullscreen (F)'"
+        :aria-label="isFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+        @click="toggleFullscreen"
+      >
+        <Minimize2 v-if="isFullscreen" />
+        <Maximize2 v-else />
+      </button>
     </div>
   </div>
 </template>
@@ -106,6 +95,10 @@
   }
 
   const emit = defineEmits<Emits>();
+
+  // Shared with apps/web (no ui primitives there): mirrors Button ghost + icon-sm.
+  const iconButton =
+    'grid size-7 shrink-0 place-items-center rounded-md text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none [&_svg]:size-4';
 
   // Local volume state for the slider
   const localVolume = ref(props.volume);
@@ -154,7 +147,7 @@
 </script>
 
 <style scoped>
-  /* Custom range input styling */
+  /* Transparent range input over the painted track; only the thumb is visible */
   input[type='range'].slider {
     -webkit-appearance: none;
     appearance: none;
@@ -163,63 +156,39 @@
     margin: 0;
   }
 
-  input[type='range'].slider::-webkit-slider-track {
+  input[type='range'].slider::-webkit-slider-runnable-track {
     background: transparent;
     height: 4px;
-    border-radius: 2px;
   }
 
   input[type='range'].slider::-webkit-slider-thumb {
     -webkit-appearance: none;
     appearance: none;
-    background: white;
-    height: 10px;
     width: 10px;
-    border-radius: 50%;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
+    height: 10px;
     margin-top: -3px;
+    border: none;
+    border-radius: 50%;
+    background: var(--fg);
+    box-shadow: var(--shadow-sm);
+    transition: transform 0.15s ease;
   }
 
-  input[type='range'].slider::-webkit-slider-thumb:hover {
-    background: #f3f4f6;
-    transform: scale(1.15);
-    box-shadow: 0 3px 8px rgba(139, 92, 246, 0.4);
+  input[type='range'].slider:hover::-webkit-slider-thumb {
+    transform: scale(1.2);
   }
 
   input[type='range'].slider::-moz-range-track {
     background: transparent;
     height: 4px;
-    border-radius: 2px;
   }
 
   input[type='range'].slider::-moz-range-thumb {
-    border: none;
-    background: white;
-    height: 10px;
     width: 10px;
+    height: 10px;
+    border: none;
     border-radius: 50%;
-    cursor: pointer;
-    transition: all 0.15s ease;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.4);
-  }
-
-  input[type='range'].slider::-moz-range-thumb:hover {
-    background: #f3f4f6;
-    transform: scale(1.15);
-    box-shadow: 0 3px 8px rgba(139, 92, 246, 0.4);
-  }
-
-  /* Smooth transitions */
-  .transition-all {
-    transition-property: all;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 200ms;
-  }
-
-  /* Backdrop blur effects */
-  .backdrop-blur-sm {
-    backdrop-filter: blur(8px);
+    background: var(--fg);
+    box-shadow: var(--shadow-sm);
   }
 </style>

@@ -1,1231 +1,1004 @@
 <template>
-  <div class="clipper-profile">
-    <PageLayout
-      title="My Profile"
-      description="Your public clipper profile and campaign settings"
-      :show-header="true"
-      :icon="UserCircle"
-    >
+  <div class="flex h-full min-w-0 flex-col">
+    <PageLayout title="My profile" description="Your public clipper profile and campaign settings" :icon="UserCircle">
       <template #actions>
-        <button v-if="isProfileConfigured" class="edit-btn" @click="showEditProfileDialog = true">
-          <Pencil class="edit-btn__icon" />
-          Edit Profile
-        </button>
+        <template v-if="isProfileConfigured">
+          <Button
+            v-if="clipperProfile?.slug && clipperProfile?.is_public"
+            variant="ghost"
+            size="sm"
+            @click="$router.push(`/clippers/${clipperProfile.slug}`)"
+          >
+            <Eye />
+            View public profile
+          </Button>
+          <Button variant="secondary" size="sm" @click="$router.push('/clipper-profile/edit')">
+            <Pencil />
+            Edit profile
+          </Button>
+        </template>
       </template>
 
-      <!-- Empty State (when profile not configured) -->
-      <div v-if="!isProfileConfigured" class="profile-page profile-page--empty">
-        <div class="profile-empty">
-          <div class="profile-empty__icon-wrapper">
-            <UserCircle class="profile-empty__icon" />
-          </div>
-          <h3 class="profile-empty__title">No clipper profile yet</h3>
-          <p class="profile-empty__description">
-            Set up your public profile to join campaigns, showcase your work, and get discovered by organizations
-          </p>
-          <button class="profile-empty__btn" @click="showOnboardingWizard = true">
-            <Plus class="profile-empty__btn-icon" />
-            Create Profile
-          </button>
+      <template v-if="isProfileConfigured" #toolbar>
+        <div class="-my-1 min-w-0 flex-1 overflow-x-auto py-1">
+          <SegmentedControl v-model="activeTab" :options="tabOptions" />
         </div>
-      </div>
+      </template>
 
-      <!-- Profile Content (when profile configured) -->
-      <div v-else class="profile-page">
-        <div class="org-profile org-profile--settings">
-          <div class="org-hero">
-            <div class="org-hero__banner"></div>
-            <div class="org-hero__content">
-              <div class="org-hero__avatar">
-                <img
-                  v-if="clipperProfile?.avatar_url && !avatarLoadError"
-                  :src="clipperProfile.avatar_url"
-                  class="org-hero__avatar-img"
-                  @error="avatarLoadError = true"
-                />
-                <UserCircle v-else class="org-hero__avatar-fallback" />
-                <div v-if="clipperProfile?.is_verified" class="profile-avatar__verified">
-                  <CheckCircle />
-                </div>
+      <!-- Empty state (no profile yet) -->
+      <EmptyState
+        v-if="!isProfileConfigured"
+        :icon="UserCircle"
+        title="No clipper profile yet"
+        description="Set up your public profile to join campaigns, showcase your work and get discovered by organizations."
+      >
+        <Button variant="primary" @click="showOnboardingWizard = true">
+          <Plus />
+          Create profile
+        </Button>
+      </EmptyState>
+
+      <div v-else class="flex flex-col gap-4 px-5 py-4">
+        <!-- ── Profile header ──────────────────────────────────────────── -->
+        <section class="flex flex-wrap items-start gap-x-6 gap-y-4 border-b border-line-subtle pb-4">
+          <div class="flex min-w-0 flex-[1_1_360px] items-start gap-4">
+            <div class="relative shrink-0">
+              <Avatar :src="clipperProfile?.avatar_url" :icon="UserCircle" size="lg" />
+              <span
+                v-if="clipperProfile?.is_verified"
+                class="absolute -bottom-0.5 -right-0.5 grid size-5 place-items-center rounded-full bg-brand text-brand-fg ring-2 ring-panel"
+                title="Verified"
+              >
+                <Check class="size-3" :stroke-width="3" />
+              </span>
+            </div>
+
+            <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+              <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <h2 class="truncate text-base font-semibold text-fg">
+                  {{ clipperProfile?.display_name || 'Set up your profile' }}
+                </h2>
+                <Badge v-if="clipperProfile?.looking_for_work" variant="success">
+                  <span class="size-1.5 rounded-full bg-success" />
+                  Available for work
+                </Badge>
+                <Badge v-if="clipperProfile?.is_affiliate" variant="neutral">
+                  <Handshake />
+                  Affiliate
+                </Badge>
+                <Badge v-if="clipperProfile && !clipperProfile.is_public" variant="outline">
+                  <EyeOff />
+                  Private
+                </Badge>
               </div>
-              <div class="org-hero__info">
-                <div class="profile-name-row">
-                  <h1 class="org-hero__name">{{ clipperProfile?.display_name || 'Set up your profile' }}</h1>
-                  <div class="profile-badges">
-                    <span v-if="clipperProfile?.looking_for_work" class="status-badge status-badge--available">
-                      <span class="status-badge__dot"></span>
-                      Available for Work
-                    </span>
-                    <span v-if="clipperProfile?.is_affiliate" class="status-badge status-badge--affiliate">
-                      <Handshake :size="12" />
-                      Affiliate
-                    </span>
-                  </div>
-                </div>
-                <div class="profile-meta-row">
-                  <button
-                    v-if="clipperProfile?.slug && clipperProfile?.is_public"
-                    class="profile-action-btn profile-action-btn--primary"
-                    @click="$router.push(`/clippers/${clipperProfile.slug}`)"
-                  >
-                    <Eye :size="14" />
-                    View Public Profile
-                  </button>
-                  <span v-else-if="clipperProfile" class="profile-visibility">
-                    <EyeOff :size="14" />
-                    Private Profile
-                  </span>
-                  <span v-if="clipperProfile?.user?.last_active_at" class="profile-last-active">
-                    <Clock :size="14" />
-                    {{ formatLastActive(clipperProfile.user.last_active_at) }}
-                  </span>
-                </div>
-                <p class="org-hero__tagline" :class="{ 'profile-bio--empty': !clipperProfile?.bio }">
-                  {{ clipperProfile?.bio || 'Add a bio to tell organizations about yourself' }}
-                </p>
-                <div v-if="clipperProfile?.specialty_tags?.length" class="org-hero__tags">
-                  <span v-for="tag in clipperProfile.specialty_tags.slice(0, 5)" :key="tag" class="org-hero__tag">{{ tag }}</span>
-                </div>
+              <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-subtle">
+                <span v-if="clipperProfile?.slug" class="truncate">/clippers/{{ clipperProfile.slug }}</span>
+                <span v-if="clipperProfile?.user?.last_active_at" class="inline-flex items-center gap-1">
+                  <Clock class="size-3" />
+                  {{ formatLastActive(clipperProfile.user.last_active_at) }}
+                </span>
+              </div>
+              <p class="max-w-[640px] text-sm" :class="clipperProfile?.bio ? 'text-fg-muted' : 'italic text-fg-subtle'">
+                {{ clipperProfile?.bio || 'Add a bio to tell organizations about yourself' }}
+              </p>
+              <div v-if="clipperProfile?.specialty_tags?.length" class="flex flex-wrap gap-1">
+                <Badge v-for="tag in clipperProfile.specialty_tags.slice(0, 5)" :key="tag" variant="neutral" size="md">
+                  {{ getSpecialtyTagLabel(tag) }}
+                </Badge>
               </div>
             </div>
           </div>
 
-          <div class="org-stats-grid org-stats-grid--settings">
-            <div class="org-stat-card">
-              <div class="org-stat-card__icon org-stat-card__icon--violet">
-                <Megaphone :size="18" />
-              </div>
-              <div class="org-stat-card__content">
-                <span class="org-stat-card__value">{{ clipperProfile?.total_campaigns_completed || 0 }}</span>
-                <span class="org-stat-card__label">Campaigns</span>
-              </div>
-            </div>
-            <div class="org-stat-card">
-              <div class="org-stat-card__icon org-stat-card__icon--cyan">
-                <FileVideo :size="18" />
-              </div>
-              <div class="org-stat-card__content">
-                <span class="org-stat-card__value">{{ clipperProfile?.total_clips_delivered || 0 }}</span>
-                <span class="org-stat-card__label">Clips Delivered</span>
-              </div>
-            </div>
-            <div class="org-stat-card">
-              <div class="org-stat-card__icon org-stat-card__icon--green">
-                <CheckCircle :size="18" />
-              </div>
-              <div class="org-stat-card__content">
-                <span class="org-stat-card__value">{{ clipperProfile?.total_endorsements || 0 }}</span>
-                <span class="org-stat-card__label">Endorsements</span>
-              </div>
-            </div>
-          </div>
-        </div>
+          <StatGrid size="sm" :items="profileStats" class="w-full max-w-[360px] shrink-0 self-center" />
+        </section>
 
-        <!-- Enhanced Tab Navigation -->
-        <nav class="tabs-nav">
-          <div class="tabs-container">
-            <button
-              v-for="tab in tabs"
-              :key="tab.id"
-              class="tab-button"
-              :class="{ 'tab-button--active': activeTab === tab.id }"
-              @click="activeTab = tab.id"
-            >
-              <div class="tab-button__icon">
-                <component :is="tab.icon" />
-              </div>
-              <span class="tab-button__label">{{ tab.label }}</span>
-            </button>
-          </div>
-        </nav>
-
-        <!-- Content -->
-        <main class="content">
-          <!-- Leaderboard -->
+        <!-- Tab panels: keyed so each switch eases in instead of popping -->
+        <div :key="activeTab" class="flex animate-enter flex-col gap-4">
+          <!-- ── Leaderboard ─────────────────────────────────────────────── -->
           <template v-if="activeTab === 'leaderboard'">
-            <div class="ranking-card">
-              <div class="ranking-row">
-                <div class="ranking-row__header-icon">
-                  <Trophy />
-                </div>
-                <div class="ranking-row__header-text">
-                  <h2 class="ranking-row__title">Your Ranking</h2>
-                  <p class="ranking-row__subtitle">Global performance stats</p>
-                </div>
-                <div class="ranking-row__stats">
-                  <div class="rank-stat rank-stat--primary">
-                    <span class="rank-stat__value">{{ myRank || '--' }}</span>
-                    <span class="rank-stat__label">Rank</span>
-                  </div>
-                  <div class="rank-stat">
-                    <span class="rank-stat__value">{{ leaderboardType === 'posts' ? myPostsCount : (clipperProfile?.total_clips_delivered || 0) }}</span>
-                    <span class="rank-stat__label">{{ leaderboardType === 'posts' ? 'Posts' : 'Clips' }}</span>
-                  </div>
-                  <div class="rank-stat">
-                    <span class="rank-stat__value">{{ formatViews(totalViews) }}</span>
-                    <span class="rank-stat__label">Views</span>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <StatGrid :count="3">
+              <StatCard
+                label="Your rank"
+                :value="myRank ? `#${myRank}` : '—'"
+                :icon="Trophy"
+                tone="brand"
+                :loading="loadingLeaderboard && !leaderboardEntries.length"
+              />
+              <StatCard
+                :label="leaderboardType === 'posts' ? 'Posts' : 'Clips'"
+                :value="leaderboardType === 'posts' ? myPostsCount : clipperProfile?.total_clips_delivered || 0"
+                :icon="leaderboardType === 'posts' ? BarChart3 : FileVideo"
+                :loading="loadingLeaderboard && !leaderboardEntries.length"
+              />
+              <StatCard
+                label="Views"
+                :value="formatViews(totalViews)"
+                :icon="Eye"
+                :loading="loadingLeaderboard && !leaderboardEntries.length"
+              />
+            </StatGrid>
 
-            <section class="leaderboard">
-              <div class="leaderboard__header">
-                <div class="leaderboard__header-icon">
-                  <Users />
+            <section class="rounded-xl border border-line-subtle bg-surface">
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-subtle px-4 py-3">
+                <div class="mr-auto min-w-0">
+                  <h2 class="text-sm font-semibold text-fg">Top clippers</h2>
+                  <p class="text-xs text-fg-muted">Global performance rankings</p>
                 </div>
-                <div class="leaderboard__header-text">
-                  <h2 class="leaderboard__title">Top Clippers</h2>
-                  <p class="leaderboard__subtitle">Global performance rankings</p>
-                </div>
-                <div class="period-switch">
-                  <button
-                    :class="{ active: leaderboardType === 'posts' }"
-                    @click="switchLeaderboardType('posts')"
-                  >
-                    Posts
-                  </button>
-                  <button
-                    :class="{ active: leaderboardType === 'campaigns' }"
-                    @click="switchLeaderboardType('campaigns')"
-                  >
-                    Campaigns
-                  </button>
-                </div>
-                <div class="period-switch">
-                  <button
-                    :class="{ active: leaderboardPeriod === 'weekly' }"
-                    @click="switchLeaderboardPeriod('weekly')"
-                  >
-                    Weekly
-                  </button>
-                  <button
-                    :class="{ active: leaderboardPeriod === 'monthly' }"
-                    @click="switchLeaderboardPeriod('monthly')"
-                  >
-                    Monthly
-                  </button>
-                </div>
+                <SegmentedControl
+                  :model-value="leaderboardType"
+                  :options="leaderboardTypeOptions"
+                  size="sm"
+                  @update:model-value="switchLeaderboardType"
+                />
+                <SegmentedControl
+                  :model-value="leaderboardPeriod"
+                  :options="leaderboardPeriodOptions"
+                  size="sm"
+                  @update:model-value="switchLeaderboardPeriod"
+                />
               </div>
 
-              <div v-if="loadingLeaderboard" class="leaderboard__loading">
-                <div v-for="i in 5" :key="i" class="skeleton-row"></div>
+              <div v-if="loadingLeaderboard && !leaderboardEntries.length" class="flex flex-col gap-2 p-4">
+                <div v-for="i in 5" :key="i" class="skeleton h-9 w-full" />
               </div>
-              <div v-else-if="leaderboardEntries.length === 0" class="leaderboard__empty">
-                <Trophy class="leaderboard__empty-icon" />
-                <p>No leaderboard data yet</p>
-              </div>
-              <div v-else class="leaderboard__list">
-                <div class="lb-header">
-                  <span class="lb-header__rank">#</span>
-                  <span class="lb-header__user">User</span>
-                  <span class="lb-header__col">{{ leaderboardType === 'posts' ? 'Posts' : 'Clips' }}</span>
-                  <span v-if="leaderboardType === 'campaigns'" class="lb-header__col">Campaigns</span>
-                  <span class="lb-header__col">Views</span>
+              <EmptyState
+                v-else-if="leaderboardEntries.length === 0"
+                size="sm"
+                :icon="Trophy"
+                title="No leaderboard data yet"
+              />
+              <div v-else class="text-sm">
+                <div
+                  class="flex h-8 items-center gap-3 px-4 text-2xs font-medium uppercase tracking-[0.04em] text-fg-subtle"
+                >
+                  <span class="w-6 text-center">#</span>
+                  <span class="flex-1">Clipper</span>
+                  <span class="w-16 text-right">{{ leaderboardType === 'posts' ? 'Posts' : 'Clips' }}</span>
+                  <span v-if="leaderboardType === 'campaigns'" class="w-20 text-right">Campaigns</span>
+                  <span class="w-16 text-right">Views</span>
                 </div>
                 <div
                   v-for="(entry, index) in leaderboardEntries"
                   :key="entry.id"
-                  class="lb-entry"
-                  :class="{ 'lb-entry--you': entry.profile?.user_id === currentUserId }"
+                  class="flex h-10 items-center gap-3 border-t border-line-subtle px-4"
+                  :class="entry.profile?.user_id === currentUserId ? 'bg-brand-soft' : ''"
                 >
-                  <span class="lb-entry__rank" :class="`lb-entry__rank--${index + 1}`">{{ index + 1 }}</span>
-                  <div class="lb-entry__avatar">
-                    <img v-if="entry.profile?.avatar_url" :src="entry.profile.avatar_url" />
-                    <UserCircle v-else />
-                  </div>
-                  <div class="lb-entry__info">
-                    <span class="lb-entry__name">
-                      {{ entry.profile?.display_name || 'Anonymous' }}
-                      <span v-if="entry.profile?.user_id === currentUserId" class="lb-entry__you">(You)</span>
-                    </span>
-                  </div>
-                  <span class="lb-entry__stat">
+                  <span
+                    class="tabular w-6 text-center text-xs font-semibold"
+                    :class="index < 3 ? 'text-fg' : 'text-fg-subtle'"
+                  >
+                    {{ index + 1 }}
+                  </span>
+                  <span class="flex min-w-0 flex-1 items-center gap-2.5">
+                    <Avatar :src="entry.profile?.avatar_url" :icon="UserCircle" size="sm" />
+                    <span class="truncate font-medium text-fg">{{ entry.profile?.display_name || 'Anonymous' }}</span>
+                    <Badge v-if="entry.profile?.user_id === currentUserId" variant="brand">You</Badge>
+                  </span>
+                  <span class="tabular w-16 text-right text-fg-muted">
                     {{ leaderboardType === 'posts' ? entry.posts_count : entry.clips_delivered }}
                   </span>
-                  <span v-if="leaderboardType === 'campaigns'" class="lb-entry__stat">
+                  <span v-if="leaderboardType === 'campaigns'" class="tabular w-20 text-right text-fg-muted">
                     {{ entry.campaigns_active }}
                   </span>
-                  <span class="lb-entry__stat">{{ formatViews(entry.total_views || 0) }}</span>
+                  <span class="tabular w-16 text-right font-medium text-fg">
+                    {{ formatViews(entry.total_views || 0) }}
+                  </span>
                 </div>
               </div>
             </section>
           </template>
 
-          <!-- Accounts -->
+          <!-- ── Accounts ────────────────────────────────────────────────── -->
           <template v-if="activeTab === 'accounts'">
-            <section ref="socialAccountsSectionRef" class="section">
-              <div class="section__header">
-                <div class="section__header-icon">
-                  <Share2 />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section-title">Social Accounts</h2>
-                  <p class="section-subtitle">Connect your social media accounts to post and track analytics</p>
-                </div>
-                <button class="action-btn" @click="showPlatformSelectionDialog = true">
-                  <Plus />
-                  Connect Account
-                </button>
-              </div>
+            <div ref="socialAccountsSectionRef">
+              <SectionCard
+                title="Social accounts"
+                description="Connect accounts to post videos and track analytics"
+                :count="socialAccounts.length || undefined"
+                flush
+              >
+                <template #actions>
+                  <Button variant="secondary" size="sm" @click="showPlatformSelectionDialog = true">
+                    <Plus />
+                    Connect account
+                  </Button>
+                </template>
 
-              <div v-if="loadingSocialAccounts" class="loading-rows">
-                <div v-for="i in 2" :key="i" class="skeleton-row skeleton-row--lg"></div>
-              </div>
-              <div v-else-if="socialAccounts.length === 0" class="empty-state">
-                <Share2 class="empty-state__icon" />
-                <p class="empty-state__title">No social accounts connected</p>
-                <p class="empty-state__text">Connect your social media accounts to post videos and track analytics</p>
-                <button class="empty-state__btn" @click="showPlatformSelectionDialog = true">
-                  <Plus />
-                  Connect Account
-                </button>
-              </div>
-              <div v-else class="list list--social-accounts">
-                <div v-for="account in socialAccounts" :key="account.id" class="list-item">
-                  <div class="list-item__icon" :class="getPlatformIconClass(account.platform)">
-                    <component :is="getPlatformIcon(account.platform)" />
-                  </div>
-                  <div class="list-item__content">
-                    <span class="list-item__name">@{{ account.username }}</span>
-                    <span class="list-item__meta">
-                      {{ getPlatformName(account.platform) }}
-                      <template v-if="account.display_name">· {{ account.display_name }}</template>
-                      <template v-if="account.connected_at">
-                        · Connected {{ formatDate(account.connected_at) }}
-                      </template>
-                      <template v-if="isTokenExpiringSoonForAccount(account)">
-                        ·
-                        <span class="token-expiring">Token expiring soon</span>
-                      </template>
-                    </span>
-                  </div>
-                  <div
-                    class="list-item__actions"
-                    :class="{ 'list-item__actions--visible': needsTokenAttention(account) }"
-                  >
-                    <button
-                      class="refresh"
-                      :disabled="reconnectingAccountId === account.id"
-                      title="Reconnect to refresh token"
-                      @click="reconnectSocialAccount(account)"
-                    >
-                      <Loader2 v-if="reconnectingAccountId === account.id" class="animate-spin" />
-                      <RefreshCw v-else />
-                    </button>
-                    <button @click="viewAccountPosts(account)" title="View Posts"><Eye /></button>
-                    <button class="danger" @click="confirmDeleteSocialAccount(account)" title="Disconnect">
-                      <Trash2 />
-                    </button>
-                  </div>
+                <div v-if="loadingSocialAccounts && !socialAccounts.length" class="flex flex-col gap-2 p-4">
+                  <div v-for="i in 2" :key="i" class="skeleton h-12 w-full" />
                 </div>
-              </div>
-            </section>
-
-            <!-- Posts Section -->
-            <section v-if="selectedAccountForPosts" class="section">
-              <div class="section__header">
-                <div class="section__header-icon">
-                  <Upload />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section-title">Posts from @{{ selectedAccountForPosts.username }}</h2>
-                  <p class="section-subtitle">Your published posts and analytics</p>
-                </div>
-                <button class="action-btn" @click="openPublishDialog">
-                  <Upload />
-                  Post Video
-                </button>
-              </div>
-
-              <UserPostsList :account-id="selectedAccountForPosts.id" />
-            </section>
-          </template>
-
-          <!-- Payments -->
-          <template v-if="activeTab === 'payments'">
-            <section class="section">
-              <div class="section__header">
-                <div class="section__header-icon section__header-icon--green">
-                  <Wallet />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section-title">Payment Methods</h2>
-                  <p class="section-subtitle">Add payment methods to receive your earnings</p>
-                </div>
-                <button class="action-btn action-btn--green" @click="openAddPaymentMethod">
-                  <Plus />
-                  Add Method
-                </button>
-              </div>
-
-              <div v-if="loadingPaymentMethods" class="loading-rows">
-                <div v-for="i in 2" :key="i" class="skeleton-row skeleton-row--lg"></div>
-              </div>
-              <div v-else-if="paymentMethods.length === 0" class="empty-state">
-                <Wallet class="empty-state__icon" />
-                <p class="empty-state__title">No payment methods added</p>
-                <p class="empty-state__text">Add a payment method to receive your earnings from campaigns</p>
-                <button class="empty-state__btn empty-state__btn--green" @click="openAddPaymentMethod">
-                  <Plus />
-                  Add Payment Method
-                </button>
-              </div>
-              <div v-else class="list">
-                <div
-                  v-for="method in paymentMethods"
-                  :key="method.id"
-                  class="list-item"
-                  :class="{ 'list-item--highlight': method.is_default }"
+                <EmptyState
+                  v-else-if="socialAccounts.length === 0"
+                  size="sm"
+                  :icon="Share2"
+                  title="No social accounts connected"
+                  description="Connect your social media accounts to post videos and track analytics."
                 >
-                  <div class="list-item__icon" :class="getPaymentClass(method.method_type)">
-                    <component :is="getPaymentMethodIcon(method.method_type)" />
-                  </div>
-                  <div class="list-item__content">
-                    <span class="list-item__name">
-                      {{ getPaymentMethodDisplayName(method.method_type) }}
-                      <span v-if="method.is_default" class="default-badge">Default</span>
-                    </span>
-                    <span class="list-item__meta">{{ maskPaymentDetails(method.method_type, method.details) }}</span>
-                  </div>
-                  <div class="list-item__actions">
-                    <button v-if="!method.is_default" class="text-btn" @click="setDefaultPaymentMethod(method)">
-                      Set Default
-                    </button>
-                    <button @click="editPaymentMethod(method)" title="Edit"><Pencil /></button>
-                    <button class="danger" @click="confirmDeletePaymentMethod(method)" title="Delete">
-                      <Trash2 />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </section>
-          </template>
-
-          <!-- Campaigns -->
-          <template v-if="activeTab === 'campaigns'">
-            <div class="posts-stats-grid">
-              <div class="posts-stat-card posts-stat-card--green">
-                <div class="posts-stat-card__icon"><DollarSign /></div>
-                <div class="posts-stat-card__content">
-                  <span class="posts-stat-card__value">${{ formatAmount(earningsSummary.total_earned) }}</span>
-                  <span class="posts-stat-card__label">Total Earned</span>
-                </div>
-              </div>
-              <div class="posts-stat-card posts-stat-card--amber">
-                <div class="posts-stat-card__icon"><Clock /></div>
-                <div class="posts-stat-card__content">
-                  <span class="posts-stat-card__value">${{ formatAmount(earningsSummary.pending) }}</span>
-                  <span class="posts-stat-card__label">Pending</span>
-                </div>
-              </div>
-              <div class="posts-stat-card posts-stat-card--purple">
-                <div class="posts-stat-card__icon"><Upload /></div>
-                <div class="posts-stat-card__content">
-                  <span class="posts-stat-card__value">{{ earningsSummary.total_submissions }}</span>
-                  <span class="posts-stat-card__label">Submissions</span>
-                </div>
-              </div>
-              <div class="posts-stat-card posts-stat-card--cyan">
-                <div class="posts-stat-card__icon"><CheckCircle /></div>
-                <div class="posts-stat-card__content">
-                  <span class="posts-stat-card__value">{{ earningsSummary.verified_submissions }}</span>
-                  <span class="posts-stat-card__label">Verified</span>
-                </div>
-              </div>
+                  <Button variant="secondary" size="sm" @click="showPlatformSelectionDialog = true">
+                    <Plus />
+                    Connect account
+                  </Button>
+                </EmptyState>
+                <ul v-else class="divide-y divide-line-subtle">
+                  <li
+                    v-for="account in socialAccounts"
+                    :key="account.id"
+                    class="group flex items-center gap-3 px-4 py-2.5"
+                  >
+                    <PlatformLogo :platform="account.platform" size="md" />
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-sm font-medium text-fg">@{{ account.username }}</p>
+                      <p class="truncate text-xs text-fg-subtle">
+                        {{ getPlatformName(account.platform) }}
+                        <template v-if="account.display_name">· {{ account.display_name }}</template>
+                        <template v-if="account.connected_at">
+                          · Connected {{ formatDate(account.connected_at) }}
+                        </template>
+                        <template v-if="isTokenExpiringSoonForAccount(account)">
+                          ·
+                          <span class="text-warning">Token expiring soon</span>
+                        </template>
+                      </p>
+                    </div>
+                    <Badge v-if="needsTokenAttention(account)" variant="warning">Reconnect needed</Badge>
+                    <div
+                      class="flex shrink-0 items-center gap-0.5 transition-opacity"
+                      :class="
+                        needsTokenAttention(account) ? '' : 'opacity-0 focus-within:opacity-100 group-hover:opacity-100'
+                      "
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Reconnect to refresh token"
+                        title="Reconnect to refresh token"
+                        :disabled="reconnectingAccountId === account.id"
+                        @click="reconnectSocialAccount(account)"
+                      >
+                        <Loader2 v-if="reconnectingAccountId === account.id" class="animate-spin" />
+                        <RefreshCw v-else />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="View posts"
+                        title="View posts"
+                        @click="viewAccountPosts(account)"
+                      >
+                        <Eye />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        class="hover:!bg-danger-soft hover:!text-danger"
+                        aria-label="Disconnect"
+                        title="Disconnect"
+                        @click="confirmDeleteSocialAccount(account)"
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  </li>
+                </ul>
+              </SectionCard>
             </div>
 
-            <section class="section">
-              <div class="section__header">
-                <div class="section__header-icon section__header-icon--purple">
-                  <Megaphone />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section-title">Campaign History</h2>
-                  <p class="section-subtitle">Campaigns you've joined</p>
-                </div>
-                <button class="browse-btn" @click="$router.push('/campaigns')">Browse Campaigns</button>
-              </div>
+            <!-- Post cards are a collection grid: they sit on the panel, not inside another card -->
+            <section v-if="selectedAccountForPosts" class="flex flex-col gap-2.5">
+              <SectionHeader
+                :title="`Posts from @${selectedAccountForPosts.username}`"
+                description="Your published posts and analytics"
+              >
+                <Button variant="secondary" size="sm" @click="openPublishDialog">
+                  <Upload />
+                  Post video
+                </Button>
+              </SectionHeader>
+              <UserPostsList :key="selectedAccountForPosts.id" :account-id="selectedAccountForPosts.id" />
+            </section>
+          </template>
 
-              <div v-if="loadingCampaigns" class="loading-rows">
-                <div v-for="i in 3" :key="i" class="skeleton-row skeleton-row--lg"></div>
+          <!-- ── Payments ────────────────────────────────────────────────── -->
+          <template v-if="activeTab === 'payments'">
+            <SectionCard title="Payment methods" description="Where your campaign earnings are sent" flush>
+              <template #actions>
+                <Button variant="secondary" size="sm" @click="openAddPaymentMethod">
+                  <Plus />
+                  Add method
+                </Button>
+              </template>
+
+              <div v-if="loadingPaymentMethods && !paymentMethods.length" class="flex flex-col gap-2 p-4">
+                <div v-for="i in 2" :key="i" class="skeleton h-12 w-full" />
               </div>
-              <div v-else-if="myCampaigns.length === 0" class="empty-state">
-                <Megaphone class="empty-state__icon" />
-                <p class="empty-state__title">No campaigns yet</p>
-                <p class="empty-state__text">Browse available campaigns and start earning</p>
-                <button class="empty-state__btn empty-state__btn--primary" @click="$router.push('/campaigns')">
-                  Browse Campaigns
-                </button>
+              <EmptyState
+                v-else-if="paymentMethods.length === 0"
+                size="sm"
+                :icon="Wallet"
+                title="No payment methods added"
+                description="Add a payment method to receive your earnings from campaigns."
+              >
+                <Button variant="secondary" size="sm" @click="openAddPaymentMethod">
+                  <Plus />
+                  Add payment method
+                </Button>
+              </EmptyState>
+              <ul v-else class="divide-y divide-line-subtle">
+                <li v-for="method in paymentMethods" :key="method.id" class="group flex items-center gap-3 px-4 py-2.5">
+                  <IconTile :icon="getPaymentMethodIcon(method.method_type)" size="md" />
+                  <div class="min-w-0 flex-1">
+                    <p class="flex items-center gap-2 text-sm font-medium text-fg">
+                      <span class="truncate">{{ getPaymentMethodDisplayName(method.method_type) }}</span>
+                      <Badge v-if="method.is_default" variant="brand">Default</Badge>
+                    </p>
+                    <p class="truncate text-xs text-fg-subtle">
+                      {{ maskPaymentDetails(method.method_type, method.details) }}
+                    </p>
+                  </div>
+                  <div
+                    class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100"
+                  >
+                    <Button
+                      v-if="!method.is_default"
+                      variant="ghost"
+                      size="xs"
+                      @click="setDefaultPaymentMethod(method)"
+                    >
+                      Set default
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Edit"
+                      title="Edit"
+                      @click="editPaymentMethod(method)"
+                    >
+                      <Pencil />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      class="hover:!bg-danger-soft hover:!text-danger"
+                      aria-label="Delete"
+                      title="Delete"
+                      @click="confirmDeletePaymentMethod(method)"
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                </li>
+              </ul>
+            </SectionCard>
+          </template>
+
+          <!-- ── Campaigns ───────────────────────────────────────────────── -->
+          <template v-if="activeTab === 'campaigns'">
+            <StatGrid :count="4">
+              <StatCard
+                label="Total earned"
+                :value="`$${formatAmount(earningsSummary.total_earned)}`"
+                :icon="DollarSign"
+                tone="success"
+                :loading="loadingEarnings"
+              />
+              <StatCard
+                label="Pending"
+                :value="`$${formatAmount(earningsSummary.pending)}`"
+                :icon="Clock"
+                tone="warning"
+                :loading="loadingEarnings"
+              />
+              <StatCard
+                label="Submissions"
+                :value="earningsSummary.total_submissions"
+                :icon="Upload"
+                :loading="loadingEarnings"
+              />
+              <StatCard
+                label="Verified"
+                :value="earningsSummary.verified_submissions"
+                :icon="CheckCircle"
+                tone="brand"
+                :loading="loadingEarnings"
+              />
+            </StatGrid>
+
+            <SectionCard title="Campaign history" description="Campaigns you've joined" flush>
+              <template #actions>
+                <Button variant="secondary" size="sm" @click="$router.push('/campaigns')">Browse campaigns</Button>
+              </template>
+
+              <div v-if="loadingCampaigns && !myCampaigns.length" class="flex flex-col gap-2 p-4">
+                <div v-for="i in 3" :key="i" class="skeleton h-11 w-full" />
               </div>
-              <div v-else class="campaign-list">
-                <div v-for="campaign in myCampaigns" :key="campaign.id" class="campaign-row">
-                  <div class="campaign-row__main">
-                    <h3 class="campaign-row__title">{{ campaign.title }}</h3>
+              <EmptyState
+                v-else-if="myCampaigns.length === 0"
+                size="sm"
+                :icon="Megaphone"
+                title="No campaigns yet"
+                description="Browse available campaigns and start earning."
+              >
+                <Button variant="secondary" size="sm" @click="$router.push('/campaigns')">Browse campaigns</Button>
+              </EmptyState>
+              <ul v-else class="divide-y divide-line-subtle">
+                <li v-for="campaign in myCampaigns" :key="campaign.id" class="flex items-center gap-3 px-4 py-2.5">
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-medium text-fg">{{ campaign.title }}</p>
                     <router-link
                       v-if="campaign.organization?.slug"
                       :to="{ path: `/orgs/${campaign.organization.slug}`, query: { from: $route.fullPath } }"
-                      class="campaign-row__org campaign-row__org--link"
+                      class="truncate text-xs text-fg-muted transition-colors hover:text-brand"
                     >
                       {{ campaign.organization.name }}
                     </router-link>
-                    <span v-else class="campaign-row__org">{{ campaign.organization?.name || 'Unknown' }}</span>
+                    <p v-else class="truncate text-xs text-fg-subtle">{{ campaign.organization?.name || 'Unknown' }}</p>
                   </div>
-                  <span class="cpm-badge">${{ formatCpm(campaign.cpm) }}/1K</span>
-                  <span class="status-badge" :class="`status-badge--${campaign.status}`">{{ campaign.status }}</span>
-                  <span v-if="campaign.joined_at" class="campaign-row__date">{{ formatDate(campaign.joined_at) }}</span>
-                </div>
-              </div>
-            </section>
+                  <Badge variant="outline" class="tabular">${{ formatCpm(campaign.cpm) }}/1K</Badge>
+                  <Badge :variant="statusVariant(campaign.status)" class="capitalize">{{ campaign.status }}</Badge>
+                  <span
+                    v-if="campaign.joined_at"
+                    class="tabular hidden w-24 shrink-0 text-right text-xs text-fg-subtle min-[900px]:block"
+                  >
+                    {{ formatDate(campaign.joined_at) }}
+                  </span>
+                </li>
+              </ul>
+            </SectionCard>
 
-            <section class="section">
-              <div class="section__header">
-                <div class="section__header-icon">
-                  <Upload />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section-title">My Submissions</h2>
-                  <p class="section-subtitle">Your submitted clips and their status</p>
-                </div>
+            <SectionCard title="My submissions" description="Your submitted clips and their status" flush>
+              <div v-if="loadingSubmissions && !mySubmissions.length" class="flex flex-col gap-2 p-4">
+                <div v-for="i in 3" :key="i" class="skeleton h-11 w-full" />
               </div>
-
-              <div v-if="loadingSubmissions" class="loading-rows">
-                <div v-for="i in 3" :key="i" class="skeleton-row"></div>
-              </div>
-              <div v-else-if="mySubmissions.length === 0" class="empty-state empty-state--compact">
-                <Upload class="empty-state__icon" />
-                <p class="empty-state__title">No submissions yet</p>
-              </div>
-              <div v-else class="submission-list">
-                <div v-for="submission in mySubmissions" :key="submission.id" class="submission-row">
-                  <div class="submission-row__platform" :class="getSubmissionPlatformClass(submission.platform)">
-                    <component :is="getPlatformIcon(submission.platform)" />
-                  </div>
-                  <div class="submission-row__content">
-                    <a v-if="submission.clip_url" :href="submission.clip_url" target="_blank" class="submission-row__link">
+              <EmptyState v-else-if="mySubmissions.length === 0" size="sm" :icon="Upload" title="No submissions yet" />
+              <ul v-else class="divide-y divide-line-subtle">
+                <li
+                  v-for="submission in mySubmissions"
+                  :key="submission.id"
+                  class="flex items-center gap-3 px-4 py-2.5"
+                >
+                  <PlatformLogo :platform="submission.platform" size="md" />
+                  <div class="min-w-0 flex-1">
+                    <a
+                      v-if="submission.clip_url"
+                      :href="submission.clip_url"
+                      target="_blank"
+                      class="block truncate text-sm text-fg transition-colors hover:text-brand"
+                    >
                       {{ truncateUrl(submission.clip_url) }}
                     </a>
-                    <span v-else class="submission-row__link submission-row__link--disabled">
+                    <span v-else class="block truncate text-sm text-fg-subtle">
                       {{ truncateUrl(submission.clip_url) }}
                     </span>
-                    <span class="submission-row__meta">
+                    <p class="truncate text-xs text-fg-subtle">
                       {{ submission.campaign?.title || 'Unknown' }} · {{ submission.view_count.toLocaleString() }} views
-                    </span>
-                  </div>
-                  <span class="status-badge" :class="`status-badge--${submission.status}`">
-                    {{ submission.status }}
-                  </span>
-                  <span class="submission-row__date">{{ formatDate(submission.inserted_at) }}</span>
-                </div>
-              </div>
-            </section>
-          </template>
-
-          <!-- Posts Analytics -->
-          <template v-if="activeTab === 'posts'">
-            <!-- Stat Cards -->
-            <div class="posts-stats-grid">
-              <div class="posts-stat-card posts-stat-card--cyan">
-                <div class="posts-stat-card__icon">
-                  <FileVideo />
-                </div>
-                <div class="posts-stat-card__content">
-                  <span class="posts-stat-card__value">{{ postsAnalytics?.total_posts || 0 }}</span>
-                  <span class="posts-stat-card__label">Total Posts</span>
-                </div>
-              </div>
-              <div class="posts-stat-card posts-stat-card--purple">
-                <div class="posts-stat-card__icon">
-                  <Eye />
-                </div>
-                <div class="posts-stat-card__content">
-                  <span class="posts-stat-card__value">{{ formatViews(postsAnalytics?.total_views || 0) }}</span>
-                  <span class="posts-stat-card__label">Total Views</span>
-                </div>
-              </div>
-              <div class="posts-stat-card posts-stat-card--pink">
-                <div class="posts-stat-card__icon">
-                  <Heart />
-                </div>
-                <div class="posts-stat-card__content">
-                  <span class="posts-stat-card__value">{{ formatViews(postsAnalytics?.total_likes || 0) }}</span>
-                  <span class="posts-stat-card__label">Total Likes</span>
-                </div>
-              </div>
-              <div class="posts-stat-card posts-stat-card--green">
-                <div class="posts-stat-card__icon">
-                  <TrendingUp />
-                </div>
-                <div class="posts-stat-card__content">
-                  <span class="posts-stat-card__value">{{ formatViews(postsAnalytics?.total_reach || 0) }}</span>
-                  <span class="posts-stat-card__label">Total Reach</span>
-                </div>
-              </div>
-            </div>
-
-            <!-- Posts List -->
-            <section class="section">
-              <div class="section__header">
-                <div class="section__header-icon section__header-icon--cyan">
-                  <FileVideo />
-                </div>
-                <div class="section__header-text">
-                  <h2 class="section-title">My Posts</h2>
-                  <p class="section-subtitle">Posts published to your Social Media Accounts</p>
-                </div>
-                <button class="browse-btn" @click="loadPostsAnalytics">
-                  <RefreshCw class="browse-btn__icon" :class="{ 'animate-spin': loadingPosts }" />
-                  Refresh
-                </button>
-              </div>
-
-              <div v-if="loadingPosts" class="loading-rows">
-                <div v-for="i in 3" :key="i" class="skeleton-row skeleton-row--lg"></div>
-              </div>
-              <div v-else-if="userPosts.length === 0" class="empty-state">
-                <FileVideo class="empty-state__icon" />
-                <p class="empty-state__title">No posts yet</p>
-                <p class="empty-state__text">Publish your first video to see it here</p>
-              </div>
-              <div v-else class="posts-grid">
-                <div v-for="post in userPosts" :key="`${post.source || 'personal'}:${post.id}`" class="post-card">
-                  <div class="post-card__media">
-                    <div class="post-card__thumbnail">
-                      <img v-if="post.thumbnail_url" :src="post.thumbnail_url" alt="Post thumbnail" />
-                      <div v-else class="post-card__thumbnail-placeholder">
-                        <FileVideo />
-                      </div>
-                    </div>
-                  </div>
-                  <div class="post-card__content">
-                    <div class="post-card__header">
-                      <div class="post-card__status-group">
-                        <span class="post-card__status" :class="`post-card__status--${post.status}`">
-                          {{ post.status }}
-                        </span>
-                        <span
-                          class="post-card__platform"
-                          :class="`post-card__platform--${normalizePostPlatform(post.platform)}`"
-                          :title="getPlatformDisplayName(post.platform)"
-                        >
-                          <component :is="getPostPlatformIcon(post.platform)" :size="12" />
-                        </span>
-                      </div>
-                      <a v-if="post.post_url" :href="post.post_url" target="_blank" class="post-card__link">
-                        View on {{ getPlatformDisplayName(post.platform) }}
-                      </a>
-                    </div>
-                    <p v-if="post.caption" class="post-card__caption">
-                      {{ post.caption.substring(0, 100) }}{{ post.caption.length > 100 ? '...' : '' }}
                     </p>
-                    <div class="post-card__stats">
-                      <div class="post-stat">
-                        <Eye class="post-stat__icon" />
-                        <span class="post-stat__value">{{ formatViews(post.view_count) }}</span>
-                      </div>
-                      <div class="post-stat">
-                        <Heart class="post-stat__icon" />
-                        <span class="post-stat__value">{{ formatViews(post.like_count) }}</span>
-                      </div>
-                    </div>
-                    <div class="post-card__footer">
-                      <span class="post-card__date">{{ formatDate(post.published_at || post.inserted_at) }}</span>
-                    </div>
                   </div>
-                </div>
+                  <Badge :variant="statusVariant(submission.status)" class="capitalize">{{ submission.status }}</Badge>
+                  <span class="tabular hidden w-24 shrink-0 text-right text-xs text-fg-subtle min-[900px]:block">
+                    {{ formatDate(submission.inserted_at) }}
+                  </span>
+                </li>
+              </ul>
+            </SectionCard>
+          </template>
+
+          <!-- ── Posts ───────────────────────────────────────────────────── -->
+          <template v-if="activeTab === 'posts'">
+            <StatGrid :count="4">
+              <StatCard
+                label="Total posts"
+                :value="postsAnalytics?.total_posts || 0"
+                :icon="FileVideo"
+                :loading="loadingPosts && !postsAnalytics"
+              />
+              <StatCard
+                label="Total views"
+                :value="formatViews(postsAnalytics?.total_views || 0)"
+                :icon="Eye"
+                :loading="loadingPosts && !postsAnalytics"
+              />
+              <StatCard
+                label="Total likes"
+                :value="formatViews(postsAnalytics?.total_likes || 0)"
+                :icon="Heart"
+                :loading="loadingPosts && !postsAnalytics"
+              />
+              <StatCard
+                label="Total reach"
+                :value="formatViews(postsAnalytics?.total_reach || 0)"
+                :icon="TrendingUp"
+                :loading="loadingPosts && !postsAnalytics"
+              />
+            </StatGrid>
+
+            <!-- Post cards are a collection grid: they sit on the panel, not inside another card -->
+            <section class="flex flex-col gap-2.5">
+              <SectionHeader title="My posts" description="Posts published to your social media accounts">
+                <Button variant="ghost" size="sm" :disabled="loadingPosts" @click="loadPostsAnalytics">
+                  <RefreshCw :class="{ 'animate-spin': loadingPosts }" />
+                  Refresh
+                </Button>
+              </SectionHeader>
+
+              <div
+                v-if="loadingPosts && !userPosts.length"
+                class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3"
+              >
+                <div v-for="i in 3" :key="i" class="skeleton aspect-[4/3] w-full !rounded-xl" />
+              </div>
+              <EmptyState
+                v-else-if="userPosts.length === 0"
+                size="sm"
+                :icon="FileVideo"
+                title="No posts yet"
+                description="Publish your first video to see it here."
+              />
+              <div v-else class="grid animate-fade-in grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+                <SocialPostCard v-for="post in userPosts" :key="post.id" :post="post" />
               </div>
             </section>
           </template>
 
-          <!-- Hiring Tab -->
+          <!-- ── Hiring ──────────────────────────────────────────────────── -->
           <template v-if="activeTab === 'hiring'">
-            <div v-if="loadingHiringPosts" class="loading-rows">
-              <div v-for="i in 3" :key="i" class="skeleton-row skeleton-row--lg"></div>
+            <div v-if="loadingHiringPosts && !hiringPosts.length" class="flex flex-col gap-4" aria-busy="true">
+              <div class="skeleton h-[66px] w-full !rounded-xl" />
+              <div class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+                <div v-for="i in 3" :key="i" class="skeleton h-44 w-full !rounded-xl" />
+              </div>
             </div>
             <template v-else>
-              <!-- Hiring Stats -->
-              <div class="posts-stats-grid">
-                <div class="posts-stat-card posts-stat-card--cyan">
-                  <div class="posts-stat-card__icon"><Briefcase /></div>
-                  <div class="posts-stat-card__content">
-                    <span class="posts-stat-card__value">{{ myHiringApplications.length }}</span>
-                    <span class="posts-stat-card__label">Applications</span>
-                  </div>
-                </div>
-                <div class="posts-stat-card posts-stat-card--green">
-                  <div class="posts-stat-card__icon"><CheckCircle /></div>
-                  <div class="posts-stat-card__content">
-                    <span class="posts-stat-card__value">{{ myHiringApplications.filter(a => a.status === 'accepted').length }}</span>
-                    <span class="posts-stat-card__label">Hired</span>
-                  </div>
-                </div>
-                <div class="posts-stat-card posts-stat-card--amber">
-                  <div class="posts-stat-card__icon"><Clock /></div>
-                  <div class="posts-stat-card__content">
-                    <span class="posts-stat-card__value">{{ myHiringApplications.filter(a => a.status === 'pending').length }}</span>
-                    <span class="posts-stat-card__label">Pending</span>
-                  </div>
-                </div>
-                <div class="posts-stat-card posts-stat-card--purple">
-                  <div class="posts-stat-card__icon"><Megaphone /></div>
-                  <div class="posts-stat-card__content">
-                    <span class="posts-stat-card__value">{{ hiringPosts.length }}</span>
-                    <span class="posts-stat-card__label">Open Positions</span>
-                  </div>
-                </div>
-              </div>
+              <StatGrid :count="4">
+                <StatCard label="Applications" :value="myHiringApplications.length" :icon="Briefcase" />
+                <StatCard
+                  label="Hired"
+                  :value="myHiringApplications.filter((a) => a.status === 'accepted').length"
+                  :icon="CheckCircle"
+                  tone="success"
+                />
+                <StatCard
+                  label="Pending"
+                  :value="myHiringApplications.filter((a) => a.status === 'pending').length"
+                  :icon="Clock"
+                  tone="warning"
+                />
+                <StatCard label="Open positions" :value="hiringPosts.length" :icon="Megaphone" />
+              </StatGrid>
 
-              <!-- My Applications -->
-              <section v-if="myHiringApplications.length" class="hiring-tab__section-card">
-                <div class="section__header">
-                  <div class="section__header-icon section__header-icon--cyan"><FileVideo /></div>
-                  <div class="section__header-text">
-                    <h2 class="section-title">My Applications</h2>
-                    <p class="section-subtitle">Your submitted hiring applications</p>
-                  </div>
-                </div>
-                <div class="hiring-tab__apps-list">
-                  <div v-for="app in myHiringApplications" :key="app.id" class="hiring-tab__app-card">
-                    <div class="hiring-tab__app-header">
+              <SectionCard
+                v-if="myHiringApplications.length"
+                title="My applications"
+                description="Your submitted hiring applications"
+                :count="myHiringApplications.length"
+                flush
+              >
+                <ul class="divide-y divide-line-subtle">
+                  <li v-for="app in myHiringApplications" :key="app.id" class="flex items-center gap-3 px-4 py-2.5">
+                    <component
+                      :is="app.hiring_post?.organization?.slug ? 'router-link' : 'span'"
+                      :to="
+                        app.hiring_post?.organization?.slug
+                          ? { path: `/orgs/${app.hiring_post.organization.slug}`, query: { from: $route.fullPath } }
+                          : undefined
+                      "
+                      class="flex shrink-0"
+                    >
+                      <Avatar
+                        :src="app.hiring_post?.organization?.logo_url"
+                        :icon="Building2"
+                        shape="square"
+                        size="md"
+                      />
+                    </component>
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-sm font-medium text-fg">{{ app.hiring_post?.title }}</p>
                       <router-link
                         v-if="app.hiring_post?.organization?.slug"
                         :to="{ path: `/orgs/${app.hiring_post.organization.slug}`, query: { from: $route.fullPath } }"
-                        class="hiring-tab__org-block hiring-tab__org-block--link"
+                        class="truncate text-xs text-fg-muted transition-colors hover:text-brand"
                       >
-                        <img v-if="app.hiring_post.organization.logo_url" :src="app.hiring_post.organization.logo_url" class="hiring-tab__org-logo" />
-                        <Building2 v-else class="hiring-tab__org-logo-placeholder" />
+                        {{ app.hiring_post.organization.name }}
                       </router-link>
-                      <template v-else>
-                        <img v-if="app.hiring_post?.organization?.logo_url" :src="app.hiring_post.organization.logo_url" class="hiring-tab__org-logo" />
-                        <Building2 v-else class="hiring-tab__org-logo-placeholder" />
-                      </template>
-                      <div class="hiring-tab__app-info">
-                        <router-link
-                          v-if="app.hiring_post?.organization?.slug"
-                          :to="{ path: `/orgs/${app.hiring_post.organization.slug}`, query: { from: $route.fullPath } }"
-                          class="hiring-tab__app-org hiring-tab__app-org--link"
-                        >
-                          {{ app.hiring_post.organization.name }}
-                        </router-link>
-                        <div v-else class="hiring-tab__app-org">{{ app.hiring_post?.organization?.name || 'Organization' }}</div>
-                        <div class="hiring-tab__app-title">{{ app.hiring_post?.title }}</div>
-                      </div>
-                      <span
-                        class="hiring-tab__status"
-                        :class="{
-                          'hiring-tab__status--pending': app.status === 'pending',
-                          'hiring-tab__status--accepted': app.status === 'accepted',
-                          'hiring-tab__status--rejected': app.status === 'rejected',
-                        }"
-                      >
-                        {{ app.status === 'accepted' ? 'Hired!' : app.status }}
-                      </span>
+                      <p v-else class="truncate text-xs text-fg-subtle">
+                        {{ app.hiring_post?.organization?.name || 'Organization' }}
+                      </p>
                     </div>
-                  </div>
-                </div>
-              </section>
+                    <Badge :variant="statusVariant(app.status)" class="capitalize">
+                      {{ app.status === 'accepted' ? 'Hired' : app.status }}
+                    </Badge>
+                  </li>
+                </ul>
+              </SectionCard>
 
-              <!-- Browse Hiring Posts -->
-              <section class="hiring-tab__section-card">
-                <div class="section__header">
-                  <div class="section__header-icon section__header-icon--green"><Briefcase /></div>
-                  <div class="section__header-text">
-                    <h2 class="section-title">Companies Hiring</h2>
-                    <p class="section-subtitle">Browse open positions from organizations</p>
-                  </div>
-                </div>
+              <!-- Position cards are a collection grid: they sit on the panel, not inside another card -->
+              <section class="flex flex-col gap-2.5">
+                <SectionHeader title="Companies hiring" description="Browse open positions from organizations">
+                  <CustomDropdown
+                    class="w-48"
+                    :model-value="hiringFilters.payment_type"
+                    :options="hiringPaymentTypeOptions"
+                    placeholder="All payment types"
+                    size="sm"
+                    @update:model-value="
+                      (v: string) => {
+                        hiringFilters.payment_type = v;
+                        loadHiringPosts();
+                      }
+                    "
+                  />
+                </SectionHeader>
 
-                <!-- Filters -->
-                <div class="hiring-tab__filters">
-                  <select v-model="hiringFilters.payment_type" class="hiring-tab__filter-select" @change="loadHiringPosts">
-                    <option value="">All Payment Types</option>
-                    <option v-for="pt in HIRING_PAYMENT_TYPES" :key="pt.value" :value="pt.value">{{ pt.label }}</option>
-                  </select>
-                </div>
-
-                <div v-if="!hiringPosts.length" class="hiring-tab__empty">
-                  <Briefcase class="hiring-tab__empty-icon" />
-                  <p>No organizations are currently hiring. Check back later!</p>
-                </div>
-
-                <div v-else class="hiring-tab__grid">
-                  <div v-for="post in hiringPosts" :key="post.id" class="hiring-tab__card">
-                    <div class="hiring-tab__card-header">
-                      <router-link
-                        v-if="post.organization?.slug"
-                        :to="{ path: `/orgs/${post.organization.slug}`, query: { from: $route.fullPath } }"
-                        class="hiring-tab__org-block hiring-tab__org-block--link"
+                <EmptyState
+                  v-if="!hiringPosts.length"
+                  size="sm"
+                  :icon="Briefcase"
+                  title="No open positions"
+                  description="No organizations are currently hiring. Check back later."
+                />
+                <div v-else class="grid animate-fade-in grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+                  <article
+                    v-for="post in hiringPosts"
+                    :key="post.id"
+                    class="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line-subtle bg-surface p-4"
+                  >
+                    <div class="flex items-center gap-3">
+                      <component
+                        :is="post.organization?.slug ? 'router-link' : 'span'"
+                        :to="
+                          post.organization?.slug
+                            ? { path: `/orgs/${post.organization.slug}`, query: { from: $route.fullPath } }
+                            : undefined
+                        "
+                        class="flex shrink-0"
                       >
-                        <img v-if="post.organization.logo_url" :src="post.organization.logo_url" class="hiring-tab__org-logo" />
-                        <Building2 v-else class="hiring-tab__org-logo-placeholder" />
-                      </router-link>
-                      <template v-else>
-                        <img v-if="post.organization?.logo_url" :src="post.organization.logo_url" class="hiring-tab__org-logo" />
-                        <Building2 v-else class="hiring-tab__org-logo-placeholder" />
-                      </template>
-                      <div class="hiring-tab__card-org">
-                        <router-link
-                          v-if="post.organization?.slug"
-                          :to="{ path: `/orgs/${post.organization.slug}`, query: { from: $route.fullPath } }"
-                          class="hiring-tab__card-org-name hiring-tab__card-org-name--link"
-                        >
-                          {{ post.organization.name }}
-                        </router-link>
-                        <div v-else class="hiring-tab__card-org-name">{{ post.organization?.name }}</div>
-                        <div class="hiring-tab__card-title">{{ post.title }}</div>
+                        <Avatar :src="post.organization?.logo_url" :icon="Building2" shape="square" size="md" />
+                      </component>
+                      <div class="min-w-0 flex-1">
+                        <h3 class="truncate text-sm font-semibold text-fg" :title="post.title">{{ post.title }}</h3>
+                        <p class="flex min-w-0 items-center gap-1 text-xs text-fg-muted">
+                          <router-link
+                            v-if="post.organization?.slug"
+                            :to="{ path: `/orgs/${post.organization.slug}`, query: { from: $route.fullPath } }"
+                            class="truncate transition-colors hover:text-brand"
+                          >
+                            {{ post.organization.name }}
+                          </router-link>
+                          <span v-else class="truncate">{{ post.organization?.name }}</span>
+                          <span v-if="post.clipper_slots" class="tabular shrink-0 text-fg-subtle">
+                            · {{ post.clipper_slots_filled }}/{{ post.clipper_slots }} clippers
+                          </span>
+                        </p>
                       </div>
                     </div>
 
-                    <p v-if="post.description" class="hiring-tab__card-desc">{{ post.description }}</p>
+                    <p v-if="post.description" class="line-clamp-2 text-xs text-fg-muted">{{ post.description }}</p>
 
-                    <div class="hiring-tab__card-meta">
-                      <span v-if="post.payment_type" class="hiring-tab__card-badge hiring-tab__card-badge--pay">
-                        {{ getHiringPaymentTypeLabel(post.payment_type) }}{{ post.payment_details ? `: ${post.payment_details}` : '' }}
-                      </span>
-                      <span v-if="post.clipper_slots" class="hiring-tab__card-badge">
-                        {{ post.clipper_slots_filled }}/{{ post.clipper_slots }} clippers
-                      </span>
-                      <span v-if="post.experience_level" class="hiring-tab__card-badge">
+                    <div class="flex flex-wrap gap-1">
+                      <Badge v-if="post.experience_level" variant="neutral">
                         {{ getExperienceLevelLabel(post.experience_level) }}+
-                      </span>
+                      </Badge>
+                      <Badge v-for="t in (post.content_types || []).slice(0, 4)" :key="`c-${t}`" variant="outline">
+                        {{ getSpecialtyTagLabel(t) }}
+                      </Badge>
+                      <Badge v-for="p in post.platforms || []" :key="`p-${p}`" variant="outline">
+                        {{ getHiringPlatformLabel(p) }}
+                      </Badge>
                     </div>
 
-                    <div v-if="post.content_types?.length" class="hiring-tab__card-tags">
-                      <span v-for="t in post.content_types.slice(0, 4)" :key="t" class="hiring-tab__mini-tag">{{ getSpecialtyTagLabel(t) }}</span>
+                    <div class="mt-auto flex items-center gap-2 border-t border-line-subtle pt-2.5">
+                      <p
+                        class="min-w-0 flex-1 truncate text-xs font-medium text-fg"
+                        :title="
+                          post.payment_type
+                            ? `${getHiringPaymentTypeLabel(post.payment_type)}${post.payment_details ? `: ${post.payment_details}` : ''}`
+                            : undefined
+                        "
+                      >
+                        <template v-if="post.payment_type">
+                          {{ getHiringPaymentTypeLabel(post.payment_type)
+                          }}{{ post.payment_details ? `: ${post.payment_details}` : '' }}
+                        </template>
+                      </p>
+                      <Button
+                        :variant="post.has_applied ? 'subtle' : 'secondary'"
+                        size="sm"
+                        :disabled="post.has_applied || applyingTo === post.id"
+                        :loading="applyingTo === post.id"
+                        @click="openApplyDialog(post)"
+                      >
+                        <Check v-if="post.has_applied" />
+                        {{ post.has_applied ? 'Applied' : 'Apply' }}
+                      </Button>
                     </div>
-
-                    <div v-if="post.platforms?.length" class="hiring-tab__card-tags">
-                      <span v-for="p in post.platforms" :key="p" class="hiring-tab__mini-tag">{{ getHiringPlatformLabel(p) }}</span>
-                    </div>
-
-                    <button
-                      class="hiring-tab__apply-btn"
-                      :class="{ 'hiring-tab__apply-btn--applied': post.has_applied }"
-                      :disabled="post.has_applied || applyingTo === post.id"
-                      @click="openApplyDialog(post)"
-                    >
-                      <Loader2 v-if="applyingTo === post.id" class="hiring-tab__apply-spinner" />
-                      {{ post.has_applied ? 'Applied' : 'Apply' }}
-                    </button>
-                  </div>
+                  </article>
                 </div>
               </section>
             </template>
-
-            <!-- Apply Dialog -->
-            <Dialog v-model:open="showApplyDialog">
-              <DialogContent class="hiring-tab__dialog">
-                <DialogHeader>
-                  <DialogTitle>Apply to {{ applyTarget?.organization?.name }}</DialogTitle>
-                  <DialogDescription>
-                    {{ applyTarget?.title }}
-                  </DialogDescription>
-                </DialogHeader>
-                <div class="hiring-tab__dialog-body">
-                  <label class="hiring-tab__dialog-label">Message (optional)</label>
-                  <textarea v-model="applyMessage" class="hiring-tab__dialog-textarea" rows="4" placeholder="Tell them why you'd be a great fit..." />
-                  <p class="hiring-tab__dialog-note">Your clipper profile will be shared with this organization.</p>
-                </div>
-                <DialogFooter>
-                  <Button variant="outline" @click="showApplyDialog = false">Cancel</Button>
-                  <Button @click="submitApplication" :disabled="applyingTo !== null">
-                    <Loader2 v-if="applyingTo !== null" class="hiring-tab__apply-spinner" />
-                    Submit Application
-                  </Button>
-                </DialogFooter>
-              </DialogContent>
-            </Dialog>
           </template>
 
-          <!-- Affiliate Tab -->
+          <!-- ── Affiliate ───────────────────────────────────────────────── -->
           <template v-if="activeTab === 'affiliate'">
-            <div v-if="loadingAffiliate" class="loading-rows">
-              <div v-for="i in 3" :key="i" class="skeleton-row skeleton-row--lg"></div>
+            <div v-if="loadingAffiliate && !affiliateDashboard" class="flex flex-col gap-4" aria-busy="true">
+              <div class="skeleton h-9 w-full max-w-[420px]" />
+              <div v-for="i in 2" :key="i" class="skeleton h-[66px] w-full !rounded-xl" />
+              <div class="skeleton h-40 w-full !rounded-xl" />
             </div>
             <template v-else-if="affiliateInfo && affiliateDashboard">
-              <!-- Sign-up Stats -->
-              <div class="posts-stats-grid" v-if="affiliateDashboard && affiliateDashboard.breakdown">
-                <div class="posts-stat-card posts-stat-card--cyan">
-                  <div class="posts-stat-card__icon"><UserPlus /></div>
-                  <div class="posts-stat-card__content">
-                    <span class="posts-stat-card__value">{{ affiliateDashboard.breakdown.first_subscription?.count || 0 }}</span>
-                    <span class="posts-stat-card__label">First-time Sign-ups</span>
-                  </div>
+              <!-- Referral code: a heading row on the panel, not a card -->
+              <section class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <div class="min-w-0 flex-1">
+                  <p class="flex items-center gap-2 text-sm font-semibold text-fg">
+                    Your referral code
+                    <Badge :variant="statusVariant(affiliateInfo.status)" class="capitalize">
+                      {{ affiliateInfo.status }}
+                    </Badge>
+                  </p>
+                  <p class="text-xs text-fg-muted">Share it — you earn a commission on every referred subscription.</p>
                 </div>
-                <div class="posts-stat-card posts-stat-card--purple">
-                  <div class="posts-stat-card__icon"><RefreshCw /></div>
-                  <div class="posts-stat-card__content">
-                    <span class="posts-stat-card__value">{{ affiliateDashboard.breakdown.recurring?.count || 0 }}</span>
-                    <span class="posts-stat-card__label">Recurring Sign-ups</span>
-                  </div>
+                <div class="flex items-center gap-2">
+                  <code
+                    class="flex h-[var(--control-sm)] items-center rounded-[var(--radius-control)] border border-line bg-surface-sunken px-2.5 font-mono text-sm tracking-wide text-fg"
+                  >
+                    {{ affiliateInfo.referral_code }}
+                  </code>
+                  <Button variant="secondary" size="sm" @click="copyAffiliateCode">
+                    <Check v-if="affCopied" class="text-success" />
+                    <Copy v-else />
+                    {{ affCopied ? 'Copied' : 'Copy' }}
+                  </Button>
                 </div>
-                <div class="posts-stat-card posts-stat-card--green">
-                  <div class="posts-stat-card__icon"><TrendingUp /></div>
-                  <div class="posts-stat-card__content">
-                    <span class="posts-stat-card__value">{{ getAffiliateTotalSignups() }}</span>
-                    <span class="posts-stat-card__label">Total Sign-ups</span>
-                  </div>
-                </div>
-              </div>
+              </section>
 
-              <!-- Referral Code -->
-              <div class="aff-tab__link-card">
-                <div class="aff-tab__link-header">
-                  <Hash class="aff-tab__link-icon" />
-                  <span class="aff-tab__link-label">Your Referral Code</span>
-                  <span class="aff-tab__status" :class="`aff-tab__status--${affiliateInfo.status}`">{{ affiliateInfo.status }}</span>
-                </div>
-                <div class="aff-tab__link-row">
-                  <code class="aff-tab__link-url">{{ affiliateInfo.referral_code }}</code>
-                  <button class="aff-tab__copy-btn" @click="copyAffiliateCode">
-                    <Copy v-if="!affCopied" :size="14" />
-                    <Check v-else :size="14" class="aff-tab__copy-ok" />
-                    {{ affCopied ? 'Copied!' : 'Copy' }}
-                  </button>
-                </div>
-              </div>
+              <StatGrid v-if="affiliateDashboard.breakdown" :count="3">
+                <StatCard
+                  label="First-time sign-ups"
+                  :value="affiliateDashboard.breakdown.first_subscription?.count || 0"
+                  :icon="UserPlus"
+                />
+                <StatCard
+                  label="Recurring sign-ups"
+                  :value="affiliateDashboard.breakdown.recurring?.count || 0"
+                  :icon="RefreshCw"
+                />
+                <StatCard label="Total sign-ups" :value="getAffiliateTotalSignups()" :icon="TrendingUp" tone="brand" />
+              </StatGrid>
 
-              <!-- Stats -->
-              <div class="posts-stats-grid">
-                <div class="posts-stat-card posts-stat-card--cyan">
-                  <div class="posts-stat-card__icon"><TrendingUp /></div>
-                  <div class="posts-stat-card__content">
-                    <span class="posts-stat-card__value">${{ affiliateDashboard.this_month.total.toFixed(2) }}</span>
-                    <span class="posts-stat-card__label">This Month</span>
-                  </div>
-                </div>
-                <div class="posts-stat-card posts-stat-card--purple">
-                  <div class="posts-stat-card__icon"><BarChart3 /></div>
-                  <div class="posts-stat-card__content">
-                    <span class="posts-stat-card__value">${{ affiliateDashboard.three_months.total.toFixed(2) }}</span>
-                    <span class="posts-stat-card__label">Last 3 Months</span>
-                  </div>
-                </div>
-                <div class="posts-stat-card posts-stat-card--pink">
-                  <div class="posts-stat-card__icon"><Heart /></div>
-                  <div class="posts-stat-card__content">
-                    <span class="posts-stat-card__value">${{ affiliateDashboard.ytd.total.toFixed(2) }}</span>
-                    <span class="posts-stat-card__label">Year to Date</span>
-                  </div>
-                </div>
-                <div class="posts-stat-card posts-stat-card--green">
-                  <div class="posts-stat-card__icon"><DollarSign /></div>
-                  <div class="posts-stat-card__content">
-                    <span class="posts-stat-card__value">${{ affiliateDashboard.all_time.total.toFixed(2) }}</span>
-                    <span class="posts-stat-card__label">All Time</span>
-                  </div>
-                </div>
-              </div>
+              <StatGrid :count="4">
+                <StatCard
+                  label="This month"
+                  :value="`$${affiliateDashboard.this_month.total.toFixed(2)}`"
+                  :icon="DollarSign"
+                  tone="success"
+                />
+                <StatCard
+                  label="Last 3 months"
+                  :value="`$${affiliateDashboard.three_months.total.toFixed(2)}`"
+                  :icon="BarChart3"
+                />
+                <StatCard
+                  label="Year to date"
+                  :value="`$${affiliateDashboard.ytd.total.toFixed(2)}`"
+                  :icon="TrendingUp"
+                />
+                <StatCard label="All time" :value="`$${affiliateDashboard.all_time.total.toFixed(2)}`" :icon="Wallet" />
+              </StatGrid>
 
-              <!-- Recent Referrals -->
-              <section class="section">
-                <div class="section__header">
-                  <div class="section__header-icon section__header-icon--cyan"><Handshake /></div>
-                  <div class="section__header-text">
-                    <h2 class="section-title">Recent Referrals</h2>
-                    <p class="section-subtitle">Commission earned from referred users</p>
-                  </div>
-                </div>
-                <div v-if="affiliateReferrals.length === 0" class="empty-state">
-                  <Handshake class="empty-state__icon" />
-                  <p class="empty-state__title">No referrals yet</p>
-                  <p class="empty-state__text">Share your code to start earning commissions</p>
-                </div>
-                <div v-else class="aff-tab__table-wrapper">
-                  <table class="aff-tab__table">
+              <SectionCard title="Recent referrals" description="Commission earned from referred users" flush>
+                <EmptyState
+                  v-if="affiliateReferrals.length === 0"
+                  size="sm"
+                  :icon="Handshake"
+                  title="No referrals yet"
+                  description="Share your code to start earning commissions."
+                />
+                <div v-else class="overflow-x-auto">
+                  <table class="w-full text-left text-sm">
                     <thead>
-                      <tr>
-                        <th class="aff-tab__th">Date</th>
-                        <th class="aff-tab__th">Type</th>
-                        <th class="aff-tab__th">Amount</th>
-                        <th class="aff-tab__th">Commission</th>
-                        <th class="aff-tab__th">Status</th>
+                      <tr class="text-2xs font-medium uppercase tracking-[0.04em] text-fg-subtle">
+                        <th class="h-8 px-4 font-medium">Date</th>
+                        <th class="h-8 px-4 font-medium">Type</th>
+                        <th class="h-8 px-4 text-right font-medium">Amount</th>
+                        <th class="h-8 px-4 text-right font-medium">Commission</th>
+                        <th class="h-8 px-4 font-medium">Status</th>
                       </tr>
                     </thead>
                     <tbody>
-                      <tr v-for="r in affiliateReferrals" :key="r.id" class="aff-tab__row">
-                        <td class="aff-tab__td">{{ formatDate(r.inserted_at) }}</td>
-                        <td class="aff-tab__td"><span class="aff-tab__event-badge">{{ formatAffEventType(r.event_type) }}</span></td>
-                        <td class="aff-tab__td">${{ r.amount_usd.toFixed(2) }}</td>
-                        <td class="aff-tab__td aff-tab__td--green">${{ r.commission_usd.toFixed(2) }}</td>
-                        <td class="aff-tab__td"><span class="aff-tab__ref-status" :class="`aff-tab__ref-status--${r.status}`">{{ r.status }}</span></td>
+                      <tr v-for="r in affiliateReferrals" :key="r.id" class="border-t border-line-subtle">
+                        <td class="tabular h-10 whitespace-nowrap px-4 text-fg-muted">
+                          {{ formatDate(r.inserted_at) }}
+                        </td>
+                        <td class="h-10 px-4">
+                          <Badge variant="neutral">{{ formatAffEventType(r.event_type) }}</Badge>
+                        </td>
+                        <td class="tabular h-10 px-4 text-right text-fg">${{ r.amount_usd.toFixed(2) }}</td>
+                        <td class="tabular h-10 px-4 text-right font-medium text-success">
+                          ${{ r.commission_usd.toFixed(2) }}
+                        </td>
+                        <td class="h-10 px-4">
+                          <Badge :variant="statusVariant(r.status)" class="capitalize">{{ r.status }}</Badge>
+                        </td>
                       </tr>
                     </tbody>
                   </table>
                 </div>
-              </section>
+              </SectionCard>
 
-              <!-- Payout Settings -->
-              <section class="section">
-                <div class="section__header">
-                  <div class="section__header-icon section__header-icon--green"><Wallet /></div>
-                  <div class="section__header-text">
-                    <h2 class="section-title">Payout Settings</h2>
-                    <p class="section-subtitle">Configure how you receive commissions</p>
-                  </div>
-                </div>
-                <div class="aff-tab__settings">
-                  <div class="aff-tab__field">
-                    <label class="aff-tab__label">Payout Method</label>
+              <SectionCard title="Payout settings" description="How you receive commissions" flush>
+                <div class="flex max-w-md flex-col gap-4 p-4">
+                  <Field label="Payout method">
                     <CustomDropdown
                       v-model="affSettingsForm.payout_method"
                       :options="payoutMethodOptions"
-                      placeholder="Select method..."
-                      class="aff-tab__dropdown"
-                      trigger-class="aff-tab__dropdown-trigger"
+                      placeholder="Select method…"
                     />
+                  </Field>
+                  <Field v-if="affSettingsForm.payout_method === 'crypto'" label="Solana USDC address">
+                    <Input v-model="affSettingsForm.solana_usdc_address" placeholder="Enter your Solana USDC address" />
+                  </Field>
+                  <Field v-if="affSettingsForm.payout_method === 'paypal'" label="PayPal email">
+                    <Input v-model="affSettingsForm.paypal_email" type="email" placeholder="Enter your PayPal email" />
+                  </Field>
+                  <div>
+                    <Button variant="primary" size="sm" :loading="savingAffSettings" @click="saveAffiliateSettings">
+                      Save settings
+                    </Button>
                   </div>
-                  <div v-if="affSettingsForm.payout_method === 'crypto'" class="aff-tab__field">
-                    <label class="aff-tab__label">Solana USDC Address</label>
-                    <input v-model="affSettingsForm.solana_usdc_address" type="text" class="aff-tab__input" placeholder="Enter your Solana USDC address" />
-                  </div>
-                  <div v-if="affSettingsForm.payout_method === 'paypal'" class="aff-tab__field">
-                    <label class="aff-tab__label">PayPal Email</label>
-                    <input v-model="affSettingsForm.paypal_email" type="email" class="aff-tab__input" placeholder="Enter your PayPal email" />
-                  </div>
-                  <button class="aff-tab__save-btn" :disabled="savingAffSettings" @click="saveAffiliateSettings">
-                    <Loader2 v-if="savingAffSettings" :size="14" class="animate-spin" />
-                    Save Settings
-                  </button>
                 </div>
-              </section>
+              </SectionCard>
             </template>
           </template>
-        </main>
+        </div>
       </div>
     </PageLayout>
 
-    <!-- Dialogs -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div
-          v-if="showPlatformSelectionDialog"
-          class="platform-dialog__overlay"
-          @click.self="showPlatformSelectionDialog = false"
+    <!-- ── Dialogs ───────────────────────────────────────────────────── -->
+
+    <!-- Connect social account -->
+    <Modal
+      :open="showPlatformSelectionDialog"
+      title="Connect social account"
+      description="Choose a platform to connect and start posting."
+      :icon="Share2"
+      size="md"
+      :dismissible="!connectingPlatform"
+      :hide-close="connectingPlatform"
+      @close="showPlatformSelectionDialog = false"
+    >
+      <ListGroup>
+        <ListItem
+          v-for="platform in availablePlatforms"
+          :key="platform.id"
+          :title="platform.name"
+          :disabled="!platform.available || connectingPlatform"
+          :chevron="!(connectingPlatform && selectedPlatform === platform.id)"
+          @click="connectPlatform(platform.id)"
         >
-          <Transition name="dialog" appear>
-            <div class="platform-dialog" role="dialog" aria-modal="true">
-              <!-- Accent bar -->
-              <div class="platform-dialog__accent"></div>
+          <template #leading>
+            <PlatformLogo :platform="platform.id" size="md" />
+          </template>
+          <template #trailing>
+            <Badge v-if="!platform.available" variant="neutral">Coming soon</Badge>
+            <Loader2
+              v-if="connectingPlatform && selectedPlatform === platform.id"
+              class="size-4 animate-spin text-fg-muted"
+            />
+          </template>
+        </ListItem>
+      </ListGroup>
+      <template #footer>
+        <Button variant="ghost" :disabled="connectingPlatform" @click="showPlatformSelectionDialog = false">
+          Cancel
+        </Button>
+      </template>
+    </Modal>
 
-              <!-- Header -->
-              <div class="platform-dialog__header">
-                <button
-                  class="platform-dialog__close"
-                  @click="showPlatformSelectionDialog = false"
-                  :disabled="connectingPlatform"
-                  title="Close"
-                >
-                  <X :size="18" />
-                </button>
-                <div class="platform-dialog__icon">
-                  <Share2 :size="24" />
-                </div>
-                <h2 class="platform-dialog__title">Connect Social Account</h2>
-                <p class="platform-dialog__subtitle">Choose a platform to connect and start posting</p>
-              </div>
+    <!-- Add / edit payment method -->
+    <Modal
+      :open="showPaymentMethodDialog"
+      :title="editingPaymentMethod ? 'Edit payment method' : 'Add payment method'"
+      :description="
+        editingPaymentMethod ? 'Update your payment method details.' : 'Add a new payment method to receive earnings.'
+      "
+      :icon="Wallet"
+      size="sm"
+      :dismissible="!savingPaymentMethod"
+      :hide-close="savingPaymentMethod"
+      @close="closePaymentMethodDialog"
+    >
+      <form id="clipper-payment-method-form" class="flex flex-col gap-4" @submit.prevent="savePaymentMethod">
+        <Field label="Method type">
+          <CustomDropdown
+            v-model="paymentMethodForm.method_type"
+            :options="[...PAYMENT_METHOD_TYPES]"
+            placeholder="Select method"
+          />
+        </Field>
 
-              <!-- Content -->
-              <div class="platform-dialog__content">
-                <div class="platform-grid">
-                  <button
-                    v-for="platform in availablePlatforms"
-                    :key="platform.id"
-                    class="platform-option"
-                    :class="{ 'platform-option--disabled': !platform.available }"
-                    :disabled="!platform.available || connectingPlatform"
-                    @click="connectPlatform(platform.id)"
-                  >
-                    <div class="platform-option__icon" :class="platform.iconClass">
-                      <component :is="platform.icon" />
-                    </div>
-                    <div class="platform-option__content">
-                      <span class="platform-option__name">{{ platform.name }}</span>
-                      <span v-if="!platform.available" class="platform-option__badge">Coming Soon</span>
-                    </div>
-                    <Loader2
-                      v-if="connectingPlatform && selectedPlatform === platform.id"
-                      class="platform-option__spinner"
-                    />
-                  </button>
-                </div>
-              </div>
+        <Field v-if="paymentMethodForm.method_type === 'paypal'" label="PayPal email">
+          <Input v-model="paymentMethodForm.details.email" type="email" placeholder="email@example.com" />
+        </Field>
 
-              <!-- Footer -->
-              <div class="platform-dialog__footer">
-                <button
-                  @click="showPlatformSelectionDialog = false"
-                  :disabled="connectingPlatform"
-                  class="platform-dialog__btn platform-dialog__btn--secondary"
-                >
-                  Cancel
-                </button>
-              </div>
-            </div>
-          </Transition>
-        </div>
-      </Transition>
-    </Teleport>
+        <template v-else-if="paymentMethodForm.method_type === 'crypto'">
+          <Field label="Wallet address">
+            <Input v-model="paymentMethodForm.details.wallet_address" placeholder="0x..." />
+          </Field>
+          <Field label="Network" hint="Optional">
+            <Input v-model="paymentMethodForm.details.network" placeholder="Ethereum, Solana..." />
+          </Field>
+        </template>
 
-    <!-- Payment Method Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showPaymentMethodDialog" class="payment-dialog__overlay" @click.self="closePaymentMethodDialog">
-          <Transition name="dialog" appear>
-            <div class="payment-dialog">
-              <div class="payment-dialog__accent"></div>
-              <div class="payment-dialog__header">
-                <button
-                  class="payment-dialog__close"
-                  @click="closePaymentMethodDialog"
-                  title="Close"
-                  :disabled="savingPaymentMethod"
-                >
-                  <X :size="18" />
-                </button>
-                <div class="payment-dialog__icon">
-                  <Wallet :size="24" />
-                </div>
-                <h2 class="payment-dialog__title">{{ editingPaymentMethod ? 'Edit' : 'Add' }} Payment Method</h2>
-                <p class="payment-dialog__subtitle">
-                  {{
-                    editingPaymentMethod
-                      ? 'Update your payment method details'
-                      : 'Add a new payment method to receive earnings'
-                  }}
-                </p>
-              </div>
+        <Field v-else-if="['venmo', 'cashapp'].includes(paymentMethodForm.method_type)" label="Username">
+          <Input v-model="paymentMethodForm.details.username" placeholder="@username" />
+        </Field>
 
-              <form @submit.prevent="savePaymentMethod" class="payment-dialog__form">
-                <div class="payment-dialog__content">
-                  <div class="payment-dialog__field">
-                    <label class="payment-dialog__label">Method Type</label>
-                    <CustomDropdown
-                      v-model="paymentMethodForm.method_type"
-                      :options="[...PAYMENT_METHOD_TYPES]"
-                      placeholder="Select method"
-                      class="payment-dialog__dropdown"
-                      trigger-class="payment-dialog__dropdown-trigger"
-                    />
-                  </div>
+        <template v-else-if="paymentMethodForm.method_type === 'bank_transfer'">
+          <Field label="Account name">
+            <Input v-model="paymentMethodForm.details.account_name" placeholder="John Doe" />
+          </Field>
+          <div class="grid grid-cols-2 gap-3">
+            <Field label="Account number">
+              <Input v-model="paymentMethodForm.details.account_number" placeholder="****1234" />
+            </Field>
+            <Field label="Routing number">
+              <Input v-model="paymentMethodForm.details.routing_number" placeholder="123456789" />
+            </Field>
+          </div>
+        </template>
 
-                  <template v-if="paymentMethodForm.method_type === 'paypal'">
-                    <div class="payment-dialog__field">
-                      <label class="payment-dialog__label">PayPal Email</label>
-                      <Input
-                        v-model="paymentMethodForm.details.email"
-                        type="email"
-                        placeholder="email@example.com"
-                        class="payment-dialog__input"
-                      />
-                    </div>
-                  </template>
+        <label for="default-payment" class="flex cursor-pointer items-center gap-2 text-sm text-fg">
+          <Checkbox id="default-payment" v-model="paymentMethodForm.is_default" />
+          Set as default
+        </label>
+      </form>
 
-                  <template v-else-if="paymentMethodForm.method_type === 'crypto'">
-                    <div class="payment-dialog__field">
-                      <label class="payment-dialog__label">Wallet Address</label>
-                      <Input
-                        v-model="paymentMethodForm.details.wallet_address"
-                        placeholder="0x..."
-                        class="payment-dialog__input"
-                      />
-                    </div>
-                    <div class="payment-dialog__field">
-                      <label class="payment-dialog__label">Network (optional)</label>
-                      <Input
-                        v-model="paymentMethodForm.details.network"
-                        placeholder="Ethereum, Solana..."
-                        class="payment-dialog__input"
-                      />
-                    </div>
-                  </template>
+      <template #footer>
+        <Button variant="ghost" :disabled="savingPaymentMethod" @click="closePaymentMethodDialog">Cancel</Button>
+        <Button
+          type="submit"
+          form="clipper-payment-method-form"
+          variant="primary"
+          :loading="savingPaymentMethod"
+          :disabled="!paymentMethodForm.method_type"
+        >
+          {{ editingPaymentMethod ? 'Save changes' : 'Add method' }}
+        </Button>
+      </template>
+    </Modal>
 
-                  <template v-else-if="['venmo', 'cashapp'].includes(paymentMethodForm.method_type)">
-                    <div class="payment-dialog__field">
-                      <label class="payment-dialog__label">Username</label>
-                      <Input
-                        v-model="paymentMethodForm.details.username"
-                        placeholder="@username"
-                        class="payment-dialog__input"
-                      />
-                    </div>
-                  </template>
+    <!-- Delete / disconnect confirmation -->
+    <Modal
+      v-model:open="showDeleteDialog"
+      :title="deleteType === 'social account' ? 'Disconnect social account?' : 'Delete payment method?'"
+      :icon="AlertTriangle"
+      tone="danger"
+      size="sm"
+      :dismissible="!deleting"
+    >
+      <p class="text-sm text-fg-muted">Are you sure? This cannot be undone.</p>
+      <template #footer>
+        <Button variant="ghost" :disabled="deleting" @click="showDeleteDialog = false">Cancel</Button>
+        <Button variant="destructive" :loading="deleting" @click="confirmDelete">
+          {{ deleteType === 'social account' ? 'Disconnect' : 'Delete' }}
+        </Button>
+      </template>
+    </Modal>
 
-                  <template v-else-if="paymentMethodForm.method_type === 'bank_transfer'">
-                    <div class="payment-dialog__field">
-                      <label class="payment-dialog__label">Account Name</label>
-                      <Input
-                        v-model="paymentMethodForm.details.account_name"
-                        placeholder="John Doe"
-                        class="payment-dialog__input"
-                      />
-                    </div>
-                    <div class="payment-dialog__field">
-                      <label class="payment-dialog__label">Account Number</label>
-                      <Input
-                        v-model="paymentMethodForm.details.account_number"
-                        placeholder="****1234"
-                        class="payment-dialog__input"
-                      />
-                    </div>
-                    <div class="payment-dialog__field">
-                      <label class="payment-dialog__label">Routing Number</label>
-                      <Input
-                        v-model="paymentMethodForm.details.routing_number"
-                        placeholder="123456789"
-                        class="payment-dialog__input"
-                      />
-                    </div>
-                  </template>
-
-                  <div class="payment-dialog__checkbox">
-                    <Checkbox v-model:checked="paymentMethodForm.is_default" id="default-payment" />
-                    <label for="default-payment" class="payment-dialog__checkbox-label">Set as default</label>
-                  </div>
-                </div>
-
-                <div class="payment-dialog__footer">
-                  <button
-                    type="button"
-                    class="payment-dialog__btn payment-dialog__btn--secondary"
-                    @click="closePaymentMethodDialog"
-                    :disabled="savingPaymentMethod"
-                  >
-                    Cancel
-                  </button>
-                  <button
-                    type="submit"
-                    class="payment-dialog__btn payment-dialog__btn--primary"
-                    :disabled="savingPaymentMethod || !paymentMethodForm.method_type"
-                  >
-                    <Loader2 v-if="savingPaymentMethod" class="payment-dialog__btn-spinner" />
-                    {{ editingPaymentMethod ? 'Save Changes' : 'Add Method' }}
-                  </button>
-                </div>
-              </form>
-            </div>
-          </Transition>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <Dialog v-model:open="showDeleteDialog">
-      <DialogContent class="dialog dialog--small">
-        <DialogHeader>
-          <DialogTitle>Confirm Delete</DialogTitle>
-          <DialogDescription>Are you sure? This cannot be undone.</DialogDescription>
-        </DialogHeader>
-        <DialogFooter>
-          <Button variant="outline" @click="showDeleteDialog = false">Cancel</Button>
-          <Button variant="destructive" @click="confirmDelete" :disabled="deleting">
-            <Loader2 v-if="deleting" class="spinner" />
-            Delete
-          </Button>
-        </DialogFooter>
-      </DialogContent>
-    </Dialog>
-
-    <EditProfileDialog :show="showEditProfileDialog" @close="showEditProfileDialog = false" @saved="onProfileSaved" />
+    <!-- Apply to hiring post -->
+    <Modal
+      v-model:open="showApplyDialog"
+      :title="`Apply to ${applyTarget?.organization?.name || 'organization'}`"
+      :description="applyTarget?.title"
+      :icon="Briefcase"
+      size="md"
+    >
+      <Field label="Message" hint="Optional — your clipper profile will be shared with this organization.">
+        <Textarea v-model="applyMessage" :rows="4" placeholder="Tell them why you'd be a great fit…" />
+      </Field>
+      <template #footer>
+        <Button variant="ghost" @click="showApplyDialog = false">Cancel</Button>
+        <Button variant="primary" :loading="applyingTo !== null" @click="submitApplication">Submit application</Button>
+      </template>
+    </Modal>
 
     <InstagramPublishDialog
       :open="showPublishDialog"
@@ -1265,10 +1038,7 @@
       @complete="onOnboardingComplete"
     />
 
-    <AddPostDialog
-      v-model="showAddPostDialog"
-      @submitted="onPostAdded"
-    />
+    <AddPostDialog v-model="showAddPostDialog" @submitted="onPostAdded" />
   </div>
 </template>
 
@@ -1285,10 +1055,6 @@
     Trash2,
     CheckCircle,
     Loader2,
-    Music2,
-    Instagram,
-    Youtube,
-    Globe,
     CreditCard,
     Bitcoin,
     Smartphone,
@@ -1301,23 +1067,19 @@
     Trophy,
     AlertTriangle,
     Clock,
-    Users,
     UserPlus,
-    X,
     BarChart3,
     Heart,
     TrendingUp,
     FileVideo,
     RefreshCw,
     Handshake,
-    Hash,
     Copy,
     Check,
     Briefcase,
     Building2,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
-  import EditProfileDialog from '@/components/EditProfileDialog.vue';
   import UserPostsList from '@/components/UserPostsList.vue';
   import InstagramPublishDialog from '@/components/InstagramPublishDialog.vue';
   import TwitterPublishDialog from '@/components/TwitterPublishDialog.vue';
@@ -1325,25 +1087,25 @@
   import YoutubePublishDialog from '@/components/YoutubePublishDialog.vue';
   import ClipperProfileOnboardingWizard from '@/components/ClipperProfileOnboardingWizard.vue';
   import AddPostDialog from '@/components/AddPostDialog.vue';
-  import XLogo from '@/components/icons/XLogo.vue';
-  import TokendLogo from '@/components/icons/TokendLogo.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
+  import { PlatformLogo } from '@/components/ui/platform-logo';
+  import SocialPostCard from '@/components/clipper-profile/SocialPostCard.vue';
+  import { Avatar } from '@/components/ui/avatar';
+  import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
-  import { Input } from '@/components/ui/input';
-  import { Label } from '@/components/ui/label';
   import { Checkbox } from '@/components/ui/checkbox';
-  import {
-    Dialog,
-    DialogContent,
-    DialogHeader,
-    DialogTitle,
-    DialogDescription,
-    DialogFooter,
-  } from '@/components/ui/dialog';
-  import {
-    listPersonalExternalPosts,
-    type ExternalPostSubmission,
-  } from '@/services/schedulingApi';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Field } from '@/components/ui/field';
+  import { IconTile } from '@/components/ui/icon-tile';
+  import { ListGroup, ListItem } from '@/components/ui/list-group';
+  import { Input } from '@/components/ui/input';
+  import { Modal } from '@/components/ui/modal';
+  import { SectionCard } from '@/components/ui/section-card';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { SegmentedControl } from '@/components/ui/segmented-control';
+  import { StatCard, StatGrid } from '@/components/ui/stat-card';
+  import { Textarea } from '@/components/ui/textarea';
+  import { listPersonalExternalPosts, type ExternalPostSubmission } from '@/services/schedulingApi';
   import {
     listPaymentMethods,
     createPaymentMethod,
@@ -1366,10 +1128,7 @@
     type UserPost,
     type UserAnalyticsSummary,
   } from '@/services/userInstagramApi';
-  import {
-    isTokenExpiredForAccount,
-    isTokenExpiringSoonForAccount,
-  } from '@/utils/socialTokenExpiry';
+  import { isTokenExpiredForAccount, isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry';
   import { reconnectPersonalSocialPlatform } from '@/utils/socialOAuthReconnect';
   import {
     startUserTwitterOAuth,
@@ -1395,11 +1154,20 @@
     disconnectUserTokendAccount,
     type UserTokendAccount,
   } from '@/services/userTokendApi';
-  import { getMyClipperProfile, getExperienceLevelLabel, getSpecialtyTagLabel, type ClipperProfile } from '@/services/clipperProfilesApi';
   import {
-    listPublicHiringPosts, applyToHiringPost, listMyHiringApplications,
-    PAYMENT_TYPES as HIRING_PAYMENT_TYPES, getPaymentTypeLabel as getHiringPaymentTypeLabel,
-    type HiringPost, type HiringApplication,
+    getMyClipperProfile,
+    getExperienceLevelLabel,
+    getSpecialtyTagLabel,
+    type ClipperProfile,
+  } from '@/services/clipperProfilesApi';
+  import {
+    listPublicHiringPosts,
+    applyToHiringPost,
+    listMyHiringApplications,
+    PAYMENT_TYPES as HIRING_PAYMENT_TYPES,
+    getPaymentTypeLabel as getHiringPaymentTypeLabel,
+    type HiringPost,
+    type HiringApplication,
   } from '@/services/hiringApi';
   import {
     listMyCampaigns,
@@ -1412,11 +1180,7 @@
   import { useToast } from '@/composables/useToast';
   import { useSocialTokenMonitor } from '@/composables/useSocialTokenMonitor';
   import { formatLastActive } from '@/utils/timeUtils';
-  import { 
-    initThumbnailCache, 
-    getCachedThumbnail, 
-    setCachedThumbnail 
-  } from '@/db/thumbnail-cache';
+  import { initThumbnailCache, getCachedThumbnail, setCachedThumbnail } from '@/db/thumbnail-cache';
   import {
     getMyDashboard,
     getMyReferrals,
@@ -1454,13 +1218,66 @@
   });
 
   const requestedTab = new URLSearchParams(window.location.search).get('tab');
-  const activeTab = ref(requestedTab && ['leaderboard', 'accounts', 'payments', 'campaigns', 'posts', 'hiring', 'affiliate'].includes(requestedTab) ? requestedTab : 'leaderboard');
+  const activeTab = ref(
+    requestedTab &&
+      ['leaderboard', 'accounts', 'payments', 'campaigns', 'posts', 'hiring', 'affiliate'].includes(requestedTab)
+      ? requestedTab
+      : 'leaderboard'
+  );
+
+  // ── Presentation helpers (layout only) ───────────────────────────────
+  const tabOptions = computed(() => tabs.value.map((t) => ({ value: t.id, label: t.label, icon: t.icon })));
+  const leaderboardTypeOptions = [
+    { value: 'posts' as const, label: 'Posts' },
+    { value: 'campaigns' as const, label: 'Campaigns' },
+  ];
+  const leaderboardPeriodOptions = [
+    { value: 'weekly' as const, label: 'Weekly' },
+    { value: 'monthly' as const, label: 'Monthly' },
+  ];
+  const hiringPaymentTypeOptions = computed(() => [
+    { value: '', label: 'All payment types' },
+    ...HIRING_PAYMENT_TYPES.map((t) => ({ value: t.value, label: t.label })),
+  ]);
+  const profileStats = computed(() => [
+    { label: 'Campaigns', value: clipperProfile.value?.total_campaigns_completed || 0 },
+    { label: 'Clips delivered', value: clipperProfile.value?.total_clips_delivered || 0 },
+    { label: 'Endorsements', value: clipperProfile.value?.total_endorsements || 0 },
+  ]);
+
+  /** Maps campaign / submission / application / payout statuses onto Badge tones. */
+  function statusVariant(status?: string | null): 'success' | 'warning' | 'danger' | 'brand' | 'neutral' {
+    switch ((status || '').toLowerCase()) {
+      case 'active':
+      case 'approved':
+      case 'accepted':
+      case 'verified':
+      case 'paid':
+      case 'published':
+        return 'success';
+      case 'pending':
+      case 'reviewed':
+      case 'paused':
+      case 'processing':
+        return 'warning';
+      case 'rejected':
+      case 'failed':
+      case 'cancelled':
+      case 'suspended':
+        return 'danger';
+      case 'draft':
+        return 'brand';
+      default:
+        return 'neutral';
+    }
+  }
   const socialAccountsSectionRef = ref<HTMLElement | null>(null);
   const clipperProfile = ref<ClipperProfile | null>(null);
   const loadingSocialAccounts = ref(true);
   const loadingPaymentMethods = ref(true);
   const loadingCampaigns = ref(true);
   const loadingSubmissions = ref(true);
+  const loadingEarnings = ref(true);
   const socialAccounts = ref<UserInstagramAccount[]>([]);
   const paymentMethods = ref<ClipperPaymentMethod[]>([]);
   const myCampaigns = ref<Campaign[]>([]);
@@ -1480,11 +1297,17 @@
   const currentUserId = ref<number | null>(null);
   const leaderboardPeriod = ref<'weekly' | 'monthly'>('weekly');
   const leaderboardType = ref<'posts' | 'campaigns'>('posts');
-  const avatarLoadError = ref(false);
 
   // Affiliate State
   const loadingAffiliate = ref(false);
-  const affiliateInfo = ref<{ id: number; referral_code: string; status: string; payout_method: string | null; solana_usdc_address: string | null; paypal_email: string | null } | null>(null);
+  const affiliateInfo = ref<{
+    id: number;
+    referral_code: string;
+    status: string;
+    payout_method: string | null;
+    solana_usdc_address: string | null;
+    paypal_email: string | null;
+  } | null>(null);
   const affiliateDashboard = ref<AffiliateDashboard | null>(null);
   const affiliateReferrals = ref<AffiliateReferral[]>([]);
   const affiliatePayouts = ref<AffiliatePayout[]>([]);
@@ -1508,9 +1331,12 @@
 
   function getHiringPlatformLabel(value: string): string {
     const PREFERRED_PLATFORMS = [
-      { value: 'tiktok', label: 'TikTok' }, { value: 'youtube', label: 'YouTube' },
-      { value: 'instagram', label: 'Instagram' }, { value: 'twitter', label: 'Twitter/X' },
-      { value: 'kick', label: 'Kick' }, { value: 'twitch', label: 'Twitch' },
+      { value: 'tiktok', label: 'TikTok' },
+      { value: 'youtube', label: 'YouTube' },
+      { value: 'instagram', label: 'Instagram' },
+      { value: 'twitter', label: 'Twitter/X' },
+      { value: 'kick', label: 'Kick' },
+      { value: 'twitch', label: 'Twitch' },
       { value: 'facebook', label: 'Facebook' },
     ];
     return PREFERRED_PLATFORMS.find((p) => p.value === value)?.label || value;
@@ -1521,10 +1347,7 @@
     try {
       const filters: Record<string, any> = {};
       if (hiringFilters.value.payment_type) filters.payment_type = hiringFilters.value.payment_type;
-      const [postsRes, appsRes] = await Promise.all([
-        listPublicHiringPosts(filters),
-        listMyHiringApplications(),
-      ]);
+      const [postsRes, appsRes] = await Promise.all([listPublicHiringPosts(filters), listMyHiringApplications()]);
       if (postsRes.success) hiringPosts.value = postsRes.hiring_posts;
       if (appsRes.success) myHiringApplications.value = appsRes.applications;
     } catch (err) {
@@ -1549,7 +1372,7 @@
         toast({ title: 'Application submitted!', description: 'The organization will review your profile.' });
         showApplyDialog.value = false;
         // Mark as applied locally
-        const idx = hiringPosts.value.findIndex(p => p.id === applyTarget.value!.id);
+        const idx = hiringPosts.value.findIndex((p) => p.id === applyTarget.value!.id);
         if (idx >= 0) hiringPosts.value[idx].has_applied = true;
         // Refresh my applications
         const appsRes = await listMyHiringApplications();
@@ -1601,16 +1424,15 @@
     endorsements_received: number;
     total_views: number;
     posts_count: number;
-    profile?: { id: number; user_id: number; display_name: string | null; avatar_url: string | null; slug?: string; is_verified?: boolean };
+    profile?: {
+      id: number;
+      user_id: number;
+      display_name: string | null;
+      avatar_url: string | null;
+      slug?: string;
+      is_verified?: boolean;
+    };
   }
-
-  // Reset avatar load error when clipperProfile changes
-  watch(
-    () => clipperProfile.value?.avatar_url,
-    () => {
-      avatarLoadError.value = false;
-    }
-  );
 
   // Load tab data when tab changes
   watch(
@@ -1633,44 +1455,6 @@
     if (views >= 1000000) return (views / 1000000).toFixed(1) + 'M';
     if (views >= 1000) return (views / 1000).toFixed(1) + 'K';
     return views.toString();
-  };
-
-  const getPlatformDisplayName = (platform: string): string => {
-    const platformNames: Record<string, string> = {
-      'instagram': 'Instagram',
-      'x': 'X',
-      'twitter': 'X',
-      'youtube': 'YouTube',
-      'tiktok': 'TikTok',
-      'tiktok_business': 'TikTok',
-      'facebook': 'Facebook'
-    };
-    return platformNames[platform?.toLowerCase()] || platform || 'Platform';
-  };
-
-  const TiktokIcon = {
-    template:
-      '<svg viewBox="0 0 24 24" fill="currentColor" width="1em" height="1em"><path d="M19.59 6.69a4.83 4.83 0 01-3.77-4.25V2h-3.45v13.67a2.89 2.89 0 01-2.88 2.5 2.89 2.89 0 01-2.89-2.89 2.89 2.89 0 012.89-2.89c.28 0 .54.04.79.1v-3.5a6.37 6.37 0 00-.79-.05A6.34 6.34 0 003.15 15.2a6.34 6.34 0 006.34 6.34 6.34 6.34 0 006.34-6.34V9.01a8.16 8.16 0 004.76 1.52v-3.4a4.85 4.85 0 01-1-.44z"/></svg>',
-  };
-
-  const normalizePostPlatform = (platform: string): string => {
-    const normalized = platform?.toLowerCase();
-    return normalized === 'twitter' ? 'x' : normalized || 'unknown';
-  };
-
-  const getPostPlatformIcon = (platform: string) => {
-    switch (normalizePostPlatform(platform)) {
-      case 'x':
-        return XLogo;
-      case 'tiktok':
-      case 'tiktok_business':
-        return TiktokIcon;
-      case 'youtube':
-        return Youtube;
-      case 'instagram':
-      default:
-        return Instagram;
-    }
   };
 
   const switchLeaderboardPeriod = (period: 'weekly' | 'monthly') => {
@@ -1720,11 +1504,7 @@
   const loadAffiliateData = async () => {
     loadingAffiliate.value = true;
     try {
-      const [dashRes, refRes, payRes] = await Promise.all([
-        getMyDashboard(),
-        getMyReferrals(),
-        getMyPayouts(),
-      ]);
+      const [dashRes, refRes, payRes] = await Promise.all([getMyDashboard(), getMyReferrals(), getMyPayouts()]);
       if (dashRes.success) {
         affiliateInfo.value = dashRes.affiliate!;
         affiliateDashboard.value = dashRes.dashboard!;
@@ -1746,7 +1526,9 @@
     try {
       await navigator.clipboard.writeText(affiliateInfo.value.referral_code);
       affCopied.value = true;
-      setTimeout(() => { affCopied.value = false; }, 2000);
+      setTimeout(() => {
+        affCopied.value = false;
+      }, 2000);
     } catch {
       affCopied.value = false;
     }
@@ -1770,7 +1552,11 @@
   };
 
   const formatAffEventType = (type: string) => {
-    const map: Record<string, string> = { first_subscription: 'Signup', recurring: 'Recurring', credit_pack: 'Credit Pack' };
+    const map: Record<string, string> = {
+      first_subscription: 'Signup',
+      recurring: 'Recurring',
+      credit_pack: 'Credit Pack',
+    };
     return map[type] || type;
   };
 
@@ -1786,7 +1572,7 @@
     try {
       // Initialize thumbnail cache
       await initThumbnailCache();
-      
+
       // Sync analytics from PostForMe
       await syncUserAnalytics();
 
@@ -1811,17 +1597,15 @@
             return post;
           })
         );
-        
+
         userPosts.value = postsWithCache;
-        
+
         // Generate thumbnails for posts missing them (parallel, max 3 concurrent)
-        const postsNeedingThumbnails = postsWithCache.filter(
-          post => !post.thumbnail_url && post.media_url
-        );
-        
+        const postsNeedingThumbnails = postsWithCache.filter((post) => !post.thumbnail_url && post.media_url);
+
         if (postsNeedingThumbnails.length > 0) {
           console.log(`Generating thumbnails for ${postsNeedingThumbnails.length} posts...`);
-          
+
           // Generate in batches of 3 to avoid overwhelming the server
           const batchSize = 3;
           for (let i = 0; i < postsNeedingThumbnails.length; i += batchSize) {
@@ -1834,7 +1618,7 @@
                     // Cache the thumbnail
                     await setCachedThumbnail(post.id, result.thumbnail_url);
                     // Update local state
-                    const idx = userPosts.value.findIndex(p => p.id === post.id);
+                    const idx = userPosts.value.findIndex((p) => p.id === post.id);
                     if (idx >= 0) {
                       userPosts.value[idx].thumbnail_url = result.thumbnail_url;
                     }
@@ -1842,7 +1626,10 @@
                 } catch (error: any) {
                   // Silently handle errors (already has thumbnail or FFmpeg failed)
                   if (error?.response?.status !== 400) {
-                    console.warn(`Failed to generate thumbnail for post ${post.id}:`, error?.response?.data?.error || error.message);
+                    console.warn(
+                      `Failed to generate thumbnail for post ${post.id}:`,
+                      error?.response?.data?.error || error.message
+                    );
                   }
                 }
               })
@@ -1860,7 +1647,6 @@
 
   const showPaymentMethodDialog = ref(false);
   const showDeleteDialog = ref(false);
-  const showEditProfileDialog = ref(false);
   const showPublishDialog = ref(false);
   const showTwitterPublishDialog = ref(false);
   const showTiktokPublishDialog = ref(false);
@@ -1889,7 +1675,9 @@
   const savingPaymentMethod = ref(false);
   const deleting = ref(false);
   const deleteType = ref<'social account' | 'payment method'>('social account');
-  const deleteTarget = ref<UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount | ClipperPaymentMethod | null>(null);
+  const deleteTarget = ref<
+    UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount | ClipperPaymentMethod | null
+  >(null);
 
   const reconnectingAccountId = ref<number | null>(null);
 
@@ -1904,36 +1692,26 @@
       {
         id: 'instagram',
         name: 'Instagram',
-        icon: markRaw(Instagram),
-        iconClass: 'platform-card__icon--instagram',
         available: true,
       },
       {
         id: 'tiktok',
         name: 'TikTok',
-        icon: markRaw(Music2),
-        iconClass: 'platform-card__icon--tiktok',
         available: true,
       },
       {
         id: 'x',
         name: 'X (Twitter)',
-        icon: markRaw(XLogo),
-        iconClass: 'platform-card__icon--x',
         available: true,
       },
       {
         id: 'youtube',
         name: 'YouTube Shorts',
-        icon: markRaw(Youtube),
-        iconClass: 'platform-card__icon--youtube',
         available: true,
       },
       {
         id: 'tokend',
         name: 'Tokend',
-        icon: markRaw(TokendLogo),
-        iconClass: 'platform-card__icon--tokend',
         available: true,
       },
     ];
@@ -1945,41 +1723,6 @@
   });
 
   const paymentMethodForm = reactive({ method_type: '', is_default: false, details: {} as Record<string, string> });
-
-  const getPlatformIcon = (platform: string) => {
-    const icons: Record<string, any> = {
-      tiktok: Music2,
-      instagram: Instagram,
-      x: XLogo,
-      twitter: XLogo,
-      youtube: Youtube,
-      tokend: TokendLogo,
-    };
-    return icons[platform] || Globe;
-  };
-
-  const getPlatformIconClass = (platform: string) => {
-    const classes: Record<string, string> = {
-      instagram: 'list-item__icon--instagram',
-      tiktok: 'list-item__icon--tiktok',
-      x: 'list-item__icon--x',
-      twitter: 'list-item__icon--x',
-      youtube: 'list-item__icon--youtube',
-      tokend: 'list-item__icon--tokend',
-    };
-    return classes[platform] || '';
-  };
-
-  const getSubmissionPlatformClass = (platform: string) => {
-    const classes: Record<string, string> = {
-      tiktok: 'platform--tiktok',
-      instagram: 'platform--instagram',
-      x: 'platform--x',
-      twitter: 'platform--x',
-      youtube: 'platform--youtube',
-    };
-    return classes[platform] || '';
-  };
 
   const getPlatformName = (platform: string) => {
     const names: Record<string, string> = {
@@ -2002,23 +1745,6 @@
       bank_transfer: Building,
     };
     return icons[methodType] || Wallet;
-  };
-
-  const getPaymentClass = (methodType: string) => {
-    const classes: Record<string, string> = {
-      paypal: 'payment--paypal',
-      crypto: 'payment--crypto',
-      venmo: 'payment--venmo',
-      cashapp: 'payment--cashapp',
-      bank_transfer: 'payment--bank',
-    };
-    return classes[methodType] || '';
-  };
-
-  const formatFollowers = (count: number) => {
-    if (count >= 1000000) return `${(count / 1000000).toFixed(1)}M`;
-    if (count >= 1000) return `${(count / 1000).toFixed(1)}K`;
-    return count.toString();
   };
 
   const formatAmount = (amount: string | number) =>
@@ -2149,9 +1875,7 @@
           if (result.success) {
             toast({
               title: 'Tokend connected',
-              description: result.account
-                ? `@${result.account.username} linked`
-                : 'Tokend account linked',
+              description: result.account ? `@${result.account.username} linked` : 'Tokend account linked',
             });
             await loadSocialAccounts();
             showPlatformSelectionDialog.value = false;
@@ -2400,6 +2124,8 @@
       if (response.success) earningsSummary.value = response.summary;
     } catch (error) {
       console.error('Failed to load earnings:', error);
+    } finally {
+      loadingEarnings.value = false;
     }
   };
 
@@ -2407,9 +2133,13 @@
     try {
       const response = await getMyClipperProfile();
       if (response.success) {
-        const identityChanged = clipperProfile.value && (clipperProfile.value.display_name !== response.profile?.display_name || clipperProfile.value.avatar_url !== response.profile?.avatar_url);
+        const identityChanged =
+          clipperProfile.value &&
+          (clipperProfile.value.display_name !== response.profile?.display_name ||
+            clipperProfile.value.avatar_url !== response.profile?.avatar_url);
         clipperProfile.value = response.profile;
-        if(identityChanged && window.parent !== window) window.parent.postMessage({type:'clippster-profile-updated'},location.origin);
+        if (identityChanged && window.parent !== window)
+          window.parent.postMessage({ type: 'clippster-profile-updated' }, location.origin);
       }
     } catch (error) {
       console.error('Failed to load clipper profile:', error);
@@ -2419,18 +2149,35 @@
   let accountRefreshTimer: ReturnType<typeof setInterval> | undefined;
   let refreshingAccount = false;
   const refreshAccount = async () => {
-    if (document.hidden || refreshingAccount || showEditProfileDialog.value) return;
+    if (document.hidden || refreshingAccount) return;
     refreshingAccount = true;
     try {
-      await Promise.allSettled([loadClipperProfile(), ...(activeTab.value === 'accounts' ? [loadSocialAccounts(true)] : []), ...(activeTab.value === 'payments' ? [loadPaymentMethods()] : []), ...(activeTab.value === 'campaigns' ? [loadMyCampaigns(),loadMySubmissions(),loadEarnings()] : []), ...(activeTab.value === 'posts' ? [
-        listUserPosts().then(response => { if(response.success) userPosts.value = response.posts; }),
-        getUserAnalyticsSummary({ days: 30 }).then(response => { if(response.success && response.summary) postsAnalytics.value = response.summary; }),
-        loadExternalPosts(),
-      ] : [])]);
-    } finally { refreshingAccount = false; }
+      await Promise.allSettled([
+        loadClipperProfile(),
+        ...(activeTab.value === 'accounts' ? [loadSocialAccounts(true)] : []),
+        ...(activeTab.value === 'payments' ? [loadPaymentMethods()] : []),
+        ...(activeTab.value === 'campaigns' ? [loadMyCampaigns(), loadMySubmissions(), loadEarnings()] : []),
+        ...(activeTab.value === 'posts'
+          ? [
+              listUserPosts().then((response) => {
+                if (response.success) userPosts.value = response.posts;
+              }),
+              getUserAnalyticsSummary({ days: 30 }).then((response) => {
+                if (response.success && response.summary) postsAnalytics.value = response.summary;
+              }),
+              loadExternalPosts(),
+            ]
+          : []),
+      ]);
+    } finally {
+      refreshingAccount = false;
+    }
   };
 
-  const onProfileSaved = async () => { await loadClipperProfile(); if(window.parent!==window)window.parent.postMessage({type:'clippster-profile-updated'},location.origin); };
+  const onProfileSaved = async () => {
+    await loadClipperProfile();
+    if (window.parent !== window) window.parent.postMessage({ type: 'clippster-profile-updated' }, location.origin);
+  };
 
   // Check if profile is configured - profile exists if we have a record from the server
   const isProfileConfigured = computed(() => {
@@ -2461,7 +2208,10 @@
     loadMySubmissions();
     loadEarnings();
     await focusSocialAccountsSection();
-    if(activeTab.value === 'posts'){void loadPostsAnalytics();void loadExternalPosts();}
+    if (activeTab.value === 'posts') {
+      void loadPostsAnalytics();
+      void loadExternalPosts();
+    }
     accountRefreshTimer = setInterval(() => void refreshAccount(), 5000);
     window.addEventListener('focus', refreshAccount);
     document.addEventListener('visibilitychange', refreshAccount);
@@ -2485,2531 +2235,3 @@
     if (cleanupReconnectAuth) cleanupReconnectAuth();
   });
 </script>
-
-<style src="@/styles/clipperProfileShell.css"></style>
-<style scoped>
-  /* ===== Page Container ===== */
-
-  .org-stats-grid {
-    display: grid;
-    gap: 0.75rem;
-    margin-top: 0.25rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .org-stats-grid--settings {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  /* ===== Edit Button ===== */
-
-  .profile-avatar__verified {
-    position: absolute;
-    bottom: -3px;
-    right: -3px;
-    width: 28px;
-    height: 28px;
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    border-radius: 50%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    border: 3px solid var(--sidebar-surface);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  }
-
-  .profile-avatar__verified svg {
-    width: 14px;
-    height: 14px;
-    color: white;
-  }
-
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-
-  @media (max-width: 900px) {
-    .org-stats-grid--settings {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (max-width: 640px) {
-
-    .org-stats-grid--settings {
-      grid-template-columns: 1fr;
-    }
-  }
-
-  /* ===== Enhanced Tab Navigation ===== */
-
-  /* ===== Content ===== */
-
-  /* ===== Notice ===== */
-  .notice {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.625rem 0.875rem;
-    background: rgba(245, 158, 11, 0.06);
-    border-left: 3px solid #f59e0b;
-    border-radius: 0 6px 6px 0;
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .notice__icon {
-    width: 16px;
-    height: 16px;
-    color: #f59e0b;
-    flex-shrink: 0;
-  }
-
-  .notice strong {
-    color: #fbbf24;
-  }
-
-  /* ===== Ranking Card ===== */
-  .ranking-card {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    padding: 1rem 1.125rem;
-  }
-
-  /* ===== Ranking Row ===== */
-  .ranking-row {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-  }
-
-  @media (max-width: 640px) {
-    .ranking-row {
-      flex-wrap: wrap;
-    }
-  }
-
-  .ranking-row__header-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-    flex-shrink: 0;
-  }
-
-  .ranking-row__header-icon svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .ranking-row__header-text {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .ranking-row__title {
-    font-size: 1.0625rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .ranking-row__subtitle {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-  }
-
-  .ranking-row__stats {
-    display: flex;
-    gap: 2rem;
-    margin-left: auto;
-  }
-
-  @media (max-width: 640px) {
-    .ranking-row__stats {
-      width: 100%;
-      margin-left: 0;
-      margin-top: 0.75rem;
-    }
-  }
-
-  .rank-stat {
-    text-align: center;
-    min-width: 50px;
-  }
-
-  .rank-stat__value {
-    display: block;
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-  }
-
-  .rank-stat--primary .rank-stat__value {
-    color: #fbbf24;
-  }
-
-  .rank-stat__label {
-    display: block;
-    font-size: 0.5625rem;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    margin-top: 0.25rem;
-  }
-
-  /* ===== Leaderboard ===== */
-  .leaderboard {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    padding: 1rem 1.125rem;
-  }
-
-  .leaderboard__header {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    margin-bottom: 1rem;
-  }
-
-  .leaderboard__header-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-    flex-shrink: 0;
-  }
-
-  .leaderboard__header-icon svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .leaderboard__header-text {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .leaderboard__title {
-    font-size: 1.0625rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .leaderboard__subtitle {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-  }
-
-  .period-switch {
-    display: flex;
-    gap: 0;
-    margin-left: auto;
-  }
-
-  .period-switch button {
-    padding: 0.3125rem 0.625rem;
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    font-size: 0.625rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .period-switch button:first-child {
-    border-radius: 5px 0 0 5px;
-  }
-
-  .period-switch button:last-child {
-    border-radius: 0 5px 5px 0;
-    border-left: none;
-  }
-
-  .period-switch button:hover {
-    color: var(--sidebar-text);
-  }
-
-  .period-switch button.active {
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .leaderboard__loading,
-  .loading-rows {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .skeleton-row {
-    height: 44px;
-    background: var(--sidebar-hover);
-    border-radius: 6px;
-  }
-
-  .skeleton-row--lg {
-    height: 54px;
-  }
-
-  .leaderboard__empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 2.5rem 1rem;
-    color: var(--sidebar-text-muted);
-    text-align: center;
-  }
-
-  .leaderboard__empty-icon {
-    width: 32px;
-    height: 32px;
-    margin-bottom: 0.625rem;
-    opacity: 0.25;
-  }
-
-  .leaderboard__empty p {
-    font-size: 0.8125rem;
-    margin: 0;
-  }
-
-  .leaderboard__list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .lb-header {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.375rem 0.625rem;
-    border-bottom: 1px solid var(--sidebar-border);
-    margin-bottom: 0.25rem;
-  }
-
-  .lb-header__rank {
-    width: 24px;
-    text-align: center;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-accent);
-    flex-shrink: 0;
-  }
-
-  .lb-header__user {
-    flex: 1;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-accent);
-    padding-left: calc(30px + 0.75rem);
-  }
-
-  .lb-header__col {
-    width: 60px;
-    text-align: right;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-accent);
-    flex-shrink: 0;
-  }
-
-  .lb-entry {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.5rem 0.625rem;
-    border-radius: 6px;
-    transition: background 150ms ease;
-  }
-
-  .lb-entry:hover {
-    background: var(--sidebar-hover);
-  }
-
-  .lb-entry--you {
-    background: rgba(6, 182, 212, 0.06);
-  }
-
-  .lb-entry--you:hover {
-    background: rgba(6, 182, 212, 0.1);
-  }
-
-  .lb-entry__rank {
-    width: 24px;
-    height: 24px;
-    border-radius: 5px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.6875rem;
-    font-weight: 700;
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    flex-shrink: 0;
-  }
-
-  .lb-entry__rank--1 {
-    background: #fbbf24;
-    color: #422006;
-  }
-
-  .lb-entry__rank--2 {
-    background: #9ca3af;
-    color: #1f2937;
-  }
-
-  .lb-entry__rank--3 {
-    background: #d97706;
-    color: #fff;
-  }
-
-  .lb-entry__avatar {
-    width: 30px;
-    height: 30px;
-    border-radius: 7px;
-    background: var(--sidebar-hover);
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .lb-entry__avatar img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .lb-entry__avatar svg {
-    width: 14px;
-    height: 14px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .lb-entry__info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .lb-entry__name {
-    display: block;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .lb-entry__you {
-    color: var(--sidebar-accent);
-    font-size: 0.625rem;
-    margin-left: 0.25rem;
-  }
-
-  .lb-entry__clips {
-    display: block;
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .lb-entry__stat {
-    width: 60px;
-    text-align: right;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    flex-shrink: 0;
-  }
-
-  /* ===== Sections ===== */
-  .section {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    padding: 1rem 1.125rem;
-  }
-
-  .section__header {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    margin-bottom: 1rem;
-  }
-
-  .section__header-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-    flex-shrink: 0;
-  }
-
-  .section__header-icon svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .section__header-icon--green {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
-
-  .section__header-icon--purple {
-    background-color: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
-  }
-
-  .section__header-icon--cyan {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: #06b6d4;
-  }
-
-  /* Posts Stats Grid */
-  .posts-stats-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
-    gap: 1rem;
-    margin-bottom: 1.5rem;
-  }
-
-  .posts-stat-card {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1rem 1.25rem;
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    transition: all 200ms ease;
-  }
-
-  .posts-stat-card:hover {
-    border-color: rgba(255, 255, 255, 0.12);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  }
-
-  .posts-stat-card__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    flex-shrink: 0;
-  }
-
-  .posts-stat-card__icon svg {
-    width: 22px;
-    height: 22px;
-  }
-
-  .posts-stat-card--cyan .posts-stat-card__icon {
-    background: rgba(6, 182, 212, 0.15);
-    color: #06b6d4;
-  }
-
-  .posts-stat-card--purple .posts-stat-card__icon {
-    background: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
-  }
-
-  .posts-stat-card--pink .posts-stat-card__icon {
-    background: rgba(236, 72, 153, 0.15);
-    color: #ec4899;
-  }
-
-  .posts-stat-card--green .posts-stat-card__icon {
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
-
-  .posts-stat-card--amber .posts-stat-card__icon {
-    background: rgba(245, 158, 11, 0.15);
-    color: #f59e0b;
-  }
-
-  .posts-stat-card__content {
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .posts-stat-card__value {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    letter-spacing: -0.02em;
-    line-height: 1.2;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .posts-stat-card__label {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    font-weight: 500;
-  }
-
-  /* Posts Grid */
-  .posts-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
-    gap: 1rem;
-  }
-
-  .post-card {
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    overflow: hidden;
-    transition: all 200ms ease;
-  }
-
-  .post-card:hover {
-    border-color: rgba(255, 255, 255, 0.12);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
-  }
-
-  .post-card__media {
-    position: relative;
-    width: 100%;
-  }
-
-  .post-card__thumbnail {
-    position: relative;
-    width: 100%;
-    padding-top: 56.25%; /* 16:9 aspect ratio */
-    background: var(--sidebar-hover);
-    overflow: hidden;
-  }
-
-  .post-card__thumbnail img {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .post-card__thumbnail-placeholder {
-    position: absolute;
-    top: 0;
-    left: 0;
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--sidebar-text-muted);
-  }
-
-  .post-card__thumbnail-placeholder svg {
-    width: 32px;
-    height: 32px;
-  }
-
-  .post-card__content {
-    padding: 1rem;
-  }
-
-  .post-card__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.75rem;
-  }
-
-  .post-card__status {
-    padding: 0.125rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.625rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .post-card__status-group {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-  }
-
-  .post-card__platform {
-    width: 1.25rem;
-    height: 1.25rem;
-    border-radius: 999px;
-    display: inline-flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(39, 39, 42, 0.9);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    color: #a1a1aa;
-    font-size: 0.75rem;
-  }
-
-  .post-card__platform--instagram {
-    color: #f472b6;
-  }
-
-  .post-card__platform--x {
-    color: #f4f4f5;
-  }
-
-  .post-card__platform--tiktok,
-  .post-card__platform--tiktok_business {
-    color: #22d3ee;
-  }
-
-  .post-card__platform--youtube {
-    color: #ef4444;
-  }
-
-  .post-card__status--published {
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
-
-  .post-card__status--failed {
-    background: rgba(239, 68, 68, 0.15);
-    color: #ef4444;
-  }
-
-  .post-card__link {
-    font-size: 0.75rem;
-    color: #06b6d4;
-    text-decoration: none;
-    font-weight: 500;
-    transition: opacity 200ms ease;
-  }
-
-  .post-card__link:hover {
-    opacity: 0.8;
-  }
-
-  .post-card__caption {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    line-height: 1.5;
-    margin-bottom: 0.75rem;
-  }
-
-  .post-card__stats {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding-bottom: 0.75rem;
-    margin-bottom: 0.5rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .post-stat {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  .post-stat__icon {
-    width: 14px;
-    height: 14px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .post-stat__value {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .post-card__footer {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-  }
-
-  .post-card__date {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .browse-btn__icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  .animate-spin {
-    animation: spin 1s linear infinite;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  .section__header-text {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .section-title {
-    font-size: 1.0625rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .section-subtitle {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-  }
-
-  .action-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    height: 32px;
-    padding: 0 0.75rem;
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    cursor: pointer;
-    transition: all 150ms ease;
-    margin-left: auto;
-    flex-shrink: 0;
-  }
-
-  .action-btn:hover {
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-accent);
-  }
-
-  .action-btn svg {
-    width: 13px;
-    height: 13px;
-  }
-
-  .action-btn--green:hover {
-    border-color: #10b981;
-    color: #10b981;
-  }
-
-  .browse-btn {
-    height: 32px;
-    padding: 0 0.75rem;
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    cursor: pointer;
-    transition: all 150ms ease;
-    margin-left: auto;
-    flex-shrink: 0;
-  }
-
-  .browse-btn:hover {
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-accent);
-  }
-
-  /* ===== Empty State ===== */
-  .empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 2.5rem 1rem;
-    text-align: center;
-  }
-
-  .empty-state__icon-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 72px;
-    height: 72px;
-    background-color: var(--sidebar-hover);
-    border-radius: 16px;
-    margin-bottom: 1.5rem;
-  }
-
-  .empty-state--compact {
-    padding: 1.75rem 1rem;
-  }
-
-  .empty-state__icon {
-    width: 36px;
-    height: 36px;
-    color: var(--sidebar-text-muted);
-    opacity: 0.25;
-    margin-bottom: 0.875rem;
-  }
-
-  .empty-state__title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.25rem;
-  }
-
-  .empty-state__text {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 1.125rem;
-    max-width: 320px;
-    line-height: 1.5;
-  }
-
-  .empty-state__btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    height: 32px;
-    padding: 0 0.875rem;
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .empty-state__btn:hover {
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-accent);
-  }
-
-  .empty-state__btn svg {
-    width: 13px;
-    height: 13px;
-  }
-
-  .empty-state__btn--green:hover {
-    border-color: #10b981;
-    color: #10b981;
-  }
-
-  .empty-state__btn--primary {
-    background-color: var(--sidebar-accent);
-    border: none;
-    color: var(--sidebar-bg);
-  }
-
-  .empty-state__btn--primary:hover {
-    opacity: 0.9;
-    color: var(--sidebar-bg);
-  }
-
-  /* ===== List ===== */
-  .list {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .list-item {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 0.75rem 0;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .list-item:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
-  }
-
-  .list-item:first-child {
-    padding-top: 0;
-  }
-
-  .list-item--highlight {
-    background: rgba(16, 185, 129, 0.04);
-    padding: 0.75rem;
-    margin: 0 -0.5rem;
-    border-radius: 6px;
-    border-bottom: none;
-  }
-
-  .list-item__icon {
-    width: 38px;
-    height: 38px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--sidebar-hover);
-    flex-shrink: 0;
-  }
-
-  .list-item__icon svg {
-    width: 18px;
-    height: 18px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .list-item__content {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .list-item__name {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .verified-icon {
-    width: 13px;
-    height: 13px;
-    color: #10b981;
-  }
-
-  .list-item__meta {
-    display: block;
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    margin-top: 0.125rem;
-  }
-
-  .default-badge {
-    padding: 0.125rem 0.375rem;
-    background: rgba(16, 185, 129, 0.12);
-    border-radius: 3px;
-    font-size: 0.5rem;
-    font-weight: 700;
-    color: #10b981;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-
-  .list-item__actions {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    opacity: 0;
-    transition: opacity 150ms ease;
-  }
-
-  .list-item:hover .list-item__actions,
-  .list-item__actions--visible {
-    opacity: 1;
-  }
-
-  .list--social-accounts .list-item__actions {
-    opacity: 1;
-  }
-
-  .list-item__actions button {
-    width: 26px;
-    height: 26px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 150ms ease;
-  }
-
-  .list-item__actions button svg {
-    width: 13px;
-    height: 13px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .list-item__actions button:hover {
-    background: var(--sidebar-hover);
-  }
-
-  .list-item__actions button.danger:hover {
-    background: rgba(239, 68, 68, 0.1);
-  }
-
-  .list-item__actions button.danger svg {
-    color: #f87171;
-  }
-
-  .list-item__actions button.refresh svg {
-    color: #fbbf24;
-  }
-
-  .list-item__actions button.refresh:hover {
-    background: rgba(245, 158, 11, 0.12);
-  }
-
-  .list-item__actions button:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  .text-btn {
-    padding: 0.25rem 0.5rem;
-    background: transparent;
-    border: none;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: color 150ms ease;
-  }
-
-  .text-btn:hover {
-    color: #10b981;
-  }
-
-  /* ===== Platform/Payment Colors ===== */
-  .list-item__icon--instagram {
-    background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
-  }
-
-  .list-item__icon--instagram svg {
-    color: white;
-  }
-
-  .list-item__icon--tiktok {
-    background: #000000;
-  }
-
-  .list-item__icon--tiktok svg {
-    color: #ff0050;
-  }
-
-  .list-item__icon--x {
-    background: #000000;
-  }
-
-  .list-item__icon--x svg {
-    color: white;
-  }
-
-  .list-item__icon--youtube {
-    background: linear-gradient(135deg, #ff0000, #cc0000);
-  }
-
-  .list-item__icon--youtube svg {
-    color: white;
-  }
-
-  .list-item__icon--tokend {
-    background: #000000;
-    padding: 0;
-    overflow: hidden;
-  }
-
-  .list-item__icon--tokend img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .platform--tiktok {
-    background: rgba(255, 0, 80, 0.1);
-  }
-
-  .platform--tiktok svg {
-    color: #ff0050;
-  }
-
-  .platform--instagram {
-    background: rgba(225, 48, 108, 0.1);
-  }
-
-  .platform--instagram svg {
-    color: #e1306c;
-  }
-
-  .token-expiring {
-    color: #f59e0b;
-    font-weight: 600;
-  }
-
-  /* ===== Platform Selection Dialog ===== */
-  .platform-dialog__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-  }
-
-  .platform-dialog {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    width: 100%;
-    max-width: 500px;
-    margin: 1rem;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  }
-
-  .platform-dialog__accent {
-    height: 3px;
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
-    flex-shrink: 0;
-  }
-
-  .platform-dialog__header {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1.5rem 1.5rem 1rem;
-    text-align: center;
-  }
-
-  .platform-dialog__close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .platform-dialog__close:hover:not(:disabled) {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .platform-dialog__close:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .platform-dialog__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 48px;
-    height: 48px;
-    border-radius: 10px;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-    margin-bottom: 0.875rem;
-  }
-
-  .platform-dialog__title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.02em;
-  }
-
-  .platform-dialog__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  .platform-dialog__content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0.5rem 1.5rem 1.5rem;
-  }
-
-  .platform-dialog__content::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .platform-dialog__content::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .platform-dialog__content::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  .platform-grid {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.75rem;
-  }
-
-  .platform-option {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 1.5rem 1rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 180ms ease;
-    position: relative;
-  }
-
-  .platform-option:hover:not(.platform-option--disabled) {
-    border-color: var(--sidebar-accent);
-    background: var(--sidebar-active);
-    transform: translateY(-2px);
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
-  }
-
-  .platform-option--disabled {
-    opacity: 0.55;
-    cursor: not-allowed;
-  }
-
-  .platform-option__icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .platform-option__icon svg {
-    width: 26px;
-    height: 26px;
-  }
-
-  .platform-card__icon--instagram {
-    background: linear-gradient(45deg, #f09433, #e6683c, #dc2743, #cc2366, #bc1888);
-  }
-
-  .platform-card__icon--instagram svg {
-    color: white;
-  }
-
-  .platform-card__icon--tiktok {
-    background: #000000;
-    border: 1px solid rgba(255, 0, 80, 0.3);
-  }
-
-  .platform-card__icon--tiktok svg {
-    color: #ff0050;
-  }
-
-  .platform-card__icon--x {
-    background: #000000;
-    border: 1px solid rgba(255, 255, 255, 0.2);
-  }
-
-  .platform-card__icon--x svg {
-    color: white;
-  }
-
-  .platform-card__icon--youtube {
-    background: linear-gradient(135deg, #ff0000, #cc0000);
-  }
-
-  .platform-card__icon--youtube svg {
-    color: white;
-  }
-
-  .platform-card__icon--tokend {
-    background: #000000;
-    padding: 0;
-    overflow: hidden;
-  }
-
-  .platform-card__icon--tokend img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .platform-option__content {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.375rem;
-    width: 100%;
-  }
-
-  .platform-option__name {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .platform-option__badge {
-    font-size: 0.625rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    padding: 0.1875rem 0.5rem;
-    background-color: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
-    border-radius: 4px;
-  }
-
-  .platform-option__spinner {
-    position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
-    width: 16px;
-    height: 16px;
-    animation: spin 0.8s linear infinite;
-  }
-
-  .platform-dialog__footer {
-    display: flex;
-    gap: 0.625rem;
-    padding: 1.25rem 1.5rem;
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  .platform-dialog__btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border-radius: 6px;
-    border: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .platform-dialog__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .platform-dialog__btn--secondary {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-    border: 1px solid var(--sidebar-border);
-  }
-
-  .platform-dialog__btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .platform--x {
-    background: var(--sidebar-hover);
-  }
-
-  .platform--x svg {
-    color: var(--sidebar-text);
-  }
-
-  .platform--youtube {
-    background: rgba(255, 0, 0, 0.1);
-  }
-
-  .platform--youtube svg {
-    color: #ff0000;
-  }
-
-  .payment--paypal svg {
-    color: #0077b5;
-  }
-
-  .payment--crypto svg {
-    color: #f7931a;
-  }
-
-  .payment--venmo svg {
-    color: #008cff;
-  }
-
-  .payment--cashapp svg {
-    color: #00d960;
-  }
-
-  .payment--bank svg {
-    color: #9ca3af;
-  }
-
-  /* ===== Earnings Bar ===== */
-  .earnings-bar {
-    display: flex;
-    gap: 0.75rem;
-    overflow-x: auto;
-  }
-
-  .earnings-item {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.75rem 1rem;
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    flex: 1;
-    min-width: 120px;
-  }
-
-  .earnings-item svg {
-    width: 20px;
-    height: 20px;
-    color: var(--sidebar-text-muted);
-    flex-shrink: 0;
-  }
-
-  .earnings-item--earned svg {
-    color: #10b981;
-  }
-
-  .earnings-item--pending svg {
-    color: #f59e0b;
-  }
-
-  .earnings-item__value {
-    display: block;
-    font-size: 1rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    line-height: 1;
-  }
-
-  .earnings-item--earned .earnings-item__value {
-    color: #10b981;
-  }
-
-  .earnings-item--pending .earnings-item__value {
-    color: #fbbf24;
-  }
-
-  .earnings-item__label {
-    display: block;
-    font-size: 0.5625rem;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    margin-top: 0.1875rem;
-  }
-
-  /* ===== Campaign/Submission Lists ===== */
-  .campaign-list,
-  .submission-list {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .campaign-row {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 0.75rem 0;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .campaign-row:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
-  }
-
-  .campaign-row:first-child {
-    padding-top: 0;
-  }
-
-  .campaign-row__main {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .campaign-row__title {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .campaign-row__org {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .campaign-row__org--link {
-    color: var(--sidebar-accent);
-    text-decoration: none;
-  }
-
-  .campaign-row__org--link:hover {
-    text-decoration: underline;
-  }
-
-  .campaign-row__date {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .cpm-badge {
-    padding: 0.25rem 0.4375rem;
-    background: rgba(16, 185, 129, 0.12);
-    border-radius: 4px;
-    font-size: 0.625rem;
-    font-weight: 700;
-    color: #10b981;
-  }
-
-  .submission-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 0;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .submission-row:last-child {
-    border-bottom: none;
-    padding-bottom: 0;
-  }
-
-  .submission-row:first-child {
-    padding-top: 0;
-  }
-
-  .submission-row__platform {
-    width: 30px;
-    height: 30px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--sidebar-hover);
-    flex-shrink: 0;
-  }
-
-  .submission-row__platform svg {
-    width: 14px;
-    height: 14px;
-  }
-
-  .submission-row__content {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .submission-row__link {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-accent);
-    text-decoration: none;
-  }
-
-  .submission-row__link:hover {
-    text-decoration: underline;
-  }
-
-  .submission-row__meta {
-    display: block;
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    margin-top: 0.125rem;
-  }
-
-  .submission-row__date {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    flex-shrink: 0;
-  }
-
-  /* ===== Dialog ===== */
-  .dialog {
-    max-width: 420px;
-  }
-
-  .dialog--small {
-    max-width: 380px;
-  }
-
-  .dialog__form {
-    display: flex;
-    flex-direction: column;
-    gap: 1.125rem;
-  }
-
-  .dialog__field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4375rem;
-  }
-
-  .dialog__checkbox {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding-top: 0.25rem;
-  }
-
-  .spinner {
-    width: 14px;
-    height: 14px;
-    margin-right: 0.5rem;
-  }
-
-  /* ===== Payment Method Dialog ===== */
-  .payment-dialog__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 60;
-  }
-
-  .payment-dialog {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    width: 100%;
-    max-width: 480px;
-    margin: 1rem;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-  }
-
-  .payment-dialog__accent {
-    height: 3px;
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
-    flex-shrink: 0;
-  }
-
-  .payment-dialog__header {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1.5rem 1.5rem 1rem;
-    text-align: center;
-  }
-
-  .payment-dialog__close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    width: 30px;
-    height: 30px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .payment-dialog__close:hover:not(:disabled) {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .payment-dialog__close:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .payment-dialog__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 48px;
-    height: 48px;
-    border-radius: 10px;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-    margin-bottom: 0.875rem;
-  }
-
-  .payment-dialog__title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.02em;
-  }
-
-  .payment-dialog__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  .payment-dialog__form {
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-  }
-
-  .payment-dialog__content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0.5rem 1.5rem 1.5rem;
-  }
-
-  .payment-dialog__content::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .payment-dialog__content::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .payment-dialog__content::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  .payment-dialog__field {
-    margin-bottom: 1rem;
-  }
-
-  .payment-dialog__label {
-    display: block;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    margin-bottom: 0.5rem;
-  }
-
-  .payment-dialog__input {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .payment-dialog__input::placeholder {
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  .payment-dialog__input:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
-  }
-
-  /* ===== Custom Dropdown Styling ===== */
-  .payment-dialog__dropdown {
-    width: 100%;
-  }
-
-  /* Dropdown trigger button styling */
-  :deep(.payment-dialog__dropdown-trigger) {
-    width: 100% !important;
-    height: 44px !important;
-    padding: 0.75rem 1rem !important;
-    background-color: var(--sidebar-hover) !important;
-    border: 1px solid var(--sidebar-border) !important;
-    border-radius: 8px !important;
-    font-size: 0.875rem !important;
-    color: var(--sidebar-text) !important;
-    transition: all 150ms ease !important;
-    justify-content: space-between !important;
-  }
-
-  :deep(.payment-dialog__dropdown-trigger:hover) {
-    border-color: rgba(255, 255, 255, 0.15) !important;
-  }
-
-  :deep(.payment-dialog__dropdown-trigger span) {
-    color: var(--sidebar-text) !important;
-  }
-
-  :deep(.payment-dialog__dropdown-trigger svg) {
-    width: 16px !important;
-    height: 16px !important;
-    color: var(--sidebar-text-muted) !important;
-  }
-
-  .payment-dialog__checkbox {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.75rem 0 0;
-  }
-
-  .payment-dialog__checkbox-label {
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    cursor: pointer;
-  }
-
-  .payment-dialog__footer {
-    display: flex;
-    gap: 0.625rem;
-    padding: 1.25rem 1.5rem;
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  .payment-dialog__btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border-radius: 6px;
-    border: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .payment-dialog__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .payment-dialog__btn--secondary {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-    border: 1px solid var(--sidebar-border);
-  }
-
-  .payment-dialog__btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .payment-dialog__btn--primary {
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
-  }
-
-  .payment-dialog__btn--primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .payment-dialog__btn-spinner {
-    width: 16px;
-    height: 16px;
-    animation: spin 0.8s linear infinite;
-  }
-
-  /* ===== Transitions ===== */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  .dialog-enter-active {
-    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 150ms ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.96) translateY(8px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* ===== Keyframes ===== */
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  /* ===== Empty State ===== */
-
-  /* ===== Affiliate Tab ===== */
-  .aff-tab__link-card {
-    padding: 1.25rem;
-    border-radius: 10px;
-    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    background: var(--sidebar-hover, rgba(255, 255, 255, 0.02));
-    margin-bottom: 1rem;
-  }
-
-  .aff-tab__link-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .aff-tab__link-icon {
-    width: 18px;
-    height: 18px;
-    color: #a855f7;
-  }
-
-  .aff-tab__link-label {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .aff-tab__status {
-    display: inline-block;
-    padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    margin-left: auto;
-  }
-
-  .aff-tab__status--active { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
-  .aff-tab__status--suspended { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-  .aff-tab__status--deactivated { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
-
-  .aff-tab__link-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .aff-tab__link-url {
-    flex: 1;
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    background: rgba(0, 0, 0, 0.3);
-    color: #a855f7;
-    font-family: monospace;
-    border: 1px solid rgba(255, 255, 255, 0.06);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .aff-tab__copy-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.75rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    background: #7c3aed;
-    color: white;
-    border: none;
-    cursor: pointer;
-    transition: opacity 0.15s;
-    white-space: nowrap;
-  }
-
-  .aff-tab__copy-btn:hover { opacity: 0.9; }
-  .aff-tab__copy-ok { color: #22c55e; }
-
-  .aff-tab__table-wrapper {
-    border-radius: 10px;
-    border: 1px solid var(--sidebar-border);
-    overflow-x: auto;
-  }
-
-  .aff-tab__table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  .aff-tab__th {
-    padding: 0.625rem 0.875rem;
-    text-align: left;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    background: var(--sidebar-hover);
-    white-space: nowrap;
-  }
-
-  .aff-tab__row {
-    border-top: 1px solid var(--sidebar-border);
-    transition: background 0.15s;
-  }
-
-  .aff-tab__row:hover { background: var(--sidebar-hover); }
-
-  .aff-tab__td {
-    padding: 0.625rem 0.875rem;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-    white-space: nowrap;
-  }
-
-  .aff-tab__td--green { color: #22c55e; }
-
-  .aff-tab__event-badge {
-    font-size: 0.75rem;
-    padding: 0.125rem 0.375rem;
-    border-radius: 4px;
-    background: rgba(255, 255, 255, 0.05);
-  }
-
-  .aff-tab__ref-status {
-    display: inline-block;
-    padding: 0.0625rem 0.375rem;
-    border-radius: 9999px;
-    font-size: 0.625rem;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .aff-tab__ref-status--pending { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-  .aff-tab__ref-status--confirmed { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-  .aff-tab__ref-status--paid { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
-  .aff-tab__ref-status--cancelled { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
-
-  .aff-tab__settings {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    max-width: 400px;
-  }
-
-  .aff-tab__field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .aff-tab__label {
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-  }
-
-  .aff-tab__input {
-    padding: 0.625rem 0.875rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    outline: none;
-    transition: border-color 150ms ease;
-  }
-
-  .aff-tab__input:focus {
-    border-color: #a855f7;
-    box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.15);
-  }
-
-  .aff-tab__dropdown-trigger {
-    background-color: var(--sidebar-hover) !important;
-    border: 1px solid var(--sidebar-border) !important;
-    border-radius: 8px !important;
-    color: var(--sidebar-text) !important;
-    font-size: 0.875rem !important;
-  }
-
-  .aff-tab__save-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.625rem 1rem;
-    border-radius: 8px;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    background: #7c3aed;
-    color: white;
-    border: none;
-    cursor: pointer;
-    transition: opacity 0.15s;
-    width: fit-content;
-  }
-
-  .aff-tab__save-btn:hover { opacity: 0.9; }
-  .aff-tab__save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  /* ===== Hiring Tab ===== */
-  .hiring-tab__section-card {
-    display: flex; flex-direction: column; gap: 1rem;
-    padding: 1.25rem; border-radius: 10px;
-    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    background: var(--sidebar-hover, rgba(255, 255, 255, 0.02));
-    margin-bottom: 1rem;
-  }
-  .hiring-tab__apps-list { display: flex; flex-direction: column; gap: 0.5rem; }
-  .hiring-tab__app-card {
-    padding: 0.75rem 1rem; border-radius: 8px;
-    border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
-  }
-  .hiring-tab__app-header { display: flex; align-items: center; gap: 0.75rem; }
-  .hiring-tab__org-block {
-    display: flex;
-    flex-shrink: 0;
-    align-items: center;
-    border-radius: 6px;
-  }
-
-  .hiring-tab__org-block--link {
-    text-decoration: none;
-    color: inherit;
-    transition: opacity 0.15s;
-  }
-
-  .hiring-tab__org-block--link:hover {
-    opacity: 0.85;
-  }
-
-  .hiring-tab__org-logo { width: 32px; height: 32px; border-radius: 6px; object-fit: cover; flex-shrink: 0; }
-  .hiring-tab__org-logo-placeholder { width: 32px; height: 32px; color: var(--sidebar-text-muted); flex-shrink: 0; }
-  .hiring-tab__app-info { flex: 1; min-width: 0; }
-  .hiring-tab__app-org { font-size: 0.75rem; color: var(--sidebar-text-muted); }
-
-  .hiring-tab__app-org--link {
-    display: inline-block;
-    color: var(--sidebar-accent);
-    text-decoration: none;
-    font-weight: 600;
-  }
-
-  .hiring-tab__app-org--link:hover {
-    text-decoration: underline;
-  }
-  .hiring-tab__app-title { font-size: 0.875rem; font-weight: 600; color: var(--sidebar-text); }
-  .hiring-tab__status {
-    padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.625rem;
-    font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; flex-shrink: 0;
-  }
-  .hiring-tab__status--pending { background: rgba(234, 179, 8, 0.15); color: #eab308; }
-  .hiring-tab__status--accepted { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
-  .hiring-tab__status--rejected { background: rgba(239, 68, 68, 0.15); color: #ef4444; }
-
-  .hiring-tab__filters { display: flex; gap: 0.5rem; }
-  .hiring-tab__filter-select {
-    padding: 0.375rem 0.75rem; border-radius: 6px;
-    border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
-    color: var(--sidebar-text); font-size: 0.8125rem; cursor: pointer;
-  }
-
-  .hiring-tab__empty {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    text-align: center; padding: 3rem 1rem; color: var(--sidebar-text-muted);
-  }
-  .hiring-tab__empty-icon { width: 48px; height: 48px; margin-bottom: 1rem; opacity: 0.4; }
-
-  .hiring-tab__grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(320px, 1fr)); gap: 0.75rem; }
-  .hiring-tab__card {
-    padding: 1rem; border-radius: 10px;
-    border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
-    display: flex; flex-direction: column; gap: 0.625rem;
-  }
-  .hiring-tab__card-header { display: flex; align-items: center; gap: 0.75rem; }
-  .hiring-tab__card-org { flex: 1; min-width: 0; }
-  .hiring-tab__card-org-name { font-size: 0.75rem; color: var(--sidebar-text-muted); }
-
-  .hiring-tab__card-org-name--link {
-    display: inline-block;
-    color: var(--sidebar-accent);
-    text-decoration: none;
-    font-weight: 600;
-  }
-
-  .hiring-tab__card-org-name--link:hover {
-    text-decoration: underline;
-  }
-  .hiring-tab__card-title { font-size: 0.9375rem; font-weight: 600; color: var(--sidebar-text); }
-  .hiring-tab__card-desc {
-    font-size: 0.8125rem; color: var(--sidebar-text-muted); line-height: 1.5;
-    margin: 0; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden;
-  }
-  .hiring-tab__card-meta { display: flex; flex-wrap: wrap; gap: 0.375rem; }
-  .hiring-tab__card-badge {
-    padding: 0.125rem 0.5rem; border-radius: 9999px; font-size: 0.6875rem;
-    background: rgba(255, 255, 255, 0.06); color: var(--sidebar-text-muted);
-  }
-  .hiring-tab__card-badge--pay { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
-  .hiring-tab__card-tags { display: flex; flex-wrap: wrap; gap: 0.25rem; }
-  .hiring-tab__mini-tag {
-    padding: 0.0625rem 0.375rem; border-radius: 9999px; font-size: 0.625rem;
-    background: rgba(255, 255, 255, 0.04); color: var(--sidebar-text-muted);
-  }
-  .hiring-tab__apply-btn {
-    display: flex; align-items: center; justify-content: center; gap: 0.375rem;
-    padding: 0.5rem; border-radius: 6px; border: none;
-    background: #22d3ee; color: #0a0a0b; font-size: 0.8125rem; font-weight: 600;
-    cursor: pointer; transition: opacity 0.15s; margin-top: auto;
-  }
-  .hiring-tab__apply-btn:hover:not(:disabled) { opacity: 0.9; }
-  .hiring-tab__apply-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-  .hiring-tab__apply-btn--applied { background: rgba(34, 197, 94, 0.15); color: #22c55e; }
-  .hiring-tab__apply-spinner { width: 1rem; height: 1rem; animation: spin 1s linear infinite; }
-
-  .hiring-tab__dialog { max-width: 480px; }
-  .hiring-tab__dialog-body { display: flex; flex-direction: column; gap: 0.75rem; padding: 0.5rem 0; }
-  .hiring-tab__dialog-label { font-size: 0.8125rem; font-weight: 600; color: var(--sidebar-text); }
-  .hiring-tab__dialog-textarea {
-    padding: 0.625rem 0.875rem; border-radius: 8px;
-    border: 1px solid var(--sidebar-border); background: var(--sidebar-hover);
-    color: var(--sidebar-text); font-size: 0.875rem; font-family: inherit;
-    resize: vertical; min-height: 80px;
-  }
-  .hiring-tab__dialog-textarea:focus { outline: none; border-color: #22d3ee; }
-  .hiring-tab__dialog-note { font-size: 0.75rem; color: var(--sidebar-text-muted); margin: 0; }
-
-  /* ===== Action Button (Add Post etc.) ===== */
-  .action-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.875rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: #000;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: filter 150ms ease;
-    flex-shrink: 0;
-  }
-
-  .action-btn:hover {
-    filter: brightness(1.1);
-  }
-
-  .action-btn svg {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* ===== Submission List ===== */
-  .submission-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .submission-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    transition: border-color 150ms ease;
-  }
-
-  .submission-row:hover {
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .submission-row__platform {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .submission-row__platform svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  .platform--instagram {
-    background: rgba(236, 72, 153, 0.15);
-    color: #f472b6;
-  }
-
-  .platform--tiktok {
-    background: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-  }
-
-  .platform--youtube {
-    background: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-  }
-
-  .platform--x {
-    background: rgba(255, 255, 255, 0.08);
-    color: var(--sidebar-text);
-  }
-
-  .submission-row__content {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.125rem;
-  }
-
-  .submission-row__link {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-accent);
-    text-decoration: none;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .submission-row__link:hover {
-    text-decoration: underline;
-  }
-
-  .submission-row__meta {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .submission-row__date {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    flex-shrink: 0;
-  }
-
-  /* ===== Status Badge ===== */
-
-  /* ===== Empty State Compact + Button ===== */
-  .empty-state--compact {
-    padding: 2rem 1rem;
-  }
-
-  .empty-state__btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border: none;
-    border-radius: 8px;
-    cursor: pointer;
-    transition: filter 150ms ease;
-    margin-top: 0.75rem;
-  }
-
-  .empty-state__btn--primary {
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: #000;
-  }
-
-  .empty-state__btn--primary:hover {
-    filter: brightness(1.1);
-  }
-
-  .empty-state__btn svg {
-    width: 14px;
-    height: 14px;
-  }
-
-</style>
-
-<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
-<style>
-  /* Payment Dialog dropdown menu styling */
-  .payment-dialog__dropdown + div[class*='fixed'],
-  div.fixed.bg-popover {
-    background-color: var(--sidebar-surface) !important;
-    border: 1px solid var(--sidebar-border) !important;
-    border-radius: 8px !important;
-    padding: 0.25rem !important;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
-    animation: paymentDialogDropdownFade 100ms ease-out !important;
-  }
-
-  @keyframes paymentDialogDropdownFade {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  /* Dropdown menu items */
-  .payment-dialog__dropdown + div[class*='fixed'] button,
-  div.fixed.bg-popover button {
-    display: flex !important;
-    align-items: center !important;
-    padding: 0.625rem 0.75rem !important;
-    border-radius: 6px !important;
-    font-size: 0.875rem !important;
-    color: var(--sidebar-text) !important;
-    transition: background-color 150ms ease !important;
-  }
-
-  .payment-dialog__dropdown + div[class*='fixed'] button:hover,
-  div.fixed.bg-popover button:hover {
-    background-color: rgba(6, 182, 212, 0.1) !important;
-    color: var(--sidebar-accent) !important;
-  }
-
-  .payment-dialog__dropdown + div[class*='fixed'] button.bg-primary\/10,
-  div.fixed.bg-popover button.bg-primary\/10 {
-    background-color: rgba(6, 182, 212, 0.15) !important;
-    color: var(--sidebar-accent) !important;
-    font-weight: 600 !important;
-  }
-</style>

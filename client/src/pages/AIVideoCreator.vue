@@ -6,407 +6,351 @@
     :icon="Wand2"
   >
     <template #actions>
-      <button class="aiv-create-btn" @click="createNewProject">
-        <Plus class="aiv-create-btn__icon" />
-        New Project
-      </button>
+      <Button variant="primary" @click="createNewProject"><Plus /> New project</Button>
     </template>
 
-    <!-- Project content (loading / empty / grid) -->
-    <div class="aiv__content" :class="{ 'aiv__content--empty': !isLoadingSessions && savedSessions.length === 0 }">
-      <!-- Page Heading -->
-      <div v-if="savedSessions.length > 0 || isLoadingSessions" class="aiv__heading">
-        <h1 class="aiv__title">AI Video Projects</h1>
-        <p class="aiv__subtitle">Create AI-generated videos from your media with a natural language workflow</p>
-      </div>
-
-      <!-- Loading State (Skeleton) -->
-      <div v-if="isLoadingSessions" class="aiv__grid">
-        <div v-for="i in 6" :key="`skeleton-${i}`" class="aiv-card aiv-card--skeleton">
-          <div class="aiv-card__skeleton-bg"></div>
-          <div class="aiv-card__bottom">
-            <div class="aiv-skeleton__title"></div>
-            <div class="aiv-skeleton__meta"></div>
-          </div>
+    <template v-if="savedSessions.length > 0" #toolbar>
+      <SelectionBar
+        v-if="selectedProjects.size > 0"
+        :count="selectedProjects.size"
+        :total="filteredSessions.length"
+        @clear="clearSelection"
+        @select-all="selectAllProjects"
+      >
+        <Button variant="destructive-soft" size="sm" @click="confirmBulkDelete"><Trash2 /> Delete</Button>
+      </SelectionBar>
+      <template v-else>
+        <SearchField v-model="searchQuery" placeholder="Search projects…" class="min-w-[120px] max-w-64 flex-1" />
+        <div class="w-40 shrink-0">
+          <CustomDropdown v-model="sortBy" :options="sortOptions" placeholder="Sort by" />
         </div>
-      </div>
+      </template>
+    </template>
 
-      <!-- Projects Grid -->
-      <div v-else-if="savedSessions.length > 0" class="aiv__main">
-        <Transition name="selection-bar">
-          <div v-if="selectedProjects.size > 0" class="aiv__selection-bar">
-            <div class="aiv__selection-info">
-              <Check class="aiv__selection-icon" />
-              <span>{{ selectedProjects.size }} selected</span>
-              <button
-                v-if="selectedProjects.size < savedSessions.length"
-                type="button"
-                class="aiv__selection-action"
-                @click="selectAllProjects"
-              >
-                Select all
-              </button>
-            </div>
-            <div class="aiv__selection-actions">
-              <button type="button" class="aiv__selection-clear" @click="clearSelection">Clear</button>
-              <button type="button" class="aiv__selection-delete" @click="confirmBulkDelete">
-                <Trash2 class="aiv__selection-delete-icon" />
-                Delete Selected
-              </button>
-            </div>
-          </div>
-        </Transition>
-
-        <div class="aiv__grid">
-          <div
-            v-for="s in savedSessions"
-            :key="s.id"
-            class="aiv-card"
-            :class="{ 'aiv-card--selected': isProjectSelected(s.id) }"
-            @click="openProject(s.id)"
-          >
-            <div
-              class="aiv-card__checkbox"
-              :class="{ 'aiv-card__checkbox--visible': isProjectSelected(s.id) }"
-              @click.stop="toggleProjectSelection(s.id)"
+    <!-- Project list -->
+    <ProjectGrid
+      v-if="(isLoadingSessions && !savedSessions.length) || filteredSessions.length > 0"
+      :items="filteredSessions"
+      :loading="isLoadingSessions"
+      :item-key="(s) => s.id"
+      :group-date="groupDate"
+    >
+      <template #tile="{ item: s }">
+        <MediaTile
+          :title="s.name || 'Untitled project'"
+          :thumbnail="s.thumbnail_url"
+          :icon="Wand2"
+          :meta="[formatStatus(s.status), formatDate(s.updated_at)]"
+          selectable
+          :selected="isProjectSelected(s.id)"
+          @open="openProject(s.id)"
+          @toggle-select="toggleProjectSelection(s.id)"
+        >
+          <template v-if="s.status === 'generating' || s.status === 'refining'" #badges>
+            <MediaChip><Loader2 class="animate-spin" /> {{ formatStatus(s.status) }}</MediaChip>
+          </template>
+          <template #actions>
+            <Button
+              variant="secondary"
+              size="icon-xs"
+              class="hover:text-danger"
+              title="Delete"
+              aria-label="Delete"
+              @click.stop="deleteProject(s.id)"
             >
-              <div
-                class="aiv-card__checkbox-inner"
-                :class="{ 'aiv-card__checkbox-inner--checked': isProjectSelected(s.id) }"
-              >
-                <Check v-if="isProjectSelected(s.id)" class="aiv-card__checkbox-icon" />
-              </div>
-            </div>
+              <Trash2 />
+            </Button>
+          </template>
+        </MediaTile>
+      </template>
+    </ProjectGrid>
 
-            <!-- Status Badge (top-left) -->
-            <div class="aiv-card__badge" :class="`aiv-card__badge--${s.status}`">
-              {{ formatStatus(s.status) }}
-            </div>
+    <EmptyState
+      v-else-if="savedSessions.length > 0"
+      :icon="SearchX"
+      title="No matching projects"
+      description="Try a different search."
+    >
+      <Button variant="secondary" @click="searchQuery = ''">Clear search</Button>
+    </EmptyState>
 
-            <!-- Thumbnail background with vignette -->
-            <div
-              v-if="s.thumbnail_url"
-              class="aiv-card__thumbnail"
-              :style="{ backgroundImage: `url(${s.thumbnail_url})` }"
-            >
-              <div class="aiv-card__vignette"></div>
-            </div>
-            <div v-else class="aiv-card__thumbnail aiv-card__thumbnail--empty">
-              <div class="aiv-card__thumbnail-gradient"></div>
-              <div class="aiv-card__empty-icon">
-                <Wand2 class="aiv-card__folder-icon" />
-              </div>
-            </div>
+    <EmptyState
+      v-else
+      :icon="Wand2"
+      title="No AI video projects yet"
+      description="Create AI-generated videos from your media with a natural language workflow."
+    >
+      <Button variant="secondary" @click="createNewProject"><Plus /> New project</Button>
+    </EmptyState>
 
-            <!-- Bottom overlay: title + date -->
-            <div class="aiv-card__bottom">
-              <h3 class="aiv-card__title" :title="s.name || 'Untitled Project'">
-                {{ s.name || 'Untitled Project' }}
-              </h3>
-              <div class="aiv-card__meta">
-                <span class="aiv-card__meta-text">{{ formatDate(s.updated_at) }}</span>
-              </div>
-            </div>
-
-            <!-- Hover overlay with actions -->
-            <div class="aiv-card__hover-actions">
-              <button class="aiv-card__action-btn" title="Open Project" @click.stop="openProject(s.id)">
-                <Play class="aiv-card__action-icon" />
-              </button>
-              <button class="aiv-card__action-btn aiv-card__action-btn--danger" title="Delete" @click.stop="deleteProject(s.id)">
-                <Trash2 class="aiv-card__action-icon" />
-              </button>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Empty State -->
-      <div v-else class="aiv__empty">
-        <div class="aiv__empty-icon-wrapper">
-          <Wand2 class="aiv__empty-icon" />
-        </div>
-        <h3 class="aiv__empty-title">No projects found</h3>
-        <p class="aiv__empty-description">Create a new project to get started</p>
-      </div>
-    </div>
-
-    <!-- Editor overlay — shown when a project is open -->
+    <!-- Editor overlay — shown when a project is open (eases in; closes instantly) -->
     <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="!showProjectPicker" class="aiv-overlay">
-          <div class="aiv-editor">
-            <!-- Header -->
-            <div class="aiv-header">
-              <div class="aiv-header__left">
-                <button @click="backToProjects" class="aiv-header__back" title="Back to projects">
-                  <ArrowLeft :size="16" />
-                </button>
-                <Wand2 :size="18" class="aiv-header__icon" />
-                <span class="aiv-header__title">{{ chatSession.session.value?.name || 'Untitled Project' }}</span>
-                <span class="aiv-header__badge">BETA</span>
-              </div>
-              <div class="aiv-header__right">
-                <button v-if="composition" @click="openExport" class="aiv-header__btn">
-                  <Download :size="15" />
-                  <span>Export</span>
-                </button>
-                <button @click="router.back()" class="aiv-header__close" title="Close">
-                  <X :size="18" />
-                </button>
-              </div>
-            </div>
+      <div
+        v-if="!showProjectPicker"
+        class="fixed inset-x-0 bottom-0 top-[var(--titlebar-height)] z-[10000] flex animate-fade-in flex-col overflow-hidden bg-panel text-fg"
+      >
+        <SessionHeader
+          :title="chatSession.session.value?.name || 'Untitled project'"
+          :icon="Wand2"
+          back-label="Back to projects"
+          @back="backToProjects"
+        >
+          <template #badge>
+            <Badge variant="brand">Beta</Badge>
+          </template>
+          <template #actions>
+            <Button v-if="composition" variant="primary" size="sm" @click="openExport"><Download /> Export</Button>
+            <Button variant="ghost" size="icon-sm" title="Close" aria-label="Close" @click="router.back()">
+              <X />
+            </Button>
+          </template>
+        </SessionHeader>
 
-            <!-- Main Content -->
-            <div class="aiv-content">
-              <!-- Left: Unified AI Chat + Media Panel -->
-              <div class="aiv-sidebar">
-                <div class="aiv-panel aiv-panel--chat">
-                  <div class="aiv-panel__body custom-scrollbar">
-                    <AIChatPanel
-                      :messages="chatSession.messages.value"
-                      :is-sending="chatSession.isSending.value"
-                      :is-generating="chatSession.isGenerating.value"
-                      :is-refinement-mode="chatSession.isGenerated.value"
-                      :refinement-round="chatSession.refinementRound.value"
-                      :max-refinement-rounds="chatSession.maxRefinementRounds.value"
-                      :refinement-messages-remaining="chatSession.refinementMessagesRemaining.value"
-                      :error="chatSession.error.value"
-                      :generation-phase="chatSession.generationPhase.value"
-                      :scenes="chatSession.scenes.value"
-                      :completed-scenes="chatSession.completedScenes.value"
-                      :reference-analysis="chatSession.referenceAnalysis.value"
-                      :is-analyzing-reference="isAnalyzingReference"
-                      :reference-progress="referenceProgress"
-                      :reference-error="referenceError"
-                      :style-pack-id="selectedStylePackId"
-                      :draft-message="chatDraftMessage"
-                      :media-items="mediaItems"
-                      :transcript-generation-status="transcriptGenerationStatus"
-                      @send="handleChatSend"
-                      @update:draft-message="handleDraftMessageUpdate"
-                      @clear-error="chatSession.clearError"
-                      @analyze-reference="handleAnalyzeReference"
-                      @upload-reference="handleUploadReference"
-                      @remove-reference="handleRemoveReference"
-                      @cancel-reference="cancelReferenceAnalysis"
-                      @retry-reference="retryReferenceAnalysis"
-                      @select-style-pack="handleSelectStylePack"
-                      @upload-media="handleUpload"
-                      @open-clip-picker="openClipPicker"
-                      @open-asset-picker="openAssetPicker"
-                      @remove-media="removeMedia"
-                    />
-                  </div>
-                </div>
-              </div>
+        <div class="flex min-h-0 flex-1 overflow-hidden">
+          <!-- Left: AI chat + source media -->
+          <aside class="flex w-[clamp(300px,34vw,400px)] shrink-0 flex-col border-r border-line-subtle bg-surface">
+            <AIChatPanel
+              :messages="chatSession.messages.value"
+              :is-sending="chatSession.isSending.value"
+              :is-generating="chatSession.isGenerating.value"
+              :is-refinement-mode="chatSession.isGenerated.value"
+              :refinement-round="chatSession.refinementRound.value"
+              :max-refinement-rounds="chatSession.maxRefinementRounds.value"
+              :refinement-messages-remaining="chatSession.refinementMessagesRemaining.value"
+              :error="chatSession.error.value"
+              :generation-phase="chatSession.generationPhase.value"
+              :scenes="chatSession.scenes.value"
+              :completed-scenes="chatSession.completedScenes.value"
+              :reference-analysis="chatSession.referenceAnalysis.value"
+              :is-analyzing-reference="isAnalyzingReference"
+              :reference-progress="referenceProgress"
+              :reference-error="referenceError"
+              :style-pack-id="selectedStylePackId"
+              :draft-message="chatDraftMessage"
+              :media-items="mediaItems"
+              :transcript-generation-status="transcriptGenerationStatus"
+              @send="handleChatSend"
+              @update:draft-message="handleDraftMessageUpdate"
+              @clear-error="chatSession.clearError"
+              @analyze-reference="handleAnalyzeReference"
+              @upload-reference="handleUploadReference"
+              @remove-reference="handleRemoveReference"
+              @cancel-reference="cancelReferenceAnalysis"
+              @retry-reference="retryReferenceAnalysis"
+              @select-style-pack="handleSelectStylePack"
+              @upload-media="handleUpload"
+              @open-clip-picker="openClipPicker"
+              @open-asset-picker="openAssetPicker"
+              @remove-media="removeMedia"
+            />
+          </aside>
 
-              <!-- Center: Preview + Playback Controls -->
-              <div class="aiv-preview">
-                <div class="aiv-preview__stage">
-                  <RemotionPlayerMount
-                    v-if="composition"
-                    :composition="composition"
-                    :current-time="currentTime"
-                    :is-playing="isPlaying"
-                    @time-update="handleTimeUpdate"
-                    @duration-change="handleDurationChange"
-                    @playing-change="handlePlayingChange"
-                  />
-                  <!-- Generating overlay -->
-                  <div v-else-if="isGenerating" class="preview-generating">
-                    <div class="generating-visual">
-                      <div class="generating-spinner">
-                        <Loader2 :size="48" class="animate-spin" />
-                      </div>
-                      <h3>Generating Your Video</h3>
-                      <p v-if="chatSession.generationPhase.value === 'planning'">Planning scenes...</p>
-                      <p v-else-if="chatSession.scenes.value.length > 0">
-                        {{ chatSession.completedScenes.value }}/{{ chatSession.scenes.value.length }} scenes complete
-                      </p>
-                      <p v-else>Processing...</p>
-                      <div class="generating-progress">
-                        <div class="generating-progress__bar">
-                          <div class="generating-progress__fill" :style="{ width: generatingProgress + '%' }"></div>
-                        </div>
-                        <span class="generating-progress__label">{{ generatingProgress }}%</span>
-                      </div>
-                      <div v-if="chatSession.scenes.value.length > 0" class="generating-scenes">
-                        <div
-                          v-for="scene in chatSession.scenes.value"
-                          :key="scene.index"
-                          class="generating-scene"
-                          :class="`generating-scene--${scene.status}`"
-                        >
-                          <Loader2 v-if="scene.status === 'generating'" :size="12" class="animate-spin" />
-                          <Check v-else-if="scene.status === 'complete'" :size="12" />
-                          <div v-else class="generating-scene__dot"></div>
-                          <span>Scene {{ scene.index + 1 }}</span>
-                        </div>
-                      </div>
-                      <button class="preview-generating__cancel" type="button" @click="chatSession.cancelGeneration">
-                        Cancel generation
-                      </button>
-                    </div>
-                  </div>
-                  <div v-else class="preview-placeholder">
-                    <div class="placeholder-visual">
-                      <div class="visual-circle"><Wand2 :size="40" /></div>
-                      <h3>AI Video Editor</h3>
-                      <p v-if="mediaItems.length === 0">Start chatting with AI to plan and generate your video</p>
-                      <p v-else>Then chat with AI to plan and generate your video</p>
-                      <div class="placeholder-steps">
-                        <div class="step" :class="{ 'step--done': mediaItems.length > 0 }">
-                          <span class="step__num">1</span>
-                          <span>Add Media</span>
-                        </div>
-                        <div class="step__arrow">→</div>
-                        <div class="step" :class="{ 'step--done': chatSession.messages.value.length > 1 }">
-                          <span class="step__num">2</span>
-                          <span>Chat with AI</span>
-                        </div>
-                        <div class="step__arrow">→</div>
-                        <div class="step">
-                          <span class="step__num">3</span>
-                          <span>AI Generates</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <div v-if="composition?.styleMatch" class="aiv-style-match">
-                  <Sparkles :size="13" />
-                  <span>{{ composition.styleMatch.summary }}</span>
-                  <strong>{{ Math.round(composition.styleMatch.confidence * 100) }}% match</strong>
-                </div>
-
-                <!-- Playback Controls -->
-                <div v-if="composition" class="aiv-playback">
-                  <button @click="seekTo(0)" class="aiv-playback__btn" title="Restart">
-                    <SkipBack :size="16" />
-                  </button>
-                  <button
-                    @click="togglePlayback"
-                    class="aiv-playback__btn aiv-playback__btn--play"
-                    :title="isPlaying ? 'Pause' : 'Play'"
-                  >
-                    <component :is="isPlaying ? Pause : Play" :size="18" />
-                  </button>
-                  <button @click="seekTo(duration)" class="aiv-playback__btn" title="End">
-                    <SkipForward :size="16" />
-                  </button>
-                  <div class="aiv-playback__time">
-                    <span class="current">{{ formatTime(currentTime) }}</span>
-                    <span class="separator">/</span>
-                    <span class="total">{{ formatTime(duration) }}</span>
-                  </div>
-                  <div class="aiv-playback__scrub">
-                    <input
-                      type="range"
-                      :value="currentTime"
-                      :max="duration || 1"
-                      step="0.1"
-                      class="aiv-playback__slider"
-                      @input="(e: Event) => seekTo(parseFloat((e.target as HTMLInputElement).value))"
-                    />
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            <!-- Bottom: Timeline -->
-            <div v-if="composition" class="aiv-timeline">
-              <div class="aiv-timeline__header">
-                <div class="aiv-timeline__title">
-                  <ListMusic :size="14" />
-                  <span>Timeline</span>
-                </div>
-                <div class="aiv-timeline__meta">
-                  <span>{{ composition.tracks.length }} tracks</span>
-                </div>
-              </div>
-              <div class="aiv-timeline__body custom-scrollbar">
-                <AITimeline :composition="composition" :current-time="currentTime" />
-              </div>
-            </div>
-          </div>
-
-          <!-- Modals (inside overlay so they share stacking context) -->
-          <ClipPickerDialog v-model="showClipPicker" @select="handleClipsSelected" />
-          <AssetPickerDialog v-model="showAssetPicker" @select="handleAssetsSelected" />
-          <ExportDialog v-model="showExportDialog" :composition="composition" @exported="handleExported" />
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- Project Name Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showProjectNameDialog" class="credit-confirm-overlay" @click.self="showProjectNameDialog = false">
-          <div class="credit-confirm-dialog">
-            <div class="credit-confirm__icon">
-              <Wand2 :size="24" />
-            </div>
-            <h3 class="credit-confirm__title">Name Your Project</h3>
-            <p class="credit-confirm__desc">Give your AI video project a memorable name</p>
-            <div style="width: 100%; margin: 1.5rem 0;">
-              <input
-                v-model="projectNameInput"
-                type="text"
-                placeholder="e.g., Product Launch Video"
-                maxlength="100"
-                class="project-name-input"
-                @keyup.enter="confirmCreateProject"
-                autofocus
+          <!-- Center: preview + playback -->
+          <section class="flex min-w-0 flex-1 flex-col">
+            <div class="relative min-h-0 flex-1 bg-surface-sunken">
+              <RemotionPlayerMount
+                v-if="composition"
+                class="animate-fade-in"
+                :composition="composition"
+                :current-time="currentTime"
+                :is-playing="isPlaying"
+                @time-update="handleTimeUpdate"
+                @duration-change="handleDurationChange"
+                @playing-change="handlePlayingChange"
               />
-              <p v-if="projectNameError" class="project-name-error">{{ projectNameError }}</p>
+
+              <!-- Generating -->
+              <div v-else-if="isGenerating" class="absolute inset-0 grid animate-enter place-items-center overflow-y-auto p-6">
+                <div class="flex w-full max-w-[360px] flex-col items-center gap-4 text-center">
+                  <IconTile :icon="Loader2" tone="brand" size="lg" class="[&_svg]:animate-spin" />
+                  <div>
+                    <h3 class="text-sm font-semibold text-fg">Generating your video</h3>
+                    <p class="mt-0.5 text-xs text-fg-muted">
+                      <template v-if="chatSession.generationPhase.value === 'planning'">Planning scenes…</template>
+                      <template v-else-if="chatSession.scenes.value.length > 0">
+                        {{ chatSession.completedScenes.value }}/{{ chatSession.scenes.value.length }} scenes complete
+                      </template>
+                      <template v-else>Processing…</template>
+                    </p>
+                  </div>
+                  <div class="flex w-full items-center gap-2">
+                    <div class="h-1.5 flex-1 overflow-hidden rounded-full bg-surface-active">
+                      <div
+                        class="h-full rounded-full bg-brand transition-[width] duration-300"
+                        :style="{ width: generatingProgress + '%' }"
+                      />
+                    </div>
+                    <span class="tabular w-9 text-right text-xs text-fg-muted">{{ generatingProgress }}%</span>
+                  </div>
+                  <div v-if="chatSession.scenes.value.length > 0" class="flex flex-wrap justify-center gap-1.5">
+                    <Badge
+                      v-for="scene in chatSession.scenes.value"
+                      :key="scene.index"
+                      size="md"
+                      :variant="scene.status === 'complete' ? 'success' : scene.status === 'generating' ? 'brand' : 'neutral'"
+                    >
+                      <Loader2 v-if="scene.status === 'generating'" class="animate-spin" />
+                      <Check v-else-if="scene.status === 'complete'" />
+                      Scene {{ scene.index + 1 }}
+                    </Badge>
+                  </div>
+                  <Button variant="secondary" size="sm" @click="chatSession.cancelGeneration">Cancel generation</Button>
+                </div>
+              </div>
+
+              <!-- Empty -->
+              <EmptyState
+                v-else
+                :icon="Wand2"
+                title="Plan your video with AI"
+                :description="
+                  mediaItems.length === 0
+                    ? 'Add source media, then chat with AI to plan and generate your video.'
+                    : 'Now chat with AI to plan and generate your video.'
+                "
+                class="absolute inset-0"
+              >
+                <ol class="flex flex-wrap items-center justify-center gap-1.5 text-xs">
+                  <template v-for="(step, index) in placeholderSteps" :key="step.label">
+                    <li
+                      class="flex h-7 items-center gap-1.5 rounded-full border px-2.5"
+                      :class="step.done ? 'border-[var(--success-line)] bg-success-soft text-fg' : 'border-line text-fg-muted'"
+                    >
+                      <Check v-if="step.done" class="size-3.5 text-success" />
+                      <span v-else class="tabular text-2xs font-semibold text-fg-subtle">{{ index + 1 }}</span>
+                      {{ step.label }}
+                    </li>
+                    <ChevronRight v-if="index < placeholderSteps.length - 1" class="size-3.5 text-fg-disabled" />
+                  </template>
+                </ol>
+              </EmptyState>
             </div>
-            <div class="credit-confirm__actions">
-              <button class="credit-confirm__btn credit-confirm__btn--cancel" @click="showProjectNameDialog = false">
-                Cancel
-              </button>
-              <button class="credit-confirm__btn credit-confirm__btn--confirm" @click="confirmCreateProject">
-                <Plus :size="14" />
-                <span>Create Project</span>
-              </button>
+
+            <div
+              v-if="composition?.styleMatch"
+              class="flex min-w-0 items-center gap-2 border-t border-line-subtle bg-surface px-3 py-1.5 text-xs text-fg-muted"
+            >
+              <Sparkles class="size-3.5 shrink-0 text-ai" />
+              <span class="min-w-0 flex-1 truncate">{{ composition.styleMatch.summary }}</span>
+              <Badge variant="ai">{{ Math.round(composition.styleMatch.confidence * 100) }}% match</Badge>
             </div>
+
+            <!-- Playback controls -->
+            <div v-if="composition" class="flex animate-fade-in items-center gap-1 border-t border-line-subtle bg-surface px-3 py-2">
+              <Button variant="ghost" size="icon-sm" title="Restart" aria-label="Restart" @click="seekTo(0)">
+                <SkipBack />
+              </Button>
+              <Button
+                variant="subtle"
+                size="icon"
+                :title="isPlaying ? 'Pause' : 'Play'"
+                :aria-label="isPlaying ? 'Pause' : 'Play'"
+                @click="togglePlayback"
+              >
+                <component :is="isPlaying ? Pause : Play" />
+              </Button>
+              <Button variant="ghost" size="icon-sm" title="End" aria-label="Go to end" @click="seekTo(duration)">
+                <SkipForward />
+              </Button>
+              <span class="tabular ml-1.5 shrink-0 text-xs text-fg-muted">
+                <span class="text-fg">{{ formatTime(currentTime) }}</span> / {{ formatTime(duration) }}
+              </span>
+              <input
+                type="range"
+                :value="currentTime"
+                :max="duration || 1"
+                step="0.1"
+                class="ml-2 min-w-0 flex-1"
+                aria-label="Seek"
+                @input="(e: Event) => seekTo(parseFloat((e.target as HTMLInputElement).value))"
+              />
+            </div>
+          </section>
+        </div>
+
+        <!-- Bottom: timeline -->
+        <div
+          v-if="composition"
+          class="flex h-[clamp(150px,30vh,220px)] shrink-0 animate-fade-in flex-col border-t border-line-subtle bg-surface"
+        >
+          <div class="flex h-9 shrink-0 items-center justify-between border-b border-line-subtle px-3">
+            <span class="eyebrow flex items-center gap-1.5"><ListMusic class="size-3.5" /> Timeline</span>
+            <span class="text-2xs text-fg-subtle">{{ composition.tracks.length }} tracks</span>
+          </div>
+          <div class="relative min-h-0 flex-1 overflow-hidden">
+            <AITimeline :composition="composition" :current-time="currentTime" />
           </div>
         </div>
-      </Transition>
+
+        <!-- Modals (inside overlay so they share stacking context) -->
+        <ClipPickerDialog v-model="showClipPicker" @select="handleClipsSelected" />
+        <AssetPickerDialog v-model="showAssetPicker" @select="handleAssetsSelected" />
+        <ExportDialog v-model="showExportDialog" :composition="composition" @exported="handleExported" />
+      </div>
     </Teleport>
 
-    <!-- Credit Confirmation Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="creditConfirm.show" class="credit-confirm-overlay" @click.self="creditConfirm.show = false">
-          <div class="credit-confirm-dialog">
-            <div class="credit-confirm__icon">
-              <Sparkles :size="24" />
-            </div>
-            <h3 class="credit-confirm__title">{{ creditConfirm.title }}</h3>
-            <p class="credit-confirm__desc">{{ creditConfirm.description }}</p>
-            <div class="credit-confirm__cost">
-              <span class="credit-confirm__amount">{{ creditConfirm.cost }}</span>
-              <span class="credit-confirm__unit">credits</span>
-            </div>
-            <div class="credit-confirm__actions">
-              <button class="credit-confirm__btn credit-confirm__btn--cancel" @click="creditConfirm.show = false">
-                Cancel
-              </button>
-              <button class="credit-confirm__btn credit-confirm__btn--confirm" @click="confirmCreditAction">
-                <Sparkles :size="14" />
-                <span>{{ creditConfirm.confirmLabel }}</span>
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <!-- Project name dialog -->
+    <Modal
+      :open="showProjectNameDialog"
+      title="New AI video project"
+      description="Give your AI video project a memorable name."
+      :icon="Wand2"
+      size="sm"
+      @close="showProjectNameDialog = false"
+    >
+      <Field label="Project name" :error="projectNameError">
+        <Input
+          v-model="projectNameInput"
+          placeholder="e.g. Product launch video"
+          maxlength="100"
+          autofocus
+          :aria-invalid="!!projectNameError"
+          @keyup.enter="confirmCreateProject"
+        />
+      </Field>
+      <template #footer>
+        <Button variant="ghost" @click="showProjectNameDialog = false">Cancel</Button>
+        <Button variant="primary" @click="confirmCreateProject"><Plus /> Create project</Button>
+      </template>
+    </Modal>
+
+    <!-- Credit confirmation dialog -->
+    <Modal
+      :open="creditConfirm.show"
+      :title="creditConfirm.title"
+      :description="creditConfirm.description"
+      :icon="Sparkles"
+      tone="ai"
+      size="sm"
+      @close="creditConfirm.show = false"
+    >
+      <div class="flex items-center justify-between rounded-lg border border-line-subtle bg-surface px-3 py-2.5">
+        <span class="text-sm text-fg-muted">Cost</span>
+        <span class="text-sm text-fg">
+          <span class="tabular text-base font-semibold">{{ creditConfirm.cost }}</span> credits
+        </span>
+      </div>
+      <template #footer>
+        <Button variant="ghost" @click="creditConfirm.show = false">Cancel</Button>
+        <Button variant="primary" @click="confirmCreditAction"><Sparkles /> {{ creditConfirm.confirmLabel }}</Button>
+      </template>
+    </Modal>
+
+    <ConfirmationModal
+      :show="!!deleteTarget"
+      title="Delete project"
+      :message="deleteTarget?.message || ''"
+      suffix=""
+      confirm-text="Delete"
+      variant="destructive"
+      @close="deleteTarget = null"
+      @confirm="performDelete"
+    />
   </PageLayout>
 </template>
 
 <script setup lang="ts">
+  import { useToast } from '@/composables/useToast';
   import { ref, computed, onMounted, watch } from 'vue';
   import { useRouter } from 'vue-router';
   import {
@@ -423,11 +367,27 @@
     SkipForward,
     Trash2,
     Plus,
-    ArrowLeft,
+    ChevronRight,
+    SearchX,
   } from 'lucide-vue-next';
   import { open } from '@tauri-apps/plugin-dialog';
   import { invoke } from '@tauri-apps/api/core';
   import PageLayout from '@/components/PageLayout.vue';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
+  import ConfirmationModal from '@/components/ConfirmationModal.vue';
+  import { MediaChip, MediaTile } from '@/components/ui/media-tile';
+  import { SelectionBar } from '@/components/ui/selection-bar';
+  import ProjectGrid from '@/components/create/ProjectGrid.vue';
+  import SessionHeader from '@/components/create/SessionHeader.vue';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Field } from '@/components/ui/field';
+  import { IconTile } from '@/components/ui/icon-tile';
+  import { Input } from '@/components/ui/input';
+  import { Modal } from '@/components/ui/modal';
+  import { SearchField } from '@/components/ui/search-field';
+  import { toDate } from '@/utils/dateTimeUtils';
   import RemotionPlayerMount from '@/components/ai-video/RemotionPlayerMount.vue';
   import AITimeline from '@/components/ai-video/AITimeline.vue';
   import ClipPickerDialog from '@/components/ai-video/pickers/ClipPickerDialog.vue';
@@ -488,7 +448,8 @@
 
   // Project picker state
   const savedSessions = ref<Array<{ id: number; name: string | null; status: string; updated_at: string; inserted_at: string; thumbnail_url?: string | null }>>([]);
-  const isLoadingSessions = ref(false);
+  // Starts true so the first paint is the (delayed) skeleton, never the empty state
+  const isLoadingSessions = ref(true);
   const showProjectPicker = computed(() => !chatSession.session.value);
   const selectedProjects = ref<Set<number>>(new Set());
 
@@ -510,17 +471,70 @@
   }
 
   function selectAllProjects() {
-    selectedProjects.value = new Set(savedSessions.value.map((s) => s.id));
+    selectedProjects.value = new Set(filteredSessions.value.map((s) => s.id));
   }
 
-  async function confirmBulkDelete() {
+  // Search / sort for the project list
+  const searchQuery = ref('');
+  const sortBy = ref<'updated' | 'created' | 'name'>('updated');
+  const sortOptions = [
+    { value: 'updated', label: 'Last updated' },
+    { value: 'created', label: 'Date created' },
+    { value: 'name', label: 'Name' },
+  ];
+
+  type SavedSession = (typeof savedSessions.value)[number];
+
+  const filteredSessions = computed(() => {
+    const query = searchQuery.value.trim().toLowerCase();
+    const result = savedSessions.value.filter(
+      (s) => !query || (s.name || 'Untitled project').toLowerCase().includes(query)
+    );
+    return result.sort((a, b) => {
+      if (sortBy.value === 'name') return (a.name || '').localeCompare(b.name || '');
+      const key = sortBy.value === 'created' ? 'inserted_at' : 'updated_at';
+      return toDate(b[key]).getTime() - toDate(a[key]).getTime();
+    });
+  });
+
+  // Date sections follow the active sort (none when sorting by name)
+  const groupDate = computed(() => {
+    if (sortBy.value === 'name') return undefined;
+    const key = sortBy.value === 'created' ? 'inserted_at' : 'updated_at';
+    return (s: SavedSession) => s[key];
+  });
+
+  // Delete confirmation (single project or the current selection)
+  const deleteTarget = ref<{ ids: number[]; bulk: boolean; message: string } | null>(null);
+
+  function confirmBulkDelete() {
     const count = selectedProjects.value.size;
     if (count === 0) return;
-    if (!confirm(`Are you sure you want to delete ${count} project${count > 1 ? 's' : ''}? This action cannot be undone.`)) {
+    deleteTarget.value = {
+      ids: Array.from(selectedProjects.value),
+      bulk: true,
+      message: `Are you sure you want to delete ${count} project${count > 1 ? 's' : ''}?`,
+    };
+  }
+
+  async function performDelete() {
+    const target = deleteTarget.value;
+    deleteTarget.value = null;
+    if (!target) return;
+
+    if (!target.bulk) {
+      const id = target.ids[0];
+      try {
+        await chatSession.deleteSession(id);
+        savedSessions.value = savedSessions.value.filter((s) => s.id !== id);
+      } catch (e) {
+        console.error('[AIVideoCreator] Failed to delete project:', e);
+        useToast().error('Could not delete project', 'Please try again.');
+      }
       return;
     }
-    const ids = Array.from(selectedProjects.value);
-    for (const id of ids) {
+
+    for (const id of target.ids) {
       try {
         await chatSession.deleteSession(id);
         savedSessions.value = savedSessions.value.filter((s) => s.id !== id);
@@ -534,7 +548,7 @@
   function formatStatus(status: string): string {
     const map: Record<string, string> = {
       discovery: 'Planning',
-      generating: 'Generating...',
+      generating: 'Generating',
       generated: 'Ready',
       refining: 'Refining',
       completed: 'Completed',
@@ -613,21 +627,10 @@
     }
   }
 
-  async function deleteProject(id: number) {
-    const project = savedSessions.value.find(s => s.id === id);
-    const projectName = project?.name || 'Untitled Project';
-    
-    if (!confirm(`Are you sure you want to delete "${projectName}"? This action cannot be undone.`)) {
-      return;
-    }
-
-    try {
-      await chatSession.deleteSession(id);
-      savedSessions.value = savedSessions.value.filter((s) => s.id !== id);
-    } catch (e) {
-      console.error('[AIVideoCreator] Failed to delete project:', e);
-      alert('Failed to delete project. Please try again.');
-    }
+  function deleteProject(id: number) {
+    const project = savedSessions.value.find((s) => s.id === id);
+    const projectName = project?.name || 'Untitled project';
+    deleteTarget.value = { ids: [id], bulk: false, message: `Are you sure you want to delete "${projectName}"?` };
   }
 
   function backToProjects() {
@@ -643,6 +646,12 @@
   // AI generation — composition is driven by chat session
   const composition = computed(() => chatSession.composition.value);
   const isGenerating = computed(() => chatSession.isGenerating.value);
+  const placeholderSteps = computed(() => [
+    { label: 'Add media', done: mediaItems.value.length > 0 },
+    { label: 'Chat with AI', done: chatSession.messages.value.length > 1 },
+    { label: 'AI generates', done: false },
+  ]);
+
   const generatingProgress = computed(() => {
     const total = chatSession.scenes.value.length;
     if (total === 0) return 0;
@@ -964,7 +973,7 @@
   function showGenerateConfirmation() {
     creditConfirm.value = {
       show: true,
-      title: 'Generate Video',
+      title: 'Generate video',
       description:
         'AI will create a video composition based on your conversation. This will use credits from your balance.',
       cost: 10,
@@ -976,7 +985,7 @@
   function showRefineConfirmation(message: string) {
     creditConfirm.value = {
       show: true,
-      title: 'Refine Video',
+      title: 'Refine video',
       description: 'AI will modify your video based on your feedback. This will use credits from your balance.',
       cost: 5,
       confirmLabel: 'Refine',
@@ -1535,1919 +1544,3 @@
   }
 </script>
 
-<style scoped>
-  /* ═══ Full-Screen Overlay ═══ */
-  .aiv-overlay {
-    position: fixed;
-    top: 32px;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(0, 0, 0, 0.98);
-    backdrop-filter: blur(16px);
-    z-index: 10000;
-    display: flex;
-  }
-
-  .aiv-editor {
-    width: 100%;
-    height: 100%;
-    background-color: #0a0a0b;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    color: #f4f4f5;
-  }
-
-  /* ═══ Header ═══ */
-  .aiv-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0 1rem;
-    height: 44px;
-    background: #111113;
-    border-bottom: 1px solid #1e1e22;
-    flex-shrink: 0;
-  }
-
-  .aiv-header__left {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .aiv-header__icon {
-    color: #0ea5e9;
-  }
-
-  .aiv-header__title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: #f4f4f5;
-  }
-
-  .aiv-header__badge {
-    padding: 0.0625rem 0.375rem;
-    background: #0ea5e9;
-    color: black;
-    border-radius: 3px;
-    font-size: 0.5625rem;
-    font-weight: 800;
-    letter-spacing: 0.05em;
-  }
-
-  .aiv-header__right {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .aiv-header__btn {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    background: #1e1e22;
-    border: 1px solid #2a2a2e;
-    border-radius: 6px;
-    color: #d4d4d8;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms;
-  }
-
-  .aiv-header__btn:hover {
-    background: #2a2a2e;
-    border-color: #0ea5e9;
-  }
-
-  .aiv-header__close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: #71717a;
-    cursor: pointer;
-    transition: all 150ms;
-  }
-
-  .aiv-header__close:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: #f4f4f5;
-  }
-
-  .aiv-header__back {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border: 1px solid #2a2a2e;
-    border-radius: 6px;
-    color: #a1a1aa;
-    cursor: pointer;
-    transition: all 150ms;
-  }
-
-  .aiv-header__back:hover {
-    background: #1e1e22;
-    border-color: #3f3f46;
-    color: #f4f4f5;
-  }
-
-  /* ===== New Project Button ===== */
-  .aiv-create-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    height: 32px;
-    padding: 0 0.875rem;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border: none;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .aiv-create-btn:hover {
-    opacity: 0.9;
-  }
-
-  .aiv-create-btn__icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* ===== Content Container ===== */
-  .aiv__content {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: 1.5rem;
-    width: 100%;
-    flex: 1;
-  }
-
-  .aiv__content--empty {
-    justify-content: center;
-    align-items: center;
-  }
-
-  /* ===== Page Heading ===== */
-  .aiv__heading {
-    margin-bottom: 0.5rem;
-  }
-
-  .aiv__title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.2rem;
-    letter-spacing: -0.02em;
-  }
-
-  .aiv__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  /* ===== Projects Grid Container ===== */
-  .aiv__main {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-    width: 100%;
-  }
-
-  /* ===== Selection Bar ===== */
-  .aiv__selection-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .aiv__selection-info {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    font-weight: 500;
-  }
-
-  .aiv__selection-icon {
-    width: 16px;
-    height: 16px;
-    color: var(--sidebar-accent);
-  }
-
-  .aiv__selection-action {
-    margin-left: 0.25rem;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-accent);
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    cursor: pointer;
-  }
-
-  .aiv__selection-action:hover {
-    background-color: var(--sidebar-hover);
-  }
-
-  .aiv__selection-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .aiv__selection-clear {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .aiv__selection-clear:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .aiv__selection-delete {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: #fca5a5;
-    background: rgba(239, 68, 68, 0.15);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .aiv__selection-delete:hover {
-    background: rgba(239, 68, 68, 0.25);
-  }
-
-  .aiv__selection-delete-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  .selection-bar-enter-active {
-    transition: all 150ms ease;
-  }
-  .selection-bar-leave-active {
-    transition: all 100ms ease;
-  }
-  .selection-bar-enter-from,
-  .selection-bar-leave-to {
-    opacity: 0;
-    transform: translateY(-4px);
-  }
-
-  /* ===== Projects Grid ===== */
-  .aiv__grid {
-    display: grid;
-    grid-template-columns: repeat(1, 1fr);
-    gap: 1.25rem;
-  }
-
-  @media (min-width: 1024px) {
-    .aiv__grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (min-width: 1400px) {
-    .aiv__grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  @media (min-width: 1800px) {
-    .aiv__grid {
-      grid-template-columns: repeat(4, 1fr);
-    }
-  }
-
-  /* ===== Card ===== */
-  .aiv-card {
-    position: relative;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: all 200ms ease;
-    aspect-ratio: 16 / 9;
-  }
-
-  .aiv-card:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-    transform: scale(1.02);
-  }
-
-  .aiv-card--selected {
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
-  }
-
-  .aiv-card--selected:hover {
-    border-color: var(--sidebar-accent);
-  }
-
-  .aiv-card__checkbox {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    z-index: 30;
-    opacity: 0;
-    transition: opacity 150ms ease;
-  }
-
-  .aiv-card:hover .aiv-card__checkbox,
-  .aiv-card__checkbox--visible {
-    opacity: 1;
-  }
-
-  .aiv-card__checkbox-inner {
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(0, 0, 0, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.45);
-    color: white;
-    cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: all 150ms ease;
-  }
-
-  .aiv-card__checkbox-inner:hover {
-    background-color: rgba(0, 0, 0, 0.8);
-  }
-
-  .aiv-card__checkbox-inner--checked {
-    background-color: var(--sidebar-accent);
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-  }
-
-  .aiv-card__checkbox-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  .aiv-card--skeleton {
-    pointer-events: none;
-  }
-
-  .aiv-card__skeleton-bg {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, var(--sidebar-hover) 0%, var(--sidebar-surface) 100%);
-    animation: aiv-shimmer 1.5s ease-in-out infinite;
-  }
-
-  @keyframes aiv-shimmer {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.5; }
-  }
-
-  /* Status Badge (top-left) */
-  .aiv-card__badge {
-    position: absolute;
-    top: 1rem;
-    left: 1rem;
-    z-index: 20;
-    display: flex;
-    align-items: center;
-    padding: 0.3125rem 0.5rem;
-    border-radius: 5px;
-    font-size: 0.625rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-    backdrop-filter: blur(8px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  }
-
-  .aiv-card__badge--discovery {
-    background-color: rgba(14, 165, 233, 0.25);
-    color: #7dd3fc;
-  }
-
-  .aiv-card__badge--generating,
-  .aiv-card__badge--refining {
-    background-color: rgba(245, 158, 11, 0.25);
-    color: #fcd34d;
-  }
-
-  .aiv-card__badge--generated,
-  .aiv-card__badge--completed {
-    background-color: rgba(34, 197, 94, 0.25);
-    color: #86efac;
-  }
-
-  /* Thumbnail */
-  .aiv-card__thumbnail {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-  }
-
-  .aiv-card__vignette {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 40%, transparent 70%);
-  }
-
-  .aiv-card__thumbnail--empty {
-    background-color: var(--sidebar-hover);
-  }
-
-  .aiv-card__thumbnail-gradient {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.4) 50%, rgba(0, 0, 0, 0.5) 100%);
-  }
-
-  .aiv-card__empty-icon {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.2;
-  }
-
-  .aiv-card__folder-icon {
-    width: 64px;
-    height: 64px;
-    color: var(--sidebar-text);
-  }
-
-  /* Bottom Info Overlay */
-  .aiv-card__bottom {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 5;
-    padding: 1rem;
-    padding-top: 7rem;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 50%, transparent 100%);
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .aiv-card__title {
-    font-size: 1rem;
-    font-weight: 700;
-    color: white;
-    margin: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-    line-height: 1.3;
-  }
-
-  .aiv-card__meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.7);
-  }
-
-  .aiv-card__meta-text {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  /* Skeleton text */
-  .aiv-skeleton__title {
-    height: 14px;
-    width: 65%;
-    background: var(--sidebar-hover);
-    border-radius: 4px;
-    margin-bottom: 6px;
-  }
-
-  .aiv-skeleton__meta {
-    height: 10px;
-    width: 40%;
-    background: var(--sidebar-hover);
-    border-radius: 4px;
-  }
-
-  /* Hover Actions Overlay */
-  .aiv-card__hover-actions {
-    position: absolute;
-    inset: 0;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    background-color: rgba(0, 0, 0, 0.4);
-    opacity: 0;
-    transition: opacity 200ms ease;
-  }
-
-  .aiv-card:hover .aiv-card__hover-actions {
-    opacity: 1;
-  }
-
-  .aiv-card__action-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.5rem;
-    background-color: rgba(255, 255, 255, 0.9);
-    border: none;
-    border-radius: 9999px;
-    color: #1f2937;
-    cursor: pointer;
-    transition: all 150ms ease;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-  }
-
-  .aiv-card__action-btn:hover {
-    background-color: white;
-    transform: scale(1.1);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  }
-
-  .aiv-card__action-btn--danger:hover {
-    background-color: #fecaca;
-    color: #dc2626;
-  }
-
-  .aiv-card__action-icon {
-    width: 20px;
-    height: 20px;
-  }
-
-  /* ===== Empty State ===== */
-  .aiv__empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-  }
-
-  .aiv__empty-icon-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 72px;
-    height: 72px;
-    background-color: var(--sidebar-hover);
-    border-radius: 16px;
-    margin-bottom: 1.5rem;
-  }
-
-  .aiv__empty-icon {
-    width: 36px;
-    height: 36px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .aiv__empty-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
-  }
-
-  .aiv__empty-description {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    max-width: 300px;
-  }
-
-  /* ═══ Content Layout ═══ */
-  .aiv-content {
-    display: flex;
-    flex: 1;
-    overflow: hidden;
-    min-height: 0;
-  }
-
-  /* ═══ Sidebar (Unified Chat + Media) ═══ */
-  .aiv-sidebar {
-    width: min(430px, 40vw);
-    min-width: 330px;
-    max-width: 500px;
-    flex-shrink: 0;
-    display: flex;
-    background: #111113;
-    border-right: 1px solid #1e1e22;
-  }
-
-  .aiv-panel {
-    width: 100%;
-    background: #141416;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  .aiv-panel--chat {
-    width: 100%;
-  }
-
-  .aiv-panel__body {
-    flex: 1;
-    overflow: hidden;
-    padding: 0.875rem;
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* ═══ Preview ═══ */
-  .aiv-preview {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-    background: linear-gradient(135deg, #0a0a0b 0%, #0d0d0e 100%);
-  }
-
-  .aiv-preview__stage {
-    flex: 1;
-    position: relative;
-    min-height: 0;
-  }
-
-  .aiv-style-match {
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    padding: 6px 12px;
-    border-top: 1px solid rgba(99, 102, 241, 0.18);
-    background: rgba(99, 102, 241, 0.08);
-    color: #c7d2fe;
-    font-size: 11px;
-  }
-
-  .aiv-style-match strong {
-    margin-left: auto;
-    color: #a5b4fc;
-  }
-
-  .preview-placeholder {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    background: radial-gradient(circle at center, #141416 0%, #0a0a0b 100%);
-  }
-
-  /* ═══ Playback Controls ═══ */
-  .aiv-playback {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 1rem;
-    background: #111113;
-    border-top: 1px solid #1e1e22;
-    flex-shrink: 0;
-  }
-
-  .aiv-playback__btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: #a1a1aa;
-    cursor: pointer;
-    transition: all 150ms;
-  }
-
-  .aiv-playback__btn:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: #f4f4f5;
-  }
-
-  .aiv-playback__btn--play {
-    width: 36px;
-    height: 36px;
-    background: #0ea5e9;
-    color: white;
-    border-radius: 50%;
-  }
-
-  .aiv-playback__btn--play:hover {
-    background: #38bdf8;
-    color: white;
-  }
-
-  .aiv-playback__time {
-    display: flex;
-    align-items: center;
-    gap: 0.2rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-    margin-left: 0.5rem;
-    min-width: 70px;
-  }
-
-  .aiv-playback__time .current {
-    color: #0ea5e9;
-  }
-  .aiv-playback__time .separator {
-    color: #52525b;
-  }
-  .aiv-playback__time .total {
-    color: #71717a;
-  }
-
-  .aiv-playback__scrub {
-    flex: 1;
-    margin-left: 0.5rem;
-  }
-
-  .aiv-playback__slider {
-    width: 100%;
-    height: 4px;
-    accent-color: #0ea5e9;
-    cursor: pointer;
-  }
-
-  /* ═══ Empty State Steps ═══ */
-  .placeholder-steps {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-top: 1.5rem;
-  }
-
-  .step {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    background: #1a1a1e;
-    border: 1px solid #2a2a2e;
-    border-radius: 20px;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    color: #71717a;
-    transition: all 150ms;
-  }
-
-  .step--done {
-    border-color: #0ea5e933;
-    color: #0ea5e9;
-    background: rgba(14, 165, 233, 0.08);
-  }
-
-  .step__num {
-    width: 18px;
-    height: 18px;
-    border-radius: 50%;
-    background: #2a2a2e;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.5625rem;
-    font-weight: 700;
-    color: #a1a1aa;
-  }
-
-  .step--done .step__num {
-    background: #0ea5e9;
-    color: white;
-  }
-
-  .step__arrow {
-    color: #3f3f46;
-    font-size: 0.75rem;
-  }
-
-  .visual-circle {
-    width: 80px;
-    height: 80px;
-    border-radius: 50%;
-    background: #1e1e22;
-    border: 1px solid #2a2a2e;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin: 0 auto 1.5rem;
-    color: #0ea5e9;
-  }
-
-  .preview-placeholder h3 {
-    font-size: 1.25rem;
-    font-weight: 600;
-    margin-bottom: 0.5rem;
-    color: #f4f4f5;
-  }
-
-  .preview-placeholder p {
-    color: #71717a;
-    font-size: 0.9375rem;
-  }
-
-  /* ═══ Timeline ═══ */
-  .aiv-timeline {
-    flex-shrink: 0;
-    height: 240px;
-    border-top: 1px solid #1e1e22;
-    background: #111113;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .aiv-timeline__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 1rem;
-    border-bottom: 1px solid #1e1e22;
-    flex-shrink: 0;
-  }
-
-  .aiv-timeline__title {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #71717a;
-  }
-
-  .aiv-timeline__meta {
-    font-size: 0.625rem;
-    font-weight: 500;
-    color: #52525b;
-  }
-
-  .aiv-timeline__body {
-    flex: 1;
-    overflow: hidden;
-    position: relative;
-  }
-
-  .timeline-empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    height: 100%;
-    color: #52525b;
-    font-size: 0.8125rem;
-  }
-
-  .timeline-time-info {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .timeline-time-info .current {
-    color: #0ea5e9;
-  }
-  .timeline-time-info .separator {
-    color: #52525b;
-  }
-  .timeline-time-info .total {
-    color: #71717a;
-  }
-
-  /* ═══ Media Items ═══ */
-  .media-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .media-item-card {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.5rem;
-    background: #1a1a1e;
-    border: 1px solid #2a2a2e;
-    border-radius: 8px;
-    transition: all 150ms;
-  }
-
-  .media-item-card:hover {
-    border-color: #0ea5e9;
-    background: #1e1e24;
-  }
-
-  .media-thumb {
-    width: 40px;
-    height: 40px;
-    background: #1e1e22;
-    border-radius: 6px;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    border: 1px solid #2a2a2e;
-    color: #52525b;
-  }
-
-  .media-thumb img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .media-info {
-    flex: 1;
-    min-width: 0;
-    cursor: pointer;
-  }
-
-  .media-name {
-    display: block;
-    max-width: 100%;
-    font-size: 0.75rem;
-    font-weight: 600;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    color: #d4d4d8;
-  }
-
-  .media-meta-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.125rem;
-  }
-
-  .media-meta {
-    font-size: 0.625rem;
-    color: #71717a;
-    text-transform: capitalize;
-  }
-
-  .transcribing-badge,
-  .transcript-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.0625rem 0.3rem;
-    background: rgba(14, 165, 233, 0.1);
-    color: #0ea5e9;
-    border-radius: 3px;
-    font-size: 0.5625rem;
-    font-weight: 600;
-    text-transform: uppercase;
-  }
-
-  .transcript-badge {
-    background: rgba(34, 197, 94, 0.1);
-    color: rgb(34, 197, 94);
-    cursor: pointer;
-  }
-
-  .media-remove-btn {
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #52525b;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    border-radius: 4px;
-    transition: all 150ms;
-    flex-shrink: 0;
-  }
-
-  .media-remove-btn:hover {
-    background: #dc2626;
-    color: white;
-  }
-
-  .add-media-actions {
-    display: flex;
-    gap: 0.375rem;
-    margin-top: 0.5rem;
-  }
-
-  .add-media-btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.25rem;
-    padding: 0.4rem 0.5rem;
-    background: #1a1a1e;
-    border: 1px solid #2a2a2e;
-    border-radius: 6px;
-    color: #a1a1aa;
-    font-size: 0.625rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 150ms;
-  }
-
-  .add-media-btn:hover {
-    border-color: #0ea5e9;
-    color: #d4d4d8;
-  }
-
-  .add-media-btn--primary {
-    background: #0ea5e9;
-    color: white;
-    border-color: #0ea5e9;
-  }
-
-  /* ═══ Empty States ═══ */
-  .media-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    padding: 1.5rem 0.5rem;
-    color: #71717a;
-  }
-
-  .empty-icon-container {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    background: #1a1a1e;
-    border: 1px solid #2a2a2e;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 0.75rem;
-    color: #0ea5e9;
-  }
-
-  .empty-text {
-    margin-bottom: 1rem;
-  }
-  .empty-text h3 {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: #d4d4d8;
-    margin-bottom: 0.25rem;
-  }
-  .empty-text p {
-    font-size: 0.6875rem;
-    color: #71717a;
-  }
-
-  .empty-actions {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-    width: 100%;
-  }
-
-  .empty-action-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.375rem;
-    padding: 0.5rem;
-    background: #1a1a1e;
-    border: 1px solid #2a2a2e;
-    border-radius: 6px;
-    color: #d4d4d8;
-    font-size: 0.75rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 150ms;
-  }
-
-  .empty-action-btn:hover {
-    border-color: #0ea5e9;
-  }
-
-  .empty-action-btn--primary {
-    background: #0ea5e9;
-    color: white;
-    border-color: #0ea5e9;
-    font-weight: 600;
-  }
-
-  /* ═══ Transcript Editor ═══ */
-  .transcript-editor-section {
-    margin-top: 0.75rem;
-    padding-top: 0.75rem;
-    border-top: 1px solid #2a2a2e;
-  }
-
-  .transcript-editor-info {
-    margin-bottom: 0.5rem;
-  }
-
-  .transcript-media-name {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: #d4d4d8;
-  }
-
-  .transcript-textarea {
-    width: 100%;
-    padding: 0.625rem;
-    background: #1a1a1e;
-    border: 1px solid #2a2a2e;
-    border-radius: 6px;
-    color: #d4d4d8;
-    font-size: 0.75rem;
-    line-height: 1.5;
-    resize: vertical;
-    font-family: inherit;
-  }
-
-  .transcript-textarea:focus {
-    outline: none;
-    border-color: #0ea5e9;
-  }
-
-  .transcript-actions {
-    display: flex;
-    gap: 0.375rem;
-    margin-top: 0.5rem;
-  }
-
-  .transcript-btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.25rem;
-    padding: 0.5rem;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    border: 1px solid #2a2a2e;
-  }
-
-  .transcript-btn--secondary {
-    background: #1a1a1e;
-    color: #d4d4d8;
-  }
-  .transcript-btn--secondary:hover {
-    background: #2a2a2e;
-  }
-  .transcript-btn--primary {
-    background: #0ea5e9;
-    color: white;
-    border-color: #0ea5e9;
-  }
-
-  /* ═══ AI Prompt ═══ */
-  .ai-smart-suggestion {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.625rem;
-    background: rgba(14, 165, 233, 0.08);
-    border: 1px solid rgba(14, 165, 233, 0.15);
-    border-radius: 6px;
-    color: #0ea5e9;
-    font-size: 0.6875rem;
-    font-weight: 500;
-  }
-
-  .ai-prompt-box {
-    background: #1a1a1e;
-    border: 1px solid #2a2a2e;
-    border-radius: 8px;
-    overflow: hidden;
-    transition: border-color 150ms;
-  }
-
-  .ai-prompt-box:focus-within {
-    border-color: #0ea5e9;
-  }
-
-  .ai-prompt-input {
-    width: 100%;
-    background: transparent;
-    border: none;
-    padding: 0.625rem;
-    color: #f4f4f5;
-    font-size: 0.8125rem;
-    font-family: inherit;
-    resize: none;
-    outline: none;
-  }
-
-  .ai-prompt-footer {
-    padding: 0.375rem 0.625rem;
-    background: #141416;
-    border-top: 1px solid #2a2a2e;
-  }
-
-  .ai-tip-container {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.625rem;
-  }
-  .tip-label {
-    font-weight: 700;
-    color: #0ea5e9;
-  }
-  .tip-text {
-    color: #52525b;
-    font-weight: 500;
-  }
-
-  .ai-generate-button {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem;
-    background: #0ea5e9;
-    color: white;
-    border: none;
-    border-radius: 8px;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms;
-    width: 100%;
-  }
-
-  .ai-generate-button:hover:not(:disabled) {
-    filter: brightness(1.1);
-  }
-  .ai-generate-button:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  .ai-generating-status {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.5rem 0.625rem;
-    background: rgba(14, 165, 233, 0.08);
-    border-radius: 6px;
-    color: #0ea5e9;
-    font-size: 0.6875rem;
-  }
-
-  .scene-progress-bar {
-    width: 100%;
-    height: 3px;
-    background: rgba(14, 165, 233, 0.15);
-    border-radius: 2px;
-    overflow: hidden;
-  }
-
-  .scene-progress-fill {
-    height: 100%;
-    background: #0ea5e9;
-    border-radius: 2px;
-    transition: width 0.4s ease;
-  }
-
-  .scene-phase {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .scene-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .scene-list-header {
-    font-size: 0.625rem;
-    font-weight: 600;
-    color: #0ea5e9;
-    margin-bottom: 0.125rem;
-  }
-
-  .scene-item {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.375rem;
-    border-radius: 4px;
-    font-size: 0.625rem;
-    transition: all 0.2s;
-  }
-
-  .scene-item--pending {
-    color: #52525b;
-  }
-  .scene-item--generating {
-    color: #0ea5e9;
-    background: rgba(14, 165, 233, 0.08);
-  }
-  .scene-item--complete {
-    color: #22c55e;
-  }
-  .scene-item--error {
-    color: #ef4444;
-  }
-
-  .scene-item-indicator {
-    flex-shrink: 0;
-    width: 14px;
-    height: 14px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .scene-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 50%;
-    background: #3f3f46;
-  }
-
-  .scene-item-info {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 1px;
-  }
-
-  .scene-item-name {
-    font-weight: 600;
-    white-space: nowrap;
-  }
-
-  .scene-item-desc {
-    color: #71717a;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    font-size: 0.5625rem;
-  }
-
-  .scene-item--generating .scene-item-desc {
-    color: #7dd3fc;
-  }
-  .scene-item--complete .scene-item-desc {
-    color: #86efac;
-  }
-
-  .scene-item-time {
-    flex-shrink: 0;
-    font-size: 0.5625rem;
-    color: #52525b;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .status-pulse {
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    background: #0ea5e9;
-    animation: pulse 2s infinite;
-  }
-
-  .ai-error-message {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.625rem;
-    background: rgba(220, 38, 38, 0.1);
-    border: 1px solid rgba(220, 38, 38, 0.2);
-    border-radius: 6px;
-    color: #fca5a5;
-    font-size: 0.6875rem;
-  }
-
-  /* ═══ Toggle Button ═══ */
-  .aiv-toggle-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    background: #1a1a1e;
-    border: 1px solid #2a2a2e;
-    border-radius: 6px;
-    color: #a1a1aa;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 150ms;
-    width: 100%;
-  }
-
-  .aiv-toggle-btn:hover {
-    border-color: #0ea5e9;
-    color: #d4d4d8;
-  }
-
-  .prompt-examples-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-    margin-top: 0.5rem;
-  }
-
-  .example-item-btn {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.625rem;
-    padding: 0.5rem;
-    background: transparent;
-    border: 1px solid transparent;
-    border-radius: 6px;
-    text-align: left;
-    cursor: pointer;
-    transition: all 150ms;
-    color: #d4d4d8;
-  }
-
-  .example-item-btn:hover {
-    background: #1a1a1e;
-    border-color: #2a2a2e;
-  }
-
-  .example-icon {
-    font-size: 1rem;
-  }
-  .example-name {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: #d4d4d8;
-  }
-  .example-desc {
-    font-size: 0.625rem;
-    color: #71717a;
-    line-height: 1.3;
-  }
-
-  /* ═══ Control Sections ═══ */
-  .ai-control-section {
-    margin-bottom: 0.75rem;
-  }
-
-  .control-section-label {
-    font-size: 0.625rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: #71717a;
-    margin-bottom: 0.5rem;
-  }
-
-  .control-section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.5rem;
-  }
-
-  .control-section-value {
-    font-size: 0.625rem;
-    font-weight: 600;
-    color: #0ea5e9;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .intensity-slider-row {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-  .intensity-label {
-    font-size: 0.5625rem;
-    color: #52525b;
-    white-space: nowrap;
-    flex-shrink: 0;
-  }
-  .intensity-slider {
-    flex: 1;
-    height: 4px;
-    accent-color: #0ea5e9;
-    cursor: pointer;
-  }
-
-  /* ═══ Credit Confirmation Dialog ═══ */
-  .credit-confirm-overlay {
-    position: fixed;
-    inset: 0;
-    background: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-    backdrop-filter: blur(4px);
-  }
-
-  .credit-confirm-dialog {
-    background: #1a1a1e;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 16px;
-    padding: 28px 32px;
-    max-width: 360px;
-    width: 90%;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 12px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  }
-
-  .credit-confirm__icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background: rgba(14, 165, 233, 0.15);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: #0ea5e9;
-  }
-
-  .credit-confirm__title {
-    font-size: 18px;
-    font-weight: 700;
-    color: rgba(255, 255, 255, 0.95);
-    margin: 0;
-  }
-
-  .credit-confirm__desc {
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.5);
-    text-align: center;
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  .credit-confirm__cost {
-    display: flex;
-    align-items: baseline;
-    gap: 6px;
-    padding: 8px 20px;
-    background: rgba(14, 165, 233, 0.1);
-    border: 1px solid rgba(14, 165, 233, 0.2);
-    border-radius: 10px;
-    margin: 4px 0;
-  }
-
-  .credit-confirm__amount {
-    font-size: 28px;
-    font-weight: 800;
-    color: #0ea5e9;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .credit-confirm__unit {
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.5);
-    font-weight: 500;
-  }
-
-  .credit-confirm__actions {
-    display: flex;
-    gap: 10px;
-    width: 100%;
-    margin-top: 4px;
-  }
-
-  .credit-confirm__btn {
-    flex: 1;
-    padding: 10px 16px;
-    border-radius: 10px;
-    font-size: 14px;
-    font-weight: 600;
-    cursor: pointer;
-    border: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 6px;
-    transition: all 0.15s;
-  }
-
-  .credit-confirm__btn--cancel {
-    background: rgba(255, 255, 255, 0.06);
-    color: rgba(255, 255, 255, 0.6);
-  }
-
-  .credit-confirm__btn--cancel:hover {
-    background: rgba(255, 255, 255, 0.1);
-  }
-
-  .credit-confirm__btn--confirm {
-    background: linear-gradient(135deg, #0ea5e9 0%, #0284c7 100%);
-    color: white;
-    box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3);
-  }
-
-  .credit-confirm__btn--confirm:hover {
-    background: linear-gradient(135deg, #0284c7 0%, #0369a1 100%);
-    transform: translateY(-1px);
-    box-shadow: 0 6px 16px rgba(14, 165, 233, 0.4);
-  }
-
-  /* ═══ Generating Overlay ═══ */
-  .preview-generating {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 100%;
-    height: 100%;
-    background: radial-gradient(ellipse at center, rgba(14, 165, 233, 0.08) 0%, transparent 70%);
-  }
-
-  .generating-visual {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 16px;
-    text-align: center;
-    max-width: 320px;
-  }
-
-  .generating-spinner {
-    color: #0ea5e9;
-    animation: pulse-glow 2s ease-in-out infinite;
-  }
-
-  @keyframes pulse-glow {
-    0%,
-    100% {
-      filter: drop-shadow(0 0 8px rgba(14, 165, 233, 0.3));
-    }
-    50% {
-      filter: drop-shadow(0 0 20px rgba(14, 165, 233, 0.6));
-    }
-  }
-
-  .generating-visual h3 {
-    font-size: 18px;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.9);
-    margin: 0;
-  }
-
-  .generating-visual p {
-    font-size: 13px;
-    color: rgba(255, 255, 255, 0.5);
-    margin: 0;
-  }
-
-  .generating-progress {
-    width: 100%;
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
-  .generating-progress__bar {
-    flex: 1;
-    height: 6px;
-    background: rgba(255, 255, 255, 0.08);
-    border-radius: 3px;
-    overflow: hidden;
-  }
-
-  .generating-progress__fill {
-    height: 100%;
-    background: linear-gradient(90deg, #0ea5e9, #38bdf8);
-    border-radius: 3px;
-    transition: width 0.5s ease;
-  }
-
-  .generating-progress__label {
-    font-size: 12px;
-    font-weight: 600;
-    color: #38bdf8;
-    min-width: 36px;
-    text-align: right;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .generating-scenes {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    justify-content: center;
-    margin-top: 4px;
-  }
-
-  .generating-scene {
-    display: flex;
-    align-items: center;
-    gap: 4px;
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 11px;
-    background: rgba(255, 255, 255, 0.04);
-    color: rgba(255, 255, 255, 0.4);
-  }
-
-  .generating-scene--generating {
-    background: rgba(14, 165, 233, 0.15);
-    color: #38bdf8;
-  }
-
-  .generating-scene--complete {
-    background: rgba(34, 197, 94, 0.12);
-    color: #4ade80;
-  }
-
-  .generating-scene__dot {
-    width: 6px;
-    height: 6px;
-    border-radius: 50%;
-    background: rgba(255, 255, 255, 0.2);
-  }
-
-  .preview-generating__cancel {
-    padding: 6px 11px;
-    border: 1px solid rgba(248, 113, 113, 0.28);
-    border-radius: 7px;
-    background: rgba(248, 113, 113, 0.08);
-    color: #fca5a5;
-    cursor: pointer;
-    font-size: 11px;
-  }
-
-  /* ═══ Animations ═══ */
-  @keyframes pulse {
-    0%,
-    100% {
-      opacity: 1;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 0.5;
-      transform: scale(0.9);
-    }
-  }
-
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 0.2s ease;
-  }
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  /* ═══ Panel Slide Transition ═══ */
-  .panel-slide-enter-active {
-    transition:
-      opacity 0.15s ease,
-      transform 0.15s ease;
-  }
-  .panel-slide-leave-active {
-    transition:
-      opacity 0.1s ease,
-      transform 0.1s ease;
-  }
-  .panel-slide-enter-from {
-    opacity: 0;
-    transform: translateX(-8px);
-  }
-  .panel-slide-leave-to {
-    opacity: 0;
-    transform: translateX(-8px);
-  }
-
-  @media (max-width: 1100px) {
-    .aiv-sidebar {
-      width: min(400px, 44vw);
-      min-width: 300px;
-    }
-
-    .aiv-timeline {
-      height: 200px;
-    }
-  }
-
-  @media (max-width: 860px) {
-    .aiv-content {
-      flex-direction: column;
-    }
-
-    .aiv-sidebar {
-      width: 100%;
-      min-width: 0;
-      max-width: none;
-      border-right: none;
-      border-bottom: 1px solid #1e1e22;
-      height: 55%;
-    }
-
-    .aiv-preview {
-      min-height: 0;
-    }
-
-    .aiv-timeline {
-      height: 168px;
-    }
-  }
-
-  /* ═══ Scrollbar ═══ */
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 4px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: #2a2a2e;
-    border-radius: 10px;
-  }
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: #3f3f46;
-  }
-
-  /* ═══ Project Name Input ═══ */
-  .project-name-input {
-    width: 100%;
-    padding: 12px 16px;
-    background: rgba(255, 255, 255, 0.06);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 10px;
-    color: white;
-    font-size: 14px;
-    font-family: inherit;
-    transition: all 0.2s;
-  }
-
-  .project-name-input:focus {
-    outline: none;
-    background: rgba(255, 255, 255, 0.08);
-    border-color: #0ea5e9;
-    box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.1);
-  }
-
-  .project-name-input::placeholder {
-    color: rgba(255, 255, 255, 0.3);
-  }
-
-  .project-name-error {
-    margin: 8px 0 0 0;
-    font-size: 12px;
-    color: #ef4444;
-    font-weight: 500;
-  }
-</style>

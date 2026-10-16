@@ -64,34 +64,40 @@ function handleClick() {
 <template>
 	<button
 		type="button"
-		class="group relative flex aspect-square cursor-grab items-center justify-center rounded-lg border border-white/[0.06] bg-white/[0.03] transition-all hover:border-white/15 hover:bg-white/[0.07] active:cursor-grabbing"
-		:class="isAdding && 'pointer-events-none opacity-40'"
+		:class="[
+			'group/sticker relative flex aspect-square min-w-0 cursor-grab items-center justify-center rounded-md border transition-colors active:cursor-grabbing',
+			'focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]',
+			isAdding
+				? 'pointer-events-none border-brand-line bg-brand-soft'
+				: 'border-line-subtle bg-surface-raised hover:border-brand-line hover:bg-brand-soft',
+		]"
 		:title="`${displayName} (${collectionPrefix})`"
+		:aria-label="`Add ${displayName} sticker`"
 		@click="handleClick"
 		@pointerdown="handlePointerDown"
 		@dragstart.prevent
 	>
-		<!-- Icon preview -->
-		<div v-if="!imageError" class="flex size-full items-center justify-center p-2.5">
+		<!-- Icon preview (user content) -->
+		<div v-if="!imageError" class="flex size-full items-center justify-center p-2">
 			<img
 				:src="getSrc()"
 				:alt="displayName"
-				class="size-full object-contain"
+				class="size-full object-contain transition-transform duration-150 group-hover/sticker:scale-110"
 				loading="lazy"
 				draggable="false"
 				@error="handleImgError"
 			/>
 		</div>
 		<!-- Fallback text -->
-		<div v-else class="flex size-full items-center justify-center p-1.5">
-			<span class="text-center text-[10px] leading-tight text-zinc-500 break-all">
+		<div v-else class="flex size-full items-center justify-center p-1">
+			<span class="break-all text-center text-2xs leading-tight text-fg-subtle">
 				{{ displayName }}
 			</span>
 		</div>
 
 		<!-- Adding spinner overlay -->
-		<div v-if="isAdding" class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-black/50">
-			<Loader2 class="size-4 animate-spin text-white" />
+		<div v-if="isAdding" class="absolute inset-0 grid place-items-center rounded-md bg-[var(--overlay)]">
+			<Loader2 class="size-4 animate-spin text-fg" />
 		</div>
 	</button>
 </template>
