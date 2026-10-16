@@ -1,11 +1,72 @@
 @import 'tailwindcss';
 @import '../../../client/src/styles/theme.css';
 @import '../../../client/src/fonts.css';
+@source '../../../client/src/components/BuildCard.vue';
+@source '../../../client/src/components/VideoPlayerDialog.vue';
 @custom-variant dark (&:is(.dark *));
 @source './**/*.{vue,ts}';
+@source '../../../client/src/pages/ClipperProfilePage.vue';
+@source '../../../client/src/components/EditProfileDialog.vue';
+@source '../../../client/src/components/ClipperProfileOnboardingWizard.vue';
+@source '../../../client/src/components/AccountSettingsDialog.vue';
+@source '../../../client/src/components/settings/*.vue';
+@source '../../../client/src/components/UserPostsList.vue';
+@source '../../../client/src/components/*PublishDialog.vue';
+@source '../../../client/src/components/AddPostDialog.vue';
+@source '../../../client/src/components/CustomTimePicker.vue';
+@source '../../../client/src/components/Timeline*.vue';
+@source '../../../client/src/components/TranscriptPanel.vue';
+@source '../../../client/src/components/SubtitlePropertiesPanel.vue';
+@source '../../../client/src/components/SubtitleEditorDialog.vue';
+@source '../../../client/src/components/SubtitleAdjustmentDialog.vue';
+@source '../../../client/src/components/ClipTextBoxPropertiesPanel.vue';
+@source '../../../client/src/components/ClipDetectionConfirmDialog.vue';
+@source '../../../client/src/components/TranscriptionConfirmDialog.vue';
+@source '../../../client/src/components/CreateClipDialog.vue';
+@source '../../../client/src/components/ConfirmationModal.vue';
+@source '../../../client/src/components/ClipsTabView.vue';
+@source '../../../client/src/components/WorkspaceClipCardView.vue';
+@source '../../../client/src/components/WorkspaceMediaHeader.vue';
+@source '../../../client/src/components/WorkspacePreviewControls.vue';
+@source '../../../client/src/editor/components/preview/SocialOverlay.vue';
+@source '../../../client/src/components/ClipGenerationProgress.vue';
+@source '../../../client/src/components/Quick*.vue';
+@source '../../../client/src/components/Build*.vue';
+@theme inline {
+  --color-background: var(--sidebar-bg);
+  --color-foreground: var(--sidebar-text);
+  --color-muted: var(--sidebar-hover);
+  --color-muted-foreground: var(--sidebar-text-muted);
+  --color-border: var(--sidebar-border);
+  --color-input: var(--sidebar-border);
+  --color-ring: var(--editor-accent);
+  --color-primary: var(--editor-accent);
+  --color-primary-foreground: #000;
+  --color-secondary: var(--sidebar-surface);
+  --color-secondary-foreground: var(--sidebar-text);
+  --color-popover: var(--sidebar-surface);
+  --color-popover-foreground: var(--sidebar-text);
+  --color-card: var(--sidebar-surface);
+  --color-card-foreground: var(--sidebar-text);
+}
 @source '../../../client/src/components/VideoPlayer.vue';
 @source '../../../client/src/components/VideoControls.vue';
 @source '../../../client/src/components/ProjectWorkspaceHeader.vue';
+@source '../../../client/src/components/CreatorProfilesView.vue';
+@source '../../../client/src/components/StreamVodsView.vue';
+@source '../../../client/src/components/ProjectLibraryView.vue';
+@source '../../../client/src/components/DownloadCard.vue';
+@source '../../../client/src/components/CustomDropdown.vue';
+@source '../../../client/src/components/ProjectDialog.vue';
+@source '../../../client/src/components/SearchPalette.vue';
+@source '../../../client/src/components/PaginationFooter.vue';
+@source '../../../client/src/components/CreatorDownloadDialog.vue';
+@source '../../../client/src/components/TimeRangePicker.vue';
+@source '../../../client/src/components/AddPostDialog.vue';
+@source '../../../client/src/components/organization/ExternalPostSubmitDialog.vue';
+@source '../../../client/src/components/ui/button';
+@source '../../../client/src/components/ui/input';
+@source '../../../client/src/components/ui/dropdown-menu';
 @layer base {
   body {
     margin: 0;
@@ -45,3 +106,10 @@
     @apply inline-flex items-center justify-center gap-2 rounded-lg border border-white/10 bg-white/5 px-3 py-2 text-sm text-zinc-200 hover:bg-white/10;
   }
 }
+@source "../../../client/src/components/ProfileDialog.vue";
+@source "../../../client/src/components/WatermarkPositionPicker.vue";
+@source "../../../client/src/components/OverlayPositionPicker.vue";
+@source "../../../client/src/components/IntroOutroRatioPicker.vue";
+@source "../../../client/src/components/poi";
+@source "../../../client/src/components/ui/switch";
+@source "../../../client/src/components/ui/checkbox";

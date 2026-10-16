@@ -34,7 +34,7 @@ export async function createWebApp(config: Config) {
     store.db.prepare('SELECT 1').get()
     res.json({ status: 'ok' })
   })
-  app.use(express.json({ limit: '64kb' }))
+  app.use(express.json({ limit: '8mb' }))
   app.use('/api/auth', auth.router)
   app.use('/api/web', workspaceRoutes(store, config, auth, jobs))
   app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found.' }))
@@ -70,7 +70,7 @@ export async function createWebApp(config: Config) {
       })
     if (status >= 500)
       console.error(
-        JSON.stringify({ event: 'web_request_failed', status, type: error.name || 'Error' })
+        JSON.stringify({ event: 'web_request_failed', status, type: error.name || 'Error', ...(process.env.NODE_ENV !== 'production' ? { message: error.message, stack: error.stack } : {}) })
       )
   }
   app.use(errors)

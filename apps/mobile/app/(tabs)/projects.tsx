@@ -4,17 +4,13 @@ import { useCallback, useEffect, useState } from 'react'
 import { ActivityIndicator, Image, Pressable, ScrollView, Text, View } from 'react-native'
 import { ScreenHeader } from '@/components/ScreenHeader'
 import { WorkspaceActions } from '@/components/navigation/WorkspaceActions'
-import { QuickAction } from '@/components/navigation/QuickAction'
 import { DownloadProgressCard } from '@/components/DownloadProgressCard'
 import { BottomSheet } from '@/components/ui/BottomSheet'
-import { Button } from '@/components/ui/button'
 import { Tabs } from '@/components/ui/tabs'
 import { MenuRow } from '@/components/navigation/MenuRow'
-import { Input } from '@/components/ui/input'
 import { useAccount } from '@/context/AccountContext'
 import type { Project } from '@clippster/shared-types'
 import { getAllProjects, getRawVideoByProjectId } from '@/services/database'
-import { pickAndImportLocalVideo } from '@/services/localVideoImport'
 import { tokens } from '@/theme/tokens'
 import { deleteProjectEverywhere } from '@/services/cloudSync'
 import {
@@ -53,12 +49,9 @@ function formatDuration(seconds: number | null | undefined): string {
 
 export default function ProjectsScreen() {
   const { requireSubscription } = useAccount()
-  const [libraryTab, setLibraryTab] = useState('projects')
+  const [libraryTab, setLibraryTab] = useState('uploads')
   const [projects, setProjects] = useState<ProjectRow[]>([])
   const [loading, setLoading] = useState(true)
-  const [showCreate, setShowCreate] = useState(false)
-  const [sourceUrl, setSourceUrl] = useState('')
-  const [importing, setImporting] = useState(false)
   const [jobs, setJobs] = useState<DownloadJob[]>([])
   const [menuProject, setMenuProject] = useState<ProjectRow | null>(null)
 
@@ -121,37 +114,6 @@ export default function ProjectsScreen() {
     }
   }, [jobs, loadProjects])
 
-  function closeCreateModal() {
-    setShowCreate(false)
-    setSourceUrl('')
-  }
-
-  function handlePasteUrl() {
-    const url = sourceUrl.trim()
-    if (!url) return
-    closeCreateModal()
-    router.push({ pathname: '/(tabs)/download', params: { source: url } })
-  }
-
-  async function handleImportVideo() {
-    const allowed = await requireSubscription({
-      context: 'Import a local video',
-      type: 'project'
-    })
-    if (!allowed) return
-
-    setImporting(true)
-    try {
-      const projectId = await pickAndImportLocalVideo()
-      if (projectId) {
-        closeCreateModal()
-        router.push(`/project/${projectId}`)
-      }
-    } finally {
-      setImporting(false)
-    }
-  }
-
   function openProjectMenu(project: ProjectRow) {
     setMenuProject(project)
   }
@@ -210,25 +172,6 @@ export default function ProjectsScreen() {
     <View className="flex-1 bg-background">
       <ScreenHeader showLogo rightAction={<WorkspaceActions />} />
       <ScrollView contentContainerStyle={{ paddingHorizontal: 20, paddingTop: 10, paddingBottom: 24, gap: 17 }}>
-        <View className="rounded-[18px] border border-border bg-surface p-5">
-          <Text className="mb-2 text-xl font-bold tracking-tight text-foreground">Make your next move.</Text>
-          <Text className="text-sm leading-5 text-muted">Pick up an edit or start with a new video.</Text>
-        </View>
-        <Text className="text-sm font-semibold text-foreground">Quick actions</Text>
-        <View className="flex-row gap-2">
-          <QuickAction icon="Plus" title="New project" onPress={() => setShowCreate(true)} />
-          <QuickAction icon="Link" title="Find video" onPress={() => router.push('/(tabs)/download')} />
-          <QuickAction
-            icon="Sparkles"
-            title="AI clips"
-            onPress={() => {
-              const project = projects[0]
-              if (project) router.push(`/project/${project.id}?detect=1`)
-              else appAlert('Add a video first', 'Download or import a video to find clips with AI.')
-            }}
-          />
-          <QuickAction icon="Users" title="Shared clips" onPress={() => router.push('/(tabs)/inbox')} />
-        </View>
         <DownloadProgressCard
           jobs={jobs}
           onOpenProject={(id) => router.push(`/project/${id}`)}
@@ -272,7 +215,7 @@ export default function ProjectsScreen() {
         <Text className="text-[17px] font-semibold text-foreground">Your library</Text>
         <Tabs
           items={[
-            { key: 'projects', label: 'Projects' },
+            { key: 'uploads', label: 'Uploads' },
             { key: 'downloads', label: 'Downloads' }
           ]}
           value={libraryTab}
@@ -284,11 +227,11 @@ export default function ProjectsScreen() {
           <ProjectCategory
             title=""
             emptyMessage={
-              libraryTab === 'projects'
-                ? 'Your projects will appear here. Start with a new video.'
+              libraryTab === 'uploads'
+                ? 'Videos imported from your phone and editor drafts will appear here.'
                 : 'Videos downloaded from a URL will appear here.'
             }
-            items={libraryTab === 'projects' ? editorProjects : downloads}
+            items={libraryTab === 'uploads' ? editorProjects : downloads}
             onOpen={(project) =>
               project.hasEditorDraft
                 ? router.push({ pathname: '/edit/[kind]/[id]', params: { kind: 'project', id: project.id } })
@@ -322,51 +265,6 @@ export default function ProjectsScreen() {
         <MenuRow icon="Trash2" title="Delete project" destructive onPress={handleDeleteProject} />
       </BottomSheet>
 
-      <BottomSheet
-        visible={showCreate}
-        onClose={closeCreateModal}
-        variant="sheet"
-        title="Where’s your video?"
-        keyboardAvoiding
-        closeMode="none"
-        secondaryAction={{ title: 'Cancel', onPress: closeCreateModal, variant: 'ghost' }}
-      >
-        <View className="gap-3">
-          <Input
-            value={sourceUrl}
-            onChangeText={setSourceUrl}
-            onSubmitEditing={handlePasteUrl}
-            placeholder="Paste a video or channel URL"
-            autoCapitalize="none"
-            autoCorrect={false}
-            returnKeyType="go"
-          />
-          <Button
-            title="Find video"
-            variant="accent"
-            onPress={handlePasteUrl}
-            disabled={!sourceUrl.trim() || importing}
-          />
-        </View>
-
-        <View pointerEvents={importing ? 'none' : 'auto'}>
-          <MenuRow
-            icon="FolderOpen"
-            title={importing ? 'Importing…' : 'Import from device'}
-            subtitle="Choose a video from Files"
-            onPress={() => void handleImportVideo()}
-          />
-          <MenuRow
-            icon="Film"
-            title="Start in editor"
-            subtitle="Build a project with your own media"
-            onPress={() => {
-              closeCreateModal()
-              router.push('/(tabs)/editor')
-            }}
-          />
-        </View>
-      </BottomSheet>
     </View>
   )
 }

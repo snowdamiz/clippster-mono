@@ -99,7 +99,6 @@
                 :download="{
                   id: download.id,
                   title: download.title,
-                  mintId: download.id,
                   progress: {
                     download_id: download.id,
                     progress: download.progress,
@@ -107,7 +106,6 @@
                     current_time: undefined,
                     total_time: undefined,
                   },
-                  result: undefined,
                 }"
               />
             </div>

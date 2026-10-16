@@ -88,7 +88,8 @@
         <button
           @click="handleDeleteClick"
           class="btn-danger"
-          :disabled="isCalculating || !storageInfo"
+          :disabled="!deletionEnabled || isCalculating || !storageInfo"
+          :title="deletionEnabled ? 'Clear local storage' : 'Source-media cleanup is unavailable on web'"
         >
           <Trash2 :size="18" />
           Clear Local Storage
@@ -108,9 +109,8 @@
 <script setup lang="ts">
 import { ref, onMounted } from 'vue';
 import { AlertTriangle, HardDrive, Trash2, Shield, Loader2 } from 'lucide-vue-next';
-import { invoke } from '@tauri-apps/api/core';
+import { invoke, performCompleteCleanup } from '@/services/settingsRuntime';
 import { useToast } from '@/composables/useToast';
-import { performCompleteCleanup } from '@/services/database/storage-cleanup';
 import DeleteDataConfirmDialog from './DeleteDataConfirmDialog.vue';
 
 interface StorageSizeInfo {
@@ -131,6 +131,7 @@ interface DeletionResult {
 }
 
 const { error, success } = useToast();
+defineProps({ deletionEnabled: { type: Boolean, default: true } });
 
 const storageInfo = ref<StorageSizeInfo | null>(null);
 const isCalculating = ref(false);

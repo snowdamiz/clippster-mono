@@ -129,7 +129,7 @@
 <script setup lang="ts">
   import { computed } from 'vue';
   import { Play, Trash2, Download, Video, ExternalLink, Share2, Check } from 'lucide-vue-next';
-  import type { ClipBuild } from '@/services/database';
+  import type { ClipBuild } from '@/services/database/types';
   import { useFormatters } from '@/composables/useFormatters';
 
   const props = defineProps<{

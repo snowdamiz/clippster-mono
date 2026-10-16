@@ -381,7 +381,7 @@
 <script setup lang="ts">
   defineOptions({ inheritAttrs: false });
   import { ref, computed, watch, reactive, onUnmounted } from 'vue';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke } from '@/services/creatorProfileRuntime';
   import {
     X,
     Move,
@@ -395,8 +395,9 @@
     Upload,
     Loader2,
   } from 'lucide-vue-next';
-  import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
-  import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
+  import { getAllWatermarkImages } from '@/services/creatorProfileRuntime';
+  import type { WatermarkImage } from '@/services/database/types';
+  import { useWatermarkOperations } from '@/services/creatorProfileRuntime';
   import MediaPreview from '@/components/MediaPreview.vue';
 
   // Types for watermark settings per aspect ratio

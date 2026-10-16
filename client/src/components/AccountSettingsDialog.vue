@@ -372,7 +372,7 @@
                 </div>
 
                 <!-- App Tours -->
-                <div class="account-settings__section">
+                <div v-if="desktopToolsAvailable" class="account-settings__section">
                   <h3 class="account-settings__section-title">App Tours</h3>
                   <p class="account-settings__section-desc">Restart a guided tour anytime. Skip or Finish marks it complete.</p>
                   <div class="account-settings__section-items">
@@ -388,7 +388,8 @@
                       <button
                         type="button"
                         class="account-settings__restart-btn"
-                        :disabled="restartingTour === tour.id"
+                        :disabled="!desktopToolsAvailable || restartingTour === tour.id"
+                        :title="desktopToolsAvailable ? 'Restart tour' : 'Desktop tours require Clippster Desktop'"
                         @click="onRestartTour(tour.id)"
                       >
                         <RefreshCw :size="14" />
@@ -473,7 +474,7 @@
                     </div>
 
                     <!-- Background Notifications -->
-                    <div class="account-settings__toggle-row" :class="{ 'account-settings__field--disabled': !prefsStore.toastEnabled }">
+                    <div v-if="desktopToolsAvailable" class="account-settings__toggle-row" :class="{ 'account-settings__field--disabled': !prefsStore.toastEnabled }">
                       <div class="account-settings__toggle-info">
                         <span class="account-settings__toggle-label">Background Notifications</span>
                         <span class="account-settings__toggle-desc">Show notifications when app is minimized</span>
@@ -495,7 +496,7 @@
                   <h3 class="account-settings__section-title">Notification Categories</h3>
                   <div class="account-settings__section-items">
                     <div
-                      v-for="cat in categoryOptions"
+                      v-for="cat in categoryOptions.filter(option => desktopToolsAvailable || option.key !== 'notify_livestream')"
                       :key="cat.key"
                       class="account-settings__toggle-row"
                     >
@@ -517,8 +518,8 @@
               </template>
 
               <!-- ==================== DELETE DATA TAB ==================== -->
-              <template v-if="activeTab === 'delete'">
-                <DeleteDataTab />
+              <template v-if="desktopToolsAvailable && activeTab === 'delete'">
+                <DeleteDataTab :deletion-enabled="desktopToolsAvailable" />
               </template>
 
             </div>
@@ -535,9 +536,10 @@ import { X, Settings, Mail, Lock, CheckCircle, AlertCircle, Info, Clock, Bell, U
 import { useAuthStore } from '@/stores/auth';
 import { useUserPreferencesStore } from '@/stores/userPreferences';
 import DeleteDataTab from '@/components/settings/DeleteDataTab.vue';
-import { useAppTour } from '@/composables/useAppTour';
+import { useAppTour } from '@/services/settingsRuntime';
 
 const props = defineProps({
+  desktopToolsAvailable: { type: Boolean, default: true },
   show: {
     type: Boolean,
     required: true,
@@ -572,12 +574,12 @@ async function onRestartTour(tourId) {
 }
 
 // Tab navigation
-const tabs = [
+const tabs = computed(() => [
   { id: 'account', label: 'Account', icon: markRaw(User) },
   { id: 'preferences', label: 'Preferences', icon: markRaw(Clock) },
   { id: 'notifications', label: 'Notifications', icon: markRaw(Bell) },
-  { id: 'delete', label: 'Delete Data', icon: markRaw(Trash2) },
-];
+  ...(props.desktopToolsAvailable ? [{ id: 'delete', label: 'Delete Data', icon: markRaw(Trash2) }] : []),
+]);
 const activeTab = ref('account');
 
 // Duration options

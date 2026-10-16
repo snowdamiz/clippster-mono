@@ -1,0 +1,216 @@
+{
+  "source": "landing/src",
+  "strategy": "Reuse production route components and data; preview-only shared visual transforms.",
+  "pages": [
+    {
+      "path": "/",
+      "title": "Clippster",
+      "type": "home"
+    },
+    {
+      "path": "/clipping-tool",
+      "title": "AI Clipping Tool for Streamers",
+      "type": "pillar"
+    },
+    {
+      "path": "/video-editor",
+      "title": "Desktop Video Editor for Creators",
+      "type": "pillar"
+    },
+    {
+      "path": "/live-stream-clipping",
+      "title": "Live Stream Clipping Software",
+      "type": "pillar"
+    },
+    {
+      "path": "/clipping-campaigns",
+      "title": "Clipping Campaign Software",
+      "type": "pillar"
+    },
+    {
+      "path": "/for-organizations",
+      "title": "Clipping Tools for Organizations",
+      "type": "pillar"
+    },
+    {
+      "path": "/social-posting",
+      "title": "Schedule Clips to TikTok, Reels & Shorts",
+      "type": "pillar"
+    },
+    {
+      "path": "/clip-analytics",
+      "title": "Clip Performance Analytics",
+      "type": "pillar"
+    },
+    {
+      "path": "/design-studio",
+      "title": "Design Studio for Thumbnails (Beta)",
+      "type": "pillar"
+    },
+    {
+      "path": "/platforms/twitch",
+      "title": "Twitch Clipping Tool",
+      "type": "platform"
+    },
+    {
+      "path": "/platforms/kick",
+      "title": "Kick Clipping Tool",
+      "type": "platform"
+    },
+    {
+      "path": "/platforms/youtube",
+      "title": "YouTube Clipping & Shorts Publishing",
+      "type": "platform"
+    },
+    {
+      "path": "/platforms/pumpfun",
+      "title": "Pump.fun Livestream Clipping (Desktop)",
+      "type": "platform"
+    },
+    {
+      "path": "/platforms/x",
+      "title": "Clip X Livestreams & Post to X",
+      "type": "platform"
+    },
+    {
+      "path": "/platforms/rumble",
+      "title": "Rumble Live & VOD Clipping",
+      "type": "platform"
+    },
+    {
+      "path": "/vs/opus-clip",
+      "title": "Clippster vs Opus Clip",
+      "type": "comparison"
+    },
+    {
+      "path": "/vs/eklipse",
+      "title": "Clippster vs Eklipse",
+      "type": "comparison"
+    },
+    {
+      "path": "/vs/streamladder",
+      "title": "Clippster vs StreamLadder",
+      "type": "comparison"
+    },
+    {
+      "path": "/vs/medal",
+      "title": "Clippster vs Medal",
+      "type": "comparison"
+    },
+    {
+      "path": "/vs/powder",
+      "title": "Clippster vs Powder",
+      "type": "comparison"
+    },
+    {
+      "path": "/guides/how-to-clip-twitch-streams",
+      "title": "How to Clip Twitch Streams",
+      "type": "guide"
+    },
+    {
+      "path": "/guides/how-to-clip-kick-streams",
+      "title": "How to Clip Kick Streams",
+      "type": "guide"
+    },
+    {
+      "path": "/guides/clip-pumpfun-livestreams",
+      "title": "How to Clip Pump.fun Livestreams",
+      "type": "guide"
+    },
+    {
+      "path": "/guides/clip-during-live-stream",
+      "title": "How to Clip During a Live Stream",
+      "type": "guide"
+    },
+    {
+      "path": "/guides/twitch-to-tiktok-workflow",
+      "title": "Twitch to TikTok Workflow",
+      "type": "guide"
+    },
+    {
+      "path": "/guides/stream-to-youtube-shorts",
+      "title": "Stream to YouTube Shorts Workflow",
+      "type": "guide"
+    },
+    {
+      "path": "/guides/vertical-crop-for-tiktok-reels-shorts",
+      "title": "Vertical Crop for TikTok, Reels & Shorts",
+      "type": "guide"
+    },
+    {
+      "path": "/guides/auto-captions-for-clips",
+      "title": "Auto Captions for Clips",
+      "type": "guide"
+    },
+    {
+      "path": "/guides/how-to-run-a-clipping-campaign",
+      "title": "How to Run a Clipping Campaign",
+      "type": "guide"
+    },
+    {
+      "path": "/guides/how-to-hire-clippers",
+      "title": "How to Hire Clippers",
+      "type": "guide"
+    },
+    {
+      "path": "/guides/make-money-clipping-streams",
+      "title": "Make Money Clipping Streams",
+      "type": "guide"
+    },
+    {
+      "path": "/guides/clipper-payouts-cpm",
+      "title": "Clipper Payouts & CPM Explained",
+      "type": "guide"
+    },
+    {
+      "path": "/guides/track-clip-views-across-platforms",
+      "title": "Track Clip Views Across Platforms",
+      "type": "guide"
+    },
+    {
+      "path": "/methodology",
+      "title": "SEO & Product Claim Methodology",
+      "type": "authority"
+    },
+    {
+      "path": "/authors/clippster-editorial",
+      "title": "Clippster Editorial",
+      "type": "authority"
+    },
+    {
+      "path": "/case-studies/live-clipping-vs-vod-queue",
+      "title": "Case Study: Live Clipping vs VOD Queue",
+      "type": "authority"
+    },
+    {
+      "path": "/case-studies/org-campaign-clipper-workflow",
+      "title": "Case Study: Organization Campaign Workflow",
+      "type": "authority"
+    },
+    {
+      "path": "/pricing",
+      "title": "Clippster Pricing",
+      "type": "legal"
+    },
+    {
+      "path": "/clippers",
+      "title": "Clipper Directory",
+      "type": "directory"
+    },
+    {
+      "path": "/orgs",
+      "title": "Clipping Organizations Directory",
+      "type": "directory"
+    },
+    {
+      "path": "/privacy",
+      "title": "Privacy Policy",
+      "type": "legal"
+    },
+    {
+      "path": "/terms",
+      "title": "Terms of Service",
+      "type": "legal"
+    }
+  ]
+}

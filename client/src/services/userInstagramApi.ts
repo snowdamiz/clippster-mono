@@ -3,7 +3,7 @@
  * Handles user-level Instagram account connections and post publishing
  */
 
-import api from './api';
+import api from '@/services/api';
 import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
 import { buildUserConnectUrlBody, type UserSocialConnectOptions } from './userSocialConnect';
 
@@ -27,6 +27,7 @@ export interface UserInstagramAccount {
 }
 
 export interface UserPost {
+  source?: 'personal' | 'organization';
   id: number;
   platform: 'instagram' | 'x' | 'tiktok' | 'youtube';
   post_id: string;
@@ -156,7 +157,7 @@ export async function startUserInstagramOAuth(
   }
 
   // Dynamic import to handle Tauri-specific code
-  const { invoke } = await import('@tauri-apps/api/core');
+  const { openSocialOAuth } = await import('@/services/socialOAuthRuntime');
 
   try {
     // Preferred flow: Post For Me generic OAuth
@@ -175,7 +176,7 @@ export async function startUserInstagramOAuth(
       throw new Error('Post For Me response did not include connection_id');
     }
 
-    await invoke('start_social_oauth', { authUrl: connectResponse.data.auth_url });
+    await openSocialOAuth(connectResponse.data.auth_url);
 
     let cancelled = false;
 

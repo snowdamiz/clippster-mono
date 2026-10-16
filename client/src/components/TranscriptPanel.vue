@@ -254,6 +254,7 @@
   }
 
   const emit = defineEmits<Emits>();
+  let autoscrollTimeout: ReturnType<typeof setTimeout> | null = null;
 
   const transcriptContent = ref<HTMLElement>();
   const loadingTranscript = ref(false);
@@ -726,14 +727,14 @@
       preventAutoscroll.value = true;
 
       // Clear any existing timeout
-      if (window.autoscrollTimeout) {
-        clearTimeout(window.autoscrollTimeout);
+      if (autoscrollTimeout) {
+        clearTimeout(autoscrollTimeout);
       }
 
       // Set new timeout - longer duration for better UX
-      window.autoscrollTimeout = setTimeout(() => {
+      autoscrollTimeout = setTimeout(() => {
         preventAutoscroll.value = false;
-        window.autoscrollTimeout = null;
+        autoscrollTimeout = null;
       }, 5000); // Prevent autoscroll for 5 seconds after manual click
 
       // DIRECT DOM MANIPULATION for instant feedback
@@ -766,14 +767,14 @@
     preventAutoscroll.value = true;
 
     // Clear any existing timeout
-    if (window.autoscrollTimeout) {
-      clearTimeout(window.autoscrollTimeout);
+    if (autoscrollTimeout) {
+      clearTimeout(autoscrollTimeout);
     }
 
     // Set new timeout for editing
-    window.autoscrollTimeout = setTimeout(() => {
+    autoscrollTimeout = setTimeout(() => {
       preventAutoscroll.value = false;
-      window.autoscrollTimeout = null;
+      autoscrollTimeout = null;
     }, 5000); // Prevent autoscroll for 5 seconds during editing
 
     // Start editing this word
@@ -830,7 +831,7 @@
 
     try {
       // Import database function dynamically to avoid circular imports
-      const { updateTranscriptWord } = await import('@/services/database');
+      const { updateTranscriptWord } = await import('@/services/workspaceRuntime');
 
       const result = await updateTranscriptWord(props.projectId, index, newText);
 
@@ -1140,9 +1141,9 @@
     }
 
     // Clear autoscroll timeout
-    if (window.autoscrollTimeout) {
-      clearTimeout(window.autoscrollTimeout);
-      window.autoscrollTimeout = null;
+    if (autoscrollTimeout) {
+      clearTimeout(autoscrollTimeout);
+      autoscrollTimeout = null;
     }
   });
 </script>

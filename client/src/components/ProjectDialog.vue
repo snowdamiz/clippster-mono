@@ -2,7 +2,7 @@
   <ProjectDialogFrame
     :model-value="modelValue"
     :editing="isEdit"
-    :loading="loading"
+    :loading="loading || saving"
     @close="close"
     @submit="handleSubmit"
   >
@@ -113,8 +113,8 @@
 <script setup lang="ts">
   import ProjectDialogFrame from './ProjectDialogFrame.vue';
   import { ref, watch, reactive, onMounted, computed } from 'vue';
-  import { open } from '@tauri-apps/plugin-dialog';
-  import { type Project, getAllCreatorProfiles, type CreatorProfileWithLinks } from '@/services/database';
+  import { openFileDialog as open, getAllCreatorProfiles } from '@/services/creatorProfileRuntime';
+  import type { CreatorProfileWithLinks } from '@/services/database/types';
   import { Video, X, Upload } from 'lucide-vue-next';
   import CustomDropdown from '@/components/CustomDropdown.vue';
 
@@ -127,7 +127,8 @@
 
   const props = defineProps<{
     modelValue: boolean;
-    project?: Project | null;
+    saving?: boolean;
+    project?: { id: string; name: string; description?: string | null; creator_profile_id?: string | null } | null;
   }>();
 
   const emit = defineEmits<{
@@ -289,7 +290,7 @@
   }
 
   function close() {
-    if (!loading.value) {
+    if (!loading.value && !props.saving) {
       emit('update:modelValue', false);
     }
   }

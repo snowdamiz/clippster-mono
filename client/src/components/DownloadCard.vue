@@ -50,7 +50,7 @@
     <div class="download-card__bottom">
       <h3 class="download-card__title" :title="download.title">{{ download.title }}</h3>
       <div class="download-card__meta">
-        <span class="download-card__status">{{ download.isQueued ? 'Waiting...' : 'Downloading...' }}</span>
+        <span class="download-card__status">{{ download.isQueued ? 'Waiting...' : download.message || 'Downloading...' }}</span>
         <span class="download-card__dot"></span>
         <span class="download-card__percent">{{ Math.round(download.progress.progress) }}%</span>
       </div>
@@ -71,14 +71,14 @@
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import { useDownloads, type ActiveDownload } from '@/composables/useDownloads';
+  import { useCreatorDownloadRuntime } from '@/services/creatorDownloadRuntime';
   import { Loader2, X, Clock } from 'lucide-vue-next';
   import ConfirmationModal from './ConfirmationModal.vue';
 
-  const { cancelDownload, cancelGroup } = useDownloads();
+  const { cancelDownload, cancelGroup } = useCreatorDownloadRuntime();
 
   interface Props {
-    download: ActiveDownload;
+    download: { id: string; title: string; message?: string; groupId?: string; segmentNumber?: number; isQueued?: boolean; progress: { progress: number; download_id?: string; current_time?: number; total_time?: number; status?: string } };
   }
 
   const props = defineProps<Props>();

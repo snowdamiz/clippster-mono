@@ -4,7 +4,9 @@ export async function run(
   args: string[],
   signal: AbortSignal,
   timeout = 30 * 60_000,
-  onOutput?: (text: string) => void
+  onOutput?: (text: string) => void,
+  captureOutput = true,
+  onBinaryOutput?: (chunk: Buffer) => void
 ): Promise<string> {
   signal.throwIfAborted()
   return new Promise((resolve, reject) => {
@@ -30,8 +32,9 @@ export async function run(
       timeout
     )
     child.stdout.on('data', (chunk: Buffer) => {
+      if (onBinaryOutput) { onBinaryOutput(chunk); return }
       const text = chunk.toString()
-      output += text
+      if (captureOutput) output += text
       onOutput?.(text)
       if (output.length > 8 * 1024 ** 2)
         stop(new Error('Media tool output exceeded its size limit.'))

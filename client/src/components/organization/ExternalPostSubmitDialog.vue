@@ -128,7 +128,7 @@
 import { ref, computed, watch } from 'vue';
 import { Link, ChevronDown, Loader2, Send } from 'lucide-vue-next';
 import { useToast } from '@/composables/useToast';
-import { submitExternalPost } from '@/services/schedulingApi';
+import { submitExternalPost } from '@/services/creatorProfileRuntime';
 
 interface CreatorProfile {
   id: number;

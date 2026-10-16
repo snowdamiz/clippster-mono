@@ -2,8 +2,8 @@
  * Timeline movement and resize constraint utilities
  */
 
-import { ClipSegment } from './timelineUtils'
-import { ClipSegment as DatabaseClipSegment } from '../services/database'
+import type { ClipSegment } from './timelineUtils'
+type DatabaseClipSegment = Pick<ClipSegment, 'start_time' | 'end_time'>
 import { TIMELINE_CONSTANTS } from '../constants/timelineConstants'
 
 export interface MovementConstraints {

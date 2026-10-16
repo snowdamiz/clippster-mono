@@ -220,6 +220,7 @@
 
     <!-- Clip Context Menu (for right-click on clip track) -->
     <TimelineClipContextMenu
+      :allow-editor="props.allowEditor"
       :show="showClipContextMenu"
       :info="clipContextMenuInfo"
       @close="closeClipContextMenu"
@@ -254,7 +255,7 @@
     deleteClip,
     createManualClip,
     addSegmentToClip,
-  } from '../services/database';
+  } from '@/services/workspaceRuntime';
   import { debounce, throttle } from '../utils/timelineUtils';
   import { createSeekEvent } from '../utils/videoSeekUtils';
   import { TRACK_DIMENSIONS, SELECTORS } from '../utils/timelineConstants';
@@ -286,6 +287,7 @@
 
   const props = withDefaults(defineProps<TimelineProps>(), {
     clips: () => [],
+    allowEditor: true,
   });
 
   // Simple two-state height: compact when no clip is visible, expanded when a clip is shown
@@ -293,7 +295,7 @@
   const TIMELINE_HEIGHT_EXPANDED = 204; // Adds space for one clip track
 
   const calculatedHeight = computed(() => {
-    return displayClips.value.length > 0 ? TIMELINE_HEIGHT_EXPANDED : TIMELINE_HEIGHT_COMPACT;
+    return Math.max(props.minHeight || 0, displayClips.value.length > 0 ? TIMELINE_HEIGHT_EXPANDED : TIMELINE_HEIGHT_COMPACT);
   });
 
   // With fixed heights sized appropriately, scrollbar is never needed

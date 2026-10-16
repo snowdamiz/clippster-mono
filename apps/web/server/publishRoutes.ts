@@ -17,7 +17,8 @@ export function publishRoutes(store: Store, auth: Auth, config: Config, jobs: Jo
     const project = store.get(String(req.params.id), owner)
     jobs.assertIdle(project.id, owner)
     const clip = project.clips.find(clip => clip.id === req.params.clipId)
-    requireValue(clip && clip.builtRevision === clip.revision, 409, 'Build the latest clip before publishing.')
+    requireValue(clip, 404, 'Clip not found.')
+    requireValue(req.body?.buildId || clip.builtRevision === clip.revision, 409, 'Build the latest clip before publishing.')
     const { accountId, organizationId, caption = '', scheduledAt, requestId } = req.body || {}
     requireValue(typeof requestId === 'string' && /^[\da-f-]{36}$/i.test(requestId), 400, 'Invalid publish request.')
     requireValue(Number.isSafeInteger(accountId) && accountId > 0, 400, 'Choose a social account.')
@@ -36,7 +37,9 @@ export function publishRoutes(store: Store, auth: Auth, config: Config, jobs: Jo
     const accounts = await upstream.get<{ success: boolean; social_accounts?: SocialAccount[]; accounts?: SocialAccount[] }>(organizationId ? `/organizations/${organizationId}/social-accounts` : '/user/social-accounts')
     const account = (organizationId ? accounts.accounts : accounts.social_accounts)?.find(account => account.id === accountId && account.is_active !== false)
     requireValue(accounts.success && account && WEB_PUBLISH_PLATFORMS.includes(account.platform), 400, 'Choose an active supported social account.')
-    const fingerprint = createHash('sha256').update(JSON.stringify([project.id, clip.id, clip.revision, accountId, organizationId || null, caption, scheduledAt || null])).digest('hex')
+    const build = req.body?.buildId ? clip.builds?.find(value => value.id === req.body.buildId) : undefined
+    requireValue(!req.body?.buildId || build, 404, 'This build is no longer available. Rebuild the clip before publishing.')
+    const fingerprint = createHash('sha256').update(JSON.stringify([project.id, clip.id, build?.revision ?? clip.revision, req.body?.buildId || null, accountId, organizationId || null, caption, scheduledAt || null])).digest('hex')
     const previous = store.db.prepare('SELECT * FROM publications WHERE id = ?').get(requestId) as { owner: string; fingerprint: string; status: string; result: string } | undefined
     if (previous) {
       requireValue(previous.owner === owner && previous.fingerprint === fingerprint, 409, 'Publish request has changed. Start a new request.')
@@ -44,7 +47,7 @@ export function publishRoutes(store: Store, auth: Auth, config: Config, jobs: Jo
       res.json(JSON.parse(previous.result)); return
     }
     store.db.prepare('INSERT INTO publications VALUES (?, ?, ?, ?, NULL)').run(requestId, owner, fingerprint, 'pending')
-    const file = await openAsBlob(join(projectDirectory(config, project.id), `${clip.id}.mp4`), { type: 'video/mp4' })
+    const file = await openAsBlob(join(projectDirectory(config, project.id), `${build?.id || clip.id}.mp4`), { type: 'video/mp4' })
     const form = new FormData(); form.append('file', file, `${clip.id}.mp4`)
     const media = await upstream.post<{ success: boolean; error?: string; media_url?: string }>(organizationId ? `/organizations/${organizationId}/posts/upload-media` : '/user/posts/upload-media', form)
     requireValue(media.success && media.media_url, 502, media.error || 'Unable to upload the built clip.')
@@ -55,6 +58,7 @@ export function publishRoutes(store: Store, auth: Auth, config: Config, jobs: Jo
     const result = await upstream.post<{ success: boolean; error?: string }>(scheduledAt ? '/social/schedule' : organizationId ? `/organizations/${organizationId}/posts/publish` : `/user/${platformRoute}/publish`, payload)
     requireValue(result.success, 502, result.error || 'Publishing was not confirmed. Check Posts before retrying.')
     store.db.prepare('UPDATE publications SET status = ?, result = ? WHERE id = ? AND owner = ?').run('completed', JSON.stringify(result), requestId, owner)
+    if (build && !scheduledAt) { const current = store.get(project.id, owner); const saved = current.clips.find(value => value.id === clip.id)?.builds?.find(value => value.id === build.id); if (saved) { saved.publishedAt = Date.now(); store.save(current, owner) } }
     res.json(result)
   })
   return router

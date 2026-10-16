@@ -18,64 +18,7 @@
                 class="workspace-dialog__player-column"
                 :class="{ 'workspace-dialog__player-column--fullscreen': isFullscreen }"
               >
-                <!-- Aspect Ratio Selector (only shown when VOD preset exists) -->
-                <div v-if="vodPresetConfig" class="workspace-dialog__aspect-selector">
-                  <label class="workspace-dialog__aspect-label">Preview:</label>
-                  <CustomDropdown
-                    v-model="previewAspectRatio"
-                    :options="aspectRatioOptions"
-                    placeholder="Select aspect ratio"
-                    class="workspace-dialog__aspect-dropdown"
-                  />
-
-                  <!-- Platform Preview Button (only shown for 9:16) -->
-                  <button
-                    v-if="is916"
-                    ref="socialButtonRef"
-                    type="button"
-                    class="workspace-dialog__platform-button"
-                    @click="showSocialMenu = !showSocialMenu"
-                  >
-                    <Smartphone :size="14" />
-                    <span>{{ activeSocialOverlay?.label || 'Platform' }}</span>
-                  </button>
-                </div>
-
-                <!-- Social Overlay Dropdown Menu -->
-                <Teleport to="body">
-                  <Transition name="dropdown">
-                    <div v-if="showSocialMenu && is916" class="workspace-dialog__social-menu" :style="socialMenuStyle">
-                      <!-- None option -->
-                      <button
-                        type="button"
-                        class="workspace-dialog__social-option"
-                        :class="{ 'workspace-dialog__social-option--active': !activeSocialOverlay }"
-                        @click="
-                          activeSocialOverlay = null;
-                          showSocialMenu = false;
-                        "
-                      >
-                        <span class="workspace-dialog__social-icon">✕</span>
-                        <span class="workspace-dialog__social-label">None</span>
-                      </button>
-
-                      <!-- Platform options -->
-                      <button
-                        v-for="preset in SOCIAL_OVERLAY_PRESETS"
-                        :key="preset.platform"
-                        type="button"
-                        class="workspace-dialog__social-option"
-                        :class="{
-                          'workspace-dialog__social-option--active': activeSocialOverlay?.platform === preset.platform,
-                        }"
-                        @click="toggleSocialOverlay(preset)"
-                      >
-                        <span class="workspace-dialog__social-icon">{{ preset.icon }}</span>
-                        <span class="workspace-dialog__social-label">{{ preset.label }}</span>
-                      </button>
-                    </div>
-                  </Transition>
-                </Teleport>
+                <WorkspacePreviewControls v-if="vodPresetConfig" v-model:ratio="previewAspectRatio" v-model:social="activeSocialOverlay" :options="aspectRatioOptions" />
 
                 <!-- Video Player Container -->
                 <div class="workspace-dialog__video-wrapper" style="position: relative">
@@ -408,7 +351,7 @@
     getVideoEditorProjectsForRawVideo,
     type VideoEditorProject,
   } from '@/services/database';
-  import { Smartphone, Clapperboard } from 'lucide-vue-next';
+  import { Clapperboard } from 'lucide-vue-next';
   import { invoke, convertFileSrc } from '@tauri-apps/api/core';
   import type {
     ActiveVodPresetConfig,
@@ -432,9 +375,8 @@
   import TranscriptPanel from './TranscriptPanel.vue';
   import SubtitlePropertiesPanel from './SubtitlePropertiesPanel.vue';
   import ClipTextBoxPropertiesPanel from './ClipTextBoxPropertiesPanel.vue';
-  import CustomDropdown from './CustomDropdown.vue';
+  import WorkspacePreviewControls from './WorkspacePreviewControls.vue';
   import SocialOverlay from '@/editor/components/preview/SocialOverlay.vue';
-  import { SOCIAL_OVERLAY_PRESETS } from '@/editor/constants/social-overlay-constants';
   import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
   import { useTranscriptionOnly } from '@/composables/useTranscriptionOnly';
   import { useRouter } from 'vue-router';
@@ -477,7 +419,7 @@
   import { updateClipFullSubtitleSettings, updateClipSubtitlePosition, updateClipTextOverlay } from '@/services/database/clips';
   import { parseClipTextOverlayJson, createDefaultClipTextBoxState, type ClipTextBoxState } from '@/utils/clipTextBox';
   import { parseCreatorClipBuildDefaults } from '@/composables/useCreatorClipDefaults';
-  import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
+  import { captionPresetSettings } from '@/utils/captionPresetSettings';
   import { parseTranscriptToWords } from '@/utils/timelineUtils';
   import {
     ensureShortVideoAutoClip,
@@ -695,8 +637,6 @@
 
   // Social overlay state
   const activeSocialOverlay = ref<SocialOverlayPreset | null>(null);
-  const showSocialMenu = ref(false);
-  const socialButtonRef = ref<HTMLButtonElement | null>(null);
 
   // VOD preset config state
   const vodPresetConfig = ref<ActiveVodPresetConfig | null>(null);
@@ -799,17 +739,6 @@
   // Check if current aspect ratio is 9:16 (vertical)
   const is916 = computed(() => previewAspectRatio.value === '9:16');
 
-  // Social menu positioning
-  const socialMenuStyle = computed(() => {
-    const el = socialButtonRef.value;
-    if (!el) return {};
-    const rect = el.getBoundingClientRect();
-    return {
-      top: `${rect.bottom + 6}px`,
-      left: `${rect.left + rect.width / 2}px`,
-      transform: 'translateX(-50%)',
-    };
-  });
 
   // Framing regions for the current preview aspect (stacked POI layout). When regions exist, VideoPlayer
   // composites them (including uploaded media); "Use 16:9" single-box preview only applies when there are no regions.
@@ -852,19 +781,9 @@
   watch(is916, (val) => {
     if (!val) {
       activeSocialOverlay.value = null;
-      showSocialMenu.value = false;
     }
   });
 
-  // Toggle social overlay
-  function toggleSocialOverlay(preset: SocialOverlayPreset) {
-    if (activeSocialOverlay.value?.platform === preset.platform) {
-      activeSocialOverlay.value = null;
-    } else {
-      activeSocialOverlay.value = preset;
-    }
-    showSocialMenu.value = false;
-  }
 
   // Watch for settings or aspect ratio changes to load correct watermark data
   watch(
@@ -4221,80 +4140,10 @@
 
   // Helper function to load subtitle settings from preset (fallback when no full settings saved)
   function loadSubtitleSettingsFromPreset(clip: any) {
-    const preset = CAPTION_PRESETS.find((p) => p.id === clip.subtitle_preset_id);
-    if (!preset) return;
-
-    const animationStyleMap: Record<
-      string,
-      'none' | 'karaoke' | 'zoom' | 'pop' | 'glow' | 'box-highlight' | 'typewriter' | 'wave'
-    > = {
-      none: 'none',
-      karaoke: 'karaoke',
-      'karaoke-scale': 'karaoke',
-      zoom: 'zoom',
-      pop: 'pop',
-      glow: 'glow',
-      'box-highlight': 'box-highlight',
-      typewriter: 'typewriter',
-      wave: 'wave',
-    };
-
-    const fontWeightMap: Record<string, number> = {
-      normal: 400,
-      bold: 700,
-      '100': 100,
-      '200': 200,
-      '300': 300,
-      '400': 400,
-      '500': 500,
-      '600': 600,
-      '700': 700,
-      '800': 800,
-      '900': 900,
-    };
-    const fontWeight = fontWeightMap[preset.fontWeight || '700'] || 700;
-
-    activeSubtitleSettings.value = {
-      enabled: true,
-      selectedPresetId: preset.id,
-      fontFamily: preset.fontFamily || 'Montserrat',
-      fontSize: preset.fontSize || 48,
-      fontWeight: fontWeight,
-      textColor: preset.color || '#FFFFFF',
-      backgroundColor: preset.backgroundColor || 'transparent',
-      backgroundEnabled: preset.backgroundColor !== 'transparent',
-      position: 'bottom' as const,
-      positionPercentage: clip.subtitle_position_y ?? 85, // Use saved position
-      maxWidth: clip.subtitle_position_width ?? 90, // Use saved width
-      animationStyle: animationStyleMap[preset.highlightStyle || 'none'] || 'none',
-      highlightColor: preset.highlightColor || '#0ea5e9',
-      multiColorEnabled: false,
-      multiColorMode: 'default',
-      colorPalette: [],
-      border1Width: preset.stroke?.width || 0,
-      border1Color: preset.stroke?.color || '#000000',
-      border2Width: 0,
-      border2Color: '#000000',
-      shadowBlur: preset.shadow?.blur ?? 0,
-      shadowOffsetX: preset.shadow?.offsetX ?? 0,
-      shadowOffsetY: preset.shadow?.offsetY ?? 0,
-      shadowColor: preset.shadow?.color || '#000000',
-      lineHeight: preset.lineHeight || 1.2,
-      letterSpacing: preset.letterSpacing || 0,
-      textAlign: 'center' as const,
-      textOffsetX: 0,
-      textOffsetY: 0,
-      padding: 0,
-      borderRadius: 0,
-      wordSpacing: 0.35,
-    };
+    const settings = captionPresetSettings(clip.subtitle_preset_id, clip.subtitle_position_y ?? 85, clip.subtitle_position_width ?? 90);
+    if (!settings) return;
+    activeSubtitleSettings.value = settings;
     activeSubtitleSettingsClipId.value = clip.id ?? null;
-    console.log(
-      '[ProjectWorkspaceDialog] Loaded subtitle settings from preset:',
-      preset.id,
-      'with saved position:',
-      clip.subtitle_position_y
-    );
   }
 
   // Function to handle clip playback
@@ -5712,362 +5561,4 @@
   });
 </script>
 
-<style scoped>
-  /* ========================================
-     WORKSPACE DIALOG STYLES
-     ======================================== */
-
-  /* ===== Overlay ===== */
-  .workspace-dialog__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(8px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-  }
-
-  /* ===== Dialog Container ===== */
-  .workspace-dialog {
-    background-color: var(--sidebar-surface, #0c0c0c);
-    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    border-radius: 16px;
-    width: calc(100% - 60px);
-    height: calc(100% - 80px);
-    margin: 60px 30px 33px 30px;
-    max-width: 1800px;
-    max-height: 950px;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow:
-      0 25px 80px rgba(0, 0, 0, 0.6),
-      0 0 1px rgba(255, 255, 255, 0.1);
-  }
-
-  /* ===== Main Content Area ===== */
-  .workspace-dialog__content {
-    display: flex;
-    flex: 1;
-    min-height: 0;
-    overflow: hidden;
-  }
-
-  /* ===== Player Column ===== */
-  .workspace-dialog__player-column {
-    width: 60%;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    padding: 0.5rem;
-    gap: 0.5rem;
-    border-right: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    background: linear-gradient(180deg, rgba(0, 0, 0, 0.2) 0%, transparent 100%);
-  }
-
-  .workspace-dialog__player-column--fullscreen {
-    position: fixed !important;
-    inset: 0 !important;
-    width: 100vw !important;
-    height: 100vh !important;
-    max-width: none !important;
-    max-height: none !important;
-    z-index: 99999 !important;
-    background: #000 !important;
-    padding: 1rem !important;
-    gap: 1rem !important;
-    border: none !important;
-    display: flex !important;
-    flex-direction: column !important;
-    justify-content: center !important;
-  }
-
-  .workspace-dialog__aspect-selector {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    margin-bottom: 0.75rem;
-  }
-
-  .workspace-dialog__aspect-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.7);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    white-space: nowrap;
-  }
-
-  .workspace-dialog__aspect-dropdown {
-    flex: 1;
-    max-width: 150px;
-  }
-
-  .workspace-dialog__platform-button {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.7);
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 0.375rem;
-    cursor: pointer;
-    transition: all 150ms ease;
-    white-space: nowrap;
-  }
-
-  .workspace-dialog__platform-button:hover {
-    background: rgba(255, 255, 255, 0.08);
-    border-color: rgba(255, 255, 255, 0.15);
-    color: rgba(255, 255, 255, 0.9);
-  }
-
-  .workspace-dialog__social-menu {
-    position: fixed;
-    z-index: 10000;
-    min-width: 180px;
-    background: rgba(24, 24, 27, 0.98);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 0.5rem;
-    padding: 0.375rem;
-    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(12px);
-  }
-
-  .workspace-dialog__social-option {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    width: 100%;
-    padding: 0.625rem 0.75rem;
-    font-size: 0.8125rem;
-    color: rgba(255, 255, 255, 0.7);
-    background: transparent;
-    border: none;
-    border-radius: 0.375rem;
-    cursor: pointer;
-    transition: all 150ms ease;
-    text-align: left;
-  }
-
-  .workspace-dialog__social-option:hover {
-    background: rgba(255, 255, 255, 0.08);
-    color: rgba(255, 255, 255, 0.95);
-  }
-
-  .workspace-dialog__social-option--active {
-    background: rgba(6, 182, 212, 0.15);
-    color: #06b6d4;
-  }
-
-  .workspace-dialog__social-option--active:hover {
-    background: rgba(6, 182, 212, 0.2);
-  }
-
-  .workspace-dialog__social-icon {
-    font-size: 1.125rem;
-    line-height: 1;
-  }
-
-  .workspace-dialog__social-label {
-    font-weight: 500;
-  }
-
-  .workspace-dialog__video-wrapper {
-    flex: 1 1 0;
-    min-height: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: #000;
-    border-radius: 0.5rem;
-    overflow: hidden;
-  }
-
-  .workspace-dialog__player-column--fullscreen .workspace-dialog__video-wrapper {
-    max-height: calc(100vh - 6rem);
-    border-radius: 0;
-  }
-
-  /* ===== Media Column ===== */
-  .workspace-dialog__media-column {
-    width: 40%;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    background: linear-gradient(180deg, transparent 0%, rgba(0, 0, 0, 0.15) 100%);
-    overflow: hidden;
-  }
-
-  /* ===== Tab Bar ===== */
-  .workspace-dialog__tab-bar {
-    display: flex;
-    gap: 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.08);
-    flex-shrink: 0;
-    background-color: rgba(0, 0, 0, 0.2);
-  }
-
-  .workspace-dialog__tab {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted, rgba(255, 255, 255, 0.5));
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .workspace-dialog__tab:hover {
-    color: var(--sidebar-text, rgba(255, 255, 255, 0.9));
-    background-color: rgba(255, 255, 255, 0.03);
-  }
-
-  .workspace-dialog__tab--active {
-    color: var(--sidebar-text, rgba(255, 255, 255, 0.9));
-    border-bottom-color: var(--sidebar-accent, #06b6d4);
-  }
-
-  .workspace-dialog__tab--has-transcript {
-    color: #4ade80;
-  }
-
-  .workspace-dialog__tab--has-transcript.workspace-dialog__tab--active {
-    border-bottom-color: #22c55e;
-  }
-
-  .workspace-dialog__full-project-bar {
-    flex-shrink: 0;
-    padding: 0.5rem 0.75rem 0;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  }
-
-  .workspace-dialog__full-project-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.375rem;
-    width: 100%;
-    padding: 0.5rem 0.75rem;
-    border-radius: 0.5rem;
-    border: 1px solid rgba(6, 182, 212, 0.35);
-    background: rgba(6, 182, 212, 0.12);
-    color: #67e8f9;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .workspace-dialog__full-project-btn:hover:not(:disabled) {
-    background: rgba(6, 182, 212, 0.2);
-    border-color: rgba(6, 182, 212, 0.55);
-    color: #a5f3fc;
-  }
-
-  .workspace-dialog__full-project-btn:disabled {
-    opacity: 0.6;
-    cursor: wait;
-  }
-
-  .workspace-dialog__tab-badge {
-    font-size: 0.625rem;
-    font-weight: 700;
-    color: #22c55e;
-  }
-
-  /* ===== Timeline Section ===== */
-  .workspace-dialog__timeline {
-    flex-shrink: 0;
-    border-top: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    background-color: rgba(0, 0, 0, 0.25);
-  }
-
-  /* ===== Transitions ===== */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  .dialog-enter-active {
-    transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 150ms ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* ===== Scrollbar Styling ===== */
-  .workspace-dialog__media-column :deep(::-webkit-scrollbar) {
-    width: 6px;
-  }
-
-  .workspace-dialog__media-column :deep(::-webkit-scrollbar-track) {
-    background: transparent;
-  }
-
-  .workspace-dialog__media-column :deep(::-webkit-scrollbar-thumb) {
-    background-color: rgba(255, 255, 255, 0.12);
-    border-radius: 3px;
-  }
-
-  .workspace-dialog__media-column :deep(::-webkit-scrollbar-thumb:hover) {
-    background-color: rgba(255, 255, 255, 0.2);
-  }
-
-  /* ===== Responsive Adjustments ===== */
-  @media (max-width: 1400px) {
-    .workspace-dialog__player-column {
-      width: 55%;
-    }
-
-    .workspace-dialog__media-column {
-      width: 45%;
-    }
-  }
-
-  @media (max-width: 1200px) {
-    .workspace-dialog {
-      margin: 20px;
-      width: calc(100% - 40px);
-      height: calc(100% - 40px);
-      border-radius: 12px;
-    }
-
-    .workspace-dialog__player-column {
-      width: 50%;
-      padding: 1rem;
-    }
-
-    .workspace-dialog__media-column {
-      width: 50%;
-    }
-  }
-</style>
+<style scoped src="@/styles/projectWorkspace.css"></style>

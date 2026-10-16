@@ -1,3 +1,7 @@
+import { extractRumbleVideoId } from '@/lib/creatorPlatformIds';
+export { extractRumbleVideoId } from '@/lib/creatorPlatformIds';
+import { extractRumbleChannel } from '@/lib/creatorPlatformIds';
+export { extractRumbleChannel } from '@/lib/creatorPlatformIds';
 import { invoke } from '@tauri-apps/api/core';
 
 export interface RumbleLiveStatus {
@@ -26,99 +30,12 @@ export interface RumbleVod {
  * Extract Rumble video ID from various URL formats
  * Returns video ID if input is a video URL, null otherwise
  */
-export function extractRumbleVideoId(input: string): string | null {
-  if (!input || typeof input !== 'string') {
-    return null;
-  }
 
-  const trimmed = input.trim();
-
-  // rumble.com/v[id]-title.html format
-  if (trimmed.includes('/v')) {
-    const match = trimmed.match(/\/v([a-z0-9]+)[-\.]/i);
-    if (match) return 'v' + match[1];
-  }
-
-  // rumble.com/embed/v[id] format
-  if (trimmed.includes('/embed/v')) {
-    const match = trimmed.match(/\/embed\/v([a-z0-9]+)/i);
-    if (match) return 'v' + match[1];
-  }
-
-  // Direct video ID (starts with 'v' followed by alphanumeric)
-  if (/^v[a-z0-9]+$/i.test(trimmed)) {
-    return trimmed;
-  }
-
-  return null;
-}
 
 /**
  * Extract Rumble channel name from URL
  */
-export function extractRumbleChannel(input: string): string | null {
-  if (!input || typeof input !== 'string') {
-    return null;
-  }
 
-  const trimmed = input.trim();
-
-  // If it's a video URL, return null (not a channel)
-  if (extractRumbleVideoId(trimmed)) {
-    return null;
-  }
-
-  // URL parsing
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    try {
-      const url = new URL(trimmed);
-      if (!url.hostname.includes('rumble.com')) {
-        return null;
-      }
-
-      // Handle /c/channelname format
-      if (url.pathname.includes('/c/')) {
-        const parts = url.pathname.split('/c/');
-        if (parts.length > 1) {
-          return 'c/' + parts[1].split('/')[0];
-        }
-      }
-
-      // Handle /user/channelname format
-      if (url.pathname.includes('/user/')) {
-        const parts = url.pathname.split('/user/');
-        if (parts.length > 1) {
-          return 'user/' + parts[1].split('/')[0];
-        }
-      }
-
-      // Handle direct channel paths like /ChannelName or /SomeChannel
-      // Exclude known non-channel paths (videos, browse, search, etc.)
-      const pathSegments = url.pathname.split('/').filter((p) => p.length > 0);
-      if (pathSegments.length === 1) {
-        const segment = pathSegments[0];
-        // Video URLs start with 'v' followed by alphanumeric and contain a dash (e.g., v1abc-title.html)
-        if (/^v[a-z0-9]+-/.test(segment)) {
-          return null;
-        }
-        // Skip known non-channel top-level paths
-        const nonChannelPaths = ['browse', 'search', 'login', 'register', 'account', 'about', 'contact', 'terms', 'privacy', 'embed', 'playlists'];
-        if (nonChannelPaths.includes(segment.toLowerCase())) {
-          return null;
-        }
-        // Treat as a direct channel name
-        return segment;
-      }
-
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  // Plain channel name — assume /c/ format
-  return trimmed;
-}
 
 /**
  * Check if a Rumble channel is currently live

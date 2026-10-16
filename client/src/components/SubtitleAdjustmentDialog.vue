@@ -214,7 +214,7 @@
   import { Type, XIcon, CheckIcon, PlayIcon, PauseIcon, RotateCcwIcon } from 'lucide-vue-next';
   import Hls from 'hls.js';
   import type { SubtitleSettings, SubtitleOverride } from '@/types';
-  import { utf8ToBase64Url } from '@/utils/encoding';
+  import { resolvePoiVideoSource } from '@/services/poiRuntime';
 
   interface Props {
     modelValue: boolean;
@@ -289,14 +289,6 @@
     }
   }
 
-  function constructVideoUrl(filePath: string, port: number): string {
-    const encodedPath = utf8ToBase64Url(filePath);
-    const isTsFile = filePath.toLowerCase().endsWith('.ts');
-    if (isTsFile) {
-      return `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;
-    }
-    return `http://localhost:${port}/video/${encodedPath}`;
-  }
 
   onUnmounted(() => {
     cleanupHls();
@@ -401,10 +393,8 @@
     if (!props.videoPath) return;
 
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const port = await invoke<number>('get_video_server_port');
       const timestamp = Date.now();
-      const baseUrl = constructVideoUrl(props.videoPath, port);
+      const baseUrl = await resolvePoiVideoSource(props.videoPath, true);
       videoUrl.value = baseUrl.includes('?') ? `${baseUrl}&t=${timestamp}` : `${baseUrl}?t=${timestamp}`;
     } catch (error) {
       console.error('[SubtitleAdjustment] Failed to load video:', error);

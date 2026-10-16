@@ -1,11 +1,15 @@
 import { useEffect, useState, useRef } from 'react'
-import { useLocation, Link } from 'react-router-dom'
+import { useLocation, useNavigate, Link } from 'react-router-dom'
 import { useAuth } from '@/hooks/useAuth'
 
 /** Keep account navigation outside the shared Vue video workspace. */
-export function AccountWorkspace() {
+export function AccountWorkspace({ viewOverride, onClose }: { viewOverride?: string; onClose?: () => void } = {}) {
   const { token, refreshUserData } = useAuth()
-  const { pathname } = useLocation()
+  const { pathname, search } = useLocation()
+  const navigate = useNavigate()
+  const projectId = new URLSearchParams(search).get('project')
+  const clipId = new URLSearchParams(search).get('clip')
+  const fromBuiltClips = new URLSearchParams(search).get('from') === 'clips'
   const [ready, setReady] = useState(false)
   const [error, setError] = useState('')
   const [attempt, setAttempt] = useState(0)
@@ -37,13 +41,23 @@ export function AccountWorkspace() {
 
   useEffect(() => {
     const receive = (event: MessageEvent) => {
-      if (event.origin !== window.location.origin || event.source !== frame.current?.contentWindow ||
-          event.data?.type !== 'clippster-account-refresh') return
-      void refreshUserData()
+      if (event.origin !== window.location.origin || event.source !== frame.current?.contentWindow) return
+      if (event.data?.type === 'clippster-account-refresh') void refreshUserData()
+      if (event.data?.type === 'clippster-profile-updated') window.dispatchEvent(new Event('clippster-profile-updated'))
+      if (event.data?.type === 'clippster-settings-close') { if(onClose)onClose();else navigate('/account/profile') }
+      if (event.data?.type === 'clippster-workspace-navigation') {
+        const id = event.data.projectId
+        if (id !== null && (typeof id !== 'string' || !/^[\da-f-]{36}$/i.test(id))) return
+        const clip = event.data.clipId
+        if (clip != null && (typeof clip !== 'string' || !/^[\da-f-]{36}$/i.test(clip))) return
+        const built = event.data.view === 'built'
+        const destination = (id || !built ? '/account/videos' : '/account/clips') + (id ? `?project=${encodeURIComponent(id)}${clip ? `&clip=${encodeURIComponent(clip)}` : ''}${built ? '&from=clips' : ''}` : '')
+        if (pathname + search !== destination) navigate(destination)
+      }
     }
     window.addEventListener('message', receive)
     return () => window.removeEventListener('message', receive)
-  }, [refreshUserData])
+  }, [refreshUserData, navigate, pathname, search, onClose])
 
   if (error) return <div className="p-6" role="alert">
     <p className="text-red-400">{error}</p>
@@ -54,7 +68,7 @@ export function AccountWorkspace() {
   return <iframe
     ref={frame}
     key={pathname}
-    src={`/workspace/?embedded=1&view=${({ downloads: 'download', creators: 'creators', campaigns: 'campaigns', prompts: 'prompts', calendar: 'calendar' } as Record<string, string>)[pathname.split('/').at(-1) || ''] || 'library'}`}
+    src={`/workspace/?embedded=1&view=${viewOverride || (fromBuiltClips ? 'built' : ({ settings: 'settings', profile: 'profile', clips: 'built', downloads: 'download', creators: 'creators', campaigns: 'campaigns', prompts: 'prompts', calendar: 'calendar' } as Record<string, string>)[pathname.split('/').at(-1) || ''] || 'library')}${new URLSearchParams(search).get('tab') ? `&tab=${encodeURIComponent(new URLSearchParams(search).get('tab')!)}` : ''}${projectId && /^[\da-f-]{36}$/i.test(projectId) ? `&project=${encodeURIComponent(projectId)}` : ''}${clipId && /^[\da-f-]{36}$/i.test(clipId) ? `&clip=${encodeURIComponent(clipId)}` : ''}`}
     title="Clippster video workspace"
     className="h-full min-h-[600px] w-full border-0"
     allow="fullscreen"

@@ -18,24 +18,6 @@ defmodule ClippsterServer.MediaResolver do
   }
 
   @doc """
-  List Kick channel VODs via yt-dlp (fallback when RapidAPI is unavailable).
-  """
-  def list_kick_vods_ytdlp(channel, opts \\ []) do
-    limit = Keyword.get(opts, :limit, 20)
-    offset = Keyword.get(opts, :offset, 0)
-
-    with {:ok, channel_url} <- build_channel_url("kick", channel),
-         {:ok, entries} <- run_playlist_json("kick", channel_url, limit, offset) do
-      {:ok,
-       %{
-         entries: entries,
-         has_more: length(entries) >= limit,
-         total: length(entries) + offset
-       }}
-    end
-  end
-
-  @doc """
   Detect platform from URL. Optional `platform` param overrides auto-detection.
   """
   def detect_platform(url, platform \\ nil) do
@@ -93,13 +75,14 @@ defmodule ClippsterServer.MediaResolver do
       if normalized_platform == "kick" do
         list_kick_vods(channel, limit, offset)
       else
-        list_vods_via_ytdlp(normalized_platform, channel, limit, offset)
+        list_vods_via_ytdlp(normalized_platform, channel, limit, offset, Keyword.get(opts, :tab, "streams"))
       end
     end
   end
 
-  defp list_vods_via_ytdlp(normalized_platform, channel, limit, offset) do
+  defp list_vods_via_ytdlp(normalized_platform, channel, limit, offset, tab) do
     with {:ok, channel_url} <- build_channel_url(normalized_platform, channel),
+         channel_url = if(normalized_platform == "youtube" && tab == "videos", do: String.replace_suffix(channel_url, "/streams", "/videos"), else: channel_url),
          {:ok, entries} <- run_playlist_json(normalized_platform, channel_url, limit, offset) do
       {:ok,
        %{
@@ -168,16 +151,6 @@ defmodule ClippsterServer.MediaResolver do
       end
 
     {:ok, url}
-  end
-
-  defp build_channel_url("kick", channel) do
-    slug =
-      channel
-      |> String.replace(~r{^https?://(?:www\.)?kick\.com/}, "")
-      |> String.split("/")
-      |> List.first()
-
-    {:ok, "https://kick.com/#{slug}/videos"}
   end
 
   defp build_channel_url("twitch", channel) do

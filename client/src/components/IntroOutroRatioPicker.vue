@@ -108,9 +108,9 @@
 <script setup lang="ts">
   import { ref, watch } from 'vue';
   import { X, Play, SkipForward, Check, Upload, Film, Loader2, Trash2 } from 'lucide-vue-next';
-  import { invoke } from '@tauri-apps/api/core';
-  import { listen } from '@tauri-apps/api/event';
-  import { createIntroOutro, generateId } from '@/services/database';
+  import { invoke } from '@/services/creatorProfileRuntime';
+  import { listen, openFileDialog, getAllIntroOutros } from '@/services/creatorProfileRuntime';
+  import { createIntroOutro, generateId } from '@/services/creatorProfileRuntime';
   import { useToast } from '@/composables/useToast';
   import type { AspectRatioId, RatioAssetMap } from '@/services/database/types';
 
@@ -192,7 +192,7 @@
 
   const uploadForRatio = async (ratio: AspectRatioId) => {
     try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
+      const open = openFileDialog;
       const selected = await open({
         multiple: false,
         filters: [
@@ -289,7 +289,6 @@
     if (!props.initialSettings) return;
 
     // Load asset names for any pre-configured ratios
-    const { getAllIntroOutros } = await import('@/services/database');
     const allAssets = await getAllIntroOutros(props.mode);
 
     for (const ratio of aspectRatios) {

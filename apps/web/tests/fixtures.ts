@@ -1,6 +1,6 @@
 import { createHash } from 'node:crypto'
 import { createServer } from 'node:http'
-import { mkdtemp, rm } from 'node:fs/promises'
+import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -12,13 +12,18 @@ export async function startFixture(
   options: { port?: number; origin?: string; accountOrigin?: string; directory?: string;
     restrictions?: { restricted?: boolean; restrictions?: { allow_custom_prompts?: boolean; allow_personal_social?: boolean; require_clip_approval?: boolean; restricting_org_id?: number } };
     campaignsEnabled?: boolean;
+    creatorProfiles?: Array<Record<string, unknown>>;
     user?: Omit<Partial<AuthUser>, 'subscription'> & PlanAccount } = {}
 ) {
   const directory = options.directory || (await mkdtemp(join(tmpdir(), 'clippster-web-')))
   const oauth = new Map<string, { origin: string; client_state: string; code_challenge: string }>()
   const pendingEmails = new Set<string>()
   let detectionCalls = 0
+  const aiRequests: { endpoint: string; fields: Record<string, string | number>; video?: { height: number; codecs: string[] } }[] = []
   let publishCalls = 0
+  const kickRequests: string[] = []
+  const brandingAssets = new Map<string, Array<Record<string, unknown>>>()
+  const brandingUploads: { owner: string; type: string; bytes: number }[] = []
   const fixtureUser = (id: number, email = 'test@example.com') => ({
     id, email, has_selected_plan: true, subscription: { status: 'active' }, ...options.user
   })
@@ -111,14 +116,35 @@ export async function startFixture(
             user: fixtureUser(token === 'fixture-token-1' ? 1 : 2)
           })
         )
+    } else if (req.url === '/api/credits/balance') {
+      res.end(JSON.stringify({ success: true, balance: { hours_remaining: 100, hours_used: 0 }, organization_allocations: [] }))
+    } else if (req.url === '/api/jobs/cancel-by-project') {
+      res.end(JSON.stringify({ success: true, cancelled_jobs: 0 }))
     } else if (req.url === '/api/user/restrictions') {
       res.end(JSON.stringify({ success: true, restricted: false, ...options.restrictions }))
-    } else if (req.url === '/api/app-settings/feature-flags') {
+    } else if (req.url === '/api/settings/feature-flags') {
       res.end(JSON.stringify({ success: true, feature_flags: { campaigns_enabled: options.campaignsEnabled === true } }))
     } else if (req.url === '/api/app-settings/free-tier-branding') {
       res.end(JSON.stringify({ success: true, branding: null }))
+    } else if (req.url === '/api/user/assets') {
+      const owner = req.headers.authorization?.replace('Bearer ', '') || ''
+      const assets = brandingAssets.get(owner) || []
+      if (req.method === 'POST') {
+        const form = await new Request('http://fixture/assets', { method: 'POST', headers: { 'Content-Type': String(req.headers['content-type']) }, body: Buffer.concat(chunks) }).formData()
+        const file = form.get('file') as File
+        const asset = { id: assets.length + 1, asset_type: form.get('asset_type'), name: form.get('name'), url: 'https://fixture.invalid/branding/' + (assets.length + 1), mime_type: file.type, file_size: file.size, width: Number(form.get('width')), height: Number(form.get('height')), duration: Number(form.get('duration')), inserted_at: new Date().toISOString(), updated_at: new Date().toISOString() }
+        assets.push(asset); brandingAssets.set(owner, assets)
+        brandingUploads.push({ owner, type: String(form.get('asset_type')), bytes: file.size })
+        res.statusCode = 201; res.end(JSON.stringify({ success: true, asset }))
+      } else res.end(JSON.stringify({ success: true, assets }))
+    } else if (req.url === '/api/user/creator-profiles' && req.method === 'GET') {
+      res.end(JSON.stringify({ success: true, profiles: req.headers.authorization === 'Bearer fixture-token-1' ? options.creatorProfiles || [] : [] }))
     } else if (req.url === '/api/user/branding') {
-      res.end(JSON.stringify({ success: true, profiles: [], assets: [] }))
+      res.end(JSON.stringify({ success: true, profiles: req.headers.authorization === 'Bearer fixture-token-1' ? options.creatorProfiles || [] : [], assets: [] }))
+    } else if (req.url === '/api/user/campaigns/global-branding' || req.url?.startsWith('/api/user/campaigns/by-creator/')) {
+      res.end(JSON.stringify({ success: true, campaigns: [] }))
+    } else if (req.url === '/api/user/assigned-creator-profiles') {
+      res.end(JSON.stringify({ success: true, profiles: [] }))
     } else if (req.url === '/api/campaigns') {
       res.end(JSON.stringify({ success: true, campaigns: [] }))
     } else if (req.url === '/api/organizations') {
@@ -139,10 +165,19 @@ export async function startFixture(
     } else if (req.url === '/api/user/youtube/publish' || req.url === '/api/social/schedule' && req.method === 'POST') {
       publishCalls++
       res.end(JSON.stringify({ success: true, post: { id: publishCalls } }))
-    } else if (req.url === '/api/clips/detect' || req.url === '/api/clips/transcribe') {
-      if (req.url === '/api/clips/detect') detectionCalls++
+    } else if (req.url === '/api/clips/detect-chunked' || req.url === '/api/clips/transcribe') {
+      const submitted = await new Request('http://fixture/ai', { method: 'POST', headers: { 'Content-Type': String(req.headers['content-type']) }, body: Buffer.concat(chunks) }).formData()
+      const videoFile = submitted.get('video_chunk_0')
+      let videoStreams: Array<{ codec_type: string; codec_name: string; height?: number }> | undefined
+      if (videoFile && typeof videoFile !== 'string') {
+        const path = join(directory, 'enhanced-video-check.mp4')
+        await writeFile(path, Buffer.from(await videoFile.arrayBuffer()))
+        videoStreams = JSON.parse(execFileSync(config.ffprobe, ['-v', 'error', '-i', path, '-show_streams', '-of', 'json'], { encoding: 'utf8' })).streams
+      }
+      aiRequests.push({ endpoint: req.url, fields: Object.fromEntries([...submitted].map(([name, value]) => [name, typeof value === 'string' ? value : value.size])), video: videoStreams ? { height: videoStreams.find(stream => stream.codec_type === 'video')?.height || 0, codecs: videoStreams.map(stream => stream.codec_name) } : undefined })
+      if (req.url === '/api/clips/detect-chunked') detectionCalls++
       const body = Buffer.concat(chunks).toString('latin1')
-      if (!body.includes('name="audio"') || !body.includes('name="duration"')) {
+      if (req.url === '/api/clips/transcribe' ? !body.includes('name="audio"') || !body.includes('name="duration"') : !body.includes('name="chunks"') || !body.includes('name="total_duration"')) {
         res.statusCode = 400
         res.end(JSON.stringify({ success: false, error: 'Missing audio or duration' }))
         return
@@ -169,6 +204,13 @@ export async function startFixture(
           }
         })
       )
+    } else if (req.url?.startsWith('/api/kick/channels/fixture/videos?')) {
+      kickRequests.push(req.url)
+      const query = new URL(req.url, 'http://fixture').searchParams, offset = Number(query.get('offset') || 0), limit = Number(query.get('limit') || 20)
+      const clips = Array.from({ length: 19 }, (_, index) => ({ clipId: 'kick-' + index, title: 'Kick archive ' + index, duration: 26073 + index, thumbnailUrl: 'https://fixture.invalid/kick-' + index + '.png', pageUrl: 'https://kick.com/fixture/videos/kick-' + index, createdAt: '2026-10-10T17:34:04Z', isLive: false }))
+      res.end(JSON.stringify({ success: true, clips: clips.slice(offset, offset + limit), hasMore: offset + limit < clips.length, total: clips.length }))
+    } else if (req.url?.startsWith('/api/media/vods?')) {
+      res.end(JSON.stringify({ success: true, vods: [{ id: 'fixture-vod', title: 'Completed fixture stream', duration_seconds: 6, url: 'https://www.twitch.tv/videos/123' }] }))
     } else {
       res.statusCode = 404
       res.end('{}')
@@ -231,7 +273,10 @@ export async function startFixture(
     directory,
     login,
     detectionCalls: () => detectionCalls,
+    aiRequests: () => aiRequests,
     publishCalls: () => publishCalls,
+    kickRequests: () => kickRequests,
+    brandingUploads: () => brandingUploads,
     dispose: async () => {
       await web.close()
       await Promise.all(
@@ -256,7 +301,7 @@ export async function waitForJob(url: string, cookie: string, projectId: string)
     const workspace = await response.json()
     const job = workspace.jobs[0]
     if (job && ['completed', 'failed', 'cancelled'].includes(job.status)) return workspace
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await new Promise((resolve) => setTimeout(resolve, 500))
   }
   throw new Error('Job did not finish.')
 }

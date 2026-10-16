@@ -1,5 +1,5 @@
 <template>
-  <div class="flex items-center h-14 px-2 border-b border-border/20 relative">
+  <div class="flex items-center h-14 px-2 border-b border-border/20 relative" :style="{ height: 'var(--workspace-video-track-height, 3.5rem)' }">
     <!-- Track Label -->
     <div
       class="w-18 h-10 -ml-2 flex items-center justify-center text-xs text-center sticky left-0 z-40 bg-gradient-to-r from-[#141416] to-[#141416]/80 backdrop-blur-md border-r border-white/[0.04]"
@@ -10,9 +10,10 @@
       </div>
     </div>
     <!-- Video Track Content -->
-    <div class="flex-1 h-10 relative flex items-center">
+    <div class="flex-1 h-10 relative flex items-center" :style="{ height: 'var(--workspace-waveform-height, 2.5rem)' }">
       <div
         data-video-track="true"
+        :style="{ height: 'var(--workspace-waveform-height, 2rem)' }"
         class="flex-1 h-8 bg-[#0a0a0b]/50 rounded-md relative cursor-pointer group overflow-hidden"
         @click="onVideoTrackClick"
         @mousemove="onTimelineTrackHover"

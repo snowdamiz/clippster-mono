@@ -1,10 +1,12 @@
+import {MarketingTheme} from './components/marketing/MarketingTheme'
 import { StrictMode, lazy, Suspense } from 'react'
 import { createRoot } from 'react-dom/client'
-import { BrowserRouter, Routes, Route } from 'react-router-dom'
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom'
 import './index.css'
 /* Org public profile: must follow index.css (Tailwind + body) or colors/glows never win the cascade. */
 import './pages/OrgPublicProfilePage.css'
 import './pages/ClipperPublicProfilePage.css'
+import './styles/marketing.css'
 import App from './App'
 import { PricingPage } from './pages/PricingPage'
 import { PrivacyPage } from './pages/PrivacyPage'
@@ -42,11 +44,7 @@ const AccountLayout = lazy(() => import('./layouts/AccountLayout').then(m => ({ 
 const AccountHome = lazy(() => import('./pages/account/AccountHome').then(m => ({ default: m.AccountHome })))
 const AccountBilling = lazy(() => import('./pages/account/AccountBilling').then(m => ({ default: m.AccountBilling })))
 const AccountWorkspace = lazy(() => import('./pages/account/AccountWorkspace').then(m => ({ default: m.AccountWorkspace })))
-const AccountProfile = lazy(() => import('./pages/account/AccountProfile').then(m => ({ default: m.AccountProfile })))
-const AccountSocial = lazy(() => import('./pages/account/AccountSocial').then(m => ({ default: m.AccountSocial })))
-const AccountPosts = lazy(() => import('./pages/account/AccountPosts').then(m => ({ default: m.AccountPosts })))
 const AccountMessages = lazy(() => import('./pages/account/AccountMessages').then(m => ({ default: m.AccountMessages })))
-const AccountSettings = lazy(() => import('./pages/account/AccountSettings').then(m => ({ default: m.AccountSettings })))
 const ForOrganizationsPage = lazy(() => import('./pages/ForOrganizationsPage').then(m => ({ default: m.ForOrganizationsPage })))
 const OrgApplyPage = lazy(() => import('./pages/org/OrgApplyPage').then(m => ({ default: m.OrgApplyPage })))
 
@@ -129,7 +127,7 @@ createRoot(document.getElementById('root')!).render(
       <ScrollToTop />
       <RouteSeo />
       <LandingAnalyticsTracker />
-      <ToastProvider>
+      <MarketingTheme><ToastProvider>
         <AuthProvider>
           <AuthDialogProvider>
             <Suspense fallback={loadingFallback}>
@@ -186,12 +184,13 @@ createRoot(document.getElementById('root')!).render(
                 >
                   <Route index element={<AccountHome />} />
                   <Route path="messages" element={<AccountMessages />} />
-                  <Route path="profile" element={<AccountProfile />} />
-                  <Route path="social" element={<AccountSocial />} />
-                  <Route path="posts" element={<AccountPosts />} />
-                  <Route path="settings" element={<AccountSettings />} />
+                  <Route path="profile" element={<AccountWorkspace />} />
+                  <Route path="social" element={<Navigate to="/account/profile?tab=accounts" replace />} />
+                  <Route path="posts" element={<Navigate to="/account/profile?tab=posts" replace />} />
+                  <Route path="settings" element={<AccountWorkspace />} />
                   <Route path="billing" element={<AccountBilling />} />
                   <Route path="videos" element={<AccountWorkspace />} />
+                  <Route path="clips" element={<AccountWorkspace />} />
                   <Route path="downloads" element={<AccountWorkspace />} />
                   <Route path="creators" element={<AccountWorkspace />} />
                   <Route path="campaigns" element={<AccountWorkspace />} />
@@ -268,7 +267,7 @@ createRoot(document.getElementById('root')!).render(
             </Suspense>
           </AuthDialogProvider>
         </AuthProvider>
-      </ToastProvider>
+      </ToastProvider></MarketingTheme>
     </BrowserRouter>
   </StrictMode>,
 )

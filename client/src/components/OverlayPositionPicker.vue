@@ -308,7 +308,7 @@
 <script setup lang="ts">
   defineOptions({ inheritAttrs: false });
   import { ref, computed, watch, reactive, onUnmounted } from 'vue';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke, openFileDialog, resolveOverlayImagePath } from '@/services/creatorProfileRuntime';
   import {
     X,
     Move,
@@ -533,7 +533,6 @@
     const assetIdStr = currentSettings.assetId != null ? String(currentSettings.assetId) : null;
     if (!imageUrl && !imagePath && assetIdStr) {
       try {
-        const { resolveOverlayImagePath } = await import('@/services/database/watermarks');
         const resolved = await resolveOverlayImagePath(null, assetIdStr);
         if (resolved) {
           imagePath = resolved;
@@ -548,8 +547,7 @@
       const parentAssetId = props.overlayAssetId != null ? String(props.overlayAssetId) : null;
       if (parentAssetId) {
         try {
-          const { resolveOverlayImagePath } = await import('@/services/database/watermarks');
-          const resolved = await resolveOverlayImagePath(null, parentAssetId);
+            const resolved = await resolveOverlayImagePath(null, parentAssetId);
           if (resolved) {
             imagePath = resolved;
             console.log('[OverlayPositionPicker] Resolved parent org asset to local path:', resolved);
@@ -788,7 +786,7 @@
     if (uploadingRatioOverlay.value) return;
     uploadingRatioOverlay.value = true;
     try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
+      const open = openFileDialog;
       const result = await open({
         multiple: false,
         filters: [{ name: 'Images & Videos', extensions: ['png', 'svg', 'webp', 'jpg', 'jpeg', 'mp4', 'mov', 'webm'] }],

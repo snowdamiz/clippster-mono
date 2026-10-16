@@ -221,7 +221,7 @@ export function clipTextBoxToExportPayload(
 
 /** Load enabled clip text box as export payloads (single-element array) or null. */
 export async function getClipTextBoxOverlaysForExport(clipId: string) {
-  const { getClip } = await import('@/services/database/clips');
+  const { getClip } = await import('@/services/workspaceRuntime');
   const row = await getClip(clipId);
   const s = parseClipTextOverlayJson(row?.clip_text_overlay);
   if (!s?.enabled) return null;

@@ -1,3 +1,5 @@
+import { extractChannelSlug } from '@/lib/creatorPlatformIds';
+export { extractChannelSlug } from '@/lib/creatorPlatformIds';
 import { invoke } from '@tauri-apps/api/core';
 import api from './api';
 
@@ -27,39 +29,7 @@ export interface KickClipsResponse {
 /**
  * Extract channel slug from a Kick URL
  */
-export function extractChannelSlug(input: string): string | null {
-  if (!input || typeof input !== 'string') {
-    return null;
-  }
 
-  const trimmed = input.trim();
-
-  // URL parsing
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    try {
-      const url = new URL(trimmed);
-      if (!url.hostname.includes('kick.com')) {
-        return null;
-      }
-
-      const parts = url.pathname.split('/').filter((p) => p.length > 0);
-      if (parts.length > 0) {
-        if (parts[0] === 'video') return null;
-        return parts[0];
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  // Basic slug validation
-  if (/^[a-zA-Z0-9_-]{3,}$/.test(trimmed)) {
-    return trimmed;
-  }
-
-  return null;
-}
 
 /**
  * Fetch Kick clips via the server API (which proxies to RapidAPI)

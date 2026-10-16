@@ -571,7 +571,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-  import { convertFileSrc } from '@tauri-apps/api/core';
+  import { convertFileSrc } from '@/services/creatorProfileRuntime';
   import { CheckIcon, LayoutGridIcon, LayoutIcon } from 'lucide-vue-next';
   import POIRegion from './POIRegion.vue';
   import MediaPreview from '@/components/MediaPreview.vue';
@@ -619,6 +619,7 @@
   }
 
   interface Props {
+    resolveMediaSrc?: (id: string) => string;
     regions: ManualRegion[];
     selectedRegionId: string | null;
     thumbnailUrl?: string | null;
@@ -983,7 +984,7 @@
       return assetId;
     }
     try {
-      return convertFileSrc(assetId);
+        return props.resolveMediaSrc ? props.resolveMediaSrc(assetId) : convertFileSrc(assetId);
     } catch {
       return assetId;
     }

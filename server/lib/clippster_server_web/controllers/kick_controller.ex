@@ -144,14 +144,18 @@ defmodule ClippsterServerWeb.KickController do
     |> json(%{isLive: false, error: "Kick API request failed after retries"})
   end
 
-  def get_clips(conn, %{"channel_slug" => channel_slug, "limit" => limit}) do
+  def get_clips(conn, %{"channel_slug" => channel_slug, "limit" => limit} = params) do
     limit_int =
       case Integer.parse(to_string(limit)) do
         {n, _} when n > 0 -> n
         _ -> 20
       end
 
-    case Client.list_videos(channel_slug, limit: limit_int) do
+    offset = case Integer.parse(to_string(Map.get(params, "offset", "0"))) do
+      {n, _} when n >= 0 -> n
+      _ -> 0
+    end
+    case Client.list_videos(channel_slug, limit: limit_int, offset: offset) do
       {:ok, %{clips: clips, has_more: has_more, total: total}} ->
         json(conn, %{
           success: true,

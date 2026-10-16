@@ -7,6 +7,9 @@
       >
         <Transition name="dialog" appear>
           <div
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="creator-framing-title"
             class="bg-gradient-to-b from-zinc-900 to-zinc-950 rounded-2xl w-full max-w-5xl mx-4 border border-white/10 max-h-[90vh] flex flex-col overflow-hidden shadow-2xl"
           >
             <!-- Top accent -->
@@ -21,7 +24,7 @@
                   <LayoutDashboardIcon class="h-4 w-4 text-blue-400" />
                 </div>
                 <div class="flex items-baseline gap-2">
-                  <h2 class="text-base font-semibold text-white">Creator clip defaults</h2>
+                  <h2 id="creator-framing-title" class="text-base font-semibold text-white">Creator clip defaults</h2>
                   <span class="text-[11px] text-zinc-500">
                     · Crop regions and subtitle style applied when "Use creator layout" is checked on download
                   </span>

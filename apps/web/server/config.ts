@@ -36,9 +36,9 @@ export function readConfig(env = process.env): Config {
     ffmpeg: env.FFMPEG_PATH || 'ffmpeg',
     ffprobe: env.FFPROBE_PATH || 'ffprobe',
     ytdlp: env.YTDLP_PATH || 'yt-dlp',
-    maxSourceBytes: 2 * 1024 ** 3,
-    maxDuration: 2 * 3600,
+    maxSourceBytes: Number(env.WEB_MAX_SOURCE_BYTES || 16 * 1024 ** 3),
+    maxDuration: Number(env.WEB_MAX_SOURCE_DURATION_SECONDS || 24 * 3600),
     maxProjects: 20,
-    userStorageBytes: 10 * 1024 ** 3
+    userStorageBytes: Number(env.WEB_USER_STORAGE_BYTES || 64 * 1024 ** 3)
   }
 }

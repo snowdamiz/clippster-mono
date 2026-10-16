@@ -588,7 +588,7 @@
                 <p class="empty-state__text">Publish your first video to see it here</p>
               </div>
               <div v-else class="posts-grid">
-                <div v-for="post in userPosts" :key="post.id" class="post-card">
+                <div v-for="post in userPosts" :key="`${post.source || 'personal'}:${post.id}`" class="post-card">
                   <div class="post-card__media">
                     <div class="post-card__thumbnail">
                       <img v-if="post.thumbnail_url" :src="post.thumbnail_url" alt="Post thumbnail" />
@@ -1453,7 +1453,8 @@
     return base;
   });
 
-  const activeTab = ref('leaderboard');
+  const requestedTab = new URLSearchParams(window.location.search).get('tab');
+  const activeTab = ref(requestedTab && ['leaderboard', 'accounts', 'payments', 'campaigns', 'posts', 'hiring', 'affiliate'].includes(requestedTab) ? requestedTab : 'leaderboard');
   const socialAccountsSectionRef = ref<HTMLElement | null>(null);
   const clipperProfile = ref<ClipperProfile | null>(null);
   const loadingSocialAccounts = ref(true);
@@ -2029,8 +2030,8 @@
     return url.length > 40 ? url.substring(0, 40) + '...' : url;
   };
 
-  const loadSocialAccounts = async () => {
-    loadingSocialAccounts.value = true;
+  const loadSocialAccounts = async (silent = false) => {
+    if (!silent) loadingSocialAccounts.value = true;
     try {
       const tokendAllowed = canAccessTokend(authStore.user);
       const [igResponse, twResponse, tkResponse, ytResponse, tokendResponse] = await Promise.all([
@@ -2405,13 +2406,31 @@
   const loadClipperProfile = async () => {
     try {
       const response = await getMyClipperProfile();
-      if (response.success) clipperProfile.value = response.profile;
+      if (response.success) {
+        const identityChanged = clipperProfile.value && (clipperProfile.value.display_name !== response.profile?.display_name || clipperProfile.value.avatar_url !== response.profile?.avatar_url);
+        clipperProfile.value = response.profile;
+        if(identityChanged && window.parent !== window) window.parent.postMessage({type:'clippster-profile-updated'},location.origin);
+      }
     } catch (error) {
       console.error('Failed to load clipper profile:', error);
     }
   };
 
-  const onProfileSaved = () => loadClipperProfile();
+  let accountRefreshTimer: ReturnType<typeof setInterval> | undefined;
+  let refreshingAccount = false;
+  const refreshAccount = async () => {
+    if (document.hidden || refreshingAccount || showEditProfileDialog.value) return;
+    refreshingAccount = true;
+    try {
+      await Promise.allSettled([loadClipperProfile(), ...(activeTab.value === 'accounts' ? [loadSocialAccounts(true)] : []), ...(activeTab.value === 'payments' ? [loadPaymentMethods()] : []), ...(activeTab.value === 'campaigns' ? [loadMyCampaigns(),loadMySubmissions(),loadEarnings()] : []), ...(activeTab.value === 'posts' ? [
+        listUserPosts().then(response => { if(response.success) userPosts.value = response.posts; }),
+        getUserAnalyticsSummary({ days: 30 }).then(response => { if(response.success && response.summary) postsAnalytics.value = response.summary; }),
+        loadExternalPosts(),
+      ] : [])]);
+    } finally { refreshingAccount = false; }
+  };
+
+  const onProfileSaved = async () => { await loadClipperProfile(); if(window.parent!==window)window.parent.postMessage({type:'clippster-profile-updated'},location.origin); };
 
   // Check if profile is configured - profile exists if we have a record from the server
   const isProfileConfigured = computed(() => {
@@ -2442,6 +2461,10 @@
     loadMySubmissions();
     loadEarnings();
     await focusSocialAccountsSection();
+    if(activeTab.value === 'posts'){void loadPostsAnalytics();void loadExternalPosts();}
+    accountRefreshTimer = setInterval(() => void refreshAccount(), 5000);
+    window.addEventListener('focus', refreshAccount);
+    document.addEventListener('visibilitychange', refreshAccount);
   });
 
   watch(
@@ -2452,6 +2475,9 @@
   );
 
   onUnmounted(() => {
+    clearInterval(accountRefreshTimer);
+    window.removeEventListener('focus', refreshAccount);
+    document.removeEventListener('visibilitychange', refreshAccount);
     if (cleanupInstagramAuth) cleanupInstagramAuth();
     if (cleanupTwitterAuth) cleanupTwitterAuth();
     if (cleanupTiktokAuth) cleanupTiktokAuth();
@@ -2460,144 +2486,9 @@
   });
 </script>
 
+<style src="@/styles/clipperProfileShell.css"></style>
 <style scoped>
   /* ===== Page Container ===== */
-  .clipper-profile {
-    width: 100%;
-    min-height: 100%;
-  }
-
-  .profile-page {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: 1rem 1.5rem 0 1.5rem;
-    max-width: 1100px;
-    margin: 0 auto;
-    width: 100%;
-    flex: 1;
-  }
-
-  .org-profile--settings {
-    max-width: none;
-    margin: 0;
-    padding: 0 0 0.25rem 0;
-  }
-
-  .org-hero {
-    position: relative;
-    margin-bottom: 0;
-    padding-bottom: 1.75rem;
-  }
-
-  .org-hero__banner {
-    height: 120px;
-    background: linear-gradient(135deg, #0891b2 0%, #06b6d4 25%, #22d3ee 50%, #0891b2 75%, #164e63 100%);
-    background-size: 200% 200%;
-    border-radius: 14px 14px 0 0;
-    position: relative;
-    overflow: hidden;
-  }
-
-  .org-hero__banner::before {
-    content: '';
-    position: absolute;
-    inset: 0;
-    background:
-      radial-gradient(ellipse 80% 50% at 20% 100%, rgba(255, 255, 255, 0.1) 0%, transparent 50%),
-      radial-gradient(ellipse 60% 40% at 80% 20%, rgba(255, 255, 255, 0.08) 0%, transparent 40%);
-  }
-
-  .org-hero__banner::after {
-    content: '';
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    height: 52px;
-    background: linear-gradient(to top, var(--sidebar-surface) 0%, transparent 100%);
-  }
-
-  .org-hero__content {
-    display: flex;
-    align-items: flex-start;
-    gap: 1.25rem;
-    padding: 0 1.5rem;
-    margin-top: -48px;
-    position: relative;
-    z-index: 1;
-  }
-
-  .org-hero__avatar {
-    position: relative;
-    width: 96px;
-    height: 96px;
-    border-radius: 14px;
-    background: var(--sidebar-surface);
-    border: 4px solid var(--sidebar-surface);
-    overflow: hidden;
-    flex-shrink: 0;
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
-  }
-
-  .org-hero__avatar-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .org-hero__avatar-fallback {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    padding: 24px;
-  }
-
-  .org-hero__info {
-    flex: 1;
-    min-width: 0;
-    padding-top: 0.375rem;
-    padding-bottom: 0.25rem;
-  }
-
-  .org-hero__name {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.02em;
-    line-height: 1.2;
-  }
-
-  .org-hero__tagline {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 0.625rem;
-    line-height: 1.5;
-  }
-
-  .org-hero__tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.375rem;
-  }
-
-  .org-hero__tag {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.25rem 0.625rem;
-    background: rgba(34, 211, 238, 0.1);
-    border: 1px solid rgba(34, 211, 238, 0.2);
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    color: #22d3ee;
-    letter-spacing: 0.01em;
-  }
 
   .org-stats-grid {
     display: grid;
@@ -2610,100 +2501,7 @@
     grid-template-columns: repeat(3, 1fr);
   }
 
-  .org-stat-card {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1rem;
-    background: var(--sidebar-surface);
-    border: 1px solid rgba(34, 211, 238, 0.15);
-    border-radius: 12px;
-    transition: all 200ms ease;
-  }
-
-  .org-stat-card:hover {
-    border-color: rgba(34, 211, 238, 0.4);
-    box-shadow: 0 0 20px rgba(34, 211, 238, 0.1);
-  }
-
-  .org-stat-card__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    flex-shrink: 0;
-  }
-
-  .org-stat-card__icon--cyan {
-    background: rgba(34, 211, 238, 0.15);
-    color: #22d3ee;
-  }
-
-  .org-stat-card__icon--green {
-    background: rgba(52, 211, 153, 0.15);
-    color: #34d399;
-  }
-
-  .org-stat-card__icon--violet {
-    background: rgba(167, 139, 250, 0.15);
-    color: #a78bfa;
-  }
-
-  .org-stat-card__content {
-    display: flex;
-    flex-direction: column;
-    min-width: 0;
-  }
-
-  .org-stat-card__value {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    line-height: 1.2;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .org-stat-card__label {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    font-weight: 500;
-    white-space: nowrap;
-  }
-
-  .profile-page--empty {
-    justify-content: center;
-    align-items: center;
-  }
-
   /* ===== Edit Button ===== */
-  .edit-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    height: 32px;
-    padding: 0 0.875rem;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    font-size: 0.75rem;
-    font-weight: 600;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: opacity 150ms ease;
-  }
-
-  .edit-btn:hover {
-    opacity: 0.9;
-  }
-
-  .edit-btn__icon {
-    width: 14px;
-    height: 14px;
-  }
 
   .profile-avatar__verified {
     position: absolute;
@@ -2726,123 +2524,9 @@
     color: white;
   }
 
-  .profile-name-row {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    flex-wrap: wrap;
-    margin-bottom: 0.75rem;
-  }
-
-  @media (max-width: 640px) {
-    .profile-name-row {
-      justify-content: center;
-    }
-  }
-
-  .profile-badges {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .status-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-  }
-
-  .status-badge--available {
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
-
-  .status-badge--available .status-badge__dot {
-    width: 6px;
-    height: 6px;
-    background: #10b981;
-    border-radius: 50%;
-    animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite;
-  }
-
   @keyframes pulse {
     0%, 100% { opacity: 1; }
     50% { opacity: 0.5; }
-  }
-
-  .status-badge--affiliate {
-    background: rgba(168, 85, 247, 0.15);
-    color: #a855f7;
-  }
-
-  .profile-meta-row {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    flex-wrap: wrap;
-    margin-bottom: 0.75rem;
-  }
-
-  @media (max-width: 640px) {
-    .profile-meta-row {
-      justify-content: center;
-    }
-  }
-
-  .profile-action-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.875rem;
-    border-radius: 8px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    border: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .profile-action-btn--primary {
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: white;
-  }
-
-  .profile-action-btn--primary:hover {
-    opacity: 0.9;
-    transform: translateY(-1px);
-  }
-
-  .profile-visibility {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    background: var(--sidebar-hover);
-    border-radius: 6px;
-    font-size: 0.6875rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-  }
-
-  .profile-last-active {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    opacity: 0.8;
-  }
-
-  .org-hero__tagline.profile-bio--empty {
-    font-style: italic;
-    opacity: 0.6;
   }
 
   @media (max-width: 900px) {
@@ -2852,39 +2536,6 @@
   }
 
   @media (max-width: 640px) {
-    .org-hero {
-      padding-bottom: 1.5rem;
-    }
-
-    .org-hero__banner {
-      height: 100px;
-    }
-
-    .org-hero__content {
-      flex-direction: column;
-      align-items: center;
-      text-align: center;
-      margin-top: -40px;
-      padding: 0 1rem;
-    }
-
-    .org-hero__avatar {
-      width: 88px;
-      height: 88px;
-    }
-
-    .org-hero__info {
-      padding-top: 0.5rem;
-      padding-bottom: 0;
-    }
-
-    .org-hero__name {
-      font-size: 1.25rem;
-    }
-
-    .org-hero__tags {
-      justify-content: center;
-    }
 
     .org-stats-grid--settings {
       grid-template-columns: 1fr;
@@ -2892,91 +2543,8 @@
   }
 
   /* ===== Enhanced Tab Navigation ===== */
-  .tabs-nav {
-    background: var(--sidebar-surface);
-    border: 1px solid rgba(34, 211, 238, 0.15);
-    border-radius: 14px;
-    padding: 0.5rem;
-    margin-bottom: 1.5rem;
-    transition: border-color 200ms ease, box-shadow 200ms ease;
-  }
-
-  .tabs-nav:hover {
-    border-color: rgba(34, 211, 238, 0.25);
-  }
-
-  .tabs-container {
-    display: flex;
-    gap: 0.375rem;
-    overflow-x: auto;
-    scrollbar-width: none;
-  }
-
-  .tabs-container::-webkit-scrollbar {
-    display: none;
-  }
-
-  .tab-button {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.125rem;
-    background: transparent;
-    border: none;
-    border-radius: 8px;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 180ms ease;
-    white-space: nowrap;
-    position: relative;
-  }
-
-  .tab-button:hover:not(.tab-button--active) {
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .tab-button--active {
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.15) 0%, rgba(139, 92, 246, 0.15) 100%);
-    color: var(--sidebar-accent);
-    box-shadow: 0 2px 8px rgba(6, 182, 212, 0.2);
-  }
-
-  .tab-button__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-  }
-
-  .tab-button__icon svg {
-    width: 100%;
-    height: 100%;
-  }
-
-  .tab-button__label {
-    font-size: inherit;
-  }
-
-  @media (max-width: 768px) {
-    .tab-button__label {
-      display: none;
-    }
-    .tab-button {
-      padding: 0.75rem;
-    }
-  }
 
   /* ===== Content ===== */
-  .content {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-    padding-bottom: 4rem;
-  }
 
   /* ===== Notice ===== */
   .notice {
@@ -4529,40 +4097,6 @@
     color: #10b981;
   }
 
-  .status-badge {
-    padding: 0.125rem 0.4375rem;
-    border-radius: 3px;
-    font-size: 0.5625rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-  }
-
-  .status-badge--active,
-  .status-badge--verified {
-    background: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
-
-  .status-badge--paused,
-  .status-badge--pending {
-    background: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-  }
-
-  .status-badge--completed,
-  .status-badge--paid {
-    background: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-  }
-
-  .status-badge--rejected {
-    background: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-  }
-
   .submission-row {
     display: flex;
     align-items: center;
@@ -4948,69 +4482,6 @@
   }
 
   /* ===== Empty State ===== */
-  .profile-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-  }
-
-  .profile-empty__icon-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 72px;
-    height: 72px;
-    background-color: var(--sidebar-hover);
-    border-radius: 16px;
-    margin-bottom: 1.5rem;
-  }
-
-  .profile-empty__icon {
-    width: 36px;
-    height: 36px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .profile-empty__title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
-  }
-
-  .profile-empty__description {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 1.5rem;
-    max-width: 380px;
-    line-height: 1.5;
-  }
-
-  .profile-empty__btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1.25rem;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border: none;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .profile-empty__btn:hover {
-    opacity: 0.9;
-  }
-
-  .profile-empty__btn-icon {
-    width: 14px;
-    height: 14px;
-  }
 
   /* ===== Affiliate Tab ===== */
   .aff-tab__link-card {
@@ -5459,35 +4930,6 @@
   }
 
   /* ===== Status Badge ===== */
-  .status-badge {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.125rem 0.5rem;
-    border-radius: 9999px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    flex-shrink: 0;
-  }
-
-  .status-badge--pending {
-    background: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-    border: 1px solid rgba(245, 158, 11, 0.25);
-  }
-
-  .status-badge--approved {
-    background: rgba(16, 185, 129, 0.15);
-    color: #34d399;
-    border: 1px solid rgba(16, 185, 129, 0.25);
-  }
-
-  .status-badge--rejected {
-    background: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-    border: 1px solid rgba(239, 68, 68, 0.25);
-  }
 
   /* ===== Empty State Compact + Button ===== */
   .empty-state--compact {

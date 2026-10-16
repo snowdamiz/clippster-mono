@@ -44,7 +44,6 @@
         class="max-w-full text-xs text-zinc-400"
         @change="choose"
       />
-      <span class="text-xs text-zinc-500">Up to 2 GB and 2 hours</span>
     </label>
     <p v-if="uploadProgress !== null" role="status" class="text-sm text-sky-300">Uploading… {{ uploadProgress }}%</p>
   </section>

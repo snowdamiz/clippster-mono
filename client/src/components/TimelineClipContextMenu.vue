@@ -23,9 +23,10 @@
             <span class="flex-1 text-left">Play Clip</span>
           </button>
 
-          <div class="h-px bg-white/5 mx-2 my-1"></div>
+          <div v-if="allowEditor !== false" class="h-px bg-white/5 mx-2 my-1"></div>
 
           <button
+            v-if="allowEditor !== false"
             class="context-menu-item w-full px-3 py-2 flex items-center gap-3 text-sm text-white/80 hover:bg-white/10 hover:text-white transition-colors duration-150"
             @click="handleEditClip"
           >
@@ -47,6 +48,7 @@
   import type { ClipContextMenuInfo } from '../types';
 
   const props = defineProps<{
+    allowEditor?: boolean;
     show: boolean;
     info: ClipContextMenuInfo | null;
   }>();

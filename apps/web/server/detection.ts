@@ -1,8 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import type { WebClip, WebProject, WordInfo } from '@clippster/shared-types'
 import { clipInput } from './validation'
-import type { Config } from './config'
-import { audioForDetection } from './media'
 interface DetectionResponse {
   success: boolean
   error?: string
@@ -49,7 +47,8 @@ export function normalizeDetection(
         },
         project.duration
       )
-      clips.push({ ...input, id: randomUUID(), revision: 1, builtRevision: null })
+      const score = (value: unknown) => typeof value === 'number' && Number.isFinite(value) ? Math.max(0, Math.min(100, value)) : undefined
+      clips.push({ ...input, id: randomUUID(), revision: 1, builtRevision: null, detection: { viralityScore: score(data.virality_score), confidenceScore: score(data.confidence_score), reason: typeof data.reason === 'string' ? data.reason.slice(0, 10000) : undefined } })
     } catch {
       /* Invalid model timestamps cannot enter the editor or renderer. */
     }
@@ -57,33 +56,4 @@ export function normalizeDetection(
   if (detected.length && !clips.length)
     throw new Error('The AI returned no valid clip times. Refine your prompt and try again.')
   return { clips, words }
-}
-export async function detect(
-  project: WebProject,
-  prompt: string,
-  token: string,
-  directory: string,
-  work: string,
-  config: Config,
-  signal: AbortSignal,
-  transcriptionOnly = false
-) {
-  if (!project.hasAudio)
-    throw new Error('AI clipping needs a source with audio. You can still create clips manually.')
-  const audio = await audioForDetection(directory, work, config, signal)
-  const form = new FormData()
-  form.append('audio', audio, 'audio.mp3')
-  form.append('project_id', project.id)
-  form.append('prompt', prompt)
-  form.append('duration', String(project.duration))
-  const response = await fetch(`${config.apiUrl}/clips/${transcriptionOnly ? 'transcribe' : 'detect'}`, {
-    method: 'POST',
-    headers: { Authorization: `Bearer ${token}`, 'X-Client-Platform': 'web' },
-    body: form,
-    signal: AbortSignal.any([signal, AbortSignal.timeout(30 * 60_000)])
-  })
-  const result = (await response.json()) as DetectionResponse
-  if (!response.ok || !result.success)
-    throw new Error(result.details || result.error || 'AI detection failed.')
-  return normalizeDetection(transcriptionOnly ? { ...result, clips: [] } : result, project)
 }

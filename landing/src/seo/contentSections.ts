@@ -1,6 +1,7 @@
 import type { SeoFaq } from './content'
 
 export type ContentSection =
+  | { type: 'product-comparison' }
   | { type: 'paragraph'; text: string }
   | { type: 'heading'; text: string }
   | { type: 'steps'; items: Array<{ title: string; body: string }> }

@@ -1,0 +1,1516 @@
+
+  /* ===== Page Container ===== */
+  .streamvods {
+    width: 100%;
+    height: 100%;
+    min-height: 0;
+    overflow: hidden;
+  }
+
+  .streamvods__content {
+    display: flex;
+    flex-direction: column;
+    gap: 1.5rem;
+    padding: 1.5rem;
+    width: 100%;
+    flex: 1;
+  }
+
+  .streamvods__content--empty {
+    justify-content: center;
+    align-items: center;
+  }
+
+  /* ===== YouTube Tabs ===== */
+  .streamvods__youtube-tabs {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1.5rem;
+    padding: 0.25rem;
+    background-color: rgba(255, 255, 255, 0.03);
+    border-radius: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.08);
+    width: fit-content;
+  }
+
+  .streamvods__youtube-tab {
+    padding: 0.5rem 1rem;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: rgba(255, 255, 255, 0.5);
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .streamvods__youtube-tab:hover:not(:disabled) {
+    background-color: rgba(255, 255, 255, 0.05);
+    color: rgba(255, 255, 255, 0.8);
+  }
+
+  .streamvods__youtube-tab--active {
+    background-color: rgba(255, 255, 255, 0.1);
+    color: white;
+  }
+
+  .streamvods__youtube-tab--active:hover {
+    background-color: rgba(255, 255, 255, 0.12);
+    color: white;
+  }
+
+  .streamvods__youtube-tab:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  /* ===== Page Heading ===== */
+  .streamvods__heading {
+    margin-bottom: 0.5rem;
+  }
+
+  .streamvods__title {
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0 0 0.2rem;
+    letter-spacing: -0.02em;
+  }
+
+  .streamvods__subtitle {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    line-height: 1.5;
+  }
+
+  /* ===== Actions Bar ===== */
+  .streamvods-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  /* ===== Recent Searches Dropdown ===== */
+  .streamvods-recent {
+    position: relative;
+  }
+
+  .streamvods-recent__trigger {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 32px;
+    padding: 0 0.625rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    color: var(--sidebar-text);
+    font-size: 0.75rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .streamvods-recent__trigger:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .streamvods-recent__trigger-icon {
+    width: 14px;
+    height: 14px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .streamvods-recent__trigger-text {
+    color: var(--sidebar-text);
+  }
+
+  .streamvods-recent__trigger-chevron {
+    width: 12px;
+    height: 12px;
+    color: var(--sidebar-text-muted);
+    transition: transform 150ms ease;
+  }
+
+  .streamvods-recent__trigger-chevron--open {
+    transform: rotate(180deg);
+  }
+
+  .streamvods-recent__dropdown {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    width: 280px;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+    z-index: 9999;
+    max-height: 400px;
+    overflow-y: auto;
+  }
+
+  .streamvods-recent__header {
+    padding: 0.75rem 1rem;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    color: var(--sidebar-text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    border-bottom: 1px solid var(--sidebar-border);
+  }
+
+  .streamvods-recent__item {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+    padding: 0.75rem 1rem;
+    cursor: pointer;
+    transition: background-color 150ms ease;
+  }
+
+  .streamvods-recent__item:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .streamvods-recent__avatar {
+    position: relative;
+    flex-shrink: 0;
+  }
+
+  .streamvods-recent__avatar-img {
+    width: 36px;
+    height: 36px;
+    border-radius: 50%;
+    overflow: hidden;
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+
+  .streamvods-recent__avatar-img img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .streamvods-recent__avatar-fallback {
+    width: 16px;
+    height: 16px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .streamvods-recent__avatar-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border: 2px solid var(--sidebar-surface);
+  }
+
+  .streamvods-recent__avatar-badge img {
+    width: 10px;
+    height: 10px;
+    filter: brightness(0) invert(1);
+  }
+
+  .streamvods-recent__avatar-badge--pumpfun {
+    background-color: #10b981;
+  }
+
+  .streamvods-recent__avatar-badge--kick {
+    background-color: #53fc18;
+  }
+
+  .streamvods-recent__avatar-badge--kick img {
+    filter: brightness(0);
+  }
+
+  .streamvods-recent__avatar-badge--twitch {
+    background-color: #9146ff;
+  }
+
+  .streamvods-recent__avatar-badge--youtube {
+    background-color: #dc2626;
+  }
+
+  .streamvods-recent__avatar-badge--tokend {
+    background-color: #000000;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .streamvods-recent__avatar-badge--tokend img {
+    width: 100%;
+    height: 100%;
+    filter: none;
+    object-fit: cover;
+  }
+
+  .streamvods-recent__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .streamvods-recent__name {
+    display: block;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .streamvods-recent__detail {
+    display: block;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  .streamvods-recent__clear {
+    display: block;
+    width: 100%;
+    padding: 0.75rem 1rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: #f87171;
+    background: transparent;
+    border: none;
+    border-top: 1px solid var(--sidebar-border);
+    cursor: pointer;
+    text-align: left;
+    transition: background-color 150ms ease;
+  }
+
+  .streamvods-recent__clear:hover {
+    background-color: rgba(248, 113, 113, 0.1);
+  }
+
+  /* ===== Search Input ===== */
+  .streamvods-search {
+    position: relative;
+    width: 280px;
+  }
+
+  .streamvods-search-group {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .streamvods-search__icon {
+    position: absolute;
+    left: 0.625rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 15px;
+    height: 15px;
+    color: var(--sidebar-text-muted);
+    pointer-events: none;
+  }
+
+  .streamvods-search__platform {
+    position: absolute;
+    left: 0.5rem;
+    top: 50%;
+    transform: translateY(-50%);
+    width: 22px;
+    height: 22px;
+    border-radius: 5px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1;
+  }
+
+  .streamvods-search__platform--pumpfun {
+    background-color: #10b981;
+  }
+
+  .streamvods-search__platform--kick {
+    background-color: #53fc18;
+  }
+
+  .streamvods-search__platform--twitch {
+    background-color: #9146ff;
+  }
+
+  .streamvods-search__platform--youtube {
+    background-color: #dc2626;
+  }
+
+  .streamvods-search__platform--tokend {
+    background-color: #000000;
+    padding: 0;
+    overflow: hidden;
+  }
+
+  .streamvods-search__platform-icon {
+    width: 12px;
+    height: 12px;
+    filter: brightness(0) invert(1);
+  }
+
+  .streamvods-search__platform-icon--dark {
+    filter: brightness(0);
+  }
+
+  .streamvods-search__platform-icon--tokend {
+    width: 100%;
+    height: 100%;
+    filter: none;
+    object-fit: cover;
+  }
+
+  .streamvods-search__input {
+    width: 100%;
+    height: 32px;
+    padding-left: 2rem;
+    padding-right: 0.75rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.75rem;
+    color: var(--sidebar-text);
+    transition: all 150ms ease;
+  }
+
+  .streamvods-search__input::placeholder {
+    color: var(--sidebar-text-muted);
+  }
+
+  .streamvods-search__input:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .streamvods-search__input:focus {
+    outline: none;
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.1);
+  }
+
+  .streamvods-search-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    height: 32px;
+    padding: 0 0.75rem;
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    border: none;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .streamvods-search-btn:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .streamvods-search-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .streamvods-search-btn__icon {
+    width: 14px;
+    height: 14px;
+  }
+
+  .streamvods-search-btn__icon--spin {
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Section Header ===== */
+  .streamvods__section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 1rem;
+  }
+
+  .streamvods__section-header-left {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .streamvods__section-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+  }
+
+  .streamvods__section-icon svg {
+    width: 18px;
+    height: 18px;
+  }
+
+  .streamvods__section-title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0;
+  }
+
+  .streamvods__section-subtitle {
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+  }
+
+  /* ===== VOD Cards Grid ===== */
+  .streamvods__grid {
+    display: grid;
+    grid-template-columns: repeat(1, 1fr);
+    gap: 1rem;
+  }
+
+  @media (min-width: 640px) {
+    .streamvods__grid {
+      grid-template-columns: repeat(2, 1fr);
+    }
+  }
+
+  @media (min-width: 1024px) {
+    .streamvods__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  @media (min-width: 1400px) {
+    .streamvods__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  @media (min-width: 1800px) {
+    .streamvods__grid {
+      grid-template-columns: repeat(3, 1fr);
+    }
+  }
+
+  @media (min-width: 2200px) {
+    .streamvods__grid {
+      grid-template-columns: repeat(4, 1fr);
+    }
+  }
+
+  /* ===== VOD Card ===== */
+  .vod-card {
+    position: relative;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 10px;
+    overflow: hidden;
+    cursor: pointer;
+    transition: all 200ms ease;
+    aspect-ratio: 16 / 9;
+  }
+
+  .vod-card:hover {
+    border-color: rgba(255, 255, 255, 0.15);
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
+    transform: scale(1.02);
+  }
+
+  .vod-card__thumbnail {
+    position: absolute;
+    inset: 0;
+    background-size: cover;
+    background-position: center;
+    background-repeat: no-repeat;
+    z-index: 0;
+  }
+
+  .vod-card__vignette {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.25) 0%, rgba(0, 0, 0, 0.3) 40%, transparent 50%);
+    pointer-events: none;
+  }
+
+  .vod-card__badges {
+    position: absolute;
+    top: 0.75rem;
+    left: 0.75rem;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.375rem;
+    z-index: 15;
+  }
+
+  .vod-card__badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+    padding: 0.3125rem 0.5rem;
+    backdrop-filter: blur(8px);
+    border-radius: 5px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  }
+
+  .vod-card__badge--pumpfun {
+    background-color: rgba(16, 185, 129, 0.3);
+    color: #6ee7b7;
+  }
+
+  .vod-card__badge--kick {
+    background-color: rgba(83, 252, 24, 0.3);
+    color: #bef264;
+  }
+
+  .vod-card__badge--twitch {
+    background-color: rgba(147, 51, 234, 0.3);
+    color: #c4b5fd;
+  }
+
+  .vod-card__badge--youtube {
+    background-color: rgba(220, 38, 38, 0.3);
+    color: #fca5a5;
+  }
+
+  .vod-card__badge--tokend {
+    background-color: rgba(0, 229, 255, 0.18);
+    color: #00e5ff;
+  }
+
+  .vod-card__badge--tokend .vod-card__badge-icon {
+    filter: none;
+    border-radius: 20%;
+  }
+
+  .vod-card__badge--duration {
+    background-color: rgba(14, 165, 233, 0.3);
+    color: #7dd3fc;
+  }
+
+  .vod-card__badge--downloaded {
+    background-color: rgba(34, 197, 94, 0.3);
+    color: #86efac;
+    border: 1px solid rgba(34, 197, 94, 0.4);
+  }
+
+  .vod-card__badge-icon {
+    width: 10px;
+    height: 10px;
+    filter: brightness(0) invert(1);
+  }
+
+  .vod-card__badge--kick .vod-card__badge-icon {
+    filter: brightness(0);
+  }
+
+  .vod-card__badge-icon-svg {
+    width: 10px;
+    height: 10px;
+  }
+
+  /* Downloaded VOD styling - greyed out appearance */
+  .vod-card--downloaded {
+    opacity: 0.6;
+  }
+
+  .vod-card--downloaded:hover {
+    opacity: 0.75;
+  }
+
+  .vod-card--downloaded .vod-card__thumbnail {
+    filter: grayscale(0.5);
+  }
+
+  .vod-card__actions {
+    position: absolute;
+    inset: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.75rem;
+    background-color: rgba(0, 0, 0, 0.5);
+    opacity: 0;
+    transition: opacity 200ms ease;
+    z-index: 10;
+  }
+
+  .vod-card:hover .vod-card__actions {
+    opacity: 1;
+  }
+
+  .vod-card__action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.5rem;
+    background-color: rgba(255, 255, 255, 0.9);
+    border: none;
+    border-radius: 9999px;
+    color: #1f2937;
+    cursor: pointer;
+    transition: all 150ms ease;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
+  }
+
+  .vod-card__action-btn:hover {
+    background-color: white;
+    transform: scale(1.1);
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
+  }
+
+  .vod-card__action-icon {
+    width: 20px;
+    height: 20px;
+  }
+
+  .vod-card__bottom {
+    position: absolute;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    z-index: 5;
+    padding: 1rem;
+    padding-top: 7rem;
+    background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 50%, transparent 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 0.375rem;
+  }
+
+  .vod-card__name {
+    font-size: 1rem;
+    font-weight: 700;
+    color: white;
+    margin: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-shadow: 0 2px 4px rgba(0, 0, 0, 0.6);
+    line-height: 1.3;
+    transition: color 150ms ease;
+  }
+
+  .vod-card:hover .vod-card__name {
+    color: rgba(255, 255, 255, 0.9);
+  }
+
+  .vod-card__meta {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: rgba(255, 255, 255, 0.7);
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+  }
+
+  .vod-card__meta-dot {
+    width: 3px;
+    height: 3px;
+    border-radius: 50%;
+    background-color: rgba(255, 255, 255, 0.4);
+    flex-shrink: 0;
+  }
+
+  /* Skeleton Card */
+  .vod-card--skeleton {
+    pointer-events: none;
+  }
+
+  .vod-card__skeleton-bg {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+  }
+
+  .vod-card__skeleton-title {
+    height: 16px;
+    width: 65%;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.05) 25%,
+      rgba(255, 255, 255, 0.1) 50%,
+      rgba(255, 255, 255, 0.05) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+  }
+
+  .vod-card__skeleton-meta {
+    height: 12px;
+    width: 40%;
+    margin-top: 0.25rem;
+    background: linear-gradient(
+      90deg,
+      rgba(255, 255, 255, 0.03) 25%,
+      rgba(255, 255, 255, 0.08) 50%,
+      rgba(255, 255, 255, 0.03) 75%
+    );
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    animation-delay: 0.15s;
+    border-radius: 3px;
+  }
+
+  /* Stagger skeleton animation delays */
+  .vod-card--skeleton:nth-child(1) .vod-card__skeleton-bg {
+    animation-delay: 0s;
+  }
+  .vod-card--skeleton:nth-child(2) .vod-card__skeleton-bg {
+    animation-delay: 0.1s;
+  }
+  .vod-card--skeleton:nth-child(3) .vod-card__skeleton-bg {
+    animation-delay: 0.2s;
+  }
+  .vod-card--skeleton:nth-child(4) .vod-card__skeleton-bg {
+    animation-delay: 0.3s;
+  }
+  .vod-card--skeleton:nth-child(5) .vod-card__skeleton-bg {
+    animation-delay: 0.4s;
+  }
+  .vod-card--skeleton:nth-child(6) .vod-card__skeleton-bg {
+    animation-delay: 0.5s;
+  }
+
+  /* ===== Results Count ===== */
+  .streamvods__results-count {
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    margin-bottom: 1rem;
+  }
+
+  /* ===== Error State ===== */
+  .streamvods__error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 4rem 2rem;
+    text-align: center;
+    background-color: rgba(239, 68, 68, 0.05);
+    border: 1px solid rgba(239, 68, 68, 0.2);
+    border-radius: 10px;
+  }
+
+  .streamvods__error-icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 64px;
+    height: 64px;
+    background-color: rgba(239, 68, 68, 0.15);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+    color: #f87171;
+  }
+
+  .streamvods__error-icon svg {
+    width: 32px;
+    height: 32px;
+  }
+
+  .streamvods__error-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: #f87171;
+    margin: 0 0 0.5rem;
+  }
+
+  .streamvods__error-message {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0 0 1.5rem;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+
+  .streamvods__error-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    padding: 0.75rem 1.25rem;
+    background-color: rgba(239, 68, 68, 0.15);
+    color: #f87171;
+    border: 1px solid rgba(239, 68, 68, 0.3);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .streamvods__error-btn:hover {
+    background-color: rgba(239, 68, 68, 0.25);
+    border-color: rgba(239, 68, 68, 0.4);
+  }
+
+  /* ===== Empty State ===== */
+  .streamvods__empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+  }
+
+  .streamvods__empty-icon-wrapper {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 72px;
+    height: 72px;
+    background-color: var(--sidebar-hover);
+    border-radius: 16px;
+    margin-bottom: 1.5rem;
+  }
+
+  .streamvods__empty-icon {
+    width: 36px;
+    height: 36px;
+    color: var(--sidebar-text-muted);
+  }
+
+  .streamvods__empty-title {
+    font-size: 1.125rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.5rem;
+  }
+
+  .streamvods__empty-description {
+    font-size: 0.875rem;
+    color: var(--sidebar-text-muted);
+    margin: 0;
+    max-width: 320px;
+    line-height: 1.5;
+  }
+
+  /* ===== Download Modal ===== */
+  .download-modal__overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0, 0, 0, 0.7);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 60;
+  }
+
+  .download-modal {
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 12px;
+    width: 100%;
+    max-width: 520px;
+    margin: 1rem;
+    max-height: 85vh;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
+  }
+
+  .download-modal__accent {
+    height: 3px;
+    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
+    flex-shrink: 0;
+  }
+
+  .download-modal__header {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding: 1.5rem 1.5rem 1rem;
+    text-align: center;
+  }
+
+  .download-modal__close {
+    position: absolute;
+    top: 1rem;
+    right: 1rem;
+    width: 32px;
+    height: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border: none;
+    border-radius: 6px;
+    color: var(--sidebar-text-muted);
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .download-modal__close:hover {
+    background-color: var(--sidebar-hover);
+    color: var(--sidebar-text);
+  }
+
+  .download-modal__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 52px;
+    height: 52px;
+    border-radius: 12px;
+    background-color: rgba(6, 182, 212, 0.15);
+    color: var(--sidebar-accent);
+    margin-bottom: 0.875rem;
+  }
+
+  .download-modal__title {
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: var(--sidebar-text);
+    margin: 0;
+    letter-spacing: -0.02em;
+  }
+
+  .download-modal__subtitle {
+    font-size: 0.8125rem;
+    color: var(--sidebar-text-muted);
+    margin: 0.25rem 0 0;
+  }
+
+  /* ===== Modal Content ===== */
+  .download-modal__content {
+    flex: 1;
+    overflow-y: auto;
+    padding: 1.25rem 1.5rem 1.5rem;
+    display: flex;
+    flex-direction: column;
+    gap: 1rem;
+  }
+
+  .download-modal__content::-webkit-scrollbar {
+    width: 6px;
+  }
+
+  .download-modal__content::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .download-modal__content::-webkit-scrollbar-thumb {
+    background-color: rgba(255, 255, 255, 0.15);
+    border-radius: 3px;
+  }
+
+  .download-modal__content::-webkit-scrollbar-thumb:hover {
+    background-color: rgba(255, 255, 255, 0.25);
+  }
+
+  /* ===== Preview Card ===== */
+  .download-preview {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    padding: 0.875rem 1rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+    transition: all 150ms ease;
+  }
+
+  .download-preview:hover {
+    background-color: var(--sidebar-active);
+  }
+
+  .download-preview__thumb {
+    width: 90px;
+    aspect-ratio: 16 / 9;
+    border-radius: 6px;
+    overflow: hidden;
+    background-color: var(--sidebar-surface);
+    flex-shrink: 0;
+  }
+
+  .download-preview__thumb img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+  }
+
+  .download-preview__placeholder {
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: var(--sidebar-text-muted);
+    opacity: 0.5;
+  }
+
+  .download-preview__info {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .download-preview__title {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-text);
+    margin: 0 0 0.375rem;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+    line-height: 1.4;
+  }
+
+  .download-preview__meta {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.6875rem;
+    color: var(--sidebar-text-muted);
+  }
+
+  .download-preview__duration {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.25rem;
+  }
+
+  .download-preview__sep {
+    opacity: 0.4;
+  }
+
+  /* ===== Section Styling ===== */
+  .download-section {
+    display: flex;
+    flex-direction: column;
+    gap: 0.625rem;
+  }
+
+  .download-section__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0 0.25rem;
+  }
+
+  .download-section__label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sidebar-text-muted);
+  }
+
+  .download-section__badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 28px;
+    padding: 0.25rem 0.5rem;
+    background-color: var(--sidebar-surface);
+    border: 1px solid var(--sidebar-border);
+    border-radius: 6px;
+    font-size: 0.6875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .download-section__badge--full {
+    background-color: rgba(16, 185, 129, 0.15);
+    border-color: rgba(16, 185, 129, 0.25);
+    color: #34d399;
+  }
+
+  .download-section__badge--partial {
+    background-color: rgba(6, 182, 212, 0.15);
+    border-color: rgba(6, 182, 212, 0.25);
+    color: var(--sidebar-accent);
+  }
+
+  .download-section__card {
+    padding: 1rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+  }
+
+  .download-section__reset {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.375rem;
+    font-size: 0.75rem;
+    color: var(--sidebar-text-muted);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    padding: 0 0.25rem;
+    transition: color 150ms ease;
+  }
+
+  .download-section__reset:hover {
+    color: var(--sidebar-text);
+  }
+
+  /* ===== Segment Options ===== */
+  .download-segment {
+    padding: 1rem;
+    background-color: var(--sidebar-hover);
+    border-radius: 8px;
+  }
+
+  .download-segment__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .download-segment__toggle {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    cursor: pointer;
+  }
+
+  .download-segment__checkbox {
+    width: 16px;
+    height: 16px;
+    border-radius: 4px;
+    border: 1px solid var(--sidebar-border);
+    background-color: transparent;
+    cursor: pointer;
+    accent-color: var(--sidebar-accent);
+  }
+
+  .download-segment__label {
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: var(--sidebar-text);
+  }
+
+  .download-segment__options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    padding-top: 0.875rem;
+    border-top: 1px solid var(--sidebar-border);
+    margin-top: 0.875rem;
+  }
+
+  .download-segment__row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .download-segment__opt-label {
+    font-size: 0.6875rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--sidebar-text-muted);
+  }
+
+  .download-segment__opt-value {
+    font-size: 0.75rem;
+    font-weight: 500;
+    background-color: var(--sidebar-surface);
+    color: var(--sidebar-text);
+    padding: 0.25rem 0.5rem;
+    border-radius: 6px;
+  }
+
+  .download-segment__slider {
+    width: 100%;
+    height: 6px;
+    background-color: var(--sidebar-surface);
+    border-radius: 3px;
+    appearance: none;
+    cursor: pointer;
+    accent-color: var(--sidebar-accent);
+  }
+
+  .download-segment__marks {
+    display: flex;
+    justify-content: space-between;
+    font-size: 0.625rem;
+    color: var(--sidebar-text-muted);
+    opacity: 0.7;
+    padding: 0 2px;
+  }
+
+  /* ===== Modal Footer ===== */
+  .download-section--creator-layout {
+    margin-top: 0.25rem;
+  }
+
+  .download-creator-layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 0.5rem;
+    cursor: pointer;
+    font-size: 0.875rem;
+    color: var(--sidebar-text);
+  }
+
+  .download-creator-layout__checkbox {
+    margin-top: 0.15rem;
+    flex-shrink: 0;
+  }
+
+  .download-creator-layout__text {
+    font-weight: 600;
+  }
+
+  .download-creator-layout__hint {
+    margin: 0.35rem 0 0 1.5rem;
+    font-size: 0.75rem;
+    line-height: 1.4;
+    color: var(--sidebar-text);
+    opacity: 0.75;
+  }
+
+  .download-modal__footer {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 0.75rem;
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--sidebar-border);
+    background-color: rgba(255, 255, 255, 0.02);
+    flex-shrink: 0;
+  }
+
+  .download-modal__btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+    padding: 0.625rem 1.25rem;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    border-radius: 8px;
+    border: none;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .download-modal__btn--secondary {
+    background-color: var(--sidebar-hover);
+    border: 1px solid var(--sidebar-border);
+    color: var(--sidebar-text);
+  }
+
+  .download-modal__btn--secondary:hover:not(:disabled) {
+    background-color: var(--sidebar-active);
+    border-color: rgba(255, 255, 255, 0.15);
+  }
+
+  .download-modal__btn--primary {
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+    padding: 0.625rem 1.5rem;
+  }
+
+  .download-modal__btn--primary:hover:not(:disabled) {
+    opacity: 0.9;
+  }
+
+  .download-modal__btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
+  .download-modal__btn-spinner {
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* ===== Modal Transitions ===== */
+  .modal-enter-active,
+  .modal-leave-active {
+    transition: opacity 0.2s ease;
+  }
+
+  .modal-enter-from,
+  .modal-leave-to {
+    opacity: 0;
+  }
+
+  .dialog-enter-active {
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  }
+
+  .dialog-leave-active {
+    transition: all 0.15s ease-in;
+  }
+
+  .dialog-enter-from {
+    opacity: 0;
+    transform: scale(0.96) translateY(8px);
+  }
+
+  .dialog-leave-to {
+    opacity: 0;
+    transform: scale(0.98);
+  }
+
+  /* ===== Scale Transition (for search icon) ===== */
+  .scale-enter-active,
+  .scale-leave-active {
+    transition: all 0.2s ease;
+  }
+
+  .scale-enter-from,
+  .scale-leave-to {
+    opacity: 0;
+    transform: scale(0.5);
+  }
+
+  /* ===== Animations ===== */
+  @keyframes spin {
+    to {
+      transform: rotate(360deg);
+    }
+  }
+
+  @keyframes shimmer {
+    0% {
+      background-position: -200% 0;
+    }
+    100% {
+      background-position: 200% 0;
+    }
+  }
+
+  /* ===== Selection Checkbox ===== */
+  .vod-card__checkbox {
+    position: absolute;
+    top: 0.75rem;
+    right: 0.75rem;
+    z-index: 30;
+    opacity: 0;
+    transition: opacity 150ms ease;
+  }
+
+  .vod-card:hover .vod-card__checkbox,
+  .vod-card__checkbox--visible {
+    opacity: 1;
+  }
+
+  .vod-card__checkbox-inner {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background-color: rgba(0, 0, 0, 0.6);
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    color: white;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+    transition: all 150ms ease;
+  }
+
+  .vod-card__checkbox-inner:hover {
+    background-color: rgba(0, 0, 0, 0.8);
+  }
+
+  .vod-card__checkbox-inner--checked {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+  }
+
+  .vod-card__checkbox-inner--checked:hover {
+    background-color: var(--sidebar-accent);
+    border-color: var(--sidebar-accent);
+  }
+
+  .vod-card__checkbox-icon {
+    width: 16px;
+    height: 16px;
+  }
+
+  .vod-card--selected {
+    border-color: var(--sidebar-accent);
+    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.2);
+  }
+
+  /* ===== Bulk Actions Bar ===== */
+  .streamvods__bulk-actions {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 0.75rem 1rem;
+    background-color: rgba(6, 182, 212, 0.1);
+    border: 1px solid rgba(6, 182, 212, 0.3);
+    border-radius: 8px;
+    margin-bottom: 1rem;
+  }
+
+  .streamvods__bulk-count {
+    font-size: 0.875rem;
+    font-weight: 600;
+    color: var(--sidebar-accent);
+  }
+
+  .streamvods__bulk-buttons {
+    display: flex;
+    gap: 0.5rem;
+  }
+
+  .streamvods__bulk-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.375rem;
+    padding: 0.5rem 0.875rem;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 150ms ease;
+  }
+
+  .streamvods__bulk-btn--secondary {
+    background-color: transparent;
+    color: var(--sidebar-text);
+    border: 1px solid var(--sidebar-border);
+  }
+
+  .streamvods__bulk-btn--secondary:hover {
+    background-color: var(--sidebar-hover);
+  }
+
+  .streamvods__bulk-btn--primary {
+    background-color: var(--sidebar-accent);
+    color: var(--sidebar-bg);
+  }
+
+  .streamvods__bulk-btn--primary:hover {
+    opacity: 0.9;
+  }

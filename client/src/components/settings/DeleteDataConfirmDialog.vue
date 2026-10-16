@@ -132,8 +132,7 @@
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue';
 import { X, Trash2, AlertTriangle, Loader2 } from 'lucide-vue-next';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+import { invoke, listen } from '@/services/settingsRuntime';
 
 interface StorageSizeInfo {
   total_bytes: number;

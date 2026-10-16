@@ -1,5 +1,5 @@
 import { ref, computed, watch } from 'vue';
-import { useCreditBalance, OrganizationAllocation } from './useCreditBalance';
+import { useCreditBalance, type OrganizationAllocation } from '@/composables/useCreditBalance';
 
 export type CreditSource = 'personal' | 'organization';
 

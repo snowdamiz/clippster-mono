@@ -137,8 +137,7 @@
 <script setup lang="ts">
 import { ref, computed, watch, onMounted, onUnmounted } from 'vue';
 import { X, Link, ChevronDown, Loader2, User, Instagram, Youtube } from 'lucide-vue-next';
-import { submitPersonalExternalPost } from '@/services/schedulingApi';
-import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
+import { submitPersonalExternalPost, getUserAssignedCreatorProfiles } from '@/services/creatorProfileRuntime';
 import { useToast } from '@/composables/useToast';
 
 interface CreatorOption {

@@ -77,6 +77,7 @@
     <div class="page-layout__content">
       <slot></slot>
     </div>
+    <div v-if="$slots.footer" class="shrink-0"><slot name="footer" /></div>
   </div>
 </template>
 

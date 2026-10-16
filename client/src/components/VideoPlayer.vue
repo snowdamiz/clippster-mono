@@ -72,7 +72,7 @@
       <!-- Video Element -->
       <!-- Note: For HLS URLs (.m3u8), src is not set directly - HLS.js handles it -->
       <video
-        v-else
+        v-if="videoSrc && !videoError"
         ref="videoElementRef"
         :src="videoSrc && !videoSrc.includes('.m3u8') ? videoSrc : undefined"
         crossorigin="anonymous"

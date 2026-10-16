@@ -4,6 +4,7 @@
       <div class="absolute inset-0 bg-black/70 backdrop-blur-md" @click="$emit('close')"></div>
       <Transition name="dialog" appear>
         <div
+          role="dialog" aria-modal="true" aria-label="Download Latest VOD"
           class="relative flex flex-col w-full max-w-sm sm:max-w-md lg:max-w-lg mx-3 sm:mx-4 overflow-hidden bg-gradient-to-b from-zinc-900 to-zinc-950 border border-white/10 rounded-xl sm:rounded-2xl max-h-[92vh] sm:max-h-[90vh]"
         >
           <!-- Decorative top accent -->
@@ -275,12 +276,11 @@
 
 <script setup lang="ts">
   import { ref, watch, computed } from 'vue';
-  import { useRouter } from 'vue-router';
   import { Button } from '@/components/ui/button';
   import TimeRangePicker from '@/components/TimeRangePicker.vue';
-  import { type CreatorProfileWithLinks } from '@/services/database';
-  import { usePlatformStore, type PlatformClip } from '@/stores/platform';
-  import { useDownloads } from '@/composables/useDownloads';
+  import { type CreatorProfileWithLinks } from '@/services/database/types';
+  import type { PlatformClip } from '@/stores/platform';
+  import { useCreatorDownloadRuntime, extractMintId } from '@/services/creatorDownloadRuntime';
   import { useToast } from '@/composables/useToast';
   import { platformConfigs } from '@/config/platforms';
   import {
@@ -298,6 +298,7 @@
   interface Props {
     show: boolean;
     creator: CreatorProfileWithLinks | null;
+    selectedVod?: PlatformClip | null;
   }
 
   const props = defineProps<Props>();
@@ -305,9 +306,7 @@
     (e: 'close'): void;
   }>();
 
-  const router = useRouter();
-  const platformStore = usePlatformStore();
-  const { startDownload: startVodDownload } = useDownloads();
+  const { platformStore, startDownload: startVodDownload, navigateProjects } = useCreatorDownloadRuntime();
   const { success, error: showError } = useToast();
 
   // State
@@ -447,7 +446,6 @@
       let validatedId = selectedLink.platform_id;
 
       if (selectedLink.platform === 'pumpfun') {
-        const { extractMintId } = await import('@/services/pumpfun');
         const mintId = extractMintId(selectedLink.platform_id);
         if (!mintId) {
           console.error('[CreatorDownload] Invalid mint ID:', selectedLink.platform_id);
@@ -462,6 +460,12 @@
         platformId: validatedId,
         displayName: selectedLink.display_name || undefined,
       };
+      if (props.selectedVod) {
+        latestVod.value = props.selectedVod;
+        selectedTimeRange.value = { startTime: 0, endTime: props.selectedVod.duration || 0 };
+        autoSegment.value = false;
+        return;
+      }
 
       console.log('[CreatorDownload] Searching for VODs with platform_id:', validatedId);
 
@@ -586,7 +590,7 @@
 
       // Navigate to projects
       setTimeout(() => {
-        router.push('/projects');
+        navigateProjects();
       }, 500);
     } catch (err) {
       console.error('Download failed:', err);

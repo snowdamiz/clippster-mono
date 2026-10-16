@@ -593,9 +593,8 @@
     CHANNEL_PLATFORMS,
     getPlatformLabel,
   } from '@/services/clipperProfilesApi';
-  import { getAllClipsWithBuilds, getRawVideosByProjectId, type Clip, type ClipBuild } from '@/services/database';
-  import { invoke } from '@tauri-apps/api/core';
-  import { getStoragePath } from '@/services/storage';
+  import type { Clip, ClipBuild } from '@/services/database/types';
+  import { getAllClipsWithBuilds, getRawVideosByProjectId, invoke, getStoragePath } from '@/services/profileMediaRuntime';
 
   interface Props {
     show: boolean;

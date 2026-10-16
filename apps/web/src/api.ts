@@ -2,6 +2,7 @@ import { ref } from 'vue'
 import { createApiClient, createAuthApi, createWebProjectsApi } from '@clippster/api-client'
 export const sessionExpired = ref(false)
 const apiPrefix = new URLSearchParams(location.search).has('embedded') ? '/workspace/api' : '/api'
+export const webApiPath = `${apiPrefix}/web`
 export const client = createApiClient({
   baseUrl: `${location.origin}${apiPrefix}`,
   platform: 'web',
@@ -26,6 +27,7 @@ export const workspaceClient = {
   delete: <T = unknown>(path: string) => workspaceRequest<T>(path, 'DELETE'),
 }
 export const sourcePath = (id: string) => `${apiPrefix}/web/projects/${id}/source`
+export const clipPreviewPath = (projectId: string, clipId: string) => `${apiPrefix}/web/projects/${projectId}/clips/${clipId}/preview`
 export const downloadPath = (id: string, clipId: string) =>
   `${apiPrefix}/web/projects/${id}/clips/${clipId}/download`
 export const framingAssetPath = (projectId: string, id?: string) => `${apiPrefix}/web/projects/${projectId}/framing-assets${id ? `/${id}` : ''}`

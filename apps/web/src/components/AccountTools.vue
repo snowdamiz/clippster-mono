@@ -7,10 +7,7 @@
         <div class="mb-6 flex flex-wrap items-center gap-3">
           <input v-model="search" class="field max-w-sm" :aria-label="`Search ${title}`" placeholder="Search…" />
           <button class="button-secondary" @click="load">Refresh</button>
-          <button v-if="view === 'prompts' || view === 'creators'" class="button-primary" @click="edit()">{{ view === 'prompts' ? 'New Prompt' : 'New Profile' }}</button>
-          <template v-if="view === 'creators'">
-            <button v-for="scope in ['streamer', 'global', 'assigned']" :key="scope" class="button-secondary" :aria-pressed="creatorScope === scope" @click="creatorScope = scope">{{ scope === 'streamer' ? 'Creators' : scope === 'global' ? 'Global Profiles' : 'Assigned Creators' }}</button>
-          </template>
+          <button v-if="view === 'prompts'" class="button-primary" @click="edit()">New Prompt</button>
           <template v-if="view === 'campaigns'">
             <button class="button-secondary" @click="campaignScope = 'all'; load()">Discover</button>
             <button class="button-secondary" @click="campaignScope = 'mine'; load()">My Campaigns</button>
@@ -44,17 +41,11 @@
           <article v-for="item in filtered" :key="item.id" class="rounded-xl border border-white/10 bg-white/[.02] p-5">
             <h2 class="mb-2 text-lg font-semibold">{{ item.name || item.title || item.campaign?.title || 'Submitted clip' }}</h2>
             <p class="mb-4 line-clamp-4 whitespace-pre-wrap text-sm text-zinc-400">{{ item.content || item.description || 'No description' }}</p>
-            <p v-if="view === 'creators'" class="mb-4 text-xs text-zinc-400">{{ (item.platform_links || []).map((link: any) => `${link.platform}: ${link.platform_id}`).join(' · ') }}</p>
             <div class="flex flex-wrap gap-2">
               <template v-if="view === 'prompts'">
                 <button class="button-secondary" @click="copy(item.content)">Copy</button>
                 <button class="button-secondary" @click="edit(item)">{{ item.system ? 'View' : 'Edit' }}</button>
                 <button v-if="!item.system" class="button-secondary" @click="remove(item)">Delete</button>
-              </template>
-              <template v-if="view === 'creators'">
-                <button v-if="creatorScope !== 'assigned'" class="button-secondary" @click="edit(item)">Edit</button>
-                <button v-if="creatorScope !== 'assigned'" class="button-secondary" @click="remove(item)">Delete</button>
-                <a href="/account/downloads" target="_top" class="button-secondary">Download Video</a>
               </template>
               <template v-if="view === 'campaigns' && campaignScope === 'submissions'"><p class="w-full text-sm">{{ item.status }} · {{ item.view_count || 0 }} views · {{ item.platform }}</p><a :href="safeLink(item.clip_url)" target="_blank" rel="noopener noreferrer" class="button-secondary">View clip</a></template>
               <button v-if="view === 'campaigns'" class="button-primary" @click="showCampaign(campaignScope === 'submissions' ? item.campaign_id : item.id)">View Campaign</button>
@@ -64,21 +55,11 @@
         <p v-if="view !== 'calendar' && !filtered.length" class="py-16 text-center text-zinc-400">No {{ title.toLowerCase() }} found.</p>
       </template>
     </div>
-    <dialog v-if="view === 'creators' || view === 'prompts'" ref="editor" class="m-auto w-[95vw] max-w-xl rounded-xl border border-white/10 bg-zinc-950 p-6 text-white backdrop:bg-black/80">
+    <dialog v-if="view === 'prompts'" ref="editor" class="m-auto w-[95vw] max-w-xl rounded-xl border border-white/10 bg-zinc-950 p-6 text-white backdrop:bg-black/80">
       <form class="grid gap-4" @submit.prevent="save">
-        <h2 class="text-xl font-semibold">{{ draft.system ? 'System prompt' : draft.id ? 'Edit' : 'Create' }} {{ view === 'prompts' ? 'prompt' : 'profile' }}</h2>
+        <h2 class="text-xl font-semibold">{{ draft.system ? 'System prompt' : draft.id ? 'Edit' : 'Create' }} prompt</h2>
         <label>Name<input v-model="draft.name" class="field mt-2" required maxlength="120" :readonly="draft.system" /></label>
-        <label>{{ view === 'prompts' ? 'Prompt' : 'Description' }}<textarea v-model="draft.content" class="field mt-2" rows="10" :required="view === 'prompts'" :maxlength="view === 'prompts' ? 4000 : 1000" :readonly="draft.system" /></label>
-        <label v-if="view === 'creators'">Profile type<select v-model="draft.scope" class="field"><option value="streamer">Creator</option><option value="global">Global</option></select></label>
-        <fieldset v-if="view === 'creators' && draft.scope === 'streamer'" class="grid gap-3">
-          <legend class="mb-2">Platforms</legend>
-          <div v-for="(link, index) in draft.platform_links" :key="index" class="flex gap-2">
-            <select v-model="link.platform" class="field w-auto" aria-label="Creator platform"><option v-for="p in ['pumpfun', 'kick', 'twitch', 'YouTube', 'rumble', 'twitter', 'tokend']" :key="p">{{ p }}</option></select>
-            <input v-model="link.platform_id" class="field" aria-label="Channel identifier" placeholder="Channel name or ID" required maxlength="200" />
-            <button type="button" class="button-secondary" aria-label="Remove platform" @click="draft.platform_links.splice(index, 1)">×</button>
-          </div>
-          <button type="button" class="button-secondary" :disabled="draft.platform_links.length >= 12" @click="draft.platform_links.push({ platform: 'twitch', platform_id: '', is_primary: draft.platform_links.length === 0 })">Add platform</button>
-        </fieldset>
+        <label>Prompt<textarea v-model="draft.content" class="field mt-2" rows="10" required :maxlength="4000" :readonly="draft.system" /></label>
         <p v-if="draft.system" class="text-sm text-zinc-400">System prompts are read-only.</p>
         <p v-if="dialogError" role="alert" class="text-red-300">{{ dialogError }}</p>
         <div class="flex gap-3"><button v-if="!draft.system" class="button-primary" :disabled="saving">Save</button><button type="button" class="button-secondary" @click="editor?.close()">Close</button></div>
@@ -119,25 +100,24 @@
 </template>
 <script setup lang="ts">
 import { computed, ref, onMounted } from 'vue'
-import { Users, MessageSquare, CalendarDays, Megaphone } from 'lucide-vue-next'
+import { MessageSquare, CalendarDays, Megaphone } from 'lucide-vue-next'
 import PageLayout from '@/components/PageLayout.vue'
 import { workspaceClient as client, errorMessage } from '../api'
 import { SYSTEM_DETECTION_PROMPTS, hasCreatorToolsAccess } from '@clippster/shared-types'
 const props = defineProps<{ view: string; billingUrl: string }>()
-const titles: Record<string, string> = { creators: 'My Creators', campaigns: 'Campaigns', prompts: 'Prompts', calendar: 'Calendar' }
+const titles: Record<string, string> = { campaigns: 'Campaigns', prompts: 'Prompts', calendar: 'Calendar' }
 const title = computed(() => titles[props.view])
-const icon = computed(() => ({ creators: Users, campaigns: Megaphone, prompts: MessageSquare, calendar: CalendarDays })[props.view])
-const description = computed(() => props.view === 'creators' ? 'Manage your creator and global profiles. Live-stream tools are available in Clippster Desktop.' : props.view === 'prompts' ? 'Manage your AI prompts and templates' : props.view === 'calendar' ? 'Plan and manage your published and scheduled content' : 'Discover campaigns and submit your clips')
+const icon = computed(() => ({ campaigns: Megaphone, prompts: MessageSquare, calendar: CalendarDays })[props.view])
+const description = computed(() => props.view === 'prompts' ? 'Manage your AI prompts and templates' : props.view === 'calendar' ? 'Plan and manage your published and scheduled content' : 'Discover campaigns and submit your clips')
 const loading = ref(true), saving = ref(false), blocked = ref(false), error = ref(''), dialogError = ref(''), search = ref('')
-const items = ref<any[]>([]), assigned = ref<any[]>([]), selected = ref<any>(null)
-const creatorScope = ref('streamer'), campaignScope = ref('all')
+const items = ref<any[]>([]), selected = ref<any>(null)
+const campaignScope = ref('all')
 const earnings = ref<Record<string, string | number>>({})
 const editor = ref<HTMLDialogElement>(), draft = ref<any>({})
 const applicationNote = ref(''), clipUrl = ref(''), platform = ref(''), rescheduleAt = ref('')
 const cursor = ref(new Date()), calendarMode = ref('month')
 const account = '/web/account'
-const filtered = computed(() => (props.view === 'creators' && creatorScope.value === 'assigned' ? assigned.value : items.value)
-  .filter(item => props.view !== 'creators' || creatorScope.value === 'assigned' || (item.scope || 'streamer') === creatorScope.value)
+const filtered = computed(() => items.value
   .filter(item => `${item.name || item.title || item.campaign?.title || ''} ${item.content || item.description || ''}`.toLowerCase().includes(search.value.toLowerCase())))
 const days = computed(() => {
   const first = new Date(cursor.value.getFullYear(), cursor.value.getMonth(), calendarMode.value === 'month' ? 1 : cursor.value.getDate())
@@ -152,10 +132,6 @@ async function load() {
   loading.value = true; error.value = ''; blocked.value = false
   try {
     if (props.view === 'prompts') items.value = [...SYSTEM_DETECTION_PROMPTS, ...(await client.get<any>('/web/prompts')).prompts]
-    if (props.view === 'creators') {
-      const [personal, shared] = await Promise.all([checked(client.get(account + '/user/creator-profiles')), checked(client.get(account + '/user/assigned-creator-profiles'))])
-      items.value = personal.profiles || []; assigned.value = shared.profiles || []
-    }
     if (props.view === 'campaigns') {
       const paths: Record<string, string> = { all: '/campaigns', mine: '/user/campaigns', submissions: '/user/submissions', earnings: '/user/earnings' }
       const result = await client.get<any>(account + paths[campaignScope.value])
@@ -165,7 +141,7 @@ async function load() {
     if (props.view === 'calendar') {
       const me = await client.get<any>('/auth/me')
       const orgId = me.user?.owned_organization_id
-      const flags = await client.get<any>(account + '/app-settings/feature-flags')
+      const flags = await client.get<any>(account + '/settings/feature-flags')
       const campaignsAllowed = hasCreatorToolsAccess(me.user) && (flags.feature_flags?.campaigns_enabled || me.user?.is_admin || me.user?.campaigns_enabled)
       const sources = [
         { kind: 'scheduled', path: '/social/scheduled' }, { kind: 'published', path: '/user/posts' },
@@ -188,19 +164,19 @@ async function load() {
   } catch (cause) { error.value = errorMessage(cause); blocked.value = true }
   finally { loading.value = false }
 }
-function edit(item?: any) { draft.value = item ? { ...JSON.parse(JSON.stringify(item)), platform_links: JSON.parse(JSON.stringify(item.platform_links || [])), content: item.content || item.description || '' } : { name: '', content: '', platform_links: [], scope: creatorScope.value === 'global' ? 'global' : 'streamer' }; dialogError.value = ''; editor.value?.showModal() }
+function edit(item?: any) { draft.value = item ? { ...JSON.parse(JSON.stringify(item)), content: item.content || '' } : { name: '', content: '' }; dialogError.value = ''; editor.value?.showModal() }
 async function save() {
   saving.value = true; dialogError.value = ''
   try {
-    const path = props.view === 'prompts' ? '/web/prompts' : account + '/user/creator-profiles'
-    const body = props.view === 'prompts' ? { name: draft.value.name, content: draft.value.content } : { name: draft.value.name, description: draft.value.content, scope: draft.value.scope, platform_links: draft.value.platform_links }
+    const path = '/web/prompts'
+    const body = { name: draft.value.name, content: draft.value.content }
     await checked(draft.value.id ? client.put(`${path}/${draft.value.id}`, body) : client.post(path, body))
     editor.value?.close(); await load()
   } catch (cause) { dialogError.value = errorMessage(cause) } finally { saving.value = false }
 }
 async function remove(item: any) {
   if (!confirm(`Delete "${item.name}"?`)) return
-  try { await checked(client.delete(`${props.view === 'prompts' ? '/web/prompts' : account + '/user/creator-profiles'}/${item.id}`)); await load() } catch (cause) { error.value = errorMessage(cause) }
+  try { await checked(client.delete(`/web/prompts/${item.id}`)); await load() } catch (cause) { error.value = errorMessage(cause) }
 }
 async function copy(content: string) { try { await navigator.clipboard.writeText(content) } catch { error.value = 'Unable to copy. Open the prompt and copy its text.' } }
 async function showCampaign(id: number) { try { const result = await client.get<any>(`${account}/campaigns/${id}`); selected.value = { ...result.campaign, participation: result.participation }; dialogError.value = ''; applicationNote.value = ''; clipUrl.value = ''; platform.value = selected.value.allowed_platforms?.[0] || 'tiktok' } catch (cause) { error.value = errorMessage(cause) } }

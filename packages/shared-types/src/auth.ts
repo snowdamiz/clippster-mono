@@ -7,6 +7,7 @@ export interface AuthUser {
   avatar_url?: string;
   wallet_address?: string;
   is_admin?: boolean;
+  is_affiliate?: boolean;
   is_moderator?: boolean;
   account_type?: 'personal' | 'organization';
   owned_organization_id?: number | string | null;

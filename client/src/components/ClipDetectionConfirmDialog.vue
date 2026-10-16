@@ -367,7 +367,7 @@
   import { ChevronDown, Info, Loader2, Sparkles, Building2, User, X } from 'lucide-vue-next';
   import { useCreditSource } from '@/composables/useCreditSource';
   import { useAuthStore } from '@/stores/auth';
-  import { getAllPrompts } from '@/services/database';
+  import { getAllPrompts } from '@/services/workspaceRuntime';
   import TimeRangePicker from '@/components/TimeRangePicker.vue';
 
   interface Prompt {

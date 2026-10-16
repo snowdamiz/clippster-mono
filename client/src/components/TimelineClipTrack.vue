@@ -3,6 +3,7 @@
     v-for="(clip, index) in clips"
     :key="clip.id"
     class="flex items-center min-h-12 px-2 border-b border-border/20 cursor-pointer relative"
+    :style="{ minHeight: 'var(--workspace-clip-track-height, 3rem)' }"
     @click="onTimelineClipClick(clip.id)"
   >
     <!-- Track Label -->

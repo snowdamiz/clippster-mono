@@ -3,7 +3,7 @@
  * Handles scheduling, updating, and canceling social media posts
  */
 
-import api from './api';
+import api from '@/services/api';
 
 // ============================================
 // Types

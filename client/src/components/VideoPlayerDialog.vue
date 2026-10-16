@@ -225,9 +225,9 @@
 
 <script setup lang="ts">
   import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke } from '@/services/creatorProfileRuntime';
   import Hls from 'hls.js';
-  import type { RawVideo, IntroOutro } from '@/services/database';
+  import type { RawVideo, IntroOutro } from '@/services/database/types';
   import { X, Loader2, Play, Pause, VolumeX, Volume2, RotateCcw, FolderOpen, Clock } from 'lucide-vue-next';
   import { utf8ToBase64Url } from '@/utils/encoding';
 
@@ -485,12 +485,11 @@
       }
 
       try {
-        const { invoke } = await import('@tauri-apps/api/core');
-        const { getWatermarkImage } = await import('@/services/database/watermarks');
+        const { getWatermarkImage } = await import('@/services/creatorProfileRuntime');
 
         const watermark = await getWatermarkImage(targetWatermarkId);
         if (watermark) {
-          const dataUrl = await invoke<string>('read_file_as_data_url', {
+          const dataUrl = /^https?:|^data:|^\/(?:workspace\/)?api\/web\//.test(watermark.file_path) ? watermark.file_path : await invoke<string>('read_file_as_data_url', {
             filePath: watermark.file_path,
           });
           watermarkDataUrl.value = dataUrl;
@@ -885,7 +884,7 @@
     try {
       resetVideoState();
 
-      const port = await invoke<number>('get_video_server_port');
+      const port = await invoke<number>('get_video_server_port', {});
       // Use constructVideoUrl to properly handle .ts files with HLS wrapper
       const timestamp = Date.now();
       const baseUrl = constructVideoUrl(filePath, port);

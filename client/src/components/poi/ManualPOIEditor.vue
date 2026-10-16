@@ -127,6 +127,7 @@
                   <POISourcePanel
                     v-else
                     :regions="displayRegions"
+                    :resolve-media-src="id => resolvePoiMedia(projectId, id)"
                     :selected-region-id="selectedRegionId"
                     :thumbnail-url="thumbnailUrl"
                     :source-aspect-ratio="sourceAspectRatio"
@@ -166,6 +167,7 @@
                 <div class="flex-1">
                   <POITargetPanel
                     :regions="displayRegions"
+                    :resolve-media-src="id => resolvePoiMedia(projectId, id)"
                     :selected-region-id="selectedRegionId"
                     :thumbnail-url="thumbnailUrl"
                     :target-aspect-ratio="targetAspectRatio"
@@ -457,7 +459,6 @@
     SegmentRegionConfig,
     SubtitleSettings,
   } from '@/types';
-  import { utf8ToBase64 } from '@/utils/encoding';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
   import {
     createDefaultClipTextBoxState,
@@ -469,7 +470,7 @@
   } from '@/utils/clipTextBox';
   import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
   import { useAiBroll } from '@/composables/useAiBroll';
-  import { EditorCore } from '@/editor/core';
+  import { getPoiTimelineEditor, resolvePoiVideoSource, savePoiMedia, resolvePoiMedia } from '@/services/poiRuntime';
   import type { ManualBrollMediaType } from '@/composables/useAiBroll';
   import type { AiBrollPlannerOptions } from '@/types/ai-broll';
   import {
@@ -770,8 +771,8 @@
   const currentTime = ref(0);
   let unsubscribeTimelinePlayback: (() => void) | null = null;
 
-  function timelineEditor(): EditorCore | null {
-    return props.useTimelinePlayback ? EditorCore.getInstance() : null;
+  function timelineEditor() {
+    return props.useTimelinePlayback ? getPoiTimelineEditor() : null;
   }
 
   function syncTimelinePlaybackState() {
@@ -914,14 +915,6 @@
     }
   }
 
-  function constructVideoUrl(filePath: string, port: number): string {
-    const encodedPath = utf8ToBase64(filePath);
-    const isTsFile = filePath.toLowerCase().endsWith('.ts');
-    if (isTsFile) {
-      return `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;
-    }
-    return `http://localhost:${port}/video/${encodedPath}`;
-  }
 
   // Keyboard controls for precision scrubbing
   function handleKeyDown(e: KeyboardEvent) {
@@ -1030,10 +1023,8 @@
     videoError.value = null;
 
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const port = await invoke<number>('get_video_server_port');
       const timestamp = Date.now();
-      const baseUrl = constructVideoUrl(props.videoPath, port);
+      const baseUrl = await resolvePoiVideoSource(props.videoPath);
       videoUrl.value = baseUrl.includes('?') ? `${baseUrl}&t=${timestamp}` : `${baseUrl}?t=${timestamp}`;
       console.log('[POIEditor] Video URL loaded:', videoUrl.value);
     } catch (error) {
@@ -1396,12 +1387,7 @@
       if (!file) return;
 
       try {
-        const buf = new Uint8Array(await file.arrayBuffer());
-        const { invoke } = await import('@tauri-apps/api/core');
-        const tempPath = await invoke<string>('save_temp_media_file', {
-          fileName: file.name,
-          data: Array.from(buf),
-        });
+        const tempPath = await savePoiMedia(file, props.projectId);
         const mediaType = file.type.startsWith('image/') ? 'image' : 'video';
         updateRegion(regionId, {
           mediaAssetId: tempPath,
@@ -1559,14 +1545,14 @@
   async function persistClipTextToDb() {
     if (!props.clipId || !clipTextLocal.value) return;
     clipTextLocal.value = ensureClipTextPerRatioEntry(clipTextLocal.value, props.targetAspectRatio);
-    const { updateClipTextOverlay } = await import('@/services/database/clips');
+    const { updateClipTextOverlay } = await import('@/services/workspaceRuntime');
     await updateClipTextOverlay(props.clipId, clipTextLocal.value);
     emit('clipTextOverlayChange', serializeClipTextBoxState(clipTextLocal.value));
   }
 
   async function persistClipTextClearDb() {
     if (!props.clipId) return;
-    const { updateClipTextOverlay } = await import('@/services/database/clips');
+    const { updateClipTextOverlay } = await import('@/services/workspaceRuntime');
     await updateClipTextOverlay(props.clipId, null);
     emit('clipTextOverlayChange', null);
   }

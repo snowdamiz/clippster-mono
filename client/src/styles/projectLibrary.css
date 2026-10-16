@@ -95,7 +95,7 @@
 }
 
 /* Dropdown trigger button styling */
-:deep(.projects-header__dropdown-trigger) {
+.projects-header__dropdown-trigger {
   height: 32px !important;
   padding: 0 0.625rem !important;
   background-color: var(--sidebar-surface) !important;
@@ -106,15 +106,15 @@
   transition: all 150ms ease !important;
 }
 
-:deep(.projects-header__dropdown-trigger:hover) {
+.projects-header__dropdown-trigger:hover {
   border-color: rgba(255, 255, 255, 0.15) !important;
 }
 
-:deep(.projects-header__dropdown-trigger span) {
+.projects-header__dropdown-trigger span {
   color: var(--sidebar-text) !important;
 }
 
-:deep(.projects-header__dropdown-trigger svg) {
+.projects-header__dropdown-trigger svg {
   width: 12px !important;
   height: 12px !important;
   color: var(--sidebar-text-muted) !important;
