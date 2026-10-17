@@ -47,15 +47,15 @@
               :video-error="videoError"
               :is-playing="playback.playing.value"
               :aspect-ratio="previewState.aspect.value"
-              :framing-regions="videoState.builtClip.value ? undefined : previewState.config.value?.regions"
-              :manual-framing-config="videoState.builtClip.value ? null : previewState.config.value"
+              :framing-regions="previewState.config.value?.regions"
+              :manual-framing-config="previewState.config.value"
               :watermark-settings="previewState.watermarkSettings.value"
-              :watermark-data="videoState.builtClip.value ? null : previewState.watermarkData.value"
+              :watermark-data="previewState.watermarkData.value"
               :current-time="playback.time.value"
               :subtitle-settings="subtitleSettings"
               :subtitle-initial-position="draft?.subtitleSettings?.perRatioConfigs?.[previewState.ratio.value]?.position"
               :resolve-media-src="(id: string) => framingAssetPath(project.id, id)"
-              :clip-text-box-state="videoState.builtClip.value ? undefined : draft?.textBox || undefined"
+              :clip-text-box-state="draft?.textBox || undefined"
               :clip-absolute-start="playback.time.value - clipTime"
               :transcript-words="playerWords"
               :transcript-segments="subtitleSegments"
@@ -106,7 +106,7 @@
           <ClipTextBoxPropertiesPanel v-if="panel === 'text' && draft" :state="draft.textBox || null" :clip-duration="draft.segments.reduce((sum, part) => sum + part.end_time - part.start_time, 0)" @close="panel = 'clips'" @update-state="updateTextBox" @delete="deleteTextBox" />
         </aside>
       </div>
-      <div v-if="project.status === 'ready'" class="workspace-dialog__timeline" style="--workspace-video-track-height: 80px; --workspace-waveform-height: 56px; --workspace-clip-track-height: 60px"><Timeline ref="timeline" :min-height="270" :allow-editor="false" :video-src="sourcePath(project.id)" :project-id="project.id" :duration="project.duration" :current-time="videoState.sourceTime.value" :timeline-hover-time="timelineHoverTime" :timeline-hover-position="timelineHoverPosition" :clips="timelineClips" :hovered-clip-id="selectedId" :hovered-timeline-clip-id="hoveredTimelineClipId" :currently-playing-clip-id="playback.playing.value ? selectedId : null" @seek-timeline="seekTimeline" @timeline-track-hover="hoverTimeline" @timeline-mouse-leave="timelineHoverTime = null" @timeline-clip-hover="hoveredTimelineClipId = $event" @timeline-segment-click="selectById" @scroll-to-media-panel="selectById" @play-from-time="playFromTime" @refresh-clips-data="refreshWorkspace" @edit-clip="selectById" @toggle-subtitles="toggleSubtitles" @toggle-text="toggleText" /></div>
+      <div v-if="project.status === 'ready'" class="workspace-dialog__timeline"><Timeline ref="timeline" :allow-editor="false" :video-src="sourcePath(project.id)" :project-id="project.id" :duration="project.duration" :current-time="videoState.sourceTime.value" :timeline-hover-time="timelineHoverTime" :timeline-hover-position="timelineHoverPosition" :clips="timelineClips" :hovered-clip-id="selectedId" :hovered-timeline-clip-id="hoveredTimelineClipId" :currently-playing-clip-id="playback.playing.value ? selectedId : null" @seek-timeline="seekTimeline" @timeline-track-hover="hoverTimeline" @timeline-mouse-leave="timelineHoverTime = null" @timeline-clip-hover="hoveredTimelineClipId = $event" @timeline-segment-click="selectById" @scroll-to-media-panel="selectById" @play-from-time="playFromTime" @refresh-clips-data="refreshWorkspace" @edit-clip="selectById" @toggle-subtitles="toggleSubtitles" @toggle-text="toggleText" /></div>
     </div>
     <ClipDetectionConfirmDialog v-model="dialogs.showDetect.value" :video-duration="project.duration" :is-transcribed="!!project.words.length" :initial-subtitle-detection-defaults="previewState.detectionDefaults.value" @confirm="dialogs.confirmDetect" />
     <TranscriptionConfirmDialog v-model="dialogs.showTranscribe.value" :video-duration="project.duration" :segment-count="dialogs.transcriptionClip.value ? 1 : undefined" :total-duration="dialogs.transcriptionClip.value?.segments.reduce((sum, part) => sum + part.end_time - part.start_time, 0)" :item-label="dialogs.transcriptionClip.value ? 'clip' : 'video'" :is-transcribed="dialogs.transcriptionClip.value ? !!dialogs.transcriptionClip.value.subtitleWords?.length : !!project.words.length" @confirm="dialogs.confirmTranscribe" />
@@ -118,7 +118,7 @@
   </section>
 </template>
 <script setup lang="ts">
-  import { ref, computed, watch, onMounted, onUnmounted } from 'vue'
+  import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue'
   import { useWorkspacePreview } from '../useWorkspacePreview'
   import WorkspacePreviewControls from '@/components/WorkspacePreviewControls.vue'
   import SocialOverlay from '@/editor/components/preview/SocialOverlay.vue'
@@ -190,17 +190,17 @@
   onUnmounted(() => document.removeEventListener('fullscreenchange', fullscreenChanged))
   const playback = usePlayback()
   const previewState = useWorkspacePreview(() => props.project)
-  const videoState = useWorkspaceVideo(() => props.project, playback, ratio => { previewState.ratio.value = ratio })
+  const videoState = useWorkspaceVideo(() => props.project, playback)
   const timelineHoverTime = ref<number | null>(null), timelineHoverPosition = ref(0), hoveredTimelineClipId = ref<string | null>(null)
   const timelineClips = computed(() => props.project.clips.map(clip => ({ id: clip.id, title: clip.name, filename: clip.name, type: (clip.segments.length > 1 ? 'spliced' : 'continuous') as 'spliced' | 'continuous', segments: clip.segments.map(segment => ({ ...segment, duration: segment.end_time - segment.start_time, transcript: props.project.words.filter(word => word.start >= segment.start_time && word.end <= segment.end_time).map(word => word.word).join(' ') })), total_duration: clip.segments.reduce((sum, segment) => sum + segment.end_time - segment.start_time, 0), combined_transcript: '', virality_score: clip.detection?.viralityScore || 0, reason: clip.detection?.reason || '', socialMediaPost: '' })))
   const unregister = registerWorkspace({ project: () => props.project, update: workspace => emit('workspaceUpdated', workspace) })
   onUnmounted(unregister)
   async function refreshWorkspace() { emit('workspaceUpdated', await projects.get(props.project.id)) }
-  function selectById(id: string) { const clip = props.project.clips.find(clip => clip.id === id); if (clip) { select(clip); timeline.value?.revealClip(id); timeline.value?.scrollTimelineClipIntoView(id) } }
+  async function selectById(id: string) { const clip = props.project.clips.find(clip => clip.id === id); if (clip) { select(clip); timeline.value?.revealClip(id); await nextTick(); timeline.value?.scrollTimelineClipIntoView(id) } }
   function seekTimeline(event: MouseEvent) { const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect(); seekSource(Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)) * props.project.duration) }
   function hoverTimeline(event: MouseEvent) { const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect(); timelineHoverPosition.value = event.clientX - bounds.left; timelineHoverTime.value = Math.max(0, Math.min(1, timelineHoverPosition.value / bounds.width)) * props.project.duration }
-  function playFromTime(time: number) { videoState.restore(time, true); playback.playSource(time) }
-  function seekSource(time: number) { videoState.restore(time); playback.seek(time) }
+  function playFromTime(time: number) { videoState.restore(time, true) }
+  function seekSource(time: number) { videoState.restore(time) }
   const loading = ref(false)
   const videoError = ref<string | null>(null)
   const selectedId = ref<string | null>(null)
@@ -269,7 +269,7 @@
     return offset
   })
   const settingsForRatio = (ratio: string) => resolveCaptionSettings(draft.value?.subtitleSettings || previewState.subtitleDefaults.value, ratio, draft.value ? !!draft.value.captions : !!previewState.subtitleDefaults.value?.enabled)
-  const subtitleSettings = computed(() => videoState.builtClip.value ? { ...settingsForRatio(previewState.ratio.value), enabled: false } : settingsForRatio(previewState.ratio.value))
+  const subtitleSettings = computed(() => settingsForRatio(previewState.ratio.value))
   function select(clip: WebClip) {
     videoState.restore(clip.segments[0]?.start_time || 0)
     selectedId.value = clip.id

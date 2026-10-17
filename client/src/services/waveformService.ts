@@ -600,7 +600,7 @@ export function calculatePeaks(
 // ============================================================================
 
 // Threshold for switching to streaming mode (5 minutes)
-// Videos longer than this use on-demand per-range extraction instead of loading all audio into memory
+// Long videos use the native persistent peak cache instead of retaining raw audio in JS.
 const LONG_VIDEO_THRESHOLD = 300; // seconds
 
 type WaveformMode = 'cached' | 'streaming';
@@ -858,30 +858,30 @@ class WaveformServiceImpl {
     const normalizedPath = this.normalizePath(filePath);
     const mode = this.peakMode.get(normalizedPath);
 
-    // Generate cache key including pixel width and gain for proper zoom/volume caching
+    // Cache unamplified peaks so gain changes never request another extraction.
     const cacheKey = this.getPeakCacheKey(
       normalizedPath,
       options.startTime,
       options.endTime,
       options.pixelWidth,
-      options.gainMultiplier
+      1
     );
 
     // Check cache first
     const cached = this.getPeakFromCache(cacheKey);
     if (cached) {
       // Cache hit - frequent during playback, skip logging
-      return cached;
+      return this.applyGain(cached, options.gainMultiplier);
     }
 
     // Check for pending request (deduplication)
     if (this.pendingPeakRequests.has(cacheKey)) {
       console.log('[WaveformService] Reusing pending peak request:', cacheKey);
-      return this.pendingPeakRequests.get(cacheKey)!;
+      return this.applyGain(await this.pendingPeakRequests.get(cacheKey)!, options.gainMultiplier);
     }
 
     // Create the peak extraction promise
-    const peakPromise = this.doGetPeaksForRange(normalizedPath, mode, options, cacheKey);
+    const peakPromise = this.doGetPeaksForRange(normalizedPath, mode, { ...options, gainMultiplier: 1 }, cacheKey);
     
     // Store as pending
     this.pendingPeakRequests.set(cacheKey, peakPromise);
@@ -890,7 +890,7 @@ class WaveformServiceImpl {
       const peaks = await peakPromise;
       // Cache the result
       this.setPeakCache(cacheKey, peaks);
-      return peaks;
+      return this.applyGain(peaks, options.gainMultiplier);
     } finally {
       // Clean up pending request
       this.pendingPeakRequests.delete(cacheKey);
@@ -904,7 +904,7 @@ class WaveformServiceImpl {
     cacheKey: string
   ): Promise<WaveformPeak[]> {
     if (mode === 'streaming') {
-      // LONG VIDEO: Ask Rust to calculate peaks on-demand
+      // Rust resamples its persistent source-wide peaks; zoom never starts another decode.
       console.log('[WaveformService] Extracting peaks via Rust:', cacheKey);
       try {
         const peaks = await invoke<WaveformPeak[]>('extract_audio_peaks_for_range', {
@@ -914,19 +914,11 @@ class WaveformServiceImpl {
           numPeaks: options.pixelWidth,
         });
         
-        // Apply gain multiplier if specified
-        if (options.gainMultiplier && options.gainMultiplier !== 1.0) {
-          return peaks.map(p => ({
-            min: Math.max(-1, p.min * options.gainMultiplier!),
-            max: Math.min(1, p.max * options.gainMultiplier!),
-          }));
-        }
-        
         console.log('[WaveformService] Peaks extracted:', peaks.length);
         return peaks;
       } catch (error) {
         console.error('[WaveformService] Rust peak extraction failed:', error);
-        return [];
+        throw error;
       }
     } else {
       // SHORT VIDEO: Use cached audio data
@@ -947,6 +939,10 @@ class WaveformServiceImpl {
     }
   }
 
+  private applyGain(peaks: WaveformPeak[], gain = 1): WaveformPeak[] {
+    return gain === 1 ? peaks : peaks.map(p => ({ min: Math.max(-1, p.min * gain), max: Math.min(1, p.max * gain) }));
+  }
+
 
   /**
    * Get cached peaks synchronously without triggering async fetch
@@ -962,9 +958,10 @@ class WaveformServiceImpl {
       options.startTime,
       options.endTime,
       options.pixelWidth,
-      options.gainMultiplier
+      1
     );
-    return this.getPeakFromCache(cacheKey);
+    const peaks = this.getPeakFromCache(cacheKey);
+    return peaks ? this.applyGain(peaks, options.gainMultiplier) : undefined;
   }
 
   /**
@@ -1042,6 +1039,7 @@ class WaveformServiceImpl {
       }
     }
     await deleteCachedAudio(normalizedPath);
+    if (resolveLocalPath(filePath)) await invoke('clear_waveform_cache', { videoPath: normalizedPath });
     console.log('[WaveformService] Cleared cache for:', normalizedPath);
   }
 
@@ -1092,6 +1090,7 @@ export function useWaveform(initialPath?: string, options: UseWaveformOptions = 
   const isLoaded = ref(false);
   const error = ref<string | null>(null);
   const audioData = ref<AudioData | null>(null);
+  let generation = 0;
 
   const duration = computed(() => audioData.value?.duration ?? 0);
   const sampleRate = computed(() => audioData.value?.sampleRate ?? 0);
@@ -1104,19 +1103,23 @@ export function useWaveform(initialPath?: string, options: UseWaveformOptions = 
     }
 
     filePath.value = targetPath;
+    const run = ++generation;
     isLoading.value = true;
+    isLoaded.value = false;
     error.value = null;
 
     try {
       const data = await waveformService.loadAudio(targetPath, forceReload);
+      if (run !== generation) return;
       audioData.value = data;
       isLoaded.value = true;
     } catch (e) {
+      if (run !== generation) return;
       error.value = e instanceof Error ? e.message : 'Failed to load audio';
       isLoaded.value = false;
       console.error('[useWaveform] Load error:', e);
     } finally {
-      isLoading.value = false;
+      if (run === generation) isLoading.value = false;
     }
   }
 
@@ -1136,6 +1139,7 @@ export function useWaveform(initialPath?: string, options: UseWaveformOptions = 
   }
 
   function reset(): void {
+    generation++;
     filePath.value = null;
     audioData.value = null;
     isLoading.value = false;
