@@ -44,6 +44,7 @@ const isVideo = computed(() => {
   
   // Fallback: detect from data URL MIME type
   if (props.src.startsWith('data:video/')) return true;
+  if (/[?&]media=video(?:&|$)/.test(props.src) || /\.(mp4|webm|mov|m4v)(?:[?#]|$)/i.test(props.src)) return true;
   
   // Default to image
   return false;

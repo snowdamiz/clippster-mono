@@ -305,6 +305,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
+  import { convertFileSrc } from '@/services/creatorProfileRuntime';
   import {
     PlusIcon,
     VideoIcon,
@@ -340,6 +341,7 @@
   } from '@/utils/poiOverlaySelection';
 
   interface Props {
+    resolveMediaSrc?: (id: string) => string;
     regions: ManualRegion[];
     selectedRegionId: string | null;
     thumbnailUrl?: string | null;
@@ -511,7 +513,8 @@
         selectedRegionMediaSrc.value = null;
         return;
       }
-      // If it's a blob URL, use directly
+        if (props.resolveMediaSrc) { selectedRegionMediaSrc.value = props.resolveMediaSrc(assetId); return; }
+        // If it's a blob URL, use directly
       if (assetId.startsWith('blob:')) {
         selectedRegionMediaSrc.value = assetId;
         return;
@@ -519,7 +522,6 @@
       // If it's a file path (from save_temp_media_file), use convertFileSrc
       if (assetId.includes('/') || assetId.includes('\\')) {
         try {
-          const { convertFileSrc } = await import('@tauri-apps/api/core');
           selectedRegionMediaSrc.value = convertFileSrc(assetId);
         } catch {
           // Fallback for non-Tauri environment

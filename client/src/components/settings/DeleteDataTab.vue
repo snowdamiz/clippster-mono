@@ -13,11 +13,12 @@
           </p>
           <p class="tabular text-lg font-semibold text-fg">{{ storageInfo.total_formatted }}</p>
         </div>
-        <dl
-          v-if="storageInfo.breakdown.length > 0"
-          class="mt-3 flex flex-col gap-1.5 border-t border-line-subtle pt-3"
-        >
-          <div v-for="item in storageInfo.breakdown" :key="item.name" class="flex items-center justify-between gap-3 text-xs">
+        <dl v-if="storageInfo.breakdown.length > 0" class="mt-3 flex flex-col gap-1.5 border-t border-line-subtle pt-3">
+          <div
+            v-for="item in storageInfo.breakdown"
+            :key="item.name"
+            class="flex items-center justify-between gap-3 text-xs"
+          >
             <dt class="truncate text-fg-muted">{{ item.name }}</dt>
             <dd class="tabular shrink-0 font-medium text-fg">{{ item.formatted }}</dd>
           </div>
@@ -67,7 +68,7 @@
         <Button
           variant="destructive"
           size="sm"
-          :disabled="isCalculating || !storageInfo"
+          :disabled="!deletionEnabled || isCalculating || !storageInfo"
           @click="handleDeleteClick"
         >
           <Trash2 />
@@ -82,97 +83,107 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
-import { AlertTriangle, HardDrive, Trash2, Shield } from 'lucide-vue-next';
-import { invoke } from '@tauri-apps/api/core';
-import { useToast } from '@/composables/useToast';
-import { performCompleteCleanup } from '@/services/database/storage-cleanup';
-import { Button } from '@/components/ui/button';
-import DeleteDataConfirmDialog from './DeleteDataConfirmDialog.vue';
-import SettingsSection from './SettingsSection.vue';
+  import { ref, onMounted } from 'vue';
+  import { AlertTriangle, HardDrive, Trash2, Shield, Loader2 } from 'lucide-vue-next';
+  import { useToast } from '@/composables/useToast';
+  import { Button } from '@/components/ui/button';
+  import { invoke, performCompleteCleanup } from '@/services/settingsRuntime';
+  import DeleteDataConfirmDialog from './DeleteDataConfirmDialog.vue';
+  import SettingsSection from './SettingsSection.vue';
 
-interface StorageSizeInfo {
-  total_bytes: number;
-  total_formatted: string;
-  breakdown: Array<{
-    name: string;
-    bytes: number;
-    formatted: string;
-  }>;
-}
-
-interface DeletionResult {
-  success: boolean;
-  bytes_freed: number;
-  formatted_size: string;
-  errors: string[];
-}
-
-const { error, success } = useToast();
-
-const deletedItems = [
-  'Raw videos (VOD recordings, livestream recordings)',
-  'Video projects and timeline data',
-  'Temporary DVR files',
-  'Auto-detect temporary files',
-  'Proxy files',
-  'Downloaded library audio',
-];
-
-const preservedItems = [
-  'Built clips (final exported videos)',
-  'Clip transcripts and metadata',
-  'Your profile and account settings',
-  'Your subscription and billing information',
-];
-
-const storageInfo = ref<StorageSizeInfo | null>(null);
-const isCalculating = ref(false);
-const showConfirmDialog = ref(false);
-
-const calculateStorageSize = async () => {
-  isCalculating.value = true;
-  try {
-    const info = await invoke<StorageSizeInfo>('calculate_local_storage_size');
-    storageInfo.value = info;
-  } catch (err) {
-    console.error('Failed to calculate storage size:', err);
-    error('Error', 'Failed to calculate storage size');
-  } finally {
-    isCalculating.value = false;
+  interface StorageSizeInfo {
+    total_bytes: number;
+    total_formatted: string;
+    breakdown: Array<{
+      name: string;
+      bytes: number;
+      formatted: string;
+    }>;
   }
-};
 
-const handleDeleteClick = () => {
-  showConfirmDialog.value = true;
-};
+  interface DeletionResult {
+    success: boolean;
+    bytes_freed: number;
+    formatted_size: string;
+    errors: string[];
+  }
 
-const handleDeleted = async (result: DeletionResult) => {
-  if (result.success) {
-    // Clean up database entries
+  const { error, success } = useToast();
+  defineProps({ deletionEnabled: { type: Boolean, default: true } });
+
+  const deletedItems = [
+    'Raw videos (VOD recordings, livestream recordings)',
+    'Video projects and timeline data',
+    'Temporary DVR files',
+    'Auto-detect temporary files',
+    'Proxy files',
+    'Downloaded library audio',
+  ];
+
+  const preservedItems = [
+    'Built clips (final exported videos)',
+    'Clip transcripts and metadata',
+    'Your profile and account settings',
+    'Your subscription and billing information',
+  ];
+
+  const storageInfo = ref<StorageSizeInfo | null>(null);
+  const isCalculating = ref(false);
+  const showConfirmDialog = ref(false);
+
+  const calculateStorageSize = async () => {
+    isCalculating.value = true;
     try {
-      await performCompleteCleanup();
-      success('Storage Cleared', `Successfully freed ${result.formatted_size} of disk space. Refreshing app...`, undefined, 'system');
-      
-      // Reload the page after a short delay to allow toast to show
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
+      const info = await invoke<StorageSizeInfo>('calculate_local_storage_size');
+      storageInfo.value = info;
     } catch (err) {
-      console.error('Failed to clean database:', err);
-      error('Database Cleanup Failed', 'Files deleted but database cleanup failed', undefined, 'system');
-      
-      // Still reload to refresh UI even if database cleanup failed
-      setTimeout(() => {
-        window.location.reload();
-      }, 1500);
+      console.error('Failed to calculate storage size:', err);
+      error('Error', 'Failed to calculate storage size');
+    } finally {
+      isCalculating.value = false;
     }
-  } else {
-    error('Deletion Failed', result.errors.length > 0 ? result.errors[0] : 'Failed to delete local storage', undefined, 'system');
-  }
-};
+  };
 
-onMounted(() => {
-  calculateStorageSize();
-});
+  const handleDeleteClick = () => {
+    showConfirmDialog.value = true;
+  };
+
+  const handleDeleted = async (result: DeletionResult) => {
+    if (result.success) {
+      // Clean up database entries
+      try {
+        await performCompleteCleanup();
+        success(
+          'Storage Cleared',
+          `Successfully freed ${result.formatted_size} of disk space. Refreshing app...`,
+          undefined,
+          'system'
+        );
+
+        // Reload the page after a short delay to allow toast to show
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      } catch (err) {
+        console.error('Failed to clean database:', err);
+        error('Database Cleanup Failed', 'Files deleted but database cleanup failed', undefined, 'system');
+
+        // Still reload to refresh UI even if database cleanup failed
+        setTimeout(() => {
+          window.location.reload();
+        }, 1500);
+      }
+    } else {
+      error(
+        'Deletion Failed',
+        result.errors.length > 0 ? result.errors[0] : 'Failed to delete local storage',
+        undefined,
+        'system'
+      );
+    }
+  };
+
+  onMounted(() => {
+    calculateStorageSize();
+  });
 </script>

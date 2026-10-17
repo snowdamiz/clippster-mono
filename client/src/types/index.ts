@@ -78,6 +78,8 @@ export interface Transcript {
 
 // Timeline Component Props and Emits
 export interface TimelineProps {
+  minHeight?: number;
+  allowEditor?: boolean;
   videoSrc: string | null;
   currentTime: number;
   duration: number;

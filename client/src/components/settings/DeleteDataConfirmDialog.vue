@@ -35,7 +35,11 @@
           <span class="tabular text-base font-semibold text-fg">{{ storageInfo.total_formatted }}</span>
         </div>
         <dl v-if="storageInfo.breakdown.length > 0" class="mt-2 flex flex-col gap-1 border-t border-line-subtle pt-2">
-          <div v-for="item in storageInfo.breakdown" :key="item.name" class="flex items-center justify-between gap-3 text-xs">
+          <div
+            v-for="item in storageInfo.breakdown"
+            :key="item.name"
+            class="flex items-center justify-between gap-3 text-xs"
+          >
             <dt class="truncate text-fg-subtle">{{ item.name }}</dt>
             <dd class="tabular shrink-0 text-fg-muted">{{ item.formatted }}</dd>
           </div>
@@ -52,15 +56,20 @@
             temporary DVR and auto-detect files, proxy files, and downloaded library audio.
           </p>
           <p>
-            <span class="font-medium text-fg">Kept:</span> built clips (final exported videos), clip thumbnails, clip
-            transcripts and metadata, and your profile and account settings.
+            <span class="font-medium text-fg">Kept:</span>
+            built clips (final exported videos), clip thumbnails, clip transcripts and metadata, and your profile and
+            account settings.
           </p>
         </AlertDescription>
       </Alert>
 
       <!-- Confirmation input -->
       <Field for="delete-data-confirm">
-        <template #label>Type <span class="font-semibold text-fg">confirm</span> to proceed</template>
+        <template #label>
+          Type
+          <span class="font-semibold text-fg">confirm</span>
+          to proceed
+        </template>
         <Input
           id="delete-data-confirm"
           v-model="confirmText"
@@ -84,112 +93,114 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue';
-import { Trash2, AlertTriangle, Loader2 } from 'lucide-vue-next';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Field } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import { Modal } from '@/components/ui/modal';
-import { invoke } from '@tauri-apps/api/core';
-import { listen } from '@tauri-apps/api/event';
+  import { ref, computed, watch } from 'vue';
+  import { Trash2, AlertTriangle, Loader2, X } from 'lucide-vue-next';
+  import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+  import { Button } from '@/components/ui/button';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
+  import { Modal } from '@/components/ui/modal';
+  import { invoke, listen } from '@/services/settingsRuntime';
 
-interface StorageSizeInfo {
-  total_bytes: number;
-  total_formatted: string;
-  breakdown: Array<{
-    name: string;
-    bytes: number;
-    formatted: string;
-  }>;
-}
-
-interface DeletionProgress {
-  operation: string;
-  percentage: number;
-}
-
-interface DeletionResult {
-  success: boolean;
-  bytes_freed: number;
-  formatted_size: string;
-  errors: string[];
-}
-
-const props = defineProps<{
-  modelValue: boolean;
-  storageInfo: StorageSizeInfo | null;
-}>();
-
-const emit = defineEmits<{
-  'update:modelValue': [value: boolean];
-  'deleted': [result: DeletionResult];
-}>();
-
-const confirmText = ref('');
-const isDeleting = ref(false);
-const deletionProgress = ref<DeletionProgress>({
-  operation: 'Preparing...',
-  percentage: 0,
-});
-
-const isConfirmValid = computed(() => {
-  return confirmText.value.toLowerCase() === 'confirm';
-});
-
-watch(() => props.modelValue, (newVal) => {
-  if (newVal) {
-    confirmText.value = '';
-    isDeleting.value = false;
-    deletionProgress.value = {
-      operation: 'Preparing...',
-      percentage: 0,
-    };
-  }
-});
-
-const handleCancel = () => {
-  if (!isDeleting.value) {
-    emit('update:modelValue', false);
-  }
-};
-
-const handleDelete = async () => {
-  if (!isConfirmValid.value || isDeleting.value) {
-    return;
+  interface StorageSizeInfo {
+    total_bytes: number;
+    total_formatted: string;
+    breakdown: Array<{
+      name: string;
+      bytes: number;
+      formatted: string;
+    }>;
   }
 
-  isDeleting.value = true;
-  deletionProgress.value = {
-    operation: 'Starting deletion...',
+  interface DeletionProgress {
+    operation: string;
+    percentage: number;
+  }
+
+  interface DeletionResult {
+    success: boolean;
+    bytes_freed: number;
+    formatted_size: string;
+    errors: string[];
+  }
+
+  const props = defineProps<{
+    modelValue: boolean;
+    storageInfo: StorageSizeInfo | null;
+  }>();
+
+  const emit = defineEmits<{
+    'update:modelValue': [value: boolean];
+    deleted: [result: DeletionResult];
+  }>();
+
+  const confirmText = ref('');
+  const isDeleting = ref(false);
+  const deletionProgress = ref<DeletionProgress>({
+    operation: 'Preparing...',
     percentage: 0,
-  };
-
-  const unlisten = await listen<DeletionProgress>('deletion-progress', (event) => {
-    deletionProgress.value = event.payload;
   });
 
-  try {
-    const result = await invoke<DeletionResult>('delete_local_storage');
-    
-    unlisten();
-    emit('deleted', result);
-    emit('update:modelValue', false);
-  } catch (error) {
-    console.error('Failed to delete local storage:', error);
-    unlisten();
-    
-    const errorResult: DeletionResult = {
-      success: false,
-      bytes_freed: 0,
-      formatted_size: '0 bytes',
-      errors: [String(error)],
+  const isConfirmValid = computed(() => {
+    return confirmText.value.toLowerCase() === 'confirm';
+  });
+
+  watch(
+    () => props.modelValue,
+    (newVal) => {
+      if (newVal) {
+        confirmText.value = '';
+        isDeleting.value = false;
+        deletionProgress.value = {
+          operation: 'Preparing...',
+          percentage: 0,
+        };
+      }
+    }
+  );
+
+  const handleCancel = () => {
+    if (!isDeleting.value) {
+      emit('update:modelValue', false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!isConfirmValid.value || isDeleting.value) {
+      return;
+    }
+
+    isDeleting.value = true;
+    deletionProgress.value = {
+      operation: 'Starting deletion...',
+      percentage: 0,
     };
-    
-    emit('deleted', errorResult);
-    emit('update:modelValue', false);
-  } finally {
-    isDeleting.value = false;
-  }
-};
+
+    const unlisten = await listen<DeletionProgress>('deletion-progress', (event) => {
+      deletionProgress.value = event.payload;
+    });
+
+    try {
+      const result = await invoke<DeletionResult>('delete_local_storage');
+
+      unlisten();
+      emit('deleted', result);
+      emit('update:modelValue', false);
+    } catch (error) {
+      console.error('Failed to delete local storage:', error);
+      unlisten();
+
+      const errorResult: DeletionResult = {
+        success: false,
+        bytes_freed: 0,
+        formatted_size: '0 bytes',
+        errors: [String(error)],
+      };
+
+      emit('deleted', errorResult);
+      emit('update:modelValue', false);
+    } finally {
+      isDeleting.value = false;
+    }
+  };
 </script>

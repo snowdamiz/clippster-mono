@@ -1,74 +1,6 @@
 <template>
-  <div class="flex h-full min-h-0 flex-1 flex-col" data-media-panel>
-    <!-- Panel toolbar: clip count + contextual actions -->
-    <div class="flex h-10 shrink-0 items-center justify-between gap-2 border-b border-line-subtle px-3">
-      <p class="tabular shrink-0 text-xs text-fg-muted">
-        {{ clips.length }} clip{{ clips.length !== 1 ? 's' : '' }}
-      </p>
-
-      <div class="flex min-w-0 items-center justify-end gap-1.5">
-        <!-- Detection progress (hidden while finalizing — the list shows a centered progress then) -->
-        <InlineProgress
-          v-if="props.isGenerating && clips.length > 0 && props.generationStage !== 'finalizing'"
-          :label="(props.generationStage || 'Processing').replace(/_/g, ' ')"
-          :progress="props.generationProgress"
-          cancel-title="Cancel detection"
-          @cancel="handleCancelDetection"
-        />
-        <!-- Re-run detection (only when AI is allowed) -->
-        <Button
-          v-else-if="clips.length > 0 && isAIAllowed && !props.clipDetectionDisabled"
-          variant="ghost"
-          size="xs"
-          title="Run clip detection again"
-          @click="handleDetectClips"
-        >
-          <Sparkles />
-          Detect
-        </Button>
-
-        <!-- Transcription progress -->
-        <InlineProgress
-          v-if="props.isTranscribing"
-          :label="(props.transcribeStage || 'Transcribing').replace(/_/g, ' ')"
-          :progress="props.transcribeProgress"
-          cancel-title="Cancel transcription"
-          @cancel="handleCancelTranscription"
-        />
-        <Button
-          v-else-if="transcriptData && !props.isGenerating"
-          variant="ghost"
-          size="xs"
-          title="View transcript"
-          @click="handleViewTranscript"
-        >
-          <FileText />
-          View transcript
-        </Button>
-        <Button
-          v-else-if="!props.isGenerating && isAIAllowed && !transcriptData"
-          variant="ghost"
-          size="xs"
-          title="Generate transcript"
-          @click="handleTranscribe"
-        >
-          <FileText />
-          Transcribe
-        </Button>
-        <!-- Manual add (when AI is not allowed) -->
-        <Button
-          v-else-if="clips.length > 0 && !isAIAllowed"
-          variant="ghost"
-          size="xs"
-          title="Manually add a new clip"
-          @click="handleAddClip"
-        >
-          <Plus />
-          Add clip
-        </Button>
-      </div>
-    </div>
-
+  <div class="px-4 flex flex-col flex-1 h-full min-h-0" data-media-panel>
+    <WorkspaceMediaHeader :model="mediaHeaderModel" />
     <!-- Clips Content -->
     <ClipsTab
       ref="clipsTabRef"
@@ -120,7 +52,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, computed, watch, onUnmounted, nextTick } from 'vue';
+  import { ref, reactive, onMounted, computed, watch, onUnmounted, nextTick } from 'vue';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
   import {
     getClipDetectionSessionsByProjectId,
@@ -135,6 +67,7 @@
   } from '@/services/database';
   import type { MediaPanelProps, MediaPanelEmits, WatermarkSettings } from '../types';
   import ClipsTab from './ClipsTab.vue';
+  import WorkspaceMediaHeader from './WorkspaceMediaHeader.vue';
   import { useTranscriptData } from '@/composables/useTranscriptData';
   import { useAIPermission } from '@/composables/useAIPermission';
   import { Sparkles, Plus, FileText } from 'lucide-vue-next';
@@ -672,5 +605,17 @@
     setWatermarkSettings: (settings: WatermarkSettings) => {
       watermarkSettings.value = settings;
     },
+  });
+  const mediaHeaderModel = reactive({
+    props,
+    clips,
+    isAIAllowed,
+    transcriptData,
+    handleCancelDetection,
+    handleDetectClips,
+    handleCancelTranscription,
+    handleViewTranscript,
+    handleTranscribe,
+    handleAddClip,
   });
 </script>

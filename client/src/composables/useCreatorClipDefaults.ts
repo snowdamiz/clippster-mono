@@ -18,37 +18,9 @@ import { setProjectVodPreset } from '@/services/database/vod-presets';
  * rest of the app already understands.
  */
 
-export const SUPPORTED_TARGET_ASPECT_RATIOS = ['16:9', '9:16', '1:1', '4:5'] as const;
-export type SupportedTargetAspectRatio = (typeof SUPPORTED_TARGET_ASPECT_RATIOS)[number];
-
-export function parseCreatorClipBuildDefaults(
-  raw: string | null | undefined
-): CreatorClipBuildDefaults | null {
-  if (!raw) return null;
-  try {
-    const parsed = JSON.parse(raw) as CreatorClipBuildDefaults;
-    if (!parsed || typeof parsed !== 'object' || !parsed.targetAspectRatio) {
-      return null;
-    }
-    // Legacy: Twitch live preview option removed from UI — treat as no reference image.
-    if (parsed.referenceImageSource === 'twitch_preview') {
-      parsed.referenceImageSource = 'none';
-      parsed.referenceImageUrl = null;
-    }
-    return parsed;
-  } catch (error) {
-    console.error('[useCreatorClipDefaults] Failed to parse clip_build_defaults JSON:', error);
-    return null;
-  }
-}
-
-export function serializeCreatorClipBuildDefaults(
-  defaults: CreatorClipBuildDefaults | null
-): string | null {
-  if (!defaults) return null;
-  return JSON.stringify(defaults);
-}
-
+import { parseCreatorClipBuildDefaults, serializeCreatorClipBuildDefaults } from '@/lib/creatorClipBuildDefaults';
+export { SUPPORTED_TARGET_ASPECT_RATIOS, parseCreatorClipBuildDefaults, serializeCreatorClipBuildDefaults } from '@/lib/creatorClipBuildDefaults';
+export type { SupportedTargetAspectRatio } from '@/lib/creatorClipBuildDefaults';
 export async function getCreatorClipBuildDefaults(
   creatorProfileId: string
 ): Promise<CreatorClipBuildDefaults | null> {

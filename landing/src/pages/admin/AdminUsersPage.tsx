@@ -35,7 +35,7 @@ import {
 } from '@/services/adminApi'
 import { formatWalletAddress } from './adminFormat'
 import { formatDateTime } from '@/utils/dateTimeUtils'
-import { downloadEmailsCsv } from '@/utils/downloadEmailsCsv'
+import { downloadRecordsCsv } from '@/utils/downloadRecordsCsv'
 import './AdminUsersPage.css'
 
 type Tier = 'starter' | 'creator' | 'pro'
@@ -358,13 +358,12 @@ export function AdminUsersPage() {
     }
   }
 
-  function exportEmailsCsv() {
-    const emails = users.map((user) => user.email).filter(Boolean)
-    if (!emails.length) {
-      setError('No user emails to export')
+  function exportUsersCsv() {
+    if (!users.length) {
+      setError('No users to export')
       return
     }
-    downloadEmailsCsv(emails, 'user-emails.csv')
+    downloadRecordsCsv(users, 'users.csv')
   }
 
   function navigateToUserProfile(userId: number) {
@@ -725,10 +724,10 @@ export function AdminUsersPage() {
                     type="button"
                     className="admin-users__export-btn"
                     disabled={!users.some((user) => Boolean(user.email))}
-                    onClick={exportEmailsCsv}
+                    onClick={exportUsersCsv}
                   >
                     <Download className="admin-users__export-icon" />
-                    Export Emails CSV
+                    Export Users CSV
                   </button>
                   <span className="admin-users__stats-count">
                     {rows.length} user{rows.length !== 1 ? 's' : ''}

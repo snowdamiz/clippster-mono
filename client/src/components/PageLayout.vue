@@ -81,6 +81,7 @@
     <div class="page-layout__content flex min-h-0 flex-1 flex-col overflow-y-auto">
       <slot></slot>
     </div>
+    <div v-if="$slots.footer" class="shrink-0"><slot name="footer" /></div>
   </div>
 </template>
 

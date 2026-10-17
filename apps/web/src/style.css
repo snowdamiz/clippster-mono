@@ -4,19 +4,29 @@
 @import '../../../client/src/fonts.css';
 @custom-variant dark (&:is(.dark *));
 @source './**/*.{vue,ts}';
+@source '../../../client/src/components';
+@source '../../../client/src/lib/sharedViewPresentation.ts';
+@source '../../../client/src/pages/ClipperProfilePage.vue';
+@source '../../../client/src/editor/components/preview/SocialOverlay.vue';
+@theme inline {
+  --color-background: var(--sidebar-bg);
+  --color-foreground: var(--sidebar-text);
+  --color-muted: var(--sidebar-hover);
+  --color-muted-foreground: var(--sidebar-text-muted);
+  --color-border: var(--sidebar-border);
+  --color-input: var(--sidebar-border);
+  --color-ring: var(--editor-accent);
+  --color-primary: var(--editor-accent);
+  --color-primary-foreground: #000;
+  --color-secondary: var(--sidebar-surface);
+  --color-secondary-foreground: var(--sidebar-text);
+  --color-popover: var(--sidebar-surface);
+  --color-popover-foreground: var(--sidebar-text);
+  --color-card: var(--sidebar-surface);
+  --color-card-foreground: var(--sidebar-text);
+}
+
 /* Desktop components rendered by the web workspace (Tailwind must scan them too). */
-@source '../../../client/src/components/AppBrand.vue';
-@source '../../../client/src/components/PageLayout.vue';
-@source '../../../client/src/components/SidebarNavigationItem.vue';
-@source '../../../client/src/components/LibraryProjectCard.vue';
-@source '../../../client/src/components/ProjectDialogFrame.vue';
-@source '../../../client/src/components/SharedAuthDialog.vue';
-@source '../../../client/src/components/ProjectWorkspaceHeader.vue';
-@source '../../../client/src/components/VideoPlayer.vue';
-@source '../../../client/src/components/VideoControls.vue';
-@source '../../../client/src/components/SubtitlePropertiesPanel.vue';
-@source '../../../client/src/components/ClipTextBoxPropertiesPanel.vue';
-@source '../../../client/src/components/poi/POIRegion.vue';
 @layer base {
   body {
     margin: 0;

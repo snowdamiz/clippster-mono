@@ -1,449 +1,54 @@
 <template>
-  <!-- Hidden while a nested editor is open (they render their own overlays). -->
-  <Modal
-    :open="modelValue && !showManualPOIEditor && !showSubtitleAdjustmentDialog"
-    size="lg"
-    :icon="WrenchIcon"
-    title="Export configuration"
-    :description="`${clip?.current_version_name || clip?.name || 'Untitled Clip'} · ${formatDuration(clipDuration)}`"
-    flush
-    footer-class="justify-between"
-    @close="close"
-  >
-    <!-- Step indicator -->
-    <nav
-      class="sticky top-0 z-10 flex items-center gap-1 border-b border-line-subtle bg-surface-raised px-5 py-2.5"
-      aria-label="Build steps"
-    >
-      <template v-for="(step, index) in visibleSteps" :key="step.id">
-        <button
-          type="button"
-          class="inline-flex h-7 shrink-0 items-center gap-2 rounded-md px-2 text-xs font-medium transition-colors disabled:cursor-not-allowed"
-          :class="
-            currentStep === step.id
-              ? 'bg-surface-active text-fg'
-              : canNavigateToStep(step.id)
-                ? 'text-fg-muted hover:bg-surface-hover hover:text-fg'
-                : 'text-fg-subtle'
-          "
-          :disabled="!canNavigateToStep(step.id)"
-          :aria-current="currentStep === step.id ? 'step' : undefined"
-          @click="goToStep(step.id)"
-        >
-          <span
-            class="tabular grid size-[18px] place-items-center rounded-full text-2xs font-semibold"
-            :class="
-              currentStep === step.id
-                ? 'bg-brand text-brand-fg'
-                : isStepCompleted(step.id)
-                  ? 'bg-brand-soft text-brand'
-                  : 'border border-line-strong text-fg-subtle'
-            "
-          >
-            <CheckIcon v-if="isStepCompleted(step.id) && currentStep !== step.id" class="size-3" :stroke-width="3" />
-            <template v-else>{{ index + 1 }}</template>
-          </span>
-          {{ step.label }}
-        </button>
-        <span
-          v-if="index < visibleSteps.length - 1"
-          class="h-px min-w-3 flex-1"
-          :class="isStepCompleted(step.id) ? 'bg-brand-line' : 'bg-line'"
-        />
-      </template>
-    </nav>
-
-    <div class="px-5 pb-5 pt-4">
-      <!-- Keyed by step so each step eases in -->
-      <div :key="currentStep" class="animate-enter">
-        <!-- Step 1: Platforms -->
-        <div v-if="currentStep === 'platforms'" key="platforms" class="flex flex-col gap-3">
-          <SectionHeader title="Choose your platforms" description="Select aspect ratios for your target platforms" />
-
-          <div class="grid grid-cols-[repeat(auto-fill,minmax(128px,1fr))] gap-2">
-            <button
-              v-for="option in ratioOptions"
-              :key="option.ratio"
-              type="button"
-              class="relative flex flex-col items-center gap-2 rounded-lg border px-3 pb-3 pt-4 text-center transition-colors focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
-              :class="
-                selectedRatios.includes(option.ratio)
-                  ? 'border-brand-line bg-brand-soft'
-                  : 'border-line bg-surface hover:border-line-strong hover:bg-surface-hover'
-              "
-              :aria-pressed="selectedRatios.includes(option.ratio)"
-              @click="toggleRatio(option.ratio)"
-            >
-              <span
-                class="absolute right-2 top-2 grid size-4 place-items-center rounded-full border transition-colors"
-                :class="
-                  selectedRatios.includes(option.ratio)
-                    ? 'border-brand bg-brand text-brand-fg'
-                    : 'border-line-strong text-transparent'
-                "
-              >
-                <CheckIcon class="size-2.5" :stroke-width="3.5" />
-              </span>
-              <span class="grid h-12 place-items-center">
-                <span
-                  class="rounded-[3px] border-2 transition-colors"
-                  :class="selectedRatios.includes(option.ratio) ? 'border-brand' : 'border-fg-subtle'"
-                  :style="{ width: `${option.width}px`, height: `${option.height}px` }"
-                />
-              </span>
-              <span class="flex items-center gap-1.5">
-                <span class="tabular text-sm font-semibold text-fg">{{ option.ratio }}</span>
-                <Badge v-if="option.original">Original</Badge>
-              </span>
-              <span class="text-xs text-fg-muted">{{ option.platforms }}</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Step 2: Framing (conditional) -->
-        <div v-else-if="currentStep === 'framing'" key="framing" class="flex flex-col gap-4">
-          <SectionHeader title="Framing & layout" description="Configure cropping and subtitle positioning" />
-
-          <template v-if="hasPortraitRatio">
-            <div class="flex flex-col gap-2">
-              <SectionHeader title="Portrait cropping" variant="eyebrow" :icon="CropIcon" />
-              <div class="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  disabled
-                  class="flex cursor-not-allowed flex-col gap-1 rounded-lg border border-line-subtle bg-surface px-3 py-2.5 text-left opacity-50"
-                >
-                  <span class="flex items-center gap-2 text-sm font-medium text-fg">
-                    <SparklesIcon class="size-4 text-fg-subtle" />
-                    Auto
-                    <Badge>Soon</Badge>
-                  </span>
-                  <span class="text-xs text-fg-muted">Coming soon - Use manual configuration</span>
-                </button>
-                <button
-                  type="button"
-                  class="flex flex-col gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors"
-                  :class="
-                    framingMode === 'manual'
-                      ? 'border-brand-line bg-brand-soft'
-                      : 'border-line bg-surface hover:border-line-strong hover:bg-surface-hover'
-                  "
-                  :aria-pressed="framingMode === 'manual'"
-                  @click="framingMode = 'manual'"
-                >
-                  <span class="flex items-center gap-2 text-sm font-medium text-fg">
-                    <PencilRulerIcon
-                      class="size-4"
-                      :class="framingMode === 'manual' ? 'text-brand' : 'text-fg-subtle'"
-                    />
-                    Manual
-                  </span>
-                  <span class="text-xs text-fg-muted">Manually configure regions for each aspect ratio</span>
-                </button>
-              </div>
-            </div>
-
-            <div v-if="framingMode === 'manual'" class="flex flex-col gap-2">
-              <p class="text-xs text-fg-muted">Configure each aspect ratio:</p>
-              <div
-                class="flex flex-col divide-y divide-line-subtle overflow-hidden rounded-lg border border-line-subtle bg-surface"
-              >
-                <button
-                  v-for="ratio in selectedPortraitRatios"
-                  :key="ratio"
-                  type="button"
-                  class="flex items-center gap-3 px-3 py-2 text-left transition-colors hover:bg-surface-hover focus-visible:bg-surface-hover focus-visible:outline-none"
-                  @click="openPOIEditorForRatio(ratio)"
-                >
-                  <span class="grid w-7 shrink-0 place-items-center">
-                    <span
-                      class="rounded-[2px] border-2"
-                      :class="isRatioConfigured(ratio) ? 'border-success' : 'border-fg-subtle'"
-                      :style="{
-                        aspectRatio: ratio.replace(':', '/'),
-                        height: ratio === '1:1' ? '1.5rem' : '2rem',
-                        width: ratio === '1:1' ? '1.5rem' : 'auto',
-                      }"
-                    />
-                  </span>
-                  <span class="tabular text-sm font-medium text-fg">{{ ratio }}</span>
-                  <span class="ml-auto flex items-center gap-2">
-                    <Badge v-if="isRatioConfigured(ratio)" variant="success">
-                      <CheckIcon />
-                      {{ getConfigForRatio(ratio)?.regions.length }} region{{
-                        getConfigForRatio(ratio)?.regions.length !== 1 ? 's' : ''
-                      }}
-                    </Badge>
-                    <span v-else class="text-xs text-fg-muted">Click to configure</span>
-                    <ChevronRightIcon class="size-4 text-fg-subtle" />
-                  </span>
-                </button>
-              </div>
-
-              <p v-if="loadingVideoFrame" class="flex items-center gap-1.5 text-xs text-fg-muted">
-                <Loader2 class="size-3.5 animate-spin" />
-                Loading video preview…
-              </p>
-            </div>
-          </template>
-
-          <!-- Empty state when no content to show -->
-          <EmptyState
-            v-else
-            size="sm"
-            :icon="CropIcon"
-            title="Nothing to frame"
-            description="No framing options needed for your selected formats."
-          />
-        </div>
-
-        <!-- Step 3: Export Settings -->
-        <div v-else-if="currentStep === 'export'" key="export" class="flex flex-col gap-3">
-          <SectionHeader title="Export settings" description="Configure quality and format options" />
-
-          <div class="flex flex-col divide-y divide-line-subtle border-y border-line-subtle">
-            <Field
-              inline
-              :hint="
-                quality === 'low'
-                  ? 'Fast export, smaller file size'
-                  : quality === 'medium'
-                    ? 'Balanced quality and file size'
-                    : 'Best quality, larger file size'
-              "
-              class="py-2.5"
-            >
-              <template #label><span class="text-sm text-fg">Quality</span></template>
-              <SegmentedControl v-model="quality" :options="qualityOptions" size="sm" />
-            </Field>
-            <Field
-              inline
-              :hint="frameRate === 30 ? 'Standard for most platforms' : 'Smoother motion for fast-paced content'"
-              class="py-2.5"
-            >
-              <template #label><span class="text-sm text-fg">Frame rate</span></template>
-              <SegmentedControl v-model="frameRate" :options="frameRateOptions" size="sm" />
-            </Field>
-            <Field
-              inline
-              :hint="
-                outputFormat === 'mp4'
-                  ? 'Best compatibility across all platforms'
-                  : 'Apple ProRes quality for professional workflows'
-              "
-              class="py-2.5"
-            >
-              <template #label><span class="text-sm text-fg">Output format</span></template>
-              <SegmentedControl v-model="outputFormat" :options="outputFormatOptions" size="sm" />
-            </Field>
-          </div>
-        </div>
-
-        <!-- Step 4: Add-ons -->
-        <div v-else-if="currentStep === 'addons'" key="addons" class="flex flex-col gap-5">
-          <!-- Personal creator branding (auto-applied; shown only when matched personal profile has branding) -->
-          <section v-if="showPersonalBrandingSection" class="flex flex-col gap-2">
-            <SectionHeader
-              title="Personal branding"
-              :icon="User"
-              :description="
-                hasOrgOrCampaignSelected
-                  ? 'Overridden by organization or campaign for selected builds'
-                  : 'Applied automatically to personal builds'
-              "
-            />
-            <div class="flex items-center gap-3 transition-opacity" :class="hasOrgOrCampaignSelected && 'opacity-60'">
-              <span class="grid size-8 shrink-0 place-items-center overflow-hidden rounded-full bg-surface-hover text-fg-subtle">
-                <img v-if="personalCreatorAvatarUrl" :src="personalCreatorAvatarUrl" alt="" class="size-full object-cover" />
-                <User v-else class="size-4" />
-              </span>
-              <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-medium text-fg">{{ personalCreatorProfile?.name }}</p>
-                <div class="mt-0.5 flex flex-wrap gap-1">
-                  <Badge v-if="personalBrandingHasWatermark">Watermark</Badge>
-                  <Badge v-if="personalBrandingHasIntro">Intro</Badge>
-                  <Badge v-if="personalBrandingHasOutro">Outro</Badge>
-                </div>
-              </div>
-              <Badge :variant="hasOrgOrCampaignSelected ? 'neutral' : 'success'">
-                {{ hasOrgOrCampaignSelected ? 'Overridden' : 'Active' }}
-              </Badge>
-            </div>
-          </section>
-
-          <!-- Organization builds (shown only when orgs with matching streamer exist) -->
-          <section v-if="availableOrgs.length > 0" class="flex flex-col gap-2">
-            <SectionHeader
-              title="Build for organizations"
-              :icon="Building2"
-              description="Select organizations and aspect ratios for each build"
-            />
-            <div class="flex flex-col divide-y divide-line-subtle overflow-hidden rounded-lg border border-line-subtle bg-surface">
-              <BuildTargetRow
-                v-for="(org, orgIndex) in availableOrgs"
-                :key="org.organizationId"
-                :name="org.organizationName"
-                :selected="org.selected"
-                :ratios="selectedRatios"
-                :target-ratios="org.aspectRatios"
-                :show-ratios="hasMultipleAspectRatios"
-                @toggle="toggleOrgSelection(orgIndex)"
-                @toggle-ratio="(ratio) => toggleOrgAspectRatio(orgIndex, ratio)"
-              />
-            </div>
-          </section>
-
-          <!-- Campaign builds (shown only when campaigns exist) -->
-          <section v-if="availableCampaignSelections.length > 0" class="flex flex-col gap-2">
-            <SectionHeader
-              title="Build for campaigns"
-              :icon="Megaphone"
-              description="Campaign branding will override organization branding"
-            />
-            <div class="flex flex-col divide-y divide-line-subtle overflow-hidden rounded-lg border border-line-subtle bg-surface">
-              <BuildTargetRow
-                v-for="(campaignSel, campaignIndex) in availableCampaignSelections"
-                :key="campaignSel.campaign.id"
-                :name="campaignSel.campaign.title"
-                :subtitle="campaignSel.campaign.organization?.name"
-                :selected="campaignSel.selected"
-                :ratios="selectedRatios"
-                :target-ratios="campaignSel.aspectRatios"
-                :show-ratios="hasMultipleAspectRatios"
-                @toggle="toggleCampaignSelection(campaignIndex)"
-                @toggle-ratio="(ratio) => toggleCampaignAspectRatio(campaignIndex, ratio)"
-              >
-                <template v-if="!campaignSel.campaign.branding_profile_id" #badge>
-                  <Badge>
-                    <Globe />
-                    Global
-                  </Badge>
-                </template>
-              </BuildTargetRow>
-            </div>
-          </section>
-
-          <!-- Intro/Outro - hidden for free tier users (admin-controlled) -->
-          <!-- Disabled when orgs/campaigns are selected (branding comes from their profiles) -->
-          <section v-if="!isFreeTier" class="flex flex-col gap-3">
-            <SectionHeader
-              title="Intro & outro"
-              :icon="Film"
-              :description="
-                hasOrgOrCampaignSelected
-                  ? 'Branding from organization or campaign (applied per build target)'
-                  : 'Added before and after the clip'
-              "
-            />
-            <div class="grid grid-cols-2 gap-3">
-              <IntroOutroSelect
-                label="Intro"
-                :items="intros"
-                :model-value="selectedIntro"
-                :default-item="defaultIntro"
-                :loading="loadingAssets"
-                :disabled="hasOrgOrCampaignSelected"
-                empty-text="No intros available"
-                :format-duration="formatDuration"
-                @select="selectIntro"
-              />
-              <IntroOutroSelect
-                label="Outro"
-                :items="outros"
-                :model-value="selectedOutro"
-                :default-item="defaultOutro"
-                :loading="loadingAssets"
-                :disabled="hasOrgOrCampaignSelected"
-                empty-text="No outros available"
-                :format-duration="formatDuration"
-                @select="selectOutro"
-              />
-            </div>
-            <div
-              v-if="selectedIntro || selectedOutro"
-              class="flex items-center justify-between border-t border-line-subtle pt-3 text-xs"
-            >
-              <span class="text-fg-muted">Total duration</span>
-              <span class="tabular font-medium text-fg">{{ formatDuration(totalDuration) }}</span>
-            </div>
-          </section>
-        </div>
-      </div>
-    </div>
-
-    <template #footer>
-      <span class="tabular truncate text-xs text-fg-subtle">
-        Step {{ currentStepIndex + 1 }} of {{ visibleSteps.length }}
-        <template v-if="footerSummary"> · {{ footerSummary }}</template>
-      </span>
-      <div class="flex shrink-0 items-center gap-2">
-        <Button v-if="!isFirstStep" variant="ghost" @click="previousStep">
-          <ArrowLeftIcon />
-          Back
-        </Button>
-        <Button v-if="!isLastStep" variant="primary" :disabled="!canProceed" @click="nextStep">
-          Next
-          <ArrowRightIcon />
-        </Button>
-        <Button v-else variant="primary" :disabled="!canProceed" @click="confirmBuild">
-          <WrenchIcon />
-          {{
-            publishMode
-              ? 'Build & publish'
-              : `Build ${totalBuildsCount > 0 ? totalBuildsCount : selectedRatios.length} video${(totalBuildsCount > 0 ? totalBuildsCount : selectedRatios.length) !== 1 ? 's' : ''}`
-          }}
-        </Button>
-      </div>
+  <ClipBuildSettingsView :model="viewModel">
+    <template #ManualPOIEditor>
+      <ManualPOIEditor
+        v-model="showManualPOIEditor"
+        :initial-config="getConfigForRatio(editingAspectRatio)"
+        :target-aspect-ratio="editingAspectRatio"
+        :source-aspect-ratio="'16:9'"
+        :thumbnail-url="videoFrameUrl || thumbnailUrl"
+        :video-path="videoPath"
+        :clip-start-time="clipStartTime"
+        :clip-end-time="clipEndTime"
+        :watermark-settings="watermarkSettings"
+        :layout-overlays="vodPresetConfig?.layoutOverlays"
+        :overlay-preview-urls="overlayPreviewUrls"
+        :subtitle-settings="subtitleSettingsForPOIEditor"
+        :subtitle-position-override="getSubtitlePositionForRatio(editingAspectRatio)"
+        :transcript-words="transcriptWords"
+        :transcript-segments="transcriptSegments"
+        :is-subtitle-transcribing="poiSubtitleTranscribing"
+        :subtitle-transcribe-progress="poiSubtitleTranscribeProgress"
+        :subtitle-transcribe-stage="poiSubtitleTranscribeStage"
+        :subtitle-transcribe-message="poiSubtitleTranscribeMessage"
+        :clip-id="clip?.id ?? null"
+        :project-id="clipProjectId"
+        :clip-text-overlay-json="clipTextOverlayRaw"
+        @confirm="onManualConfigConfirm"
+        @subtitlePositionChange="onSubtitlePositionChange"
+        @subtitleSettingsChange="onSubtitleSettingsChange"
+        @clip-text-overlay-change="onClipTextOverlayChange"
+        @request-subtitle-transcription="onRequestSubtitleTranscription"
+      />
     </template>
-  </Modal>
-
-  <!-- Manual POI Editor Dialog -->
-  <ManualPOIEditor
-    v-model="showManualPOIEditor"
-    :initial-config="getConfigForRatio(editingAspectRatio)"
-    :target-aspect-ratio="editingAspectRatio"
-    :source-aspect-ratio="'16:9'"
-    :thumbnail-url="videoFrameUrl || thumbnailUrl"
-    :video-path="videoPath"
-    :clip-start-time="clipStartTime"
-    :clip-end-time="clipEndTime"
-    :watermark-settings="watermarkSettings"
-    :layout-overlays="vodPresetConfig?.layoutOverlays"
-    :overlay-preview-urls="overlayPreviewUrls"
-    :subtitle-settings="subtitleSettingsForPOIEditor"
-    :subtitle-position-override="getSubtitlePositionForRatio(editingAspectRatio)"
-    :transcript-words="transcriptWords"
-    :transcript-segments="transcriptSegments"
-    :is-subtitle-transcribing="poiSubtitleTranscribing"
-    :subtitle-transcribe-progress="poiSubtitleTranscribeProgress"
-    :subtitle-transcribe-stage="poiSubtitleTranscribeStage"
-    :subtitle-transcribe-message="poiSubtitleTranscribeMessage"
-    :clip-id="clip?.id ?? null"
-    :project-id="clipProjectId"
-    :clip-text-overlay-json="clipTextOverlayRaw"
-    @confirm="onManualConfigConfirm"
-    @subtitlePositionChange="onSubtitlePositionChange"
-    @subtitleSettingsChange="onSubtitleSettingsChange"
-    @clip-text-overlay-change="onClipTextOverlayChange"
-    @request-subtitle-transcription="onRequestSubtitleTranscription"
-  />
-
-  <!-- Subtitle Adjustment Dialog -->
-  <SubtitleAdjustmentDialog
-    v-model="showSubtitleAdjustmentDialog"
-    :aspect-ratio="editingSubtitleRatio"
-    :subtitle-settings="subtitleSettings"
-    :initial-override="subtitleOverrides[editingSubtitleRatio as keyof SubtitleOverrides]"
-    :thumbnail-url="videoFrameUrl || thumbnailUrl"
-    :video-path="videoPath"
-    :clip-start-time="clipStartTime"
-    :clip-end-time="clipEndTime"
-    @confirm="onSubtitleOverrideConfirm"
-  />
+    <template #SubtitleAdjustmentDialog>
+      <SubtitleAdjustmentDialog
+        v-model="showSubtitleAdjustmentDialog"
+        :aspect-ratio="editingSubtitleRatio"
+        :subtitle-settings="subtitleSettings"
+        :initial-override="subtitleOverrides[editingSubtitleRatio as keyof SubtitleOverrides]"
+        :thumbnail-url="videoFrameUrl || thumbnailUrl"
+        :video-path="videoPath"
+        :clip-start-time="clipStartTime"
+        :clip-end-time="clipEndTime"
+        @confirm="onSubtitleOverrideConfirm"
+      />
+    </template>
+  </ClipBuildSettingsView>
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+  import { ref, reactive, toRefs, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import {
     WrenchIcon,
     CheckIcon,
@@ -463,6 +68,8 @@
     Film,
     Loader2,
   } from 'lucide-vue-next';
+  import { useClipBuildNavigation, type ClipBuildStep as StepId } from '@/composables/useClipBuildNavigation';
+  import ClipBuildSettingsView from './ClipBuildSettingsView.vue';
   import { convertFileSrc } from '@tauri-apps/api/core';
   import type { ClipWithVersion, WatermarkSettings } from '@/services/database';
   import type { CreatorProfileWithLinks } from '@/services/database/types';
@@ -486,11 +93,7 @@
   import { Modal } from '@/components/ui/modal';
   import { SectionHeader } from '@/components/ui/section-header';
   import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
-  import {
-    getMyGlobalBrandingCampaigns,
-    getCampaignsByCreatorProfile,
-    type Campaign,
-  } from '@/services/campaignApi';
+  import { getMyGlobalBrandingCampaigns, getCampaignsByCreatorProfile, type Campaign } from '@/services/campaignApi';
   import { type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
   import type {
     ManualFramingConfig,
@@ -516,45 +119,10 @@
   }
 
   // Step definitions
-  type StepId = 'platforms' | 'framing' | 'export' | 'addons';
-
-  interface Step {
-    id: StepId;
-    label: string;
-    icon: typeof LayoutGridIcon;
-  }
-
-  const allSteps: Step[] = [
-    { id: 'platforms', label: 'Platforms', icon: LayoutGridIcon },
-    { id: 'framing', label: 'Framing', icon: CropIcon },
-    { id: 'export', label: 'Export', icon: SettingsIcon },
-    { id: 'addons', label: 'Add-ons', icon: SparkleIcon },
-  ];
 
   // Current step state
-  const currentStep = ref<StepId>('platforms');
 
   // Aspect ratio choices on the Platforms step (preview box size in px)
-  const ratioOptions = [
-    { ratio: '16:9', platforms: 'YouTube · Twitch', original: true, width: 64, height: 36 },
-    { ratio: '9:16', platforms: 'TikTok · Reels', original: false, width: 24, height: 42 },
-    { ratio: '1:1', platforms: 'Instagram feed', original: false, width: 38, height: 38 },
-    { ratio: '4:5', platforms: 'Instagram post', original: false, width: 32, height: 40 },
-  ];
-
-  const qualityOptions: SegmentedOption<'low' | 'medium' | 'high'>[] = [
-    { value: 'low', label: 'Low' },
-    { value: 'medium', label: 'Medium' },
-    { value: 'high', label: 'High' },
-  ];
-  const frameRateOptions: SegmentedOption<30 | 60>[] = [
-    { value: 30, label: '30 FPS' },
-    { value: 60, label: '60 FPS' },
-  ];
-  const outputFormatOptions: SegmentedOption<'mp4' | 'mov'>[] = [
-    { value: 'mp4', label: 'MP4' },
-    { value: 'mov', label: 'MOV' },
-  ];
 
   const props = defineProps<{
     modelValue: boolean;
@@ -660,11 +228,11 @@
     selected: boolean;
     aspectRatios: string[];
   }
-  
+
   const availableOrgs = ref<OrgSelection[]>([]);
   const availableCampaignSelections = ref<CampaignSelection[]>([]);
   const loadingOrgsAndCampaigns = ref(false);
-  
+
   // Legacy campaign selection state (kept for backward compatibility)
   const isForCampaign = ref(false);
   const availableCampaigns = ref<Campaign[]>([]);
@@ -728,19 +296,13 @@
     () => localSubtitleTranscribing.value || Boolean(props.isSubtitleTranscribing)
   );
   const poiSubtitleTranscribeProgress = computed(() =>
-    localSubtitleTranscribing.value
-      ? localSubtitleTranscribeProgress.value
-      : props.subtitleTranscribeProgress || 0
+    localSubtitleTranscribing.value ? localSubtitleTranscribeProgress.value : props.subtitleTranscribeProgress || 0
   );
   const poiSubtitleTranscribeStage = computed(() =>
-    localSubtitleTranscribing.value
-      ? localSubtitleTranscribeStage.value
-      : props.subtitleTranscribeStage || ''
+    localSubtitleTranscribing.value ? localSubtitleTranscribeStage.value : props.subtitleTranscribeStage || ''
   );
   const poiSubtitleTranscribeMessage = computed(() =>
-    localSubtitleTranscribing.value
-      ? localSubtitleTranscribeMessage.value
-      : props.subtitleTranscribeMessage || ''
+    localSubtitleTranscribing.value ? localSubtitleTranscribeMessage.value : props.subtitleTranscribeMessage || ''
   );
 
   /** True when the clip's extracted MP4 is the full playable source (0-based). */
@@ -772,10 +334,7 @@
       const targetPath = normalizePathForCompare(clip.file_path);
       const rawVideo = rawVideos.find((rv) => normalizePathForCompare(rv.file_path) === targetPath);
       if (!rawVideo) {
-        console.warn(
-          '[ClipBuildSettingsDialog] No raw video matched self-contained clip file_path:',
-          clip.file_path
-        );
+        console.warn('[ClipBuildSettingsDialog] No raw video matched self-contained clip file_path:', clip.file_path);
         return;
       }
       const transcript = await getTranscriptByRawVideoId(rawVideo.id);
@@ -881,35 +440,39 @@
   const subtitleOverrides = ref<SubtitleOverrides>({});
   const showSubtitleAdjustmentDialog = ref(false);
   const editingSubtitleRatio = ref<string>('16:9');
-  
+
   // Local mutable copy of subtitle settings (can be updated from ManualPOIEditor)
   const localSubtitleSettings = ref<SubtitleSettings | null>(null);
-  
+
   // Initialize and sync local subtitle settings from prop
-  watch(() => props.subtitleSettings, (settings) => {
-    if (settings) {
-      // Always sync from prop to ensure we have latest data
-      localSubtitleSettings.value = { ...settings };
-      console.log('[ClipBuildSettingsDialog] Synced local subtitle settings from prop:', {
-        animationStyle: localSubtitleSettings.value.animationStyle,
-        border1Width: localSubtitleSettings.value.border1Width,
-        border2Width: localSubtitleSettings.value.border2Width
-      });
-    }
-  }, { immediate: true, deep: true });
-  
+  watch(
+    () => props.subtitleSettings,
+    (settings) => {
+      if (settings) {
+        // Always sync from prop to ensure we have latest data
+        localSubtitleSettings.value = { ...settings };
+        console.log('[ClipBuildSettingsDialog] Synced local subtitle settings from prop:', {
+          animationStyle: localSubtitleSettings.value.animationStyle,
+          border1Width: localSubtitleSettings.value.border1Width,
+          border2Width: localSubtitleSettings.value.border2Width,
+        });
+      }
+    },
+    { immediate: true, deep: true }
+  );
+
   // Use local settings if available, otherwise fall back to prop
   const effectiveSubtitleSettings = computed(() => localSubtitleSettings.value || props.subtitleSettings);
-  
+
   // Compute subtitle settings for POI editor, merging per-ratio overrides
   // This ensures the POI editor shows the correct settings for the current ratio
   const subtitleSettingsForPOIEditor = computed((): SubtitleSettings | null => {
     const base = effectiveSubtitleSettings.value;
     if (!base) return null;
-    
+
     const ratio = editingAspectRatio.value;
     const ratioOverride = subtitleOverrides.value[ratio as keyof SubtitleOverrides];
-    
+
     if (ratioOverride) {
       // Merge per-ratio override into base settings, excluding position (different types)
       const { position: _xyPos, ...overrideWithoutPosition } = ratioOverride;
@@ -922,7 +485,7 @@
       });
       return merged;
     }
-    
+
     return base;
   });
 
@@ -960,87 +523,22 @@
   });
 
   // Visible steps (framing step shown when portrait ratios selected OR subtitles OR clip text box)
-  const visibleSteps = computed(() => {
-    return allSteps.filter((step) => {
-      if (step.id === 'framing') {
-        return (
-          hasPortraitRatio.value ||
-          hasSubtitlesEnabled.value ||
-          hasClipTextBoxEnabled.value
-        );
-      }
-      return true;
-    });
-  });
-
-  // Current step index
-  const currentStepIndex = computed(() => {
-    return visibleSteps.value.findIndex((s) => s.id === currentStep.value);
-  });
-
-  // Navigation helpers
-  const isFirstStep = computed(() => currentStepIndex.value === 0);
-  const isLastStep = computed(() => currentStepIndex.value === visibleSteps.value.length - 1);
-
-  // Check if user can proceed to next step
-  const canProceed = computed(() => {
-    switch (currentStep.value) {
-      case 'platforms':
-        return selectedRatios.value.length > 0;
-      case 'framing':
-        // Always can proceed - auto mode doesn't require configuration
-        return true;
-      case 'export':
-        return true;
-      case 'addons':
-        return selectedRatios.value.length > 0;
-      default:
-        return true;
-    }
-  });
-
-  // Check if a step is completed
-  function isStepCompleted(stepId: StepId): boolean {
-    const stepIndex = visibleSteps.value.findIndex((s) => s.id === stepId);
-    return stepIndex < currentStepIndex.value;
-  }
-
-  // Check if user can navigate to a specific step
-  function canNavigateToStep(stepId: StepId): boolean {
-    const stepIndex = visibleSteps.value.findIndex((s) => s.id === stepId);
-    // Can navigate to current step or any completed step
-    // Can also navigate to next step if current step is valid
-    if (stepIndex <= currentStepIndex.value) return true;
-    if (stepIndex === currentStepIndex.value + 1 && canProceed.value) return true;
-    return false;
-  }
-
-  // Navigate to specific step
-  function goToStep(stepId: StepId) {
-    if (canNavigateToStep(stepId)) {
-      currentStep.value = stepId;
-    }
-  }
-
-  // Go to next step
-  function nextStep() {
-    if (!isLastStep.value && canProceed.value) {
-      const nextIndex = currentStepIndex.value + 1;
-      if (nextIndex < visibleSteps.value.length) {
-        currentStep.value = visibleSteps.value[nextIndex].id;
-      }
-    }
-  }
-
-  // Go to previous step
-  function previousStep() {
-    if (!isFirstStep.value) {
-      const prevIndex = currentStepIndex.value - 1;
-      if (prevIndex >= 0) {
-        currentStep.value = visibleSteps.value[prevIndex].id;
-      }
-    }
-  }
+  const {
+    currentStep,
+    visibleSteps,
+    currentStepIndex,
+    isFirstStep,
+    isLastStep,
+    canProceed,
+    isStepCompleted,
+    canNavigateToStep,
+    goToStep,
+    nextStep,
+    previousStep,
+  } = useClipBuildNavigation(
+    selectedRatios,
+    () => hasPortraitRatio.value || hasSubtitlesEnabled.value || hasClipTextBoxEnabled.value
+  );
 
   // Get selected portrait ratios that need configuration
   const selectedPortraitRatios = computed(() => {
@@ -1055,8 +553,7 @@
     const clipText = parseClipTextOverlayJson(clipTextOverlayRaw.value);
     const hasClipTextForRatio =
       !!clipText?.enabled &&
-      (Object.keys(clipText.perRatioConfigs ?? {}).length === 0 ||
-        Boolean(clipText.perRatioConfigs?.[ratio]));
+      (Object.keys(clipText.perRatioConfigs ?? {}).length === 0 || Boolean(clipText.perRatioConfigs?.[ratio]));
     return hasFraming || hasClipTextForRatio;
   }
 
@@ -1072,7 +569,7 @@
     console.log('[ClipBuildSettingsDialog] Opening POI editor for ratio:', ratio);
     console.log('[ClipBuildSettingsDialog] Config for ratio:', config);
     console.log('[ClipBuildSettingsDialog] All manualFramingConfigs:', manualFramingConfigs.value);
-    
+
     // Always reload so a prior clip's cached path cannot leak into POI editor.
     await loadVideoFrame();
 
@@ -1149,8 +646,7 @@
     ensureSubtitlePositionOverrideForRatio(editingAspectRatio.value);
 
     try {
-      const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } =
-        await import('@/services/database/clips');
+      const { updateClipFullSubtitleSettings, updateClipSubtitlePosition } = await import('@/services/database/clips');
       await updateClipFullSubtitleSettings(props.clip.id, enabledSettings);
       await updateClipSubtitlePosition(
         props.clip.id,
@@ -1188,7 +684,7 @@
       ? Math.max(0, getSelfContainedClipDuration(props.clip) || clipDuration.value || 0)
       : 0;
     if (clipSeconds <= 0) {
-      showErrorToast('Transcript Unavailable', 'Could not determine this clip\'s duration.');
+      showErrorToast('Transcript Unavailable', "Could not determine this clip's duration.");
       return;
     }
     if (clipSeconds > FREE_CLIP_MAX_SECONDS) {
@@ -1199,7 +695,11 @@
       return;
     }
 
-    const { transcribeProject, progress: tProgress, cancelTranscription } = useTranscriptionOnly({
+    const {
+      transcribeProject,
+      progress: tProgress,
+      cancelTranscription,
+    } = useTranscriptionOnly({
       showSuccessToast: false,
       showErrorToast: true,
       showChunkCompletionToast: false,
@@ -1286,10 +786,7 @@
         },
         positionPercentage: DEFAULT_POI_SUBTITLE_POSITION.y,
         maxWidth: existingOverride?.maxWidth ?? DEFAULT_POI_SUBTITLE_POSITION.width,
-        fontSize:
-          existingOverride?.fontSize ??
-          effectiveSubtitleSettings.value.fontSize ??
-          32,
+        fontSize: existingOverride?.fontSize ?? effectiveSubtitleSettings.value.fontSize ?? 32,
       },
     };
   }
@@ -1430,8 +927,7 @@
 
   // Handle case where framing step becomes hidden while user is on it
   watch(
-    () =>
-      hasPortraitRatio.value || hasSubtitlesEnabled.value || hasClipTextBoxEnabled.value,
+    () => hasPortraitRatio.value || hasSubtitlesEnabled.value || hasClipTextBoxEnabled.value,
     (showFramingStep) => {
       if (!showFramingStep && currentStep.value === 'framing') {
         // Skip to export step if framing step is no longer needed
@@ -1472,7 +968,7 @@
         width: override.maxWidth,
       };
     }
-    
+
     return { ...DEFAULT_POI_SUBTITLE_POSITION };
   }
 
@@ -1513,20 +1009,21 @@
       ...subtitleOverrides.value,
       [ratio]: newOverride,
     };
-    
+
     // Save position to database so it persists
     if (props.clip?.id) {
       try {
         const { getClip, saveSubtitleSettings } = await import('@/services/database/clips');
         const dbClip = await getClip(props.clip.id);
         let currentSettings: any = null;
-        
+
         if (dbClip?.subtitle_settings) {
-          currentSettings = typeof dbClip.subtitle_settings === 'string' 
-            ? JSON.parse(dbClip.subtitle_settings)
-            : dbClip.subtitle_settings;
+          currentSettings =
+            typeof dbClip.subtitle_settings === 'string'
+              ? JSON.parse(dbClip.subtitle_settings)
+              : dbClip.subtitle_settings;
         }
-        
+
         // Merge position into perRatioConfigs
         const perRatioConfigs: Record<string, any> = {
           ...(currentSettings?.perRatioConfigs || {}),
@@ -1537,12 +1034,12 @@
           positionPercentage: newOverride.positionPercentage,
           maxWidth: newOverride.maxWidth,
         };
-        
+
         const settingsToSave = {
           ...(currentSettings || effectiveSubtitleSettings.value || {}),
           perRatioConfigs,
         };
-        
+
         await saveSubtitleSettings(props.clip.id, settingsToSave);
         console.log('[ClipBuildSettingsDialog] Saved subtitle position to database:', {
           clipId: props.clip.id,
@@ -1568,16 +1065,16 @@
       selectedPresetId: settings.selectedPresetId,
       ratio,
     });
-    
+
     // IMPORTANT: Only update localSubtitleSettings (base settings) if editing 16:9
     // For other ratios, we only update the per-ratio override to preserve base settings
     if (ratio === '16:9') {
       localSubtitleSettings.value = { ...settings };
     }
-    
+
     // Update the override for this specific ratio
     const existingOverride: Partial<SubtitleOverride> = subtitleOverrides.value[ratio as keyof SubtitleOverrides] || {};
-    
+
     // Store ALL visual properties that changed so Rust can apply them via per_ratio_override JSON
     // The Rust code reads these fields from the JSON even though TypeScript SubtitleOverride doesn't define them
     // IMPORTANT: Preserve position/maxWidth from existing override if user dragged the subtitle
@@ -1590,7 +1087,9 @@
         fontSize: settings.fontSize,
         // Only update position fields if NOT already set by user dragging
         // (existingOverride.position indicates user has dragged the subtitle)
-        positionPercentage: existingOverride.position ? existingOverride.positionPercentage : settings.positionPercentage,
+        positionPercentage: existingOverride.position
+          ? existingOverride.positionPercentage
+          : settings.positionPercentage,
         maxWidth: existingOverride.maxWidth ?? settings.maxWidth,
         position: existingOverride.position, // Preserve user's dragged position
         presetId: settings.selectedPresetId || undefined,
@@ -1615,43 +1114,44 @@
         backgroundEnabled: settings.backgroundEnabled,
       } as any, // Cast to any since we're extending SubtitleOverride with extra fields
     };
-    
+
     // Save per-ratio override to database (don't overwrite base settings!)
     if (props.clip?.id) {
       try {
         const { getClip, saveSubtitleSettings } = await import('@/services/database/clips');
-        
+
         // Load current clip data from database to get existing subtitle_settings
         const dbClip = await getClip(props.clip.id);
         let currentSettings: any = null;
-        
+
         if (dbClip?.subtitle_settings) {
-          currentSettings = typeof dbClip.subtitle_settings === 'string' 
-            ? JSON.parse(dbClip.subtitle_settings)
-            : dbClip.subtitle_settings;
+          currentSettings =
+            typeof dbClip.subtitle_settings === 'string'
+              ? JSON.parse(dbClip.subtitle_settings)
+              : dbClip.subtitle_settings;
         }
-        
+
         console.log('[ClipBuildSettingsDialog] Current settings from DB:', {
           hasSettings: !!currentSettings,
           baseAnimationStyle: currentSettings?.animationStyle,
           hasPerRatioConfigs: !!currentSettings?.perRatioConfigs,
-          existingRatios: currentSettings?.perRatioConfigs ? Object.keys(currentSettings.perRatioConfigs) : []
+          existingRatios: currentSettings?.perRatioConfigs ? Object.keys(currentSettings.perRatioConfigs) : [],
         });
-        
+
         // Build perRatioConfigs by merging existing with new overrides
         const perRatioConfigs: Record<string, any> = {
           ...(currentSettings?.perRatioConfigs || {}),
           ...subtitleOverrides.value,
         };
-        
+
         // If we have current settings, use them as base; otherwise use the incoming settings
         const baseSettings = currentSettings || settings;
-        
+
         const settingsToSave = {
           ...baseSettings,
           perRatioConfigs: Object.keys(perRatioConfigs).length > 0 ? perRatioConfigs : undefined,
         };
-        
+
         await saveSubtitleSettings(props.clip.id, settingsToSave);
         console.log('[ClipBuildSettingsDialog] Saved per-ratio subtitle override to database:', {
           clipId: props.clip.id,
@@ -1931,7 +1431,6 @@
     }
   }
 
-
   function formatDuration(seconds: number): string {
     if (!seconds) return '0:00';
     const mins = Math.floor(seconds / 60);
@@ -1962,25 +1461,20 @@
           selected: false,
           aspectRatios: [],
         }));
-        console.log(
-          '[ClipBuildSettingsDialog] Eligible orgs for build:',
-          eligible.length,
-          'project:',
-          projectId
-        );
+        console.log('[ClipBuildSettingsDialog] Eligible orgs for build:', eligible.length, 'project:', projectId);
       } else {
         availableOrgs.value = [];
       }
 
       // Fetch campaigns (global branding + creator-profile-specific)
       const campaignResults: Campaign[] = [];
-      
+
       // Global branding campaigns
       const globalRes = await getMyGlobalBrandingCampaigns();
       if (globalRes.success && globalRes.campaigns) {
         campaignResults.push(...globalRes.campaigns);
       }
-      
+
       // Profile-specific campaigns
       if (props.creatorProfileServerId) {
         const profileRes = await getCampaignsByCreatorProfile(props.creatorProfileServerId);
@@ -1992,17 +1486,17 @@
           }
         }
       }
-      
+
       // Convert to CampaignSelection format
-      availableCampaignSelections.value = campaignResults.map(campaign => ({
+      availableCampaignSelections.value = campaignResults.map((campaign) => ({
         campaign,
         selected: false,
         aspectRatios: [],
       }));
-      
+
       // Also set legacy availableCampaigns for backward compatibility
       availableCampaigns.value = campaignResults;
-      
+
       console.log('[ClipBuildSettingsDialog] Found', campaignResults.length, 'campaigns');
     } catch (e) {
       console.warn('[ClipBuildSettingsDialog] Failed to load orgs/campaigns:', e);
@@ -2013,7 +1507,7 @@
       loadingOrgsAndCampaigns.value = false;
     }
   }
-  
+
   async function syncBrandingPreviewFromSelection() {
     if (!hasOrgOrCampaignSelected.value) {
       selectedIntro.value = props.defaultIntro ? (props.defaultIntro as IntroOutroItem) : null;
@@ -2021,11 +1515,8 @@
       return;
     }
 
-    const selectedCampaign =
-      availableCampaignSelections.value.find((c) => c.selected)?.campaign ?? null;
-    const selectedOrg = selectedCampaign
-      ? null
-      : availableOrgs.value.find((o) => o.selected)?.serverProfile ?? null;
+    const selectedCampaign = availableCampaignSelections.value.find((c) => c.selected)?.campaign ?? null;
+    const selectedOrg = selectedCampaign ? null : (availableOrgs.value.find((o) => o.selected)?.serverProfile ?? null);
 
     try {
       const branding = await resolveSelectionBrandingPreview(selectedOrg, selectedCampaign);
@@ -2045,7 +1536,7 @@
     }
     void syncBrandingPreviewFromSelection();
   }
-  
+
   // Toggle aspect ratio for org
   function toggleOrgAspectRatio(orgIndex: number, ratio: string) {
     const org = availableOrgs.value[orgIndex];
@@ -2056,7 +1547,7 @@
       org.aspectRatios.push(ratio);
     }
   }
-  
+
   // Toggle campaign selection
   function toggleCampaignSelection(index: number) {
     const campaign = availableCampaignSelections.value[index];
@@ -2066,7 +1557,7 @@
     }
     void syncBrandingPreviewFromSelection();
   }
-  
+
   // Toggle aspect ratio for campaign
   function toggleCampaignAspectRatio(campaignIndex: number, ratio: string) {
     const campaign = availableCampaignSelections.value[campaignIndex];
@@ -2077,21 +1568,24 @@
       campaign.aspectRatios.push(ratio);
     }
   }
-  
+
   // Check if we have multiple aspect ratios selected (show nested selectors)
   const hasMultipleAspectRatios = computed(() => selectedRatios.value.length > 1);
-  
+
   // Check if any org or campaign is selected (for disabling intro/outro)
   const hasOrgOrCampaignSelected = computed(() => {
-    const hasSelectedOrg = availableOrgs.value.some(org => org.selected);
-    const hasSelectedCampaign = availableCampaignSelections.value.some(c => c.selected);
+    const hasSelectedOrg = availableOrgs.value.some((org) => org.selected);
+    const hasSelectedCampaign = availableCampaignSelections.value.some((c) => c.selected);
     const result = hasSelectedOrg || hasSelectedCampaign;
     console.log('[ClipBuildSettingsDialog] hasOrgOrCampaignSelected computed:', {
       hasSelectedOrg,
       hasSelectedCampaign,
       result,
-      availableOrgs: availableOrgs.value.map(o => ({ name: o.organizationName, selected: o.selected })),
-      availableCampaigns: availableCampaignSelections.value.map(c => ({ title: c.campaign.title, selected: c.selected }))
+      availableOrgs: availableOrgs.value.map((o) => ({ name: o.organizationName, selected: o.selected })),
+      availableCampaigns: availableCampaignSelections.value.map((c) => ({
+        title: c.campaign.title,
+        selected: c.selected,
+      })),
     });
     return result;
   });
@@ -2126,11 +1620,7 @@
 
   const showPersonalBrandingSection = computed(() => {
     if (!personalCreatorProfile.value) return false;
-    return (
-      personalBrandingHasWatermark.value ||
-      personalBrandingHasIntro.value ||
-      personalBrandingHasOutro.value
-    );
+    return personalBrandingHasWatermark.value || personalBrandingHasIntro.value || personalBrandingHasOutro.value;
   });
 
   const personalCreatorAvatarUrl = computed(() => {
@@ -2148,60 +1638,64 @@
       return null;
     }
   });
-  
+
   // Short status line shown next to the step counter in the footer
-  const footerSummary = computed(() => {
-    if (currentStep.value === 'platforms' && selectedRatios.value.length > 0) {
-      const n = selectedRatios.value.length;
-      return `${n} format${n > 1 ? 's' : ''} selected`;
-    }
-    if (currentStep.value === 'addons' && totalBuildsCount.value > 0) {
-      const n = totalBuildsCount.value;
-      return `${n} build${n !== 1 ? 's' : ''} will be created`;
-    }
-    return '';
-  });
 
   // Get total number of builds that will be created
   // Must match the logic in confirmBuild() - when nested aspectRatios is empty, use selectedRatios
   const totalBuildsCount = computed(() => {
     let count = 0;
-    
+
     console.log('[BuildDialog] Calculating totalBuildsCount...');
     console.log('[BuildDialog] hasMultipleAspectRatios:', hasMultipleAspectRatios.value);
     console.log('[BuildDialog] selectedRatios:', selectedRatios.value);
-    console.log('[BuildDialog] availableOrgs:', availableOrgs.value.map(o => ({ name: o.organizationName, selected: o.selected, aspectRatios: o.aspectRatios })));
-    console.log('[BuildDialog] availableCampaignSelections:', availableCampaignSelections.value.map(c => ({ name: c.campaign.title, selected: c.selected, aspectRatios: c.aspectRatios })));
-    
+    console.log(
+      '[BuildDialog] availableOrgs:',
+      availableOrgs.value.map((o) => ({ name: o.organizationName, selected: o.selected, aspectRatios: o.aspectRatios }))
+    );
+    console.log(
+      '[BuildDialog] availableCampaignSelections:',
+      availableCampaignSelections.value.map((c) => ({
+        name: c.campaign.title,
+        selected: c.selected,
+        aspectRatios: c.aspectRatios,
+      }))
+    );
+
     // Count org builds (each org × each aspect ratio = 1 build)
     for (const org of availableOrgs.value) {
       if (org.selected) {
         // If multiple aspect ratios mode and user selected specific ratios, use those
         // Otherwise fall back to all selected ratios (same as confirmBuild)
-        const ratios = hasMultipleAspectRatios.value && org.aspectRatios.length > 0 
-          ? org.aspectRatios 
-          : selectedRatios.value;
+        const ratios =
+          hasMultipleAspectRatios.value && org.aspectRatios.length > 0 ? org.aspectRatios : selectedRatios.value;
         console.log(`[BuildDialog] Org "${org.organizationName}" selected, ratios:`, ratios, 'adding', ratios.length);
         count += ratios.length;
       }
     }
-    
+
     // Count campaign builds
     for (const campaign of availableCampaignSelections.value) {
       if (campaign.selected) {
-        const ratios = hasMultipleAspectRatios.value && campaign.aspectRatios.length > 0 
-          ? campaign.aspectRatios 
-          : selectedRatios.value;
-        console.log(`[BuildDialog] Campaign "${campaign.campaign.title}" selected, ratios:`, ratios, 'adding', ratios.length);
+        const ratios =
+          hasMultipleAspectRatios.value && campaign.aspectRatios.length > 0
+            ? campaign.aspectRatios
+            : selectedRatios.value;
+        console.log(
+          `[BuildDialog] Campaign "${campaign.campaign.title}" selected, ratios:`,
+          ratios,
+          'adding',
+          ratios.length
+        );
         count += ratios.length;
       }
     }
-    
+
     // If no org/campaign selected, it's a personal build (one per selected ratio)
     if (count === 0) {
       count = selectedRatios.value.length;
     }
-    
+
     console.log('[BuildDialog] Total build count:', count);
     return count;
   });
@@ -2300,14 +1794,13 @@
 
     // Build targets from multi-select (orgs and campaigns with their aspect ratios)
     const buildTargets: BuildTarget[] = [];
-    
+
     // Add org build targets
     for (const org of availableOrgs.value) {
       if (org.selected) {
-        const ratios = hasMultipleAspectRatios.value && org.aspectRatios.length > 0 
-          ? org.aspectRatios 
-          : [...selectedRatios.value];
-        
+        const ratios =
+          hasMultipleAspectRatios.value && org.aspectRatios.length > 0 ? org.aspectRatios : [...selectedRatios.value];
+
         for (const ratio of ratios) {
           buildTargets.push({
             type: 'org',
@@ -2321,15 +1814,16 @@
         }
       }
     }
-    
+
     // Add campaign build targets
     for (const campaignSel of availableCampaignSelections.value) {
       if (campaignSel.selected) {
         // If multiple aspect ratios, use selected ones; otherwise use all selected ratios
-        const ratios = hasMultipleAspectRatios.value && campaignSel.aspectRatios.length > 0 
-          ? campaignSel.aspectRatios 
-          : [...selectedRatios.value];
-        
+        const ratios =
+          hasMultipleAspectRatios.value && campaignSel.aspectRatios.length > 0
+            ? campaignSel.aspectRatios
+            : [...selectedRatios.value];
+
         // Create one build target per aspect ratio
         for (const ratio of ratios) {
           buildTargets.push({
@@ -2356,7 +1850,11 @@
           selectedPlatforms: new Map(),
         });
       }
-      console.log('[ClipBuildSettingsDialog] No orgs/campaigns selected, created', buildTargets.length, 'personal build targets');
+      console.log(
+        '[ClipBuildSettingsDialog] No orgs/campaigns selected, created',
+        buildTargets.length,
+        'personal build targets'
+      );
     }
 
     const selectedCampaignTargets = availableCampaignSelections.value.filter((campaignSel) => campaignSel.selected);
@@ -2374,27 +1872,114 @@
       manualFramingConfig: finalManualConfig ?? undefined,
       manualFramingConfigs: finalManualConfigs,
       subtitleOverrides: finalSubtitleOverrides,
-      layoutOverlays: props.vodPresetConfig?.layoutOverlays?.length
-        ? props.vodPresetConfig.layoutOverlays
-        : undefined,
+      layoutOverlays: props.vodPresetConfig?.layoutOverlays?.length ? props.vodPresetConfig.layoutOverlays : undefined,
       // Multi-build targets (always populated — personal targets as fallback)
       buildTargets: buildTargets,
       // Legacy single campaign fields (kept for backward compatibility)
-      campaignId: singleSelectedCampaign?.id ?? (isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.id : null),
+      campaignId:
+        singleSelectedCampaign?.id ??
+        (isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.id : null),
       selectedCampaign: singleSelectedCampaign ?? (isForCampaign.value ? selectedCampaign.value : null),
-      campaignBrandingProfileId: singleSelectedCampaign?.branding_profile_id
-        ?? (isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.branding_profile_id : null),
-      brandingType: singleSelectedCampaign ? 'campaign' : (isForCampaign.value && selectedCampaign.value ? 'campaign' : 'personal'),
+      campaignBrandingProfileId:
+        singleSelectedCampaign?.branding_profile_id ??
+        (isForCampaign.value && selectedCampaign.value ? selectedCampaign.value.branding_profile_id : null),
+      brandingType: singleSelectedCampaign
+        ? 'campaign'
+        : isForCampaign.value && selectedCampaign.value
+          ? 'campaign'
+          : 'personal',
     };
 
     console.log('[ClipBuildSettingsDialog] Emitting confirm with buildTargets:', buildTargets.length, 'targets');
     console.log('[ClipBuildSettingsDialog] Build targets:', buildTargets);
     emit('confirm', settings);
-    
+
     // In publish mode, keep dialog open and wait for build completion
     // The parent component will handle the build and emit build-complete event
     if (!props.publishMode) {
       close();
     }
   }
+  const viewModel = reactive({
+    ...toRefs(props),
+    availableCampaignSelections,
+    availableOrgs,
+    canNavigateToStep,
+    canProceed,
+    clipDuration,
+    clipEndTime,
+    clipProjectId,
+    clipStartTime,
+    clipTextOverlayRaw,
+    close,
+    confirmBuild,
+    currentStep,
+    currentStepIndex,
+    editingAspectRatio,
+    editingSubtitleRatio,
+    formatDuration,
+    frameRate,
+    framingMode,
+    getConfigForRatio,
+    getSubtitlePositionForRatio,
+    goToStep,
+    hasMultipleAspectRatios,
+    hasOrgOrCampaignSelected,
+    hasPortraitRatio,
+    intros,
+    isFirstStep,
+    isFreeTier,
+    isLastStep,
+    isRatioConfigured,
+    isStepCompleted,
+    loadingAssets,
+    loadingVideoFrame,
+    nextStep,
+    onClipTextOverlayChange,
+    onManualConfigConfirm,
+    onRequestSubtitleTranscription,
+    onSubtitleOverrideConfirm,
+    onSubtitlePositionChange,
+    onSubtitleSettingsChange,
+    openPOIEditorForRatio,
+    outputFormat,
+    outros,
+    overlayPreviewUrls,
+    personalBrandingHasIntro,
+    personalBrandingHasOutro,
+    personalBrandingHasWatermark,
+    personalCreatorAvatarUrl,
+    personalCreatorProfile,
+    poiSubtitleTranscribeMessage,
+    poiSubtitleTranscribeProgress,
+    poiSubtitleTranscribeStage,
+    poiSubtitleTranscribing,
+    previousStep,
+    quality,
+    selectIntro,
+    selectOutro,
+    selectedIntro,
+    selectedOutro,
+    selectedPortraitRatios,
+    selectedRatios,
+    showIntroDropdown,
+    showManualPOIEditor,
+    showOutroDropdown,
+    showPersonalBrandingSection,
+    showSubtitleAdjustmentDialog,
+    subtitleOverrides,
+    subtitleSettingsForPOIEditor,
+    toggleCampaignAspectRatio,
+    toggleCampaignSelection,
+    toggleOrgAspectRatio,
+    toggleOrgSelection,
+    toggleRatio,
+    totalBuildsCount,
+    totalDuration,
+    transcriptSegments,
+    transcriptWords,
+    videoFrameUrl,
+    videoPath,
+    visibleSteps,
+  });
 </script>

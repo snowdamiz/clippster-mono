@@ -1,4 +1,4 @@
-import type { TargetAspectRatio } from '@clippster/shared-types'
+import type { CanvasRatio } from '@/editor/model/schema'
 import * as MediaLibrary from 'expo-media-library/legacy'
 import * as Sharing from 'expo-sharing'
 import { router } from 'expo-router'
@@ -19,7 +19,7 @@ interface ExportSheetProps {
   visible: boolean
   progress: ClipBuildProgress | null
   onClose: () => void
-  onExport: (options: { ratios: TargetAspectRatio[]; remuxOnly: boolean }) => void
+  onExport: (options: { ratios: CanvasRatio[]; remuxOnly: boolean }) => void
   title?: string
   showRemux?: boolean
 }
@@ -45,7 +45,7 @@ export function ExportSheet({
   const canStart = ratio916 || ratio169
 
   function startExport() {
-    const ratios: TargetAspectRatio[] = []
+    const ratios: CanvasRatio[] = []
     if (ratio916) ratios.push('9:16')
     if (ratio169) ratios.push('16:9')
     if (ratios.length > 0) onExport({ ratios, remuxOnly })

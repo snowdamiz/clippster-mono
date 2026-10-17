@@ -4,7 +4,7 @@
  * account assignments, and post submissions.
  */
 
-import api from './api';
+import api from '@/services/api';
 
 // ============================================
 // Types - Social Accounts
@@ -735,7 +735,7 @@ async function startPostForMeOrganizationOAuth(
   onResult?: (result: { success: boolean; account?: SocialAccount; error?: string }) => void,
   options?: OrgSocialConnectOptions
 ): Promise<() => void> {
-  const { invoke } = await import('@tauri-apps/api/core');
+  const { openSocialOAuth } = await import('@/services/socialOAuthRuntime');
 
   const connectResponse = await api.post<PostForMeConnectUrlResponse>(
     '/social/connect-url',
@@ -752,7 +752,7 @@ async function startPostForMeOrganizationOAuth(
     throw new Error('Post For Me response did not include connection_id');
   }
 
-  await invoke('start_social_oauth', { authUrl: connectResponse.data.auth_url });
+  await openSocialOAuth(connectResponse.data.auth_url);
 
   let cancelled = false;
 

@@ -1,991 +1,622 @@
 <template>
-  <PageLayout
-    title="Video library"
-    description="Manage and organize your video projects"
-    :show-header="true"
-    :icon="Folder"
-  >
-    <template #actions>
-      <Button variant="primary" @click="openCreateDialog">
-        <Plus />
-        New project
-      </Button>
-    </template>
+  <ProjectLibraryView :model="libraryModel">
+    <template #dialogs>
+      <!-- Project Dialog -->
+      <ProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
+      <!-- Project Workspace Dialog -->
+      <ProjectWorkspaceDialog
+        v-model="showWorkspaceDialog"
+        :project="workspaceProject"
+        :initial-clip-id="workspaceInitialClipId"
+      />
+      <!-- Project-Level Clip Detection Dialog -->
+      <ClipDetectionConfirmDialog
+        :model-value="showProjectDetectDialog"
+        :video-duration="segmentsToDetect.length === 1 ? totalDetectionDuration : 0"
+        :segment-count="segmentsToDetect.length > 1 ? segmentsToDetect.length : 0"
+        :total-duration="totalDetectionDuration"
+        @update:model-value="showProjectDetectDialog = $event"
+        @confirm="onProjectDetectClipsConfirmed"
+      />
+      <!-- Transcription Confirm Dialog -->
+      <TranscriptionConfirmDialog
+        :model-value="showTranscribeDialog"
+        :video-duration="0"
+        :segment-count="segmentsToTranscribe.length"
+        :total-duration="totalTranscribeDuration"
+        :is-transcribed="segmentsToTranscribe.length === 1 && projectTranscriptStatus[segmentsToTranscribe[0]?.id]"
+        @update:model-value="showTranscribeDialog = $event"
+        @confirm="onTranscribeConfirmed"
+      />
+      <!-- Folder Clip Build Dialog -->
+      <ClipBuildSettingsDialog
+        v-model="showFolderBuildDialog"
+        :clip="folderClipToBuild"
+        :watermark-settings="folderCreatorWatermarkSettings"
+        :default-intro="folderCreatorDefaultIntro"
+        :default-outro="folderCreatorDefaultOutro"
+        :creator-profile="folderCreatorProfile"
+        :creator-profile-server-id="folderCreatorProfileServerId"
+        @confirm="onFolderBuildConfirm"
+      />
 
-    <template #toolbar>
-      <SelectionBar
-        v-if="selectedProjects.size > 0"
-        :count="selectedProjects.size"
-        :total="paginatedProjects.length"
-        @clear="clearSelection"
-        @select-all="selectAllCurrentPage"
+      <!-- Free Tier Limit Dialog -->
+      <FreeTierLimitDialog
+        :show="showFreeTierLimitDialog"
+        :limit-info="freeTierLimitInfo"
+        @close="showFreeTierLimitDialog = false"
+      />
+
+      <!-- Folder Contents Dialog -->
+      <Modal
+        :open="showFolderDialog && !!folderProject"
+        :title="folderProject?.name"
+        :icon="FolderOpen"
+        :size="folderDialogSize"
+        flush
+        :class="folderActiveTab === 'clips' ? 'h-[min(720px,calc(100vh-3rem))]' : undefined"
+        footer-class="block border-t-0 bg-transparent p-0"
+        @close="showFolderDialog = false"
       >
-        <Button
-          variant="destructive-soft"
-          size="sm"
-          :disabled="hasAnySelectedProjectDetecting()"
-          :title="hasAnySelectedProjectDetecting() ? 'Cannot delete while detection is in progress' : undefined"
-          @click="confirmBulkDelete"
-        >
-          <Trash2 />
-          Delete selected
-        </Button>
-      </SelectionBar>
-      <template v-else>
-        <SearchPaletteTrigger
-          placeholder="Search projects…"
-          :query="searchQuery"
-          size="sm"
-          class="w-full max-w-[260px] flex-1"
-          @open="openSearchPalette"
-          @clear="searchQuery = ''"
-        />
-        <div class="ml-auto flex shrink-0 items-center gap-2">
-          <SegmentedControl v-model="statusFilter" :options="statusFilterOptions" size="sm" />
-          <div class="w-[148px] shrink-0">
-            <CustomDropdown v-model="sortBy" :options="sortOptions" placeholder="Sort by" size="sm" />
-          </div>
-          <SegmentedControl v-model="viewMode" :options="viewModeOptions" size="sm" />
-        </div>
-      </template>
-    </template>
-
-    <div class="flex flex-1 flex-col gap-6 px-5 py-4">
-      <!-- Tour demo project -->
-      <section v-if="mockProjectActive" class="flex flex-col gap-2.5">
-        <SectionHeader title="Tour demo" />
-        <div class="card-grid">
+        <div v-if="folderProject" class="flex flex-col" :class="folderActiveTab === 'clips' && 'h-full min-h-0'">
+          <!-- Tabs + guidance / selection -->
           <div
-            class="flex flex-col overflow-hidden rounded-xl border border-line-subtle bg-surface"
-            data-tour-id="tour-mock-project"
+            class="sticky top-0 z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-line-subtle bg-surface-raised px-5 py-2"
           >
-            <div class="grid aspect-video place-items-center border-b border-line-subtle bg-surface-sunken text-fg-disabled">
-              <Folder class="size-7" />
-            </div>
-            <div class="flex flex-col gap-2.5 px-3 pb-3 pt-2">
-              <div class="min-w-0">
-                <h3 class="truncate text-sm font-medium text-fg">Demo VOD project</h3>
-                <p class="text-xs text-fg-muted">Sample project for the tour</p>
-              </div>
-              <div class="flex flex-wrap gap-1.5">
-                <Button variant="secondary" size="xs" data-tour-id="tour-mock-detect" @click.prevent>
-                  <Sparkles />
-                  Detect clips
-                </Button>
-                <Button variant="secondary" size="xs" data-tour-id="tour-mock-transcribe" @click.prevent>
-                  <FileText />
-                  Transcribe
-                </Button>
-                <Button variant="secondary" size="xs" data-tour-id="tour-mock-preedit" @click.prevent>
-                  <LayoutDashboard />
-                  Pre-edit VOD
-                </Button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </section>
-
-      <!-- Loading State (first load only; background refreshes keep the grid) -->
-      <div v-if="loading && !projects.length" aria-busy="true" class="skeleton-group">
-        <div v-if="viewMode === 'list'" class="flex flex-col gap-1">
-          <div v-for="i in 8" :key="`skeleton-row-${i}`" class="flex h-11 items-center gap-3 px-2">
-            <div class="skeleton h-8 w-14 shrink-0" />
-            <div class="skeleton h-3.5 w-1/3" />
-            <div class="skeleton ml-auto h-3 w-24" />
-          </div>
-        </div>
-        <div v-else class="card-grid">
-          <div v-for="i in 8" :key="`skeleton-${i}`" class="flex flex-col gap-2">
-            <div class="skeleton aspect-video rounded-xl" />
-            <div class="skeleton h-3.5 w-3/4" />
-            <div class="skeleton h-3 w-1/2" />
-          </div>
-        </div>
-      </div>
-
-      <!-- Projects Content -->
-      <template v-else-if="projects.length > 0 || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0">
-        <!-- Active Downloads Section -->
-        <section
-          v-if="getActiveDownloads().length > 0 || getQueuedDownloads().length > 0"
-          class="flex flex-col gap-2.5"
-        >
-          <SectionHeader
-            title="Active downloads"
-            :count="getActiveDownloads().length + getQueuedDownloads().length"
-          >
-            <Button variant="ghost" size="sm" title="Cancel all downloads" @click="handleCancelAllDownloads">
-              <XCircle />
-              Cancel all
-            </Button>
-          </SectionHeader>
-          <div class="card-grid">
-            <DownloadCard
-              v-for="download in [...getActiveDownloads(), ...getQueuedDownloads()]"
-              :key="download.id"
-              :download="download"
-            />
-          </div>
-        </section>
-
-        <!-- Projects, grouped by date -->
-        <div v-if="filteredProjects.length > 0" :key="`${viewMode}-${statusFilter}`" class="flex animate-enter flex-col gap-6">
-          <section v-for="group in groupedProjects" :key="group.dateLabel" class="@container flex flex-col gap-2.5">
-            <SectionHeader :title="group.dateLabel" :count="group.projects.length" />
-
-            <div
-              :class="
-                viewMode === 'list'
-                  ? 'flex flex-col overflow-hidden rounded-xl border border-line-subtle bg-surface pb-1'
-                  : 'card-grid'
-              "
-            >
-              <!-- List column headings -->
-              <div
-                v-if="viewMode === 'list'"
-                class="mb-1 flex h-8 items-center gap-3 border-b border-line-subtle px-3 text-2xs font-medium text-fg-subtle"
-              >
-                <span class="w-4 shrink-0" />
-                <span class="flex-1 pl-[68px]">Name</span>
-                <span class="flex shrink-0 items-center gap-4">
-                  <span class="w-4" />
-                  <span class="hidden w-20 text-right @xl:block">Duration</span>
-                  <span class="w-12 text-right">Clips</span>
-                  <span class="hidden w-24 text-right @2xl:block">Updated</span>
-                </span>
-                <span class="w-[118px] shrink-0" />
-              </div>
-              <LibraryProjectCard
-                v-for="project in group.projects"
-                :key="project.id"
-                :name="project.name"
-                :thumbnail="getThumbnailUrl(project.id)"
-                :live="isProjectLive(project.id)"
-                :selected="isProjectSelected(project.id)"
-                :list="viewMode === 'list'"
-                :class="viewMode === 'list' && 'mx-1'"
-                @open="handleProjectClick(project)"
-              >
-                <template #badges>
-                  <LibrarySelectCheckbox
-                    :checked="isProjectSelected(project.id)"
-                    :label="`Select ${project.name}`"
-                    :overlay="viewMode !== 'list'"
-                    :visible="selectedProjects.size > 0"
-                    :class="viewMode === 'list' ? 'flex shrink-0' : 'absolute left-2 top-2 z-20 flex'"
-                    @toggle="toggleProjectSelection(project.id)"
-                  />
-                  <template v-if="viewMode !== 'list'">
-                    <div class="pointer-events-none absolute bottom-2 left-2 z-10 flex max-w-[calc(100%-5rem)] flex-wrap gap-1">
-                      <MediaChip v-if="isProjectLive(project.id)" variant="live">Live</MediaChip>
-                      <MediaChip v-if="isProjectDetecting(project.id)">
-                        <Loader2 class="animate-spin text-ai" />
-                        Detecting…
-                      </MediaChip>
-                      <MediaChip v-else-if="viewMode === 'folders' && hasChildren(project.id) && getChildCount(project.id) > 1">
-                        <FolderOpen />
-                        {{ getChildCount(project.id) }} parts
-                      </MediaChip>
-                      <MediaChip v-if="hasVodPreset(project.id) && !isLiveClipsContainerProject(project)">
-                        <LayoutDashboard class="text-brand" />
-                        {{ vodPresetConfigs[project.id]?.targetAspectRatio }} pre-edit
-                      </MediaChip>
-                    </div>
-                    <MediaChip
-                      v-if="getProjectDuration(project.id)"
-                      class="tabular pointer-events-none absolute bottom-2 right-2 z-10"
-                    >
-                      {{ getProjectDuration(project.id) }}
-                    </MediaChip>
-                  </template>
-                </template>
-
-                <template #meta>
-                  <template v-if="viewMode !== 'list'">
-                    <PlatformLogo v-if="getProjectPlatform(project)" :platform="getProjectPlatform(project)" size="xs" />
-                    <span class="truncate">{{ getRelativeTime(project.updated_at) }}</span>
-                    <span class="size-[3px] shrink-0 rounded-full bg-fg-subtle" />
-                    <span class="tabular shrink-0">{{ getClipCount(project.id) }} clips</span>
-                  </template>
-                  <div v-else class="flex items-center gap-4">
-                    <div class="flex items-center gap-1.5">
-                      <Badge v-if="isProjectLive(project.id)" variant="live">Live</Badge>
-                      <Badge v-if="isProjectDetecting(project.id)" variant="ai">
-                        <Loader2 class="animate-spin" />
-                        Detecting…
-                      </Badge>
-                      <Badge v-if="hasVodPreset(project.id) && !isLiveClipsContainerProject(project)" variant="brand">
-                        {{ vodPresetConfigs[project.id]?.targetAspectRatio }} pre-edit
-                      </Badge>
-                    </div>
-                    <span class="grid w-4 place-items-center">
-                      <PlatformLogo v-if="getProjectPlatform(project)" :platform="getProjectPlatform(project)" size="xs" />
-                    </span>
-                    <span class="tabular hidden w-20 whitespace-nowrap text-right @xl:block">
-                      {{ getProjectDuration(project.id) || '—' }}
-                    </span>
-                    <span class="tabular w-12 text-right">{{ getClipCount(project.id) }}</span>
-                    <span class="hidden w-24 truncate text-right @2xl:block">
-                      {{ getRelativeTime(project.updated_at) }}
-                    </span>
-                  </div>
-                </template>
-
-                <!-- Hover actions -->
-                <template #actions>
-                  <div class="flex items-center gap-0.5" :class="viewMode === 'list' && 'w-[118px] justify-end'">
-                    <LibraryCardAction
-                      v-if="canDetectClips(project.id) && !isProjectDetecting(project.id) && isAIAllowed"
-                      title="Detect clips"
-                      :overlay="viewMode !== 'list'"
-                      @click.stop="startProjectDetection(project)"
-                    >
-                      <Sparkles />
-                    </LibraryCardAction>
-                    <LibraryCardAction
-                      v-if="canTranscribe(project.id)"
-                      :title="isProjectTranscribed(project.id) ? 'Transcribed' : 'Transcribe'"
-                      :active="isProjectTranscribed(project.id)"
-                      :overlay="viewMode !== 'list'"
-                      @click.stop="startTranscription(project)"
-                    >
-                      <FileText />
-                    </LibraryCardAction>
-                    <LibraryCardAction
-                      v-if="(hasDirectVideos(project.id) || hasChildren(project.id)) && !isLiveClipsContainerProject(project)"
-                      title="Pre-edit VOD"
-                      :active="hasVodPreset(project.id)"
-                      :overlay="viewMode !== 'list'"
-                      @click.stop="openVodPresetEditor(project)"
-                    >
-                      <LayoutDashboard />
-                    </LibraryCardAction>
-                    <LibraryCardAction title="Edit" :overlay="viewMode !== 'list'" @click.stop="editProject(project)">
-                      <Edit />
-                    </LibraryCardAction>
-                  </div>
-                </template>
-              </LibraryProjectCard>
-            </div>
-          </section>
-        </div>
-
-        <!-- No Results State (only show if no active downloads) -->
-        <EmptyState
-          v-if="filteredProjects.length === 0 && getActiveDownloads().length === 0 && getQueuedDownloads().length === 0"
-          :icon="Search"
-          title="No projects found"
-          description="No projects match the current filters."
-        >
-          <Button
-            variant="secondary"
-            @click="
-              searchQuery = '';
-              statusFilter = 'all';
-            "
-          >
-            Clear filters
-          </Button>
-        </EmptyState>
-      </template>
-
-      <!-- Empty State -->
-      <EmptyState
-        v-else-if="!mockProjectActive"
-        :icon="Folder"
-        title="No projects yet"
-        description="Create a new project to get started."
-      >
-        <Button variant="secondary" @click="openCreateDialog">
-          <Plus />
-          New project
-        </Button>
-      </EmptyState>
-    </div>
-
-    <!-- Pagination Footer -->
-    <PaginationFooter
-      v-if="!loading && filteredProjects.length > 0"
-      :current-page="currentPage"
-      :total-pages="totalPages"
-      :total-items="filteredProjects.length"
-      item-label="project"
-      @go-to-page="goToPage"
-      @previous="previousPage"
-      @next="nextPage"
-    />
-
-    <!-- Project Dialog -->
-    <ProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
-    <!-- Project Workspace Dialog -->
-    <ProjectWorkspaceDialog
-      v-model="showWorkspaceDialog"
-      :project="workspaceProject"
-      :initial-clip-id="workspaceInitialClipId"
-    />
-    <!-- Project-Level Clip Detection Dialog -->
-    <ClipDetectionConfirmDialog
-      :model-value="showProjectDetectDialog"
-      :video-duration="segmentsToDetect.length === 1 ? totalDetectionDuration : 0"
-      :segment-count="segmentsToDetect.length > 1 ? segmentsToDetect.length : 0"
-      :total-duration="totalDetectionDuration"
-      @update:model-value="showProjectDetectDialog = $event"
-      @confirm="onProjectDetectClipsConfirmed"
-    />
-    <!-- Transcription Confirm Dialog -->
-    <TranscriptionConfirmDialog
-      :model-value="showTranscribeDialog"
-      :video-duration="0"
-      :segment-count="segmentsToTranscribe.length"
-      :total-duration="totalTranscribeDuration"
-      :is-transcribed="segmentsToTranscribe.length === 1 && projectTranscriptStatus[segmentsToTranscribe[0]?.id]"
-      @update:model-value="showTranscribeDialog = $event"
-      @confirm="onTranscribeConfirmed"
-    />
-    <!-- Folder Clip Build Dialog -->
-    <ClipBuildSettingsDialog
-      v-model="showFolderBuildDialog"
-      :clip="folderClipToBuild"
-      :watermark-settings="folderCreatorWatermarkSettings"
-      :default-intro="folderCreatorDefaultIntro"
-      :default-outro="folderCreatorDefaultOutro"
-      :creator-profile="folderCreatorProfile"
-      :creator-profile-server-id="folderCreatorProfileServerId"
-      @confirm="onFolderBuildConfirm"
-    />
-
-    <!-- Free Tier Limit Dialog -->
-    <FreeTierLimitDialog
-      :show="showFreeTierLimitDialog"
-      :limit-info="freeTierLimitInfo"
-      @close="showFreeTierLimitDialog = false"
-    />
-
-    <!-- Folder Contents Dialog -->
-    <Modal
-      :open="showFolderDialog && !!folderProject"
-      :title="folderProject?.name"
-      :icon="FolderOpen"
-      :size="folderDialogSize"
-      flush
-      :class="folderActiveTab === 'clips' ? 'h-[min(720px,calc(100vh-3rem))]' : undefined"
-      footer-class="block border-t-0 bg-transparent p-0"
-      @close="showFolderDialog = false"
-    >
-      <div v-if="folderProject" class="flex flex-col" :class="folderActiveTab === 'clips' && 'h-full min-h-0'">
-        <!-- Tabs + guidance / selection -->
-        <div
-          class="sticky top-0 z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-line-subtle bg-surface-raised px-5 py-2"
-        >
-          <SegmentedControl
-            :model-value="folderActiveTab"
-            :options="folderTabOptions"
-            size="sm"
-            @update:model-value="onFolderTabChange"
-          />
-          <SelectionBar
-            v-if="selectedFolderChildren.size > 0"
-            :count="selectedFolderChildren.size"
-            @clear="clearFolderChildSelection"
-          >
-            <Button
-              variant="destructive-soft"
+            <SegmentedControl
+              :model-value="folderActiveTab"
+              :options="folderTabOptions"
               size="sm"
-              :disabled="hasAnySelectedFolderChildDetecting()"
-              :title="hasAnySelectedFolderChildDetecting() ? 'Cannot delete while detection is in progress' : undefined"
-              @click="confirmBulkDeleteFolderChildren"
+              @update:model-value="onFolderTabChange"
+            />
+            <SelectionBar
+              v-if="selectedFolderChildren.size > 0"
+              :count="selectedFolderChildren.size"
+              @clear="clearFolderChildSelection"
             >
-              <Trash2 />
-              Delete
-            </Button>
-          </SelectionBar>
-          <p v-else class="min-w-0 flex-1 basis-[260px] text-xs text-fg-muted">
-            {{
-              folderActiveTab === 'segments'
-                ? 'Open a segment to edit subtitles, positioning, framing, timing and clip details.'
-                : 'Preview, build and publish detected clips. To edit subtitles or positioning, open the segment from Segments.'
-            }}
-          </p>
-        </div>
-
-        <!-- Segments Tab -->
-        <div
-          v-if="folderActiveTab === 'segments'"
-          class="grid animate-enter gap-3 p-5"
-          :class="
-            paginatedFolderChildren.length <= 1
-              ? 'grid-cols-1'
-              : paginatedFolderChildren.length === 2
-                ? 'grid-cols-2'
-                : 'grid-cols-[repeat(auto-fill,minmax(var(--card-grid-min),1fr))]'
-          "
-        >
-          <LibraryProjectCard
-            v-for="project in paginatedFolderChildren"
-            :key="project.id"
-            :name="project.name"
-            :thumbnail="getThumbnailUrl(project.id)"
-            :selected="isFolderChildSelected(project.id)"
-            @open="openWorkspace(project)"
-          >
-            <template #badges>
-              <LibrarySelectCheckbox
-                :checked="isFolderChildSelected(project.id)"
-                :label="`Select ${project.name}`"
-                :visible="selectedFolderChildren.size > 0"
-                class="absolute left-2 top-2 z-20 flex"
-                @toggle="toggleFolderChildSelection(project.id)"
-              />
-              <div class="pointer-events-none absolute bottom-2 left-2 z-10 flex gap-1">
-                <MediaChip v-if="isDetectionActive(project.id)">
-                  <Loader2 class="animate-spin text-ai" />
-                  Detecting…
-                </MediaChip>
-                <MediaChip v-else-if="activeTranscriptions.has(project.id)">
-                  <Loader2 class="animate-spin text-success" />
-                  Transcribing…
-                </MediaChip>
-                <MediaChip v-else-if="projectTranscriptStatus[project.id]">
-                  <FileText class="text-success" />
-                  Transcribed
-                </MediaChip>
-              </div>
-              <MediaChip
-                v-if="getProjectDuration(project.id)"
-                class="tabular pointer-events-none absolute bottom-2 right-2 z-10"
-              >
-                {{ getProjectDuration(project.id) }}
-              </MediaChip>
-            </template>
-            <template #meta>
-              <span class="truncate">{{ project.description || 'No description' }}</span>
-              <span class="size-[3px] shrink-0 rounded-full bg-fg-subtle" />
-              <span class="shrink-0">{{ getRelativeTime(project.updated_at) }}</span>
-            </template>
-            <template #actions>
-              <LibraryCardAction
-                title="Edit segment — subtitles, positioning, framing, and clip details"
-                @click.stop="openWorkspace(project)"
-              >
-                <Edit />
-              </LibraryCardAction>
-              <LibraryCardAction
-                v-if="
-                  canDetectClips(project.id) &&
-                  !isDetectionActive(project.id) &&
-                  !isProjectDetecting(folderProject?.id || '') &&
-                  isAIAllowed
+              <Button
+                variant="destructive-soft"
+                size="sm"
+                :disabled="hasAnySelectedFolderChildDetecting()"
+                :title="
+                  hasAnySelectedFolderChildDetecting() ? 'Cannot delete while detection is in progress' : undefined
                 "
-                title="Detect clips"
-                @click.stop="startProjectDetection(project)"
-              >
-                <Sparkles />
-              </LibraryCardAction>
-              <LibraryCardAction
-                v-if="
-                  canTranscribe(project.id) && !isDetectionActive(project.id) && !activeTranscriptions.has(project.id)
-                "
-                :title="projectTranscriptStatus[project.id] ? 'Already transcribed' : 'Transcribe'"
-                :active="!!projectTranscriptStatus[project.id]"
-                @click.stop="startTranscription(project)"
-              >
-                <FileText />
-              </LibraryCardAction>
-              <LibraryCardAction
-                v-if="!isDetectionActive(project.id) && !isProjectDetecting(folderProject?.id || '')"
-                title="Delete"
-                tone="danger"
-                @click.stop="confirmDelete(project)"
+                @click="confirmBulkDeleteFolderChildren"
               >
                 <Trash2 />
-              </LibraryCardAction>
-            </template>
-          </LibraryProjectCard>
-        </div>
-
-        <!-- Clips Tab - list + preview player -->
-        <div v-else-if="folderActiveTab === 'clips'" class="flex min-h-0 flex-1 animate-enter">
-          <!-- Left Column: Clips List -->
-          <div class="w-[44%] min-w-[300px] max-w-[480px] shrink-0 overflow-y-auto border-r border-line-subtle px-4 pb-4">
-            <div v-if="folderClipsLoading && !folderClips.length" class="skeleton-group grid place-items-center py-12 text-fg-muted">
-              <Loader2 class="size-6 animate-spin" />
-            </div>
-
-            <EmptyState
-              v-else-if="folderClips.length === 0"
-              size="sm"
-              :icon="Video"
-              title="No clips detected"
-              description="Run clip detection on a segment first. Detected clips appear here for preview, quick builds and publishing."
-              class="py-12"
-            />
-
-            <div v-else class="animate-fade-in pb-4">
-              <ClipsTab
-                :clips="folderClips"
-                :project-id="folderProject?.id || null"
-                :hide-header="true"
-                :play-on-card-click="true"
-                :is-generating="false"
-                :generation-progress="0"
-                :generation-stage="''"
-                :generation-message="''"
-                :generation-error="''"
-                :playing-clip-id="clipToPreview?.id || null"
-                :is-playing-segments="false"
-                :hovered-timeline-clip-id="null"
-                :video-duration="0"
-                :prompts="folderPrompts"
-                :transcript-data="null"
-                :show-adjust-clip-button="true"
-                :vod-preset-config="folderProject ? vodPresetConfigs[folderProject.id] || null : null"
-                @play-clip="onClipsTabPlayClip"
-                @delete-clip="deleteFolderClip"
-                @edit-clip="onClipsTabEditClip"
-                @adjust-clip="onClipsTabAdjustClip"
-                @refresh-clips="onClipsTabRefreshClips"
-                @detect-clips="onClipsTabDetectClips"
-                @publish-now="onClipsTabPublishNow"
-              />
-            </div>
+                Delete
+              </Button>
+            </SelectionBar>
+            <p v-else class="min-w-0 flex-1 basis-[260px] text-xs text-fg-muted">
+              {{
+                folderActiveTab === 'segments'
+                  ? 'Open a segment to edit subtitles, positioning, framing, timing and clip details.'
+                  : 'Preview, build and publish detected clips. To edit subtitles or positioning, open the segment from Segments.'
+              }}
+            </p>
           </div>
 
-          <!-- Right Column: Video Player -->
-          <div class="flex min-w-0 flex-1 flex-col overflow-y-auto p-4">
-            <EmptyState
-              v-if="!clipToPreview"
-              size="sm"
-              :icon="PlayIcon"
-              title="Select a clip to preview"
-              description="Click a clip to preview, build or publish it. To edit subtitles or positioning, open the segment from Segments."
-              class="flex-1 rounded-xl border border-line-subtle bg-surface-sunken"
-            />
+          <!-- Segments Tab -->
+          <div
+            v-if="folderActiveTab === 'segments'"
+            class="grid animate-enter gap-3 p-5"
+            :class="
+              paginatedFolderChildren.length <= 1
+                ? 'grid-cols-1'
+                : paginatedFolderChildren.length === 2
+                  ? 'grid-cols-2'
+                  : 'grid-cols-[repeat(auto-fill,minmax(var(--card-grid-min),1fr))]'
+            "
+          >
+            <LibraryProjectCard
+              v-for="project in paginatedFolderChildren"
+              :key="project.id"
+              :name="project.name"
+              :thumbnail="getThumbnailUrl(project.id)"
+              :selected="isFolderChildSelected(project.id)"
+              @open="openWorkspace(project)"
+            >
+              <template #badges>
+                <LibrarySelectCheckbox
+                  :checked="isFolderChildSelected(project.id)"
+                  :label="`Select ${project.name}`"
+                  :visible="selectedFolderChildren.size > 0"
+                  class="absolute left-2 top-2 z-20 flex"
+                  @toggle="toggleFolderChildSelection(project.id)"
+                />
+                <div class="pointer-events-none absolute bottom-2 left-2 z-10 flex gap-1">
+                  <MediaChip v-if="isDetectionActive(project.id)">
+                    <Loader2 class="animate-spin text-ai" />
+                    Detecting…
+                  </MediaChip>
+                  <MediaChip v-else-if="activeTranscriptions.has(project.id)">
+                    <Loader2 class="animate-spin text-success" />
+                    Transcribing…
+                  </MediaChip>
+                  <MediaChip v-else-if="projectTranscriptStatus[project.id]">
+                    <FileText class="text-success" />
+                    Transcribed
+                  </MediaChip>
+                </div>
+                <MediaChip
+                  v-if="getProjectDuration(project.id)"
+                  class="tabular pointer-events-none absolute bottom-2 right-2 z-10"
+                >
+                  {{ getProjectDuration(project.id) }}
+                </MediaChip>
+              </template>
+              <template #meta>
+                <span class="truncate">{{ project.description || 'No description' }}</span>
+                <span class="size-[3px] shrink-0 rounded-full bg-fg-subtle" />
+                <span class="shrink-0">{{ getRelativeTime(project.updated_at) }}</span>
+              </template>
+              <template #actions>
+                <LibraryCardAction
+                  title="Edit segment — subtitles, positioning, framing, and clip details"
+                  @click.stop="openWorkspace(project)"
+                >
+                  <Edit />
+                </LibraryCardAction>
+                <LibraryCardAction
+                  v-if="
+                    canDetectClips(project.id) &&
+                    !isDetectionActive(project.id) &&
+                    !isProjectDetecting(folderProject?.id || '') &&
+                    isAIAllowed
+                  "
+                  title="Detect clips"
+                  @click.stop="startProjectDetection(project)"
+                >
+                  <Sparkles />
+                </LibraryCardAction>
+                <LibraryCardAction
+                  v-if="
+                    canTranscribe(project.id) && !isDetectionActive(project.id) && !activeTranscriptions.has(project.id)
+                  "
+                  :title="projectTranscriptStatus[project.id] ? 'Already transcribed' : 'Transcribe'"
+                  :active="!!projectTranscriptStatus[project.id]"
+                  @click.stop="startTranscription(project)"
+                >
+                  <FileText />
+                </LibraryCardAction>
+                <LibraryCardAction
+                  v-if="!isDetectionActive(project.id) && !isProjectDetecting(folderProject?.id || '')"
+                  title="Delete"
+                  tone="danger"
+                  @click.stop="confirmDelete(project)"
+                >
+                  <Trash2 />
+                </LibraryCardAction>
+              </template>
+            </LibraryProjectCard>
+          </div>
 
-            <template v-else>
-              <div class="mb-3 min-w-0">
-                <h3 class="truncate text-sm font-semibold text-fg">
-                  {{ clipToPreview.current_version?.name || clipToPreview.name || 'Untitled clip' }}
-                </h3>
-                <p class="truncate text-xs text-fg-muted">{{ clipToPreview.segment_name }}</p>
+          <!-- Clips Tab - list + preview player -->
+          <div v-else-if="folderActiveTab === 'clips'" class="flex min-h-0 flex-1 animate-enter">
+            <!-- Left Column: Clips List -->
+            <div
+              class="w-[44%] min-w-[300px] max-w-[480px] shrink-0 overflow-y-auto border-r border-line-subtle px-4 pb-4"
+            >
+              <div
+                v-if="folderClipsLoading && !folderClips.length"
+                class="skeleton-group grid place-items-center py-12 text-fg-muted"
+              >
+                <Loader2 class="size-6 animate-spin" />
               </div>
 
-              <!-- Video Container -->
-              <div
-                ref="inlineVideoContainerRef"
-                class="group/player relative aspect-video w-full overflow-hidden rounded-lg bg-black"
-                :class="{ 'inline-video-fullscreen': isInlineVideoFullscreen }"
-              >
-                <video
-                  v-if="inlineVideoSrc"
-                  ref="inlineVideoRef"
-                  class="size-full object-contain"
-                  :src="inlineVideoSrc"
-                  @loadedmetadata="onInlineVideoLoaded"
-                  @timeupdate="onInlineVideoTimeUpdate"
-                  @ended="onInlineVideoEnded"
-                  @click="toggleInlineVideoPlay"
-                ></video>
-                <div v-else-if="inlineVideoLoading" class="grid size-full place-items-center text-fg-muted">
-                  <Loader2 class="size-7 animate-spin" />
-                </div>
-                <div v-else class="grid size-full place-items-center text-sm text-fg-muted">
-                  No video source available
+              <EmptyState
+                v-else-if="folderClips.length === 0"
+                size="sm"
+                :icon="Video"
+                title="No clips detected"
+                description="Run clip detection on a segment first. Detected clips appear here for preview, quick builds and publishing."
+                class="py-12"
+              />
+
+              <div v-else class="animate-fade-in pb-4">
+                <ClipsTab
+                  :clips="folderClips"
+                  :project-id="folderProject?.id || null"
+                  :hide-header="true"
+                  :play-on-card-click="true"
+                  :is-generating="false"
+                  :generation-progress="0"
+                  :generation-stage="''"
+                  :generation-message="''"
+                  :generation-error="''"
+                  :playing-clip-id="clipToPreview?.id || null"
+                  :is-playing-segments="false"
+                  :hovered-timeline-clip-id="null"
+                  :video-duration="0"
+                  :prompts="folderPrompts"
+                  :transcript-data="null"
+                  :show-adjust-clip-button="true"
+                  :vod-preset-config="folderProject ? vodPresetConfigs[folderProject.id] || null : null"
+                  @play-clip="onClipsTabPlayClip"
+                  @delete-clip="deleteFolderClip"
+                  @edit-clip="onClipsTabEditClip"
+                  @adjust-clip="onClipsTabAdjustClip"
+                  @refresh-clips="onClipsTabRefreshClips"
+                  @detect-clips="onClipsTabDetectClips"
+                  @publish-now="onClipsTabPublishNow"
+                />
+              </div>
+            </div>
+
+            <!-- Right Column: Video Player -->
+            <div class="flex min-w-0 flex-1 flex-col overflow-y-auto p-4">
+              <EmptyState
+                v-if="!clipToPreview"
+                size="sm"
+                :icon="PlayIcon"
+                title="Select a clip to preview"
+                description="Click a clip to preview, build or publish it. To edit subtitles or positioning, open the segment from Segments."
+                class="flex-1 rounded-xl border border-line-subtle bg-surface-sunken"
+              />
+
+              <template v-else>
+                <div class="mb-3 min-w-0">
+                  <h3 class="truncate text-sm font-semibold text-fg">
+                    {{ clipToPreview.current_version?.name || clipToPreview.name || 'Untitled clip' }}
+                  </h3>
+                  <p class="truncate text-xs text-fg-muted">{{ clipToPreview.segment_name }}</p>
                 </div>
 
-                <!-- Watermark Overlay -->
+                <!-- Video Container -->
                 <div
-                  v-if="previewWatermarkData && previewWatermarkSettings && inlineVideoSrc"
-                  class="pointer-events-none absolute z-[1] transition-opacity duration-300"
-                  :style="getPreviewWatermarkStyle"
+                  ref="inlineVideoContainerRef"
+                  class="group/player relative aspect-video w-full overflow-hidden rounded-lg bg-black"
+                  :class="{ 'inline-video-fullscreen': isInlineVideoFullscreen }"
                 >
-                  <img
-                    :src="previewWatermarkData.dataUrl"
-                    alt="Watermark"
-                    :class="isPreviewWatermarkFullFrame ? '' : 'max-h-full max-w-full object-contain'"
-                    :style="getPreviewWatermarkImageStyle"
-                  />
-                </div>
-
-                <!-- Custom Video Controls -->
-                <div
-                  v-if="inlineVideoSrc"
-                  class="absolute inset-x-0 bottom-0 z-[2] bg-black/60 backdrop-blur-sm transition-opacity duration-150"
-                  :class="isInlineVideoFullscreen ? 'opacity-100' : 'opacity-0 group-hover/player:opacity-100'"
-                >
-                  <!-- Progress Bar -->
-                  <div
-                    ref="inlineProgressBarRef"
-                    class="relative flex h-4 w-full cursor-pointer items-center"
-                    @mousedown="startInlineSeekDrag"
-                    @mousemove="onInlineTimelineHover"
-                    @mouseleave="onInlineTimelineLeave"
-                  >
-                    <div class="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2">
-                      <div class="absolute inset-0 bg-white/20"></div>
-                      <div
-                        class="absolute h-full bg-brand"
-                        :class="{ 'transition-[width] duration-75': !inlineSeekDragging }"
-                        :style="{ width: `${inlineVideoProgress}%` }"
-                      ></div>
-                    </div>
-                    <div
-                      class="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand shadow-[var(--shadow-sm)]"
-                      :class="inlineSeekDragging ? 'size-4' : 'size-3 transition-[left,width,height] duration-75'"
-                      :style="{ left: `${inlineVideoProgress}%` }"
-                    ></div>
-                    <div
-                      v-if="inlineHoverTime !== null || inlineSeekDragging"
-                      class="tabular pointer-events-none absolute -top-8 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-black/90 px-2 py-1 text-xs font-medium text-white"
-                      :style="{ left: `${inlineSeekDragging ? inlineVideoProgress : inlineHoverPosition}%` }"
-                    >
-                      {{
-                        formatDuration(
-                          inlineSeekDragging
-                            ? (inlineVideoProgress / 100) * inlineVideoClipDuration
-                            : (inlineHoverTime ?? 0)
-                        )
-                      }}
-                    </div>
+                  <video
+                    v-if="inlineVideoSrc"
+                    ref="inlineVideoRef"
+                    class="size-full object-contain"
+                    :src="inlineVideoSrc"
+                    @loadedmetadata="onInlineVideoLoaded"
+                    @timeupdate="onInlineVideoTimeUpdate"
+                    @ended="onInlineVideoEnded"
+                    @click="toggleInlineVideoPlay"
+                  ></video>
+                  <div v-else-if="inlineVideoLoading" class="grid size-full place-items-center text-fg-muted">
+                    <Loader2 class="size-7 animate-spin" />
+                  </div>
+                  <div v-else class="grid size-full place-items-center text-sm text-fg-muted">
+                    No video source available
                   </div>
 
-                  <!-- Controls Row -->
-                  <div class="flex items-center justify-between px-3 pb-2 pt-1 text-white">
-                    <div class="flex items-center gap-3">
+                  <!-- Watermark Overlay -->
+                  <div
+                    v-if="previewWatermarkData && previewWatermarkSettings && inlineVideoSrc"
+                    class="pointer-events-none absolute z-[1] transition-opacity duration-300"
+                    :style="getPreviewWatermarkStyle"
+                  >
+                    <img
+                      :src="previewWatermarkData.dataUrl"
+                      alt="Watermark"
+                      :class="isPreviewWatermarkFullFrame ? '' : 'max-h-full max-w-full object-contain'"
+                      :style="getPreviewWatermarkImageStyle"
+                    />
+                  </div>
+
+                  <!-- Custom Video Controls -->
+                  <div
+                    v-if="inlineVideoSrc"
+                    class="absolute inset-x-0 bottom-0 z-[2] bg-black/60 backdrop-blur-sm transition-opacity duration-150"
+                    :class="isInlineVideoFullscreen ? 'opacity-100' : 'opacity-0 group-hover/player:opacity-100'"
+                  >
+                    <!-- Progress Bar -->
+                    <div
+                      ref="inlineProgressBarRef"
+                      class="relative flex h-4 w-full cursor-pointer items-center"
+                      @mousedown="startInlineSeekDrag"
+                      @mousemove="onInlineTimelineHover"
+                      @mouseleave="onInlineTimelineLeave"
+                    >
+                      <div class="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2">
+                        <div class="absolute inset-0 bg-white/20"></div>
+                        <div
+                          class="absolute h-full bg-brand"
+                          :class="{ 'transition-[width] duration-75': !inlineSeekDragging }"
+                          :style="{ width: `${inlineVideoProgress}%` }"
+                        ></div>
+                      </div>
+                      <div
+                        class="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand shadow-[var(--shadow-sm)]"
+                        :class="inlineSeekDragging ? 'size-4' : 'size-3 transition-[left,width,height] duration-75'"
+                        :style="{ left: `${inlineVideoProgress}%` }"
+                      ></div>
+                      <div
+                        v-if="inlineHoverTime !== null || inlineSeekDragging"
+                        class="tabular pointer-events-none absolute -top-8 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-black/90 px-2 py-1 text-xs font-medium text-white"
+                        :style="{ left: `${inlineSeekDragging ? inlineVideoProgress : inlineHoverPosition}%` }"
+                      >
+                        {{
+                          formatDuration(
+                            inlineSeekDragging
+                              ? (inlineVideoProgress / 100) * inlineVideoClipDuration
+                              : (inlineHoverTime ?? 0)
+                          )
+                        }}
+                      </div>
+                    </div>
+
+                    <!-- Controls Row -->
+                    <div class="flex items-center justify-between px-3 pb-2 pt-1 text-white">
+                      <div class="flex items-center gap-3">
+                        <button
+                          type="button"
+                          class="inline-player__btn"
+                          :title="inlineVideoPlaying ? 'Pause' : 'Play'"
+                          @click="toggleInlineVideoPlay"
+                        >
+                          <PlayIcon v-if="!inlineVideoPlaying" :size="18" />
+                          <Pause v-else :size="18" />
+                        </button>
+                        <div class="group/volume flex items-center gap-1.5">
+                          <button type="button" class="inline-player__btn" title="Mute" @click="toggleInlineVideoMute">
+                            <VolumeX v-if="inlineVideoMuted || inlineVideoVolume === 0" :size="16" />
+                            <Volume2 v-else :size="16" />
+                          </button>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.1"
+                            :value="inlineVideoMuted ? 0 : inlineVideoVolume"
+                            aria-label="Volume"
+                            class="inline-player__volume opacity-0 transition-opacity group-hover/volume:opacity-100"
+                            @input="setInlineVideoVolume"
+                          />
+                        </div>
+                        <span class="tabular font-mono text-xs">
+                          {{ formatClipTime(inlineVideoCurrentTime) }} / {{ formatClipTime(inlineVideoClipDuration) }}
+                        </span>
+                      </div>
                       <button
                         type="button"
                         class="inline-player__btn"
-                        :title="inlineVideoPlaying ? 'Pause' : 'Play'"
-                        @click="toggleInlineVideoPlay"
+                        :title="isInlineVideoFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+                        @click="toggleInlineVideoFullscreen"
                       >
-                        <PlayIcon v-if="!inlineVideoPlaying" :size="18" />
-                        <Pause v-else :size="18" />
+                        <Minimize2 v-if="isInlineVideoFullscreen" :size="16" />
+                        <Maximize2 v-else :size="16" />
                       </button>
-                      <div class="group/volume flex items-center gap-1.5">
-                        <button type="button" class="inline-player__btn" title="Mute" @click="toggleInlineVideoMute">
-                          <VolumeX v-if="inlineVideoMuted || inlineVideoVolume === 0" :size="16" />
-                          <Volume2 v-else :size="16" />
-                        </button>
-                        <input
-                          type="range"
-                          min="0"
-                          max="1"
-                          step="0.1"
-                          :value="inlineVideoMuted ? 0 : inlineVideoVolume"
-                          aria-label="Volume"
-                          class="inline-player__volume opacity-0 transition-opacity group-hover/volume:opacity-100"
-                          @input="setInlineVideoVolume"
-                        />
-                      </div>
-                      <span class="tabular font-mono text-xs">
-                        {{ formatClipTime(inlineVideoCurrentTime) }} / {{ formatClipTime(inlineVideoClipDuration) }}
-                      </span>
                     </div>
-                    <button
-                      type="button"
-                      class="inline-player__btn"
-                      :title="isInlineVideoFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
-                      @click="toggleInlineVideoFullscreen"
+                  </div>
+
+                  <!-- Play overlay when paused -->
+                  <div
+                    v-if="inlineVideoSrc && !inlineVideoPlaying && !inlineVideoLoading"
+                    class="absolute inset-0 flex cursor-pointer items-center justify-center"
+                    @click="toggleInlineVideoPlay"
+                  >
+                    <div
+                      class="grid size-14 place-items-center rounded-full bg-black/50 pl-1 text-white backdrop-blur-sm"
                     >
-                      <Minimize2 v-if="isInlineVideoFullscreen" :size="16" />
-                      <Maximize2 v-else :size="16" />
-                    </button>
+                      <PlayIcon :size="28" />
+                    </div>
                   </div>
                 </div>
 
-                <!-- Play overlay when paused -->
-                <div
-                  v-if="inlineVideoSrc && !inlineVideoPlaying && !inlineVideoLoading"
-                  class="absolute inset-0 flex cursor-pointer items-center justify-center"
-                  @click="toggleInlineVideoPlay"
+                <!-- Clip Description -->
+                <p
+                  v-if="clipToPreview.current_version_detection_reason"
+                  class="mt-3 line-clamp-2 text-xs italic text-fg-muted"
                 >
-                  <div class="grid size-14 place-items-center rounded-full bg-black/50 pl-1 text-white backdrop-blur-sm">
-                    <PlayIcon :size="28" />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Clip Description -->
-              <p
-                v-if="clipToPreview.current_version_detection_reason"
-                class="mt-3 line-clamp-2 text-xs italic text-fg-muted"
-              >
-                "{{ clipToPreview.current_version_detection_reason }}"
-              </p>
-            </template>
+                  "{{ clipToPreview.current_version_detection_reason }}"
+                </p>
+              </template>
+            </div>
           </div>
         </div>
-      </div>
 
-      <!-- Pagination (segments tab only) -->
-      <template v-if="folderProject && folderActiveTab === 'segments' && folderTotalPages > 1" #footer>
-        <PaginationFooter
-          mode="static"
-          :current-page="folderCurrentPage"
-          :total-pages="folderTotalPages"
-          :total-items="getEffectiveSegmentCount(folderProject.id)"
-          item-label="part"
-          @go-to-page="(page) => (folderCurrentPage = page)"
-          @previous="folderCurrentPage--"
-          @next="folderCurrentPage++"
-        />
-      </template>
-    </Modal>
+        <!-- Pagination (segments tab only) -->
+        <template v-if="folderProject && folderActiveTab === 'segments' && folderTotalPages > 1" #footer>
+          <PaginationFooter
+            mode="static"
+            :current-page="folderCurrentPage"
+            :total-pages="folderTotalPages"
+            :total-items="getEffectiveSegmentCount(folderProject.id)"
+            item-label="part"
+            @go-to-page="(page) => (folderCurrentPage = page)"
+            @previous="folderCurrentPage--"
+            @next="folderCurrentPage++"
+          />
+        </template>
+      </Modal>
 
-    <!-- Delete Project Dialog -->
-    <Modal
-      :open="showDeleteDialog"
-      title="Delete project"
-      :description="projectHasVideos || projectHasClips ? 'This project contains content' : 'This action cannot be undone'"
-      :icon="AlertTriangle"
-      tone="danger"
-      size="md"
-      :dismissible="!deletingProject"
-      :hide-close="deletingProject"
-      @close="handleDeleteDialogClose"
-    >
-      <div class="flex flex-col gap-4">
-        <p class="text-sm text-fg-muted">
-          Are you sure you want to delete
-          <span class="font-medium text-fg">"{{ projectToDelete?.name }}"</span>? This action cannot be undone.
-        </p>
-
-        <!-- Content warnings -->
-        <div v-if="projectHasVideos || projectHasClips" class="border-t border-line-subtle pt-3">
-          <p class="eyebrow mb-2">What will be deleted</p>
-          <ul class="flex flex-col gap-1.5 text-sm text-fg-muted">
-            <li v-if="projectHasVideos" class="flex items-start gap-2">
-              <Trash2 class="mt-0.5 size-3.5 shrink-0 text-danger" />
-              <span><span class="font-medium text-fg">Delete:</span> raw video files from disk</span>
-            </li>
-            <li v-if="projectHasClips" class="flex items-start gap-2">
-              <Trash2 class="mt-0.5 size-3.5 shrink-0 text-danger" />
-              <span><span class="font-medium text-fg">Delete:</span> unbuilt clips not being edited</span>
-            </li>
-            <li v-if="projectHasClips" class="flex items-start gap-2">
-              <Check class="mt-0.5 size-3.5 shrink-0 text-success" />
-              <span><span class="font-medium text-fg">Keep:</span> built clips (available in My Clips)</span>
-            </li>
-            <li v-if="projectHasClips" class="flex items-start gap-2">
-              <Check class="mt-0.5 size-3.5 shrink-0 text-success" />
-              <span><span class="font-medium text-fg">Keep:</span> clips currently in the editor</span>
-            </li>
-          </ul>
-        </div>
-
-        <!-- Segments deletion option - only show if more than 1 segment -->
-        <div
-          v-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') > 1"
-          class="flex flex-col gap-2"
-        >
-          <p class="text-sm text-fg-muted">
-            This project contains
-            <span class="font-medium text-fg">{{ getChildCount(projectToDelete?.id || '') }} segments</span>. What
-            would you like to do with them?
-          </p>
-          <RadioGroup v-model="segmentDeleteMode" class="gap-2">
-            <label
-              v-for="option in segmentDeleteOptions"
-              :key="option.value"
-              class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors"
-              :class="
-                segmentDeleteMode === option.value
-                  ? 'border-brand-line bg-brand-soft'
-                  : 'border-line-subtle hover:bg-surface-hover'
-              "
-            >
-              <RadioGroupItem :value="option.value" class="mt-0.5" />
-              <span class="min-w-0">
-                <span class="block text-sm font-medium text-fg">{{ option.title }}</span>
-                <span class="block text-xs text-fg-muted">{{ option.description }}</span>
-              </span>
-            </label>
-          </RadioGroup>
-        </div>
-
-        <!-- Single segment notice - auto-deleted with parent -->
-        <p
-          v-else-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') === 1"
-          class="flex items-start gap-2 text-sm text-fg-muted"
-        >
-          <Info class="mt-0.5 size-4 shrink-0 text-fg-subtle" />
-          <span>
-            This project contains <span class="font-medium text-fg">1 segment</span>, which will also be deleted
-            along with its video files.
-          </span>
-        </p>
-      </div>
-
-      <template #footer>
-        <Button variant="ghost" :disabled="deletingProject" @click="handleDeleteDialogClose">Cancel</Button>
-        <Button variant="destructive" :loading="deletingProject" @click="deleteProjectConfirmed">
-          {{
-            deletingProject
-              ? 'Deleting...'
-              : deleteSegmentsToo && hasChildren(projectToDelete?.id || '')
-                ? getChildCount(projectToDelete?.id || '') === 1
-                  ? 'Delete project & segment'
-                  : `Delete project & ${getChildCount(projectToDelete?.id || '')} segments`
-                : 'Delete project'
-          }}
-        </Button>
-      </template>
-    </Modal>
-
-    <!-- Bulk Delete Confirmation Modal -->
-    <ConfirmationModal
-      :show="showBulkDeleteDialog"
-      :title="`Delete ${selectedProjects.size} projects`"
-      subtitle="This action cannot be undone"
-      :message="`Are you sure you want to delete ${selectedProjects.size} projects? This will also delete all associated segments and video files.`"
-      :confirm-text="bulkDeleting ? 'Deleting...' : `Delete ${selectedProjects.size} projects`"
-      close-text="Cancel"
-      suffix=""
-      :show-cannot-undone-text="false"
-      variant="destructive"
-      @close="handleBulkDeleteDialogClose"
-      @confirm="bulkDeleteConfirmed"
-    />
-
-    <!-- Bulk Delete Folder Children Confirmation Modal -->
-    <ConfirmationModal
-      :show="showBulkDeleteFolderChildrenDialog"
-      :title="`Delete ${selectedFolderChildren.size} segment${selectedFolderChildren.size !== 1 ? 's' : ''}`"
-      subtitle="This action cannot be undone"
-      :message="`Are you sure you want to delete ${selectedFolderChildren.size} segment${selectedFolderChildren.size !== 1 ? 's' : ''}? This will also delete all associated video files.`"
-      :confirm-text="`Delete ${selectedFolderChildren.size} segment${selectedFolderChildren.size !== 1 ? 's' : ''}`"
-      close-text="Cancel"
-      suffix=""
-      :show-cannot-undone-text="false"
-      variant="destructive"
-      @close="handleBulkDeleteFolderChildrenDialogClose"
-      @confirm="bulkDeleteFolderChildrenConfirmed"
-    />
-
-    <!-- Search Palette Modal -->
-    <SearchPalette
-      v-model="showSearchPalette"
-      :search-query="paletteSearchQuery"
-      :active-tab="paletteActiveTab"
-      :placeholder="
-        paletteActiveTab === 'search'
-          ? 'Search projects by name or description...'
-          : paletteActiveTab === 'live'
-            ? 'Filter live projects...'
-            : 'Filter projects with clips...'
-      "
-      :tabs="projectsPaletteTabs"
-      @update:search-query="paletteSearchQuery = $event"
-      @update:active-tab="onPaletteTabChange"
-      @close="closeSearchPalette"
-    >
-      <!-- Search Results -->
-      <div v-if="paletteSearchResults.length > 0" class="p-2">
-        <div class="flex items-center justify-between px-2 pb-1.5 pt-1">
-          <span class="eyebrow">
-            {{
-              paletteActiveTab === 'live'
-                ? 'Live projects'
-                : paletteActiveTab === 'with_clips'
-                  ? 'Projects with clips'
-                  : 'Results'
-            }}
-          </span>
-          <span class="tabular text-xs text-fg-subtle">{{ paletteSearchResults.length }} found</span>
-        </div>
-        <SearchPaletteItem
-          v-for="item in paletteSearchResults"
-          :key="item.id"
-          :title="item.project.name"
-          :thumbnail="item.thumbnailUrl"
-          :icon="Folder"
-          @select="selectPaletteResult(item)"
-        >
-          <template #meta>
-            <template v-if="item.platform">
-              <PlatformLogo :platform="item.platform" size="xs" />
-              <span>{{ platformLabel(item.platform) }}</span>
-            </template>
-            <Badge v-if="item.isLive" variant="live">Live</Badge>
-            <span v-if="item.clipCount > 0" class="tabular">
-              {{ item.clipCount }} clip{{ item.clipCount !== 1 ? 's' : '' }}
-            </span>
-          </template>
-        </SearchPaletteItem>
-      </div>
-
-      <!-- No Results -->
-      <EmptyState
-        v-else-if="paletteSearchQuery || paletteActiveTab !== 'search'"
-        size="sm"
-        :icon="paletteActiveTab === 'live' ? Radio : paletteActiveTab === 'with_clips' ? Video : Search"
-        :title="
-          paletteActiveTab === 'live'
-            ? 'No live projects'
-            : paletteActiveTab === 'with_clips'
-              ? 'No projects with clips'
-              : 'No projects found'
-        "
+      <!-- Delete Project Dialog -->
+      <Modal
+        :open="showDeleteDialog"
+        title="Delete project"
         :description="
-          paletteActiveTab === 'live'
-            ? 'Start monitoring a livestream to see it here'
-            : paletteActiveTab === 'with_clips'
-              ? 'Detect clips in your projects to see them here'
-              : 'Try a different search term'
+          projectHasVideos || projectHasClips ? 'This project contains content' : 'This action cannot be undone'
         "
-        class="py-12"
+        :icon="AlertTriangle"
+        tone="danger"
+        size="md"
+        :dismissible="!deletingProject"
+        :hide-close="deletingProject"
+        @close="handleDeleteDialogClose"
+      >
+        <div class="flex flex-col gap-4">
+          <p class="text-sm text-fg-muted">
+            Are you sure you want to delete
+            <span class="font-medium text-fg">"{{ projectToDelete?.name }}"</span>
+            ? This action cannot be undone.
+          </p>
+
+          <!-- Content warnings -->
+          <div v-if="projectHasVideos || projectHasClips" class="border-t border-line-subtle pt-3">
+            <p class="eyebrow mb-2">What will be deleted</p>
+            <ul class="flex flex-col gap-1.5 text-sm text-fg-muted">
+              <li v-if="projectHasVideos" class="flex items-start gap-2">
+                <Trash2 class="mt-0.5 size-3.5 shrink-0 text-danger" />
+                <span>
+                  <span class="font-medium text-fg">Delete:</span>
+                  raw video files from disk
+                </span>
+              </li>
+              <li v-if="projectHasClips" class="flex items-start gap-2">
+                <Trash2 class="mt-0.5 size-3.5 shrink-0 text-danger" />
+                <span>
+                  <span class="font-medium text-fg">Delete:</span>
+                  unbuilt clips not being edited
+                </span>
+              </li>
+              <li v-if="projectHasClips" class="flex items-start gap-2">
+                <Check class="mt-0.5 size-3.5 shrink-0 text-success" />
+                <span>
+                  <span class="font-medium text-fg">Keep:</span>
+                  built clips (available in My Clips)
+                </span>
+              </li>
+              <li v-if="projectHasClips" class="flex items-start gap-2">
+                <Check class="mt-0.5 size-3.5 shrink-0 text-success" />
+                <span>
+                  <span class="font-medium text-fg">Keep:</span>
+                  clips currently in the editor
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Segments deletion option - only show if more than 1 segment -->
+          <div
+            v-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') > 1"
+            class="flex flex-col gap-2"
+          >
+            <p class="text-sm text-fg-muted">
+              This project contains
+              <span class="font-medium text-fg">{{ getChildCount(projectToDelete?.id || '') }} segments</span>
+              . What would you like to do with them?
+            </p>
+            <RadioGroup v-model="segmentDeleteMode" class="gap-2">
+              <label
+                v-for="option in segmentDeleteOptions"
+                :key="option.value"
+                class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors"
+                :class="
+                  segmentDeleteMode === option.value
+                    ? 'border-brand-line bg-brand-soft'
+                    : 'border-line-subtle hover:bg-surface-hover'
+                "
+              >
+                <RadioGroupItem :value="option.value" class="mt-0.5" />
+                <span class="min-w-0">
+                  <span class="block text-sm font-medium text-fg">{{ option.title }}</span>
+                  <span class="block text-xs text-fg-muted">{{ option.description }}</span>
+                </span>
+              </label>
+            </RadioGroup>
+          </div>
+
+          <!-- Single segment notice - auto-deleted with parent -->
+          <p
+            v-else-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') === 1"
+            class="flex items-start gap-2 text-sm text-fg-muted"
+          >
+            <Info class="mt-0.5 size-4 shrink-0 text-fg-subtle" />
+            <span>
+              This project contains
+              <span class="font-medium text-fg">1 segment</span>
+              , which will also be deleted along with its video files.
+            </span>
+          </p>
+        </div>
+
+        <template #footer>
+          <Button variant="ghost" :disabled="deletingProject" @click="handleDeleteDialogClose">Cancel</Button>
+          <Button variant="destructive" :loading="deletingProject" @click="deleteProjectConfirmed">
+            {{
+              deletingProject
+                ? 'Deleting...'
+                : deleteSegmentsToo && hasChildren(projectToDelete?.id || '')
+                  ? getChildCount(projectToDelete?.id || '') === 1
+                    ? 'Delete project & segment'
+                    : `Delete project & ${getChildCount(projectToDelete?.id || '')} segments`
+                  : 'Delete project'
+            }}
+          </Button>
+        </template>
+      </Modal>
+
+      <!-- Bulk Delete Confirmation Modal -->
+      <ConfirmationModal
+        :show="showBulkDeleteDialog"
+        :title="`Delete ${selectedProjects.size} projects`"
+        subtitle="This action cannot be undone"
+        :message="`Are you sure you want to delete ${selectedProjects.size} projects? This will also delete all associated segments and video files.`"
+        :confirm-text="bulkDeleting ? 'Deleting...' : `Delete ${selectedProjects.size} projects`"
+        close-text="Cancel"
+        suffix=""
+        :show-cannot-undone-text="false"
+        variant="destructive"
+        @close="handleBulkDeleteDialogClose"
+        @confirm="bulkDeleteConfirmed"
       />
 
-      <!-- Initial State -->
-      <EmptyState
-        v-else
-        size="sm"
-        :icon="Search"
-        title="Search your projects"
-        description="Find projects by name or description"
-        class="py-12"
+      <!-- Bulk Delete Folder Children Confirmation Modal -->
+      <ConfirmationModal
+        :show="showBulkDeleteFolderChildrenDialog"
+        :title="`Delete ${selectedFolderChildren.size} segment${selectedFolderChildren.size !== 1 ? 's' : ''}`"
+        subtitle="This action cannot be undone"
+        :message="`Are you sure you want to delete ${selectedFolderChildren.size} segment${selectedFolderChildren.size !== 1 ? 's' : ''}? This will also delete all associated video files.`"
+        :confirm-text="`Delete ${selectedFolderChildren.size} segment${selectedFolderChildren.size !== 1 ? 's' : ''}`"
+        close-text="Cancel"
+        suffix=""
+        :show-cannot-undone-text="false"
+        variant="destructive"
+        @close="handleBulkDeleteFolderChildrenDialogClose"
+        @confirm="bulkDeleteFolderChildrenConfirmed"
       />
-    </SearchPalette>
 
-    <!-- Existing Project Dialog -->
-    <ExistingProjectDialog
-      :show="showExistingProjectDialog"
-      :existing-project="existingProjectForClip"
-      @open-existing="onOpenExistingProject"
-      @create-new="onCreateNewProject"
-    />
+      <!-- Search Palette Modal -->
+      <ProjectLibrarySearch :model="searchPaletteModel" />
 
-    <!-- Auth Modal -->
-    <AuthModal v-model="showAuthModal" />
+      <!-- Existing Project Dialog -->
+      <ExistingProjectDialog
+        :show="showExistingProjectDialog"
+        :existing-project="existingProjectForClip"
+        @open-existing="onOpenExistingProject"
+        @create-new="onCreateNewProject"
+      />
 
-    <!-- Quick Publish Wizard -->
-    <QuickPublishWizard
-      :show="showFolderPublishWizard"
-      :clip="folderClipToPublish"
-      :clip-path="folderClipToPublishPath"
-      :project-id="folderProject?.id || ''"
-      :thumbnail-url="folderClipToPublishThumbnail"
-      @close="onFolderPublishWizardClose"
-    />
+      <!-- Auth Modal -->
+      <AuthModal v-model="showAuthModal" />
 
-    <!-- VOD Preset Editor -->
-    <VodPresetEditor
-      v-model="showVodPresetEditor"
-      :project-id="vodPresetProject?.id || ''"
-      :initial-config="vodPresetInitialConfig"
-      :creator-profile-id="vodPresetProject?.creator_profile_id"
-      :thumbnail-url="vodPresetProject ? thumbnailCache.get(vodPresetProject.id) : null"
-      :video-path="(vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.file_path) || null"
-      :video-duration="(vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.duration) || 0"
-      @confirm="onVodPresetConfirmed"
-      @clear="onVodPresetCleared"
-    />
-  </PageLayout>
+      <!-- Quick Publish Wizard -->
+      <QuickPublishWizard
+        :show="showFolderPublishWizard"
+        :clip="folderClipToPublish"
+        :clip-path="folderClipToPublishPath"
+        :project-id="folderProject?.id || ''"
+        :thumbnail-url="folderClipToPublishThumbnail"
+        @close="onFolderPublishWizardClose"
+      />
+
+      <!-- VOD Preset Editor -->
+      <VodPresetEditor
+        v-model="showVodPresetEditor"
+        :project-id="vodPresetProject?.id || ''"
+        :initial-config="vodPresetInitialConfig"
+        :creator-profile-id="vodPresetProject?.creator_profile_id"
+        :thumbnail-url="vodPresetProject ? thumbnailCache.get(vodPresetProject.id) : null"
+        :video-path="(vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.file_path) || null"
+        :video-duration="(vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.duration) || 0"
+        @confirm="onVodPresetConfirmed"
+        @clear="onVodPresetCleared"
+      />
+    </template>
+  </ProjectLibraryView>
 </template>
 
 <script setup lang="ts">
-  import LibraryProjectCard from '@/components/LibraryProjectCard.vue';
-  import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+  import type { ProjectFormData } from '@/components/ProjectDialog.vue';
+  import ProjectLibraryView from '@/components/ProjectLibraryView.vue';
+  import { statusOptions, getDateLabel } from '@/lib/projectLibraryPresentation';
+  import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { formatDateTime, formatDate, toDate } from '@/utils/dateTimeUtils';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -1045,10 +676,7 @@
     hasTranscriptForProject,
     isLiveClipsContainerProject,
   } from '@/services/database';
-  import {
-    isShortVideoAutoClipEligible,
-    SHORT_VIDEO_CLIP_THRESHOLD_SECONDS,
-  } from '@/services/database/auto-clips';
+  import { isShortVideoAutoClipEligible, SHORT_VIDEO_CLIP_THRESHOLD_SECONDS } from '@/services/database/auto-clips';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { useClipThumbnailStore } from '@/stores/clipThumbnails';
   import { persistentCache } from '@/utils/persistentCache';
@@ -1061,9 +689,15 @@
   import { useDownloads } from '@/composables/useDownloads';
   import { resolveAutoBrandingProfile } from '@/composables/useBrandingProfileSelection';
   import PageLayout from '@/components/PageLayout.vue';
-  import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue';
   import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
+  import DownloadCard from '@/components/DownloadCard.vue';
+  import SearchPaletteItem from '@/components/SearchPaletteItem.vue';
+  import SearchPaletteTrigger from '@/components/SearchPaletteTrigger.vue';
+  import LibraryCardAction from '@/components/library/LibraryCardAction.vue';
+  import LibrarySelectCheckbox from '@/components/library/LibrarySelectCheckbox.vue';
+  import ProjectLibrarySearch from '@/components/ProjectLibrarySearch.vue';
   import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
   import { EmptyState } from '@/components/ui/empty-state';
@@ -1072,15 +706,9 @@
   import { SectionHeader } from '@/components/ui/section-header';
   import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
   import { PlatformLogo, platformLabel } from '@/components/ui/platform-logo';
-  import CustomDropdown from '@/components/CustomDropdown.vue';
-  import DownloadCard from '@/components/DownloadCard.vue';
-  import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
-  import SearchPaletteItem from '@/components/SearchPaletteItem.vue';
-  import SearchPaletteTrigger from '@/components/SearchPaletteTrigger.vue';
   import { SelectionBar } from '@/components/ui/selection-bar';
-  import LibraryCardAction from '@/components/library/LibraryCardAction.vue';
-  import LibrarySelectCheckbox from '@/components/library/LibrarySelectCheckbox.vue';
   import { MediaChip } from '@/components/ui/media-tile';
+  import { type SearchPaletteTab } from '@/components/SearchPalette.vue';
   import ClipDetectionConfirmDialog from '@/components/ClipDetectionConfirmDialog.vue';
   import TranscriptionConfirmDialog from '@/components/TranscriptionConfirmDialog.vue';
   import ClipBuildSettingsDialog, {
@@ -1266,20 +894,7 @@
   const paletteSearchQuery = ref('');
   const paletteActiveTab = ref<'search' | 'live' | 'with_clips'>('search');
 
-  const statusFilterOptions: SegmentedOption<string>[] = [
-    { label: 'All', value: 'all' },
-    { label: 'Live', value: 'live', title: 'Live now' },
-    { label: 'Has clips', value: 'has_clips' },
-  ];
-
   // Folder / list view switch (hierarchy is ignored while searching or filtering by clips)
-  const viewModeOptions = computed((): SegmentedOption<'folders' | 'list'>[] => {
-    const disabled = !!searchQuery.value || statusFilter.value === 'has_clips';
-    return [
-      { value: 'folders', icon: Folder, title: 'Folder view', disabled },
-      { value: 'list', icon: List, title: 'List view', disabled },
-    ];
-  });
 
   const sortOptions = [
     { label: 'Updated: newest', value: 'updated-desc' },
@@ -2595,10 +2210,7 @@
       let watermarkSettingsRaw: string | null = null;
 
       // Validate stored project watermark against current auto-branding rules
-      async function isStoredWatermarkValid(
-        projectId: string,
-        storedWatermarkId: string
-      ): Promise<boolean> {
+      async function isStoredWatermarkValid(projectId: string, storedWatermarkId: string): Promise<boolean> {
         const autoProfile = await resolveAutoBrandingProfile(projectId);
         if (!autoProfile?.watermark_id) return false;
         return String(autoProfile.watermark_id) === String(storedWatermarkId);
@@ -2953,9 +2565,7 @@
             const segEnd = typeof seg.end_time === 'number' ? seg.end_time : 0;
             const segStart = typeof seg.start_time === 'number' ? seg.start_time : 0;
             const looksZeroBased = clipDuration > 0 && segEnd <= clipDuration + 0.5 && segStart >= 0;
-            const start_time = looksZeroBased
-              ? Math.max(0, segStart)
-              : Math.max(0, segStart - clipStartOffset);
+            const start_time = looksZeroBased ? Math.max(0, segStart) : Math.max(0, segStart - clipStartOffset);
             const end_time = looksZeroBased
               ? Math.min(clipDuration || segEnd, segEnd)
               : Math.min(clipDuration, segEnd - clipStartOffset);
@@ -4864,22 +4474,6 @@
     return groups;
   });
 
-  function getDateLabel(timestamp: number): string {
-    const d = toDate(timestamp);
-    if (isNaN(d.getTime())) return 'Unknown';
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    const projectDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-    if (projectDate.getTime() === today.getTime()) return 'Today';
-    if (projectDate.getTime() === yesterday.getTime()) return 'Yesterday';
-
-    return formatDate(d);
-  }
-
   // Pagination functions
   function goToPage(page: number) {
     if (page >= 1 && page <= totalPages.value) {
@@ -5460,9 +5054,7 @@
         const dur = getProjectVideoDurationSeconds(projectId);
         return dur > 0 && isShortVideoAutoClipEligible(dur);
       }
-      return segmentsWithVideo.every((child) =>
-        isShortVideoAutoClipEligible(getProjectVideoDurationSeconds(child.id))
-      );
+      return segmentsWithVideo.every((child) => isShortVideoAutoClipEligible(getProjectVideoDurationSeconds(child.id)));
     }
 
     const duration = getProjectVideoDurationSeconds(projectId);
@@ -5910,6 +5502,70 @@
       }
     });
     clipBuildUnlistenFunctions.value = [];
+  });
+
+  const searchPaletteModel = reactive({
+    closeSearchPalette,
+    onPaletteTabChange,
+    paletteActiveTab,
+    paletteSearchQuery,
+    paletteSearchResults,
+    projectsPaletteTabs,
+    selectPaletteResult,
+    showSearchPalette,
+  });
+  const libraryModel = reactive({
+    canDetectClips,
+    canTranscribe,
+    clearSelection,
+    confirmBulkDelete,
+    currentPage,
+    editProject,
+    filteredProjects,
+    getActiveDownloads,
+    getChildCount,
+    getClipCount,
+    getProjectDuration,
+    getProjectPlatform,
+    getQueuedDownloads,
+    getRelativeTime,
+    getThumbnailUrl,
+    goToPage,
+    groupedProjects,
+    handleCancelAllDownloads,
+    handleProjectClick,
+    hasAnySelectedProjectDetecting,
+    hasChildren,
+    hasDirectVideos,
+    hasVodPreset,
+    isAIAllowed,
+    isLiveClipsContainerProject,
+    isProjectDetecting,
+    isProjectLive,
+    isProjectSelected,
+    isProjectTranscribed,
+    loading,
+    mockProjectActive,
+    nextPage,
+    openCreateDialog,
+    openSearchPalette,
+    openVodPresetEditor,
+    paginatedProjects,
+    previousPage,
+    projects,
+    searchQuery,
+    selectAllCurrentPage,
+    selectedProjects,
+    sortBy,
+    sortOptions,
+    startProjectDetection,
+    startTranscription,
+    statusFilter,
+    statusOptions,
+    toggleProjectSelection,
+    totalPages,
+    viewMode,
+    vodPresetConfigs,
   });
 </script>
 

@@ -13,6 +13,7 @@ export function usePlayback() {
     element.value = video
     video.volume = volume.value
     video.muted = muted.value
+    video.currentTime = time.value
   }
   async function play() {
     const video = element.value
@@ -31,6 +32,7 @@ export function usePlayback() {
     playing.value = false
   }
   function seek(value: number) {
+    time.value = value
     const index = segments.findIndex((segment) => value < segment.end_time)
     segmentIndex = index < 0 ? Math.max(0, segments.length - 1) : index
     if (element.value) {
@@ -54,6 +56,7 @@ export function usePlayback() {
     seek(items[0]?.start_time || 0)
     void play()
   }
+  function playSource(value: number) { segments = []; seek(value); void play() }
   function toggle() {
     if (playing.value) pause()
     else {
@@ -90,7 +93,9 @@ export function usePlayback() {
     seek,
     select,
     preview,
+    playSource,
     pause,
+    play,
     toggle,
     setVolume,
     toggleMute

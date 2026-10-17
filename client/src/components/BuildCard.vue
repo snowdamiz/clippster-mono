@@ -72,7 +72,10 @@
             Open in project
           </DropdownMenuItem>
           <DropdownMenuSeparator />
-          <DropdownMenuItem class="text-danger focus:bg-danger-soft [&>svg]:!text-danger" @click="$emit('delete', build)">
+          <DropdownMenuItem
+            class="text-danger focus:bg-danger-soft [&>svg]:!text-danger"
+            @click="$emit('delete', build)"
+          >
             <Trash2 />
             Delete build
           </DropdownMenuItem>
@@ -111,8 +114,18 @@
 
 <script setup lang="ts">
   import { computed, ref } from 'vue';
-  import { Play, Trash2, Download, Video, ExternalLink, Share2, Check, Megaphone, MoreHorizontal } from 'lucide-vue-next';
-  import type { ClipBuild } from '@/services/database';
+  import {
+    Play,
+    Trash2,
+    Download,
+    Video,
+    ExternalLink,
+    Share2,
+    Check,
+    Megaphone,
+    MoreHorizontal,
+  } from 'lucide-vue-next';
+  import { type ClipBuild } from '@/services/database/types';
   import { useFormatters } from '@/composables/useFormatters';
   import { MediaTile } from '@/components/ui/media-tile';
   import { Badge } from '@/components/ui/badge';

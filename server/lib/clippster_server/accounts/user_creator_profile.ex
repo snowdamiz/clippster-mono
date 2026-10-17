@@ -19,6 +19,7 @@ defmodule ClippsterServer.Accounts.UserCreatorProfile do
     field :layout_overlays, {:array, :map}
     field :scope, :string, default: "personal_studio"
     field :disabled, :boolean, default: false
+    field :auto_dvr_enabled, :boolean, default: false
     field :clip_build_defaults, :map
     field :client_id, :string
     field :platform_links, {:array, :map}, default: []
@@ -51,6 +52,7 @@ defmodule ClippsterServer.Accounts.UserCreatorProfile do
       :layout_overlays,
       :scope,
       :disabled,
+      :auto_dvr_enabled,
       :clip_build_defaults,
       :client_id
     ])
@@ -85,6 +87,7 @@ defmodule ClippsterServer.Accounts.UserCreatorProfile do
       :layout_overlays,
       :scope,
       :disabled,
+      :auto_dvr_enabled,
       :clip_build_defaults,
       :client_id
     ])

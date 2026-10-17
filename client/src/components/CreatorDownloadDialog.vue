@@ -18,7 +18,9 @@
             >
               <PlatformLogo :platform="creator.platform_links[selectedPlatformIndex].platform" size="md" />
               <span class="min-w-0 flex-1 truncate">
-                <span class="font-medium">{{ getPlatformName(creator.platform_links[selectedPlatformIndex].platform) }}</span>
+                <span class="font-medium">
+                  {{ getPlatformName(creator.platform_links[selectedPlatformIndex].platform) }}
+                </span>
                 <span class="ml-2 text-xs text-fg-muted">
                   {{
                     creator.platform_links[selectedPlatformIndex].display_name ||
@@ -38,7 +40,9 @@
               <PlatformLogo :platform="link.platform" size="sm" />
               <span class="min-w-0 flex-1 truncate">
                 {{ getPlatformName(link.platform) }}
-                <span class="ml-1.5 text-xs text-fg-muted">{{ link.display_name || truncateId(link.platform_id) }}</span>
+                <span class="ml-1.5 text-xs text-fg-muted">
+                  {{ link.display_name || truncateId(link.platform_id) }}
+                </span>
               </span>
               <Badge v-if="link.is_primary" variant="brand">Primary</Badge>
               <Check v-if="selectedPlatformIndex === index" class="!text-brand" />
@@ -48,7 +52,10 @@
       </Field>
 
       <!-- Loading -->
-      <div v-if="loading" class="skeleton-group flex flex-col items-center justify-center gap-3 py-10 text-sm text-fg-muted">
+      <div
+        v-if="loading"
+        class="skeleton-group flex flex-col items-center justify-center gap-3 py-10 text-sm text-fg-muted"
+      >
         <Loader2 class="size-6 animate-spin text-fg-subtle" />
         Fetching latest VOD…
       </div>
@@ -70,7 +77,10 @@
               : currentPlatformLink.platformId
           }}
         </p>
-        <Button variant="secondary" size="sm" @click="fetchLatestVod"><RefreshCw /> Try again</Button>
+        <Button variant="secondary" size="sm" @click="fetchLatestVod">
+          <RefreshCw />
+          Try again
+        </Button>
       </EmptyState>
 
       <!-- VOD found -->
@@ -85,7 +95,10 @@
           <div class="min-w-0 flex-1 py-0.5">
             <h3 class="line-clamp-2 text-sm font-medium text-fg">{{ latestVod.title }}</h3>
             <div class="mt-1.5 flex items-center gap-3 text-xs text-fg-muted">
-              <span class="tabular flex items-center gap-1"><Clock class="size-3" />{{ formatDuration(latestVod.duration) }}</span>
+              <span class="tabular flex items-center gap-1">
+                <Clock class="size-3" />
+                {{ formatDuration(latestVod.duration) }}
+              </span>
               <span v-if="latestVod.createdAt">{{ formatRelativeTime(latestVod.createdAt) }}</span>
             </div>
           </div>
@@ -99,7 +112,8 @@
           </template>
           <TimeRangePicker v-model="selectedTimeRange" :total-duration="latestVod.duration || 0" />
           <Button v-if="!isFullStreamSelected" variant="ghost" size="xs" class="self-start" @click="resetToFullStream">
-            <RotateCcw /> Reset to full stream
+            <RotateCcw />
+            Reset to full stream
           </Button>
         </Field>
 
@@ -115,14 +129,7 @@
             </span>
           </label>
           <template v-if="autoSegment">
-            <RangeField
-              v-model="autoSegmentDuration"
-              label="Part length"
-              :min="15"
-              :max="60"
-              :step="5"
-              suffix=" min"
-            />
+            <RangeField v-model="autoSegmentDuration" label="Part length" :min="15" :max="60" :step="5" suffix=" min" />
           </template>
         </div>
       </div>
@@ -160,9 +167,9 @@
   import { Switch } from '@/components/ui/switch';
   import RangeField from '@/components/branding/RangeField.vue';
   import TimeRangePicker from '@/components/TimeRangePicker.vue';
-  import { type CreatorProfileWithLinks } from '@/services/database';
-  import { usePlatformStore, type PlatformClip } from '@/stores/platform';
-  import { useDownloads } from '@/composables/useDownloads';
+  import { type CreatorProfileWithLinks } from '@/services/database/types';
+  import type { PlatformClip } from '@/stores/platform';
+  import { useCreatorDownloadRuntime, extractMintId } from '@/services/creatorDownloadRuntime';
   import { useToast } from '@/composables/useToast';
   import { platformConfigs } from '@/config/platforms';
   import {
@@ -180,6 +187,7 @@
   interface Props {
     show: boolean;
     creator: CreatorProfileWithLinks | null;
+    selectedVod?: PlatformClip | null;
   }
 
   const props = defineProps<Props>();
@@ -187,9 +195,7 @@
     (e: 'close'): void;
   }>();
 
-  const router = useRouter();
-  const platformStore = usePlatformStore();
-  const { startDownload: startVodDownload } = useDownloads();
+  const { platformStore, startDownload: startVodDownload, navigateProjects } = useCreatorDownloadRuntime();
   const { success, error: showError } = useToast();
 
   // State
@@ -296,7 +302,6 @@
       let validatedId = selectedLink.platform_id;
 
       if (selectedLink.platform === 'pumpfun') {
-        const { extractMintId } = await import('@/services/pumpfun');
         const mintId = extractMintId(selectedLink.platform_id);
         if (!mintId) {
           console.error('[CreatorDownload] Invalid mint ID:', selectedLink.platform_id);
@@ -311,6 +316,12 @@
         platformId: validatedId,
         displayName: selectedLink.display_name || undefined,
       };
+      if (props.selectedVod) {
+        latestVod.value = props.selectedVod;
+        selectedTimeRange.value = { startTime: 0, endTime: props.selectedVod.duration || 0 };
+        autoSegment.value = false;
+        return;
+      }
 
       console.log('[CreatorDownload] Searching for VODs with platform_id:', validatedId);
 
@@ -435,7 +446,7 @@
 
       // Navigate to projects
       setTimeout(() => {
-        router.push('/projects');
+        navigateProjects();
       }, 500);
     } catch (err) {
       console.error('Download failed:', err);

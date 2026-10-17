@@ -2,8 +2,8 @@
  * Composable for managing transcript data and caching in timeline components
  * Handles transcript loading, caching, and tooltip word management
  */
-import { ref, watch, type Ref } from 'vue';
-import { getTranscriptWithSegmentsByProjectId } from '../services/database';
+import { ref, watch, onMounted, onUnmounted, type Ref } from 'vue';
+import { getTranscriptWithSegmentsByProjectId } from '@/services/workspaceRuntime';
 import {
   parseTranscriptToWords,
   findWordsAroundTime,
@@ -259,6 +259,10 @@ export function useTranscriptData(projectId: Ref<string | null>) {
     resizeTooltipTranscriptWords.value = [];
     resizeTooltipCenterWordIndex.value = 0;
   }
+
+  const transcriptUpdated = (event: Event) => { if ((event as CustomEvent<{ projectId: string }>).detail?.projectId === projectId.value) void loadTranscriptData(projectId.value); };
+  onMounted(() => document.addEventListener('transcript-updated', transcriptUpdated));
+  onUnmounted(() => document.removeEventListener('transcript-updated', transcriptUpdated));
 
   // Watch for projectId changes
   watch(

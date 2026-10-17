@@ -11,8 +11,8 @@
 </template>
 <script setup lang="ts">
   import { reactive } from 'vue'
-  import SharedAuthDialog from '../../../../client/src/components/SharedAuthDialog.vue'
-  import type { AuthDialogAdapter, AuthDialogResult } from '../../../../client/src/components/authDialog'
+  import SharedAuthDialog from '@/components/SharedAuthDialog.vue'
+  import type { AuthDialogAdapter, AuthDialogResult } from '@/components/authDialog'
   import { auth, client, errorMessage } from '../api'
   import type { AuthUser } from '@clippster/shared-types'
   const emit = defineEmits<{ authenticated: [user: AuthUser] }>()

@@ -60,10 +60,6 @@ export function useWorkspace() {
     }
   }
   async function uploadSource(file: File) {
-    if (file.size > 2 * 1024 ** 3) {
-      error.value = 'Choose a video smaller than 2 GB.'
-      return
-    }
     uploadProgress.value = 0
     try {
       await action((id) =>

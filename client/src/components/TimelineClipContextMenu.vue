@@ -5,7 +5,7 @@
     </template>
 
     <TimelineMenuItem :icon="Play" label="Play clip" @click="handlePlayClip" />
-    <TimelineMenuItem :icon="Pencil" label="Edit clip" @click="handleEditClip" />
+    <TimelineMenuItem v-if="allowEditor !== false" :icon="Pencil" label="Edit clip" @click="handleEditClip" />
   </TimelineFloatingMenu>
 </template>
 
@@ -17,6 +17,7 @@
   import TimelineMenuItem from './TimelineMenuItem.vue';
 
   const props = defineProps<{
+    allowEditor?: boolean;
     show: boolean;
     info: ClipContextMenuInfo | null;
   }>();

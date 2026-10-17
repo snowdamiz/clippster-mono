@@ -1,5 +1,4 @@
 import type { BrandingConfig } from '@clippster/api-client'
-import type { TargetAspectRatio } from '@clippster/shared-types'
 import * as FileSystem from 'expo-file-system/legacy'
 
 import { validateExportMetadata } from '@/lib/exportValidation'
@@ -17,7 +16,7 @@ import {
   createMobileEditorEngine,
   NativeMobileEditorEngine
 } from '../engine/NativeMobileEditorEngine'
-import type { MobileEditProjectV3 } from '../model/schema'
+import type { CanvasRatio, MobileEditProjectV3 } from '../model/schema'
 import { ticksToSeconds } from '../model/schema'
 import { getVideoTrack } from '../model/timeline'
 import type { EditorExportProgress as ClipBuildProgress } from './exportProgress'
@@ -30,7 +29,7 @@ import { needsManualFraming, prepareManualFraming } from './prepareManualFraming
  */
 export async function exportEditorProject(
   document: MobileEditProjectV3,
-  ratios: TargetAspectRatio[],
+  ratios: CanvasRatio[],
   onProgress: (progress: ClipBuildProgress) => void,
   onMaterializedClip?: (clipId: string) => void
 ): Promise<string[]> {

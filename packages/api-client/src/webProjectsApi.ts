@@ -9,14 +9,14 @@ export function createWebProjectsApi(client: ApiClient) {
     return response.data;
   }
   return {
-    list: () => request<{ projects: WebProject[] }>('/projects'),
+    list: () => request<{ projects: WebProject[]; jobs?: WebJob[] }>('/projects'),
     create: (name: string) =>
       request<WebWorkspace>('/projects', { method: 'POST', body: { name } }),
     get: (id: string) => request<WebWorkspace>(`/projects/${encodeURIComponent(id)}`),
     remove: (id: string) =>
       request<void>(`/projects/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-    importSource: (id: string, url: string) =>
-      request<WebJob>(`/projects/${id}/import`, { method: 'POST', body: { url } }),
+    importSource: (id: string, url: string, range?: WebProject['sourceRange']) =>
+      request<WebJob>(`/projects/${id}/import`, { method: 'POST', body: { url, ...(range ? { range } : {}) } }),
     detect: (id: string, prompt: string) =>
       request<WebJob>(`/projects/${id}/detect`, { method: 'POST', body: { prompt } }),
     saveClip: (id: string, clip: WebClipInput, clipId?: string, revision?: number) =>

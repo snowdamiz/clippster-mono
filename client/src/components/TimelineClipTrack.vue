@@ -2,7 +2,9 @@
   <div
     v-for="(clip, index) in clips"
     :key="clip.id"
-    class="relative flex h-10 cursor-pointer items-center border-b border-line-subtle px-2"
+    :class="'!h-16 !min-h-16'"
+    class="relative flex min-h-10 cursor-pointer items-center border-b border-line-subtle px-2"
+    :style="{ minHeight: 'var(--workspace-clip-track-height, 2.5rem)' }"
     @click="onTimelineClipClick(clip.id)"
   >
     <!-- Track Label -->
@@ -14,7 +16,7 @@
       <span class="truncate text-2xs font-medium text-fg-muted">{{ getClipLabel(clip) }}</span>
     </div>
     <!-- Clip Track Content -->
-    <div class="relative h-8 flex-1">
+    <div class="relative h-14 flex-1">
       <div
         class="absolute inset-0 cursor-pointer rounded-md bg-surface-sunken"
         @click="onClipTrackClick"
@@ -27,7 +29,7 @@
           v-for="(segment, segIndex) in clip.segments"
           :key="`${clip.id}_${segIndex}`"
           :ref="(el) => setTimelineClipRef(el, clip.id)"
-          class="clip-segment group pointer-events-auto absolute flex h-7 items-center justify-center overflow-hidden rounded-md border"
+          class="clip-segment group pointer-events-auto absolute top-2 flex h-1.5 min-w-px items-center justify-center rounded border"
           :class="[
             isDraggingSegment && draggedSegmentInfo?.clipId === clip.id && draggedSegmentInfo?.segmentIndex === segIndex
               ? 'is-dragging z-30 cursor-grabbing'
@@ -59,13 +61,9 @@
             isCutToolActive && cutHoverInfo?.clipId === clip.id && cutHoverInfo?.segmentIndex === segIndex
           "
           @mouseenter="
-            {
-              if (isCutToolActive) {
-                console.log(`[CUTTING] Mouseenter segment ${clip.id}_${segIndex}`);
-                onSegmentHoverForCut($event, clip.id, segIndex, segment);
-              } else {
-                hoveredSegmentKey = `${clip.id}_${segIndex}`;
-              }
+            if (isCutToolActive) {
+              console.log(`[CUTTING] Mouseenter segment ${clip.id}_${segIndex}`);
+              onSegmentHoverForCut($event, clip.id, segIndex, segment);
             }
           "
           @mousemove="
@@ -75,13 +73,9 @@
             }
           "
           @mouseleave="
-            {
-              if (isCutToolActive) {
-                console.log(`[CUTTING] Mouseleave segment ${clip.id}_${segIndex}`);
-                emit('update:cutHoverInfo', null);
-              } else {
-                hoveredSegmentKey = null;
-              }
+            if (isCutToolActive) {
+              console.log(`[CUTTING] Mouseleave segment ${clip.id}_${segIndex}`);
+              emit('update:cutHoverInfo', null);
             }
           "
           @click="
@@ -98,9 +92,11 @@
           "
           @contextmenu="onSegmentContextMenu($event, clip.id, segIndex, segment, clip.title)"
         >
-          <span class="segment-title select-none truncate px-2 text-2xs font-medium text-fg">
-            {{ clip.title }}
-          </span>
+          <TimelineSegmentLabel
+            :title="clip.title"
+            :start="getSegmentDisplayTime(segment, 'start')"
+            :end="getSegmentDisplayTime(segment, 'end')"
+          />
           <!-- Cut preview indicator -->
           <div
             v-if="isCutToolActive && cutHoverInfo?.clipId === clip.id && cutHoverInfo?.segmentIndex === segIndex"
@@ -121,7 +117,7 @@
             v-if="!getSegmentAdjacency(clip.id, segIndex).hasPrevious"
             class="resize-handle resize-handle-left pointer-events-none absolute inset-y-0 left-0 flex w-2.5 cursor-ew-resize items-center justify-center opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100"
             :class="{
-              'opacity-100 pointer-events-auto': !isCutToolActive && hoveredSegmentKey === `${clip.id}_${segIndex}`,
+              'opacity-100 pointer-events-auto': !isCutToolActive,
             }"
             @mousedown="onResizeMouseDown($event, clip.id, segIndex, segment, 'left')"
           >
@@ -132,7 +128,7 @@
             v-if="!getSegmentAdjacency(clip.id, segIndex).hasNext"
             class="resize-handle resize-handle-right pointer-events-none absolute inset-y-0 right-0 flex w-2.5 cursor-ew-resize items-center justify-center opacity-0 transition-opacity duration-150 group-hover:pointer-events-auto group-hover:opacity-100"
             :class="{
-              'opacity-100 pointer-events-auto': !isCutToolActive && hoveredSegmentKey === `${clip.id}_${segIndex}`,
+              'opacity-100 pointer-events-auto': !isCutToolActive,
             }"
             @mousedown="onResizeMouseDown($event, clip.id, segIndex, segment, 'right')"
           >
@@ -145,7 +141,7 @@
 </template>
 
 <script setup lang="ts">
-  import { ref } from 'vue';
+  import TimelineSegmentLabel from './TimelineSegmentLabel.vue';
   import { formatDuration, getSegmentDisplayTime, hexToRgba } from '../utils/timelineUtils';
   import type { TimelineClipTrackProps, ClipSegment, Clip } from '../types';
 
@@ -190,9 +186,6 @@
     emit('clipContextMenu', event, clip.id, clip.title);
   }
 
-  // Local state for hover tracking
-  const hoveredSegmentKey = ref<string | null>(null);
-
   function onTimelineClipClick(clipId: string) {
     emit('timelineClipClick', clipId);
   }
@@ -207,14 +200,14 @@
     emit('timelineSegmentClick', clipId, segmentIndex, event);
   }
 
-  // Run colors identify detection runs (data color); manual clips fall back to emerald.
-  const DEFAULT_RUN_COLOR = '#10B981';
+  // Source clip ranges use purple when no detection-run color is assigned.
+  const DEFAULT_RUN_COLOR = '#8B5CF6';
 
   function segmentColorStyle(runColor: string | undefined) {
     const color = runColor || DEFAULT_RUN_COLOR;
     return {
-      backgroundColor: hexToRgba(color, 0.3),
-      borderColor: hexToRgba(color, 0.65),
+      backgroundColor: color,
+      borderColor: hexToRgba(color, 0.9),
     };
   }
 
@@ -245,10 +238,6 @@
   .clip-segment:hover .resize-handle {
     opacity: 1 !important;
     pointer-events: auto !important;
-  }
-
-  .segment-title {
-    text-shadow: 0 1px 1px rgba(0, 0, 0, 0.45);
   }
 
   .clip-segment.is-hovered {
@@ -303,6 +292,11 @@
 
   .resize-handle {
     z-index: 10;
+    top: 50%;
+    bottom: auto;
+    height: 20px;
+    max-width: 40%;
+    transform: translateY(-50%);
   }
 
   .resize-handle-left {

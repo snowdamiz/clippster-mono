@@ -15,6 +15,7 @@ export interface Session {
   token: string
   expires: number
 }
+export interface RecentVodSearch { id: string; platform: string; displayText: string; timestamp: number }
 export class Store {
   readonly db: DatabaseSync
   constructor(readonly directory: string) {
@@ -24,12 +25,14 @@ export class Store {
       CREATE TABLE IF NOT EXISTS projects (id TEXT PRIMARY KEY, owner TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS prompts (id TEXT PRIMARY KEY, owner TEXT NOT NULL, name TEXT NOT NULL, content TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS framing_assets (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, owner TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL);
+      CREATE TABLE IF NOT EXISTS broll_suggestions (clip_id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE, owner TEXT NOT NULL, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS publications (id TEXT PRIMARY KEY, owner TEXT NOT NULL, fingerprint TEXT NOT NULL, status TEXT NOT NULL, result TEXT);
       CREATE INDEX IF NOT EXISTS projects_owner ON projects(owner);
       CREATE TABLE IF NOT EXISTS jobs (id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
         owner TEXT NOT NULL, status TEXT NOT NULL, data TEXT NOT NULL);
       CREATE INDEX IF NOT EXISTS jobs_status ON jobs(status);
       CREATE TABLE IF NOT EXISTS sessions (id TEXT PRIMARY KEY, owner TEXT NOT NULL, token TEXT NOT NULL, expires INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS recent_vod_searches (owner TEXT PRIMARY KEY, data TEXT NOT NULL);
       CREATE TABLE IF NOT EXISTS oauth_attempts (id TEXT PRIMARY KEY, state TEXT NOT NULL, verifier TEXT NOT NULL, expires INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS daily_usage (owner TEXT NOT NULL, action TEXT NOT NULL, day TEXT NOT NULL,
         count INTEGER NOT NULL, PRIMARY KEY(owner, action, day));`)
@@ -42,6 +45,13 @@ export class Store {
       RETURNING count`).get(owner, action, day, limit)
     if (!row) throw new HttpError(403,
       `Free plan daily limit reached (${limit} ${action === 'vod_download' ? 'VOD downloads' : 'clip builds'}). Upgrade your plan or try again tomorrow.`)
+  }
+  recentVodSearches(owner: string): RecentVodSearch[] {
+    const row = this.db.prepare('SELECT data FROM recent_vod_searches WHERE owner = ?').get(owner) as { data: string } | undefined
+    return row ? JSON.parse(row.data) : []
+  }
+  saveVodSearches(owner: string, searches: RecentVodSearch[]) {
+    this.db.prepare('INSERT INTO recent_vod_searches VALUES (?, ?) ON CONFLICT(owner) DO UPDATE SET data=excluded.data').run(owner, JSON.stringify(searches.slice(0, 20)))
   }
   saveOAuthAttempt(id: string, state: string, verifier: string) {
     this.db.prepare('DELETE FROM oauth_attempts WHERE expires <= ?').run(Date.now())
@@ -65,6 +75,13 @@ export class Store {
       this.db.prepare('SELECT data FROM projects WHERE owner = ?').all(owner) as { data: string }[]
     )
       .map((row) => JSON.parse(row.data) as WebProject)
+      .map(project => {
+        if (project.status === 'error' && (!project.sourceUrl || project.sourceRange === undefined)) {
+          const importJob = this.jobs(project.id, owner).find(job => job.kind === 'import' && typeof job.payload.url === 'string')
+          if (importJob) { project.sourceUrl = importJob.payload.url as string; project.sourceRange = importJob.payload.range as WebProject['sourceRange'] || null; this.save(project, owner) }
+        }
+        return project
+      })
       .sort((a, b) => b.updatedAt - a.updatedAt)
   }
   get(id: string, owner: string): WebProject {
@@ -103,6 +120,10 @@ export class Store {
       .run(JSON.stringify(project), project.id, owner)
   }
   delete(id: string, owner: string) {
+    for (const project of this.list(owner)) if (project.id !== id && project.clips.some(clip => clip.linkedProjectId === id)) {
+      for (const clip of project.clips) if (clip.linkedProjectId === id) delete clip.linkedProjectId
+      this.save(project, owner)
+    }
     this.db.prepare('DELETE FROM projects WHERE id = ? AND owner = ?').run(id, owner)
   }
   jobs(projectId: string, owner: string): StoredJob[] {
@@ -161,6 +182,7 @@ export class Store {
   }
 }
 export function publicJob({
+  clipId,
   id,
   projectId,
   kind,
@@ -169,5 +191,5 @@ export function publicJob({
   message,
   createdAt
 }: WebJob): WebJob {
-  return { id, projectId, kind, status, progress, message, createdAt }
+  return { id, projectId, kind, status, progress, message, createdAt, clipId }
 }

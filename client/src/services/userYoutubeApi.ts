@@ -4,7 +4,7 @@
  * Mirrors the userTwitterApi.ts pattern.
  */
 
-import api from './api';
+import api from '@/services/api';
 import { buildUserConnectUrlBody, type UserSocialConnectOptions } from './userSocialConnect';
 
 // ============================================
@@ -84,7 +84,7 @@ export async function startUserYoutubeOAuth(
     throw new Error('Not authenticated');
   }
 
-  const { invoke } = await import('@tauri-apps/api/core');
+  const { openSocialOAuth } = await import('@/services/socialOAuthRuntime');
 
   const connectResponse = await api.post<PostForMeConnectUrlResponse>(
     '/user/social/connect-url',
@@ -101,7 +101,7 @@ export async function startUserYoutubeOAuth(
     throw new Error('Post For Me response did not include connection_id');
   }
 
-  await invoke('start_social_oauth', { authUrl: connectResponse.data.auth_url });
+  await openSocialOAuth(connectResponse.data.auth_url);
 
   let cancelled = false;
 

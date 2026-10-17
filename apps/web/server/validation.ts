@@ -1,6 +1,6 @@
-import type { WebClipInput, ClipSegment, TargetAspectRatio } from '@clippster/shared-types'
+import type { WebClipInput, ClipSegment, TargetAspectRatio, WordInfo } from '@clippster/shared-types'
 import { HttpError, requireValue } from './errors'
-import { validateClipSettings } from './clipSettings'
+import { validateClipSettings, validateFramingConfigs } from './clipSettings'
 export function textField(value: unknown, name: string, max: number): string {
   requireValue(
     typeof value === 'string' && value.trim().length > 0 && value.length <= max,
@@ -54,12 +54,12 @@ export function clipInput(
   requireValue(value && typeof value === 'object', 400, 'Invalid clip.')
   const input = value as Record<string, unknown>
   const name = textField(input.name, 'Clip name', 120)
-  requireValue(['16:9', '9:16'].includes(String(input.aspectRatio)), 400, 'Invalid aspect ratio.')
+  requireValue(['16:9', '9:16', '1:1', '4:5'].includes(String(input.aspectRatio)), 400, 'Invalid aspect ratio.')
   requireValue(typeof input.captions === 'boolean', 400, 'Invalid captions setting.')
   requireValue(
-    Array.isArray(input.segments) && input.segments.length > 0 && input.segments.length <= 20,
+    Array.isArray(input.segments) && input.segments.length > 0 && input.segments.length <= 100,
     400,
-    'A clip needs 1–20 segments.'
+    'A clip needs 1–100 segments.'
   )
   const segments = input.segments
     .map((segment) => {
@@ -83,24 +83,34 @@ export function clipInput(
         transcript: null
       }
     })
-    .sort((a, b) => a.start_time - b.start_time)
   requireValue(
-    segments.every(
-      (segment, index) => index === 0 || segment.start_time >= segments[index - 1].end_time
-    ),
+    segments.reduce((sum, segment) => sum + segment.duration, 0) <= 86400,
     400,
-    'Clip segments must not overlap.'
-  )
-  requireValue(
-    segments.reduce((sum, segment) => sum + segment.duration, 0) <= 600,
-    400,
-    'Clips may be up to 10 minutes long.'
+    'Clips may contain up to 24 hours of media.'
   )
   return {
     name,
+    ...(input.exportSettings !== undefined ? { exportSettings: validateExportSettings(input.exportSettings) } : {}),
+    ...(input.subtitleWords !== undefined ? { subtitleWords: validateSubtitleWords(input.subtitleWords, duration) } : {}),
     ...validateClipSettings(input),
+    ...(input.framingConfigs !== undefined ? { framingConfigs: validateFramingConfigs(input.framingConfigs) } : {}),
     segments,
     aspectRatio: input.aspectRatio as TargetAspectRatio,
     captions: input.captions
   }
+}
+function validateExportSettings(value: unknown): WebClipInput['exportSettings'] {
+  if (value === null) return null
+  requireValue(value && typeof value === 'object', 400, 'Invalid export settings.')
+  const settings = value as NonNullable<WebClipInput['exportSettings']>
+  requireValue(['low', 'medium', 'high'].includes(settings.quality) && [30, 60].includes(settings.frameRate) && ['mp4', 'mov'].includes(settings.format), 400, 'Invalid export settings.')
+  return { quality: settings.quality, frameRate: settings.frameRate, format: settings.format }
+}
+function validateSubtitleWords(value: unknown, duration: number): WordInfo[] | null {
+  if (value === null) return null
+  requireValue(Array.isArray(value) && value.length <= 100000, 400, 'A clip may contain up to 100,000 subtitle words.')
+  return value.map(word => {
+    requireValue(word && typeof word.word === 'string' && word.word.length <= 200 && Number.isFinite(word.start) && Number.isFinite(word.end) && word.start >= 0 && word.end >= word.start && word.end <= duration + .05, 400, 'Invalid subtitle word timing.')
+    return { word: word.word, start: word.start, end: word.end }
+  })
 }

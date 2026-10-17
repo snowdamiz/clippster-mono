@@ -90,6 +90,12 @@
 
       <!-- Zoom -->
       <div class="flex items-center gap-0.5">
+        <TimelineToolButton :disabled="!canFocusClip" title="Zoom to selected clip" aria-label="Zoom to selected clip" @click="$emit('focusClip')">
+          <template #icon><Focus /></template>
+        </TimelineToolButton>
+        <TimelineToolButton :disabled="localSliderPosition <= 0" title="Fit entire source" aria-label="Fit entire source" @click="$emit('fitSource')">
+          <template #icon><ScanLine /></template>
+        </TimelineToolButton>
         <TimelineToolButton :disabled="localSliderPosition <= 0" title="Zoom out" aria-label="Zoom out" @click="zoomOut">
           <template #icon><Minus /></template>
         </TimelineToolButton>
@@ -106,7 +112,7 @@
 
 <script setup lang="ts">
   import { ref, watch } from 'vue';
-  import { Plus, Scissors, Merge, Rewind, FastForward, Minus, Plus as Plus2, Captions, Type } from 'lucide-vue-next';
+  import { Plus, Scissors, Merge, Rewind, FastForward, Minus, Plus as Plus2, Captions, Type, Focus, ScanLine } from 'lucide-vue-next';
   import TimelineToolButton from './TimelineToolButton.vue';
 
   interface Props {
@@ -119,6 +125,7 @@
     sliderPosition: number;
     clipCount: number;
     canMergeSegments: boolean;
+    canFocusClip?: boolean;
   }
 
   const props = defineProps<Props>();
@@ -132,6 +139,8 @@
     mergeSegments: [];
     toggleSubtitles: [];
     toggleText: [];
+    focusClip: [];
+    fitSource: [];
   }>();
 
   const localSliderPosition = ref(props.sliderPosition);

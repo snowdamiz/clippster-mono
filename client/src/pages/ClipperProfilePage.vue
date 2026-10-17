@@ -1,748 +1,855 @@
 <template>
   <div class="flex h-full min-w-0 flex-col">
-  <PageLayout title="My profile" description="Your public clipper profile and campaign settings" :icon="UserCircle">
-    <template #actions>
-      <template v-if="isProfileConfigured">
-        <Button
-          v-if="clipperProfile?.slug && clipperProfile?.is_public"
-          variant="ghost"
-          size="sm"
-          @click="$router.push(`/clippers/${clipperProfile.slug}`)"
-        >
-          <Eye />
-          View public profile
-        </Button>
-        <Button variant="secondary" size="sm" @click="$router.push('/clipper-profile/edit')">
-          <Pencil />
-          Edit profile
-        </Button>
+    <PageLayout title="My profile" description="Your public clipper profile and campaign settings" :icon="UserCircle">
+      <template #actions>
+        <template v-if="isProfileConfigured">
+          <Button
+            v-if="clipperProfile?.slug && clipperProfile?.is_public"
+            variant="ghost"
+            size="sm"
+            @click="$router.push(`/clippers/${clipperProfile.slug}`)"
+          >
+            <Eye />
+            View public profile
+          </Button>
+          <Button variant="secondary" size="sm" @click="$router.push('/clipper-profile/edit')">
+            <Pencil />
+            Edit profile
+          </Button>
+        </template>
       </template>
-    </template>
 
-    <template v-if="isProfileConfigured" #toolbar>
-      <div class="-my-1 min-w-0 flex-1 overflow-x-auto py-1">
-        <SegmentedControl v-model="activeTab" :options="tabOptions" />
-      </div>
-    </template>
-
-    <!-- Empty state (no profile yet) -->
-    <EmptyState
-      v-if="!isProfileConfigured"
-      :icon="UserCircle"
-      title="No clipper profile yet"
-      description="Set up your public profile to join campaigns, showcase your work and get discovered by organizations."
-    >
-      <Button variant="primary" @click="showOnboardingWizard = true">
-        <Plus />
-        Create profile
-      </Button>
-    </EmptyState>
-
-    <div v-else class="flex flex-col gap-4 px-5 py-4">
-      <!-- ── Profile header ──────────────────────────────────────────── -->
-      <section class="flex flex-wrap items-start gap-x-6 gap-y-4 border-b border-line-subtle pb-4">
-        <div class="flex min-w-0 flex-[1_1_360px] items-start gap-4">
-          <div class="relative shrink-0">
-            <Avatar :src="clipperProfile?.avatar_url" :icon="UserCircle" size="lg" />
-            <span
-              v-if="clipperProfile?.is_verified"
-              class="absolute -bottom-0.5 -right-0.5 grid size-5 place-items-center rounded-full bg-brand text-brand-fg ring-2 ring-panel"
-              title="Verified"
-            >
-              <Check class="size-3" :stroke-width="3" />
-            </span>
-          </div>
-
-          <div class="flex min-w-0 flex-1 flex-col gap-1.5">
-            <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
-              <h2 class="truncate text-base font-semibold text-fg">
-                {{ clipperProfile?.display_name || 'Set up your profile' }}
-              </h2>
-              <Badge v-if="clipperProfile?.looking_for_work" variant="success">
-                <span class="size-1.5 rounded-full bg-success" />
-                Available for work
-              </Badge>
-              <Badge v-if="clipperProfile?.is_affiliate" variant="neutral">
-                <Handshake />
-                Affiliate
-              </Badge>
-              <Badge v-if="clipperProfile && !clipperProfile.is_public" variant="outline">
-                <EyeOff />
-                Private
-              </Badge>
-            </div>
-            <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-subtle">
-              <span v-if="clipperProfile?.slug" class="truncate">/clippers/{{ clipperProfile.slug }}</span>
-              <span v-if="clipperProfile?.user?.last_active_at" class="inline-flex items-center gap-1">
-                <Clock class="size-3" />
-                {{ formatLastActive(clipperProfile.user.last_active_at) }}
-              </span>
-            </div>
-            <p class="max-w-[640px] text-sm" :class="clipperProfile?.bio ? 'text-fg-muted' : 'italic text-fg-subtle'">
-              {{ clipperProfile?.bio || 'Add a bio to tell organizations about yourself' }}
-            </p>
-            <div v-if="clipperProfile?.specialty_tags?.length" class="flex flex-wrap gap-1">
-              <Badge v-for="tag in clipperProfile.specialty_tags.slice(0, 5)" :key="tag" variant="neutral" size="md">
-                {{ getSpecialtyTagLabel(tag) }}
-              </Badge>
-            </div>
-          </div>
+      <template v-if="isProfileConfigured" #toolbar>
+        <div class="-my-1 min-w-0 flex-1 overflow-x-auto py-1">
+          <SegmentedControl v-model="activeTab" :options="tabOptions" />
         </div>
+      </template>
 
-        <StatGrid size="sm" :items="profileStats" class="w-full max-w-[360px] shrink-0 self-center" />
-      </section>
+      <!-- Empty state (no profile yet) -->
+      <EmptyState
+        v-if="!isProfileConfigured"
+        :icon="UserCircle"
+        title="No clipper profile yet"
+        description="Set up your public profile to join campaigns, showcase your work and get discovered by organizations."
+      >
+        <Button variant="primary" @click="showOnboardingWizard = true">
+          <Plus />
+          Create profile
+        </Button>
+      </EmptyState>
 
-      <!-- Tab panels: keyed so each switch eases in instead of popping -->
-      <div :key="activeTab" class="flex animate-enter flex-col gap-4">
-      <!-- ── Leaderboard ─────────────────────────────────────────────── -->
-      <template v-if="activeTab === 'leaderboard'">
-        <StatGrid :count="3">
-          <StatCard
-            label="Your rank"
-            :value="myRank ? `#${myRank}` : '—'"
-            :icon="Trophy"
-            tone="brand"
-            :loading="loadingLeaderboard && !leaderboardEntries.length"
-          />
-          <StatCard
-            :label="leaderboardType === 'posts' ? 'Posts' : 'Clips'"
-            :value="leaderboardType === 'posts' ? myPostsCount : clipperProfile?.total_clips_delivered || 0"
-            :icon="leaderboardType === 'posts' ? BarChart3 : FileVideo"
-            :loading="loadingLeaderboard && !leaderboardEntries.length"
-          />
-          <StatCard
-            label="Views"
-            :value="formatViews(totalViews)"
-            :icon="Eye"
-            :loading="loadingLeaderboard && !leaderboardEntries.length"
-          />
-        </StatGrid>
-
-        <section class="rounded-xl border border-line-subtle bg-surface">
-          <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-subtle px-4 py-3">
-            <div class="mr-auto min-w-0">
-              <h2 class="text-sm font-semibold text-fg">Top clippers</h2>
-              <p class="text-xs text-fg-muted">Global performance rankings</p>
-            </div>
-            <SegmentedControl
-              :model-value="leaderboardType"
-              :options="leaderboardTypeOptions"
-              size="sm"
-              @update:model-value="switchLeaderboardType"
-            />
-            <SegmentedControl
-              :model-value="leaderboardPeriod"
-              :options="leaderboardPeriodOptions"
-              size="sm"
-              @update:model-value="switchLeaderboardPeriod"
-            />
-          </div>
-
-          <div v-if="loadingLeaderboard && !leaderboardEntries.length" class="flex flex-col gap-2 p-4">
-            <div v-for="i in 5" :key="i" class="skeleton h-9 w-full" />
-          </div>
-          <EmptyState v-else-if="leaderboardEntries.length === 0" size="sm" :icon="Trophy" title="No leaderboard data yet" />
-          <div v-else class="text-sm">
-            <div class="flex h-8 items-center gap-3 px-4 text-2xs font-medium uppercase tracking-[0.04em] text-fg-subtle">
-              <span class="w-6 text-center">#</span>
-              <span class="flex-1">Clipper</span>
-              <span class="w-16 text-right">{{ leaderboardType === 'posts' ? 'Posts' : 'Clips' }}</span>
-              <span v-if="leaderboardType === 'campaigns'" class="w-20 text-right">Campaigns</span>
-              <span class="w-16 text-right">Views</span>
-            </div>
-            <div
-              v-for="(entry, index) in leaderboardEntries"
-              :key="entry.id"
-              class="flex h-10 items-center gap-3 border-t border-line-subtle px-4"
-              :class="entry.profile?.user_id === currentUserId ? 'bg-brand-soft' : ''"
-            >
+      <div v-else class="flex flex-col gap-4 px-5 py-4">
+        <!-- ── Profile header ──────────────────────────────────────────── -->
+        <section class="flex flex-wrap items-start gap-x-6 gap-y-4 border-b border-line-subtle pb-4">
+          <div class="flex min-w-0 flex-[1_1_360px] items-start gap-4">
+            <div class="relative shrink-0">
+              <Avatar :src="clipperProfile?.avatar_url" :icon="UserCircle" size="lg" />
               <span
-                class="tabular w-6 text-center text-xs font-semibold"
-                :class="index < 3 ? 'text-fg' : 'text-fg-subtle'"
+                v-if="clipperProfile?.is_verified"
+                class="absolute -bottom-0.5 -right-0.5 grid size-5 place-items-center rounded-full bg-brand text-brand-fg ring-2 ring-panel"
+                title="Verified"
               >
-                {{ index + 1 }}
+                <Check class="size-3" :stroke-width="3" />
               </span>
-              <span class="flex min-w-0 flex-1 items-center gap-2.5">
-                <Avatar :src="entry.profile?.avatar_url" :icon="UserCircle" size="sm" />
-                <span class="truncate font-medium text-fg">{{ entry.profile?.display_name || 'Anonymous' }}</span>
-                <Badge v-if="entry.profile?.user_id === currentUserId" variant="brand">You</Badge>
-              </span>
-              <span class="tabular w-16 text-right text-fg-muted">
-                {{ leaderboardType === 'posts' ? entry.posts_count : entry.clips_delivered }}
-              </span>
-              <span v-if="leaderboardType === 'campaigns'" class="tabular w-20 text-right text-fg-muted">
-                {{ entry.campaigns_active }}
-              </span>
-              <span class="tabular w-16 text-right font-medium text-fg">{{ formatViews(entry.total_views || 0) }}</span>
             </div>
-          </div>
-        </section>
-      </template>
 
-      <!-- ── Accounts ────────────────────────────────────────────────── -->
-      <template v-if="activeTab === 'accounts'">
-        <div ref="socialAccountsSectionRef">
-          <SectionCard
-            title="Social accounts"
-            description="Connect accounts to post videos and track analytics"
-            :count="socialAccounts.length || undefined"
-            flush
-          >
-            <template #actions>
-              <Button variant="secondary" size="sm" @click="showPlatformSelectionDialog = true">
-                <Plus />
-                Connect account
-              </Button>
-            </template>
-
-            <div v-if="loadingSocialAccounts && !socialAccounts.length" class="flex flex-col gap-2 p-4">
-              <div v-for="i in 2" :key="i" class="skeleton h-12 w-full" />
-            </div>
-            <EmptyState
-              v-else-if="socialAccounts.length === 0"
-              size="sm"
-              :icon="Share2"
-              title="No social accounts connected"
-              description="Connect your social media accounts to post videos and track analytics."
-            >
-              <Button variant="secondary" size="sm" @click="showPlatformSelectionDialog = true">
-                <Plus />
-                Connect account
-              </Button>
-            </EmptyState>
-            <ul v-else class="divide-y divide-line-subtle">
-              <li v-for="account in socialAccounts" :key="account.id" class="group flex items-center gap-3 px-4 py-2.5">
-                <PlatformLogo :platform="account.platform" size="md" />
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-sm font-medium text-fg">@{{ account.username }}</p>
-                  <p class="truncate text-xs text-fg-subtle">
-                    {{ getPlatformName(account.platform) }}
-                    <template v-if="account.display_name"> · {{ account.display_name }}</template>
-                    <template v-if="account.connected_at"> · Connected {{ formatDate(account.connected_at) }}</template>
-                    <template v-if="isTokenExpiringSoonForAccount(account)">
-                      · <span class="text-warning">Token expiring soon</span>
-                    </template>
-                  </p>
-                </div>
-                <Badge v-if="needsTokenAttention(account)" variant="warning">Reconnect needed</Badge>
-                <div
-                  class="flex shrink-0 items-center gap-0.5 transition-opacity"
-                  :class="needsTokenAttention(account) ? '' : 'opacity-0 focus-within:opacity-100 group-hover:opacity-100'"
-                >
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    aria-label="Reconnect to refresh token"
-                    title="Reconnect to refresh token"
-                    :disabled="reconnectingAccountId === account.id"
-                    @click="reconnectSocialAccount(account)"
-                  >
-                    <Loader2 v-if="reconnectingAccountId === account.id" class="animate-spin" />
-                    <RefreshCw v-else />
-                  </Button>
-                  <Button variant="ghost" size="icon-sm" aria-label="View posts" title="View posts" @click="viewAccountPosts(account)">
-                    <Eye />
-                  </Button>
-                  <Button
-                    variant="ghost"
-                    size="icon-sm"
-                    class="hover:!bg-danger-soft hover:!text-danger"
-                    aria-label="Disconnect"
-                    title="Disconnect"
-                    @click="confirmDeleteSocialAccount(account)"
-                  >
-                    <Trash2 />
-                  </Button>
-                </div>
-              </li>
-            </ul>
-          </SectionCard>
-        </div>
-
-        <!-- Post cards are a collection grid: they sit on the panel, not inside another card -->
-        <section v-if="selectedAccountForPosts" class="flex flex-col gap-2.5">
-          <SectionHeader
-            :title="`Posts from @${selectedAccountForPosts.username}`"
-            description="Your published posts and analytics"
-          >
-            <Button variant="secondary" size="sm" @click="openPublishDialog">
-              <Upload />
-              Post video
-            </Button>
-          </SectionHeader>
-          <UserPostsList :key="selectedAccountForPosts.id" :account-id="selectedAccountForPosts.id" />
-        </section>
-      </template>
-
-      <!-- ── Payments ────────────────────────────────────────────────── -->
-      <template v-if="activeTab === 'payments'">
-        <SectionCard title="Payment methods" description="Where your campaign earnings are sent" flush>
-          <template #actions>
-            <Button variant="secondary" size="sm" @click="openAddPaymentMethod">
-              <Plus />
-              Add method
-            </Button>
-          </template>
-
-          <div v-if="loadingPaymentMethods && !paymentMethods.length" class="flex flex-col gap-2 p-4">
-            <div v-for="i in 2" :key="i" class="skeleton h-12 w-full" />
-          </div>
-          <EmptyState
-            v-else-if="paymentMethods.length === 0"
-            size="sm"
-            :icon="Wallet"
-            title="No payment methods added"
-            description="Add a payment method to receive your earnings from campaigns."
-          >
-            <Button variant="secondary" size="sm" @click="openAddPaymentMethod">
-              <Plus />
-              Add payment method
-            </Button>
-          </EmptyState>
-          <ul v-else class="divide-y divide-line-subtle">
-            <li v-for="method in paymentMethods" :key="method.id" class="group flex items-center gap-3 px-4 py-2.5">
-              <IconTile :icon="getPaymentMethodIcon(method.method_type)" size="md" />
-              <div class="min-w-0 flex-1">
-                <p class="flex items-center gap-2 text-sm font-medium text-fg">
-                  <span class="truncate">{{ getPaymentMethodDisplayName(method.method_type) }}</span>
-                  <Badge v-if="method.is_default" variant="brand">Default</Badge>
-                </p>
-                <p class="truncate text-xs text-fg-subtle">{{ maskPaymentDetails(method.method_type, method.details) }}</p>
-              </div>
-              <div class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100">
-                <Button v-if="!method.is_default" variant="ghost" size="xs" @click="setDefaultPaymentMethod(method)">
-                  Set default
-                </Button>
-                <Button variant="ghost" size="icon-sm" aria-label="Edit" title="Edit" @click="editPaymentMethod(method)">
-                  <Pencil />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  class="hover:!bg-danger-soft hover:!text-danger"
-                  aria-label="Delete"
-                  title="Delete"
-                  @click="confirmDeletePaymentMethod(method)"
-                >
-                  <Trash2 />
-                </Button>
-              </div>
-            </li>
-          </ul>
-        </SectionCard>
-      </template>
-
-      <!-- ── Campaigns ───────────────────────────────────────────────── -->
-      <template v-if="activeTab === 'campaigns'">
-        <StatGrid :count="4">
-          <StatCard
-            label="Total earned"
-            :value="`$${formatAmount(earningsSummary.total_earned)}`"
-            :icon="DollarSign"
-            tone="success"
-            :loading="loadingEarnings"
-          />
-          <StatCard
-            label="Pending"
-            :value="`$${formatAmount(earningsSummary.pending)}`"
-            :icon="Clock"
-            tone="warning"
-            :loading="loadingEarnings"
-          />
-          <StatCard label="Submissions" :value="earningsSummary.total_submissions" :icon="Upload" :loading="loadingEarnings" />
-          <StatCard
-            label="Verified"
-            :value="earningsSummary.verified_submissions"
-            :icon="CheckCircle"
-            tone="brand"
-            :loading="loadingEarnings"
-          />
-        </StatGrid>
-
-        <SectionCard title="Campaign history" description="Campaigns you've joined" flush>
-          <template #actions>
-            <Button variant="secondary" size="sm" @click="$router.push('/campaigns')">Browse campaigns</Button>
-          </template>
-
-          <div v-if="loadingCampaigns && !myCampaigns.length" class="flex flex-col gap-2 p-4">
-            <div v-for="i in 3" :key="i" class="skeleton h-11 w-full" />
-          </div>
-          <EmptyState
-            v-else-if="myCampaigns.length === 0"
-            size="sm"
-            :icon="Megaphone"
-            title="No campaigns yet"
-            description="Browse available campaigns and start earning."
-          >
-            <Button variant="secondary" size="sm" @click="$router.push('/campaigns')">Browse campaigns</Button>
-          </EmptyState>
-          <ul v-else class="divide-y divide-line-subtle">
-            <li v-for="campaign in myCampaigns" :key="campaign.id" class="flex items-center gap-3 px-4 py-2.5">
-              <div class="min-w-0 flex-1">
-                <p class="truncate text-sm font-medium text-fg">{{ campaign.title }}</p>
-                <router-link
-                  v-if="campaign.organization?.slug"
-                  :to="{ path: `/orgs/${campaign.organization.slug}`, query: { from: $route.fullPath } }"
-                  class="truncate text-xs text-fg-muted transition-colors hover:text-brand"
-                >
-                  {{ campaign.organization.name }}
-                </router-link>
-                <p v-else class="truncate text-xs text-fg-subtle">{{ campaign.organization?.name || 'Unknown' }}</p>
-              </div>
-              <Badge variant="outline" class="tabular">${{ formatCpm(campaign.cpm) }}/1K</Badge>
-              <Badge :variant="statusVariant(campaign.status)" class="capitalize">{{ campaign.status }}</Badge>
-              <span v-if="campaign.joined_at" class="tabular hidden w-24 shrink-0 text-right text-xs text-fg-subtle min-[900px]:block">
-                {{ formatDate(campaign.joined_at) }}
-              </span>
-            </li>
-          </ul>
-        </SectionCard>
-
-        <SectionCard title="My submissions" description="Your submitted clips and their status" flush>
-          <div v-if="loadingSubmissions && !mySubmissions.length" class="flex flex-col gap-2 p-4">
-            <div v-for="i in 3" :key="i" class="skeleton h-11 w-full" />
-          </div>
-          <EmptyState v-else-if="mySubmissions.length === 0" size="sm" :icon="Upload" title="No submissions yet" />
-          <ul v-else class="divide-y divide-line-subtle">
-            <li v-for="submission in mySubmissions" :key="submission.id" class="flex items-center gap-3 px-4 py-2.5">
-              <PlatformLogo :platform="submission.platform" size="md" />
-              <div class="min-w-0 flex-1">
-                <a
-                  v-if="submission.clip_url"
-                  :href="submission.clip_url"
-                  target="_blank"
-                  class="block truncate text-sm text-fg transition-colors hover:text-brand"
-                >
-                  {{ truncateUrl(submission.clip_url) }}
-                </a>
-                <span v-else class="block truncate text-sm text-fg-subtle">{{ truncateUrl(submission.clip_url) }}</span>
-                <p class="truncate text-xs text-fg-subtle">
-                  {{ submission.campaign?.title || 'Unknown' }} · {{ submission.view_count.toLocaleString() }} views
-                </p>
-              </div>
-              <Badge :variant="statusVariant(submission.status)" class="capitalize">{{ submission.status }}</Badge>
-              <span class="tabular hidden w-24 shrink-0 text-right text-xs text-fg-subtle min-[900px]:block">
-                {{ formatDate(submission.inserted_at) }}
-              </span>
-            </li>
-          </ul>
-        </SectionCard>
-      </template>
-
-      <!-- ── Posts ───────────────────────────────────────────────────── -->
-      <template v-if="activeTab === 'posts'">
-        <StatGrid :count="4">
-          <StatCard
-            label="Total posts"
-            :value="postsAnalytics?.total_posts || 0"
-            :icon="FileVideo"
-            :loading="loadingPosts && !postsAnalytics"
-          />
-          <StatCard
-            label="Total views"
-            :value="formatViews(postsAnalytics?.total_views || 0)"
-            :icon="Eye"
-            :loading="loadingPosts && !postsAnalytics"
-          />
-          <StatCard
-            label="Total likes"
-            :value="formatViews(postsAnalytics?.total_likes || 0)"
-            :icon="Heart"
-            :loading="loadingPosts && !postsAnalytics"
-          />
-          <StatCard
-            label="Total reach"
-            :value="formatViews(postsAnalytics?.total_reach || 0)"
-            :icon="TrendingUp"
-            :loading="loadingPosts && !postsAnalytics"
-          />
-        </StatGrid>
-
-        <!-- Post cards are a collection grid: they sit on the panel, not inside another card -->
-        <section class="flex flex-col gap-2.5">
-          <SectionHeader title="My posts" description="Posts published to your social media accounts">
-            <Button variant="ghost" size="sm" :disabled="loadingPosts" @click="loadPostsAnalytics">
-              <RefreshCw :class="{ 'animate-spin': loadingPosts }" />
-              Refresh
-            </Button>
-          </SectionHeader>
-
-          <div v-if="loadingPosts && !userPosts.length" class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
-            <div v-for="i in 3" :key="i" class="skeleton aspect-[4/3] w-full !rounded-xl" />
-          </div>
-          <EmptyState
-            v-else-if="userPosts.length === 0"
-            size="sm"
-            :icon="FileVideo"
-            title="No posts yet"
-            description="Publish your first video to see it here."
-          />
-          <div v-else class="grid animate-fade-in grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
-            <SocialPostCard v-for="post in userPosts" :key="post.id" :post="post" />
-          </div>
-        </section>
-      </template>
-
-      <!-- ── Hiring ──────────────────────────────────────────────────── -->
-      <template v-if="activeTab === 'hiring'">
-        <div v-if="loadingHiringPosts && !hiringPosts.length" class="flex flex-col gap-4" aria-busy="true">
-          <div class="skeleton h-[66px] w-full !rounded-xl" />
-          <div class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
-            <div v-for="i in 3" :key="i" class="skeleton h-44 w-full !rounded-xl" />
-          </div>
-        </div>
-        <template v-else>
-          <StatGrid :count="4">
-            <StatCard label="Applications" :value="myHiringApplications.length" :icon="Briefcase" />
-            <StatCard
-              label="Hired"
-              :value="myHiringApplications.filter((a) => a.status === 'accepted').length"
-              :icon="CheckCircle"
-              tone="success"
-            />
-            <StatCard
-              label="Pending"
-              :value="myHiringApplications.filter((a) => a.status === 'pending').length"
-              :icon="Clock"
-              tone="warning"
-            />
-            <StatCard label="Open positions" :value="hiringPosts.length" :icon="Megaphone" />
-          </StatGrid>
-
-          <SectionCard
-            v-if="myHiringApplications.length"
-            title="My applications"
-            description="Your submitted hiring applications"
-            :count="myHiringApplications.length"
-            flush
-          >
-            <ul class="divide-y divide-line-subtle">
-              <li v-for="app in myHiringApplications" :key="app.id" class="flex items-center gap-3 px-4 py-2.5">
-                <component
-                  :is="app.hiring_post?.organization?.slug ? 'router-link' : 'span'"
-                  :to="
-                    app.hiring_post?.organization?.slug
-                      ? { path: `/orgs/${app.hiring_post.organization.slug}`, query: { from: $route.fullPath } }
-                      : undefined
-                  "
-                  class="flex shrink-0"
-                >
-                  <Avatar :src="app.hiring_post?.organization?.logo_url" :icon="Building2" shape="square" size="md" />
-                </component>
-                <div class="min-w-0 flex-1">
-                  <p class="truncate text-sm font-medium text-fg">{{ app.hiring_post?.title }}</p>
-                  <router-link
-                    v-if="app.hiring_post?.organization?.slug"
-                    :to="{ path: `/orgs/${app.hiring_post.organization.slug}`, query: { from: $route.fullPath } }"
-                    class="truncate text-xs text-fg-muted transition-colors hover:text-brand"
-                  >
-                    {{ app.hiring_post.organization.name }}
-                  </router-link>
-                  <p v-else class="truncate text-xs text-fg-subtle">{{ app.hiring_post?.organization?.name || 'Organization' }}</p>
-                </div>
-                <Badge :variant="statusVariant(app.status)" class="capitalize">
-                  {{ app.status === 'accepted' ? 'Hired' : app.status }}
+            <div class="flex min-w-0 flex-1 flex-col gap-1.5">
+              <div class="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
+                <h2 class="truncate text-base font-semibold text-fg">
+                  {{ clipperProfile?.display_name || 'Set up your profile' }}
+                </h2>
+                <Badge v-if="clipperProfile?.looking_for_work" variant="success">
+                  <span class="size-1.5 rounded-full bg-success" />
+                  Available for work
                 </Badge>
-              </li>
-            </ul>
-          </SectionCard>
+                <Badge v-if="clipperProfile?.is_affiliate" variant="neutral">
+                  <Handshake />
+                  Affiliate
+                </Badge>
+                <Badge v-if="clipperProfile && !clipperProfile.is_public" variant="outline">
+                  <EyeOff />
+                  Private
+                </Badge>
+              </div>
+              <div class="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-xs text-fg-subtle">
+                <span v-if="clipperProfile?.slug" class="truncate">/clippers/{{ clipperProfile.slug }}</span>
+                <span v-if="clipperProfile?.user?.last_active_at" class="inline-flex items-center gap-1">
+                  <Clock class="size-3" />
+                  {{ formatLastActive(clipperProfile.user.last_active_at) }}
+                </span>
+              </div>
+              <p class="max-w-[640px] text-sm" :class="clipperProfile?.bio ? 'text-fg-muted' : 'italic text-fg-subtle'">
+                {{ clipperProfile?.bio || 'Add a bio to tell organizations about yourself' }}
+              </p>
+              <div v-if="clipperProfile?.specialty_tags?.length" class="flex flex-wrap gap-1">
+                <Badge v-for="tag in clipperProfile.specialty_tags.slice(0, 5)" :key="tag" variant="neutral" size="md">
+                  {{ getSpecialtyTagLabel(tag) }}
+                </Badge>
+              </div>
+            </div>
+          </div>
 
-          <!-- Position cards are a collection grid: they sit on the panel, not inside another card -->
-          <section class="flex flex-col gap-2.5">
-            <SectionHeader title="Companies hiring" description="Browse open positions from organizations">
-              <CustomDropdown
-                class="w-48"
-                :model-value="hiringFilters.payment_type"
-                :options="hiringPaymentTypeOptions"
-                placeholder="All payment types"
-                size="sm"
-                @update:model-value="
-                  (v: string) => {
-                    hiringFilters.payment_type = v;
-                    loadHiringPosts();
-                  }
-                "
+          <StatGrid size="sm" :items="profileStats" class="w-full max-w-[360px] shrink-0 self-center" />
+        </section>
+
+        <!-- Tab panels: keyed so each switch eases in instead of popping -->
+        <div :key="activeTab" class="flex animate-enter flex-col gap-4">
+          <!-- ── Leaderboard ─────────────────────────────────────────────── -->
+          <template v-if="activeTab === 'leaderboard'">
+            <StatGrid :count="3">
+              <StatCard
+                label="Your rank"
+                :value="myRank ? `#${myRank}` : '—'"
+                :icon="Trophy"
+                tone="brand"
+                :loading="loadingLeaderboard && !leaderboardEntries.length"
               />
-            </SectionHeader>
+              <StatCard
+                :label="leaderboardType === 'posts' ? 'Posts' : 'Clips'"
+                :value="leaderboardType === 'posts' ? myPostsCount : clipperProfile?.total_clips_delivered || 0"
+                :icon="leaderboardType === 'posts' ? BarChart3 : FileVideo"
+                :loading="loadingLeaderboard && !leaderboardEntries.length"
+              />
+              <StatCard
+                label="Views"
+                :value="formatViews(totalViews)"
+                :icon="Eye"
+                :loading="loadingLeaderboard && !leaderboardEntries.length"
+              />
+            </StatGrid>
 
-            <EmptyState
-              v-if="!hiringPosts.length"
-              size="sm"
-              :icon="Briefcase"
-              title="No open positions"
-              description="No organizations are currently hiring. Check back later."
-            />
-            <div v-else class="grid animate-fade-in grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
-              <article
-                v-for="post in hiringPosts"
-                :key="post.id"
-                class="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line-subtle bg-surface p-4"
-              >
-                <div class="flex items-center gap-3">
-                  <component
-                    :is="post.organization?.slug ? 'router-link' : 'span'"
-                    :to="post.organization?.slug ? { path: `/orgs/${post.organization.slug}`, query: { from: $route.fullPath } } : undefined"
-                    class="flex shrink-0"
+            <section class="rounded-xl border border-line-subtle bg-surface">
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line-subtle px-4 py-3">
+                <div class="mr-auto min-w-0">
+                  <h2 class="text-sm font-semibold text-fg">Top clippers</h2>
+                  <p class="text-xs text-fg-muted">Global performance rankings</p>
+                </div>
+                <SegmentedControl
+                  :model-value="leaderboardType"
+                  :options="leaderboardTypeOptions"
+                  size="sm"
+                  @update:model-value="switchLeaderboardType"
+                />
+                <SegmentedControl
+                  :model-value="leaderboardPeriod"
+                  :options="leaderboardPeriodOptions"
+                  size="sm"
+                  @update:model-value="switchLeaderboardPeriod"
+                />
+              </div>
+
+              <div v-if="loadingLeaderboard && !leaderboardEntries.length" class="flex flex-col gap-2 p-4">
+                <div v-for="i in 5" :key="i" class="skeleton h-9 w-full" />
+              </div>
+              <EmptyState
+                v-else-if="leaderboardEntries.length === 0"
+                size="sm"
+                :icon="Trophy"
+                title="No leaderboard data yet"
+              />
+              <div v-else class="text-sm">
+                <div
+                  class="flex h-8 items-center gap-3 px-4 text-2xs font-medium uppercase tracking-[0.04em] text-fg-subtle"
+                >
+                  <span class="w-6 text-center">#</span>
+                  <span class="flex-1">Clipper</span>
+                  <span class="w-16 text-right">{{ leaderboardType === 'posts' ? 'Posts' : 'Clips' }}</span>
+                  <span v-if="leaderboardType === 'campaigns'" class="w-20 text-right">Campaigns</span>
+                  <span class="w-16 text-right">Views</span>
+                </div>
+                <div
+                  v-for="(entry, index) in leaderboardEntries"
+                  :key="entry.id"
+                  class="flex h-10 items-center gap-3 border-t border-line-subtle px-4"
+                  :class="entry.profile?.user_id === currentUserId ? 'bg-brand-soft' : ''"
+                >
+                  <span
+                    class="tabular w-6 text-center text-xs font-semibold"
+                    :class="index < 3 ? 'text-fg' : 'text-fg-subtle'"
                   >
-                    <Avatar :src="post.organization?.logo_url" :icon="Building2" shape="square" size="md" />
-                  </component>
-                  <div class="min-w-0 flex-1">
-                    <h3 class="truncate text-sm font-semibold text-fg" :title="post.title">{{ post.title }}</h3>
-                    <p class="flex min-w-0 items-center gap-1 text-xs text-fg-muted">
-                      <router-link
-                        v-if="post.organization?.slug"
-                        :to="{ path: `/orgs/${post.organization.slug}`, query: { from: $route.fullPath } }"
-                        class="truncate transition-colors hover:text-brand"
+                    {{ index + 1 }}
+                  </span>
+                  <span class="flex min-w-0 flex-1 items-center gap-2.5">
+                    <Avatar :src="entry.profile?.avatar_url" :icon="UserCircle" size="sm" />
+                    <span class="truncate font-medium text-fg">{{ entry.profile?.display_name || 'Anonymous' }}</span>
+                    <Badge v-if="entry.profile?.user_id === currentUserId" variant="brand">You</Badge>
+                  </span>
+                  <span class="tabular w-16 text-right text-fg-muted">
+                    {{ leaderboardType === 'posts' ? entry.posts_count : entry.clips_delivered }}
+                  </span>
+                  <span v-if="leaderboardType === 'campaigns'" class="tabular w-20 text-right text-fg-muted">
+                    {{ entry.campaigns_active }}
+                  </span>
+                  <span class="tabular w-16 text-right font-medium text-fg">
+                    {{ formatViews(entry.total_views || 0) }}
+                  </span>
+                </div>
+              </div>
+            </section>
+          </template>
+
+          <!-- ── Accounts ────────────────────────────────────────────────── -->
+          <template v-if="activeTab === 'accounts'">
+            <div ref="socialAccountsSectionRef">
+              <SectionCard
+                title="Social accounts"
+                description="Connect accounts to post videos and track analytics"
+                :count="socialAccounts.length || undefined"
+                flush
+              >
+                <template #actions>
+                  <Button variant="secondary" size="sm" @click="showPlatformSelectionDialog = true">
+                    <Plus />
+                    Connect account
+                  </Button>
+                </template>
+
+                <div v-if="loadingSocialAccounts && !socialAccounts.length" class="flex flex-col gap-2 p-4">
+                  <div v-for="i in 2" :key="i" class="skeleton h-12 w-full" />
+                </div>
+                <EmptyState
+                  v-else-if="socialAccounts.length === 0"
+                  size="sm"
+                  :icon="Share2"
+                  title="No social accounts connected"
+                  description="Connect your social media accounts to post videos and track analytics."
+                >
+                  <Button variant="secondary" size="sm" @click="showPlatformSelectionDialog = true">
+                    <Plus />
+                    Connect account
+                  </Button>
+                </EmptyState>
+                <ul v-else class="divide-y divide-line-subtle">
+                  <li
+                    v-for="account in socialAccounts"
+                    :key="account.id"
+                    class="group flex items-center gap-3 px-4 py-2.5"
+                  >
+                    <PlatformLogo :platform="account.platform" size="md" />
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-sm font-medium text-fg">@{{ account.username }}</p>
+                      <p class="truncate text-xs text-fg-subtle">
+                        {{ getPlatformName(account.platform) }}
+                        <template v-if="account.display_name">· {{ account.display_name }}</template>
+                        <template v-if="account.connected_at">
+                          · Connected {{ formatDate(account.connected_at) }}
+                        </template>
+                        <template v-if="isTokenExpiringSoonForAccount(account)">
+                          ·
+                          <span class="text-warning">Token expiring soon</span>
+                        </template>
+                      </p>
+                    </div>
+                    <Badge v-if="needsTokenAttention(account)" variant="warning">Reconnect needed</Badge>
+                    <div
+                      class="flex shrink-0 items-center gap-0.5 transition-opacity"
+                      :class="
+                        needsTokenAttention(account) ? '' : 'opacity-0 focus-within:opacity-100 group-hover:opacity-100'
+                      "
+                    >
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="Reconnect to refresh token"
+                        title="Reconnect to refresh token"
+                        :disabled="reconnectingAccountId === account.id"
+                        @click="reconnectSocialAccount(account)"
                       >
-                        {{ post.organization.name }}
-                      </router-link>
-                      <span v-else class="truncate">{{ post.organization?.name }}</span>
-                      <span v-if="post.clipper_slots" class="tabular shrink-0 text-fg-subtle">
-                        · {{ post.clipper_slots_filled }}/{{ post.clipper_slots }} clippers
-                      </span>
+                        <Loader2 v-if="reconnectingAccountId === account.id" class="animate-spin" />
+                        <RefreshCw v-else />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        aria-label="View posts"
+                        title="View posts"
+                        @click="viewAccountPosts(account)"
+                      >
+                        <Eye />
+                      </Button>
+                      <Button
+                        variant="ghost"
+                        size="icon-sm"
+                        class="hover:!bg-danger-soft hover:!text-danger"
+                        aria-label="Disconnect"
+                        title="Disconnect"
+                        @click="confirmDeleteSocialAccount(account)"
+                      >
+                        <Trash2 />
+                      </Button>
+                    </div>
+                  </li>
+                </ul>
+              </SectionCard>
+            </div>
+
+            <!-- Post cards are a collection grid: they sit on the panel, not inside another card -->
+            <section v-if="selectedAccountForPosts" class="flex flex-col gap-2.5">
+              <SectionHeader
+                :title="`Posts from @${selectedAccountForPosts.username}`"
+                description="Your published posts and analytics"
+              >
+                <Button variant="secondary" size="sm" @click="openPublishDialog">
+                  <Upload />
+                  Post video
+                </Button>
+              </SectionHeader>
+              <UserPostsList :key="selectedAccountForPosts.id" :account-id="selectedAccountForPosts.id" />
+            </section>
+          </template>
+
+          <!-- ── Payments ────────────────────────────────────────────────── -->
+          <template v-if="activeTab === 'payments'">
+            <SectionCard title="Payment methods" description="Where your campaign earnings are sent" flush>
+              <template #actions>
+                <Button variant="secondary" size="sm" @click="openAddPaymentMethod">
+                  <Plus />
+                  Add method
+                </Button>
+              </template>
+
+              <div v-if="loadingPaymentMethods && !paymentMethods.length" class="flex flex-col gap-2 p-4">
+                <div v-for="i in 2" :key="i" class="skeleton h-12 w-full" />
+              </div>
+              <EmptyState
+                v-else-if="paymentMethods.length === 0"
+                size="sm"
+                :icon="Wallet"
+                title="No payment methods added"
+                description="Add a payment method to receive your earnings from campaigns."
+              >
+                <Button variant="secondary" size="sm" @click="openAddPaymentMethod">
+                  <Plus />
+                  Add payment method
+                </Button>
+              </EmptyState>
+              <ul v-else class="divide-y divide-line-subtle">
+                <li v-for="method in paymentMethods" :key="method.id" class="group flex items-center gap-3 px-4 py-2.5">
+                  <IconTile :icon="getPaymentMethodIcon(method.method_type)" size="md" />
+                  <div class="min-w-0 flex-1">
+                    <p class="flex items-center gap-2 text-sm font-medium text-fg">
+                      <span class="truncate">{{ getPaymentMethodDisplayName(method.method_type) }}</span>
+                      <Badge v-if="method.is_default" variant="brand">Default</Badge>
+                    </p>
+                    <p class="truncate text-xs text-fg-subtle">
+                      {{ maskPaymentDetails(method.method_type, method.details) }}
                     </p>
                   </div>
-                </div>
-
-                <p v-if="post.description" class="line-clamp-2 text-xs text-fg-muted">{{ post.description }}</p>
-
-                <div class="flex flex-wrap gap-1">
-                  <Badge v-if="post.experience_level" variant="neutral">
-                    {{ getExperienceLevelLabel(post.experience_level) }}+
-                  </Badge>
-                  <Badge v-for="t in (post.content_types || []).slice(0, 4)" :key="`c-${t}`" variant="outline">
-                    {{ getSpecialtyTagLabel(t) }}
-                  </Badge>
-                  <Badge v-for="p in post.platforms || []" :key="`p-${p}`" variant="outline">
-                    {{ getHiringPlatformLabel(p) }}
-                  </Badge>
-                </div>
-
-                <div class="mt-auto flex items-center gap-2 border-t border-line-subtle pt-2.5">
-                  <p
-                    class="min-w-0 flex-1 truncate text-xs font-medium text-fg"
-                    :title="post.payment_type ? `${getHiringPaymentTypeLabel(post.payment_type)}${post.payment_details ? `: ${post.payment_details}` : ''}` : undefined"
+                  <div
+                    class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity focus-within:opacity-100 group-hover:opacity-100"
                   >
-                    <template v-if="post.payment_type">
-                      {{ getHiringPaymentTypeLabel(post.payment_type) }}{{ post.payment_details ? `: ${post.payment_details}` : '' }}
-                    </template>
-                  </p>
-                  <Button
-                    :variant="post.has_applied ? 'subtle' : 'secondary'"
-                    size="sm"
-                    :disabled="post.has_applied || applyingTo === post.id"
-                    :loading="applyingTo === post.id"
-                    @click="openApplyDialog(post)"
-                  >
-                    <Check v-if="post.has_applied" />
-                    {{ post.has_applied ? 'Applied' : 'Apply' }}
-                  </Button>
-                </div>
-              </article>
-            </div>
-          </section>
-        </template>
-      </template>
+                    <Button
+                      v-if="!method.is_default"
+                      variant="ghost"
+                      size="xs"
+                      @click="setDefaultPaymentMethod(method)"
+                    >
+                      Set default
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      aria-label="Edit"
+                      title="Edit"
+                      @click="editPaymentMethod(method)"
+                    >
+                      <Pencil />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      class="hover:!bg-danger-soft hover:!text-danger"
+                      aria-label="Delete"
+                      title="Delete"
+                      @click="confirmDeletePaymentMethod(method)"
+                    >
+                      <Trash2 />
+                    </Button>
+                  </div>
+                </li>
+              </ul>
+            </SectionCard>
+          </template>
 
-      <!-- ── Affiliate ───────────────────────────────────────────────── -->
-      <template v-if="activeTab === 'affiliate'">
-        <div v-if="loadingAffiliate && !affiliateDashboard" class="flex flex-col gap-4" aria-busy="true">
-          <div class="skeleton h-9 w-full max-w-[420px]" />
-          <div v-for="i in 2" :key="i" class="skeleton h-[66px] w-full !rounded-xl" />
-          <div class="skeleton h-40 w-full !rounded-xl" />
-        </div>
-        <template v-else-if="affiliateInfo && affiliateDashboard">
-          <!-- Referral code: a heading row on the panel, not a card -->
-          <section class="flex flex-wrap items-center gap-x-3 gap-y-2">
-            <div class="min-w-0 flex-1">
-              <p class="flex items-center gap-2 text-sm font-semibold text-fg">
-                Your referral code
-                <Badge :variant="statusVariant(affiliateInfo.status)" class="capitalize">{{ affiliateInfo.status }}</Badge>
-              </p>
-              <p class="text-xs text-fg-muted">Share it — you earn a commission on every referred subscription.</p>
-            </div>
-            <div class="flex items-center gap-2">
-              <code
-                class="flex h-[var(--control-sm)] items-center rounded-[var(--radius-control)] border border-line bg-surface-sunken px-2.5 font-mono text-sm tracking-wide text-fg"
+          <!-- ── Campaigns ───────────────────────────────────────────────── -->
+          <template v-if="activeTab === 'campaigns'">
+            <StatGrid :count="4">
+              <StatCard
+                label="Total earned"
+                :value="`$${formatAmount(earningsSummary.total_earned)}`"
+                :icon="DollarSign"
+                tone="success"
+                :loading="loadingEarnings"
+              />
+              <StatCard
+                label="Pending"
+                :value="`$${formatAmount(earningsSummary.pending)}`"
+                :icon="Clock"
+                tone="warning"
+                :loading="loadingEarnings"
+              />
+              <StatCard
+                label="Submissions"
+                :value="earningsSummary.total_submissions"
+                :icon="Upload"
+                :loading="loadingEarnings"
+              />
+              <StatCard
+                label="Verified"
+                :value="earningsSummary.verified_submissions"
+                :icon="CheckCircle"
+                tone="brand"
+                :loading="loadingEarnings"
+              />
+            </StatGrid>
+
+            <SectionCard title="Campaign history" description="Campaigns you've joined" flush>
+              <template #actions>
+                <Button variant="secondary" size="sm" @click="$router.push('/campaigns')">Browse campaigns</Button>
+              </template>
+
+              <div v-if="loadingCampaigns && !myCampaigns.length" class="flex flex-col gap-2 p-4">
+                <div v-for="i in 3" :key="i" class="skeleton h-11 w-full" />
+              </div>
+              <EmptyState
+                v-else-if="myCampaigns.length === 0"
+                size="sm"
+                :icon="Megaphone"
+                title="No campaigns yet"
+                description="Browse available campaigns and start earning."
               >
-                {{ affiliateInfo.referral_code }}
-              </code>
-              <Button variant="secondary" size="sm" @click="copyAffiliateCode">
-                <Check v-if="affCopied" class="text-success" />
-                <Copy v-else />
-                {{ affCopied ? 'Copied' : 'Copy' }}
-              </Button>
-            </div>
-          </section>
+                <Button variant="secondary" size="sm" @click="$router.push('/campaigns')">Browse campaigns</Button>
+              </EmptyState>
+              <ul v-else class="divide-y divide-line-subtle">
+                <li v-for="campaign in myCampaigns" :key="campaign.id" class="flex items-center gap-3 px-4 py-2.5">
+                  <div class="min-w-0 flex-1">
+                    <p class="truncate text-sm font-medium text-fg">{{ campaign.title }}</p>
+                    <router-link
+                      v-if="campaign.organization?.slug"
+                      :to="{ path: `/orgs/${campaign.organization.slug}`, query: { from: $route.fullPath } }"
+                      class="truncate text-xs text-fg-muted transition-colors hover:text-brand"
+                    >
+                      {{ campaign.organization.name }}
+                    </router-link>
+                    <p v-else class="truncate text-xs text-fg-subtle">{{ campaign.organization?.name || 'Unknown' }}</p>
+                  </div>
+                  <Badge variant="outline" class="tabular">${{ formatCpm(campaign.cpm) }}/1K</Badge>
+                  <Badge :variant="statusVariant(campaign.status)" class="capitalize">{{ campaign.status }}</Badge>
+                  <span
+                    v-if="campaign.joined_at"
+                    class="tabular hidden w-24 shrink-0 text-right text-xs text-fg-subtle min-[900px]:block"
+                  >
+                    {{ formatDate(campaign.joined_at) }}
+                  </span>
+                </li>
+              </ul>
+            </SectionCard>
 
-          <StatGrid v-if="affiliateDashboard.breakdown" :count="3">
-            <StatCard label="First-time sign-ups" :value="affiliateDashboard.breakdown.first_subscription?.count || 0" :icon="UserPlus" />
-            <StatCard label="Recurring sign-ups" :value="affiliateDashboard.breakdown.recurring?.count || 0" :icon="RefreshCw" />
-            <StatCard label="Total sign-ups" :value="getAffiliateTotalSignups()" :icon="TrendingUp" tone="brand" />
-          </StatGrid>
+            <SectionCard title="My submissions" description="Your submitted clips and their status" flush>
+              <div v-if="loadingSubmissions && !mySubmissions.length" class="flex flex-col gap-2 p-4">
+                <div v-for="i in 3" :key="i" class="skeleton h-11 w-full" />
+              </div>
+              <EmptyState v-else-if="mySubmissions.length === 0" size="sm" :icon="Upload" title="No submissions yet" />
+              <ul v-else class="divide-y divide-line-subtle">
+                <li
+                  v-for="submission in mySubmissions"
+                  :key="submission.id"
+                  class="flex items-center gap-3 px-4 py-2.5"
+                >
+                  <PlatformLogo :platform="submission.platform" size="md" />
+                  <div class="min-w-0 flex-1">
+                    <a
+                      v-if="submission.clip_url"
+                      :href="submission.clip_url"
+                      target="_blank"
+                      class="block truncate text-sm text-fg transition-colors hover:text-brand"
+                    >
+                      {{ truncateUrl(submission.clip_url) }}
+                    </a>
+                    <span v-else class="block truncate text-sm text-fg-subtle">
+                      {{ truncateUrl(submission.clip_url) }}
+                    </span>
+                    <p class="truncate text-xs text-fg-subtle">
+                      {{ submission.campaign?.title || 'Unknown' }} · {{ submission.view_count.toLocaleString() }} views
+                    </p>
+                  </div>
+                  <Badge :variant="statusVariant(submission.status)" class="capitalize">{{ submission.status }}</Badge>
+                  <span class="tabular hidden w-24 shrink-0 text-right text-xs text-fg-subtle min-[900px]:block">
+                    {{ formatDate(submission.inserted_at) }}
+                  </span>
+                </li>
+              </ul>
+            </SectionCard>
+          </template>
 
-          <StatGrid :count="4">
-            <StatCard label="This month" :value="`$${affiliateDashboard.this_month.total.toFixed(2)}`" :icon="DollarSign" tone="success" />
-            <StatCard label="Last 3 months" :value="`$${affiliateDashboard.three_months.total.toFixed(2)}`" :icon="BarChart3" />
-            <StatCard label="Year to date" :value="`$${affiliateDashboard.ytd.total.toFixed(2)}`" :icon="TrendingUp" />
-            <StatCard label="All time" :value="`$${affiliateDashboard.all_time.total.toFixed(2)}`" :icon="Wallet" />
-          </StatGrid>
+          <!-- ── Posts ───────────────────────────────────────────────────── -->
+          <template v-if="activeTab === 'posts'">
+            <StatGrid :count="4">
+              <StatCard
+                label="Total posts"
+                :value="postsAnalytics?.total_posts || 0"
+                :icon="FileVideo"
+                :loading="loadingPosts && !postsAnalytics"
+              />
+              <StatCard
+                label="Total views"
+                :value="formatViews(postsAnalytics?.total_views || 0)"
+                :icon="Eye"
+                :loading="loadingPosts && !postsAnalytics"
+              />
+              <StatCard
+                label="Total likes"
+                :value="formatViews(postsAnalytics?.total_likes || 0)"
+                :icon="Heart"
+                :loading="loadingPosts && !postsAnalytics"
+              />
+              <StatCard
+                label="Total reach"
+                :value="formatViews(postsAnalytics?.total_reach || 0)"
+                :icon="TrendingUp"
+                :loading="loadingPosts && !postsAnalytics"
+              />
+            </StatGrid>
 
-          <SectionCard title="Recent referrals" description="Commission earned from referred users" flush>
-            <EmptyState
-              v-if="affiliateReferrals.length === 0"
-              size="sm"
-              :icon="Handshake"
-              title="No referrals yet"
-              description="Share your code to start earning commissions."
-            />
-            <div v-else class="overflow-x-auto">
-              <table class="w-full text-left text-sm">
-                <thead>
-                  <tr class="text-2xs font-medium uppercase tracking-[0.04em] text-fg-subtle">
-                    <th class="h-8 px-4 font-medium">Date</th>
-                    <th class="h-8 px-4 font-medium">Type</th>
-                    <th class="h-8 px-4 text-right font-medium">Amount</th>
-                    <th class="h-8 px-4 text-right font-medium">Commission</th>
-                    <th class="h-8 px-4 font-medium">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  <tr v-for="r in affiliateReferrals" :key="r.id" class="border-t border-line-subtle">
-                    <td class="tabular h-10 whitespace-nowrap px-4 text-fg-muted">{{ formatDate(r.inserted_at) }}</td>
-                    <td class="h-10 px-4"><Badge variant="neutral">{{ formatAffEventType(r.event_type) }}</Badge></td>
-                    <td class="tabular h-10 px-4 text-right text-fg">${{ r.amount_usd.toFixed(2) }}</td>
-                    <td class="tabular h-10 px-4 text-right font-medium text-success">${{ r.commission_usd.toFixed(2) }}</td>
-                    <td class="h-10 px-4"><Badge :variant="statusVariant(r.status)" class="capitalize">{{ r.status }}</Badge></td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
-          </SectionCard>
-
-          <SectionCard title="Payout settings" description="How you receive commissions" flush>
-            <div class="flex max-w-md flex-col gap-4 p-4">
-              <Field label="Payout method">
-                <CustomDropdown v-model="affSettingsForm.payout_method" :options="payoutMethodOptions" placeholder="Select method…" />
-              </Field>
-              <Field v-if="affSettingsForm.payout_method === 'crypto'" label="Solana USDC address">
-                <Input v-model="affSettingsForm.solana_usdc_address" placeholder="Enter your Solana USDC address" />
-              </Field>
-              <Field v-if="affSettingsForm.payout_method === 'paypal'" label="PayPal email">
-                <Input v-model="affSettingsForm.paypal_email" type="email" placeholder="Enter your PayPal email" />
-              </Field>
-              <div>
-                <Button variant="primary" size="sm" :loading="savingAffSettings" @click="saveAffiliateSettings">
-                  Save settings
+            <!-- Post cards are a collection grid: they sit on the panel, not inside another card -->
+            <section class="flex flex-col gap-2.5">
+              <SectionHeader title="My posts" description="Posts published to your social media accounts">
+                <Button variant="ghost" size="sm" :disabled="loadingPosts" @click="loadPostsAnalytics">
+                  <RefreshCw :class="{ 'animate-spin': loadingPosts }" />
+                  Refresh
                 </Button>
+              </SectionHeader>
+
+              <div
+                v-if="loadingPosts && !userPosts.length"
+                class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3"
+              >
+                <div v-for="i in 3" :key="i" class="skeleton aspect-[4/3] w-full !rounded-xl" />
+              </div>
+              <EmptyState
+                v-else-if="userPosts.length === 0"
+                size="sm"
+                :icon="FileVideo"
+                title="No posts yet"
+                description="Publish your first video to see it here."
+              />
+              <div v-else class="grid animate-fade-in grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-3">
+                <SocialPostCard v-for="post in userPosts" :key="post.id" :post="post" />
+              </div>
+            </section>
+          </template>
+
+          <!-- ── Hiring ──────────────────────────────────────────────────── -->
+          <template v-if="activeTab === 'hiring'">
+            <div v-if="loadingHiringPosts && !hiringPosts.length" class="flex flex-col gap-4" aria-busy="true">
+              <div class="skeleton h-[66px] w-full !rounded-xl" />
+              <div class="grid grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+                <div v-for="i in 3" :key="i" class="skeleton h-44 w-full !rounded-xl" />
               </div>
             </div>
-          </SectionCard>
-        </template>
-      </template>
+            <template v-else>
+              <StatGrid :count="4">
+                <StatCard label="Applications" :value="myHiringApplications.length" :icon="Briefcase" />
+                <StatCard
+                  label="Hired"
+                  :value="myHiringApplications.filter((a) => a.status === 'accepted').length"
+                  :icon="CheckCircle"
+                  tone="success"
+                />
+                <StatCard
+                  label="Pending"
+                  :value="myHiringApplications.filter((a) => a.status === 'pending').length"
+                  :icon="Clock"
+                  tone="warning"
+                />
+                <StatCard label="Open positions" :value="hiringPosts.length" :icon="Megaphone" />
+              </StatGrid>
+
+              <SectionCard
+                v-if="myHiringApplications.length"
+                title="My applications"
+                description="Your submitted hiring applications"
+                :count="myHiringApplications.length"
+                flush
+              >
+                <ul class="divide-y divide-line-subtle">
+                  <li v-for="app in myHiringApplications" :key="app.id" class="flex items-center gap-3 px-4 py-2.5">
+                    <component
+                      :is="app.hiring_post?.organization?.slug ? 'router-link' : 'span'"
+                      :to="
+                        app.hiring_post?.organization?.slug
+                          ? { path: `/orgs/${app.hiring_post.organization.slug}`, query: { from: $route.fullPath } }
+                          : undefined
+                      "
+                      class="flex shrink-0"
+                    >
+                      <Avatar
+                        :src="app.hiring_post?.organization?.logo_url"
+                        :icon="Building2"
+                        shape="square"
+                        size="md"
+                      />
+                    </component>
+                    <div class="min-w-0 flex-1">
+                      <p class="truncate text-sm font-medium text-fg">{{ app.hiring_post?.title }}</p>
+                      <router-link
+                        v-if="app.hiring_post?.organization?.slug"
+                        :to="{ path: `/orgs/${app.hiring_post.organization.slug}`, query: { from: $route.fullPath } }"
+                        class="truncate text-xs text-fg-muted transition-colors hover:text-brand"
+                      >
+                        {{ app.hiring_post.organization.name }}
+                      </router-link>
+                      <p v-else class="truncate text-xs text-fg-subtle">
+                        {{ app.hiring_post?.organization?.name || 'Organization' }}
+                      </p>
+                    </div>
+                    <Badge :variant="statusVariant(app.status)" class="capitalize">
+                      {{ app.status === 'accepted' ? 'Hired' : app.status }}
+                    </Badge>
+                  </li>
+                </ul>
+              </SectionCard>
+
+              <!-- Position cards are a collection grid: they sit on the panel, not inside another card -->
+              <section class="flex flex-col gap-2.5">
+                <SectionHeader title="Companies hiring" description="Browse open positions from organizations">
+                  <CustomDropdown
+                    class="w-48"
+                    :model-value="hiringFilters.payment_type"
+                    :options="hiringPaymentTypeOptions"
+                    placeholder="All payment types"
+                    size="sm"
+                    @update:model-value="
+                      (v: string) => {
+                        hiringFilters.payment_type = v;
+                        loadHiringPosts();
+                      }
+                    "
+                  />
+                </SectionHeader>
+
+                <EmptyState
+                  v-if="!hiringPosts.length"
+                  size="sm"
+                  :icon="Briefcase"
+                  title="No open positions"
+                  description="No organizations are currently hiring. Check back later."
+                />
+                <div v-else class="grid animate-fade-in grid-cols-[repeat(auto-fill,minmax(280px,1fr))] gap-3">
+                  <article
+                    v-for="post in hiringPosts"
+                    :key="post.id"
+                    class="flex min-w-0 flex-col gap-2.5 rounded-xl border border-line-subtle bg-surface p-4"
+                  >
+                    <div class="flex items-center gap-3">
+                      <component
+                        :is="post.organization?.slug ? 'router-link' : 'span'"
+                        :to="
+                          post.organization?.slug
+                            ? { path: `/orgs/${post.organization.slug}`, query: { from: $route.fullPath } }
+                            : undefined
+                        "
+                        class="flex shrink-0"
+                      >
+                        <Avatar :src="post.organization?.logo_url" :icon="Building2" shape="square" size="md" />
+                      </component>
+                      <div class="min-w-0 flex-1">
+                        <h3 class="truncate text-sm font-semibold text-fg" :title="post.title">{{ post.title }}</h3>
+                        <p class="flex min-w-0 items-center gap-1 text-xs text-fg-muted">
+                          <router-link
+                            v-if="post.organization?.slug"
+                            :to="{ path: `/orgs/${post.organization.slug}`, query: { from: $route.fullPath } }"
+                            class="truncate transition-colors hover:text-brand"
+                          >
+                            {{ post.organization.name }}
+                          </router-link>
+                          <span v-else class="truncate">{{ post.organization?.name }}</span>
+                          <span v-if="post.clipper_slots" class="tabular shrink-0 text-fg-subtle">
+                            · {{ post.clipper_slots_filled }}/{{ post.clipper_slots }} clippers
+                          </span>
+                        </p>
+                      </div>
+                    </div>
+
+                    <p v-if="post.description" class="line-clamp-2 text-xs text-fg-muted">{{ post.description }}</p>
+
+                    <div class="flex flex-wrap gap-1">
+                      <Badge v-if="post.experience_level" variant="neutral">
+                        {{ getExperienceLevelLabel(post.experience_level) }}+
+                      </Badge>
+                      <Badge v-for="t in (post.content_types || []).slice(0, 4)" :key="`c-${t}`" variant="outline">
+                        {{ getSpecialtyTagLabel(t) }}
+                      </Badge>
+                      <Badge v-for="p in post.platforms || []" :key="`p-${p}`" variant="outline">
+                        {{ getHiringPlatformLabel(p) }}
+                      </Badge>
+                    </div>
+
+                    <div class="mt-auto flex items-center gap-2 border-t border-line-subtle pt-2.5">
+                      <p
+                        class="min-w-0 flex-1 truncate text-xs font-medium text-fg"
+                        :title="
+                          post.payment_type
+                            ? `${getHiringPaymentTypeLabel(post.payment_type)}${post.payment_details ? `: ${post.payment_details}` : ''}`
+                            : undefined
+                        "
+                      >
+                        <template v-if="post.payment_type">
+                          {{ getHiringPaymentTypeLabel(post.payment_type)
+                          }}{{ post.payment_details ? `: ${post.payment_details}` : '' }}
+                        </template>
+                      </p>
+                      <Button
+                        :variant="post.has_applied ? 'subtle' : 'secondary'"
+                        size="sm"
+                        :disabled="post.has_applied || applyingTo === post.id"
+                        :loading="applyingTo === post.id"
+                        @click="openApplyDialog(post)"
+                      >
+                        <Check v-if="post.has_applied" />
+                        {{ post.has_applied ? 'Applied' : 'Apply' }}
+                      </Button>
+                    </div>
+                  </article>
+                </div>
+              </section>
+            </template>
+          </template>
+
+          <!-- ── Affiliate ───────────────────────────────────────────────── -->
+          <template v-if="activeTab === 'affiliate'">
+            <div v-if="loadingAffiliate && !affiliateDashboard" class="flex flex-col gap-4" aria-busy="true">
+              <div class="skeleton h-9 w-full max-w-[420px]" />
+              <div v-for="i in 2" :key="i" class="skeleton h-[66px] w-full !rounded-xl" />
+              <div class="skeleton h-40 w-full !rounded-xl" />
+            </div>
+            <template v-else-if="affiliateInfo && affiliateDashboard">
+              <!-- Referral code: a heading row on the panel, not a card -->
+              <section class="flex flex-wrap items-center gap-x-3 gap-y-2">
+                <div class="min-w-0 flex-1">
+                  <p class="flex items-center gap-2 text-sm font-semibold text-fg">
+                    Your referral code
+                    <Badge :variant="statusVariant(affiliateInfo.status)" class="capitalize">
+                      {{ affiliateInfo.status }}
+                    </Badge>
+                  </p>
+                  <p class="text-xs text-fg-muted">Share it — you earn a commission on every referred subscription.</p>
+                </div>
+                <div class="flex items-center gap-2">
+                  <code
+                    class="flex h-[var(--control-sm)] items-center rounded-[var(--radius-control)] border border-line bg-surface-sunken px-2.5 font-mono text-sm tracking-wide text-fg"
+                  >
+                    {{ affiliateInfo.referral_code }}
+                  </code>
+                  <Button variant="secondary" size="sm" @click="copyAffiliateCode">
+                    <Check v-if="affCopied" class="text-success" />
+                    <Copy v-else />
+                    {{ affCopied ? 'Copied' : 'Copy' }}
+                  </Button>
+                </div>
+              </section>
+
+              <StatGrid v-if="affiliateDashboard.breakdown" :count="3">
+                <StatCard
+                  label="First-time sign-ups"
+                  :value="affiliateDashboard.breakdown.first_subscription?.count || 0"
+                  :icon="UserPlus"
+                />
+                <StatCard
+                  label="Recurring sign-ups"
+                  :value="affiliateDashboard.breakdown.recurring?.count || 0"
+                  :icon="RefreshCw"
+                />
+                <StatCard label="Total sign-ups" :value="getAffiliateTotalSignups()" :icon="TrendingUp" tone="brand" />
+              </StatGrid>
+
+              <StatGrid :count="4">
+                <StatCard
+                  label="This month"
+                  :value="`$${affiliateDashboard.this_month.total.toFixed(2)}`"
+                  :icon="DollarSign"
+                  tone="success"
+                />
+                <StatCard
+                  label="Last 3 months"
+                  :value="`$${affiliateDashboard.three_months.total.toFixed(2)}`"
+                  :icon="BarChart3"
+                />
+                <StatCard
+                  label="Year to date"
+                  :value="`$${affiliateDashboard.ytd.total.toFixed(2)}`"
+                  :icon="TrendingUp"
+                />
+                <StatCard label="All time" :value="`$${affiliateDashboard.all_time.total.toFixed(2)}`" :icon="Wallet" />
+              </StatGrid>
+
+              <SectionCard title="Recent referrals" description="Commission earned from referred users" flush>
+                <EmptyState
+                  v-if="affiliateReferrals.length === 0"
+                  size="sm"
+                  :icon="Handshake"
+                  title="No referrals yet"
+                  description="Share your code to start earning commissions."
+                />
+                <div v-else class="overflow-x-auto">
+                  <table class="w-full text-left text-sm">
+                    <thead>
+                      <tr class="text-2xs font-medium uppercase tracking-[0.04em] text-fg-subtle">
+                        <th class="h-8 px-4 font-medium">Date</th>
+                        <th class="h-8 px-4 font-medium">Type</th>
+                        <th class="h-8 px-4 text-right font-medium">Amount</th>
+                        <th class="h-8 px-4 text-right font-medium">Commission</th>
+                        <th class="h-8 px-4 font-medium">Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      <tr v-for="r in affiliateReferrals" :key="r.id" class="border-t border-line-subtle">
+                        <td class="tabular h-10 whitespace-nowrap px-4 text-fg-muted">
+                          {{ formatDate(r.inserted_at) }}
+                        </td>
+                        <td class="h-10 px-4">
+                          <Badge variant="neutral">{{ formatAffEventType(r.event_type) }}</Badge>
+                        </td>
+                        <td class="tabular h-10 px-4 text-right text-fg">${{ r.amount_usd.toFixed(2) }}</td>
+                        <td class="tabular h-10 px-4 text-right font-medium text-success">
+                          ${{ r.commission_usd.toFixed(2) }}
+                        </td>
+                        <td class="h-10 px-4">
+                          <Badge :variant="statusVariant(r.status)" class="capitalize">{{ r.status }}</Badge>
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              </SectionCard>
+
+              <SectionCard title="Payout settings" description="How you receive commissions" flush>
+                <div class="flex max-w-md flex-col gap-4 p-4">
+                  <Field label="Payout method">
+                    <CustomDropdown
+                      v-model="affSettingsForm.payout_method"
+                      :options="payoutMethodOptions"
+                      placeholder="Select method…"
+                    />
+                  </Field>
+                  <Field v-if="affSettingsForm.payout_method === 'crypto'" label="Solana USDC address">
+                    <Input v-model="affSettingsForm.solana_usdc_address" placeholder="Enter your Solana USDC address" />
+                  </Field>
+                  <Field v-if="affSettingsForm.payout_method === 'paypal'" label="PayPal email">
+                    <Input v-model="affSettingsForm.paypal_email" type="email" placeholder="Enter your PayPal email" />
+                  </Field>
+                  <div>
+                    <Button variant="primary" size="sm" :loading="savingAffSettings" @click="saveAffiliateSettings">
+                      Save settings
+                    </Button>
+                  </div>
+                </div>
+              </SectionCard>
+            </template>
+          </template>
+        </div>
       </div>
-    </div>
-  </PageLayout>
+    </PageLayout>
 
     <!-- ── Dialogs ───────────────────────────────────────────────────── -->
 
@@ -771,12 +878,17 @@
           </template>
           <template #trailing>
             <Badge v-if="!platform.available" variant="neutral">Coming soon</Badge>
-            <Loader2 v-if="connectingPlatform && selectedPlatform === platform.id" class="size-4 animate-spin text-fg-muted" />
+            <Loader2
+              v-if="connectingPlatform && selectedPlatform === platform.id"
+              class="size-4 animate-spin text-fg-muted"
+            />
           </template>
         </ListItem>
       </ListGroup>
       <template #footer>
-        <Button variant="ghost" :disabled="connectingPlatform" @click="showPlatformSelectionDialog = false">Cancel</Button>
+        <Button variant="ghost" :disabled="connectingPlatform" @click="showPlatformSelectionDialog = false">
+          Cancel
+        </Button>
       </template>
     </Modal>
 
@@ -784,7 +896,9 @@
     <Modal
       :open="showPaymentMethodDialog"
       :title="editingPaymentMethod ? 'Edit payment method' : 'Add payment method'"
-      :description="editingPaymentMethod ? 'Update your payment method details.' : 'Add a new payment method to receive earnings.'"
+      :description="
+        editingPaymentMethod ? 'Update your payment method details.' : 'Add a new payment method to receive earnings.'
+      "
       :icon="Wallet"
       size="sm"
       :dismissible="!savingPaymentMethod"
@@ -793,7 +907,11 @@
     >
       <form id="clipper-payment-method-form" class="flex flex-col gap-4" @submit.prevent="savePaymentMethod">
         <Field label="Method type">
-          <CustomDropdown v-model="paymentMethodForm.method_type" :options="[...PAYMENT_METHOD_TYPES]" placeholder="Select method" />
+          <CustomDropdown
+            v-model="paymentMethodForm.method_type"
+            :options="[...PAYMENT_METHOD_TYPES]"
+            placeholder="Select method"
+          />
         </Field>
 
         <Field v-if="paymentMethodForm.method_type === 'paypal'" label="PayPal email">
@@ -987,10 +1105,7 @@
   import { SegmentedControl } from '@/components/ui/segmented-control';
   import { StatCard, StatGrid } from '@/components/ui/stat-card';
   import { Textarea } from '@/components/ui/textarea';
-  import {
-    listPersonalExternalPosts,
-    type ExternalPostSubmission,
-  } from '@/services/schedulingApi';
+  import { listPersonalExternalPosts, type ExternalPostSubmission } from '@/services/schedulingApi';
   import {
     listPaymentMethods,
     createPaymentMethod,
@@ -1013,10 +1128,7 @@
     type UserPost,
     type UserAnalyticsSummary,
   } from '@/services/userInstagramApi';
-  import {
-    isTokenExpiredForAccount,
-    isTokenExpiringSoonForAccount,
-  } from '@/utils/socialTokenExpiry';
+  import { isTokenExpiredForAccount, isTokenExpiringSoonForAccount } from '@/utils/socialTokenExpiry';
   import { reconnectPersonalSocialPlatform } from '@/utils/socialOAuthReconnect';
   import {
     startUserTwitterOAuth,
@@ -1042,11 +1154,20 @@
     disconnectUserTokendAccount,
     type UserTokendAccount,
   } from '@/services/userTokendApi';
-  import { getMyClipperProfile, getExperienceLevelLabel, getSpecialtyTagLabel, type ClipperProfile } from '@/services/clipperProfilesApi';
   import {
-    listPublicHiringPosts, applyToHiringPost, listMyHiringApplications,
-    PAYMENT_TYPES as HIRING_PAYMENT_TYPES, getPaymentTypeLabel as getHiringPaymentTypeLabel,
-    type HiringPost, type HiringApplication,
+    getMyClipperProfile,
+    getExperienceLevelLabel,
+    getSpecialtyTagLabel,
+    type ClipperProfile,
+  } from '@/services/clipperProfilesApi';
+  import {
+    listPublicHiringPosts,
+    applyToHiringPost,
+    listMyHiringApplications,
+    PAYMENT_TYPES as HIRING_PAYMENT_TYPES,
+    getPaymentTypeLabel as getHiringPaymentTypeLabel,
+    type HiringPost,
+    type HiringApplication,
   } from '@/services/hiringApi';
   import {
     listMyCampaigns,
@@ -1059,11 +1180,7 @@
   import { useToast } from '@/composables/useToast';
   import { useSocialTokenMonitor } from '@/composables/useSocialTokenMonitor';
   import { formatLastActive } from '@/utils/timeUtils';
-  import { 
-    initThumbnailCache, 
-    getCachedThumbnail, 
-    setCachedThumbnail 
-  } from '@/db/thumbnail-cache';
+  import { initThumbnailCache, getCachedThumbnail, setCachedThumbnail } from '@/db/thumbnail-cache';
   import {
     getMyDashboard,
     getMyReferrals,
@@ -1100,7 +1217,13 @@
     return base;
   });
 
-  const activeTab = ref('leaderboard');
+  const requestedTab = new URLSearchParams(window.location.search).get('tab');
+  const activeTab = ref(
+    requestedTab &&
+      ['leaderboard', 'accounts', 'payments', 'campaigns', 'posts', 'hiring', 'affiliate'].includes(requestedTab)
+      ? requestedTab
+      : 'leaderboard'
+  );
 
   // ── Presentation helpers (layout only) ───────────────────────────────
   const tabOptions = computed(() => tabs.value.map((t) => ({ value: t.id, label: t.label, icon: t.icon })));
@@ -1177,7 +1300,14 @@
 
   // Affiliate State
   const loadingAffiliate = ref(false);
-  const affiliateInfo = ref<{ id: number; referral_code: string; status: string; payout_method: string | null; solana_usdc_address: string | null; paypal_email: string | null } | null>(null);
+  const affiliateInfo = ref<{
+    id: number;
+    referral_code: string;
+    status: string;
+    payout_method: string | null;
+    solana_usdc_address: string | null;
+    paypal_email: string | null;
+  } | null>(null);
   const affiliateDashboard = ref<AffiliateDashboard | null>(null);
   const affiliateReferrals = ref<AffiliateReferral[]>([]);
   const affiliatePayouts = ref<AffiliatePayout[]>([]);
@@ -1201,9 +1331,12 @@
 
   function getHiringPlatformLabel(value: string): string {
     const PREFERRED_PLATFORMS = [
-      { value: 'tiktok', label: 'TikTok' }, { value: 'youtube', label: 'YouTube' },
-      { value: 'instagram', label: 'Instagram' }, { value: 'twitter', label: 'Twitter/X' },
-      { value: 'kick', label: 'Kick' }, { value: 'twitch', label: 'Twitch' },
+      { value: 'tiktok', label: 'TikTok' },
+      { value: 'youtube', label: 'YouTube' },
+      { value: 'instagram', label: 'Instagram' },
+      { value: 'twitter', label: 'Twitter/X' },
+      { value: 'kick', label: 'Kick' },
+      { value: 'twitch', label: 'Twitch' },
       { value: 'facebook', label: 'Facebook' },
     ];
     return PREFERRED_PLATFORMS.find((p) => p.value === value)?.label || value;
@@ -1214,10 +1347,7 @@
     try {
       const filters: Record<string, any> = {};
       if (hiringFilters.value.payment_type) filters.payment_type = hiringFilters.value.payment_type;
-      const [postsRes, appsRes] = await Promise.all([
-        listPublicHiringPosts(filters),
-        listMyHiringApplications(),
-      ]);
+      const [postsRes, appsRes] = await Promise.all([listPublicHiringPosts(filters), listMyHiringApplications()]);
       if (postsRes.success) hiringPosts.value = postsRes.hiring_posts;
       if (appsRes.success) myHiringApplications.value = appsRes.applications;
     } catch (err) {
@@ -1242,7 +1372,7 @@
         toast({ title: 'Application submitted!', description: 'The organization will review your profile.' });
         showApplyDialog.value = false;
         // Mark as applied locally
-        const idx = hiringPosts.value.findIndex(p => p.id === applyTarget.value!.id);
+        const idx = hiringPosts.value.findIndex((p) => p.id === applyTarget.value!.id);
         if (idx >= 0) hiringPosts.value[idx].has_applied = true;
         // Refresh my applications
         const appsRes = await listMyHiringApplications();
@@ -1294,7 +1424,14 @@
     endorsements_received: number;
     total_views: number;
     posts_count: number;
-    profile?: { id: number; user_id: number; display_name: string | null; avatar_url: string | null; slug?: string; is_verified?: boolean };
+    profile?: {
+      id: number;
+      user_id: number;
+      display_name: string | null;
+      avatar_url: string | null;
+      slug?: string;
+      is_verified?: boolean;
+    };
   }
 
   // Load tab data when tab changes
@@ -1367,11 +1504,7 @@
   const loadAffiliateData = async () => {
     loadingAffiliate.value = true;
     try {
-      const [dashRes, refRes, payRes] = await Promise.all([
-        getMyDashboard(),
-        getMyReferrals(),
-        getMyPayouts(),
-      ]);
+      const [dashRes, refRes, payRes] = await Promise.all([getMyDashboard(), getMyReferrals(), getMyPayouts()]);
       if (dashRes.success) {
         affiliateInfo.value = dashRes.affiliate!;
         affiliateDashboard.value = dashRes.dashboard!;
@@ -1393,7 +1526,9 @@
     try {
       await navigator.clipboard.writeText(affiliateInfo.value.referral_code);
       affCopied.value = true;
-      setTimeout(() => { affCopied.value = false; }, 2000);
+      setTimeout(() => {
+        affCopied.value = false;
+      }, 2000);
     } catch {
       affCopied.value = false;
     }
@@ -1417,7 +1552,11 @@
   };
 
   const formatAffEventType = (type: string) => {
-    const map: Record<string, string> = { first_subscription: 'Signup', recurring: 'Recurring', credit_pack: 'Credit Pack' };
+    const map: Record<string, string> = {
+      first_subscription: 'Signup',
+      recurring: 'Recurring',
+      credit_pack: 'Credit Pack',
+    };
     return map[type] || type;
   };
 
@@ -1433,7 +1572,7 @@
     try {
       // Initialize thumbnail cache
       await initThumbnailCache();
-      
+
       // Sync analytics from PostForMe
       await syncUserAnalytics();
 
@@ -1458,17 +1597,15 @@
             return post;
           })
         );
-        
+
         userPosts.value = postsWithCache;
-        
+
         // Generate thumbnails for posts missing them (parallel, max 3 concurrent)
-        const postsNeedingThumbnails = postsWithCache.filter(
-          post => !post.thumbnail_url && post.media_url
-        );
-        
+        const postsNeedingThumbnails = postsWithCache.filter((post) => !post.thumbnail_url && post.media_url);
+
         if (postsNeedingThumbnails.length > 0) {
           console.log(`Generating thumbnails for ${postsNeedingThumbnails.length} posts...`);
-          
+
           // Generate in batches of 3 to avoid overwhelming the server
           const batchSize = 3;
           for (let i = 0; i < postsNeedingThumbnails.length; i += batchSize) {
@@ -1481,7 +1618,7 @@
                     // Cache the thumbnail
                     await setCachedThumbnail(post.id, result.thumbnail_url);
                     // Update local state
-                    const idx = userPosts.value.findIndex(p => p.id === post.id);
+                    const idx = userPosts.value.findIndex((p) => p.id === post.id);
                     if (idx >= 0) {
                       userPosts.value[idx].thumbnail_url = result.thumbnail_url;
                     }
@@ -1489,7 +1626,10 @@
                 } catch (error: any) {
                   // Silently handle errors (already has thumbnail or FFmpeg failed)
                   if (error?.response?.status !== 400) {
-                    console.warn(`Failed to generate thumbnail for post ${post.id}:`, error?.response?.data?.error || error.message);
+                    console.warn(
+                      `Failed to generate thumbnail for post ${post.id}:`,
+                      error?.response?.data?.error || error.message
+                    );
                   }
                 }
               })
@@ -1535,7 +1675,9 @@
   const savingPaymentMethod = ref(false);
   const deleting = ref(false);
   const deleteType = ref<'social account' | 'payment method'>('social account');
-  const deleteTarget = ref<UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount | ClipperPaymentMethod | null>(null);
+  const deleteTarget = ref<
+    UserInstagramAccount | UserTwitterAccount | UserTiktokAccount | UserYoutubeAccount | ClipperPaymentMethod | null
+  >(null);
 
   const reconnectingAccountId = ref<number | null>(null);
 
@@ -1614,8 +1756,8 @@
     return url.length > 40 ? url.substring(0, 40) + '...' : url;
   };
 
-  const loadSocialAccounts = async () => {
-    loadingSocialAccounts.value = true;
+  const loadSocialAccounts = async (silent = false) => {
+    if (!silent) loadingSocialAccounts.value = true;
     try {
       const tokendAllowed = canAccessTokend(authStore.user);
       const [igResponse, twResponse, tkResponse, ytResponse, tokendResponse] = await Promise.all([
@@ -1733,9 +1875,7 @@
           if (result.success) {
             toast({
               title: 'Tokend connected',
-              description: result.account
-                ? `@${result.account.username} linked`
-                : 'Tokend account linked',
+              description: result.account ? `@${result.account.username} linked` : 'Tokend account linked',
             });
             await loadSocialAccounts();
             showPlatformSelectionDialog.value = false;
@@ -1992,10 +2132,51 @@
   const loadClipperProfile = async () => {
     try {
       const response = await getMyClipperProfile();
-      if (response.success) clipperProfile.value = response.profile;
+      if (response.success) {
+        const identityChanged =
+          clipperProfile.value &&
+          (clipperProfile.value.display_name !== response.profile?.display_name ||
+            clipperProfile.value.avatar_url !== response.profile?.avatar_url);
+        clipperProfile.value = response.profile;
+        if (identityChanged && window.parent !== window)
+          window.parent.postMessage({ type: 'clippster-profile-updated' }, location.origin);
+      }
     } catch (error) {
       console.error('Failed to load clipper profile:', error);
     }
+  };
+
+  let accountRefreshTimer: ReturnType<typeof setInterval> | undefined;
+  let refreshingAccount = false;
+  const refreshAccount = async () => {
+    if (document.hidden || refreshingAccount) return;
+    refreshingAccount = true;
+    try {
+      await Promise.allSettled([
+        loadClipperProfile(),
+        ...(activeTab.value === 'accounts' ? [loadSocialAccounts(true)] : []),
+        ...(activeTab.value === 'payments' ? [loadPaymentMethods()] : []),
+        ...(activeTab.value === 'campaigns' ? [loadMyCampaigns(), loadMySubmissions(), loadEarnings()] : []),
+        ...(activeTab.value === 'posts'
+          ? [
+              listUserPosts().then((response) => {
+                if (response.success) userPosts.value = response.posts;
+              }),
+              getUserAnalyticsSummary({ days: 30 }).then((response) => {
+                if (response.success && response.summary) postsAnalytics.value = response.summary;
+              }),
+              loadExternalPosts(),
+            ]
+          : []),
+      ]);
+    } finally {
+      refreshingAccount = false;
+    }
+  };
+
+  const onProfileSaved = async () => {
+    await loadClipperProfile();
+    if (window.parent !== window) window.parent.postMessage({ type: 'clippster-profile-updated' }, location.origin);
   };
 
   // Check if profile is configured - profile exists if we have a record from the server
@@ -2027,6 +2208,13 @@
     loadMySubmissions();
     loadEarnings();
     await focusSocialAccountsSection();
+    if (activeTab.value === 'posts') {
+      void loadPostsAnalytics();
+      void loadExternalPosts();
+    }
+    accountRefreshTimer = setInterval(() => void refreshAccount(), 5000);
+    window.addEventListener('focus', refreshAccount);
+    document.addEventListener('visibilitychange', refreshAccount);
   });
 
   watch(
@@ -2037,6 +2225,9 @@
   );
 
   onUnmounted(() => {
+    clearInterval(accountRefreshTimer);
+    window.removeEventListener('focus', refreshAccount);
+    document.removeEventListener('visibilitychange', refreshAccount);
     if (cleanupInstagramAuth) cleanupInstagramAuth();
     if (cleanupTwitterAuth) cleanupTwitterAuth();
     if (cleanupTiktokAuth) cleanupTiktokAuth();

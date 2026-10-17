@@ -1,3 +1,4 @@
+import {ProductComparison} from '@/components/marketing/ProductComparison'
 import { Link } from 'react-router-dom'
 import { Header } from '@/components/Header'
 import { Footer } from '@/components/Footer'
@@ -76,7 +77,7 @@ export function SeoMarketingPage({ path, sections, showCta = true }: Props) {
       />
       <Header />
       <main className="pt-28 sm:pt-32 pb-16">
-        <article className="max-w-4xl mx-auto px-6">
+        <article className="editorial-page max-w-4xl mx-auto px-6">
           <nav className="text-xs text-zinc-500 mb-6 flex flex-wrap gap-2">
             {crumbs.map((crumb, i) => (
               <span key={crumb.path} className="inline-flex items-center gap-2">
@@ -100,6 +101,7 @@ export function SeoMarketingPage({ path, sections, showCta = true }: Props) {
 
           <div className="space-y-10 text-zinc-400 leading-relaxed">
             {sections.map((section, index) => {
+              if (section.type === 'product-comparison') return <ProductComparison key={index} />
               if (section.type === 'heading') {
                 return (
                   <h2 key={index} className="text-2xl sm:text-3xl font-bold text-white">
@@ -189,17 +191,17 @@ export function SeoMarketingPage({ path, sections, showCta = true }: Props) {
           </div>
 
           {related.length > 0 && (
-            <section className="mt-16">
-              <h2 className="text-xl font-bold text-white mb-4">Related</h2>
-              <div className="grid sm:grid-cols-2 gap-3">
+            <section className="related-section">
+              <h2 className="related-heading">Related</h2>
+              <div className="related-links">
                 {related.map((item) => (
                   <Link
                     key={item.path}
                     to={item.path}
-                    className="p-4 rounded-xl border border-[#1f1f23] bg-[#141416] hover:border-white/15 transition-colors"
+                    className="related-link"
                   >
-                    <div className="text-white font-medium mb-1">{item.title.split('|')[0].trim()}</div>
-                    <div className="text-sm text-zinc-500 line-clamp-2">{item.description}</div>
+                    <span className="related-kind">{item.type === "pillar" ? "Product" : item.type === "authority" ? "Read more" : item.type}</span><div className="related-title">{item.title.split('|')[0].trim()}<span aria-hidden="true">↗</span></div>
+                    <div className="related-description">{item.description}</div>
                   </Link>
                 ))}
               </div>

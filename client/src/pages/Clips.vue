@@ -86,11 +86,7 @@
 
       <div class="flex flex-1 flex-col px-5 py-4">
         <!-- Loading State (first load only; refetches keep the current grid) -->
-        <div
-          v-if="initialLoading"
-          class="skeleton-group card-grid"
-          aria-busy="true"
-        >
+        <div v-if="initialLoading" class="skeleton-group card-grid" aria-busy="true">
           <div v-for="i in 8" :key="`skeleton-${i}`" class="flex flex-col gap-2">
             <div class="skeleton aspect-video rounded-xl" />
             <div class="skeleton h-3.5 w-3/4" />
@@ -125,7 +121,8 @@
                     @delete="() => confirmDeleteBuild(item.build)"
                     @openProject="(build) => openProjectForClip(build, item.clip)"
                     @publish="
-                      (build, filePath) => initiatePublish(build, filePath || item.filePath, item.thumbnailUrl, item.clip)
+                      (build, filePath) =>
+                        initiatePublish(build, filePath || item.filePath, item.thumbnailUrl, item.clip)
                     "
                   />
                 </div>
@@ -153,7 +150,10 @@
                     @toggle-select="toggleFolderSelection(group.id)"
                   >
                     <template v-if="hasUntranscribedClips(group.clips)" #badges>
-                      <Badge class="border-transparent bg-black/70 text-warning" title="Contains clips without transcripts">
+                      <Badge
+                        class="border-transparent bg-black/70 text-warning"
+                        title="Contains clips without transcripts"
+                      >
                         <FileText />
                         Untranscribed
                       </Badge>
@@ -283,7 +283,9 @@
                   <Badge
                     v-if="item.build.is_published"
                     variant="success"
-                    :title="item.build.published_at ? `Published ${getRelativeTime(item.build.published_at)}` : 'Published'"
+                    :title="
+                      item.build.published_at ? `Published ${getRelativeTime(item.build.published_at)}` : 'Published'
+                    "
                   >
                     <Check />
                     Published
@@ -743,7 +745,12 @@
   const showSimplifiedPublishDialog = ref(false);
   const showYoutubePublishDialog = ref(false);
   const selectedPlatform = ref<'instagram' | 'twitter' | 'tiktok' | 'youtube'>('instagram');
-  const publishingBuild = ref<{ build: ClipBuild; clip: ClipWithBuilds | null; filePath: string; thumbnailUrl: string | null } | null>(null);
+  const publishingBuild = ref<{
+    build: ClipBuild;
+    clip: ClipWithBuilds | null;
+    filePath: string;
+    thumbnailUrl: string | null;
+  } | null>(null);
   const selectedOrganization = ref<{ id: string | number; name: string; role: string } | null>(null);
   const publishMediaUrl = ref('');
   const publishThumbnailUrl = ref('');
@@ -994,7 +1001,9 @@
 
               // Look up thumbnail by file path first (each aspect ratio has its own thumbnail)
               // Then fall back to build's thumbnail_path, then to clip thumbnail
-              console.log(`[Clips] Creating displayable build: ${filePath} | AR: ${aspectRatio} | Build#${build.build_number} | Type: ${build.branding_type} | Campaign: ${build.campaign_name || 'null'} | Org: ${build.organization_name || 'null'}`);
+              console.log(
+                `[Clips] Creating displayable build: ${filePath} | AR: ${aspectRatio} | Build#${build.build_number} | Type: ${build.branding_type} | Campaign: ${build.campaign_name || 'null'} | Org: ${build.organization_name || 'null'}`
+              );
 
               builds.push({
                 // Use build ID + index for unique key when multiple files per build
@@ -1004,7 +1013,10 @@
                 clipName,
                 projectName,
                 projectId: clip.project_id,
-                thumbnailUrl: thumbnailStore.getBuildThumbnail(filePath) || thumbnailStore.getBuildThumbnail(build.id) || clipThumbnailUrl,
+                thumbnailUrl:
+                  thumbnailStore.getBuildThumbnail(filePath) ||
+                  thumbnailStore.getBuildThumbnail(build.id) ||
+                  clipThumbnailUrl,
                 createdAt: build.completed_at || build.created_at,
                 filePath,
                 aspectRatio,
@@ -1344,7 +1356,10 @@
                 clipName,
                 projectName: folderProject.value!.name,
                 projectId: clip.project_id,
-                thumbnailUrl: thumbnailStore.getBuildThumbnail(filePath) || thumbnailStore.getBuildThumbnail(build.id) || clipThumbnailUrl,
+                thumbnailUrl:
+                  thumbnailStore.getBuildThumbnail(filePath) ||
+                  thumbnailStore.getBuildThumbnail(build.id) ||
+                  clipThumbnailUrl,
                 createdAt: build.completed_at || build.created_at,
                 filePath,
                 aspectRatio,
@@ -1427,9 +1442,9 @@
     folderCurrentPage.value = 1;
     folderAspectRatioFilter.value = 'all';
     showFolderDialog.value = true;
-    
+
     // Load video editor projects for all clips in the folder
-    await loadVideoEditorProjectsForClips(group.clips.map(c => c.id));
+    await loadVideoEditorProjectsForClips(group.clips.map((c) => c.id));
   }
 
   // Load video editor projects for clips
@@ -1465,7 +1480,7 @@
     // Navigate to video editor page with state to auto-open the project
     router.push({
       path: '/video-editor',
-      state: { openProjectId: projectId }
+      state: { openProjectId: projectId },
     });
   }
 
@@ -1642,8 +1657,8 @@
       // If folder dialog is open, refresh its data
       if (showFolderDialog.value && folderProject.value) {
         const currentFolderId = folderProject.value.id;
-        const updatedGroup = Array.from(groupedByProject.value.values()).find(g => g.id === currentFolderId);
-        
+        const updatedGroup = Array.from(groupedByProject.value.values()).find((g) => g.id === currentFolderId);
+
         if (updatedGroup && getFolderBuildsCount(updatedGroup.clips) > 0) {
           // Update the folder project with fresh data
           folderProject.value = updatedGroup;
@@ -1669,7 +1684,7 @@
 
       // Collect unique project IDs for batch loading
       const uniqueProjectIds = new Set<string>();
-      clips.value.forEach(clip => {
+      clips.value.forEach((clip) => {
         if (clip.project_id) {
           uniqueProjectIds.add(clip.project_id);
         }
@@ -1679,13 +1694,13 @@
       await Promise.all([
         // Load which clips have transcripts (for untranscribed detection)
         loadTranscribedClipIds(),
-        
+
         // Lazy load only first batch of clip thumbnails (visible ones)
         // The rest will load on demand via Intersection Observer
         thumbnailStore.loadThumbnailsLazy(clips.value.slice(0, 20), 'high'),
-        
+
         // Batch load all project info in parallel
-        Promise.all(Array.from(uniqueProjectIds).map(projectId => getProjectInfo(projectId))),
+        Promise.all(Array.from(uniqueProjectIds).map((projectId) => getProjectInfo(projectId))),
       ]);
 
       // Defer non-critical operations (raw videos and build thumbnails) to after initial render
@@ -1710,9 +1725,7 @@
   async function loadDeferredData(projectIds: Set<string>) {
     try {
       // Load raw videos for all projects in parallel (batched)
-      await Promise.all(
-        Array.from(projectIds).map(projectId => loadRawVideosForProject(projectId))
-      );
+      await Promise.all(Array.from(projectIds).map((projectId) => loadRawVideosForProject(projectId)));
 
       // Collect all build thumbnail tasks
       const buildThumbnailTasks: Promise<void>[] = [];
@@ -1820,9 +1833,9 @@
       );
 
       rawVideoCache.value.set(projectId, processedRawVideos);
-      
+
       // Save to persistent cache (30 minutes TTL)
-      persistentCache.set('rawVideos', projectId, processedRawVideos, 1800000).catch(err => {
+      persistentCache.set('rawVideos', projectId, processedRawVideos, 1800000).catch((err) => {
         console.warn('Failed to save raw videos to persistent cache:', err);
       });
     } catch (error) {
@@ -1903,7 +1916,7 @@
       // Derive the expected thumbnail path
       const thumbnailPath = await getThumbnailPathForVideoFile(filePath);
       console.log(`[Clips] Expected thumbnail path: ${thumbnailPath}`);
-      
+
       if (!thumbnailPath) {
         console.warn(`[Clips] Could not derive thumbnail path for ${filePath}`);
         return;
@@ -1925,14 +1938,14 @@
       } else {
         // Thumbnail doesn't exist - regenerate it from the video file
         console.log(`[Clips] Thumbnail missing, regenerating for ${filePath}`);
-        
+
         // Check if the video file exists
         const videoExists = await invoke<boolean>('check_file_exists', {
           path: filePath,
         });
-        
+
         console.log(`[Clips] Video file exists: ${videoExists}`);
-        
+
         if (videoExists) {
           try {
             // Generate thumbnail at 1 second mark
@@ -1942,9 +1955,9 @@
               timestampSeconds: 1.0,
               outputFilename: null,
             });
-            
+
             console.log(`[Clips] Generated thumbnail at: ${newThumbnailPath}`);
-            
+
             // Load the newly generated thumbnail
             const dataUrl = await invoke<string>('read_file_as_data_url', {
               filePath: newThumbnailPath,
@@ -2008,9 +2021,9 @@
       const project = await getProject(projectId);
       if (project) {
         projectCache.value.set(projectId, project);
-        
+
         // Save to persistent cache (1 hour TTL)
-        persistentCache.set('projects', projectId, project, 3600000).catch(err => {
+        persistentCache.set('projects', projectId, project, 3600000).catch((err) => {
           console.warn('Failed to save to persistent cache:', err);
         });
 
@@ -2090,6 +2103,8 @@
         project_id: build.clip_id,
         file_path: videoPath,
         original_filename: displayName,
+        platform: null,
+        source_url: null,
         thumbnail_path: build.thumbnail_path,
         duration: build.duration,
         width: null,
@@ -2161,11 +2176,12 @@
   }
 
   function confirmDeleteBuild(build: ClipBuild) {
-    const buildItem = displayableBuilds.value.find((item) => item.id === build.id)
-      ?? folderBuilds.value.find((item) => item.id === build.id)
-      ?? displayableBuilds.value.find((item) => item.build.id === build.id)
-      ?? folderBuilds.value.find((item) => item.build.id === build.id)
-      ?? null;
+    const buildItem =
+      displayableBuilds.value.find((item) => item.id === build.id) ??
+      folderBuilds.value.find((item) => item.id === build.id) ??
+      displayableBuilds.value.find((item) => item.build.id === build.id) ??
+      folderBuilds.value.find((item) => item.build.id === build.id) ??
+      null;
     buildToDelete.value = buildItem;
     showDeleteBuildDialog.value = true;
   }
@@ -2186,8 +2202,8 @@
       // If folder dialog is open, refresh its data
       if (showFolderDialog.value && folderProject.value) {
         const currentFolderId = folderProject.value.id;
-        const updatedGroup = Array.from(groupedByProject.value.values()).find(g => g.id === currentFolderId);
-        
+        const updatedGroup = Array.from(groupedByProject.value.values()).find((g) => g.id === currentFolderId);
+
         if (updatedGroup && getFolderBuildsCount(updatedGroup.clips) > 0) {
           // Update the folder project with fresh data
           folderProject.value = updatedGroup;
@@ -2279,7 +2295,7 @@
 
   const shouldShowSelectAll = computed(() => {
     if (viewMode.value === 'folders') {
-      const totalFolders = groupedFolderProjects.value.flatMap(dateGroup => dateGroup.folders).length;
+      const totalFolders = groupedFolderProjects.value.flatMap((dateGroup) => dateGroup.folders).length;
       return totalFolders > 0 && selectedFolders.value.size < totalFolders;
     } else {
       return paginatedBuilds.value.length > 0 && selectedBuilds.value.size < paginatedBuilds.value.length;
@@ -2304,13 +2320,13 @@
   function selectAll() {
     if (viewMode.value === 'folders') {
       // Select all folders on current page (flatten all date groups)
-      const folderIds = groupedFolderProjects.value.flatMap(dateGroup => 
-        dateGroup.folders.map(folder => folder.id)
+      const folderIds = groupedFolderProjects.value.flatMap((dateGroup) =>
+        dateGroup.folders.map((folder) => folder.id)
       );
       selectedFolders.value = new Set(folderIds);
     } else {
       // Select all builds on current page
-      const buildIds = paginatedBuilds.value.map(b => b.id);
+      const buildIds = paginatedBuilds.value.map((b) => b.id);
       selectedBuilds.value = new Set(buildIds);
     }
   }
@@ -2434,7 +2450,12 @@
   /**
    * Initiate the publish flow with SimplifiedPublishDialog.
    */
-  async function initiatePublish(build: ClipBuild, filePath: string, thumbnailUrl: string | null, clip?: ClipWithBuilds) {
+  async function initiatePublish(
+    build: ClipBuild,
+    filePath: string,
+    thumbnailUrl: string | null,
+    clip?: ClipWithBuilds
+  ) {
     publishingBuild.value = { build, clip: clip || null, filePath, thumbnailUrl };
     showSimplifiedPublishDialog.value = true;
   }

@@ -10,14 +10,15 @@ export function AccountHome() {
   useEffect(() => { void refreshUserData() }, [refreshUserData])
   const { primaryDownload, isLoading } = useDownloads()
 
-  const planName =
+  const isAdmin = user?.is_admin === true
+  const planName = isAdmin ? 'Admin' :
     user?.subscription?.tier_name ||
     (user?.subscription?.tier
       ? user.subscription.tier.charAt(0).toUpperCase() + user.subscription.tier.slice(1)
       : 'Free')
-  const planStatus = user?.subscription?.status || 'none'
+  const planStatus = isAdmin ? 'Unlimited access' : user?.subscription?.status || 'none'
   const credits = user?.credits?.hours_remaining ?? user?.credits?.minutes_remaining
-  const creditsLabel =
+  const creditsLabel = isAdmin || credits === 'unlimited' ? 'Unlimited' :
     credits === undefined || credits === null
       ? '—'
       : typeof credits === 'string'
@@ -99,8 +100,8 @@ export function AccountHome() {
         </h2>
         <div className="grid sm:grid-cols-3 gap-3">
           {[
-            { to: '/account/profile', label: 'Profile', icon: User, desc: 'Public clipper profile' },
-            { to: '/account/social', label: 'Social', icon: Globe, desc: 'Connected accounts' },
+            { to: '/account/profile', label: 'Clipper Profile', icon: User, desc: 'Profile, accounts, posts, and settings' },
+            { to: '/account/profile?tab=accounts', label: 'Accounts', icon: Globe, desc: 'Connected accounts' },
             { to: '/account/messages', label: 'Messages', icon: MessageSquare, desc: 'Conversations' },
           ].map((item) => {
             const Icon = item.icon

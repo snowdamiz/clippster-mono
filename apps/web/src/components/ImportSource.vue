@@ -1,8 +1,6 @@
 <template>
   <section class="mx-auto flex w-full max-w-lg flex-col gap-5 px-6 py-10">
-    <div
-      class="flex size-11 items-center justify-center rounded-xl border border-brand-line bg-brand-soft text-brand"
-    >
+    <div class="flex size-11 items-center justify-center rounded-xl border border-brand-line bg-brand-soft text-brand">
       <Download :size="24" />
     </div>
     <div>
@@ -44,7 +42,6 @@
         class="max-w-full text-xs text-fg-muted"
         @change="choose"
       />
-      <span class="text-xs text-fg-subtle">Up to 2 GB and 2 hours</span>
     </label>
     <p v-if="uploadProgress !== null" role="status" class="text-sm text-brand">Uploading… {{ uploadProgress }}%</p>
   </section>

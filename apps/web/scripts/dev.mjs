@@ -1,6 +1,9 @@
 import { spawn } from 'node:child_process'
 const children = ['dev:server', 'dev:ui'].map((script) =>
-  spawn('npm', ['run', script, '--workspaces=false'], { stdio: 'inherit' })
+  spawn('npm', ['run', script, '--workspaces=false'], {
+    stdio: 'inherit',
+    env: { ...process.env, ...(process.env.WEB_WATCH_POLL === 'true' ? { CHOKIDAR_USEPOLLING: 'true' } : {}) }
+  })
 )
 let stopping = false
 function stop(code = 0) {

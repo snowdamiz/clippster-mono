@@ -15,13 +15,13 @@ export default defineConfig({
   },
   webServer: [
     {
-      command: 'tsx tests/browser-server.ts',
+      command: 'node ../../node_modules/tsx/dist/cli.mjs tests/browser-server.ts',
       url: 'http://127.0.0.1:8091/api/health',
       reuseExistingServer: false,
       timeout: 30_000
     },
     {
-      command: 'tsx tests/shared-server.ts',
+      command: 'node ../../node_modules/tsx/dist/cli.mjs tests/shared-server.ts',
       url: 'http://127.0.0.1:8093',
       reuseExistingServer: false,
       timeout: 30_000

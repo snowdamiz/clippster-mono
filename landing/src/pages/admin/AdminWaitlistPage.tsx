@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { AlertTriangle, Copy, Download, Loader2, RefreshCw, UserPlus, Users, ChevronDown, ChevronRight } from 'lucide-react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { listWaitlist, inviteWaitlist, inviteWaitlistEntry, addWaitlistEntry, type WaitlistEntry, type WaitlistStats, type InviteConfig } from '@/services/adminApi'
-import { downloadEmailsCsv } from '@/utils/downloadEmailsCsv'
+import { downloadRecordsCsv } from '@/utils/downloadRecordsCsv'
 import { formatDateTime } from './adminFormat'
 
 export function AdminWaitlistPage() {
@@ -60,13 +60,12 @@ export function AdminWaitlistPage() {
     }
   }
 
-  function exportEmailsCsv() {
-    const emails = rows.map((row) => row.email).filter(Boolean)
-    if (!emails.length) {
-      setError('No waitlist emails to export')
+  function exportWaitlistCsv() {
+    if (!rows.length) {
+      setError('No waitlist entries to export')
       return
     }
-    downloadEmailsCsv(emails, 'waitlist-emails.csv')
+    downloadRecordsCsv(rows, 'waitlist.csv')
   }
 
   async function handleInviteEntry(id: number) {
@@ -235,11 +234,11 @@ export function AdminWaitlistPage() {
                 Copy All Emails
               </button>
               <button
-                onClick={exportEmailsCsv}
+                onClick={exportWaitlistCsv}
                 className="inline-flex items-center gap-1.5 px-3 py-2 rounded-md text-xs font-semibold text-zinc-100 border border-zinc-700 hover:bg-zinc-800"
               >
                 <Download className="w-3.5 h-3.5" />
-                Export Emails CSV
+                Export Waitlist CSV
               </button>
             </>
           )}

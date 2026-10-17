@@ -3,23 +3,22 @@ import { Link, NavLink, Outlet, useLocation, useNavigate } from 'react-router-do
 import {
   Building2,
   CreditCard,
-  FileText,
-  Globe,
   Home,
-  LogOut,
   Menu,
   MessageSquare,
-  Settings,
-  User,
   X,
   Video,
   Download,
   Users,
   Megaphone,
   CalendarDays,
+  LayoutGrid,
 } from 'lucide-react'
 import type { LucideIcon } from 'lucide-react'
 import { DesktopRequiredBanner } from '@/components/account/DesktopRequiredBanner'
+import { AccountUserMenu } from '@/components/account/AccountUserMenu'
+import { useClipperProfile } from '@/pages/account/useClipperProfile'
+import { AccountWorkspace } from '@/pages/account/AccountWorkspace'
 import { useAuth } from '@/hooks/useAuth'
 import { getOrgDashboardPath, needsPlanSelection } from '@/lib/accountRouting'
 import { api } from '@/lib/api'
@@ -39,20 +38,20 @@ const NAV_ITEMS: NavItem[] = [
   { label: 'Messages', path: '/account/messages', icon: MessageSquare, section: 'Browse' },
   { label: 'Campaigns', path: '/account/campaigns', icon: Megaphone, section: 'Browse' },
   { label: 'Video Library', path: '/account/videos', icon: Video, section: 'Library' },
+  { label: 'Built Clips', path: '/account/clips', icon: LayoutGrid, section: 'Library' },
   { label: 'Prompts', path: '/account/prompts', icon: MessageSquare, section: 'Manage' },
   { label: 'Calendar', path: '/account/calendar', icon: CalendarDays, section: 'Manage' },
-  { label: 'Profile', path: '/account/profile', icon: User, section: 'Manage' },
-  { label: 'Social', path: '/account/social', icon: Globe, section: 'Manage' },
-  { label: 'Posts', path: '/account/posts', icon: FileText, section: 'Manage' },
-  { label: 'Settings', path: '/account/settings', icon: Settings, section: 'Manage' },
   { label: 'Billing', path: '/account/billing', icon: CreditCard, section: 'Manage' },
 ]
 
 export function AccountLayout() {
   const { user, logout } = useAuth()
+  const profileState = useClipperProfile()
+  const { profile } = profileState
   const location = useLocation()
   const navigate = useNavigate()
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [settingsOpen,setSettingsOpen] = useState(false)
 
   const gateMode = needsPlanSelection(user)
   const onBilling = location.pathname.startsWith('/account/billing')
@@ -61,9 +60,12 @@ export function AccountLayout() {
   useEffect(() => {
     let disposed = false
     setFeatureAccess({ campaigns: false, restricted: false, prompts: true, loaded: false })
-    Promise.all([api.get('/app-settings/feature-flags'), api.get('/user/restrictions')]).then(([flags, permissions]) => {
-      if (!disposed && flags.success && permissions.success) setFeatureAccess({ campaigns: !!flags.feature_flags?.campaigns_enabled, restricted: !!permissions.restricted, prompts: permissions.restrictions?.allow_custom_prompts !== false, loaded: true })
-    }).catch(() => {})
+    Promise.allSettled([api.get('/settings/feature-flags'), api.get('/user/restrictions')]).then(([flags, permissions]) => {
+      if (disposed) return
+      const settings = flags.status === 'fulfilled' && flags.value.success ? flags.value : undefined
+      const access = permissions.status === 'fulfilled' && permissions.value.success ? permissions.value : undefined
+      setFeatureAccess({ campaigns: !!settings?.feature_flags?.campaigns_enabled, restricted: !!access?.restricted, prompts: access?.restrictions?.allow_custom_prompts !== false, loaded: !!access })
+    })
     return () => { disposed = true }
   }, [user?.id])
 
@@ -98,7 +100,8 @@ export function AccountLayout() {
         : 'text-zinc-400 hover:text-zinc-200 hover:bg-zinc-800/60'
     }`
 
-  const visibleItems = NAV_ITEMS.filter(item => {
+  const manageItems: NavItem[] = [...(orgPath ? [{ label: 'Organizations', path: orgPath, icon: Building2, section: 'Manage' }] : []), ...NAV_ITEMS.filter(item => item.section === 'Manage')]
+  const visibleItems = [...NAV_ITEMS.filter(item => item.section !== 'Manage'), ...manageItems].filter(item => {
     if (item.path === '/account/campaigns' && !(featureAccess.campaigns || user?.is_admin || user?.campaigns_enabled)) return false
     return !(['/account/creators', '/account/calendar', '/account/prompts'].includes(item.path) && (!featureAccess.loaded || featureAccess.restricted && !(item.path === '/account/prompts' && featureAccess.prompts)))
   })
@@ -138,36 +141,13 @@ export function AccountLayout() {
         })}
       </nav>
 
-      <div className="p-3 border-t border-zinc-800">
-        {user && (
-          <div className="px-3 mb-2">
-            <p className="text-sm text-white font-medium truncate m-0">{user.name || 'Account'}</p>
-            <p className="text-xs text-zinc-500 truncate m-0">{user.email}</p>
-          </div>
-        )}
-        {orgPath && (
-          <Link
-            to={orgPath}
-            className="flex items-center gap-2.5 w-full px-3 py-2 mb-1 rounded-lg text-sm font-medium text-zinc-400 hover:text-cyan-400 hover:bg-zinc-800/60 no-underline transition-colors"
-          >
-            <Building2 className="w-4 h-4" />
-            Organization
-          </Link>
-        )}
-        <button
-          type="button"
-          onClick={handleSignOut}
-          className="flex items-center gap-2.5 w-full px-3 py-2 rounded-lg text-sm font-medium text-zinc-400 hover:text-red-400 hover:bg-red-500/10 border-none bg-transparent cursor-pointer transition-colors"
-        >
-          <LogOut className="w-4 h-4" />
-          Sign out
-        </button>
-      </div>
+      <AccountUserMenu name={profile?.display_name || user?.name || 'Account'} avatarUrl={profile?.avatar_url || user?.avatar_url || undefined} email={user?.email} onSignOut={handleSignOut} onSettings={()=>setSettingsOpen(true)} />
     </aside>
   )
 
   return (
     <div className="flex h-screen bg-[#0a0a0b]">
+      {settingsOpen&&<div className="fixed inset-0 z-[300]" role="dialog" aria-label="Account Settings"><AccountWorkspace viewOverride="settings" onClose={()=>setSettingsOpen(false)} /></div>}
       {/* Mobile top bar */}
       <header className="md:hidden fixed top-0 inset-x-0 z-[100] h-14 flex items-center gap-3 px-4 border-b border-zinc-800 bg-[#0a0a0b]">
         <button
