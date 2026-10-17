@@ -55,7 +55,7 @@
     social: SocialOverlayPreset | null;
   }>();
   const emit = defineEmits<{ 'update:ratio': [value: string]; 'update:social': [value: SocialOverlayPreset | null] }>();
-  function choose(value: string) {
-    emit('update:social', SOCIAL_OVERLAY_PRESETS.find((preset) => preset.platform === value) ?? null);
+  function choose(value: unknown) {
+    emit('update:social', typeof value === 'string' ? SOCIAL_OVERLAY_PRESETS.find((preset) => preset.platform === value) ?? null : null);
   }
 </script>

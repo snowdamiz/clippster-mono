@@ -27,7 +27,7 @@ concurrency:
   cancel-in-progress: true
 jobs:
   verify:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     defaults:
       run:
@@ -64,6 +64,7 @@ jobs:
           name: web-test-results
           path: apps/web/test-results/
           retention-days: 7
+          if-no-files-found: ignore
 
   oauth-api:
     runs-on: ubuntu-24.04

@@ -37,6 +37,16 @@
       "lucide-vue-next": ["node_modules/lucide-vue-next"],
       "hls.js": ["node_modules/hls.js"],
       "vitest": ["node_modules/vitest"],
+      "class-variance-authority": ["node_modules/class-variance-authority"],
+      "reka-ui": ["node_modules/reka-ui"],
+      "radix-vue": ["node_modules/reka-ui"],
+      "@vueuse/core": ["node_modules/@vueuse/core"],
+      "clsx": ["node_modules/clsx"],
+      "tailwind-merge": ["node_modules/tailwind-merge"],
+      "axios": ["node_modules/axios"],
+      "pinia": ["node_modules/pinia"],
+      "@tauri-apps/api/core": ["node_modules/@tauri-apps/api/core"],
+      "@tauri-apps/plugin-sql": ["node_modules/@tauri-apps/plugin-sql"],
       "@clippster/cloud-sync-schema": ["../../packages/cloud-sync-schema/src/index.ts"],
       "zod": ["node_modules/zod"]
     }
