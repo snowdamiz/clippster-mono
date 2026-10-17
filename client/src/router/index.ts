@@ -3,6 +3,7 @@ import { useAuthStore } from '@/stores/auth';
 import { subscriptionStillCoversAccess } from '@/composables/useSubscription';
 import { featureFlags } from '@/composables/useFeatureFlags';
 import { canAccessAIVideo } from '@/utils/aiVideoAccess';
+import { canAccessCampaigns, canAccessImageEditor } from '@/utils/featureAccess';
 
 const router = createRouter({
   history: createWebHistory(),
@@ -18,10 +19,11 @@ const router = createRouter({
           accountType: user?.account_type,
           ownedOrgId: user?.owned_organization_id,
           createdByOrgId: user?.created_by_organization_id,
-          hasSelectedPlan: !!(user as any)?.has_selected_plan || !!localStorage.getItem('has_selected_plan'),
+          hasSelectedPlan:
+            !!(user as any)?.has_selected_plan || !!localStorage.getItem('has_selected_plan'),
           subStatus: (user as any)?.subscription?.status,
         });
-        
+
         // New users without a plan go to billing
         if (
           user &&
@@ -37,8 +39,7 @@ const router = createRouter({
             return '/billing?new_user=true';
           }
         }
-        const isOrgOwner =
-          user?.account_type === 'organization' && user?.owned_organization_id;
+        const isOrgOwner = user?.account_type === 'organization' && user?.owned_organization_id;
         const destination = isOrgOwner ? '/organizations' : '/creators';
         console.log('[Router] Redirecting to:', destination);
         return destination;
@@ -101,6 +102,7 @@ const router = createRouter({
       path: '/design-studio',
       name: 'design-studio',
       component: () => import('@/layouts/DashboardLayout.vue'),
+      meta: { requiresAuth: true, requiresImageEditorAccess: true },
       children: [
         {
           path: '',
@@ -113,7 +115,7 @@ const router = createRouter({
       path: '/design-studio/edit',
       name: 'design-studio-edit',
       component: () => import('@/pages/ImageEditor.vue'),
-      meta: { noLayout: true },
+      meta: { requiresAuth: true, requiresImageEditorAccess: true, noLayout: true },
     },
     {
       path: '/image-library',
@@ -133,17 +135,29 @@ const router = createRouter({
       redirect: '/image-library',
     },
     {
-      path: '/ai-thumbnail',
-      name: 'ai-thumbnail',
+      path: '/ai-image',
+      name: 'ai-image',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiresAuth: true, requiresAIVideoAccess: true },
+      meta: { requiresAuth: true, requiresImageEditorAccess: true },
       children: [
         {
           path: '',
-          name: 'ai-thumbnail-home',
-          component: () => import('@/pages/AIThumbnailGenerator.vue'),
+          name: 'ai-image-home',
+          component: () => import('@/pages/AIImageGenerator.vue'),
         },
       ],
+    },
+    {
+      path: '/ai-image/session',
+      name: 'ai-image-session',
+      component: () => import('@/pages/AIImageCreatorSession.vue'),
+      meta: { requiresAuth: true, requiresImageEditorAccess: true, noLayout: true },
+    },
+    {
+      path: '/ai-image/thumbnail',
+      name: 'ai-image-thumbnail',
+      component: () => import('@/pages/AIThumbnailGenerator.vue'),
+      meta: { requiresAuth: true, requiresImageEditorAccess: true, noLayout: true },
     },
     {
       path: '/studio/record/session',
@@ -248,7 +262,7 @@ const router = createRouter({
       path: '/campaigns',
       name: 'campaigns',
       component: () => import('@/layouts/DashboardLayout.vue'),
-      meta: { requiredTier: 'creator' },
+      meta: { requiresCampaignAccess: true, requiredTier: 'creator' },
       children: [
         {
           path: '',
@@ -670,7 +684,14 @@ export function isOrgAccountOwner(
 
 // Helper to check if a user needs to select a plan (new user flow)
 function needsPlanSelection(
-  user?: { account_type?: string; owned_organization_id?: string | number | null; is_admin?: boolean; created_by_organization_id?: string | number | null; has_selected_plan?: boolean; subscription?: { status?: string; end_date?: string | null; days_remaining?: number } } | null
+  user?: {
+    account_type?: string;
+    owned_organization_id?: string | number | null;
+    is_admin?: boolean;
+    created_by_organization_id?: string | number | null;
+    has_selected_plan?: boolean;
+    subscription?: { status?: string; end_date?: string | null; days_remaining?: number };
+  } | null
 ): boolean {
   if (!user) return false;
   if (user.is_admin) return false;
@@ -688,7 +709,13 @@ function needsPlanSelection(
 
 // Helper to get the default landing route for a user
 export function getDefaultRoute(
-  user?: { account_type?: string; owned_organization_id?: string | number | null; is_admin?: boolean; created_by_organization_id?: string | number | null; subscription?: { status?: string } } | null
+  user?: {
+    account_type?: string;
+    owned_organization_id?: string | number | null;
+    is_admin?: boolean;
+    created_by_organization_id?: string | number | null;
+    subscription?: { status?: string };
+  } | null
 ): string {
   if (needsPlanSelection(user)) return '/billing?new_user=true';
   return isOrgAccountOwner(user) ? '/organizations' : '/creators';
@@ -701,7 +728,7 @@ router.beforeEach(async (to, _from, next) => {
     from: _from.path,
     isAuthenticated: useAuthStore().isAuthenticated,
   });
-  
+
   const authStore = useAuthStore();
   const ownedOrganizationId = authStore.user?.owned_organization_id;
 
@@ -723,6 +750,16 @@ router.beforeEach(async (to, _from, next) => {
     return;
   }
 
+  if (to.meta.requiresImageEditorAccess && !canAccessImageEditor(authStore.user)) {
+    next('/projects');
+    return;
+  }
+
+  if (to.meta.requiresCampaignAccess && !canAccessCampaigns(authStore.user)) {
+    next('/projects');
+    return;
+  }
+
   // Check if route requires admin or moderator
   if (
     to.meta.requiresAdmin &&
@@ -737,11 +774,7 @@ router.beforeEach(async (to, _from, next) => {
     const tierHierarchy: Record<string, number> = { free: 0, starter: 1, creator: 2, pro: 3 };
     const user = authStore.user;
     // Admins, org-created users, and org owners bypass personal tier checks
-    if (
-      !user?.is_admin &&
-      !user?.created_by_organization_id &&
-      !user?.owned_organization_id
-    ) {
+    if (!user?.is_admin && !user?.created_by_organization_id && !user?.owned_organization_id) {
       const userTier = user?.subscription?.tier || 'free';
       const userLevel = tierHierarchy[userTier] ?? 0;
       const requiredLevel = tierHierarchy[to.meta.requiredTier as string] ?? 0;

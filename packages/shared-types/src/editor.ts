@@ -49,11 +49,13 @@ export interface ClipBuild {
   created_at: number;
 }
 
-export type TargetAspectRatio = '9:16' | '16:9';
+export type TargetAspectRatio = '9:16' | '16:9' | '1:1' | '4:5';
 
 export const TARGET_DIMENSIONS: Record<TargetAspectRatio, { width: number; height: number }> = {
   '9:16': { width: 1080, height: 1920 },
   '16:9': { width: 1920, height: 1080 },
+  '1:1': { width: 1080, height: 1080 },
+  '4:5': { width: 1080, height: 1350 },
 };
 
 export function parseActiveVodPresetConfig(raw: string | null | undefined): ActiveVodPresetConfig | null {

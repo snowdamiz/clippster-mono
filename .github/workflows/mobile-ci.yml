@@ -9,6 +9,7 @@ on:
       - 'patches/ffmpeg-expo*'
       - 'package.json'
       - 'yarn.lock'
+      - '.node-version'
       - '.github/workflows/mobile-ci.yml'
   pull_request:
     paths:
@@ -18,6 +19,7 @@ on:
       - 'patches/ffmpeg-expo*'
       - 'package.json'
       - 'yarn.lock'
+      - '.node-version'
       - '.github/workflows/mobile-ci.yml'
 
 jobs:
@@ -27,11 +29,13 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: '.node-version'
           cache: 'yarn'
       - run: yarn install --frozen-lockfile
       - run: yarn workspace @clippster/shared-types test
       - run: yarn workspace @clippster/api-client test
+      - name: Install FFmpeg for shared export regression tests
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
       - run: yarn workspace @clippster/clip-export test
       - run: yarn mobile:typecheck
       - run: yarn mobile:lint
@@ -42,7 +46,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: '.node-version'
           cache: 'yarn'
       - run: yarn install --frozen-lockfile
       - run: yarn workspace mobile test
@@ -66,7 +70,7 @@ jobs:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: '.node-version'
           cache: 'yarn'
       - uses: actions/setup-java@v4
         with:
@@ -74,6 +78,9 @@ jobs:
           java-version: '17'
       - name: Setup Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          # The action's default also requests the retired SDK "tools" package.
+          packages: 'platform-tools'
       - run: yarn install --frozen-lockfile
       - name: Ensure ffmpeg-expo Android CLI static libs
         run: node scripts/setup-ffmpeg-cli.mjs
@@ -108,7 +115,7 @@ jobs:
           xcodebuild -version
       - uses: actions/setup-node@v4
         with:
-          node-version: '22'
+          node-version-file: '.node-version'
           cache: 'yarn'
       - run: yarn install --frozen-lockfile
       - name: Ensure ffmpeg-expo iOS CLI bits

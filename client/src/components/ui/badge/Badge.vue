@@ -6,10 +6,11 @@
 
   const props = defineProps<{
     variant?: BadgeVariants['variant']
+    size?: BadgeVariants['size']
     class?: HTMLAttributes['class']
   }>()
 </script>
 
 <template>
-  <div :class="cn(badgeVariants({ variant }), props.class)"><slot /></div>
+  <span :class="cn(badgeVariants({ variant, size }), props.class)"><slot /></span>
 </template>

@@ -150,7 +150,6 @@ export function useDownloads() {
   // Helper function to refund free tier usage when download is cancelled or fails
   async function refundFreeTierUsage() {
     try {
-      const { useAuthStore } = await import('@/stores/auth');
       const _authStore = useAuthStore();
       const _user = _authStore.user;
       const { useSubscription } = await import('@/composables/useSubscription');
@@ -320,8 +319,8 @@ export function useDownloads() {
                 frameRate: undefined, // We don't have this info from the basic download
                 codec: event.payload.codec,
                 fileSize: event.payload.file_size,
-                platform: download.provider ?? null,
-                sourceUrl: download.videoUrl ?? null,
+                platform: download.provider,
+                sourceUrl: download.videoUrl,
                 // Segment tracking information
                 sourceClipId: download.sourceClipId,
                 sourceMintId: download.mintId,
@@ -548,7 +547,6 @@ export function useDownloads() {
     await initialize();
 
     // Free tier: 2 VOD downloads/day limit
-    const { useAuthStore } = await import('@/stores/auth');
     const _authStore = useAuthStore();
     const _user = _authStore.user;
     const { useSubscription } = await import('@/composables/useSubscription');

@@ -18,7 +18,7 @@
     v-bind="forwardedProps"
     :class="
       cn(
-        'flex cursor-default select-none items-center rounded-sm px-2 py-1.5 text-sm outline-none focus:bg-accent data-[state=open]:bg-accent',
+        'flex h-8 cursor-default select-none items-center gap-2 rounded-md px-2 text-sm text-fg outline-none focus:bg-surface-active data-[state=open]:bg-surface-active',
         props.class
       )
     "

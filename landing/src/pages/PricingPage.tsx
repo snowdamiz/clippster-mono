@@ -1,8 +1,10 @@
-import { Check, X, ArrowLeft, Apple, Monitor, Minus, Loader2, Sparkles, Zap, Crown, Building2, Plus, ChevronDown, Package, TrendingUp, Trophy, Clock } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import {ProductComparison} from '@/components/marketing/ProductComparison'
+import {Header} from '@/components/Header';
+import {Footer} from '@/components/Footer';
+import { Check, X, Sparkles, Zap, Crown, Building2, Plus, ChevronDown, Package, TrendingUp, Trophy, Clock } from 'lucide-react'
 import { useDownloads } from '../hooks/usePlatform'
 import { CTA } from '../components/CTA'
-import { Fragment, useState } from 'react'
+import { useState } from 'react'
 import { trackDownloadClick, trackLandingEvent } from '@/services/landingAnalytics'
 
 // Subscription plans (actual pricing from server)
@@ -113,9 +115,9 @@ const subscriptionPlans = [
 // Credit packs (one-time purchases - actual pricing from server)
 // 1 credit = 1 minute of video processing
 const creditPacks = [
-  { name: 'Small Pack', credits: 240, price: 10, perCredit: '0.042', savings: null, icon: Package, valueBar: 33 },
-  { name: 'Medium Pack', credits: 600, price: 19.99, perCredit: '0.033', savings: null, popular: true, icon: TrendingUp, valueBar: 66 },
-  { name: 'Large Pack', credits: 1800, price: 39.99, perCredit: '0.022', savings: '40%', icon: Crown, valueBar: 100 },
+  { name: 'Small Pack', credits: 240, price: 10, perCredit: '0.042', icon: Package },
+  { name: 'Medium Pack', credits: 600, price: 20, perCredit: '0.033', popular: true, icon: TrendingUp },
+  { name: 'Large Pack', credits: 1800, price: 39.99, perCredit: '0.022', icon: Crown },
 ]
 
 // Organization plans (base tiers only, no add-ons)
@@ -205,180 +207,34 @@ const organizationPlans = [
 const creditExamples = [
   { action: 'Video processing', credits: '1 credit per minute' },
   { action: 'AI clip detection', credits: 'Included in processing' },
-  { action: 'Auto-captions generation', credits: 'Included in processing' },
-  { action: 'HD/4K export', credits: 'Included in processing' },
-  { action: 'Credits rollover', credits: 'Yes - never expire' },
-]
-
-// Feature comparison data
-type FeatureValue = 'yes' | 'no' | 'partial' | string
-
-interface ComparisonFeature {
-  name: string
-  clippster: FeatureValue
-  opus: FeatureValue
-  winner?: 'clippster' | 'opus' | 'tie'
-}
-
-interface ComparisonCategory {
-  category: string
-  features: ComparisonFeature[]
-}
-
-const comparisonFeatures: ComparisonCategory[] = [
-  {
-    category: 'Pricing & Value',
-    features: [
-      { name: 'Pricing model', clippster: 'Sub + credit packs', opus: 'Monthly subscription', winner: 'clippster' },
-      { name: 'Extra credits', clippster: 'Buy anytime', opus: 'Upgrade plan only', winner: 'clippster' },
-      { name: 'Starting price', clippster: '$29.99/month', opus: '$15/month' },
-      { name: 'Mid tier value', clippster: '1800 credits @ $54.99', opus: '~300 credits @ $29', winner: 'clippster' },
-    ]
-  },
-  {
-    category: 'AI & Clipping',
-    features: [
-      { name: 'AI highlight detection', clippster: 'yes', opus: 'yes', winner: 'tie' },
-      { name: 'AI Video Creator', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Real-time live clipping', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Picture-in-Picture mode', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Manual clipping mode', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Hotkey clipping', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Virality score', clippster: 'yes', opus: 'yes', winner: 'tie' },
-      { name: 'Processing speed', clippster: 'Real-time', opus: 'Queue-based', winner: 'clippster' },
-    ]
-  },
-  {
-    category: 'Video Editor',
-    features: [
-      { name: 'Timeline editor', clippster: 'Advanced', opus: 'Basic', winner: 'clippster' },
-      { name: 'Multi-track editing', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Drag & drop segments', clippster: 'yes', opus: 'partial' },
-      { name: 'Cut/split/merge tools', clippster: 'Full suite', opus: 'Basic', winner: 'clippster' },
-      { name: 'Keyboard shortcuts', clippster: 'Comprehensive', opus: 'Limited', winner: 'clippster' },
-      { name: 'Text overlays & stickers', clippster: 'yes', opus: 'partial', winner: 'clippster' },
-      { name: 'Watermark customization', clippster: 'yes', opus: 'limited', winner: 'clippster' },
-      { name: 'Intro/outro templates', clippster: 'yes', opus: 'no', winner: 'clippster' },
-    ]
-  },
-  {
-    category: 'Captions & Audio',
-    features: [
-      { name: 'Auto-captions', clippster: 'yes', opus: 'yes', winner: 'tie' },
-      { name: 'Languages', clippster: '9 verified', opus: '20+ (vendor claim)', winner: 'tie' },
-      { name: 'Caption styles', clippster: 'Customizable', opus: 'Templates', winner: 'clippster' },
-      { name: 'Custom fonts', clippster: 'All plans', opus: 'Pro only', winner: 'clippster' },
-      { name: 'Filler word removal', clippster: 'yes', opus: 'yes', winner: 'tie' },
-    ]
-  },
-  {
-    category: 'Platform & Export',
-    features: [
-      { name: 'App type', clippster: 'Desktop', opus: 'Web-based' },
-      { name: 'Export quality', clippster: 'Up to 4K', opus: '1080p max', winner: 'clippster' },
-      { name: 'Aspect ratios', clippster: 'All (any plan)', opus: 'Pro only', winner: 'clippster' },
-      { name: 'Watermark-free', clippster: 'Paid plans', opus: 'Paid only', winner: 'tie' },
-      { name: 'Direct publishing', clippster: 'yes', opus: 'yes', winner: 'tie' },
-    ]
-  },
-  {
-    category: 'Import Sources',
-    features: [
-      { name: 'YouTube', clippster: 'Coming Soon', opus: 'yes' },
-      { name: 'Twitch', clippster: 'yes', opus: 'Pro only', winner: 'clippster' },
-      { name: 'Kick', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'PumpFun', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Livestream DVR', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Local files', clippster: 'yes', opus: 'yes', winner: 'tie' },
-      { name: 'File size limit', clippster: 'Unlimited', opus: '10-30GB', winner: 'clippster' },
-    ]
-  },
-  {
-    category: 'Teams & Organizations',
-    features: [
-      { name: 'Organization dashboard', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Campaign management', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Clipper recruitment', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Clipper profiles & leaderboards', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Performance-based payments', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Project organization', clippster: 'yes', opus: 'yes', winner: 'tie' },
-      { name: 'Folders & tags', clippster: 'yes', opus: 'partial', winner: 'clippster' },
-      { name: 'Team collaboration', clippster: 'yes', opus: 'Pro only', winner: 'tie' },
-      { name: 'Asset sharing', clippster: 'yes', opus: 'Business only', winner: 'clippster' },
-      { name: 'Shared credit pools', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Member credit allocation', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Social account management', clippster: 'yes', opus: 'no', winner: 'clippster' },
-      { name: 'Team seats', clippster: 'Organization Accounts', opus: '2 (Pro)', winner: 'clippster' },
-    ]
-  },
+  
+  
+  { action: 'Credits rollover', credits: 'Paid credits roll over; downgrade rules apply' },
 ]
 
 // FAQ data
 const faqs = [
   {
     q: 'How do credits work?',
-    a: '1 credit = 1 minute of video processing. When you process a 10-minute video, it uses 10 credits. This covers AI detection, captioning, and export all in one.'
+    a: '1 credit = 1 minute of video processing. When you process a 10-minute video, it uses 10 credits. Feature access and daily limits depend on your plan.'
   },
   {
     q: 'What happens if I run out of credits?',
-    a: 'You can purchase additional credit packs at any time. Credit pack purchases stack with your subscription and never expire.'
+    a: 'You can purchase additional credit packs at any time. Available packs depend on your plan. Downgrading to Basic resets your credit balance.'
   },
   {
     q: 'Do unused credits roll over?',
-    a: 'Yes! All credits roll over and never expire. Whether from subscription or credit packs, your credits stay in your account until you use them.'
+    a: 'Unused paid credits roll over. Downgrading to Basic resets your balance; Free monthly credits are capped.'
   },
   {
     q: 'Can I cancel anytime?',
-    a: 'Yes! You can cancel your subscription at any time. Your remaining credits will stay in your account and never expire, so you can use them whenever you\'re ready.'
+    a: 'Yes! You can cancel your subscription at any time. Feature access changes with your plan. Downgrading to Basic resets your credit balance.'
   },
   {
     q: 'What payment methods do you accept?',
     a: 'We accept all major credit cards through Stripe.'
   },
 ]
-
-function FeatureCell({ value, isWinner, isClippster }: { value: FeatureValue, isWinner?: boolean, isClippster?: boolean }) {
-  const baseClasses = "flex items-center justify-center"
-  
-  const winnerBg = isClippster ? 'bg-cyan-500/20' : 'bg-zinc-800'
-  const winnerText = isClippster ? 'text-cyan-400' : 'text-zinc-400'
-  
-  if (value === 'yes') {
-    return (
-      <div className={baseClasses}>
-        <div className={`w-6 h-6 rounded-full flex items-center justify-center ${isWinner && isClippster ? winnerBg : 'bg-zinc-800'}`}>
-          <Check className={`w-4 h-4 ${isWinner && isClippster ? winnerText : 'text-zinc-400'}`} />
-        </div>
-      </div>
-    )
-  }
-  
-  if (value === 'no') {
-    return (
-      <div className={baseClasses}>
-        <div className="w-6 h-6 rounded-full bg-zinc-800/50 flex items-center justify-center">
-          <X className="w-4 h-4 text-zinc-600" />
-        </div>
-      </div>
-    )
-  }
-  
-  if (value === 'partial') {
-    return (
-      <div className={baseClasses}>
-        <div className="w-6 h-6 rounded-full bg-zinc-800 flex items-center justify-center">
-          <Minus className="w-4 h-4 text-zinc-500" />
-        </div>
-      </div>
-    )
-  }
-  
-  return (
-    <span className={`text-sm ${isWinner && isClippster ? 'text-cyan-300 font-medium' : 'text-zinc-400'}`}>
-      {value}
-    </span>
-  )
-}
 
 // Interactive FAQ Accordion Item
 function FAQItem({ question, answer, isOpen, onClick, index }: { 
@@ -418,7 +274,7 @@ function FAQItem({ question, answer, isOpen, onClick, index }: {
 }
 
 export function PricingPage() {
-  const { primaryDownload, isLoading } = useDownloads()
+  const { primaryDownload } = useDownloads()
   const [openFAQ, setOpenFAQ] = useState<number | null>(0)
 
   const trackPricingDownload = (source: string, label: string) => {
@@ -433,42 +289,7 @@ export function PricingPage() {
   return (
     <div className="min-h-screen bg-background overflow-x-hidden">
       {/* Header */}
-      <header className="border-b border-zinc-800/50 backdrop-blur-md sticky top-0 z-50 bg-[#0a0a0b]/90">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3 sm:gap-6">
-            <Link
-              to="/"
-              className="flex items-center gap-2 sm:gap-3"
-              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_header_logo', button_label: 'Home', path: '/' })}
-            >
-              <img src="/logo-icon.svg" alt="Clippster" className="w-7 h-7 sm:w-8 sm:h-8" />
-              <img src="/logo.svg" alt="Clippster" className="h-4 sm:h-5" />
-            </Link>
-            <Link 
-              to="/" 
-              className="hidden sm:flex items-center gap-2 text-zinc-500 hover:text-white transition-colors text-sm group"
-              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_header_back', button_label: 'Back to home', path: '/' })}
-            >
-              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-              Back to home
-            </Link>
-          </div>
-          {isLoading ? (
-            <div className="px-5 py-2.5 rounded-full bg-zinc-800 text-zinc-400 font-medium text-sm flex items-center gap-2">
-              <Loader2 className="w-4 h-4 animate-spin" />
-            </div>
-          ) : primaryDownload ? (
-            <a
-              href={primaryDownload.downloadUrl}
-              className="group px-5 py-2.5 rounded-full bg-cyan-500 text-white font-medium text-sm hover:bg-cyan-600 transition-all duration-300 flex items-center gap-2 shadow-lg shadow-cyan-500/20 hover:shadow-cyan-500/30"
-              onClick={() => trackDownloadClick(primaryDownload, 'pricing_header_download', 'Download')}
-            >
-              {primaryDownload.platform.os === 'mac' ? <Apple className="w-4 h-4" /> : <Monitor className="w-4 h-4" />}
-              <span className="hidden sm:inline">Download</span>
-            </a>
-          ) : null}
-        </div>
-      </header>
+      <Header />
 
       <main className="max-w-7xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
         {/* Page Header */}
@@ -496,7 +317,7 @@ export function PricingPage() {
           </h1>
           
           <p className="text-zinc-400 max-w-2xl mx-auto text-lg mb-10 relative leading-relaxed">
-            Subscribe for monthly credits and top up with credit packs anytime. Credits never expire.
+            Subscribe for monthly credits and top up with credit packs anytime. Paid credits roll over; plan-change rules apply.
           </p>
         </div>
 
@@ -591,7 +412,7 @@ export function PricingPage() {
                         <div className="flex items-center gap-2">
                           <Sparkles className={`w-4 h-4 ${plan.highlight ? 'text-cyan-400' : 'text-zinc-500'}`} />
                           <span className={`font-semibold ${plan.highlight ? 'text-cyan-300' : 'text-zinc-300'}`}>
-                            {plan.credits.toLocaleString()} {plan.name === 'Free' ? 'one-time credits' : 'credits/month'}
+                            {plan.credits.toLocaleString()} credits/month
                           </span>
                         </div>
                       </div>
@@ -675,7 +496,7 @@ export function PricingPage() {
               <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-gradient-to-r from-emerald-500/20 to-emerald-600/20 border border-emerald-500/30 mt-4">
                 <span className="text-sm font-semibold text-emerald-400">0% Campaign Fees</span>
                 <span className="text-xs text-emerald-300/70">•</span>
-                <span className="text-xs text-zinc-400">Save 10-30% vs other platforms</span>
+                <span className="text-xs text-zinc-400">Organization plans for campaign workflows</span>
               </div>
             </div>
 
@@ -829,120 +650,7 @@ export function PricingPage() {
           </div>
         </section>
 
-        {/* Comparison Section */}
-        <section className="mb-24 relative">
-          <div className="section-divider absolute top-0 left-0 right-0" />
-          <div className="pt-20">
-            <div className="text-center mb-12">
-              {/* Badge */}
-              <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full border border-zinc-800 bg-zinc-900/80 mb-6">
-                <span className="w-1.5 h-1.5 rounded-full bg-cyan-400 animate-pulse" />
-                <span className="text-xs font-medium text-zinc-400 uppercase tracking-wider">Comparison</span>
-              </div>
-              
-              <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4 tracking-tight">
-                Clippster vs <span className="text-zinc-500">Opus Clip</span>
-              </h2>
-              <p className="text-zinc-500 max-w-lg mx-auto px-4 leading-relaxed">
-                See how we compare to the leading cloud-based clipping tool
-              </p>
-            </div>
-
-            {/* Mobile Comparison Cards */}
-            <div className="md:hidden space-y-4">
-              {comparisonFeatures.map((category) => (
-                <div key={category.category} className="rounded-xl border border-zinc-800 overflow-hidden bg-zinc-900/40">
-                  <div className="bg-zinc-900/80 px-4 py-3 border-b border-zinc-800">
-                    <span className="text-sm font-semibold text-white">{category.category}</span>
-                  </div>
-                  <div className="divide-y divide-zinc-800/50">
-                    {category.features.map((feature) => (
-                      <div key={feature.name} className="p-4">
-                        <div className="text-sm text-zinc-300 mb-3">{feature.name}</div>
-                        <div className="grid grid-cols-2 gap-3">
-                          <div className={`rounded-lg p-3 ${feature.winner === 'clippster' ? 'bg-cyan-500/10 border border-cyan-500/20' : 'bg-zinc-800/50'}`}>
-                            <div className="flex items-center gap-1.5 mb-1.5">
-                              <img src="/logo-icon.svg" alt="" className="w-3.5 h-3.5" />
-                              <span className="text-[10px] font-medium text-zinc-400">Clippster</span>
-                            </div>
-                            <div className="flex items-center">
-                              <FeatureCell value={feature.clippster} isWinner={feature.winner === 'clippster'} isClippster={true} />
-                            </div>
-                          </div>
-                          <div className={`rounded-lg p-3 ${feature.winner === 'opus' ? 'bg-zinc-700/50' : 'bg-zinc-800/50'}`}>
-                            <div className="flex items-center gap-1.5 mb-1.5">
-                              <span className="text-[10px] font-medium text-zinc-500">Opus Clip</span>
-                            </div>
-                            <div className="flex items-center">
-                              <FeatureCell value={feature.opus} isWinner={feature.winner === 'opus'} isClippster={false} />
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              ))}
-            </div>
-
-            {/* Desktop Comparison Table */}
-            <div className="hidden md:block rounded-2xl border border-zinc-800 overflow-hidden bg-zinc-900/40 backdrop-blur-sm">
-              <table className="w-full">
-                <thead>
-                  <tr className="bg-zinc-900/80 border-b border-zinc-800">
-                    <th className="text-left text-sm font-medium text-zinc-500 px-6 py-5 w-1/2">Feature</th>
-                    <th className="text-center px-6 py-5 w-1/4">
-                      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-cyan-500/10 border border-cyan-500/30">
-                        <img src="/logo-icon.svg" alt="" className="w-5 h-5" />
-                        <span className="text-sm font-semibold text-white">Clippster</span>
-                      </div>
-                    </th>
-                    <th className="text-center px-6 py-5 w-1/4">
-                      <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-zinc-800 border border-zinc-700">
-                        <span className="text-sm font-medium text-zinc-400">Opus Clip</span>
-                      </div>
-                    </th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {comparisonFeatures.map((category, catIndex) => (
-                    <Fragment key={category.category}>
-                      {/* Category Header */}
-                      <tr key={`cat-${category.category}`} className="bg-zinc-900/60 border-y border-zinc-800">
-                        <td colSpan={3} className="px-6 py-3.5">
-                          <span className="text-sm font-semibold text-white">{category.category}</span>
-                        </td>
-                      </tr>
-                      
-                      {/* Category Features */}
-                      {category.features.map((feature, idx) => (
-                        <tr 
-                          key={`${catIndex}-${feature.name}`}
-                          className={`${idx !== category.features.length - 1 ? 'border-b border-zinc-800/30' : ''} hover:bg-zinc-800/30 transition-colors`}
-                        >
-                          <td className="text-sm text-zinc-400 px-6 py-4">{feature.name}</td>
-                          <td className={`text-center px-6 py-4 transition-colors ${feature.winner === 'clippster' ? 'bg-cyan-500/10' : ''}`}>
-                            <FeatureCell value={feature.clippster} isWinner={feature.winner === 'clippster'} isClippster={true} />
-                          </td>
-                          <td className="text-center px-6 py-4">
-                            <FeatureCell value={feature.opus} isWinner={feature.winner === 'opus'} isClippster={false} />
-                          </td>
-                        </tr>
-                      ))}
-                    </Fragment>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-
-            {/* Note */}
-            <div className="mt-6 text-center">
-              <p className="text-xs text-zinc-600 px-4">
-                * Opus Clip pricing as of December 2024. Clippster uses a minute-based credit system (1 credit = 1 minute).
-              </p>
-            </div>
-          </div>
-        </section>
+        <ProductComparison />
 
         {/* Credit Packs Section */}
         <section className="mb-24 relative">
@@ -962,7 +670,7 @@ export function PricingPage() {
                 </span>
               </h2>
               <p className="text-zinc-500 max-w-lg mx-auto leading-relaxed">
-                Buy extra credits whenever you need them. Credits never expire and stack with your subscription.
+                Buy extra credits whenever you need them. Credits stack with your subscription; plan changes can affect your balance.
               </p>
             </div>
 
@@ -1007,7 +715,7 @@ export function PricingPage() {
                           <div className="relative bg-gradient-to-r from-cyan-500 to-blue-500 py-2">
                             <span className="text-[10px] font-bold tracking-wider uppercase text-white flex items-center justify-center gap-1.5">
                               <Trophy className="w-3 h-3" />
-                              Best Value
+                              Popular
                             </span>
                           </div>
                         </div>
@@ -1064,47 +772,7 @@ export function PricingPage() {
                         {/* Divider */}
                         <div className={`h-px mb-5 ${pack.popular ? 'bg-gradient-to-r from-transparent via-zinc-700 to-transparent' : 'bg-zinc-800'}`} />
                         
-                        {/* Value indicator */}
-                        <div className="space-y-3">
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-zinc-500">Value rating</span>
-                            <div className="flex items-center gap-1.5">
-                              {[1, 2, 3].map((i) => (
-                                <div 
-                                  key={i} 
-                                  className={`w-2 h-2 rounded-full transition-colors ${
-                                    i <= (pack.valueBar === 100 ? 3 : pack.valueBar >= 66 ? 2 : 1)
-                                      ? pack.popular ? 'bg-cyan-400' : 'bg-zinc-400'
-                                      : 'bg-zinc-700'
-                                  }`} 
-                                />
-                              ))}
-                            </div>
-                          </div>
-                          
-                          {/* Savings or starter badge */}
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-zinc-500">Savings</span>
-                            {pack.savings ? (
-                              <span className={`font-semibold ${pack.popular ? 'text-cyan-400' : 'text-emerald-400'}`}>
-                                {pack.savings} off
-                              </span>
-                            ) : (
-                              <span className="text-zinc-600">—</span>
-                            )}
-                          </div>
-                          
-                          <div className="flex items-center justify-between text-sm">
-                            <span className="text-zinc-500">Never expires</span>
-                            <div className={`w-4 h-4 rounded-full flex items-center justify-center ${
-                              pack.popular 
-                                ? 'bg-cyan-500/20 text-cyan-400' 
-                                : 'bg-zinc-800 text-zinc-500'
-                            }`}>
-                              <Check className="w-2.5 h-2.5" />
-                            </div>
-                          </div>
-                        </div>
+                        <p className="text-xs text-zinc-500 leading-relaxed">Adds to your credit balance. Available packs and credit retention depend on your plan.</p>
                       </div>
                     </div>
                   </div>
@@ -1139,7 +807,7 @@ export function PricingPage() {
                     <div className="w-6 h-6 rounded-lg bg-zinc-800 flex items-center justify-center shrink-0">
                       <Clock className="w-3.5 h-3.5" />
                     </div>
-                    <span>Example: A 30-minute YouTube video uses 30 credits to process, caption, and export</span>
+                    <span>Example: Processing 30 minutes of video uses 30 credits. Feature access depends on your plan.</span>
                   </div>
                 </div>
               </div>
@@ -1186,39 +854,7 @@ export function PricingPage() {
       <CTA />
 
       {/* Footer */}
-      <footer className="border-t border-zinc-800/50">
-        <div className="max-w-6xl mx-auto px-4 sm:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <img src="/logo-icon.svg" alt="Clippster" className="w-6 h-6 opacity-50" />
-            <p className="text-xs text-zinc-600">
-              © {new Date().getFullYear()} Clippster. All rights reserved.
-            </p>
-          </div>
-          <div className="flex items-center gap-6 text-xs text-zinc-600">
-            <Link
-              to="/"
-              className="hover:text-zinc-400 transition-colors"
-              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_footer', button_label: 'Home', path: '/' })}
-            >
-              Home
-            </Link>
-            <Link
-              to="/privacy"
-              className="hover:text-zinc-400 transition-colors"
-              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_footer', button_label: 'Privacy', path: '/privacy' })}
-            >
-              Privacy
-            </Link>
-            <Link
-              to="/terms"
-              className="hover:text-zinc-400 transition-colors"
-              onClick={() => trackLandingEvent('landing_nav_click', { source: 'pricing_footer', button_label: 'Terms', path: '/terms' })}
-            >
-              Terms
-            </Link>
-          </div>
-        </div>
-      </footer>
+      <Footer />
 
     </div>
   )

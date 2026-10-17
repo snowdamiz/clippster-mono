@@ -72,12 +72,12 @@
     @mousedown="emit('playheadMouseDown', $event)"
     @keydown="handleKeyDown"
   >
-    <!-- 1px white line -->
+    <!-- 1px brand line -->
     <div
-      class="absolute left-[5px] h-full w-px transition-[background-color,box-shadow] duration-100"
-      :class="props.isScrubbing ? 'bg-white/70 shadow-[0_0_10px_rgba(255,255,255,0.22)]' : 'bg-white/50'"
+      class="absolute left-[5px] h-full w-px bg-brand transition-opacity duration-100"
+      :class="props.isScrubbing ? 'opacity-100' : 'opacity-80'"
     />
-    <!-- Downward triangle head in cyan, sits above the line -->
+    <!-- Downward triangle head in brand, sits above the line -->
     <div
       class="absolute -top-[1px] left-1/2 cursor-grab transition-[transform,filter] duration-100 active:cursor-grabbing"
       :style="{
@@ -86,8 +86,8 @@
         height: 0,
         borderLeft: '8px solid transparent',
         borderRight: '8px solid transparent',
-        borderTop: '12px solid rgba(255,255,255,0.9)',
-        filter: isSnappingToPlayhead ? 'drop-shadow(0 0 4px #0ea5e9)' : 'none',
+        borderTop: '12px solid var(--brand)',
+        filter: isSnappingToPlayhead ? 'brightness(1.25)' : 'none',
       }"
     />
   </div>

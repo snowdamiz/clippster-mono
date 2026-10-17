@@ -64,8 +64,8 @@ function handleBookmarkClick(time: number, event: MouseEvent) {
 				@mousedown.prevent.stop
 				@click="handleBookmarkClick(time, $event)"
 			>
-				<div class="text-primary absolute -left-[5px] -top-px">
-					<Bookmark class="fill-primary size-3" />
+				<div class="absolute -left-[5px] -top-px text-brand">
+					<Bookmark class="size-3 fill-current" />
 				</div>
 			</button>
 		</button>

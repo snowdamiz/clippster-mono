@@ -19,6 +19,7 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
+      "@clippster/shared-types": ["../packages/shared-types/src/index.ts"],
       "@clippster/app-tour": ["../packages/app-tour/src/index.ts"],
       "@clippster/cloud-sync-schema": ["../packages/cloud-sync-schema/src/index.ts"]
     },

@@ -1,0 +1,74 @@
+@import 'tailwindcss';
+@import '../../../client/src/styles/theme.css';
+@import '../../../client/src/styles/tailwind-theme.css';
+@import '../../../client/src/fonts.css';
+@custom-variant dark (&:is(.dark *));
+@source './**/*.{vue,ts}';
+@source '../../../client/src/components';
+@source '../../../client/src/lib/sharedViewPresentation.ts';
+@source '../../../client/src/pages/ClipperProfilePage.vue';
+@source '../../../client/src/editor/components/preview/SocialOverlay.vue';
+@theme inline {
+  --color-background: var(--sidebar-bg);
+  --color-foreground: var(--sidebar-text);
+  --color-muted: var(--sidebar-hover);
+  --color-muted-foreground: var(--sidebar-text-muted);
+  --color-border: var(--sidebar-border);
+  --color-input: var(--sidebar-border);
+  --color-ring: var(--editor-accent);
+  --color-primary: var(--editor-accent);
+  --color-primary-foreground: #000;
+  --color-secondary: var(--sidebar-surface);
+  --color-secondary-foreground: var(--sidebar-text);
+  --color-popover: var(--sidebar-surface);
+  --color-popover-foreground: var(--sidebar-text);
+  --color-card: var(--sidebar-surface);
+  --color-card-foreground: var(--sidebar-text);
+}
+
+/* Desktop components rendered by the web workspace (Tailwind must scan them too). */
+@layer base {
+  body {
+    margin: 0;
+    min-width: 360px;
+    background: var(--canvas);
+    color: var(--fg);
+    font-family: var(--font-sans);
+    font-size: var(--text-sm);
+    -webkit-font-smoothing: antialiased;
+  }
+  button,
+  a,
+  input,
+  textarea,
+  select {
+    -webkit-tap-highlight-color: transparent;
+  }
+  button:not(:disabled),
+  a {
+    cursor: pointer;
+  }
+  button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+  }
+  :focus-visible {
+    outline: 2px solid var(--brand-line);
+    outline-offset: 1px;
+  }
+}
+@layer components {
+  /* Mirrors the desktop Input / Button primitives (components/ui) without their dependencies. */
+  .field {
+    @apply h-[var(--control-md)] w-full rounded-[var(--radius-control)] border border-line bg-surface-raised px-2.5 text-sm text-fg transition-[border-color,box-shadow] placeholder:text-fg-subtle hover:border-line-strong focus:border-brand-line focus:shadow-[0_0_0_3px_var(--brand-soft)] focus:outline-none;
+  }
+  textarea.field {
+    @apply h-auto py-2;
+  }
+  .button-primary {
+    @apply inline-flex h-[var(--control-md)] items-center justify-center gap-1.5 rounded-[var(--radius-control)] bg-[var(--primary-bg)] px-3 text-sm font-medium text-[var(--fg-on-light)] shadow-[var(--shadow-sm)] transition-colors hover:bg-[var(--primary-bg-hover)];
+  }
+  .button-secondary {
+    @apply inline-flex h-[var(--control-md)] items-center justify-center gap-1.5 rounded-[var(--radius-control)] border border-line bg-surface-raised px-3 text-sm font-medium text-fg transition-colors hover:border-line-strong hover:bg-[#20242c];
+  }
+}

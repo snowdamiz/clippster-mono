@@ -1,4 +1,4 @@
-import type { WordInfo } from '@/types';
+import type { WordInfo } from '@clippster/shared-types';
 
 /** Minimal segment shape for timing (POI and DB payloads may omit `id`). */
 export interface SubtitleTimingSegment {

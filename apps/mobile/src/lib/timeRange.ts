@@ -15,6 +15,15 @@ export interface TimeRange {
   endTime: number;
 }
 
+/** Accept a clock value without silently rolling invalid minutes or seconds. */
+export function parseClockTime(value: string): number | null {
+  const parts = value.trim().split(':');
+  if (parts.length < 2 || parts.length > 3 || parts.some(part => !/^\d{1,3}$/.test(part))) return null;
+  const numbers = parts.map(Number);
+  if (numbers[numbers.length - 1] >= 60 || (numbers.length === 3 && numbers[1] >= 60)) return null;
+  return numbers.reduce((seconds, part) => seconds * 60 + part, 0);
+}
+
 export function isFullStreamRange(range: TimeRange, totalDuration: number): boolean {
   if (totalDuration <= 0) return true;
   const tolerance = 2;

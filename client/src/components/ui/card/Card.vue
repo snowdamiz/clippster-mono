@@ -8,7 +8,7 @@
 </script>
 
 <template>
-  <div :class="cn('rounded-lg border bg-card text-card-foreground shadow', props.class)">
+  <div :class="cn('rounded-[var(--radius-card)] border border-line-subtle bg-card text-card-foreground', props.class)">
     <slot />
   </div>
 </template>

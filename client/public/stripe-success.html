@@ -5,147 +5,25 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Payment Successful - Clippster</title>
   <style>
-    :root {
-      --background: oklch(0.145 0 0);
-      --foreground: oklch(0.985 0 0);
-      --card: oklch(0.145 0 0);
-      --primary: oklch(0.985 0 0);
-      --muted-foreground: oklch(0.708 0 0);
-      --success: oklch(0.696 0.17 162.48);
-      --success-bg: oklch(0.269 0.05 162.48);
-      --radius: 0.625rem;
-    }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      background: var(--background);
-      color: var(--foreground);
-      padding: 1.5rem;
-    }
-
-    .container {
-      max-width: 28rem;
-      width: 100%;
-      animation: fadeIn 0.5s ease-out;
-    }
-
-    .card {
-      position: relative;
-      overflow: hidden;
-      border-radius: calc(var(--radius) * 2);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      background: var(--card);
-      backdrop-filter: blur(10px);
-      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-    }
-
-    .gradient-overlay {
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, transparent 50%, rgba(34, 197, 94, 0.05) 100%);
-      pointer-events: none;
-    }
-
-    .content {
-      position: relative;
-      padding: 2.5rem 2rem;
-      text-align: center;
-    }
-
-    .icon-container {
-      width: 80px;
-      height: 80px;
-      margin: 0 auto 1.5rem;
-      background: var(--success-bg);
-      border-radius: 50%;
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      animation: scaleIn 0.5s ease-out;
-    }
-
-    .icon-container svg {
-      width: 40px;
-      height: 40px;
-      color: var(--success);
-    }
-
-    @keyframes scaleIn {
-      0% {
-        transform: scale(0);
-        opacity: 0;
-      }
-      50% {
-        transform: scale(1.1);
-      }
-      100% {
-        transform: scale(1);
-        opacity: 1;
-      }
-    }
-
-    h1 {
-      font-size: 1.5rem;
-      font-weight: 700;
-      margin-bottom: 0.75rem;
-      color: var(--success);
-    }
-
-    p {
-      font-size: 0.9375rem;
-      color: var(--muted-foreground);
-      line-height: 1.5;
-      margin-bottom: 1.5rem;
-    }
-
-    .status {
-      font-size: 0.875rem;
-      color: var(--muted-foreground);
-      padding: 0.75rem 1rem;
-      background: rgba(255, 255, 255, 0.03);
-      border-radius: var(--radius);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    .close-notice {
-      margin-top: 1.5rem;
-      font-size: 0.8125rem;
-      color: var(--muted-foreground);
-      opacity: 0.7;
-    }
-    .logo {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.75rem;
-      margin-bottom: 2rem;
-    }
-
-    .logo img:first-child {
-      width: 32px;
-      height: 32px;
-      border-radius: 6px;
-    }
-
-    .logo img:last-child {
-      height: 20px;
-    }
-
-    @keyframes fadeIn {
-      from { opacity: 0; transform: translateY(10px); }
-      to { opacity: 1; transform: translateY(0); }
-    }
+    /* Mirrors client/src/styles/theme.css tokens (page is served standalone). */
+    :root { --canvas: #0a0c10; --surface: #13161c; --line: rgba(255,255,255,0.085); --fg: #eef0f4; --fg-muted: #959dab; --fg-subtle: #697181; --success: #34d399; --warning: #fbbf24; }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased; min-height: 100vh; display: flex; align-items: center; justify-content: center; background: var(--canvas); color: var(--fg); padding: 24px; }
+    .container { width: 100%; max-width: 380px; display: flex; flex-direction: column; align-items: center; gap: 20px; animation: fadeIn 0.3s ease-out; }
+    .logo { display: flex; align-items: center; gap: 8px; }
+    .logo > :first-child { width: 24px; height: 24px; border-radius: 6px; }
+    .logo > :last-child { height: 15px; width: auto; filter: brightness(0) invert(1); }
+    .card { width: 100%; background: var(--surface); border-radius: 16px; box-shadow: 0 0 0 1px var(--line), 0 24px 64px -12px rgba(0,0,0,0.7); padding: 28px 24px 24px; text-align: center; }
+    .tile { width: 44px; height: 44px; margin: 0 auto 16px; border-radius: 12px; display: flex; align-items: center; justify-content: center; border: 1px solid; }
+    .tile svg { width: 22px; height: 22px; }
+    .tile--success { color: var(--success); background: rgba(52,211,153,0.12); border-color: rgba(52,211,153,0.3); }
+    .tile--warning { color: var(--warning); background: rgba(251,191,36,0.12); border-color: rgba(251,191,36,0.3); }
+    h1 { font-size: 17px; line-height: 24px; font-weight: 600; letter-spacing: -0.01em; margin-bottom: 6px; }
+    p { font-size: 13px; line-height: 20px; color: var(--fg-muted); }
+    p + p { margin-top: 6px; }
+    .status { margin-top: 18px; font-size: 12px; color: var(--fg-muted); padding: 9px 12px; background: rgba(255,255,255,0.045); border-radius: 8px; }
+    .note { margin-top: 18px; font-size: 12px; color: var(--fg-subtle); }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
   </style>
 </head>
 <body>
@@ -155,23 +33,11 @@
       <img src="/logo.svg" alt="Clippster" height="20">
     </div>
     <div class="card">
-      <div class="gradient-overlay"></div>
-      <div class="content">
-        <div class="icon-container">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="20 6 9 17 4 12"></polyline>
-          </svg>
-        </div>
-
-        <h1>Payment Successful!</h1>
-        <p>Your credit pack has been purchased successfully. Your credits have been added to your account.</p>
-
-        <div class="status" id="status">
-          Notifying application...
-        </div>
-
-        <p class="close-notice">You can close this window now.</p>
-      </div>
+      <div class="tile tile--success"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"></polyline></svg></div>
+      <h1>Payment successful</h1>
+      <p>Your credit pack was purchased and the credits have been added to your account.</p>
+      <div class="status" id="status">Notifying the app…</div>
+      <p class="note">You can close this window now.</p>
     </div>
   </div>
 
@@ -193,7 +59,7 @@
       
       // Update status after a short delay to show the app has been notified
       setTimeout(() => {
-        statusEl.textContent = '✓ Application notified. You can close this tab.';
+        statusEl.textContent = 'Clippster has been notified.';
         statusEl.style.color = 'var(--success)';
       }, 1000);
       

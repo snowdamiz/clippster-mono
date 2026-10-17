@@ -1,43 +1,30 @@
 <template>
-  <div class="studio-panel">
-    <h3 class="studio-panel__title">Audio Mixer</h3>
-
-    <div class="studio-mixer__row">
-      <div class="studio-mixer__header">
-        <span>Mic</span>
-        <span>{{ micVolume }}%</span>
-      </div>
-      <input
-        :value="micVolume"
-        class="studio-mixer__slider"
-        type="range"
-        min="0"
-        max="150"
-        step="1"
-        @input="emit('update:micVolume', Number(($event.target as HTMLInputElement).value))"
-      />
-    </div>
-
-    <div class="studio-mixer__row" :class="{ 'studio-mixer__row--disabled': !hasShareAudio }">
-      <div class="studio-mixer__header">
-        <span>Share audio</span>
-        <span>{{ hasShareAudio ? `${shareAudioVolume}%` : 'None' }}</span>
-      </div>
-      <input
-        :value="shareAudioVolume"
-        class="studio-mixer__slider"
-        type="range"
-        min="0"
-        max="150"
-        step="1"
+  <StudioPanel title="Audio mixer">
+    <RangeField
+      label="Mic"
+      :model-value="micVolume"
+      :min="0"
+      :max="150"
+      @update:model-value="emit('update:micVolume', $event)"
+    />
+    <div class="flex flex-col gap-1">
+      <RangeField
+        label="Share"
+        :model-value="shareAudioVolume"
+        :min="0"
+        :max="150"
         :disabled="!hasShareAudio"
-        @input="emit('update:shareAudioVolume', Number(($event.target as HTMLInputElement).value))"
+        @update:model-value="emit('update:shareAudioVolume', $event)"
       />
+      <p v-if="!hasShareAudio" class="pl-[68px] text-2xs text-fg-subtle">No shared audio</p>
     </div>
-  </div>
+  </StudioPanel>
 </template>
 
 <script setup lang="ts">
+  import RangeField from '@/components/branding/RangeField.vue';
+  import StudioPanel from './StudioPanel.vue';
+
   defineProps<{
     micVolume: number;
     shareAudioVolume: number;
@@ -49,45 +36,3 @@
     'update:shareAudioVolume': [value: number];
   }>();
 </script>
-
-<style scoped>
-  .studio-panel {
-    background: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .studio-panel__title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .studio-mixer__row {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-  }
-
-  .studio-mixer__row--disabled {
-    opacity: 0.55;
-  }
-
-  .studio-mixer__header {
-    display: flex;
-    justify-content: space-between;
-    gap: 0.5rem;
-    color: var(--sidebar-text-muted);
-    font-size: 0.75rem;
-  }
-
-  .studio-mixer__slider {
-    width: 100%;
-    accent-color: var(--sidebar-accent);
-  }
-</style>

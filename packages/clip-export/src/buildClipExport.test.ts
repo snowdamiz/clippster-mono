@@ -39,13 +39,13 @@ describe('buildSegmentConcatArgs', () => {
 });
 
 describe('buildFramingFilterGraph', () => {
-  it('returns center crop for empty regions', () => {
+  it('preserves the scaled source background when regions are empty', () => {
     const result = buildFramingFilterGraph({
       framingConfig: createDefaultManualFramingConfig('9:16'),
       targetRatio: '9:16',
     });
 
-    expect(result?.filterComplex).toContain('crop');
+    expect(result?.filterComplex).toContain('scale=1080:608');
     expect(result?.width).toBe(1080);
     expect(result?.height).toBe(1920);
   });

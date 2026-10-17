@@ -1,7 +1,7 @@
 import { Link, router } from 'expo-router';
 import { useState } from 'react';
-import { KeyboardAvoidingView, Platform, ScrollView, Text, View } from 'react-native';
-import { SafeAreaView } from 'react-native-safe-area-context';
+import { Text, View } from 'react-native';
+import { AuthScreen } from '@/components/auth/AuthScreen';
 import { Button } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -22,18 +22,13 @@ export default function RegisterScreen() {
   }
 
   return (
-    <SafeAreaView className="flex-1 bg-background">
-      <KeyboardAvoidingView
-        className="flex-1"
-        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
-      >
-        <ScrollView contentContainerClassName="flex-grow justify-center px-6 py-8">
-          <View className="mb-8 items-center">
-            <Text className="text-3xl font-bold text-foreground">Create account</Text>
-            <Text className="mt-2 text-muted">Use the same email as desktop Clippster</Text>
+    <AuthScreen title="Create account">
+          <View className="gap-2">
+            <Text className="text-[28px] font-bold tracking-tight text-foreground">Let’s make{'\n'}something great.</Text>
+            <Text className="mt-2 text-muted">Use your existing Clippster email to keep your workspace together.</Text>
           </View>
 
-          <Card className="gap-4">
+          <Card className="gap-[17px]" style={{ backgroundColor: 'transparent', padding: 0 }}>
             <View className="gap-2">
               <Label>Email</Label>
               <Input
@@ -59,6 +54,7 @@ export default function RegisterScreen() {
 
             <Button
               title="Create account"
+              variant="accent"
               onPress={handleRegister}
               disabled={loading || !email || password.length < 8}
             />
@@ -70,8 +66,6 @@ export default function RegisterScreen() {
               Sign in
             </Link>
           </Text>
-        </ScrollView>
-      </KeyboardAvoidingView>
-    </SafeAreaView>
+    </AuthScreen>
   );
 }

@@ -4,7 +4,7 @@
  * Mirrors the userInstagramApi.ts pattern.
  */
 
-import api from './api';
+import api from '@/services/api';
 import { buildUserConnectUrlBody, type UserSocialConnectOptions } from './userSocialConnect';
 
 // ============================================
@@ -88,7 +88,7 @@ export async function startUserTwitterOAuth(
   }
 
   // Dynamic import to handle Tauri-specific code
-  const { invoke } = await import('@tauri-apps/api/core');
+  const { openSocialOAuth } = await import('@/services/socialOAuthRuntime');
 
   try {
     // Preferred flow: Post For Me generic OAuth
@@ -107,7 +107,7 @@ export async function startUserTwitterOAuth(
       throw new Error('Post For Me response did not include connection_id');
     }
 
-    await invoke('start_post_for_me_oauth', { authUrl: connectResponse.data.auth_url });
+    await openSocialOAuth(connectResponse.data.auth_url);
 
     let cancelled = false;
 

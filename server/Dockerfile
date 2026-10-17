@@ -59,6 +59,7 @@ COPY config/runtime.exs config/
 
 # Copy release overlay (env.sh.eex for dynamic node naming)
 COPY rel rel
+RUN find rel -type f \( -name '*.sh' -o -name '*.sh.eex' \) -exec sed -i 's/\r$//' {} +
 
 # Compile the release
 RUN mix compile

@@ -23,6 +23,15 @@ import {
 	Share2,
 } from "lucide-vue-next";
 import ManualPOIEditor from "../../components/poi/ManualPOIEditor.vue";
+import { Button } from "@/components/ui/button";
+import { Modal } from "@/components/ui/modal";
+import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
+import { SectionHeader } from "@/components/ui/section-header";
+import ExportOptionGroup from "./export/ExportOptionGroup.vue";
+import ExportProgress from "./export/ExportProgress.vue";
+import ExportResult from "./export/ExportResult.vue";
+import ExportChoiceTile from "./export/ExportChoiceTile.vue";
 import SimplifiedPublishDialog from "../../components/SimplifiedPublishDialog.vue";
 import type { ManualFramingConfig, ManualFramingConfigs } from "@/types";
 import type { Campaign } from "@/services/campaignApi";
@@ -92,7 +101,7 @@ const exportDialogSubtitle = computed(() => {
 });
 
 const exportDialogTitle = computed(() =>
-	exportTimeRange.value ? "Export Segment" : "Export Configuration",
+	exportTimeRange.value ? "Export segment" : "Export video",
 );
 
 function handleOpenExportDialog() {
@@ -1059,473 +1068,302 @@ function handlePublishNow() {
 
 <template>
 	<div class="relative">
-		<!-- Export trigger button -->
-		<button
-			type="button"
-			:class="[
-				'export-trigger',
-				hasProject ? 'cursor-pointer' : 'cursor-not-allowed opacity-50',
-			]"
+		<!-- Export trigger -->
+		<Button
+			variant="primary"
+			size="sm"
 			:disabled="!hasProject"
 			@click="hasProject && handleOpenExportDialog()"
 		>
-			<Download class="export-trigger__icon" />
+			<Download />
 			Export
-		</button>
+		</Button>
 
-		<!-- Export Dialog (full modal) -->
-		<Teleport to="body">
-			<Transition name="modal">
-				<div v-if="isOpen && hasProject" class="export-dialog__overlay">
-					<Transition name="dialog" appear>
-						<div class="export-dialog">
-							<!-- Decorative top accent -->
-							<div class="export-dialog__accent" />
-
-							<!-- Header -->
-							<div class="export-dialog__header">
-								<button class="export-dialog__close" @click="handleClose" title="Close" :disabled="isExporting">
-									<X :size="18" />
-								</button>
-								<div class="export-dialog__icon">
-									<Download :size="24" />
-								</div>
-								<h2 class="export-dialog__title">{{ exportDialogTitle }}</h2>
-								<p class="export-dialog__subtitle">
-									{{ exportDialogSubtitle }}
-								</p>
-							</div>
-
-							<!-- Content -->
-							<div class="export-dialog__content">
-								<!-- Success State -->
-								<div v-if="showSuccess && exportedPath && !isExporting" class="export-dialog__step-content">
-									<div class="export-dialog__success-section">
-										<div class="export-dialog__success-header">
-											<div class="export-dialog__success-icon">
-												<Check :size="32" />
-											</div>
-											<h3 class="export-dialog__success-title">Export Complete!</h3>
-											<p class="export-dialog__success-subtitle">
-												{{ 1 + exportedVariants.length }} video{{ exportedVariants.length > 0 ? 's have' : ' has' }} been saved to Built Clips
-											</p>
-										</div>
-
-										<div class="export-dialog__success-actions">
-											<button class="export-dialog__success-btn export-dialog__success-btn--primary" @click="handlePublishNow">
-												<Share2 :size="16" />
-												Publish Now
-											</button>
-											<button class="export-dialog__success-btn" @click="handleDownload()">
-												<Download :size="16" />
-												Download {{ projectAspectLabel }}
-											</button>
-											<button
-												v-for="variant in exportedVariants"
-												:key="variant.ratio"
-												class="export-dialog__success-btn"
-												@click="handleDownload(variant.path)"
-											>
-												<Download :size="16" />
-												Download {{ variant.ratio }}
-											</button>
-											<button class="export-dialog__success-btn export-dialog__success-btn--warning" @click="handleCleanupProject">
-												<Trash2 :size="16" />
-												Close and Permanently Remove Editor Project
-											</button>
-											<button class="export-dialog__success-btn" @click="handleClose">
-												Close
-											</button>
-										</div>
-									</div>
-								</div>
-
-								<!-- Error State -->
-								<div v-else-if="exportError && !isExporting && !showSuccess" class="export-dialog__step-content">
-									<div class="export-dialog__error-section">
-										<div class="export-dialog__error-header">
-											<div class="export-dialog__error-icon">
-												<X :size="20" />
-											</div>
-											<h3 class="export-dialog__error-title">Export Failed</h3>
-										</div>
-										<p class="export-dialog__error-message">{{ exportError }}</p>
-										<div class="export-dialog__error-actions">
-											<button class="export-dialog__error-btn" @click="handleCopyError">
-												<component :is="copied ? Check : Copy" :size="14" />
-												{{ copied ? 'Copied' : 'Copy Error' }}
-											</button>
-											<button class="export-dialog__error-btn export-dialog__error-btn--retry" @click="handleExport">
-								<RotateCcw :size="14" />
-								Retry Export
-							</button>
-										</div>
-									</div>
-								</div>
-
-								<!-- Exporting State -->
-								<div v-else-if="isExporting" class="export-dialog__step-content">
-									<div class="export-dialog__step-header">
-										<h3 class="export-dialog__step-title">Exporting Project</h3>
-										<p class="export-dialog__step-subtitle">Please wait while your video is being rendered</p>
-									</div>
-
-									<div class="export-dialog__progress-section">
-										<div class="export-dialog__progress-header">
-											<span class="export-dialog__progress-label">Progress</span>
-											<span class="export-dialog__progress-value">{{ Math.round(progress * 100) }}%</span>
-										</div>
-										<div class="export-dialog__progress-bar">
-											<div
-												class="export-dialog__progress-fill"
-												:style="{ width: `${progress * 100}%` }"
-											/>
-										</div>
-										<p class="export-dialog__progress-hint">
-											{{ progress < 0.15 ? 'Preparing overlays...' : progress < 0.5 ? 'Encoding video...' : progress < 0.9 ? 'Finalizing...' : 'Almost done...' }}
-										</p>
-									</div>
-								</div>
-
-								<!-- Step 1: Platforms (only for landscape projects) -->
-								<div v-else-if="isProjectLandscape && currentStep === 'platforms'" class="export-dialog__step-content">
-									<div class="export-dialog__step-header">
-										<h3 class="export-dialog__step-title">Choose Your Platforms</h3>
-										<p class="export-dialog__step-subtitle">Select aspect ratios for your target platforms</p>
-									</div>
-
-									<div class="export-dialog__aspect-grid">
-										<!-- 16:9 Original (always selected) -->
-										<div class="export-dialog__aspect-card export-dialog__aspect-card--original">
-											<div class="export-dialog__aspect-card-header">
-												<div class="export-dialog__aspect-label-group">
-													<span class="export-dialog__aspect-ratio-text">16:9</span>
-													<span class="export-dialog__aspect-badge">Original</span>
-												</div>
-												<div class="export-dialog__aspect-check export-dialog__aspect-check--active">
-													<Check class="export-dialog__aspect-check-icon" />
-												</div>
-											</div>
-											<div class="export-dialog__aspect-preview">
-												<div class="export-dialog__aspect-box export-dialog__aspect-box--selected" style="aspect-ratio: 16/9; width: 4rem" />
-											</div>
-											<div class="export-dialog__aspect-platforms">
-												<p class="export-dialog__aspect-platform-text">YouTube &bull; Twitch</p>
-											</div>
-										</div>
-
-										<!-- 9:16 -->
-										<button
-											type="button"
-											class="export-dialog__aspect-card"
-											:class="{ 'export-dialog__aspect-card--selected': selectedRatios.includes('9:16') }"
-											@click="toggleRatio('9:16')"
-										>
-											<div class="export-dialog__aspect-card-header">
-												<span class="export-dialog__aspect-ratio-text">9:16</span>
-												<div class="export-dialog__aspect-check" :class="{ 'export-dialog__aspect-check--active': selectedRatios.includes('9:16') }">
-													<Check v-if="selectedRatios.includes('9:16')" class="export-dialog__aspect-check-icon" />
-												</div>
-											</div>
-											<div class="export-dialog__aspect-preview">
-												<div class="export-dialog__aspect-box" :class="{ 'export-dialog__aspect-box--selected': selectedRatios.includes('9:16') }" style="aspect-ratio: 9/16; height: 3rem" />
-											</div>
-											<div class="export-dialog__aspect-platforms">
-												<p class="export-dialog__aspect-platform-text">TikTok &bull; Reels</p>
-											</div>
-										</button>
-
-										<!-- 1:1 -->
-										<button
-											type="button"
-											class="export-dialog__aspect-card"
-											:class="{ 'export-dialog__aspect-card--selected': selectedRatios.includes('1:1') }"
-											@click="toggleRatio('1:1')"
-										>
-											<div class="export-dialog__aspect-card-header">
-												<span class="export-dialog__aspect-ratio-text">1:1</span>
-												<div class="export-dialog__aspect-check" :class="{ 'export-dialog__aspect-check--active': selectedRatios.includes('1:1') }">
-													<Check v-if="selectedRatios.includes('1:1')" class="export-dialog__aspect-check-icon" />
-												</div>
-											</div>
-											<div class="export-dialog__aspect-preview">
-												<div class="export-dialog__aspect-box" :class="{ 'export-dialog__aspect-box--selected': selectedRatios.includes('1:1') }" style="aspect-ratio: 1/1; width: 2.5rem" />
-											</div>
-											<div class="export-dialog__aspect-platforms">
-												<p class="export-dialog__aspect-platform-text">Instagram Feed</p>
-											</div>
-										</button>
-
-										<!-- 4:5 -->
-										<button
-											type="button"
-											class="export-dialog__aspect-card"
-											:class="{ 'export-dialog__aspect-card--selected': selectedRatios.includes('4:5') }"
-											@click="toggleRatio('4:5')"
-										>
-											<div class="export-dialog__aspect-card-header">
-												<span class="export-dialog__aspect-ratio-text">4:5</span>
-												<div class="export-dialog__aspect-check" :class="{ 'export-dialog__aspect-check--active': selectedRatios.includes('4:5') }">
-													<Check v-if="selectedRatios.includes('4:5')" class="export-dialog__aspect-check-icon" />
-												</div>
-											</div>
-											<div class="export-dialog__aspect-preview">
-												<div class="export-dialog__aspect-box" :class="{ 'export-dialog__aspect-box--selected': selectedRatios.includes('4:5') }" style="aspect-ratio: 4/5; height: 2.5rem" />
-											</div>
-											<div class="export-dialog__aspect-platforms">
-												<p class="export-dialog__aspect-platform-text">Instagram Post</p>
-											</div>
-										</button>
-									</div>
-
-									<!-- Selection summary -->
-									<div v-if="selectedRatios.length > 0" class="export-dialog__selection-summary">
-										<Check class="export-dialog__selection-icon" />
-										<span class="export-dialog__selection-text">
-											{{ selectedRatios.length }} format{{ selectedRatios.length > 1 ? 's' : '' }} selected
-										</span>
-									</div>
-								</div>
-
-								<!-- Step 2: Framing (only when portrait ratios selected) -->
-								<div v-else-if="isProjectLandscape && currentStep === 'framing'" class="export-dialog__step-content">
-									<div class="export-dialog__step-header">
-										<h3 class="export-dialog__step-title">Framing &amp; Layout</h3>
-										<p class="export-dialog__step-subtitle">Configure cropping for portrait formats</p>
-									</div>
-
-									<div class="export-dialog__framing-section">
-										<div class="export-dialog__section-header">
-											<CropIcon class="export-dialog__section-icon" />
-											<h4 class="export-dialog__section-title">Portrait Cropping</h4>
-										</div>
-
-										<!-- Mode Toggle -->
-										<div class="export-dialog__framing-grid">
-											<button
-												disabled
-												class="export-dialog__framing-mode export-dialog__framing-mode--disabled"
-											>
-												<div class="export-dialog__framing-mode-header">
-													<div class="export-dialog__framing-mode-icon">
-														<Sparkles class="export-dialog__framing-icon" />
-													</div>
-													<span class="export-dialog__framing-mode-label">Auto</span>
-												</div>
-												<p class="export-dialog__framing-mode-desc">Coming soon - Use manual configuration</p>
-											</button>
-											<button
-												@click="framingMode = 'manual'"
-												class="export-dialog__framing-mode"
-												:class="{ 'export-dialog__framing-mode--active': framingMode === 'manual' }"
-											>
-												<div class="export-dialog__framing-mode-header">
-													<div class="export-dialog__framing-mode-icon" :class="{ 'export-dialog__framing-mode-icon--active': framingMode === 'manual' }">
-														<PencilRuler class="export-dialog__framing-icon" />
-													</div>
-													<span class="export-dialog__framing-mode-label">Manual</span>
-												</div>
-												<p class="export-dialog__framing-mode-desc">Manually configure regions for each aspect ratio</p>
-											</button>
-										</div>
-
-										<!-- Manual mode configuration list -->
-										<Transition name="slide-fade">
-											<div v-if="framingMode === 'manual'" class="export-dialog__manual-config">
-												<p class="export-dialog__manual-hint">Configure each aspect ratio:</p>
-												<div class="export-dialog__manual-list">
-													<button
-														v-for="ratio in selectedPortraitRatios"
-														:key="ratio"
-														@click="openPOIEditorForRatio(ratio)"
-														class="export-dialog__ratio-config"
-														:class="{ 'export-dialog__ratio-config--configured': isRatioConfigured(ratio) }"
-													>
-														<div class="export-dialog__ratio-config-left">
-															<div
-																class="export-dialog__ratio-preview-mini"
-																:class="{ 'export-dialog__ratio-preview-mini--configured': isRatioConfigured(ratio) }"
-																:style="{ aspectRatio: ratio.replace(':', '/'), height: ratio === '1:1' ? '1.5rem' : '2rem', width: ratio === '1:1' ? '1.5rem' : 'auto' }"
-															/>
-															<span class="export-dialog__ratio-label">{{ ratio }}</span>
-														</div>
-														<div class="export-dialog__ratio-config-right">
-															<span
-																v-if="isRatioConfigured(ratio)"
-																class="export-dialog__ratio-status export-dialog__ratio-status--configured"
-															>
-																&#10003; {{ getConfigForRatio(ratio)?.regions.length }} region{{ getConfigForRatio(ratio)?.regions.length !== 1 ? 's' : '' }}
-															</span>
-															<span v-else class="export-dialog__ratio-status">Click to configure</span>
-															<ChevronRight class="export-dialog__ratio-chevron" />
-														</div>
-													</button>
-												</div>
-												<div v-if="loadingVideoFrame" class="export-dialog__loading-hint">Loading video preview...</div>
-											</div>
-										</Transition>
-									</div>
-								</div>
-
-								<!-- Step 3: Campaign Selection (conditional) -->
-								<div v-else-if="currentStep === 'campaign'" class="export-dialog__step-content">
-									<div class="export-dialog__step-header">
-										<h3 class="export-dialog__step-title">Campaign Selection</h3>
-										<p class="export-dialog__step-subtitle">Optionally export this clip for a campaign</p>
-									</div>
-
-									<div class="export-dialog__campaign-section">
-										<!-- Campaign Toggle -->
-										<button
-											type="button"
-											@click="toggleIsForCampaign"
-											class="export-dialog__campaign-toggle"
-										>
-											<div class="export-dialog__campaign-checkbox" :class="{ 'export-dialog__campaign-checkbox--checked': isForCampaign }">
-												<Check v-if="isForCampaign" class="export-dialog__campaign-checkbox-icon" />
-											</div>
-											<span class="export-dialog__campaign-toggle-text">This clip is for a campaign/organization</span>
-											<Megaphone class="export-dialog__campaign-toggle-icon" />
-										</button>
-
-										<!-- Campaign List (shown when checkbox is checked) -->
-										<Transition name="slide-fade">
-											<div v-if="isForCampaign" class="export-dialog__campaign-picker">
-												<label class="export-dialog__campaign-label">SELECT CAMPAIGN</label>
-												<div class="export-dialog__campaign-list">
-													<button
-														v-for="campaign in availableCampaigns"
-														:key="campaign.id"
-														@click="selectCampaign(campaign)"
-														type="button"
-														class="export-dialog__campaign-item"
-													>
-														<div
-															class="export-dialog__campaign-radio"
-															:class="{ 'export-dialog__campaign-radio--selected': selectedCampaign?.id === campaign.id }"
-														>
-															<div v-if="selectedCampaign?.id === campaign.id" class="export-dialog__campaign-radio-dot" />
-														</div>
-														<div class="export-dialog__campaign-info">
-															<span class="export-dialog__campaign-title">{{ campaign.title }}</span>
-															<span class="export-dialog__campaign-org">{{ campaign.organization?.name }}</span>
-														</div>
-														<span
-															v-if="campaign.creator_profile_id === null"
-															class="export-dialog__campaign-badge export-dialog__campaign-badge--global"
-														>
-															GLOBAL BRANDING
-														</span>
-													</button>
-												</div>
-												<p v-if="loadingCampaigns" class="export-dialog__campaign-loading">Loading campaigns...</p>
-												<p v-else-if="availableCampaigns.length === 0" class="export-dialog__campaign-empty">No campaigns available</p>
-											</div>
-										</Transition>
-									</div>
-								</div>
-
-								<!-- Settings State (final step, or only step for non-landscape) -->
-								<div v-else class="export-dialog__step-content">
-									<div class="export-dialog__step-header">
-										<h3 class="export-dialog__step-title">Export Settings</h3>
-										<p class="export-dialog__step-subtitle">Configure quality and format options</p>
-									</div>
-
-									<div class="export-dialog__export-settings">
-										<!-- Quality -->
-										<div class="export-dialog__setting-group">
-											<div class="export-dialog__setting-header">
-												<label class="export-dialog__setting-label">Quality</label>
-												<span class="export-dialog__setting-badge">{{ quality === 'very_high' ? 'Very High' : quality }}</span>
-											</div>
-											<div class="export-dialog__setting-buttons">
-												<button @click="quality = 'low'" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': quality === 'low' }">Low</button>
-												<button @click="quality = 'medium'" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': quality === 'medium' }">Medium</button>
-												<button @click="quality = 'high'" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': quality === 'high' }">High</button>
-												<button @click="quality = 'very_high'" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': quality === 'very_high' }">Very High</button>
-											</div>
-											<p class="export-dialog__setting-hint">{{ qualityHint }}</p>
-										</div>
-
-										<!-- Frame Rate -->
-										<div class="export-dialog__setting-group">
-											<div class="export-dialog__setting-header">
-												<label class="export-dialog__setting-label">Frame Rate</label>
-												<span class="export-dialog__setting-badge">{{ frameRate }} FPS</span>
-											</div>
-											<div class="export-dialog__setting-buttons">
-												<button @click="frameRate = 30" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': frameRate === 30 }">30 FPS</button>
-												<button @click="frameRate = 60" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': frameRate === 60 }">60 FPS</button>
-											</div>
-											<p class="export-dialog__setting-hint">{{ fpsHint }}</p>
-										</div>
-
-										<!-- Format -->
-										<div class="export-dialog__setting-group">
-											<div class="export-dialog__setting-header">
-												<label class="export-dialog__setting-label">Output Format</label>
-												<span class="export-dialog__setting-badge">{{ format.toUpperCase() }}</span>
-											</div>
-											<div class="export-dialog__setting-buttons">
-												<button @click="format = 'mp4'" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': format === 'mp4' }">MP4</button>
-												<button @click="format = 'webm'" class="export-dialog__setting-btn" :class="{ 'export-dialog__setting-btn--active': format === 'webm' }">WebM</button>
-											</div>
-											<p class="export-dialog__setting-hint">{{ formatHint }}</p>
-										</div>
-									</div>
-								</div>
-							</div>
-
-							<!-- Footer -->
-							<div class="export-dialog__footer">
-								<div class="export-dialog__footer-left">
-									<button
-										v-if="isExporting && currentExportId"
-										@click="handleCancel"
-										class="export-dialog__btn export-dialog__btn--back"
-									>
-										Cancel
-									</button>
-									<button
-										v-if="!isExporting && !exportError && !isFirstStep"
-										@click="previousStep"
-										class="export-dialog__btn export-dialog__btn--back"
-									>
-										Back
-									</button>
-								</div>
-
-								<div class="export-dialog__footer-right">
-									<button
-										v-if="!isExporting && !exportError && !isLastStep"
-										@click="nextStep"
-										class="export-dialog__btn export-dialog__btn--primary"
-									>
-										<span>Next</span>
-									</button>
-									<button
-						v-if="!isExporting && !exportError && !showSuccess && isLastStep"
-						@click="handleExport"
-						class="export-dialog__btn export-dialog__btn--primary"
+		<!-- Export dialog (hidden while the framing editor or publish dialog is on top) -->
+		<Modal
+			:open="isOpen && hasProject && !showManualPOIEditor && !showPublishDialog"
+			:title="exportDialogTitle"
+			:description="exportDialogSubtitle"
+			:icon="Download"
+			size="lg"
+			:dismissible="!isExporting"
+			:hide-close="isExporting"
+			@update:open="(open) => { if (!open) handleClose(); }"
+		>
+			<!-- Success -->
+			<ExportResult
+				v-if="showSuccess && exportedPath && !isExporting"
+				status="success"
+				title="Export complete"
+				:message="`${1 + exportedVariants.length} video${exportedVariants.length > 0 ? 's have' : ' has'} been saved to Built Clips.`"
+			>
+				<div class="flex flex-col gap-2">
+					<Button variant="secondary" block class="justify-start" @click="handleDownload()">
+						<Download />
+						Download {{ projectAspectLabel }}
+					</Button>
+					<Button
+						v-for="variant in exportedVariants"
+						:key="variant.ratio"
+						variant="secondary"
+						block
+						class="justify-start"
+						@click="handleDownload(variant.path)"
 					>
-						<Download :size="16" />
-						Export Video
-					</button>
-									<button
-										v-if="exportError && !isExporting"
-										@click="handleClose"
-										class="export-dialog__btn export-dialog__btn--back"
-									>
-										Close
-									</button>
-								</div>
-							</div>
-						</div>
-					</Transition>
+						<Download />
+						Download {{ variant.ratio }}
+					</Button>
 				</div>
-			</Transition>
-		</Teleport>
+				<div class="flex items-center justify-between gap-3 rounded-lg border border-line-subtle bg-surface px-3 py-2.5">
+					<p class="text-xs text-fg-muted">Done editing? Remove this editor project to free up space.</p>
+					<Button variant="destructive-soft" size="sm" @click="handleCleanupProject">
+						<Trash2 />
+						Close and remove project
+					</Button>
+				</div>
+			</ExportResult>
+
+			<!-- Error -->
+			<ExportResult
+				v-else-if="exportError && !isExporting && !showSuccess"
+				status="error"
+				title="Export failed"
+				:message="exportError"
+			>
+				<div>
+					<Button variant="secondary" size="sm" @click="handleCopyError">
+						<component :is="copied ? Check : Copy" />
+						{{ copied ? "Copied" : "Copy error" }}
+					</Button>
+				</div>
+			</ExportResult>
+
+			<!-- Exporting -->
+			<ExportProgress
+				v-else-if="isExporting"
+				label="Rendering video"
+				:value="progress"
+				:hint="progress < 0.15 ? 'Preparing overlays…' : progress < 0.5 ? 'Encoding video…' : progress < 0.9 ? 'Finalizing…' : 'Almost done…'"
+			/>
+
+			<template v-else>
+				<!-- Step indicator (multi-step flow for landscape projects) -->
+				<p v-if="isProjectLandscape && visibleSteps.length > 1" class="eyebrow mb-3">
+					Step {{ currentStepIndex + 1 }} of {{ visibleSteps.length }}
+				</p>
+
+				<!-- Step 1: Platforms (landscape projects only) -->
+				<section v-if="isProjectLandscape && currentStep === 'platforms'" class="flex flex-col gap-3">
+					<SectionHeader title="Choose formats" description="Export extra aspect ratios for other platforms." />
+
+					<div class="grid grid-cols-[repeat(auto-fill,minmax(130px,1fr))] gap-2">
+						<!-- 16:9 original (always included) -->
+						<ExportChoiceTile selected disabled>
+							<template #title>
+								16:9
+								<Badge variant="neutral">Original</Badge>
+							</template>
+							<template #preview>
+								<div class="aspect-video w-16 rounded-sm border border-brand bg-brand-soft" />
+							</template>
+							{{ aspectPresets[0].platforms }}
+						</ExportChoiceTile>
+
+						<ExportChoiceTile
+							v-for="preset in aspectPresets.slice(1)"
+							:key="preset.label"
+							:selected="selectedRatios.includes(preset.label)"
+							@click="toggleRatio(preset.label)"
+						>
+							<template #title>{{ preset.label }}</template>
+							<template #preview>
+								<div
+									:class="[
+										'rounded-sm border transition-colors',
+										selectedRatios.includes(preset.label) ? 'border-brand bg-brand-soft' : 'border-line-strong bg-surface-hover',
+									]"
+									:style="{
+										aspectRatio: `${preset.width} / ${preset.height}`,
+										height: preset.width === preset.height ? '2.5rem' : '3rem',
+									}"
+								/>
+							</template>
+							{{ preset.platforms }}
+						</ExportChoiceTile>
+					</div>
+
+					<p v-if="selectedRatios.length > 0" class="text-xs text-fg-subtle">
+						{{ selectedRatios.length }} format{{ selectedRatios.length > 1 ? "s" : "" }} selected
+					</p>
+				</section>
+
+				<!-- Step 2: Framing (only when portrait ratios are selected) -->
+				<section v-else-if="isProjectLandscape && currentStep === 'framing'" class="flex flex-col gap-3">
+					<SectionHeader title="Portrait framing" description="Choose how landscape footage is cropped for portrait formats." />
+
+					<div class="grid grid-cols-2 gap-2">
+						<ExportChoiceTile disabled>
+							<template #title>
+								<Sparkles class="size-3.5 text-fg-subtle" />
+								Auto
+								<Badge variant="neutral">Soon</Badge>
+							</template>
+							Automatic subject tracking
+						</ExportChoiceTile>
+						<ExportChoiceTile :selected="framingMode === 'manual'" @click="framingMode = 'manual'">
+							<template #title>
+								<PencilRuler class="size-3.5" />
+								Manual
+							</template>
+							Set the crop regions for each format
+						</ExportChoiceTile>
+					</div>
+
+					<div v-if="framingMode === 'manual'" class="flex flex-col gap-1.5">
+						<p class="text-xs font-medium text-fg-muted">Configure each format</p>
+						<button
+							v-for="ratio in selectedPortraitRatios"
+							:key="ratio"
+							type="button"
+							class="flex items-center gap-3 rounded-lg border border-line-subtle bg-surface px-3 py-2 text-left transition-colors hover:border-line hover:bg-surface-hover"
+							@click="openPOIEditorForRatio(ratio)"
+						>
+							<div
+								:class="[
+									'shrink-0 rounded-sm border',
+									isRatioConfigured(ratio) ? 'border-success bg-success-soft' : 'border-line-strong bg-surface-hover',
+								]"
+								:style="{
+									aspectRatio: ratio.replace(':', '/'),
+									height: ratio === '1:1' ? '1.25rem' : '1.75rem',
+								}"
+							/>
+							<span class="text-sm font-medium text-fg">{{ ratio }}</span>
+							<Badge v-if="isRatioConfigured(ratio)" variant="success" class="ml-auto">
+								<Check />
+								{{ getConfigForRatio(ratio)?.regions.length }} region{{ getConfigForRatio(ratio)?.regions.length !== 1 ? "s" : "" }}
+							</Badge>
+							<span v-else class="ml-auto text-xs text-fg-subtle">Not configured</span>
+							<ChevronRight class="size-4 shrink-0 text-fg-subtle" />
+						</button>
+						<p v-if="loadingVideoFrame" class="text-xs text-fg-subtle">Loading video preview…</p>
+					</div>
+				</section>
+
+				<!-- Step 3: Campaign (conditional) -->
+				<section v-else-if="currentStep === 'campaign'" class="flex flex-col gap-3">
+					<SectionHeader title="Campaign" description="Optionally export this clip for a campaign." />
+
+					<label class="flex cursor-pointer items-center gap-3 rounded-lg border border-line-subtle bg-surface px-3 py-2.5">
+						<Megaphone class="size-4 shrink-0 text-fg-subtle" />
+						<span class="flex-1 text-sm text-fg">This clip is for a campaign or organization</span>
+						<Switch :model-value="isForCampaign" @update:model-value="toggleIsForCampaign" />
+					</label>
+
+					<div v-if="isForCampaign" class="flex flex-col gap-1.5">
+						<p class="text-xs font-medium text-fg-muted">Select campaign</p>
+						<div class="flex flex-col gap-1">
+							<button
+								v-for="campaign in availableCampaigns"
+								:key="campaign.id"
+								type="button"
+								role="radio"
+								:aria-checked="selectedCampaign?.id === campaign.id"
+								:class="[
+									'flex items-center gap-3 rounded-lg border px-3 py-2 text-left transition-colors',
+									selectedCampaign?.id === campaign.id
+										? 'border-brand-line bg-brand-soft'
+										: 'border-line-subtle bg-surface hover:border-line hover:bg-surface-hover',
+								]"
+								@click="selectCampaign(campaign)"
+							>
+								<span
+									:class="[
+										'grid size-4 shrink-0 place-items-center rounded-full border',
+										selectedCampaign?.id === campaign.id ? 'border-brand' : 'border-line-strong',
+									]"
+								>
+									<span v-if="selectedCampaign?.id === campaign.id" class="size-2 rounded-full bg-brand" />
+								</span>
+								<span class="flex min-w-0 flex-1 flex-col">
+									<span class="truncate text-sm font-medium text-fg">{{ campaign.title }}</span>
+									<span class="truncate text-xs text-fg-subtle">{{ campaign.organization?.name }}</span>
+								</span>
+								<Badge v-if="campaign.creator_profile_id === null" variant="brand">Global branding</Badge>
+							</button>
+						</div>
+						<p v-if="loadingCampaigns" class="text-xs text-fg-subtle">Loading campaigns…</p>
+						<p v-else-if="availableCampaigns.length === 0" class="text-xs text-fg-subtle">No campaigns available</p>
+					</div>
+				</section>
+
+				<!-- Settings (final step, or the only step for non-landscape projects) -->
+				<section v-else class="flex flex-col gap-4">
+					<ExportOptionGroup
+						v-model="quality"
+						label="Quality"
+						:hint="qualityHint"
+						:options="[
+							{ value: 'low', label: 'Low' },
+							{ value: 'medium', label: 'Medium' },
+							{ value: 'high', label: 'High' },
+							{ value: 'very_high', label: 'Very high' },
+						]"
+					/>
+					<ExportOptionGroup
+						v-model="frameRate"
+						label="Frame rate"
+						:hint="fpsHint"
+						:options="[
+							{ value: 30, label: '30 fps' },
+							{ value: 60, label: '60 fps' },
+						]"
+					/>
+					<ExportOptionGroup
+						v-model="format"
+						label="Format"
+						:hint="formatHint"
+						:options="[
+							{ value: 'mp4', label: 'MP4' },
+							{ value: 'webm', label: 'WebM' },
+						]"
+					/>
+				</section>
+			</template>
+
+			<template #footer>
+				<!-- Exporting -->
+				<Button v-if="isExporting && currentExportId" variant="secondary" @click="handleCancel">Cancel export</Button>
+
+				<!-- Error -->
+				<template v-else-if="exportError && !isExporting">
+					<Button variant="ghost" @click="handleClose">Close</Button>
+					<Button variant="primary" @click="handleExport">
+						<RotateCcw />
+						Retry export
+					</Button>
+				</template>
+
+				<!-- Success -->
+				<template v-else-if="showSuccess && !isExporting">
+					<Button variant="ghost" @click="handleClose">Close</Button>
+					<Button variant="primary" @click="handlePublishNow">
+						<Share2 />
+						Publish now
+					</Button>
+				</template>
+
+				<!-- Steps -->
+				<template v-else-if="!isExporting">
+					<Button v-if="!isFirstStep" variant="ghost" class="mr-auto" @click="previousStep">Back</Button>
+					<Button v-if="!isLastStep" variant="primary" @click="nextStep">Next</Button>
+					<Button v-else variant="primary" @click="handleExport">
+						<Download />
+						Export video
+					</Button>
+				</template>
+			</template>
+		</Modal>
 
 		<!-- Publish Dialog -->
 		<SimplifiedPublishDialog
@@ -1552,1150 +1390,5 @@ function handlePublishNow() {
 			:clip-end-time="projectDuration"
 			@confirm="onManualConfigConfirm"
 		/>
-
 	</div>
 </template>
-
-<style scoped>
-/* ===== Overlay ===== */
-.export-dialog__overlay {
-	position: fixed;
-	inset: 0;
-	background-color: rgba(0, 0, 0, 0.7);
-	backdrop-filter: blur(4px);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	z-index: 10000;
-}
-
-/* ===== Dialog Container ===== */
-.export-dialog {
-	background-color: var(--sidebar-surface);
-	border: 1px solid var(--sidebar-border);
-	border-radius: 12px;
-	width: 100%;
-	max-width: 600px;
-	margin: 1rem;
-	max-height: 90vh;
-	display: flex;
-	flex-direction: column;
-	overflow: hidden;
-	box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-}
-
-/* ===== Accent Bar ===== */
-.export-dialog__accent {
-	height: 3px;
-	background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
-	flex-shrink: 0;
-}
-
-/* ===== Header ===== */
-.export-dialog__header {
-	position: relative;
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	padding: 1.5rem 1.5rem 1rem;
-	text-align: center;
-}
-
-.export-dialog__close {
-	position: absolute;
-	top: 1rem;
-	right: 1rem;
-	width: 32px;
-	height: 32px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	background: transparent;
-	border: none;
-	border-radius: 6px;
-	color: var(--sidebar-text-muted);
-	cursor: pointer;
-	transition: all 150ms ease;
-}
-
-.export-dialog__close:hover {
-	background-color: var(--sidebar-hover);
-	color: var(--sidebar-text);
-}
-
-.export-dialog__close:disabled {
-	opacity: 0.3;
-	cursor: not-allowed;
-}
-
-.export-dialog__icon {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	width: 52px;
-	height: 52px;
-	border-radius: 12px;
-	background-color: rgba(6, 182, 212, 0.15);
-	color: var(--sidebar-accent);
-	margin-bottom: 0.875rem;
-}
-
-.export-dialog__title {
-	font-size: 1.25rem;
-	font-weight: 700;
-	color: var(--sidebar-text);
-	margin: 0;
-	letter-spacing: -0.02em;
-}
-
-.export-dialog__subtitle {
-	font-size: 0.8125rem;
-	color: var(--sidebar-text-muted);
-	margin: 0.25rem 0 0;
-}
-
-/* ===== Content Area ===== */
-.export-dialog__content {
-	flex: 1;
-	overflow-y: auto;
-	padding: 0;
-}
-
-.export-dialog__content::-webkit-scrollbar {
-	width: 6px;
-}
-
-.export-dialog__content::-webkit-scrollbar-track {
-	background: transparent;
-}
-
-.export-dialog__content::-webkit-scrollbar-thumb {
-	background-color: rgba(255, 255, 255, 0.15);
-	border-radius: 3px;
-}
-
-/* ===== Step Content ===== */
-.export-dialog__step-content {
-	display: flex;
-	flex-direction: column;
-	gap: 1rem;
-	padding: 1.5rem;
-}
-
-.export-dialog__step-header {
-	text-align: center;
-	margin-bottom: 0.5rem;
-}
-
-.export-dialog__step-title {
-	font-size: 1rem;
-	font-weight: 600;
-	color: var(--sidebar-text);
-	margin: 0 0 0.25rem;
-}
-
-.export-dialog__step-subtitle {
-	font-size: 0.875rem;
-	color: var(--sidebar-text-muted);
-	margin: 0;
-}
-
-/* ===== Export Settings ===== */
-.export-dialog__export-settings {
-	display: flex;
-	flex-direction: column;
-	gap: 0.75rem;
-}
-
-.export-dialog__setting-group {
-	background-color: rgba(255, 255, 255, 0.03);
-	border: 1px solid var(--sidebar-border);
-	border-radius: 10px;
-	padding: 1rem;
-	display: flex;
-	flex-direction: column;
-	gap: 0.75rem;
-}
-
-.export-dialog__setting-header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-}
-
-.export-dialog__setting-label {
-	font-size: 0.875rem;
-	font-weight: 600;
-	color: var(--sidebar-text);
-}
-
-.export-dialog__setting-badge {
-	font-size: 0.75rem;
-	font-family: monospace;
-	color: var(--sidebar-accent);
-	background-color: rgba(6, 182, 212, 0.1);
-	padding: 0.25rem 0.5rem;
-	border-radius: 4px;
-	text-transform: capitalize;
-}
-
-.export-dialog__setting-buttons {
-	display: flex;
-	gap: 0.5rem;
-}
-
-.export-dialog__setting-btn {
-	flex: 1;
-	padding: 0.625rem 1rem;
-	font-size: 0.875rem;
-	font-weight: 500;
-	border-radius: 8px;
-	border: 1px solid var(--sidebar-border);
-	background-color: rgba(255, 255, 255, 0.05);
-	color: var(--sidebar-text-muted);
-	cursor: pointer;
-	transition: all 150ms ease;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
-
-.export-dialog__setting-btn:hover {
-	background-color: rgba(255, 255, 255, 0.08);
-	color: var(--sidebar-text);
-}
-
-.export-dialog__setting-btn--active {
-	background-color: var(--sidebar-accent);
-	color: white;
-	border-color: var(--sidebar-accent);
-	box-shadow: 0 2px 8px rgba(6, 182, 212, 0.2);
-}
-
-.export-dialog__setting-hint {
-	font-size: 0.6875rem;
-	color: var(--sidebar-text-muted);
-	line-height: 1.4;
-	margin: 0;
-}
-
-/* ===== Progress Section ===== */
-.export-dialog__progress-section {
-	background-color: rgba(255, 255, 255, 0.03);
-	border: 1px solid var(--sidebar-border);
-	border-radius: 10px;
-	padding: 1.25rem;
-	display: flex;
-	flex-direction: column;
-	gap: 0.75rem;
-}
-
-.export-dialog__progress-header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-}
-
-.export-dialog__progress-label {
-	font-size: 0.875rem;
-	font-weight: 500;
-	color: var(--sidebar-text-muted);
-}
-
-.export-dialog__progress-value {
-	font-size: 0.875rem;
-	font-weight: 600;
-	color: var(--sidebar-accent);
-	font-family: monospace;
-}
-
-.export-dialog__progress-bar {
-	height: 8px;
-	background-color: rgba(255, 255, 255, 0.08);
-	border-radius: 4px;
-	overflow: hidden;
-}
-
-.export-dialog__progress-fill {
-	height: 100%;
-	background: linear-gradient(90deg, var(--sidebar-accent), #0891b2);
-	border-radius: 4px;
-	transition: width 300ms ease;
-}
-
-.export-dialog__progress-hint {
-	font-size: 0.6875rem;
-	color: var(--sidebar-text-muted);
-	margin: 0;
-	text-align: center;
-}
-
-/* ===== Error Section ===== */
-.export-dialog__error-section {
-	display: flex;
-	flex-direction: column;
-	gap: 1rem;
-	align-items: center;
-	text-align: center;
-}
-
-.export-dialog__error-header {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 0.75rem;
-}
-
-.export-dialog__error-icon {
-	width: 48px;
-	height: 48px;
-	border-radius: 12px;
-	background-color: rgba(239, 68, 68, 0.15);
-	color: #ef4444;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-}
-
-.export-dialog__error-title {
-	font-size: 1rem;
-	font-weight: 600;
-	color: #ef4444;
-	margin: 0;
-}
-
-.export-dialog__error-message {
-	font-size: 0.75rem;
-	color: var(--sidebar-text-muted);
-	margin: 0;
-	max-height: 120px;
-	overflow-y: auto;
-	background-color: rgba(255, 255, 255, 0.03);
-	border: 1px solid var(--sidebar-border);
-	border-radius: 8px;
-	padding: 0.75rem;
-	width: 100%;
-	text-align: left;
-	word-break: break-word;
-}
-
-.export-dialog__error-actions {
-	display: flex;
-	gap: 0.5rem;
-	width: 100%;
-}
-
-.export-dialog__error-btn {
-	flex: 1;
-	padding: 0.625rem 1rem;
-	font-size: 0.875rem;
-	font-weight: 500;
-	border-radius: 8px;
-	border: 1px solid var(--sidebar-border);
-	background-color: rgba(255, 255, 255, 0.05);
-	color: var(--sidebar-text-muted);
-	cursor: pointer;
-	transition: all 150ms ease;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.375rem;
-}
-
-.export-dialog__error-btn:hover {
-	background-color: rgba(255, 255, 255, 0.08);
-	color: var(--sidebar-text);
-}
-
-.export-dialog__error-btn--retry {
-	background-color: var(--sidebar-accent);
-	color: white;
-	border-color: var(--sidebar-accent);
-}
-
-.export-dialog__error-btn--retry:hover {
-	opacity: 0.9;
-}
-
-/* ===== Footer ===== */
-.export-dialog__footer {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 0.75rem;
-	padding: 1rem 1.5rem;
-	border-top: 1px solid var(--sidebar-border);
-}
-
-.export-dialog__footer-left,
-.export-dialog__footer-right {
-	flex: 1;
-}
-
-.export-dialog__footer-right {
-	display: flex;
-	justify-content: flex-end;
-}
-
-.export-dialog__btn {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.5rem;
-	padding: 0.625rem 1.25rem;
-	font-size: 0.875rem;
-	font-weight: 600;
-	border-radius: 8px;
-	border: none;
-	cursor: pointer;
-	transition: all 150ms ease;
-}
-
-.export-dialog__btn--back {
-	background: transparent;
-	color: var(--sidebar-text-muted);
-	padding: 0.5rem 1rem;
-}
-
-.export-dialog__btn--back:hover {
-	color: var(--sidebar-text);
-}
-
-.export-dialog__btn--primary {
-	background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-	color: white;
-}
-
-.export-dialog__btn--primary:hover {
-	opacity: 0.9;
-}
-
-/* ===== Aspect Ratio Grid ===== */
-.export-dialog__aspect-grid {
-	display: grid;
-	grid-template-columns: repeat(2, 1fr);
-	gap: 0.75rem;
-}
-
-.export-dialog__aspect-card {
-	display: flex;
-	flex-direction: column;
-	gap: 0.5rem;
-	padding: 0.875rem;
-	border-radius: 10px;
-	border: 1px solid var(--sidebar-border);
-	background-color: rgba(255, 255, 255, 0.03);
-	cursor: pointer;
-	transition: all 150ms ease;
-	text-align: left;
-}
-
-.export-dialog__aspect-card:hover {
-	background-color: rgba(255, 255, 255, 0.06);
-	border-color: rgba(255, 255, 255, 0.15);
-}
-
-.export-dialog__aspect-card--selected {
-	border-color: var(--sidebar-accent);
-	background-color: rgba(6, 182, 212, 0.08);
-}
-
-.export-dialog__aspect-card--selected:hover {
-	border-color: var(--sidebar-accent);
-	background-color: rgba(6, 182, 212, 0.12);
-}
-
-.export-dialog__aspect-card-header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-}
-
-.export-dialog__aspect-label-group {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-}
-
-.export-dialog__aspect-ratio-text {
-	font-size: 0.875rem;
-	font-weight: 600;
-	color: var(--sidebar-text);
-}
-
-.export-dialog__aspect-badge {
-	font-size: 0.625rem;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-	color: var(--sidebar-accent);
-	background-color: rgba(6, 182, 212, 0.15);
-	padding: 0.125rem 0.375rem;
-	border-radius: 3px;
-}
-
-.export-dialog__aspect-check {
-	width: 20px;
-	height: 20px;
-	border-radius: 50%;
-	border: 2px solid var(--sidebar-border);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	transition: all 150ms ease;
-}
-
-.export-dialog__aspect-check--active {
-	border-color: var(--sidebar-accent);
-	background-color: var(--sidebar-accent);
-}
-
-.export-dialog__aspect-check-icon {
-	width: 12px;
-	height: 12px;
-	color: white;
-}
-
-.export-dialog__aspect-preview {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	padding: 0.25rem 0;
-}
-
-.export-dialog__aspect-box {
-	border: 1.5px solid var(--sidebar-border);
-	border-radius: 3px;
-	background-color: rgba(255, 255, 255, 0.05);
-	transition: all 150ms ease;
-}
-
-.export-dialog__aspect-box--selected {
-	border-color: var(--sidebar-accent);
-	background-color: rgba(6, 182, 212, 0.15);
-}
-
-.export-dialog__aspect-platforms {
-	margin-top: -0.125rem;
-}
-
-.export-dialog__aspect-platform-text {
-	font-size: 0.6875rem;
-	color: var(--sidebar-text-muted);
-	margin: 0;
-}
-
-/* ===== Framing Section ===== */
-.export-dialog__framing-section {
-	display: flex;
-	flex-direction: column;
-	gap: 0.75rem;
-	margin-top: 0.25rem;
-	padding-top: 0.75rem;
-	border-top: 1px solid var(--sidebar-border);
-}
-
-.export-dialog__framing-grid {
-	display: grid;
-	grid-template-columns: repeat(2, 1fr);
-	gap: 0.5rem;
-}
-
-.export-dialog__framing-mode {
-	display: flex;
-	flex-direction: column;
-	gap: 0.375rem;
-	padding: 0.75rem;
-	border-radius: 8px;
-	border: 1px solid var(--sidebar-border);
-	background-color: rgba(255, 255, 255, 0.03);
-	cursor: pointer;
-	transition: all 150ms ease;
-	text-align: left;
-}
-
-.export-dialog__framing-mode:hover {
-	background-color: rgba(255, 255, 255, 0.06);
-}
-
-.export-dialog__framing-mode--active {
-	border-color: var(--sidebar-accent);
-	background-color: rgba(6, 182, 212, 0.08);
-}
-
-.export-dialog__framing-mode--disabled {
-	opacity: 0.5;
-	cursor: not-allowed;
-	pointer-events: none;
-}
-
-.export-dialog__framing-mode-header {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-}
-
-.export-dialog__framing-mode-icon {
-	width: 28px;
-	height: 28px;
-	border-radius: 6px;
-	background-color: rgba(255, 255, 255, 0.08);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	color: var(--sidebar-text-muted);
-	transition: all 150ms ease;
-}
-
-.export-dialog__framing-mode-icon--active {
-	background-color: rgba(6, 182, 212, 0.2);
-	color: var(--sidebar-accent);
-}
-
-.export-dialog__framing-icon {
-	width: 14px;
-	height: 14px;
-}
-
-.export-dialog__framing-mode-label {
-	font-size: 0.8125rem;
-	font-weight: 600;
-	color: var(--sidebar-text);
-}
-
-.export-dialog__framing-mode-desc {
-	font-size: 0.6875rem;
-	color: var(--sidebar-text-muted);
-	margin: 0;
-	line-height: 1.3;
-}
-
-/* ===== Original Card ===== */
-.export-dialog__aspect-card--original {
-	cursor: default;
-	border-color: var(--sidebar-accent);
-	background-color: rgba(6, 182, 212, 0.08);
-}
-
-/* ===== Selection Summary ===== */
-.export-dialog__selection-summary {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-	padding: 0.625rem 0.875rem;
-	border-radius: 8px;
-	background-color: rgba(6, 182, 212, 0.08);
-	border: 1px solid rgba(6, 182, 212, 0.2);
-}
-
-.export-dialog__selection-icon {
-	width: 14px;
-	height: 14px;
-	color: var(--sidebar-accent);
-}
-
-.export-dialog__selection-text {
-	font-size: 0.8125rem;
-	font-weight: 500;
-	color: var(--sidebar-accent);
-}
-
-/* ===== Section Header ===== */
-.export-dialog__section-header {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-}
-
-.export-dialog__section-icon {
-	width: 16px;
-	height: 16px;
-	color: var(--sidebar-accent);
-}
-
-.export-dialog__section-title {
-	font-size: 0.875rem;
-	font-weight: 600;
-	color: var(--sidebar-text);
-	margin: 0;
-}
-
-/* ===== Manual Config ===== */
-.export-dialog__manual-config {
-	display: flex;
-	flex-direction: column;
-	gap: 0.5rem;
-}
-
-.export-dialog__manual-hint {
-	font-size: 0.75rem;
-	color: var(--sidebar-text-muted);
-	margin: 0;
-}
-
-.export-dialog__manual-list {
-	display: flex;
-	flex-direction: column;
-	gap: 0.375rem;
-}
-
-.export-dialog__ratio-config {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 0.625rem 0.75rem;
-	border-radius: 8px;
-	border: 1px solid var(--sidebar-border);
-	background-color: rgba(255, 255, 255, 0.03);
-	cursor: pointer;
-	transition: all 150ms ease;
-}
-
-.export-dialog__ratio-config:hover {
-	background-color: rgba(255, 255, 255, 0.06);
-	border-color: rgba(255, 255, 255, 0.15);
-}
-
-.export-dialog__ratio-config--configured {
-	border-color: rgba(6, 182, 212, 0.3);
-	background-color: rgba(6, 182, 212, 0.05);
-}
-
-.export-dialog__ratio-config-left {
-	display: flex;
-	align-items: center;
-	gap: 0.625rem;
-}
-
-.export-dialog__ratio-preview-mini {
-	border: 1.5px solid var(--sidebar-border);
-	border-radius: 2px;
-	background-color: rgba(255, 255, 255, 0.05);
-}
-
-.export-dialog__ratio-preview-mini--configured {
-	border-color: var(--sidebar-accent);
-	background-color: rgba(6, 182, 212, 0.15);
-}
-
-.export-dialog__ratio-label {
-	font-size: 0.8125rem;
-	font-weight: 600;
-	color: var(--sidebar-text);
-}
-
-.export-dialog__ratio-config-right {
-	display: flex;
-	align-items: center;
-	gap: 0.5rem;
-}
-
-.export-dialog__ratio-status {
-	font-size: 0.6875rem;
-	color: var(--sidebar-text-muted);
-}
-
-.export-dialog__ratio-status--configured {
-	color: var(--sidebar-accent);
-}
-
-.export-dialog__ratio-chevron {
-	width: 14px;
-	height: 14px;
-	color: var(--sidebar-text-muted);
-}
-
-.export-dialog__loading-hint {
-	font-size: 0.6875rem;
-	color: var(--sidebar-text-muted);
-	text-align: center;
-	padding: 0.25rem 0;
-}
-
-/* ===== Success State ===== */
-.export-dialog__success-section {
-	display: flex;
-	flex-direction: column;
-	gap: 1.5rem;
-	align-items: center;
-}
-
-.export-dialog__success-header {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	gap: 0.75rem;
-	text-align: center;
-}
-
-.export-dialog__success-icon {
-	width: 64px;
-	height: 64px;
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	border-radius: 50%;
-	background: linear-gradient(135deg, rgba(34, 197, 94, 0.15), rgba(22, 163, 74, 0.15));
-	border: 2px solid rgba(34, 197, 94, 0.3);
-	color: rgb(34, 197, 94);
-}
-
-.export-dialog__success-title {
-	font-size: 1.25rem;
-	font-weight: 700;
-	color: var(--sidebar-text);
-	margin: 0;
-}
-
-.export-dialog__success-subtitle {
-	font-size: 0.875rem;
-	color: var(--sidebar-text-muted);
-	margin: 0;
-}
-
-.export-dialog__success-path {
-	width: 100%;
-	padding: 1rem;
-	border-radius: 8px;
-	background-color: rgba(255, 255, 255, 0.03);
-	border: 1px solid var(--sidebar-border);
-}
-
-.export-dialog__success-path-label {
-	font-size: 0.6875rem;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-	color: var(--sidebar-text-muted);
-	margin-bottom: 0.5rem;
-}
-
-.export-dialog__success-path-value {
-	font-size: 0.75rem;
-	font-family: 'Courier New', monospace;
-	color: var(--sidebar-text);
-	word-break: break-all;
-	line-height: 1.4;
-}
-
-.export-dialog__success-actions {
-	display: flex;
-	flex-direction: column;
-	gap: 0.5rem;
-	width: 100%;
-}
-
-.export-dialog__success-btn {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	gap: 0.5rem;
-	padding: 0.75rem 1.25rem;
-	border-radius: 8px;
-	font-size: 0.875rem;
-	font-weight: 600;
-	border: 1px solid var(--sidebar-border);
-	background-color: rgba(255, 255, 255, 0.05);
-	color: var(--sidebar-text);
-	cursor: pointer;
-	transition: all 150ms ease;
-}
-
-.export-dialog__success-btn:hover {
-	background-color: rgba(255, 255, 255, 0.08);
-	border-color: rgba(255, 255, 255, 0.15);
-}
-
-.export-dialog__success-btn--primary {
-	background: linear-gradient(135deg, var(--sidebar-accent), rgba(6, 182, 212, 0.8));
-	border-color: var(--sidebar-accent);
-	color: white;
-}
-
-.export-dialog__success-btn--primary:hover {
-	background: linear-gradient(135deg, rgba(6, 182, 212, 0.9), rgba(6, 182, 212, 0.7));
-	transform: translateY(-1px);
-	box-shadow: 0 4px 12px rgba(6, 182, 212, 0.3);
-}
-
-.export-dialog__success-btn--warning {
-	background-color: rgba(239, 68, 68, 0.1);
-	border-color: rgba(239, 68, 68, 0.3);
-	color: rgb(239, 68, 68);
-}
-
-.export-dialog__success-btn--warning:hover {
-	background-color: rgba(239, 68, 68, 0.2);
-	border-color: rgba(239, 68, 68, 0.5);
-	transform: translateY(-1px);
-}
-.export-dialog__campaign-section {
-	display: flex;
-	flex-direction: column;
-	gap: 1rem;
-}
-
-.export-dialog__campaign-toggle {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	padding: 1rem;
-	border-radius: 8px;
-	border: 1px solid var(--sidebar-border);
-	background-color: rgba(255, 255, 255, 0.02);
-	cursor: pointer;
-	transition: all 150ms ease;
-	width: 100%;
-	text-align: left;
-}
-
-.export-dialog__campaign-toggle:hover {
-	background-color: rgba(255, 255, 255, 0.05);
-	border-color: rgba(6, 182, 212, 0.4);
-}
-
-.export-dialog__campaign-checkbox {
-	width: 18px;
-	height: 18px;
-	border-radius: 4px;
-	border: 2px solid var(--sidebar-border);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	flex-shrink: 0;
-	transition: all 150ms ease;
-}
-
-.export-dialog__campaign-checkbox--checked {
-	background-color: var(--sidebar-accent);
-}
-
-.export-dialog__campaign-toggle-text {
-	font-size: 0.875rem;
-	font-weight: 500;
-	color: var(--sidebar-text);
-	flex: 1;
-}
-
-.export-dialog__campaign-toggle-icon {
-	width: 18px;
-	height: 18px;
-	color: var(--sidebar-text-muted);
-	flex-shrink: 0;
-}
-
-.export-dialog__campaign-picker {
-	display: flex;
-	flex-direction: column;
-	gap: 0.75rem;
-}
-
-.export-dialog__campaign-label {
-	font-size: 0.6875rem;
-	font-weight: 600;
-	color: var(--sidebar-text-muted);
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-	margin: 0;
-}
-
-.export-dialog__campaign-list {
-	display: flex;
-	flex-direction: column;
-	gap: 0.5rem;
-	max-height: 240px;
-	overflow-y: auto;
-}
-
-.export-dialog__campaign-item {
-	display: flex;
-	align-items: center;
-	gap: 0.75rem;
-	padding: 0.75rem;
-	border-radius: 8px;
-	border: 1px solid var(--sidebar-border);
-	background-color: rgba(255, 255, 255, 0.02);
-	cursor: pointer;
-	transition: all 150ms ease;
-	width: 100%;
-	text-align: left;
-}
-
-.export-dialog__campaign-item:hover {
-	background-color: rgba(255, 255, 255, 0.05);
-	border-color: rgba(6, 182, 212, 0.4);
-}
-
-.export-dialog__campaign-radio {
-	width: 16px;
-	height: 16px;
-	border-radius: 50%;
-	border: 2px solid var(--sidebar-border);
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	transition: all 150ms ease;
-	flex-shrink: 0;
-}
-
-.export-dialog__campaign-radio--selected {
-	border-color: var(--sidebar-accent);
-}
-
-.export-dialog__campaign-radio-dot {
-	width: 8px;
-	height: 8px;
-	border-radius: 50%;
-	background-color: var(--sidebar-accent);
-}
-
-.export-dialog__campaign-info {
-	display: flex;
-	flex-direction: column;
-	gap: 0.125rem;
-	flex: 1;
-	min-width: 0;
-}
-
-.export-dialog__campaign-title {
-	font-size: 0.875rem;
-	font-weight: 500;
-	color: var(--sidebar-text);
-	overflow: hidden;
-	white-space: nowrap;
-	text-overflow: ellipsis;
-}
-
-.export-dialog__campaign-org {
-	font-size: 0.75rem;
-	color: var(--sidebar-text-muted);
-	overflow: hidden;
-	white-space: nowrap;
-	text-overflow: ellipsis;
-}
-
-.export-dialog__campaign-badge {
-	padding: 0.125rem 0.5rem;
-	border-radius: 4px;
-	font-size: 0.625rem;
-	font-weight: 600;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-	flex-shrink: 0;
-}
-
-.export-dialog__campaign-badge--global {
-	background-color: rgba(168, 85, 247, 0.15);
-	color: rgb(168, 85, 247);
-	border: 1px solid rgba(168, 85, 247, 0.3);
-}
-
-.export-dialog__campaign-badge--creator {
-	background-color: rgba(6, 182, 212, 0.15);
-	color: var(--sidebar-accent);
-	border: 1px solid rgba(6, 182, 212, 0.3);
-}
-
-.export-dialog__campaign-loading,
-.export-dialog__campaign-empty {
-	font-size: 0.75rem;
-	color: var(--sidebar-text-muted);
-	text-align: center;
-	padding: 1rem;
-	margin: 0;
-}
-
-.slide-fade-leave-active {
-	transition: all 150ms ease;
-}
-
-.slide-fade-enter-from {
-	opacity: 0;
-	transform: translateY(-8px);
-}
-
-.slide-fade-leave-to {
-	opacity: 0;
-	transform: translateY(-8px);
-}
-
-/* ===== Transitions ===== */
-.modal-enter-active,
-.modal-leave-active {
-	transition: opacity 200ms ease;
-}
-
-.modal-enter-from,
-.modal-leave-to {
-	opacity: 0;
-}
-
-.dialog-enter-active {
-	transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-}
-
-.dialog-leave-active {
-	transition: all 150ms ease-in;
-}
-
-.dialog-enter-from {
-	opacity: 0;
-	transform: scale(0.96) translateY(8px);
-}
-
-.dialog-leave-to {
-	opacity: 0;
-	transform: scale(0.98);
-}
-
-/* ===== Export Trigger Button ===== */
-.export-trigger {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  height: 32px;
-  padding: 0 0.75rem;
-  background-color: transparent;
-  color: var(--sidebar-accent);
-  border: none;
-  border-radius: 6px;
-  font-size: 0.85rem;
-  font-weight: 600;
-  cursor: pointer;
-  transition: all 150ms ease;
-}
-
-.export-trigger:hover:not(:disabled) {
-  background-color: rgba(255, 255, 255, 0.05);
-}
-
-.export-trigger:disabled {
-  opacity: 0.5;
-  cursor: not-allowed;
-}
-
-.export-trigger__icon {
-  width: 18px;
-  height: 18px;
-}
-
-/* ===== Responsive ===== */
-@media (max-width: 640px) {
-	.export-dialog {
-		max-width: calc(100% - 1rem);
-		margin: 0.5rem;
-	}
-
-	.export-dialog__header {
-		padding: 1.25rem 1.25rem 0.875rem;
-	}
-
-	.export-dialog__step-content {
-		padding: 1.25rem;
-	}
-
-	.export-dialog__footer {
-		padding: 0.875rem 1.25rem;
-	}
-}
-</style>

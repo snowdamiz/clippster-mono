@@ -1,51 +1,34 @@
-import { Ionicons } from '@expo/vector-icons';
-import type { ReactNode } from 'react';
-import { Pressable, Text, View } from 'react-native';
-import { tokens } from '@/theme/tokens';
+import { AppIcon, type AppIconName } from '@/components/AppIcon'
+import type { ReactNode } from 'react'
+import { Pressable, Text, View } from 'react-native'
+import { tokens } from '@/theme/tokens'
 
 interface MenuRowProps {
-  icon: keyof typeof Ionicons.glyphMap;
-  title: string;
-  subtitle?: string;
-  value?: string;
-  onPress: () => void;
-  destructive?: boolean;
-  trailing?: ReactNode;
+  icon: AppIconName
+  title: string
+  subtitle?: string
+  value?: string
+  onPress: () => void
+  destructive?: boolean
+  trailing?: ReactNode
 }
 
-export function MenuRow({
-  icon,
-  title,
-  subtitle,
-  value,
-  onPress,
-  destructive,
-  trailing,
-}: MenuRowProps) {
+export function MenuRow({ icon, title, subtitle, value, onPress, destructive, trailing }: MenuRowProps) {
   return (
     <Pressable
       onPress={onPress}
-      className="flex-row items-center gap-3 rounded-xl border border-border bg-surface px-4 py-3.5 active:bg-white/5"
+      accessibilityRole="button"
+      className="min-h-[60px] flex-row items-center gap-3 border-b border-border py-[13px] active:bg-white/5"
     >
-      <View className="h-9 w-9 items-center justify-center rounded-lg bg-accent/10">
-        <Ionicons
-          name={icon}
-          size={18}
-          color={destructive ? tokens.colors.destructive : tokens.colors.accent}
-        />
+      <View className="h-[32px] w-[32px] items-center justify-center">
+        <AppIcon name={icon} size={22} color={destructive ? tokens.colors.destructive : tokens.colors.foreground} />
       </View>
       <View className="flex-1 min-w-0">
-        <Text
-          className={`text-base font-medium ${destructive ? 'text-destructive' : 'text-foreground'}`}
-        >
-          {title}
-        </Text>
-        {subtitle ? <Text className="text-sm text-muted">{subtitle}</Text> : null}
+        <Text className={`text-sm font-semibold ${destructive ? 'text-destructive' : 'text-foreground'}`}>{title}</Text>
+        {subtitle ? <Text className="text-xs leading-5 text-muted">{subtitle}</Text> : null}
       </View>
       {value ? <Text className="text-sm text-muted">{value}</Text> : null}
-      {trailing ?? (
-        <Ionicons name="chevron-forward" size={18} color={tokens.colors.muted} />
-      )}
+      {trailing ?? <AppIcon name="ChevronRight" size={18} color={tokens.colors.muted} />}
     </Pressable>
-  );
+  )
 }

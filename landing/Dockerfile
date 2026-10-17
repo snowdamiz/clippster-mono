@@ -16,6 +16,7 @@ RUN yarn install --frozen-lockfile
 # Copy landing source and shared package (tsconfig/vite resolve ../packages/app-tour)
 COPY landing/ ./
 COPY packages/app-tour /packages/app-tour
+COPY packages/shared-types /packages/shared-types
 
 # Build the application
 RUN yarn build
@@ -27,6 +28,7 @@ WORKDIR /app
 
 COPY --from=builder /app/dist ./dist
 COPY landing/server.mjs ./server.mjs
+COPY landing/workspace-proxy.mjs ./workspace-proxy.mjs
 COPY landing/src/seo ./src/seo
 
 ENV PORT=8080

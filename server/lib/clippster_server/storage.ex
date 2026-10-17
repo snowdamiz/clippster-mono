@@ -368,6 +368,38 @@ defmodule ClippsterServer.Storage do
   end
 
   @doc """
+  Returns a URL the browser can load.
+
+  When `R2_PUBLIC_URL` points at the private `*.r2.cloudflarestorage.com` API host
+  (or any stored object URL uses that host), bare object URLs 400 without auth.
+  In that case we return a short-lived signed GET URL. Data URLs and real public
+  CDN URLs are returned unchanged.
+  """
+  def browser_accessible_url(nil), do: nil
+
+  def browser_accessible_url(url) when is_binary(url) do
+    cond do
+      String.starts_with?(url, "data:") ->
+        url
+
+      private_r2_object_url?(url) ->
+        case presigned_url(url) do
+          {:ok, signed} -> signed
+          {:error, _} -> url
+        end
+
+      true ->
+        url
+    end
+  end
+
+  def browser_accessible_url(_), do: nil
+
+  defp private_r2_object_url?(url) when is_binary(url) do
+    String.contains?(url, ".r2.cloudflarestorage.com")
+  end
+
+  @doc """
   Extracts the storage key from a full URL.
   Works with both public URLs and native R2 URLs.
   """

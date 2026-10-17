@@ -1,13 +1,11 @@
 import { ref, computed } from 'vue';
-import { invoke } from '@tauri-apps/api/core';
-import { suggestAiBroll, searchAiBrollStock } from '@/services/aiBrollApi';
 import {
+  suggestAiBroll, searchAiBrollStock, downloadBrollMedia, addProjectMedia,
   getAiBrollSuggestionsForClip,
   saveAiBrollSuggestions,
   updateAiBrollSuggestion,
   upsertAiBrollSuggestion,
-} from '@/services/database/ai-broll-suggestions';
-import { addProjectMedia } from '@/services/database/project-media';
+} from '@/services/aiBrollRuntime';
 import type {
   AiBrollCandidate,
   AiBrollDensity,
@@ -217,10 +215,11 @@ export function useAiBroll() {
     const ext = candidate.mediaType === 'image' ? 'jpg' : 'mp4';
     const filename = `broll_${candidate.provider}_${candidate.providerAssetId}.${ext}`;
 
-    const localPath = await invoke<string>('download_broll_media', {
+    const localPath = await downloadBrollMedia({
       url: candidate.downloadUrl,
       projectId,
       filename,
+      mediaType: candidate.mediaType,
     });
 
     if (options.addToProjectMedia !== false) {

@@ -740,7 +740,7 @@ async function onManualAdd(payload: { candidateId: string; duration: number; sta
 
 <template>
 
-  <div class="flex flex-col h-full min-h-0">
+  <div class="flex h-full min-h-0 flex-col">
 
     <AIBrollPanel
 
@@ -805,12 +805,6 @@ async function onManualAdd(payload: { candidateId: string; duration: number; sta
       @update:manual-search-media-type="aiBroll.manualSearchMediaType.value = $event"
 
     />
-
-    <p v-if="!canGenerate" class="text-[11px] text-zinc-500 px-3 py-2 border-t border-zinc-800/80">
-
-      No transcript loaded — use Manual search to add stock B-roll at the playhead.
-
-    </p>
 
   </div>
 

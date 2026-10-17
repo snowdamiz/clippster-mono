@@ -50,8 +50,8 @@ export interface NavigationItem {
 export const navigationGroups: Record<NavigationGroup, { label: string; order: number }> = {
   browse: { label: 'Browse', order: 1 },
   library: { label: 'Library', order: 2 },
-  create: { label: 'Design Studio', order: 3 },
-  studio: { label: 'Studio', order: 4 },
+  create: { label: 'Create', order: 3 },
+  studio: { label: 'Studio', order: 4 }, // folded into Create in the sidebar
   manage: { label: 'Manage', order: 5 },
   system: { label: '', order: 6 }, // No label for system group
 };
@@ -99,7 +99,6 @@ export const navigationItems: NavigationItem[] = [
     path: '/campaigns',
     icon: Megaphone,
     group: 'browse',
-    adminOnly: true,
     tourId: 'nav-campaigns',
   },
 
@@ -156,8 +155,8 @@ export const navigationItems: NavigationItem[] = [
     group: 'create',
   },
   {
-    name: 'AI Thumbnail Creator',
-    path: '/ai-thumbnail',
+    name: 'AI Image Creator',
+    path: '/ai-image',
     icon: Sparkles,
     group: 'create',
   },
@@ -165,7 +164,7 @@ export const navigationItems: NavigationItem[] = [
     name: 'Recording',
     path: '/studio/record',
     icon: Disc,
-    group: 'studio',
+    group: 'create',
     tourId: 'nav-studio-record',
   },
 
@@ -206,6 +205,7 @@ export const navigationItems: NavigationItem[] = [
     icon: Receipt,
     group: 'manage',
     restrictedHidden: true, // Hidden for restricted accounts
+    navHidden: true, // Lives in the account menu
   },
   {
     name: 'Affiliate',

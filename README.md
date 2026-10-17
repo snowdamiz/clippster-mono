@@ -55,7 +55,7 @@ This monorepo contains four main applications:
 
 ### Prerequisites
 
-- Node.js (v18+)
+- Node.js (v24+; required by the web workspace)
 - Yarn package manager
 - Elixir 1.15+ and Erlang/OTP 25+
 - PostgreSQL 12+
@@ -80,7 +80,7 @@ cd ../landing && yarn install
 ### Development
 
 ```bash
-# Start server, Tauri desktop app, landing, and mobile (Metro + Android emulator when connected)
+# Start server, Tauri desktop app, landing, mobile, and web workspace
 yarn dev
 
 # Start individual services
@@ -88,6 +88,7 @@ yarn server      # Phoenix API server only (localhost:4000)
 yarn client      # Vue development server only (localhost:1420)
 yarn tauri       # Tauri desktop app only
 yarn landing     # Landing page development server
+yarn web         # Web workspace UI (localhost:5175) and media API (localhost:8090)
 
 # Mobile (Expo) — requires dev client for SQLite, FFmpeg, OAuth
 yarn mobile          # Metro + auto-launch Android emulator (same as yarn dev mobile step)
@@ -97,6 +98,8 @@ yarn mobile:typecheck
 ```
 
 **Mobile prerequisites:** Xcode (iOS), Android Studio (Android), [EAS CLI](https://docs.expo.dev/build/setup/) for dev builds. See `apps/mobile/docs/` for auth, networking, and Phase 0 checklist. Native modules (FFmpeg, SecureStore) do **not** work in Expo Go — build once with `eas build --profile development`.
+
+**Web prerequisites:** Docker with Compose 2.24+. Follow [web setup](apps/web/README.md#local-development) once to configure the environment. `yarn dev` starts the browser UI and media service in Docker with FFmpeg and yt-dlp included; source changes reload automatically. `yarn web` starts only this container, and `yarn web:stop` stops it while preserving project data. `yarn web:host` is available for development without Docker.
 
 ### Build Commands
 
@@ -143,11 +146,12 @@ clippster/
 
 ```bash
 # Development
-yarn dev              # Start server + Tauri app concurrently
+yarn dev              # Start server, Tauri, landing, mobile, and web concurrently
 yarn server           # Start Phoenix API server
 yarn client           # Start Vue development server
 yarn tauri            # Start Tauri desktop app
 yarn landing          # Start landing page dev server
+yarn web              # Start web workspace UI and media API
 
 # Setup
 yarn setup:binaries   # Download FFmpeg and required binaries
@@ -165,6 +169,7 @@ yarn type-check       # Type check Vue application
 - **Frontend**: http://localhost:1420
 - **Backend API**: http://localhost:4000
 - **Landing Page**: http://localhost:5173 (development)
+- **Web Workspace**: http://localhost:5175 (media API on localhost:8090)
 
 #### Database
 - **Development**: PostgreSQL on localhost:5432
@@ -404,3 +409,9 @@ For detailed documentation, see [docs/completed/OTA-UPDATES.md](docs/completed/O
 - [Vue 3 Documentation](https://vuejs.org/)
 - [Solana Web3.js](https://solana-labs.github.io/solana-web3.js/)
 - [Tailwind CSS](https://tailwindcss.com/)
+
+## Web workspace
+
+The simplified browser app shares the desktop player, controls, workspace header, design tokens, and API/export packages. It supports source downloads or uploads, AI clip detection, trimming, portrait/landscape builds, captions, and MP4 downloads.
+
+See [apps/web/README.md](apps/web/README.md) for local setup and tests, and [docs/web/DEPLOYMENT.md](docs/web/DEPLOYMENT.md) for the separate Fly deployment at `app.clippster.app`.

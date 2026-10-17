@@ -127,6 +127,7 @@ defmodule ClippsterServerWeb.Router do
 
     plug(ClippsterServerWeb.AuthPlug)
     plug(ClippsterServerWeb.EnsureOrgSubscription)
+
     plug(ClippsterServerWeb.RateLimit,
       max_requests: 30,
       window_seconds: 3600,
@@ -164,6 +165,9 @@ defmodule ClippsterServerWeb.Router do
   # Rate-limited public endpoints
   scope "/api", ClippsterServerWeb do
     pipe_through(:api_rate_limited)
+
+    post("/auth/google/start", AuthController, :workspace_google_request)
+    post("/auth/google/exchange", AuthController, :workspace_google_exchange)
 
     # Beta code verification (rate limited to prevent brute force)
     post("/beta/verify-code", BetaController, :verify_code)
@@ -410,6 +414,19 @@ defmodule ClippsterServerWeb.Router do
     post("/ai/chat/sessions/:id/media-analysis", AIChatController, :upload_media_analysis)
     put("/ai/chat/sessions/:id/media", AIChatController, :update_media)
 
+    # General AI image creation sessions
+    get("/ai/image/sessions", AIImageController, :list_sessions)
+    post("/ai/image/sessions", AIImageController, :create_session)
+    get("/ai/image/sessions/:id", AIImageController, :get_session)
+    delete("/ai/image/sessions/:id", AIImageController, :delete_session)
+    put("/ai/image/sessions/:id/name", AIImageController, :rename_session)
+    post("/ai/image/sessions/:id/message", AIImageController, :send_message)
+    post("/ai/image/sessions/:id/prepare-prompt", AIImageController, :prepare_prompt)
+    post("/ai/image/sessions/:id/generate", AIImageController, :trigger_generation)
+    post("/ai/image/sessions/:id/prepare-revision", AIImageController, :prepare_revision)
+    post("/ai/image/sessions/:id/revise", AIImageController, :trigger_revision)
+    post("/ai/image/sessions/:id/select-candidate", AIImageController, :select_candidate)
+
     # AI thumbnail sessions
     get("/ai/thumbnail/sessions", AIThumbnailController, :list_sessions)
     post("/ai/thumbnail/sessions", AIThumbnailController, :create_session)
@@ -421,8 +438,19 @@ defmodule ClippsterServerWeb.Router do
     post("/ai/thumbnail/sessions/:id/reference", AIThumbnailController, :set_reference)
     post("/ai/thumbnail/sessions/:id/message", AIThumbnailController, :send_message)
     post("/ai/thumbnail/sessions/:id/generate", AIThumbnailController, :trigger_generation)
-    post("/ai/thumbnail/sessions/:id/generate-from-video", AIThumbnailController, :generate_from_video)
-    post("/ai/thumbnail/sessions/:id/continue-editable", AIThumbnailController, :continue_editable)
+
+    post(
+      "/ai/thumbnail/sessions/:id/generate-from-video",
+      AIThumbnailController,
+      :generate_from_video
+    )
+
+    post(
+      "/ai/thumbnail/sessions/:id/continue-editable",
+      AIThumbnailController,
+      :continue_editable
+    )
+
     post("/ai/thumbnail/sessions/:id/analyze", AIThumbnailController, :analyze)
     post("/ai/thumbnail/sessions/:id/apply-concept", AIThumbnailController, :apply_concept)
     post("/ai/thumbnail/sessions/:id/refine", AIThumbnailController, :send_refinement)
@@ -433,8 +461,19 @@ defmodule ClippsterServerWeb.Router do
     post("/ai/thumbnail/sessions/:id/text-overlay", AIThumbnailController, :text_overlay)
     post("/ai/thumbnail/sessions/:id/edit", AIThumbnailController, :edit)
     post("/ai/thumbnail/sessions/:id/edit/face-swap", AIThumbnailController, :face_swap)
-    post("/ai/thumbnail/sessions/:id/edit/background-remove", AIThumbnailController, :background_remove)
-    post("/ai/thumbnail/sessions/:id/edit/background-replace", AIThumbnailController, :background_replace)
+
+    post(
+      "/ai/thumbnail/sessions/:id/edit/background-remove",
+      AIThumbnailController,
+      :background_remove
+    )
+
+    post(
+      "/ai/thumbnail/sessions/:id/edit/background-replace",
+      AIThumbnailController,
+      :background_replace
+    )
+
     post("/ai/thumbnail/sessions/:id/edit/color-enhance", AIThumbnailController, :color_enhance)
     post("/ai/thumbnail/sessions/:id/edit/upscale", AIThumbnailController, :upscale)
     post("/ai/thumbnail/sessions/:id/edit/filter", AIThumbnailController, :filter)
@@ -883,6 +922,8 @@ defmodule ClippsterServerWeb.Router do
     )
 
     post("/organizations/:organization_id/posts/publish", PostSubmissionController, :publish)
+    post("/organizations/:organization_id/posts/:id/approve", PostSubmissionController, :approve)
+    post("/organizations/:organization_id/posts/:id/reject", PostSubmissionController, :reject)
     put("/organizations/:organization_id/posts/:id", PostSubmissionController, :update)
 
     post(

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watchEffect } from "vue";
+import { computed, h, ref, watchEffect, type FunctionalComponent } from "vue";
 import { useEditor } from "../../../composables/useEditor";
 import { useFontManager } from "../../../composables/useFontManager";
 import type { CaptionElement } from "../../../types/timeline";
@@ -11,8 +11,16 @@ import {
 	getExportableAnimationPresetsForDirection,
 	ANIMATION_CATEGORIES,
 } from "../../../constants/animation-constants";
-import ColorPicker from "@/components/ColorPicker.vue";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Button } from "@/components/ui/button";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
+import InspectorSection from "../shared/InspectorSection.vue";
+import InspectorField from "../shared/InspectorField.vue";
+import InspectorSelect from "../shared/InspectorSelect.vue";
+import SliderField from "../shared/SliderField.vue";
+import NumberBox from "../shared/NumberBox.vue";
+import OptionChip from "../shared/OptionChip.vue";
+import ChipGroup from "../shared/ChipGroup.vue";
+import ColorSwatchField from "../shared/ColorSwatchField.vue";
 import { AlignLeft, AlignCenter, AlignRight, X } from "lucide-vue-next";
 import { cloneTransform } from "../../../lib/timeline/element-utils";
 
@@ -56,10 +64,32 @@ const minElementDuration = computed(() => {
 
 type PanelTab = "style" | "animation";
 const activePanelTab = ref<PanelTab>("style");
+const PANEL_TAB_OPTIONS: SegmentedOption<PanelTab>[] = [
+	{ value: "style", label: "Style" },
+	{ value: "animation", label: "Animation" },
+];
 
 type AnimTab = "in" | "out" | "loop";
 const activeAnimTab = ref<AnimTab>("in");
 const selectedCategory = ref<AnimationCategory | "all">("all");
+
+/** Brand dot marking In / Out / Loop tabs that already have an animation. */
+const AnimSetDot: FunctionalComponent = () =>
+	h("span", { class: "grid place-items-center" }, [h("span", { class: "size-1.5 rounded-full bg-brand" })]);
+
+const animTabOptions = computed<SegmentedOption<AnimTab>[]>(() => {
+	const el = first.value;
+	return [
+		{ value: "in", label: "In", icon: el?.animationIn ? AnimSetDot : undefined },
+		{ value: "out", label: "Out", icon: el?.animationOut ? AnimSetDot : undefined },
+		{ value: "loop", label: "Loop", icon: el?.animationLoop ? AnimSetDot : undefined },
+	];
+});
+
+function selectAnimTab(tab: AnimTab) {
+	activeAnimTab.value = tab;
+	selectedCategory.value = "all";
+}
 
 const inPresets = computed(() => getExportableAnimationPresetsForDirection("in"));
 const outPresets = computed(() => getExportableAnimationPresetsForDirection("out"));
@@ -101,12 +131,12 @@ const availableAnimCategories = computed(() => {
 
 const easingOptions: { id: AnimationEasing; label: string }[] = [
 	{ id: "linear", label: "Linear" },
-	{ id: "ease-in", label: "Ease In" },
-	{ id: "ease-out", label: "Ease Out" },
-	{ id: "ease-in-out", label: "Ease In Out" },
-	{ id: "ease-in-cubic", label: "Ease In Cubic" },
-	{ id: "ease-out-cubic", label: "Ease Out Cubic" },
-	{ id: "ease-in-out-cubic", label: "Ease In Out Cubic" },
+	{ id: "ease-in", label: "Ease in" },
+	{ id: "ease-out", label: "Ease out" },
+	{ id: "ease-in-out", label: "Ease in out" },
+	{ id: "ease-in-cubic", label: "Ease in cubic" },
+	{ id: "ease-out-cubic", label: "Ease out cubic" },
+	{ id: "ease-in-out-cubic", label: "Ease in out cubic" },
 	{ id: "ease-out-back", label: "Overshoot" },
 	{ id: "ease-out-bounce", label: "Bounce" },
 	{ id: "spring", label: "Spring" },
@@ -292,6 +322,39 @@ function selectFont(family: string) {
 	updateAll({ fontFamily: family });
 }
 
+/** Font list for the family select; keeps the current family listed even if it isn't loaded. */
+const fontOptions = computed(() => {
+	const options = allFonts.value.map((font) => ({ value: font.family, label: font.family }));
+	const current = first.value?.fontFamily;
+	if (current && !options.some((o) => o.value === current)) {
+		options.unshift({ value: current, label: current });
+	}
+	return options;
+});
+
+const FONT_WEIGHT_OPTIONS = [
+	{ value: "normal", label: "Normal" },
+	{ value: "bold", label: "Bold" },
+	...["600", "700", "800", "900"].map((w) => ({ value: w, label: w })),
+];
+
+const TEXT_ALIGN_OPTIONS = [
+	{ value: "left", label: "Align left", icon: AlignLeft },
+	{ value: "center", label: "Align center", icon: AlignCenter },
+	{ value: "right", label: "Align right", icon: AlignRight },
+] as const;
+
+// Size / words-per-line boxes commit on blur or Enter (only when changed, like a native `change`).
+function commitFontSize(raw: string) {
+	if (raw === String(first.value?.fontSize)) return;
+	updateAll({ fontSize: Math.max(8, Math.min(200, Number(raw))) });
+}
+
+function commitMaxWords(raw: string) {
+	if (raw === String(first.value?.maxWordsPerLine)) return;
+	updateAll({ maxWordsPerLine: Math.max(1, Math.min(32, Math.floor(Number(raw)))) });
+}
+
 function setAnimationAll(direction: AnimTab, type: AnimationType | null) {
 	const preset = type ? ANIMATION_PRESETS.find((p) => p.type === type) : null;
 	const key =
@@ -336,351 +399,237 @@ function updateAnimEasing(easing: AnimationEasing) {
 </script>
 
 <template>
-	<div class="flex h-full flex-col overflow-y-auto p-3 text-xs">
-		<div class="mb-3 rounded border border-white/10 bg-white/[0.03] px-3 py-2 text-[11px] text-zinc-400">
-			Editing <span class="font-medium text-zinc-200">{{ count }}</span> captions — changes apply to
-			<strong>all</strong> selected. Values reflect the first caption.
+	<div class="flex h-full min-h-0 flex-col">
+		<!-- Selection summary + Style / Animation switch (pinned) -->
+		<div class="shrink-0 space-y-2 border-b border-line-subtle px-3 py-2">
+			<p class="text-2xs text-fg-muted">
+				Editing <span class="tabular font-medium text-fg">{{ count }}</span> captions — changes apply to
+				<span class="font-medium text-fg">all</span> selected. Values reflect the first caption.
+			</p>
+			<SegmentedControl v-model="activePanelTab" :options="PANEL_TAB_OPTIONS" size="sm" block />
 		</div>
 
-		<div class="mb-2 flex rounded-md border border-white/10 bg-white/[0.02]">
-			<button
-				v-for="tab in (['style', 'animation'] as PanelTab[])"
-				:key="tab"
-				class="flex-1 py-1.5 text-center text-[11px] font-medium transition-colors"
-				:class="
-					activePanelTab === tab
-						? 'bg-primary/15 text-primary'
-						: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'
-				"
-				@click="activePanelTab = tab"
-			>
-				{{ tab === "style" ? "Style" : "Animation" }}
-			</button>
-		</div>
+		<div class="min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+			<!-- ── Style (shared) ── -->
+			<template v-if="activePanelTab === 'style' && first">
+				<InspectorSection title="Transform">
+					<SliderField
+						inline
+						label="Scale"
+						:model-value="Math.round((first.transform.scale ?? 1) * 100)"
+						:input-value="scaleInput"
+						:min="10"
+						:max="500"
+						unit="%"
+						input-type="text"
+						@slide="(v) => handleScaleSlider(String(v))"
+						@input="handleScaleInput"
+						@commit="handleScaleBlur"
+					/>
+					<SliderField
+						inline
+						label="Rotation"
+						:model-value="first.transform.rotate ?? 0"
+						:input-value="rotationInput"
+						:min="-180"
+						:max="180"
+						:step="0.1"
+						input-type="text"
+						@slide="(v) => handleRotationSlider(String(v))"
+						@input="handleRotationInput"
+						@commit="handleRotationBlur"
+					/>
+					<SliderField
+						inline
+						label="Position X"
+						:model-value="Math.round(first.transform.position.x ?? 0)"
+						:input-value="posXInput"
+						:min="-1000"
+						:max="1000"
+						input-type="text"
+						@slide="(v) => handlePosXSlider(String(v))"
+						@input="handlePosXInput"
+						@commit="handlePosXBlur"
+					/>
+					<SliderField
+						inline
+						label="Position Y"
+						:model-value="Math.round(first.transform.position.y ?? 0)"
+						:input-value="posYInput"
+						:min="-1000"
+						:max="1000"
+						input-type="text"
+						@slide="(v) => handlePosYSlider(String(v))"
+						@input="handlePosYInput"
+						@commit="handlePosYBlur"
+					/>
+					<SliderField
+						inline
+						label="Opacity"
+						:model-value="Math.round((first.opacity ?? 1) * 100)"
+						:input-value="opacityInput"
+						:min="0"
+						:max="100"
+						unit="%"
+						input-type="text"
+						@slide="(v) => handleOpacitySlider(String(v))"
+						@input="handleOpacityInput"
+						@commit="handleOpacityBlur"
+					/>
+				</InspectorSection>
 
-		<!-- ── Style (shared) ── -->
-		<div v-if="activePanelTab === 'style' && first" class="space-y-4">
-			<div class="space-y-2 border-b border-white/10 pb-3">
-				<span class="text-[11px] font-medium text-zinc-300">Transform</span>
-				<div class="space-y-1">
-					<label class="text-[11px] text-zinc-500">Scale</label>
-					<div class="flex items-center gap-2">
-						<input
-							type="range"
-							min="10"
-							max="500"
-							:value="Math.round((first.transform.scale ?? 1) * 100)"
-							class="flex-1"
-							@input="handleScaleSlider(($event.target as HTMLInputElement).value)"
+				<InspectorSection title="Typography" flush>
+					<InspectorField label="Font">
+						<InspectorSelect
+							:model-value="first.fontFamily"
+							:options="fontOptions"
+							aria-label="Font family"
+							@update:model-value="(v) => selectFont(String(v))"
 						/>
-						<div class="flex items-center">
-							<input
-								type="text"
-								:value="scaleInput"
-								class="h-7 w-14 rounded-md border border-white/10 bg-white/5 px-2 text-right text-xs text-zinc-200"
-								@input="handleScaleInput(($event.target as HTMLInputElement).value)"
-								@blur="handleScaleBlur"
+					</InspectorField>
+					<InspectorField label="Fill">
+						<ColorSwatchField
+							app-picker
+							:model-value="first.color"
+							aria-label="Fill color"
+							@update:model-value="(v) => updateAll({ color: v })"
+						/>
+					</InspectorField>
+					<div class="grid grid-cols-2 gap-2">
+						<InspectorField label="Size">
+							<NumberBox
+								:value="first.fontSize"
+								:min="8"
+								:max="200"
+								aria-label="Font size"
+								@commit="commitFontSize"
 							/>
-							<span class="ml-0.5 text-zinc-500">%</span>
+						</InspectorField>
+						<InspectorField label="Weight">
+							<InspectorSelect
+								:model-value="first.fontWeight"
+								:options="FONT_WEIGHT_OPTIONS"
+								aria-label="Font weight"
+								@update:model-value="(v) => updateAll({ fontWeight: String(v) as CaptionElementUpdatable['fontWeight'] })"
+							/>
+						</InspectorField>
+					</div>
+					<InspectorField label="Alignment">
+						<ChipGroup class="flex w-full">
+							<OptionChip
+								v-for="opt in TEXT_ALIGN_OPTIONS"
+								:key="opt.value"
+								variant="ghost"
+								:icon="opt.icon"
+								:active="first.textAlign === opt.value"
+								:title="opt.label"
+								:aria-label="opt.label"
+								class="flex-1"
+								@click="updateAll({ textAlign: opt.value })"
+							/>
+						</ChipGroup>
+					</InspectorField>
+					<InspectorField label="Words / line">
+						<NumberBox
+							:value="first.maxWordsPerLine"
+							:min="1"
+							:max="32"
+							aria-label="Words per line"
+							@commit="commitMaxWords"
+						/>
+					</InspectorField>
+				</InspectorSection>
+			</template>
+
+			<!-- ── Animation (shared, export-parity list) ── -->
+			<template v-else-if="activePanelTab === 'animation' && first">
+				<InspectorSection flush>
+					<SegmentedControl
+						:model-value="activeAnimTab"
+						:options="animTabOptions"
+						size="sm"
+						block
+						@update:model-value="selectAnimTab"
+					/>
+
+					<!-- Current animation for this direction -->
+					<div v-if="currentAnim" class="overflow-hidden rounded-lg border border-line-subtle bg-surface-raised">
+						<div class="flex h-8 items-center gap-1 pl-2.5 pr-1">
+							<span class="min-w-0 flex-1 truncate text-xs font-medium text-fg">
+								{{ ANIMATION_PRESETS.find((p) => p.type === currentAnim?.type)?.label ?? currentAnim?.type ?? "" }}
+							</span>
+							<Button
+								variant="ghost"
+								size="icon-xs"
+								class="hover:bg-danger-soft hover:text-danger"
+								title="Remove animation"
+								aria-label="Remove animation"
+								@click="removeAnimationAll"
+							>
+								<X />
+							</Button>
+						</div>
+						<div class="space-y-1.5 border-t border-line-subtle px-2.5 py-2">
+							<SliderField
+								inline
+								label="Duration"
+								:model-value="currentAnim.duration * 10"
+								:min="1"
+								:max="activeAnimTab === 'loop' ? 100 : Math.min(minElementDuration * 10, 50)"
+								:step="1"
+								:readout="`${currentAnim.duration.toFixed(1)}s`"
+								@slide="(v) => updateAnimDuration(v / 10)"
+							/>
+							<InspectorField inline label="Easing">
+								<InspectorSelect
+									:model-value="currentAnim.easing"
+									:options="easingOptions.map((opt) => ({ value: opt.id, label: opt.label }))"
+									aria-label="Easing"
+									class="flex-1"
+									@update:model-value="(v) => updateAnimEasing(v as AnimationEasing)"
+								/>
+							</InspectorField>
 						</div>
 					</div>
-				</div>
-				<div class="space-y-1">
-					<label class="text-[11px] text-zinc-500">Rotation</label>
-					<div class="flex items-center gap-2">
-						<input
-							type="range"
-							min="-180"
-							max="180"
-							step="0.1"
-							:value="first.transform.rotate ?? 0"
-							class="flex-1"
-							@input="handleRotationSlider(($event.target as HTMLInputElement).value)"
-						/>
-						<input
-							type="text"
-							:value="rotationInput"
-							class="h-7 w-14 rounded-md border border-white/10 bg-white/5 px-2 text-right text-xs text-zinc-200"
-							@input="handleRotationInput(($event.target as HTMLInputElement).value)"
-							@blur="handleRotationBlur"
-						/>
-					</div>
-				</div>
-				<div class="space-y-1">
-					<label class="text-[11px] text-zinc-500">X</label>
-					<div class="flex items-center gap-2">
-						<input
-							type="range"
-							min="-1000"
-							max="1000"
-							:value="Math.round(first.transform.position.x ?? 0)"
-							class="flex-1"
-							@input="handlePosXSlider(($event.target as HTMLInputElement).value)"
-						/>
-						<input
-							type="text"
-							:value="posXInput"
-							class="h-7 w-14 rounded-md border border-white/10 bg-white/5 px-2 text-right text-xs text-zinc-200"
-							@input="handlePosXInput(($event.target as HTMLInputElement).value)"
-							@blur="handlePosXBlur"
-						/>
-					</div>
-				</div>
-				<div class="space-y-1">
-					<label class="text-[11px] text-zinc-500">Y</label>
-					<div class="flex items-center gap-2">
-						<input
-							type="range"
-							min="-1000"
-							max="1000"
-							:value="Math.round(first.transform.position.y ?? 0)"
-							class="flex-1"
-							@input="handlePosYSlider(($event.target as HTMLInputElement).value)"
-						/>
-						<input
-							type="text"
-							:value="posYInput"
-							class="h-7 w-14 rounded-md border border-white/10 bg-white/5 px-2 text-right text-xs text-zinc-200"
-							@input="handlePosYInput(($event.target as HTMLInputElement).value)"
-							@blur="handlePosYBlur"
-						/>
-					</div>
-				</div>
-				<div class="space-y-1">
-					<label class="text-[11px] text-zinc-500">Opacity</label>
-					<div class="flex items-center gap-2">
-						<input
-							type="range"
-							min="0"
-							max="100"
-							:value="Math.round((first.opacity ?? 1) * 100)"
-							class="flex-1"
-							@input="handleOpacitySlider(($event.target as HTMLInputElement).value)"
-						/>
-						<div class="flex items-center">
-							<input
-								type="text"
-								:value="opacityInput"
-								class="h-7 w-14 rounded-md border border-white/10 bg-white/5 px-2 text-right text-xs text-zinc-200"
-								@input="handleOpacityInput(($event.target as HTMLInputElement).value)"
-								@blur="handleOpacityBlur"
-							/>
-							<span class="ml-0.5 text-zinc-500">%</span>
-						</div>
-					</div>
-				</div>
-			</div>
 
-			<div class="space-y-2 border-b border-white/10 pb-3">
-				<span class="text-[11px] font-medium text-zinc-300">Typography</span>
-				<div class="space-y-1">
-					<label class="text-[11px] text-zinc-500">Font</label>
-					<Select :model-value="first.fontFamily" @update:model-value="(v) => selectFont(String(v))">
-						<SelectTrigger class="h-7 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200">
-							<SelectValue :placeholder="first.fontFamily" />
-						</SelectTrigger>
-						<SelectContent class="max-h-[220px] border-white/10 bg-zinc-900">
-							<SelectItem v-for="font in allFonts" :key="font.family" :value="font.family" class="text-xs text-zinc-200">
-								{{ font.family }}
-							</SelectItem>
-						</SelectContent>
-					</Select>
-				</div>
-				<div class="space-y-1">
-					<label class="text-[11px] text-zinc-500">Fill</label>
-					<ColorPicker :model-value="first.color" @update:model-value="(v) => updateAll({ color: v })" />
-				</div>
-				<div class="grid grid-cols-2 gap-2">
-					<div class="space-y-1">
-						<label class="text-[11px] text-zinc-500">Size</label>
-						<input
-							type="number"
-							min="8"
-							max="200"
-							:value="first.fontSize"
-							class="h-7 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200"
-							@change="
-								updateAll({ fontSize: Math.max(8, Math.min(200, Number(($event.target as HTMLInputElement).value))) })
-							"
-						/>
-					</div>
-					<div class="space-y-1">
-						<label class="text-[11px] text-zinc-500">Weight</label>
-						<Select :model-value="first.fontWeight" @update:model-value="(v) => updateAll({ fontWeight: String(v) })">
-							<SelectTrigger class="h-7 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200">
-								<SelectValue />
-							</SelectTrigger>
-							<SelectContent class="border-white/10 bg-zinc-900">
-								<SelectItem value="normal" class="text-xs">Normal</SelectItem>
-								<SelectItem value="bold" class="text-xs">Bold</SelectItem>
-								<SelectItem value="600" class="text-xs">600</SelectItem>
-								<SelectItem value="700" class="text-xs">700</SelectItem>
-								<SelectItem value="800" class="text-xs">800</SelectItem>
-								<SelectItem value="900" class="text-xs">900</SelectItem>
-							</SelectContent>
-						</Select>
-					</div>
-				</div>
-				<div class="space-y-1">
-					<label class="text-[11px] text-zinc-500">Align</label>
-					<div class="flex gap-1">
-						<button
-							type="button"
-							class="flex-1 rounded-md border p-1.5 transition-all"
-							:class="first.textAlign === 'left' ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:bg-white/5'"
-							@click="updateAll({ textAlign: 'left' })"
+					<!-- Category filter -->
+					<div class="flex flex-wrap gap-1">
+						<OptionChip :active="selectedCategory === 'all'" @click="selectedCategory = 'all'">All</OptionChip>
+						<OptionChip
+							v-for="cat in availableAnimCategories"
+							:key="cat.id"
+							:active="selectedCategory === cat.id"
+							@click="selectedCategory = cat.id"
 						>
-							<AlignLeft class="mx-auto size-3.5 text-zinc-300" />
-						</button>
-						<button
-							type="button"
-							class="flex-1 rounded-md border p-1.5 transition-all"
-							:class="first.textAlign === 'center' ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:bg-white/5'"
-							@click="updateAll({ textAlign: 'center' })"
-						>
-							<AlignCenter class="mx-auto size-3.5 text-zinc-300" />
-						</button>
-						<button
-							type="button"
-							class="flex-1 rounded-md border p-1.5 transition-all"
-							:class="first.textAlign === 'right' ? 'border-primary/50 bg-primary/10' : 'border-white/10 hover:bg-white/5'"
-							@click="updateAll({ textAlign: 'right' })"
-						>
-							<AlignRight class="mx-auto size-3.5 text-zinc-300" />
-						</button>
+							{{ cat.label }}
+						</OptionChip>
 					</div>
-				</div>
-				<div class="space-y-1">
-					<label class="text-[11px] text-zinc-500">Words / line</label>
-					<input
-						type="number"
-						min="1"
-						max="32"
-						:value="first.maxWordsPerLine"
-						class="h-7 w-full rounded-md border border-white/10 bg-white/5 px-2 text-xs text-zinc-200"
-						@change="
-							updateAll({
-								maxWordsPerLine: Math.max(1, Math.min(32, Math.floor(Number(($event.target as HTMLInputElement).value)))),
-							})
-						"
-					/>
-				</div>
-			</div>
-		</div>
 
-		<!-- ── Animation (shared, export-parity list) ── -->
-		<div v-else-if="activePanelTab === 'animation' && first" class="space-y-3">
-			<div class="flex rounded-md border border-white/10 bg-white/[0.02]">
-				<button
-					v-for="tab in (['in', 'out', 'loop'] as AnimTab[])"
-					:key="tab"
-					class="flex-1 py-1.5 text-center text-[11px] font-medium capitalize transition-colors"
-					:class="
-						activeAnimTab === tab
-							? 'bg-primary/15 text-primary'
-							: 'text-zinc-500 hover:bg-white/5 hover:text-zinc-300'
-					"
-					@click="activeAnimTab = tab; selectedCategory = 'all'"
-				>
-					{{ tab }}
-					<span
-						v-if="
-							(tab === 'in' && first.animationIn) ||
-							(tab === 'out' && first.animationOut) ||
-							(tab === 'loop' && first.animationLoop)
-						"
-						class="ml-0.5 inline-block size-1 rounded-full bg-primary"
-					/>
-				</button>
-			</div>
-
-			<div v-if="currentAnim" class="space-y-2 border-b border-white/[0.06] pb-3">
-				<div class="flex items-center justify-between">
-					<span class="text-[11px] font-medium text-zinc-300">
-						{{ ANIMATION_PRESETS.find((p) => p.type === currentAnim?.type)?.label ?? currentAnim?.type ?? "" }}
-					</span>
-					<button
-						type="button"
-						class="flex size-5 items-center justify-center rounded text-zinc-500 hover:bg-red-500/10 hover:text-red-400"
-						title="Remove animation"
-						@click="removeAnimationAll"
-					>
-						<X class="size-3" />
-					</button>
-				</div>
-				<div class="flex items-center gap-2">
-					<label class="w-12 shrink-0 text-[10px] text-zinc-500">Duration</label>
-					<input
-						type="range"
-						:value="currentAnim.duration * 10"
-						min="1"
-						:max="activeAnimTab === 'loop' ? 100 : Math.min(minElementDuration * 10, 50)"
-						step="1"
-						class="flex-1"
-						@input="updateAnimDuration(Number(($event.target as HTMLInputElement).value) / 10)"
-					/>
-					<span class="w-10 text-right text-[11px] text-zinc-400">{{ currentAnim.duration.toFixed(1) }}s</span>
-				</div>
-				<div class="flex items-center gap-2">
-					<label class="w-12 shrink-0 text-[10px] text-zinc-500">Easing</label>
-					<Select :model-value="currentAnim.easing" @update:model-value="(v) => updateAnimEasing(v as AnimationEasing)">
-						<SelectTrigger class="h-7 flex-1 rounded-md border border-white/10 bg-white/5 px-2 text-[10px] text-zinc-200">
-							<SelectValue />
-						</SelectTrigger>
-						<SelectContent class="border-white/10 bg-zinc-900">
-							<SelectItem v-for="opt in easingOptions" :key="opt.id" :value="opt.id" class="text-[10px] text-zinc-200">
-								{{ opt.label }}
-							</SelectItem>
-						</SelectContent>
-					</Select>
-				</div>
-			</div>
-
-			<div class="flex flex-wrap gap-1">
-				<button
-					type="button"
-					class="rounded px-2 py-0.5 text-[10px] font-medium transition-colors"
-					:class="selectedCategory === 'all' ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5'"
-					@click="selectedCategory = 'all'"
-				>
-					All
-				</button>
-				<button
-					v-for="cat in availableAnimCategories"
-					:key="cat.id"
-					type="button"
-					class="rounded px-2 py-0.5 text-[10px] font-medium transition-colors"
-					:class="selectedCategory === cat.id ? 'bg-white/10 text-zinc-200' : 'text-zinc-500 hover:bg-white/5'"
-					@click="selectedCategory = cat.id"
-				>
-					{{ cat.label }}
-				</button>
-			</div>
-
-			<div class="grid grid-cols-2 gap-0.5">
-				<button
-					type="button"
-					class="flex h-7 items-center gap-1 rounded px-2 text-[11px] font-medium transition-colors"
-					:class="!currentAnim ? 'bg-primary/10 text-primary' : 'text-zinc-500 hover:bg-white/5'"
-					@click="removeAnimationAll"
-				>
-					<X class="size-3 shrink-0" />
-					None
-				</button>
-				<button
-					v-for="preset in filteredAnimPresets"
-					:key="preset.type"
-					type="button"
-					class="flex h-7 items-center rounded px-2 text-[11px] font-medium transition-colors"
-					:class="
-						currentAnim?.type === preset.type ? 'bg-primary/10 text-primary' : 'text-zinc-500 hover:bg-white/5'
-					"
-					:title="preset.label"
-					@click="setAnimationAll(activeAnimTab, preset.type)"
-				>
-					{{ preset.label }}
-				</button>
-			</div>
+					<!-- Preset list -->
+					<div class="grid grid-cols-2 gap-0.5">
+						<OptionChip
+							variant="ghost"
+							:active="!currentAnim"
+							:icon="X"
+							class="h-7 justify-start px-2"
+							@click="removeAnimationAll"
+						>
+							None
+						</OptionChip>
+						<OptionChip
+							v-for="preset in filteredAnimPresets"
+							:key="preset.type"
+							variant="ghost"
+							:active="currentAnim?.type === preset.type"
+							:title="preset.label"
+							class="h-7 justify-start px-2"
+							@click="setAnimationAll(activeAnimTab, preset.type)"
+						>
+							<span class="truncate">{{ preset.label }}</span>
+						</OptionChip>
+					</div>
+				</InspectorSection>
+			</template>
 		</div>
 	</div>
 </template>

@@ -1,81 +1,80 @@
-import { useEventListener } from 'expo';
-import { useVideoPlayer, VideoView } from 'expo-video';
-import { memo, useEffect, useMemo, useRef, useState } from 'react';
-import { useWindowDimensions, View } from 'react-native';
-import { VideoPlayerControls } from '@/components/editor/VideoPlayerControls';
-import { useSmoothPlayerTime } from '@/hooks/useSmoothPlayerTime';
-import { configureVodPlayer } from '@/lib/configurePreviewPlayer';
-import { beginPlaybackCritical } from '@/lib/mediaDecodeGate';
-import { toVideoSource } from '@/lib/playbackVideo';
+import { useEventListener } from 'expo'
+import { useVideoPlayer, VideoView } from 'expo-video'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
+import { useWindowDimensions, View } from 'react-native'
+import { VideoPlayerControls } from '@/components/editor/VideoPlayerControls'
+import { useSmoothPlayerTime } from '@/hooks/useSmoothPlayerTime'
+import { configureVodPlayer } from '@/lib/configurePreviewPlayer'
+import { beginPlaybackCritical } from '@/lib/mediaDecodeGate'
+import { toVideoSource } from '@/lib/playbackVideo'
 
 interface VodPreviewProps {
-  videoPath: string;
-  onTimeChange?: (seconds: number) => void;
-  onDurationChange?: (seconds: number) => void;
+  videoPath: string
+  onTimeChange?: (seconds: number) => void
+  onDurationChange?: (seconds: number) => void
 }
 
 const PreviewSurface = memo(function PreviewSurface({
   player,
   width,
-  height,
+  height
 }: {
-  player: ReturnType<typeof useVideoPlayer>;
-  width: number;
-  height: number;
+  player: ReturnType<typeof useVideoPlayer>
+  width: number
+  height: number
 }) {
-  const style = useMemo(
-    () => ({ width, height, backgroundColor: '#000' as const }),
-    [width, height],
-  );
-  return <VideoView player={player} style={style} nativeControls={false} contentFit="contain" />;
-});
+  const style = useMemo(() => ({ width, height, backgroundColor: '#000' as const }), [width, height])
+  return <VideoView player={player} style={style} nativeControls={false} contentFit="contain" />
+})
 
 export function VodPreview({ videoPath, onTimeChange, onDurationChange }: VodPreviewProps) {
-  const { width } = useWindowDimensions();
-  const videoWidth = width;
-  const videoHeight = width * (9 / 16);
+  const { width } = useWindowDimensions()
+  const videoWidth = width - 40
+  const videoHeight = videoWidth * (9 / 16)
 
-  const player = useVideoPlayer(toVideoSource(videoPath), configureVodPlayer);
-  const lastNotify = useRef(0);
-  const { currentTime: playheadTime, timeSV, noteSeek } = useSmoothPlayerTime(player);
-  const [, setPlaybackEpoch] = useState(0);
+  const player = useVideoPlayer(toVideoSource(videoPath), configureVodPlayer)
+  const lastNotify = useRef(0)
+  const { currentTime: playheadTime, timeSV, noteSeek } = useSmoothPlayerTime(player)
+  const [, setPlaybackEpoch] = useState(0)
 
-  useEffect(() => beginPlaybackCritical(), []);
+  useEffect(() => beginPlaybackCritical(), [])
 
   useEventListener(player, 'playingChange', () => {
-    setPlaybackEpoch((value) => value + 1);
-  });
+    setPlaybackEpoch((value) => value + 1)
+  })
   useEventListener(player, 'volumeChange', () => {
-    setPlaybackEpoch((value) => value + 1);
-  });
+    setPlaybackEpoch((value) => value + 1)
+  })
   useEventListener(player, 'statusChange', () => {
-    const duration = player.duration ?? 0;
-    if (duration > 0) onDurationChange?.(duration);
-  });
+    const duration = player.duration ?? 0
+    if (duration > 0) onDurationChange?.(duration)
+  })
 
   useEffect(() => {
-    if (!onTimeChange) return;
-    const now = performance.now();
-    if (now - lastNotify.current < 250) return;
-    lastNotify.current = now;
-    onTimeChange(playheadTime);
-  }, [onTimeChange, playheadTime]);
+    if (!onTimeChange) return
+    const now = performance.now()
+    if (now - lastNotify.current < 250) return
+    lastNotify.current = now
+    onTimeChange(playheadTime)
+  }, [onTimeChange, playheadTime])
 
   return (
-    <View className="bg-black">
-      <PreviewSurface player={player} width={videoWidth} height={videoHeight} />
+    <View className="px-5">
+      <View className="overflow-hidden rounded-[14px] bg-black">
+        <PreviewSurface player={player} width={videoWidth} height={videoHeight} />
+      </View>
       <VideoPlayerControls
         player={player}
         currentTime={playheadTime}
         timeSV={timeSV}
         duration={player.duration ?? 0}
         onSeek={(seconds) => {
-          player.currentTime = seconds;
-          noteSeek(seconds);
-          lastNotify.current = performance.now();
-          onTimeChange?.(seconds);
+          player.currentTime = seconds
+          noteSeek(seconds)
+          lastNotify.current = performance.now()
+          onTimeChange?.(seconds)
         }}
       />
     </View>
-  );
+  )
 }

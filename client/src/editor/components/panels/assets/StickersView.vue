@@ -14,7 +14,11 @@ import {
 	type IconSearchResult,
 } from "../../../lib/iconify-api";
 import StickerItem from "./StickerItem.vue";
-import { ArrowLeft, Loader2, Smile } from "lucide-vue-next";
+import { ArrowLeft, Loader2, SearchX, Smile } from "lucide-vue-next";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SectionHeader } from "@/components/ui/section-header";
+import AssetGrid from "../shared/AssetGrid.vue";
+import AssetTile from "../shared/AssetTile.vue";
 import PanelSearchBar from "./PanelSearchBar.vue";
 
 const { editor } = useEditor({ subscribe: false });
@@ -205,41 +209,48 @@ onMounted(() => loadCollections());
 
 <template>
 	<div class="flex h-full flex-col overflow-hidden">
-		<!-- Search bar -->
 		<PanelSearchBar
 			v-model="searchQuery"
-			placeholder="Search stickers..."
+			placeholder="Search stickers…"
 			@input="handleSearchInput"
 		/>
 
-		<!-- Back button -->
+		<!-- Back row (collection / search results) -->
 		<button
 			v-if="viewMode === 'collection' || viewMode === 'search'"
 			type="button"
-			class="flex shrink-0 items-center gap-1.5 border-b border-white/10 px-3 py-1.5 text-xs text-zinc-400 transition-colors hover:bg-white/5 hover:text-zinc-200"
+			class="flex h-8 w-full shrink-0 items-center gap-1.5 border-b border-line-subtle px-3 text-left text-xs text-fg-muted transition-colors hover:bg-surface-hover hover:text-fg focus-visible:outline-none focus-visible:bg-surface-hover"
 			@click="goBack"
 		>
-			<ArrowLeft class="size-3" />
-			<span v-if="viewMode === 'collection' && currentCollection">
-				{{ currentCollection.title || selectedCollection }}
+			<ArrowLeft class="size-3.5 shrink-0" />
+			<span class="min-w-0 flex-1 truncate font-medium">
+				{{ viewMode === 'collection' ? currentCollection?.title || selectedCollection : 'All collections' }}
 			</span>
-			<span v-else>Back to browse</span>
+			<span
+				v-if="viewMode === 'collection' && collectionIcons.length > 0"
+				class="tabular shrink-0 text-2xs text-fg-subtle"
+			>
+				{{ collectionIcons.length.toLocaleString() }} icons
+			</span>
+			<span
+				v-else-if="viewMode === 'search' && searchResults && searchResults.icons.length > 0"
+				class="tabular shrink-0 text-2xs text-fg-subtle"
+			>
+				{{ searchResults.total.toLocaleString() }} results
+			</span>
 		</button>
 
 		<!-- Content -->
-		<div class="min-h-0 flex-1 overflow-y-auto">
+		<div class="min-h-0 flex-1 overflow-y-auto p-3">
 			<!-- Loading (initial) -->
 			<div v-if="isLoadingCollections || isLoadingCollection || (isSearching && !searchResults)" class="flex items-center justify-center py-16">
-				<Loader2 class="size-5 animate-spin text-zinc-500" />
+				<Loader2 class="size-5 animate-spin text-fg-subtle" />
 			</div>
 
 			<!-- Search results -->
 			<template v-else-if="viewMode === 'search'">
-				<div v-if="searchResults && searchResults.icons.length > 0" class="p-2">
-					<p class="mb-2 px-1 text-[11px] text-zinc-500">
-						{{ searchResults.total.toLocaleString() }} results
-					</p>
-					<div class="grid grid-cols-5 gap-1">
+				<template v-if="searchResults && searchResults.icons.length > 0">
+					<AssetGrid :min="40" class="gap-1.5">
 						<StickerItem
 							v-for="iconName in searchResults.icons"
 							:key="iconName"
@@ -247,23 +258,25 @@ onMounted(() => loadCollections());
 							:is-adding="addingSticker === iconName"
 							@add="addStickerToTimeline"
 						/>
-					</div>
+					</AssetGrid>
 					<!-- Sentinel + loading indicator -->
 					<div ref="searchSentinel" class="flex items-center justify-center py-3">
-						<Loader2 v-if="isLoadingMoreSearch" class="size-4 animate-spin text-zinc-600" />
+						<Loader2 v-if="isLoadingMoreSearch" class="size-4 animate-spin text-fg-subtle" />
 					</div>
-				</div>
-				<div v-else class="flex flex-col items-center justify-center gap-2 py-16 text-center">
-					<Smile class="size-8 text-zinc-600" :stroke-width="1.5" />
-					<p class="text-sm text-zinc-400">No stickers found</p>
-					<p class="text-xs text-zinc-600">Try a different search term</p>
-				</div>
+				</template>
+				<EmptyState
+					v-else
+					size="sm"
+					:icon="SearchX"
+					title="No stickers found"
+					description="Try a different search term."
+				/>
 			</template>
 
 			<!-- Collection view -->
 			<template v-else-if="viewMode === 'collection'">
-				<div v-if="collectionIcons.length > 0" class="p-2">
-					<div class="grid grid-cols-5 gap-1">
+				<template v-if="collectionIcons.length > 0">
+					<AssetGrid :min="40" class="gap-1.5">
 						<StickerItem
 							v-for="iconName in displayedCollectionIcons"
 							:key="iconName"
@@ -271,21 +284,24 @@ onMounted(() => loadCollections());
 							:is-adding="addingSticker === iconName"
 							@add="addStickerToTimeline"
 						/>
-					</div>
+					</AssetGrid>
 					<!-- Sentinel -->
 					<div ref="collectionSentinel" class="h-4" />
-				</div>
-				<div v-else class="flex flex-col items-center justify-center gap-2 py-16 text-center">
-					<p class="text-sm text-zinc-500">No icons in this collection</p>
-				</div>
+				</template>
+				<EmptyState
+					v-else
+					size="sm"
+					:icon="Smile"
+					title="No icons in this collection"
+				/>
 			</template>
 
 			<!-- Browse view -->
-			<template v-else>
+			<div v-else class="space-y-4">
 				<!-- Recent stickers -->
-				<div v-if="recentStickers.length > 0" class="border-b border-white/5 p-2">
-					<p class="mb-1.5 px-1 text-[11px] font-medium uppercase tracking-wider text-zinc-500">Recent</p>
-					<div class="grid grid-cols-5 gap-1">
+				<section v-if="recentStickers.length > 0">
+					<SectionHeader variant="eyebrow" title="Recent" class="mb-1.5 min-h-0" />
+					<AssetGrid :min="40" class="gap-1.5">
 						<StickerItem
 							v-for="iconName in recentStickers.slice(0, 10)"
 							:key="iconName"
@@ -293,21 +309,23 @@ onMounted(() => loadCollections());
 							:is-adding="addingSticker === iconName"
 							@add="addStickerToTimeline"
 						/>
-					</div>
-				</div>
+					</AssetGrid>
+				</section>
 
 				<!-- Collections grid -->
-				<div class="p-2">
-					<div class="grid grid-cols-2 gap-1.5">
-						<button
+				<section>
+					<SectionHeader variant="eyebrow" title="Collections" class="mb-1.5 min-h-0" />
+					<AssetGrid :min="88">
+						<AssetTile
 							v-for="col in popularForCategory"
 							:key="col.prefix"
-							type="button"
-							class="group flex flex-col gap-2 rounded-lg border border-white/[0.07] bg-white/[0.03] p-2.5 text-left transition-colors hover:border-white/[0.12] hover:bg-white/[0.06]"
+							aspect="2/1"
+							:label="col.name"
+							:sublabel="collections[col.prefix] ? `${collections[col.prefix].total.toLocaleString()} icons` : undefined"
 							@click="selectCollection(col.prefix)"
 						>
-							<!-- Sample icons -->
-							<div class="flex items-center gap-1">
+							<!-- Sample icons (user content) -->
+							<div class="flex size-full items-center justify-center gap-1.5 px-2">
 								<img
 									v-for="sample in getSampleIcons(col.prefix).slice(0, 4)"
 									:key="sample"
@@ -315,25 +333,16 @@ onMounted(() => loadCollections());
 									:alt="sample"
 									class="size-5 object-contain"
 									loading="lazy"
+									draggable="false"
 								/>
-								<div
-									v-if="getSampleIcons(col.prefix).length === 0"
-									class="flex gap-1"
-								>
-									<div v-for="i in 4" :key="i" class="size-5 rounded bg-white/5" />
-								</div>
+								<template v-if="getSampleIcons(col.prefix).length === 0">
+									<div v-for="i in 4" :key="i" class="skeleton size-5 rounded" />
+								</template>
 							</div>
-							<!-- Name + count -->
-							<div>
-								<p class="truncate text-[11px] font-medium text-zinc-300 group-hover:text-zinc-100">{{ col.name }}</p>
-								<p v-if="collections[col.prefix]" class="text-[10px] text-zinc-600">
-									{{ collections[col.prefix].total.toLocaleString() }} icons
-								</p>
-							</div>
-						</button>
-					</div>
-				</div>
-			</template>
+						</AssetTile>
+					</AssetGrid>
+				</section>
+			</div>
 		</div>
 	</div>
 </template>

@@ -2,356 +2,222 @@
   <PageLayout
     title="Settings"
     description="Feature flags and UI configuration"
-    :show-header="true"
     :icon="Settings"
     :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Settings' }]"
   >
-    <div class="admin-settings">
-      <!-- Page Heading -->
-      <div class="admin-settings__heading">
-        <h1 class="admin-settings__title">Settings</h1>
-        <p class="admin-settings__subtitle">Feature flags and UI configuration</p>
-      </div>
+    <div class="flex w-full max-w-[880px] flex-col gap-4 px-5 py-4">
+      <!-- Feature flags -->
+      <SectionCard
+        title="Feature flags"
+        description="Changes take effect immediately for all users"
+        :icon="Flag"
+        body-class="py-0"
+      >
+        <template #actions>
+          <Loader2 v-if="featureFlagsLoading" class="size-4 animate-spin text-fg-subtle" aria-label="Loading flags" />
+        </template>
 
-      <!-- Feature Flags -->
-      <div class="admin-settings__section">
-        <div class="admin-settings__section-header">
-          <h3 class="admin-settings__section-title">Feature Flags</h3>
-          <p class="admin-settings__section-desc">
-            Enable or disable features across the application. Changes take effect immediately for all users.
-          </p>
-        </div>
+        <SettingRow label="Live Clip" :icon="Radio">
+          <template #description>
+            Real-time stream monitoring, recording and clip detection.
+            <span v-if="!featureFlagsLoading && !isLiveClipEnabled" class="block text-warning">
+              Off — the Live Clip page and monitoring controls are hidden from all users.
+            </span>
+          </template>
+          <Loader2 v-if="updatingLiveClipFlag" class="size-3.5 animate-spin text-fg-subtle" />
+          <Switch
+            :model-value="isLiveClipEnabled"
+            :disabled="featureFlagsLoading || updatingLiveClipFlag"
+            aria-label="Live Clip"
+            @update:model-value="toggleLiveClipFeature"
+          />
+        </SettingRow>
 
-        <div class="admin-settings__flags">
-          <!-- Live Clip Feature Toggle -->
-          <div class="admin-settings__flag">
-            <div class="admin-settings__flag-info">
-              <div class="admin-settings__flag-icon admin-settings__flag-icon--violet">
-                <Radio class="admin-settings__flag-icon-svg" />
-              </div>
-              <div>
-                <span class="admin-settings__flag-name">Live Clip</span>
-                <p class="admin-settings__flag-desc">
-                  Enable real-time stream monitoring, recording, and clip detection features.
-                </p>
-              </div>
-            </div>
-            <div class="admin-settings__flag-control">
-              <span v-if="featureFlagsLoading" class="admin-settings__flag-loading">
-                <Loader2 class="admin-settings__flag-loading-icon" />
-                Loading...
-              </span>
-              <button
-                class="admin-settings__toggle"
-                :class="{ 'admin-settings__toggle--active': isLiveClipEnabled }"
-                :disabled="featureFlagsLoading || updatingLiveClipFlag"
-                role="switch"
-                :aria-checked="isLiveClipEnabled"
-                @click="toggleLiveClipFeature"
-              >
-                <span
-                  class="admin-settings__toggle-thumb"
-                  :class="{ 'admin-settings__toggle-thumb--active': isLiveClipEnabled }"
-                />
+        <SettingRow
+          v-for="flag in rolloutFlagDefinitions"
+          :key="flag.key"
+          :label="flag.name"
+          :description="flag.description"
+          :icon="flag.icon"
+        >
+          <Loader2 v-if="updatingRolloutFlags[flag.key]" class="size-3.5 animate-spin text-fg-subtle" />
+          <Switch
+            :model-value="rolloutFlagValues[flag.key]"
+            :disabled="featureFlagsLoading || updatingRolloutFlags[flag.key]"
+            :aria-label="flag.name"
+            @update:model-value="toggleRolloutFeature(flag.key)"
+          />
+        </SettingRow>
+
+        <SettingRow label="Beta mode" :icon="KeyRound">
+          <template #description>
+            Require new users to enter a beta code before accessing the app.
+            <span v-if="isBetaModeEnabled" class="block text-warning">
+              On — new users need a valid code.
+              <router-link to="/admin/beta-codes" class="underline-offset-2 hover:underline">Manage beta codes</router-link>
+            </span>
+          </template>
+          <Loader2 v-if="updatingBetaModeFlag" class="size-3.5 animate-spin text-fg-subtle" />
+          <Switch
+            :model-value="isBetaModeEnabled"
+            :disabled="featureFlagsLoading || updatingBetaModeFlag"
+            aria-label="Beta mode"
+            @update:model-value="toggleBetaModeFeature"
+          />
+        </SettingRow>
+      </SectionCard>
+
+      <!-- Tools: title bar override + leaderboard recalculation -->
+      <SectionCard title="Tools" :icon="Wrench" body-class="py-0">
+        <SettingRow label="Title bar platform" :icon="Monitor">
+          <template #description>
+            Render the title bar as another OS to test platform-specific styling.
+            <span v-if="titleBarPlatformOverride !== 'auto'" class="block text-warning">
+              Rendering as {{ getPlatformDisplayName(titleBarPlatformOverride) }} ·
+              <button type="button" class="text-brand underline-offset-2 hover:underline" @click="setTitleBarOverride('auto')">
+                Reset to auto
               </button>
-            </div>
-          </div>
+            </span>
+          </template>
+          <SegmentedControl
+            :model-value="titleBarPlatformOverride"
+            :options="platformOptions"
+            size="sm"
+            @update:model-value="setTitleBarOverride"
+          />
+        </SettingRow>
 
-          <div v-if="!isLiveClipEnabled" class="admin-settings__flag-warning">
-            <p>
-              <strong>Live Clip is disabled.</strong>
-              The Live Clip page and monitoring controls are hidden from all users.
-            </p>
-          </div>
-
-          <!-- Beta Mode Toggle -->
-          <div class="admin-settings__flag">
-            <div class="admin-settings__flag-info">
-              <div class="admin-settings__flag-icon admin-settings__flag-icon--amber">
-                <KeyRound class="admin-settings__flag-icon-svg" />
-              </div>
-              <div>
-                <span class="admin-settings__flag-name">Beta Mode</span>
-                <p class="admin-settings__flag-desc">
-                  Require new users to enter a beta code before accessing the app.
-                </p>
-              </div>
-            </div>
-            <div class="admin-settings__flag-control">
-              <span v-if="featureFlagsLoading" class="admin-settings__flag-loading">
-                <Loader2 class="admin-settings__flag-loading-icon" />
-                Loading...
-              </span>
-              <button
-                class="admin-settings__toggle"
-                :class="{ 'admin-settings__toggle--active admin-settings__toggle--amber': isBetaModeEnabled }"
-                :disabled="featureFlagsLoading || updatingBetaModeFlag"
-                role="switch"
-                :aria-checked="isBetaModeEnabled"
-                @click="toggleBetaModeFeature"
-              >
-                <span
-                  class="admin-settings__toggle-thumb"
-                  :class="{ 'admin-settings__toggle-thumb--active': isBetaModeEnabled }"
-                />
-              </button>
-            </div>
-          </div>
-
-          <div v-if="isBetaModeEnabled" class="admin-settings__flag-warning admin-settings__flag-warning--amber">
-            <p>
-              <strong>Beta Mode is enabled.</strong>
-              New users must enter a valid beta code to access the app. Generate codes in the Beta Codes page.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <!-- Platform Override Controls -->
-      <div class="admin-settings__section">
-        <div class="admin-settings__section-header">
-          <h3 class="admin-settings__section-title">TitleBar Platform Override</h3>
-          <p class="admin-settings__section-desc">
-            Force the TitleBar component to render as if running on a specific operating system. This allows testing
-            platform-specific styling without switching environments.
-          </p>
-        </div>
-
-        <div class="admin-settings__platforms">
-          <button
-            v-for="platform in ['auto', 'windows', 'macos', 'linux']"
-            :key="platform"
-            class="admin-settings__platform-btn"
-            :class="{ 'admin-settings__platform-btn--active': titleBarPlatformOverride === platform }"
-            @click="setTitleBarOverride(platform)"
+        <SettingRow
+          label="Recalculate leaderboard"
+          description="Runs every Monday (weekly) and on the 1st of each month (monthly) at 00:00 UTC"
+          :icon="Trophy"
+        >
+          <Button
+            v-for="period in leaderboardPeriods"
+            :key="period.value"
+            variant="secondary"
+            size="sm"
+            :loading="refreshingLeaderboard === period.value"
+            :disabled="refreshingLeaderboard !== null"
+            @click="refreshLeaderboard(period.value)"
           >
-            <Check v-if="titleBarPlatformOverride === platform" class="admin-settings__platform-check" />
-            {{ getPlatformDisplayName(platform) }}
-          </button>
-        </div>
+            <RefreshCw v-if="refreshingLeaderboard !== period.value" />
+            {{ period.label }}
+          </Button>
+        </SettingRow>
+        <Alert
+          v-if="leaderboardRefreshResult"
+          :variant="leaderboardRefreshResult.success ? 'success' : 'destructive'"
+          class="mb-3 animate-enter"
+        >
+          <Check v-if="leaderboardRefreshResult.success" />
+          <AlertTriangle v-else />
+          <AlertDescription>{{ leaderboardRefreshResult.message }}</AlertDescription>
+        </Alert>
+      </SectionCard>
 
-        <div v-if="titleBarPlatformOverride !== 'auto'" class="admin-settings__platform-notice">
-          <p>
-            <strong>Active Override:</strong>
-            TitleBar is rendering as {{ getPlatformDisplayName(titleBarPlatformOverride) }} style.
-            <button class="admin-settings__platform-reset" @click="setTitleBarOverride('auto')">Reset to auto</button>
-          </p>
-        </div>
-      </div>
+      <!-- Free tier branding -->
+      <SectionCard
+        title="Free tier branding"
+        description="Watermark, intro and outro applied to every free tier output; free users can't override them"
+        :icon="Stamp"
+        body-class="py-0"
+      >
+        <template #actions>
+          <Badge :variant="freeTierBrandingConfigured ? 'success' : 'neutral'">
+            {{ freeTierBrandingConfigured ? 'Configured' : 'Not set' }}
+          </Badge>
+        </template>
 
-      <!-- Leaderboard Management Section -->
-      <div class="admin-settings__section">
-        <div class="admin-settings__section-header">
-          <h3 class="admin-settings__section-title">Leaderboard Management</h3>
-          <p class="admin-settings__section-desc">
-            Manually trigger leaderboard recalculation. Normally runs automatically on Monday (weekly) and the 1st of each month (monthly). Use this to populate data immediately without waiting for the scheduled run.
-          </p>
-        </div>
-
-        <div class="admin-settings__leaderboard">
-          <div class="admin-settings__leaderboard-status">
-            <div class="admin-settings__leaderboard-indicator">
-              <Trophy :size="14" />
-            </div>
-            <div>
-              <span class="admin-settings__branding-label">Scheduled Recalculation</span>
-              <p class="admin-settings__branding-hint">Weekly: every Monday 00:00 UTC &nbsp;·&nbsp; Monthly: 1st of month 00:00 UTC</p>
-            </div>
-          </div>
-
-          <div class="admin-settings__leaderboard-actions">
-            <button
-              class="admin-settings__lb-btn admin-settings__lb-btn--weekly"
-              :disabled="refreshingLeaderboard !== null"
-              @click="refreshLeaderboard('weekly')"
-            >
-              <Loader2 v-if="refreshingLeaderboard === 'weekly'" :size="14" class="admin-settings__flag-loading-icon" />
-              <RefreshCw v-else :size="14" />
-              {{ refreshingLeaderboard === 'weekly' ? 'Refreshing...' : 'Refresh Weekly' }}
-            </button>
-            <button
-              class="admin-settings__lb-btn admin-settings__lb-btn--monthly"
-              :disabled="refreshingLeaderboard !== null"
-              @click="refreshLeaderboard('monthly')"
-            >
-              <Loader2 v-if="refreshingLeaderboard === 'monthly'" :size="14" class="admin-settings__flag-loading-icon" />
-              <RefreshCw v-else :size="14" />
-              {{ refreshingLeaderboard === 'monthly' ? 'Refreshing...' : 'Refresh Monthly' }}
-            </button>
-            <button
-              class="admin-settings__lb-btn admin-settings__lb-btn--both"
-              :disabled="refreshingLeaderboard !== null"
-              @click="refreshLeaderboard('both')"
-            >
-              <Loader2 v-if="refreshingLeaderboard === 'both'" :size="14" class="admin-settings__flag-loading-icon" />
-              <RefreshCw v-else :size="14" />
-              {{ refreshingLeaderboard === 'both' ? 'Refreshing...' : 'Refresh Both' }}
-            </button>
-          </div>
-
-          <div v-if="leaderboardRefreshResult" class="admin-settings__lb-result" :class="{ 'admin-settings__lb-result--success': leaderboardRefreshResult.success, 'admin-settings__lb-result--error': !leaderboardRefreshResult.success }">
-            <Check v-if="leaderboardRefreshResult.success" :size="14" />
-            <span>{{ leaderboardRefreshResult.message }}</span>
-          </div>
-        </div>
-      </div>
-
-      <!-- Free Tier Branding Section -->
-      <div class="admin-settings__section">
-        <div class="admin-settings__section-header">
-          <h3 class="admin-settings__section-title">Free Tier Branding</h3>
-          <p class="admin-settings__section-desc">
-            Configure the watermark, intro, and outro that are automatically applied to all free tier user outputs.
-            Free tier users cannot override these settings.
-          </p>
-        </div>
-
-        <div class="admin-settings__branding">
-          <div class="admin-settings__branding-status">
-            <div class="admin-settings__branding-indicator" :class="{ 'admin-settings__branding-indicator--active': freeTierBrandingConfigured }">
-              <Check v-if="freeTierBrandingConfigured" :size="14" />
-              <ImageIcon v-else :size="14" />
-            </div>
-            <div>
-              <span class="admin-settings__branding-label">
-                {{ freeTierBrandingConfigured ? 'Branding Configured' : 'No Branding Set' }}
-              </span>
-              <p class="admin-settings__branding-hint">
-                {{ freeTierBrandingConfigured
-                  ? 'Free tier outputs will include admin watermark/intro/outro'
-                  : 'Free tier outputs will not have any branding applied'
-                }}
-              </p>
-            </div>
-          </div>
-
-          <div class="admin-settings__branding-fields">
-            <!-- Watermark Selection -->
-            <div class="admin-settings__asset-row">
-              <label class="admin-settings__asset-label">Watermark</label>
-              <div class="admin-settings__asset-controls">
-                <div class="admin-settings__asset-info">
-                  <div class="admin-settings__asset-icon admin-settings__asset-icon--watermark">
-                    <ImageIconLucide :size="14" />
-                  </div>
-                  <span class="admin-settings__asset-name">
-                    {{ selectedWatermark?.name || 'No watermark selected' }}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  @click="openWatermarkPositionPicker"
-                  :disabled="!freeTierBranding.watermark_id"
-                  class="admin-settings__asset-btn"
-                  :class="{ 'admin-settings__asset-btn--active': watermarkConfiguredRatios > 0 }"
-                  title="Configure watermark position"
-                >
-                  <Settings2 :size="16" />
-                </button>
-                <button
-                  type="button"
-                  @click="handleWatermarkUpload"
-                  :disabled="uploadingWatermark"
-                  class="admin-settings__asset-btn"
-                  title="Upload new watermark"
-                >
-                  <Loader2 v-if="uploadingWatermark" :size="16" class="admin-settings__flag-loading-icon" />
-                  <Upload v-else :size="16" />
-                </button>
-              </div>
-              <p v-if="watermarkConfiguredRatios > 0" class="admin-settings__asset-hint">
-                <Settings2 :size="12" />
-                Position configured for {{ watermarkConfiguredRatios }} aspect ratio(s)
-              </p>
-            </div>
-
-            <!-- Intro Selection -->
-            <div class="admin-settings__asset-row">
-              <label class="admin-settings__asset-label">Intro</label>
-              <div class="admin-settings__asset-controls">
-                <div class="admin-settings__asset-info">
-                  <div class="admin-settings__asset-icon admin-settings__asset-icon--intro">
-                    <Play :size="14" />
-                  </div>
-                  <span class="admin-settings__asset-name">
-                    {{ selectedIntroName || (introConfiguredRatios > 0 ? `${introConfiguredRatios} ratio(s) configured` : 'No intro configured') }}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  @click="showIntroRatioPicker = true"
-                  class="admin-settings__asset-btn"
-                  :class="{ 'admin-settings__asset-btn--active': introConfiguredRatios > 0 }"
-                  title="Configure intro per aspect ratio"
-                >
-                  <Settings2 :size="16" />
-                </button>
-                <button
-                  type="button"
-                  @click="handleIntroUpload"
-                  :disabled="uploadingIntro"
-                  class="admin-settings__asset-btn"
-                  title="Upload new intro"
-                >
-                  <Loader2 v-if="uploadingIntro" :size="16" class="admin-settings__flag-loading-icon" />
-                  <Upload v-else :size="16" />
-                </button>
-              </div>
-              <p v-if="introConfiguredRatios > 0" class="admin-settings__asset-hint">
-                <Settings2 :size="12" />
-                Per-ratio intros configured
-              </p>
-            </div>
-
-            <!-- Outro Selection -->
-            <div class="admin-settings__asset-row">
-              <label class="admin-settings__asset-label">Outro</label>
-              <div class="admin-settings__asset-controls">
-                <div class="admin-settings__asset-info">
-                  <div class="admin-settings__asset-icon admin-settings__asset-icon--outro">
-                    <SkipForward :size="14" />
-                  </div>
-                  <span class="admin-settings__asset-name">
-                    {{ selectedOutroName || (outroConfiguredRatios > 0 ? `${outroConfiguredRatios} ratio(s) configured` : 'No outro configured') }}
-                  </span>
-                </div>
-                <button
-                  type="button"
-                  @click="showOutroRatioPicker = true"
-                  class="admin-settings__asset-btn"
-                  :class="{ 'admin-settings__asset-btn--active': outroConfiguredRatios > 0 }"
-                  title="Configure outro per aspect ratio"
-                >
-                  <Settings2 :size="16" />
-                </button>
-                <button
-                  type="button"
-                  @click="handleOutroUpload"
-                  :disabled="uploadingOutro"
-                  class="admin-settings__asset-btn"
-                  title="Upload new outro"
-                >
-                  <Loader2 v-if="uploadingOutro" :size="16" class="admin-settings__flag-loading-icon" />
-                  <Upload v-else :size="16" />
-                </button>
-              </div>
-              <p v-if="outroConfiguredRatios > 0" class="admin-settings__asset-hint">
-                <Settings2 :size="12" />
-                Per-ratio outros configured
-              </p>
-            </div>
-          </div>
-
-          <button
-            class="admin-settings__branding-save"
-            :disabled="savingBranding"
-            @click="saveFreeTierBranding"
+        <SettingRow label="Watermark" :icon="ImageIconLucide">
+          <template #description>
+            <span class="block truncate">{{ selectedWatermark?.name || 'No watermark selected' }}</span>
+            <span v-if="watermarkConfiguredRatios > 0" class="block text-fg-subtle">
+              Position set for {{ watermarkConfiguredRatios }} aspect ratio{{ watermarkConfiguredRatios !== 1 ? 's' : '' }}
+            </span>
+          </template>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            :class="{ 'text-brand': watermarkConfiguredRatios > 0 }"
+            :disabled="!freeTierBranding.watermark_id"
+            title="Configure watermark position"
+            aria-label="Configure watermark position"
+            @click="openWatermarkPositionPicker"
           >
-            <Loader2 v-if="savingBranding" :size="14" class="admin-settings__flag-loading-icon" />
-            <span>{{ savingBranding ? 'Saving...' : 'Save Branding' }}</span>
-          </button>
+            <Settings2 />
+          </Button>
+          <Button variant="secondary" size="sm" :loading="uploadingWatermark" :disabled="uploadingWatermark" @click="handleWatermarkUpload">
+            <Upload v-if="!uploadingWatermark" />
+            Upload
+          </Button>
+        </SettingRow>
+
+        <SettingRow label="Intro" :icon="Play">
+          <template #description>
+            <span class="block truncate">
+              {{
+                selectedIntroName ||
+                (introConfiguredRatios > 0 ? `${introConfiguredRatios} ratio(s) configured` : 'No intro configured')
+              }}
+            </span>
+            <span v-if="introConfiguredRatios > 0" class="block text-fg-subtle">Per-ratio intros configured</span>
+          </template>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            :class="{ 'text-brand': introConfiguredRatios > 0 }"
+            title="Configure intro per aspect ratio"
+            aria-label="Configure intro per aspect ratio"
+            @click="showIntroRatioPicker = true"
+          >
+            <Settings2 />
+          </Button>
+          <Button variant="secondary" size="sm" :loading="uploadingIntro" :disabled="uploadingIntro" @click="handleIntroUpload">
+            <Upload v-if="!uploadingIntro" />
+            Upload
+          </Button>
+        </SettingRow>
+
+        <SettingRow label="Outro" :icon="SkipForward">
+          <template #description>
+            <span class="block truncate">
+              {{
+                selectedOutroName ||
+                (outroConfiguredRatios > 0 ? `${outroConfiguredRatios} ratio(s) configured` : 'No outro configured')
+              }}
+            </span>
+            <span v-if="outroConfiguredRatios > 0" class="block text-fg-subtle">Per-ratio outros configured</span>
+          </template>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            :class="{ 'text-brand': outroConfiguredRatios > 0 }"
+            title="Configure outro per aspect ratio"
+            aria-label="Configure outro per aspect ratio"
+            @click="showOutroRatioPicker = true"
+          >
+            <Settings2 />
+          </Button>
+          <Button variant="secondary" size="sm" :loading="uploadingOutro" :disabled="uploadingOutro" @click="handleOutroUpload">
+            <Upload v-if="!uploadingOutro" />
+            Upload
+          </Button>
+        </SettingRow>
+
+        <div class="flex items-center justify-end gap-2 border-t border-line-subtle py-3">
+          <span class="mr-auto text-xs text-fg-subtle">
+            {{
+              freeTierBrandingConfigured
+                ? 'Free tier outputs will include this watermark, intro and outro'
+                : 'Free tier outputs will not have any branding applied'
+            }}
+          </span>
+          <Button variant="primary" size="sm" :loading="savingBranding" :disabled="savingBranding" @click="saveFreeTierBranding">
+            {{ savingBranding ? 'Saving…' : 'Save branding' }}
+          </Button>
         </div>
-      </div>
+      </SectionCard>
     </div>
 
     <!-- Watermark Position Picker -->
@@ -385,25 +251,63 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue';
-  import { Settings, Radio, KeyRound, Check, Loader2, ImageIcon, Trophy, RefreshCw, Upload, Play, SkipForward, Settings2, Image as ImageIconLucide } from 'lucide-vue-next';
+  import {
+    Settings,
+    Radio,
+    KeyRound,
+    Check,
+    Loader2,
+    Trophy,
+    RefreshCw,
+    Upload,
+    Play,
+    SkipForward,
+    Settings2,
+    Image as ImageIconLucide,
+    Wand2,
+    Paintbrush,
+    Globe2,
+    Megaphone,
+    Flag,
+    Monitor,
+    Stamp,
+    AlertTriangle,
+    Wrench,
+  } from 'lucide-vue-next';
   import api from '@/services/api';
   import PageLayout from '@/components/PageLayout.vue';
+  import { Alert, AlertDescription } from '@/components/ui/alert';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
+  import { Switch } from '@/components/ui/switch';
+  import { SectionCard } from '@/components/ui/section-card';
+  import { SettingRow } from '@/components/ui/setting-row';
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useToast } from '@/composables/useToast';
   import WatermarkPositionPicker, { type CreatorWatermarkSettings } from '@/components/WatermarkPositionPicker.vue';
   import IntroOutroRatioPicker from '@/components/IntroOutroRatioPicker.vue';
   import type { RatioAssetMap } from '@/services/database/types';
-  import { listOrganizationAssets, uploadOrganizationAsset, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
+  import {
+    listOrganizationAssets,
+    uploadOrganizationAsset,
+    type ServerOrganizationAsset,
+  } from '@/services/organizationAssetsApi';
   import { useAuthStore } from '@/stores/auth';
   import { readFile } from '@tauri-apps/plugin-fs';
 
   const {
     isLiveClipEnabled,
     isBetaModeEnabled,
+    isAIVideoEnabled,
+    isImageEditorEnabled,
+    isTokendEnabled,
+    isCampaignsEnabled,
     isLoading: featureFlagsLoading,
     fetchFeatureFlags,
     setLiveClipEnabled,
     setBetaModeEnabled,
+    setRolloutFlag,
   } = useFeatureFlags();
 
   const { success, error } = useToast();
@@ -413,7 +317,73 @@
 
   const updatingLiveClipFlag = ref(false);
   const updatingBetaModeFlag = ref(false);
+  type RolloutFlagKey = 'ai_video_enabled' | 'image_editor_enabled' | 'tokend_enabled' | 'campaigns_enabled';
+
+  const updatingRolloutFlags = ref<Record<RolloutFlagKey, boolean>>({
+    ai_video_enabled: false,
+    image_editor_enabled: false,
+    tokend_enabled: false,
+    campaigns_enabled: false,
+  });
+  const rolloutFlagDefinitions = [
+    {
+      key: 'ai_video_enabled',
+      name: 'AI video editor',
+      description: 'Release AI video creation to every user while retaining individual access grants.',
+      icon: Wand2,
+    },
+    {
+      key: 'image_editor_enabled',
+      name: 'Image editor',
+      description: 'Release the image editor and AI image creation tools to every user.',
+      icon: Paintbrush,
+    },
+    {
+      key: 'tokend_enabled',
+      name: 'Tokend',
+      description: 'Release Tokend browsing, account connections, downloads, and publishing to every user.',
+      icon: Globe2,
+    },
+    {
+      key: 'campaigns_enabled',
+      name: 'Campaigns',
+      description: 'Release campaign discovery and participation access to every user.',
+      icon: Megaphone,
+    },
+  ] as const;
+  const rolloutFlagValues = computed<Record<RolloutFlagKey, boolean>>(() => ({
+    ai_video_enabled: isAIVideoEnabled.value,
+    image_editor_enabled: isImageEditorEnabled.value,
+    tokend_enabled: isTokendEnabled.value,
+    campaigns_enabled: isCampaignsEnabled.value,
+  }));
   const titleBarPlatformOverride = ref<string>('auto');
+
+  const platformOptions: SegmentedOption<string>[] = [
+    { value: 'auto', label: 'Auto detect' },
+    { value: 'windows', label: 'Windows' },
+    { value: 'macos', label: 'macOS' },
+    { value: 'linux', label: 'Linux' },
+  ];
+
+  const leaderboardPeriods = [
+    { value: 'weekly', label: 'Weekly' },
+    { value: 'monthly', label: 'Monthly' },
+    { value: 'both', label: 'Both' },
+  ] as const;
+
+  const toggleRolloutFeature = async (key: RolloutFlagKey) => {
+    updatingRolloutFlags.value[key] = true;
+    try {
+      const enabled = !rolloutFlagValues.value[key];
+      const updated = await setRolloutFlag(key, enabled);
+      if (!updated) {
+        error('Update failed', 'The platform-wide feature setting could not be updated.');
+      }
+    } finally {
+      updatingRolloutFlags.value[key] = false;
+    }
+  };
 
   const toggleLiveClipFeature = async () => {
     updatingLiveClipFlag.value = true;
@@ -452,7 +422,7 @@
   const getPlatformDisplayName = (platform: string) => {
     switch (platform) {
       case 'auto':
-        return 'Auto Detect';
+        return 'Auto detect';
       case 'windows':
         return 'Windows';
       case 'macos':
@@ -492,7 +462,7 @@
   const uploadingWatermark = ref(false);
   const uploadingIntro = ref(false);
   const uploadingOutro = ref(false);
-  
+
   // Watermark picker state
   const showWatermarkPositionPicker = ref(false);
   const orgAssets = ref<ServerOrganizationAsset[]>([]);
@@ -507,24 +477,28 @@
   const selectedWatermark = computed(() => {
     if (!freeTierBranding.value.watermark_id) return null;
     const sid = extractServerId(freeTierBranding.value.watermark_id);
-    return orgAssets.value.find(a => a.id === sid);
+    return orgAssets.value.find((a) => a.id === sid);
   });
   const selectedIntroName = computed(() => {
     const introSettings = freeTierBranding.value.intro_settings;
     if (!introSettings) return null;
-    const firstEntry = Object.values(introSettings).find((v): v is { assetId: string } => v !== null && v !== undefined);
+    const firstEntry = Object.values(introSettings).find(
+      (v): v is { assetId: string } => v !== null && v !== undefined
+    );
     if (!firstEntry) return null;
     const sid = extractServerId(firstEntry.assetId);
-    const asset = orgAssets.value.find(a => a.id === sid);
+    const asset = orgAssets.value.find((a) => a.id === sid);
     return asset?.name ?? null;
   });
   const selectedOutroName = computed(() => {
     const outroSettings = freeTierBranding.value.outro_settings;
     if (!outroSettings) return null;
-    const firstEntry = Object.values(outroSettings).find((v): v is { assetId: string } => v !== null && v !== undefined);
+    const firstEntry = Object.values(outroSettings).find(
+      (v): v is { assetId: string } => v !== null && v !== undefined
+    );
     if (!firstEntry) return null;
     const sid = extractServerId(firstEntry.assetId);
-    const asset = orgAssets.value.find(a => a.id === sid);
+    const asset = orgAssets.value.find((a) => a.id === sid);
     return asset?.name ?? null;
   });
 
@@ -551,30 +525,36 @@
       };
     } finally {
       refreshingLeaderboard.value = null;
-      setTimeout(() => { leaderboardRefreshResult.value = null; }, 5000);
+      setTimeout(() => {
+        leaderboardRefreshResult.value = null;
+      }, 5000);
     }
   }
 
   const freeTierBrandingConfigured = computed(() => {
     const hasWatermark = !!freeTierBranding.value.watermark_id;
-    const hasIntro = !!freeTierBranding.value.intro_settings && Object.values(freeTierBranding.value.intro_settings).some(v => v !== null);
-    const hasOutro = !!freeTierBranding.value.outro_settings && Object.values(freeTierBranding.value.outro_settings).some(v => v !== null);
+    const hasIntro =
+      !!freeTierBranding.value.intro_settings &&
+      Object.values(freeTierBranding.value.intro_settings).some((v) => v !== null);
+    const hasOutro =
+      !!freeTierBranding.value.outro_settings &&
+      Object.values(freeTierBranding.value.outro_settings).some((v) => v !== null);
     return hasWatermark || hasIntro || hasOutro;
   });
-  
+
   const watermarkConfiguredRatios = computed(() => {
     if (!freeTierBranding.value.watermark_settings) return 0;
-    return Object.values(freeTierBranding.value.watermark_settings).filter(v => v !== null).length;
+    return Object.values(freeTierBranding.value.watermark_settings).filter((v) => v !== null).length;
   });
-  
+
   const introConfiguredRatios = computed(() => {
     if (!freeTierBranding.value.intro_settings) return 0;
-    return Object.values(freeTierBranding.value.intro_settings).filter(v => v !== null).length;
+    return Object.values(freeTierBranding.value.intro_settings).filter((v) => v !== null).length;
   });
-  
+
   const outroConfiguredRatios = computed(() => {
     if (!freeTierBranding.value.outro_settings) return 0;
-    return Object.values(freeTierBranding.value.outro_settings).filter(v => v !== null).length;
+    return Object.values(freeTierBranding.value.outro_settings).filter((v) => v !== null).length;
   });
 
   async function loadFreeTierBranding() {
@@ -593,7 +573,7 @@
       console.warn('[AdminSettings] Failed to load free tier branding:', err);
     }
   }
-  
+
   async function loadAssets() {
     const orgId = adminOrgId.value;
     if (!orgId) return;
@@ -617,9 +597,14 @@
     const fileName = selected.split(/[\\/]/).pop() || 'file';
     const ext = fileName.split('.').pop()?.toLowerCase() || 'mp4';
     const mimeMap: Record<string, string> = {
-      mp4: 'video/mp4', mov: 'video/quicktime', avi: 'video/x-msvideo',
-      mkv: 'video/x-matroska', webm: 'video/webm', flv: 'video/x-flv',
-      wmv: 'video/x-ms-wmv', m4v: 'video/x-m4v',
+      mp4: 'video/mp4',
+      mov: 'video/quicktime',
+      avi: 'video/x-msvideo',
+      mkv: 'video/x-matroska',
+      webm: 'video/webm',
+      flv: 'video/x-flv',
+      wmv: 'video/x-ms-wmv',
+      m4v: 'video/x-m4v',
     };
     const bytes = await readFile(selected);
     return new File([bytes], fileName, { type: mimeMap[ext] || 'video/mp4' });
@@ -635,14 +620,19 @@
     const fileName = selected.split(/[\\/]/).pop() || 'file';
     const ext = fileName.split('.').pop()?.toLowerCase() || 'png';
     const mimeMap: Record<string, string> = {
-      png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-      webp: 'image/webp', gif: 'image/gif',
+      png: 'image/png',
+      jpg: 'image/jpeg',
+      jpeg: 'image/jpeg',
+      webp: 'image/webp',
+      gif: 'image/gif',
     };
     const bytes = await readFile(selected);
     return new File([bytes], fileName, { type: mimeMap[ext] || 'image/png' });
   }
 
-  async function extractVideoMetadata(videoBlob: Blob): Promise<{ duration: number | null; width: number | null; height: number | null; thumbnail: File | null }> {
+  async function extractVideoMetadata(
+    videoBlob: Blob
+  ): Promise<{ duration: number | null; width: number | null; height: number | null; thumbnail: File | null }> {
     return new Promise((resolve) => {
       const video = document.createElement('video');
       video.preload = 'metadata';
@@ -656,14 +646,26 @@
           canvas.width = video.videoWidth;
           canvas.height = video.videoHeight;
           canvas.getContext('2d')?.drawImage(video, 0, 0);
-          canvas.toBlob((blob) => {
-            const thumbnail = blob ? new File([blob], 'thumbnail.jpg', { type: 'image/jpeg' }) : null;
-            resolve({ duration: video.duration || null, width: video.videoWidth || null, height: video.videoHeight || null, thumbnail });
-            URL.revokeObjectURL(video.src);
-          }, 'image/jpeg', 0.8);
+          canvas.toBlob(
+            (blob) => {
+              const thumbnail = blob ? new File([blob], 'thumbnail.jpg', { type: 'image/jpeg' }) : null;
+              resolve({
+                duration: video.duration || null,
+                width: video.videoWidth || null,
+                height: video.videoHeight || null,
+                thumbnail,
+              });
+              URL.revokeObjectURL(video.src);
+            },
+            'image/jpeg',
+            0.8
+          );
         };
       };
-      video.onerror = () => { clearTimeout(timeout); resolve({ duration: null, width: null, height: null, thumbnail: null }); };
+      video.onerror = () => {
+        clearTimeout(timeout);
+        resolve({ duration: null, width: null, height: null, thumbnail: null });
+      };
       video.src = URL.createObjectURL(videoBlob);
     });
   }
@@ -671,36 +673,45 @@
   async function extractImageDimensions(imageBlob: Blob): Promise<{ width: number | null; height: number | null }> {
     return new Promise((resolve) => {
       const img = new window.Image();
-      img.onload = () => { resolve({ width: img.naturalWidth, height: img.naturalHeight }); URL.revokeObjectURL(img.src); };
-      img.onerror = () => { resolve({ width: null, height: null }); URL.revokeObjectURL(img.src); };
+      img.onload = () => {
+        resolve({ width: img.naturalWidth, height: img.naturalHeight });
+        URL.revokeObjectURL(img.src);
+      };
+      img.onerror = () => {
+        resolve({ width: null, height: null });
+        URL.revokeObjectURL(img.src);
+      };
       img.src = URL.createObjectURL(imageBlob);
     });
   }
-  
+
   function openWatermarkPositionPicker() {
     if (!freeTierBranding.value.watermark_id) return;
     showWatermarkPositionPicker.value = true;
   }
-  
+
   function saveWatermarkPosition(settings: CreatorWatermarkSettings) {
     freeTierBranding.value.watermark_settings = settings;
     showWatermarkPositionPicker.value = false;
   }
-  
+
   function saveIntroSettings(settings: RatioAssetMap) {
     freeTierBranding.value.intro_settings = settings;
     showIntroRatioPicker.value = false;
   }
-  
+
   function saveOutroSettings(settings: RatioAssetMap) {
     freeTierBranding.value.outro_settings = settings;
     showOutroRatioPicker.value = false;
   }
-  
+
   async function handleWatermarkUpload() {
     if (uploadingWatermark.value) return;
     const orgId = adminOrgId.value;
-    if (!orgId) { error('No organization', 'Admin account must own an organization to upload assets'); return; }
+    if (!orgId) {
+      error('No organization', 'Admin account must own an organization to upload assets');
+      return;
+    }
     uploadingWatermark.value = true;
     try {
       const file = await selectImageFileNative();
@@ -729,7 +740,10 @@
   async function handleIntroUpload() {
     if (uploadingIntro.value) return;
     const orgId = adminOrgId.value;
-    if (!orgId) { error('No organization', 'Admin account must own an organization to upload assets'); return; }
+    if (!orgId) {
+      error('No organization', 'Admin account must own an organization to upload assets');
+      return;
+    }
     uploadingIntro.value = true;
     try {
       const file = await selectVideoFileNative();
@@ -766,7 +780,10 @@
   async function handleOutroUpload() {
     if (uploadingOutro.value) return;
     const orgId = adminOrgId.value;
-    if (!orgId) { error('No organization', 'Admin account must own an organization to upload assets'); return; }
+    if (!orgId) {
+      error('No organization', 'Admin account must own an organization to upload assets');
+      return;
+    }
     uploadingOutro.value = true;
     try {
       const file = await selectVideoFileNative();
@@ -809,7 +826,7 @@
           watermark_settings: freeTierBranding.value.watermark_settings,
           intro_settings: freeTierBranding.value.intro_settings,
           outro_settings: freeTierBranding.value.outro_settings,
-        }
+        },
       });
       success('Branding saved', 'Free tier branding settings have been updated');
     } catch (err) {
@@ -827,613 +844,3 @@
     loadAssets();
   });
 </script>
-
-<style scoped>
-  .admin-settings {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: 1.5rem;
-    max-width: 1000px;
-    margin: 0 auto;
-    width: 100%;
-  }
-
-  .admin-settings__heading {
-    margin-bottom: 0.5rem;
-  }
-
-  .admin-settings__title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.2rem;
-    letter-spacing: -0.02em;
-  }
-
-  .admin-settings__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  .admin-settings__header {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .admin-settings__header-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, rgba(100, 116, 139, 0.2) 0%, rgba(71, 85, 105, 0.2) 100%);
-    border: 1px solid rgba(100, 116, 139, 0.3);
-  }
-
-  .admin-settings__header-icon-svg {
-    width: 20px;
-    height: 20px;
-    color: #94a3b8;
-  }
-
-  .admin-settings__header-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-  .admin-settings__header-desc {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  .admin-settings__section {
-    padding: 1.25rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .admin-settings__section-header {
-    margin-bottom: 1rem;
-  }
-
-  .admin-settings__section-title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
-  }
-
-  .admin-settings__section-desc {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  .admin-settings__flags {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .admin-settings__flag {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1rem;
-    background-color: rgba(24, 24, 27, 0.6);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .admin-settings__flag-info {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-    flex: 1;
-  }
-
-  .admin-settings__flag-icon {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .admin-settings__flag-icon--violet {
-    background: linear-gradient(135deg, rgba(139, 92, 246, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%);
-    border: 1px solid rgba(139, 92, 246, 0.3);
-  }
-  .admin-settings__flag-icon--violet .admin-settings__flag-icon-svg {
-    color: #a78bfa;
-  }
-
-  .admin-settings__flag-icon--amber {
-    background: linear-gradient(135deg, rgba(245, 158, 11, 0.2) 0%, rgba(249, 115, 22, 0.2) 100%);
-    border: 1px solid rgba(245, 158, 11, 0.3);
-  }
-  .admin-settings__flag-icon--amber .admin-settings__flag-icon-svg {
-    color: #fbbf24;
-  }
-
-  .admin-settings__flag-icon-svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  .admin-settings__flag-name {
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .admin-settings__flag-desc {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.5rem 0 0;
-  }
-
-  .admin-settings__flag-control {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .admin-settings__flag-loading {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .admin-settings__flag-loading-icon {
-    width: 12px;
-    height: 12px;
-    animation: spin 1s linear infinite;
-  }
-
-  .admin-settings__toggle {
-    position: relative;
-    display: inline-flex;
-    width: 44px;
-    height: 24px;
-    flex-shrink: 0;
-    cursor: pointer;
-    border-radius: 9999px;
-    border: 2px solid transparent;
-    background-color: rgba(63, 63, 70, 1);
-    transition: all 200ms ease;
-  }
-
-  .admin-settings__toggle:focus {
-    outline: none;
-    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.25);
-  }
-
-  .admin-settings__toggle:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .admin-settings__toggle--active {
-    background-color: #8b5cf6;
-  }
-
-  .admin-settings__toggle--amber.admin-settings__toggle--active {
-    background-color: #f59e0b;
-  }
-
-  .admin-settings__toggle-thumb {
-    pointer-events: none;
-    display: inline-block;
-    width: 20px;
-    height: 20px;
-    border-radius: 9999px;
-    background-color: white;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-    transition: transform 200ms ease;
-  }
-
-  .admin-settings__toggle-thumb--active {
-    transform: translateX(20px);
-  }
-
-  .admin-settings__flag-warning {
-    padding: 0.75rem;
-    background-color: rgba(245, 158, 11, 0.1);
-    border: 1px solid rgba(245, 158, 11, 0.3);
-    border-radius: 10px;
-  }
-
-  .admin-settings__flag-warning p {
-    font-size: 0.875rem;
-    color: #fcd34d;
-    margin: 0;
-  }
-
-  .admin-settings__flag-warning--amber {
-    background-color: rgba(245, 158, 11, 0.1);
-    border-color: rgba(245, 158, 11, 0.3);
-  }
-
-  .admin-settings__flag-warning--amber p {
-    color: #fcd34d;
-  }
-
-  .admin-settings__platforms {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-  }
-
-  .admin-settings__platform-btn {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.5rem 1rem;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 150ms ease;
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-    border: 1px solid var(--sidebar-border);
-  }
-
-  .admin-settings__platform-btn:hover {
-    background-color: rgba(63, 63, 70, 1);
-    color: white;
-  }
-
-  .admin-settings__platform-btn--active {
-    background: linear-gradient(to right, #2563eb, #4f46e5);
-    color: white;
-    border-color: rgba(59, 130, 246, 0.3);
-  }
-
-  .admin-settings__platform-btn--active:hover {
-    opacity: 0.9;
-  }
-
-  .admin-settings__platform-check {
-    width: 12px;
-    height: 12px;
-    margin-right: 0.5rem;
-  }
-
-  .admin-settings__platform-notice {
-    margin-top: 1rem;
-    padding: 0.75rem;
-    background-color: rgba(59, 130, 246, 0.1);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-    border-radius: 10px;
-  }
-
-  .admin-settings__platform-notice p {
-    font-size: 0.875rem;
-    color: #93c5fd;
-    margin: 0;
-  }
-
-  .admin-settings__platform-reset {
-    margin-left: 0.5rem;
-    color: #60a5fa;
-    background: transparent;
-    border: none;
-    text-decoration: underline;
-    cursor: pointer;
-    font-size: 0.875rem;
-    transition: color 150ms ease;
-  }
-
-  .admin-settings__platform-reset:hover {
-    color: #bfdbfe;
-  }
-
-  /* Leaderboard Management */
-  .admin-settings__leaderboard {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .admin-settings__leaderboard-status {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-  }
-
-  .admin-settings__leaderboard-indicator {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-    flex-shrink: 0;
-  }
-
-  .admin-settings__leaderboard-actions {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-  }
-
-  .admin-settings__lb-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s;
-    border: 1px solid transparent;
-  }
-
-  .admin-settings__lb-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .admin-settings__lb-btn--weekly {
-    background: rgba(59, 130, 246, 0.15);
-    color: #60a5fa;
-    border-color: rgba(59, 130, 246, 0.3);
-  }
-
-  .admin-settings__lb-btn--weekly:hover:not(:disabled) {
-    background: rgba(59, 130, 246, 0.25);
-  }
-
-  .admin-settings__lb-btn--monthly {
-    background: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
-    border-color: rgba(139, 92, 246, 0.3);
-  }
-
-  .admin-settings__lb-btn--monthly:hover:not(:disabled) {
-    background: rgba(139, 92, 246, 0.25);
-  }
-
-  .admin-settings__lb-btn--both {
-    background: rgba(16, 185, 129, 0.15);
-    color: #34d399;
-    border-color: rgba(16, 185, 129, 0.3);
-  }
-
-  .admin-settings__lb-btn--both:hover:not(:disabled) {
-    background: rgba(16, 185, 129, 0.25);
-  }
-
-  .admin-settings__lb-result {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 0.875rem;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-  }
-
-  .admin-settings__lb-result--success {
-    background: rgba(16, 185, 129, 0.1);
-    border: 1px solid rgba(16, 185, 129, 0.3);
-    color: #34d399;
-  }
-
-  .admin-settings__lb-result--error {
-    background: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-    color: #f87171;
-  }
-
-  /* Free Tier Branding */
-  .admin-settings__branding {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .admin-settings__branding-status {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem 1rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-  }
-
-  .admin-settings__branding-indicator {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(100, 116, 139, 0.15);
-    color: var(--sidebar-text-muted);
-  }
-
-  .admin-settings__branding-indicator--active {
-    background: rgba(16, 185, 129, 0.15);
-    color: rgb(16, 185, 129);
-  }
-
-  .admin-settings__branding-label {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .admin-settings__branding-hint {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    margin: 2px 0 0;
-  }
-
-  .admin-settings__branding-fields {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .admin-settings__asset-row {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    padding: 0.875rem;
-    background: rgba(24, 24, 27, 0.4);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-  }
-
-  .admin-settings__asset-label {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .admin-settings__asset-controls {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .admin-settings__asset-info {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex: 1;
-    min-width: 0;
-  }
-
-  .admin-settings__asset-icon {
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .admin-settings__asset-icon--watermark {
-    background: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-  }
-
-  .admin-settings__asset-icon--intro {
-    background: rgba(59, 130, 246, 0.15);
-    color: #60a5fa;
-  }
-
-  .admin-settings__asset-icon--outro {
-    background: rgba(168, 85, 247, 0.15);
-    color: #a78bfa;
-  }
-
-  .admin-settings__asset-name {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .admin-settings__asset-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 0.15s;
-    flex-shrink: 0;
-  }
-
-  .admin-settings__asset-btn:hover:not(:disabled) {
-    background: var(--sidebar-active);
-    color: var(--sidebar-text);
-    border-color: var(--sidebar-accent);
-  }
-
-  .admin-settings__asset-btn--active {
-    background: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-    border-color: rgba(6, 182, 212, 0.3);
-  }
-
-  .admin-settings__asset-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .admin-settings__asset-hint {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.6875rem;
-    color: var(--sidebar-accent);
-    margin: 0;
-  }
-
-  .admin-settings__branding-save {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1.25rem;
-    background: var(--sidebar-accent);
-    color: white;
-    border: none;
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 0.15s;
-    align-self: flex-start;
-  }
-
-  .admin-settings__branding-save:hover:not(:disabled) {
-    filter: brightness(1.1);
-  }
-
-  .admin-settings__branding-save:disabled {
-    opacity: 0.6;
-    cursor: not-allowed;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-</style>

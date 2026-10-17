@@ -3,6 +3,7 @@ import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 import pagesConfig from './src/seo/pages.json' with { type: 'json' }
+import { proxyWorkspace, proxyAccountApi } from './workspace-proxy.mjs'
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url))
 const DIST_DIR = path.join(__dirname, 'dist')
@@ -465,6 +466,16 @@ async function handle(req, res) {
   const host = req.headers.host || 'clippster.app'
   const url = new URL(req.url || '/', `http://${host}`)
   const pathname = normalizePath(url.pathname)
+
+  if (pathname === '/api' || pathname.startsWith('/api/')) {
+    proxyAccountApi(req, res, API_URL)
+    return
+  }
+
+  if (pathname === '/workspace' || pathname.startsWith('/workspace/')) {
+    proxyWorkspace(req, res, process.env.WORKSPACE_URL || 'http://127.0.0.1:8090')
+    return
+  }
 
   if (req.method !== 'GET' && req.method !== 'HEAD') {
     send(res, 405, 'Method Not Allowed')

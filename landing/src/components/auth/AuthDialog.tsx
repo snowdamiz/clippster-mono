@@ -199,24 +199,22 @@ export function AuthDialog({
             <div>
               <img src="/logo.svg" alt="Clippster" className="h-5 mb-8" />
               <h2 id="auth-dialog-title" className="text-2xl font-bold text-white mb-2 leading-tight">
-                {view === 'intro' ? 'Your online account dashboard' : 'Transform videos into viral clips'}
+                Your Clippster workspace, on the web
               </h2>
               <p className="text-sm text-zinc-400 mb-8">
-                {view === 'intro'
-                  ? 'Manage your profile, social accounts, messages, and settings on the web. Clipping and editing happen in the desktop app.'
-                  : 'Sign in to unlock AI-powered clip creation and editing'}
+                Download videos, detect clips with AI, manage creators, and organize your content online. Available features depend on your plan.
               </p>
               <div className="space-y-4">
                 {(view === 'intro'
                   ? [
-                      { icon: Download, title: 'Desktop app required', desc: 'Download Clippster to clip live, edit, and publish' },
-                      { icon: Film, title: 'Web is for account stuff', desc: 'Profile, social connects, posts, messages, and billing' },
-                      { icon: Zap, title: 'Same account everywhere', desc: 'Sign up here, then log into the desktop app with the same credentials' },
+                      { icon: Download, title: 'More tools on Desktop', desc: 'Full video editor, image editor, and live-stream tools' },
+                      { icon: Film, title: 'Create clips on the web', desc: 'Download videos and find highlights with AI' },
+                      { icon: Zap, title: 'Same account everywhere', desc: 'Use the same account across Web, Mobile, and Desktop' },
                     ]
                   : [
                       { icon: Zap, title: 'AI-Powered Detection', desc: 'Automatically find the best moments in your videos' },
-                      { icon: Film, title: 'Professional Editing', desc: 'Timeline editor with multi-platform formatting' },
-                      { icon: ShieldCheck, title: 'Secure authentication', desc: 'Email or Google — synced across web and desktop' },
+                      { icon: Film, title: 'More tools on Desktop', desc: 'Full video editor, image editor, and live-stream tools' },
+                      { icon: ShieldCheck, title: 'Same account everywhere', desc: 'Use the same account across Web, Mobile, and Desktop' },
                     ]
                 ).map(({ icon: Icon, title, desc }) => (
                   <div key={title} className="flex gap-3">
@@ -251,10 +249,8 @@ export function AuthDialog({
                 <div>
                   <h3 className="text-xl font-bold text-white mb-2">Before you continue</h3>
                   <p className="text-sm text-zinc-400 leading-relaxed">
-                    This website is an <span className="text-zinc-200">online dashboard</span> for your
-                    Clippster account — profile, settings, social accounts, messages, and posts.
-                    You still need the <span className="text-zinc-200">desktop app</span> to clip, edit,
-                    and publish.
+                    Download Clippster Desktop for the full video editor, image editor, and additional
+                    desktop tools. Use the same account across Web, Mobile, and Desktop.
                   </p>
                 </div>
                 {!downloadsLoading && primaryDownload && (

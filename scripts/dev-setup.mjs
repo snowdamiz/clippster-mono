@@ -7,6 +7,7 @@ import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT = path.resolve(__dirname, '..');
+const DATABASE_PORT = Number(process.env.DATABASE_PORT || 5432);
 
 function run(cmd, opts = {}) {
   console.log(`\n> ${cmd}`);
@@ -50,15 +51,15 @@ function isComposePostgresRunning() {
     if (output.includes('"running"')) return true;
   } catch {}
 
-  // Fallback: check if port 5432 is already in use (handles containers
+  // Fallback: check if the database port is already in use (handles containers
   // started outside this compose project or native PostgreSQL installs)
   try {
     if (process.platform === 'win32') {
-      const output = execSync('netstat -ano | findstr :5432 | findstr LISTENING',
+      const output = execSync(`netstat -ano | findstr :${DATABASE_PORT} | findstr LISTENING`,
         { encoding: 'utf-8', stdio: ['pipe', 'pipe', 'ignore'] });
       return output.trim().length > 0;
     } else {
-      execSync('lsof -i :5432 -sTCP:LISTEN', { stdio: 'ignore' });
+      execSync(`lsof -i :${DATABASE_PORT} -sTCP:LISTEN`, { stdio: 'ignore' });
       return true;
     }
   } catch {}
@@ -87,7 +88,7 @@ function canConnectToPort(host, port, timeoutMs = 1000) {
 }
 
 async function isHostPostgresReady() {
-  return canConnectToPort('localhost', 5432);
+  return canConnectToPort('localhost', DATABASE_PORT);
 }
 
 async function waitForHostPostgres(maxAttempts = 30) {
@@ -132,8 +133,11 @@ async function main() {
   const hostPostgresReady = await isHostPostgresReady();
 
   if (hostPostgresReady) {
-    console.log('PostgreSQL is already reachable on localhost:5432.');
-  } else if (!isDockerRunning()) {
+    console.log(`PostgreSQL is already reachable on localhost:${DATABASE_PORT}.`);
+  }
+
+  // The web workspace needs Docker even when PostgreSQL is running on the host.
+  if (!isDockerRunning()) {
     console.log('Docker is not running. Starting Docker...');
     if (process.platform === 'darwin') {
       spawnSync('open', ['-a', 'Docker'], { stdio: 'inherit' });
@@ -166,7 +170,7 @@ async function main() {
   if (!(await isHostPostgresReady())) {
     if (isComposePostgresRunning()) {
       console.log(
-        'PostgreSQL container is running but localhost:5432 is unavailable. Recreating the container to refresh port bindings...'
+        `PostgreSQL container is running but localhost:${DATABASE_PORT} is unavailable. Recreating the container to refresh port bindings...`
       );
       runRequired('docker compose -f server/docker-compose.yml up -d --force-recreate db');
     } else {
@@ -174,10 +178,10 @@ async function main() {
       runRequired('docker compose -f server/docker-compose.yml up -d db');
     }
 
-    console.log('Waiting for PostgreSQL to be reachable on localhost:5432...');
+    console.log(`Waiting for PostgreSQL to be reachable on localhost:${DATABASE_PORT}...`);
     const ready = await waitForHostPostgres();
     if (!ready) {
-      throw new Error('PostgreSQL did not become reachable on localhost:5432 in time.');
+      throw new Error(`PostgreSQL did not become reachable on localhost:${DATABASE_PORT} in time.`);
     }
   }
   console.log('PostgreSQL is ready.');

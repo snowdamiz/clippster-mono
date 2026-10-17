@@ -9,7 +9,12 @@ import { useEditor } from "../../../composables/useEditor";
 import { processMediaAssets } from "../../../lib/media/processing";
 import { buildImageElement } from "../../../lib/timeline/element-utils";
 import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
-import { Image as ImageIcon, Search, Plus, Loader2, Pencil, FolderOpen } from "lucide-vue-next";
+import { Image as ImageIcon, Loader2, Pencil, FolderOpen, SearchX } from "lucide-vue-next";
+import { EmptyState } from "@/components/ui/empty-state";
+import { SearchField } from "@/components/ui/search-field";
+import { SegmentedControl, type SegmentedOption } from "@/components/ui/segmented-control";
+import AssetGrid from "../shared/AssetGrid.vue";
+import ImportMediaTile from "./ImportMediaTile.vue";
 
 const router = useRouter();
 
@@ -30,6 +35,10 @@ const activeProject = computed(() => {
 });
 
 const subTab = ref<"library" | "projects">("library");
+const subTabs = computed<SegmentedOption<"library" | "projects">[]>(() => [
+	{ value: "library", label: "Library", icon: ImageIcon, count: isLoading.value ? undefined : images.value.length },
+	{ value: "projects", label: "Design Studio", icon: FolderOpen, count: isLoading.value ? undefined : projects.value.length },
+]);
 const images = ref<ImageAsset[]>([]);
 const projects = ref<ProjectSummary[]>([]);
 const searchQuery = ref("");
@@ -242,202 +251,112 @@ function isAdding(id: string): boolean {
 </script>
 
 <template>
-	<div class="flex h-full flex-col bg-transparent">
-		<!-- Sub-tabs -->
-		<div class="flex items-center border-b border-white/10 px-4 shrink-0">
-			<button
-				v-for="tab in ([
-					{ key: 'library', label: 'Image Library', icon: ImageIcon },
-					{ key: 'projects', label: 'Image Editor projects', icon: FolderOpen },
-				] as const)"
-				:key="tab.key"
-				type="button"
-				:class="[
-					'flex items-center gap-1 px-2 py-2 text-[11px] font-medium whitespace-nowrap transition-colors border-b-2',
-					subTab === tab.key
-						? 'border-blue-500 text-blue-400'
-						: 'border-transparent text-zinc-500 hover:text-zinc-300',
-				]"
-				@click="subTab = tab.key"
-			>
-				<component :is="tab.icon" class="size-3.5" />
-				{{ tab.label }}
-			</button>
+	<div class="flex h-full flex-col overflow-hidden">
+		<!-- Toolbar: library / Design Studio switch + search -->
+		<div class="flex h-12 shrink-0 items-center gap-3 px-5">
+			<SegmentedControl v-model="subTab" :options="subTabs" size="sm" />
+			<div class="flex-1" />
+			<SearchField
+				v-model="searchQuery"
+				size="sm"
+				input-class="text-xs"
+				:placeholder="subTab === 'library' ? 'Search images…' : 'Search projects…'"
+				class="w-64"
+			/>
 		</div>
 
-		<!-- Search -->
-		<div class="flex items-center gap-2 border-b border-white/10 px-4 py-2 shrink-0">
-			<div class="relative flex-1">
-				<Search class="absolute left-2 top-1/2 -translate-y-1/2 size-3.5 text-zinc-500" />
-				<input
-					v-model="searchQuery"
-					type="text"
-					:placeholder="subTab === 'library' ? 'Search images...' : 'Search projects...'"
-					class="w-full h-7 pl-8 pr-3 bg-zinc-800/50 border border-white/10 rounded text-xs text-zinc-200 placeholder:text-zinc-500 focus:outline-none focus:border-blue-500/50"
+		<div class="min-h-0 flex-1 overflow-y-auto px-5 pb-4">
+			<!-- Loading -->
+			<div v-if="isLoading" class="flex h-full items-center justify-center">
+				<Loader2 class="size-5 animate-spin text-fg-subtle" />
+			</div>
+
+			<!-- Image library -->
+			<template v-else-if="subTab === 'library'">
+				<EmptyState
+					v-if="filteredImages.length === 0"
+					size="sm"
+					class="h-full"
+					:icon="searchQuery ? SearchX : ImageIcon"
+					:title="searchQuery ? 'No matching images' : 'No images found'"
+					:description="
+						searchQuery ? 'Try a different search term.' : 'Export from Design Studio or upload in Image Library.'
+					"
 				/>
-			</div>
-		</div>
 
-		<!-- Loading -->
-		<div v-if="isLoading" class="flex-1 flex items-center justify-center">
-			<Loader2 class="size-5 animate-spin text-blue-400" />
-		</div>
-
-		<!-- Image Library -->
-		<template v-else-if="subTab === 'library'">
-			<div
-				v-if="filteredImages.length === 0"
-				class="flex-1 flex flex-col items-center justify-center gap-2 px-4 text-center"
-			>
-				<ImageIcon class="size-8 text-zinc-500" />
-				<p class="text-sm text-zinc-400">No images found</p>
-				<p class="text-xs text-zinc-500">
-					Export from Design Studio or upload in Image Library
-				</p>
-			</div>
-
-			<div v-else class="flex-1 overflow-y-auto p-4">
-				<p class="mb-2 text-[10px] text-zinc-500">Click to add to the timeline at the playhead</p>
-				<div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(120px, 1fr))">
-					<div
+				<AssetGrid v-else :min="176">
+					<ImportMediaTile
 						v-for="img in filteredImages"
 						:key="img.id"
+						:label="img.name"
+						:sublabel="[img.image_type, formatDimensions(img.width, img.height)].filter(Boolean).join(' · ') || undefined"
+						:src="thumbnailCache.get(img.id)"
+						:icon="ImageIcon"
+						:busy="isAdding(img.id)"
+						action="Add to timeline"
 						:title="img.name"
-						:class="[
-							'group relative overflow-hidden rounded-lg border border-white/10 transition-colors',
-							isAdding(img.id)
-								? 'cursor-wait opacity-60'
-								: 'cursor-pointer hover:border-blue-500/50',
-						]"
 						@click="addImageToTimeline(img)"
-					>
-						<div class="relative aspect-video bg-zinc-800">
-							<img
-								v-if="thumbnailCache.get(img.id)"
-								:src="thumbnailCache.get(img.id)"
-								:alt="img.name"
-								class="size-full object-cover"
-								draggable="false"
-							/>
-							<div v-else class="flex size-full items-center justify-center">
-								<ImageIcon class="size-8 text-zinc-600" />
-							</div>
-							<div
-								v-if="isAdding(img.id)"
-								class="absolute inset-0 flex items-center justify-center bg-black/40"
-							>
-								<Loader2 class="size-5 animate-spin text-blue-400" />
-							</div>
-							<div
-								v-else
-								class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40"
-							>
-								<div class="rounded-full bg-blue-500 p-2">
-									<Plus class="size-4 text-white" />
-								</div>
-							</div>
-						</div>
-						<div class="px-2 py-1.5 bg-zinc-900/90">
-							<h3 class="text-xs font-medium text-zinc-200 truncate" :title="img.name">
-								{{ img.name }}
-							</h3>
-							<div class="flex items-center gap-1 mt-0.5 text-[10px] text-zinc-500">
-								<span v-if="img.image_type">{{ img.image_type }}</span>
-								<span
-									v-if="img.image_type && img.width && img.height"
-									class="text-zinc-700"
-								>•</span>
-								<span v-if="img.width && img.height">{{ formatDimensions(img.width, img.height) }}</span>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-		</template>
+						@keydown.enter="addImageToTimeline(img)"
+					/>
+				</AssetGrid>
+			</template>
 
-		<!-- Image Editor projects -->
-		<template v-else>
-			<div
-				v-if="filteredProjects.length === 0"
-				class="flex-1 flex flex-col items-center justify-center gap-2 px-4 text-center"
-			>
-				<FolderOpen class="size-8 text-zinc-500" />
-				<p class="text-sm text-zinc-400">No Image Editor projects</p>
-				<p class="text-xs text-zinc-500">Create projects in Design Studio</p>
-			</div>
+			<!-- Design Studio (Image Editor) projects -->
+			<template v-else>
+				<EmptyState
+					v-if="filteredProjects.length === 0"
+					size="sm"
+					class="h-full"
+					:icon="searchQuery ? SearchX : FolderOpen"
+					:title="searchQuery ? 'No matching projects' : 'No Design Studio projects'"
+					:description="searchQuery ? 'Try a different search term.' : 'Create projects in Design Studio.'"
+				/>
 
-			<div v-else class="flex-1 overflow-y-auto p-4">
-				<p class="mb-2 text-[10px] text-zinc-500">
-					Click to insert latest export · pencil opens Design Studio
-				</p>
-				<div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr))">
-					<div
+				<AssetGrid v-else :min="176">
+					<ImportMediaTile
 						v-for="project in filteredProjects"
 						:key="project.id"
+						:label="project.name"
+						:sublabel="
+							[
+								latestExportForProject(project.id)
+									? 'Has export'
+									: project.thumbnail_url
+										? 'Preview only'
+										: 'No export yet',
+								formatDimensions(project.canvas_width ?? null, project.canvas_height ?? null),
+							]
+								.filter(Boolean)
+								.join(' · ')
+						"
+						:src="projectThumbSrc(project)"
+						:icon="FolderOpen"
+						:busy="isAdding(`project-${project.id}`)"
+						:action="
+							latestExportForProject(project.id) || project.thumbnail_url
+								? 'Add to timeline'
+								: 'Open in Design Studio'
+						"
+						:action-icon="latestExportForProject(project.id) || project.thumbnail_url ? undefined : Pencil"
 						:title="project.name"
-						:class="[
-							'group relative overflow-hidden rounded-lg border border-white/10 transition-colors',
-							isAdding(`project-${project.id}`)
-								? 'cursor-wait opacity-60'
-								: 'cursor-pointer hover:border-blue-500/50',
-						]"
 						@click="addProjectToTimeline(project)"
+						@keydown.enter="addProjectToTimeline(project)"
 					>
-						<div class="relative aspect-video bg-zinc-800">
-							<img
-								v-if="projectThumbSrc(project)"
-								:src="projectThumbSrc(project)"
-								:alt="project.name"
-								class="size-full object-cover"
-								draggable="false"
-							/>
-							<div v-else class="flex size-full items-center justify-center">
-								<FolderOpen class="size-8 text-zinc-600" />
-							</div>
-							<div
-								v-if="isAdding(`project-${project.id}`)"
-								class="absolute inset-0 flex items-center justify-center bg-black/40"
-							>
-								<Loader2 class="size-5 animate-spin text-blue-400" />
-							</div>
-							<div
-								v-else
-								class="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity bg-black/40"
-							>
-								<div class="rounded-full bg-blue-500 p-2">
-									<Plus class="size-4 text-white" />
-								</div>
-							</div>
+						<template #actions>
 							<button
 								type="button"
-								class="absolute top-1 right-1 hidden rounded bg-black/60 p-1 text-zinc-300 hover:text-white group-hover:block"
+								class="grid size-6 place-items-center rounded bg-black/60 text-white/85 transition-colors hover:bg-black/80 hover:text-white"
 								title="Open in Design Studio"
 								aria-label="Open in Design Studio"
+								@keydown.enter.stop
 								@click.stop="openProjectInEditor(project)"
 							>
 								<Pencil class="size-3" />
 							</button>
-						</div>
-						<div class="px-2 py-1.5 bg-zinc-900/90">
-							<h3 class="text-xs font-medium text-zinc-200 truncate" :title="project.name">
-								{{ project.name }}
-							</h3>
-							<div class="flex items-center gap-1 mt-0.5 text-[10px] text-zinc-500">
-								<span v-if="latestExportForProject(project.id)">Has export</span>
-								<span v-else-if="project.thumbnail_url">Preview only</span>
-								<span v-else>No export yet</span>
-								<span
-									v-if="project.canvas_width && project.canvas_height"
-									class="text-zinc-700"
-								>•</span>
-								<span v-if="project.canvas_width && project.canvas_height">
-									{{ formatDimensions(project.canvas_width, project.canvas_height) }}
-								</span>
-							</div>
-						</div>
-					</div>
-				</div>
-			</div>
-		</template>
+						</template>
+					</ImportMediaTile>
+				</AssetGrid>
+			</template>
+		</div>
 	</div>
 </template>

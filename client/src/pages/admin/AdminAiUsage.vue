@@ -1,202 +1,202 @@
 <template>
   <PageLayout
-    title="AI Usage"
+    title="AI usage"
     description="Monitor AI service consumption and performance"
-    :show-header="true"
     :icon="Activity"
-    :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'AI Usage' }]"
+    :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'AI usage' }]"
   >
     <template #actions>
-      <button class="admin-ai__action-btn" @click="fetchAiStats">
-        <RefreshCw class="admin-ai__action-icon" />
-        Refresh Stats
-      </button>
+      <Button variant="ghost" size="icon-sm" title="Refresh stats" :disabled="loading" @click="fetchAiStats">
+        <RefreshCw :class="{ 'animate-spin': loading }" />
+      </Button>
     </template>
 
-    <div class="admin-ai">
-      <!-- Page Heading -->
-      <div class="admin-ai__heading">
-        <h1 class="admin-ai__title">AI Usage Stats</h1>
-        <p class="admin-ai__subtitle">Monitor AI service consumption and performance</p>
+    <div class="flex flex-col gap-4 px-5 py-4">
+      <!-- Totals -->
+      <StatGrid :count="4">
+        <StatCard
+          label="Total tokens"
+          :value="formatNumber(aiStats?.stats.total_tokens || 0)"
+          :icon="Coins"
+          :loading="loading && !aiStats"
+        />
+        <StatCard
+          label="Total duration"
+          :value="formatDuration(aiStats?.stats.total_duration || 0)"
+          :icon="Timer"
+          :loading="loading && !aiStats"
+        />
+        <StatCard label="Requests" :value="formatNumber(totalRequests)" :icon="Activity" :loading="loading && !aiStats" />
+        <StatCard
+          label="Active providers"
+          :value="aiStats?.stats.provider_stats.length || 0"
+          :icon="Layers"
+          :loading="loading && !aiStats"
+        />
+      </StatGrid>
+
+      <div v-if="aiStats" class="flex animate-enter flex-col gap-4">
+        <!-- Provider split -->
+        <SectionCard
+          v-if="providerShares.length > 0"
+          title="Requests by provider"
+          :count="aiStats.stats.provider_stats.length"
+          :icon="Layers"
+          body-class="flex flex-col gap-3 py-3.5"
+        >
+          <div class="flex h-2 w-full gap-0.5 overflow-hidden rounded-full bg-surface-hover">
+            <div
+              v-for="share in providerShares"
+              :key="share.provider"
+              class="h-full first:rounded-l-full last:rounded-r-full"
+              :style="{ width: `${share.percent}%`, backgroundColor: share.color }"
+              :title="`${formatProvider(share.provider)}: ${share.percent.toFixed(1)}%`"
+            />
+          </div>
+          <ul class="grid grid-cols-[repeat(auto-fill,minmax(200px,1fr))] gap-x-6 gap-y-2">
+            <li v-for="share in providerShares" :key="share.provider" class="flex min-w-0 items-center gap-2 text-sm">
+              <span class="size-2 shrink-0 rounded-full" :style="{ backgroundColor: share.color }" />
+              <span class="min-w-0 flex-1 truncate text-fg">{{ formatProvider(share.provider) }}</span>
+              <span class="tabular shrink-0 text-xs text-fg-muted">{{ formatNumber(share.count) }}</span>
+              <span class="tabular w-10 shrink-0 text-right text-xs text-fg-subtle">{{ share.percent.toFixed(0) }}%</span>
+            </li>
+          </ul>
+        </SectionCard>
+
+        <!-- Breakdown -->
+        <SectionCard
+          :title="breakdownView === 'model' ? 'Usage by model' : 'Usage by operation'"
+          :count="breakdownView === 'model' ? aiStats.stats.model_stats.length : aiStats.stats.operation_stats.length"
+          :icon="breakdownView === 'model' ? Cpu : Workflow"
+          flush
+        >
+          <template #actions>
+            <SegmentedControl v-model="breakdownView" :options="breakdownOptions" size="sm" />
+          </template>
+
+          <div :key="breakdownView" class="animate-enter">
+            <DataTable
+              v-if="breakdownView === 'model'"
+              bare
+              :columns="modelColumns"
+              :rows="aiStats.stats.model_stats"
+              :row-key="(stat) => `${stat.provider}:${stat.model}`"
+              :empty-icon="Cpu"
+              empty-title="No usage data available"
+            >
+              <template #cell-name="{ row: stat }">
+                <span class="block truncate font-medium text-fg">{{ stat.model }}</span>
+              </template>
+              <template #cell-provider="{ row: stat }">
+                <span class="block truncate text-fg-muted">{{ formatProvider(stat.provider) }}</span>
+              </template>
+              <template #cell-count="{ row: stat }">
+                <span class="tabular">{{ formatNumber(stat.count) }}</span>
+              </template>
+              <template #cell-tokens="{ row: stat }">
+                <span class="tabular" :class="stat.total_tokens ? 'text-fg' : 'text-fg-subtle'">
+                  {{ stat.total_tokens ? formatNumber(stat.total_tokens) : '—' }}
+                </span>
+              </template>
+              <template #cell-duration="{ row: stat }">
+                <span class="tabular whitespace-nowrap" :class="hasDuration(stat.total_duration) ? 'text-fg' : 'text-fg-subtle'">
+                  {{ hasDuration(stat.total_duration) ? formatDuration(stat.total_duration) : '—' }}
+                </span>
+              </template>
+            </DataTable>
+
+            <DataTable
+              v-else
+              bare
+              :columns="operationColumns"
+              :rows="aiStats.stats.operation_stats"
+              row-key="operation"
+              :empty-icon="Workflow"
+              empty-title="No usage data available"
+            >
+              <template #cell-name="{ row: stat }">
+                <span class="block truncate font-medium text-fg">{{ formatOperation(stat.operation) }}</span>
+              </template>
+              <template #cell-count="{ row: stat }">
+                <span class="tabular">{{ formatNumber(stat.count) }}</span>
+              </template>
+              <template #cell-tokens="{ row: stat }">
+                <span class="tabular" :class="stat.total_tokens ? 'text-fg' : 'text-fg-subtle'">
+                  {{ stat.total_tokens ? formatNumber(stat.total_tokens) : '—' }}
+                </span>
+              </template>
+              <template #cell-duration="{ row: stat }">
+                <span class="tabular whitespace-nowrap" :class="hasDuration(stat.total_duration) ? 'text-fg' : 'text-fg-subtle'">
+                  {{ hasDuration(stat.total_duration) ? formatDuration(stat.total_duration) : '—' }}
+                </span>
+              </template>
+            </DataTable>
+          </div>
+        </SectionCard>
+
+        <!-- Recent activity -->
+        <SectionCard
+          v-if="aiStats.recent_logs.length > 0"
+          title="Recent activity"
+          :count="aiStats.recent_logs.length"
+          :icon="History"
+          flush
+        >
+          <DataTable bare :columns="logColumns" :rows="aiStats.recent_logs" row-key="id">
+            <template #cell-time="{ row: log }">
+              <span class="tabular block truncate text-fg">{{ formatDay(log.created_at) }}</span>
+              <span class="tabular block truncate text-xs text-fg-subtle">{{ formatClock(log.created_at) }}</span>
+            </template>
+            <template #cell-user="{ row: log }">
+              <code class="block truncate font-mono text-xs text-fg-muted" :title="log.user_wallet">
+                {{ formatWalletAddress(log.user_wallet) || '—' }}
+              </code>
+            </template>
+            <template #cell-operation="{ row: log }">
+              <Badge variant="neutral" class="max-w-full">
+                <span class="truncate">{{ formatOperation(log.operation) }}</span>
+              </Badge>
+            </template>
+            <template #cell-model="{ row: log }">
+              <span class="block truncate text-fg">{{ log.model }}</span>
+              <span class="block truncate text-xs text-fg-subtle">{{ formatProvider(log.provider) }}</span>
+            </template>
+            <template #cell-usage="{ row: log }">
+              <span v-if="log.tokens" class="tabular block truncate text-fg">{{ formatNumber(log.tokens) }} tokens</span>
+              <span v-if="log.duration" class="tabular block truncate text-xs text-fg-subtle">
+                {{ formatDuration(log.duration) }}
+              </span>
+              <span v-if="!log.tokens && !log.duration" class="text-fg-subtle">—</span>
+            </template>
+          </DataTable>
+        </SectionCard>
       </div>
 
-      <!-- Stats Header -->
-      <div class="admin-ai__stats-header">
-        <div class="admin-ai__stats-icon">
-          <Activity class="admin-ai__stats-icon-svg" />
-        </div>
-        <div>
-          <h2 class="admin-ai__stats-title">AI Usage Stats</h2>
-          <p class="admin-ai__stats-desc">Monitor AI service consumption and performance</p>
-        </div>
-      </div>
-
-      <!-- Stats Cards -->
-      <div v-if="aiStats" class="admin-ai__cards">
-        <div class="admin-ai__card">
-          <div class="admin-ai__card-header">
-            <div class="admin-ai__card-icon admin-ai__card-icon--blue">
-              <Activity class="admin-ai__card-icon-svg" />
-            </div>
-            <h3 class="admin-ai__card-label">Total Tokens</h3>
-          </div>
-          <p class="admin-ai__card-value">{{ formatNumber(aiStats.stats.total_tokens) }}</p>
-        </div>
-        <div class="admin-ai__card">
-          <div class="admin-ai__card-header">
-            <div class="admin-ai__card-icon admin-ai__card-icon--green">
-              <Activity class="admin-ai__card-icon-svg" />
-            </div>
-            <h3 class="admin-ai__card-label">Total Duration</h3>
-          </div>
-          <p class="admin-ai__card-value">{{ formatDuration(aiStats.stats.total_duration) }}</p>
-        </div>
-        <div class="admin-ai__card">
-          <div class="admin-ai__card-header">
-            <div class="admin-ai__card-icon admin-ai__card-icon--purple">
-              <Layers class="admin-ai__card-icon-svg" />
-            </div>
-            <h3 class="admin-ai__card-label">Active Providers</h3>
-          </div>
-          <p class="admin-ai__card-value">{{ aiStats.stats.provider_stats.length }}</p>
-        </div>
-      </div>
-
-      <!-- Breakdown Section -->
-      <div v-if="aiStats" class="admin-ai__breakdown">
-        <!-- Models Breakdown -->
-        <div class="admin-ai__breakdown-card">
-          <div class="admin-ai__breakdown-header">
-            <h3 class="admin-ai__breakdown-title">Usage by Model</h3>
-          </div>
-          <div class="admin-ai__breakdown-scroll">
-            <table class="admin-ai__breakdown-table">
-              <thead>
-                <tr>
-                  <th class="admin-ai__breakdown-th">Model</th>
-                  <th class="admin-ai__breakdown-th admin-ai__breakdown-th--right">Requests</th>
-                  <th class="admin-ai__breakdown-th admin-ai__breakdown-th--right">Tokens</th>
-                  <th class="admin-ai__breakdown-th admin-ai__breakdown-th--right">Duration</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-if="aiStats.stats.model_stats.length === 0">
-                  <td colspan="4" class="admin-ai__breakdown-empty">No usage data available</td>
-                </tr>
-                <tr v-for="stat in aiStats.stats.model_stats" :key="stat.model" class="admin-ai__breakdown-row">
-                  <td class="admin-ai__breakdown-td">
-                    <div class="admin-ai__breakdown-model">
-                      <span class="admin-ai__breakdown-model-name">{{ stat.model }}</span>
-                      <span class="admin-ai__breakdown-model-provider">{{ stat.provider }}</span>
-                    </div>
-                  </td>
-                  <td class="admin-ai__breakdown-td admin-ai__breakdown-td--right">{{ formatNumber(stat.count) }}</td>
-                  <td class="admin-ai__breakdown-td admin-ai__breakdown-td--right">
-                    {{ stat.total_tokens ? formatNumber(stat.total_tokens) : '-' }}
-                  </td>
-                  <td class="admin-ai__breakdown-td admin-ai__breakdown-td--right">
-                    {{
-                      stat.total_duration && parseFloat(stat.total_duration) > 0
-                        ? formatDuration(stat.total_duration)
-                        : '-'
-                    }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        <!-- Operations Breakdown -->
-        <div class="admin-ai__breakdown-card">
-          <div class="admin-ai__breakdown-header">
-            <h3 class="admin-ai__breakdown-title">Usage by Operation</h3>
-          </div>
-          <div class="admin-ai__breakdown-scroll">
-            <table class="admin-ai__breakdown-table">
-              <thead>
-                <tr>
-                  <th class="admin-ai__breakdown-th">Operation</th>
-                  <th class="admin-ai__breakdown-th admin-ai__breakdown-th--right">Requests</th>
-                  <th class="admin-ai__breakdown-th admin-ai__breakdown-th--right">Tokens</th>
-                  <th class="admin-ai__breakdown-th admin-ai__breakdown-th--right">Duration</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-if="aiStats.stats.operation_stats.length === 0">
-                  <td colspan="4" class="admin-ai__breakdown-empty">No usage data available</td>
-                </tr>
-                <tr v-for="stat in aiStats.stats.operation_stats" :key="stat.operation" class="admin-ai__breakdown-row">
-                  <td class="admin-ai__breakdown-td admin-ai__breakdown-td--capitalize">
-                    {{ stat.operation.replace(/_/g, ' ') }}
-                  </td>
-                  <td class="admin-ai__breakdown-td admin-ai__breakdown-td--right">{{ formatNumber(stat.count) }}</td>
-                  <td class="admin-ai__breakdown-td admin-ai__breakdown-td--right">
-                    {{ stat.total_tokens ? formatNumber(stat.total_tokens) : '-' }}
-                  </td>
-                  <td class="admin-ai__breakdown-td admin-ai__breakdown-td--right">
-                    {{
-                      stat.total_duration && parseFloat(stat.total_duration) > 0
-                        ? formatDuration(stat.total_duration)
-                        : '-'
-                    }}
-                  </td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-      </div>
-
-      <!-- Recent Logs Table -->
-      <div v-if="aiStats && aiStats.recent_logs.length > 0" class="admin-ai__logs">
-        <div class="admin-ai__logs-header">
-          <h3 class="admin-ai__logs-title">Recent Activity</h3>
-        </div>
-        <div class="admin-ai__logs-scroll">
-          <table class="admin-ai__logs-table">
-            <thead>
-              <tr>
-                <th class="admin-ai__logs-th">Time</th>
-                <th class="admin-ai__logs-th">User</th>
-                <th class="admin-ai__logs-th">Operation</th>
-                <th class="admin-ai__logs-th">Provider/Model</th>
-                <th class="admin-ai__logs-th">Usage</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="log in aiStats.recent_logs" :key="log.id" class="admin-ai__logs-row">
-                <td class="admin-ai__logs-td">{{ formatDate(log.created_at) }}</td>
-                <td class="admin-ai__logs-td">
-                  <code class="admin-ai__logs-wallet">{{ formatWalletAddress(log.user_wallet) }}</code>
-                </td>
-                <td class="admin-ai__logs-td">
-                  <span class="admin-ai__logs-operation">{{ log.operation }}</span>
-                </td>
-                <td class="admin-ai__logs-td">
-                  <div class="admin-ai__logs-provider">
-                    <span class="admin-ai__logs-provider-name">{{ log.provider }}</span>
-                    <span class="admin-ai__logs-provider-model">{{ log.model }}</span>
-                  </div>
-                </td>
-                <td class="admin-ai__logs-td">
-                  <div v-if="log.tokens" class="admin-ai__logs-usage">{{ formatNumber(log.tokens) }} tokens</div>
-                  <div v-if="log.duration" class="admin-ai__logs-duration">{{ formatDuration(log.duration) }}</div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
+      <!-- Nothing loaded -->
+      <EmptyState
+        v-else-if="!loading"
+        :icon="Activity"
+        title="No AI usage data"
+        description="Usage stats could not be loaded. Try refreshing."
+      >
+        <Button variant="secondary" @click="fetchAiStats">Try again</Button>
+      </EmptyState>
     </div>
   </PageLayout>
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted } from 'vue';
-  import { formatDateTime } from '@/utils/dateTimeUtils';
-  import { Activity, RefreshCw, Layers } from 'lucide-vue-next';
+  import { ref, computed, onMounted } from 'vue';
+  import { formatDate as formatDay, formatTime as formatClock } from '@/utils/dateTimeUtils';
+  import { Activity, RefreshCw, Layers, Coins, Timer, Cpu, Workflow, History } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
+  import { StatCard, StatGrid } from '@/components/ui/stat-card';
+  import { SectionCard } from '@/components/ui/section-card';
+  import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
   import api from '@/services/api';
 
   interface AiUsageStats {
@@ -227,8 +227,10 @@
   }
 
   const aiStats = ref<AiUsageStats | null>(null);
+  const loading = ref(false);
 
   const fetchAiStats = async () => {
+    loading.value = true;
     try {
       const response = await api.get('/admin/ai-usage');
       if (response.data.success) {
@@ -236,8 +238,74 @@
       }
     } catch (err) {
       console.error('Error fetching AI stats:', err);
+    } finally {
+      loading.value = false;
     }
   };
+
+  const CHART_COLORS = ['var(--chart-1)', 'var(--chart-2)', 'var(--chart-3)', 'var(--chart-4)', 'var(--chart-5)'];
+
+  const totalRequests = computed(() =>
+    (aiStats.value?.stats.provider_stats || []).reduce((sum, stat) => sum + (stat.count || 0), 0)
+  );
+
+  const providerShares = computed(() => {
+    const total = totalRequests.value;
+    if (!aiStats.value || total === 0) return [];
+    return [...aiStats.value.stats.provider_stats]
+      .sort((a, b) => (b.count || 0) - (a.count || 0))
+      .map((stat, index) => ({
+        provider: stat.provider,
+        count: stat.count || 0,
+        percent: ((stat.count || 0) / total) * 100,
+        color: CHART_COLORS[index % CHART_COLORS.length],
+      }));
+  });
+
+  const breakdownView = ref<'model' | 'operation'>('model');
+  const breakdownOptions: SegmentedOption<'model' | 'operation'>[] = [
+    { value: 'model', label: 'By model' },
+    { value: 'operation', label: 'By operation' },
+  ];
+
+  const modelColumns: DataTableColumn[] = [
+    { key: 'name', label: 'Model' },
+    { key: 'provider', label: 'Provider', width: '140px', hideBelow: 'md' },
+    { key: 'count', label: 'Requests', width: '100px', align: 'right' },
+    { key: 'tokens', label: 'Tokens', width: '120px', align: 'right' },
+    { key: 'duration', label: 'Duration', width: '110px', align: 'right' },
+  ];
+
+  const operationColumns: DataTableColumn[] = [
+    { key: 'name', label: 'Operation' },
+    { key: 'count', label: 'Requests', width: '100px', align: 'right' },
+    { key: 'tokens', label: 'Tokens', width: '120px', align: 'right' },
+    { key: 'duration', label: 'Duration', width: '110px', align: 'right' },
+  ];
+
+  const PROVIDER_NAMES: Record<string, string> = {
+    openai: 'OpenAI',
+    anthropic: 'Anthropic',
+    deepgram: 'Deepgram',
+    replicate: 'Replicate',
+    google: 'Google',
+    gemini: 'Gemini',
+    elevenlabs: 'ElevenLabs',
+    fal: 'fal',
+  };
+
+  const formatProvider = (provider: string) => {
+    if (!provider) return '—';
+    return PROVIDER_NAMES[provider.toLowerCase()] || provider.charAt(0).toUpperCase() + provider.slice(1);
+  };
+
+  const logColumns: DataTableColumn[] = [
+    { key: 'time', label: 'Time', width: '120px' },
+    { key: 'user', label: 'User', width: '120px', hideBelow: 'md' },
+    { key: 'operation', label: 'Operation', width: '160px' },
+    { key: 'model', label: 'Model' },
+    { key: 'usage', label: 'Usage', width: '120px', align: 'right' },
+  ];
 
   const formatNumber = (num: number) => new Intl.NumberFormat('en-US').format(num || 0);
 
@@ -245,8 +313,16 @@
     const secs = Number(seconds) || 0;
     if (secs < 60) return `${secs.toFixed(1)}s`;
     const mins = Math.floor(secs / 60);
+    if (mins >= 60) return `${Math.floor(mins / 60)}h ${mins % 60}m`;
     const remainingSecs = (secs % 60).toFixed(0);
     return `${mins}m ${remainingSecs}s`;
+  };
+
+  const hasDuration = (value: string | number | null | undefined) => !!value && parseFloat(String(value)) > 0;
+
+  const formatOperation = (operation: string) => {
+    const text = (operation || '').replace(/_/g, ' ').trim().replace(/\bai\b/gi, 'AI');
+    return text.charAt(0).toUpperCase() + text.slice(1);
   };
 
   const formatWalletAddress = (address: string) => {
@@ -254,386 +330,7 @@
     return `${address.slice(0, 6)}...${address.slice(-4)}`;
   };
 
-  const formatDate = (dateString: string) => {
-    if (!dateString) return 'N/A';
-    try {
-      return formatDateTime(dateString);
-    } catch {
-      return 'Invalid date';
-    }
-  };
-
   onMounted(() => {
     fetchAiStats();
   });
 </script>
-
-<style scoped>
-  .admin-ai {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: 1.5rem;
-    max-width: 1400px;
-    margin: 0 auto;
-    width: 100%;
-  }
-
-  .admin-ai__heading {
-    margin-bottom: 0.5rem;
-  }
-
-  .admin-ai__title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.2rem;
-    letter-spacing: -0.02em;
-  }
-
-  .admin-ai__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  .admin-ai__action-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    height: 32px;
-    padding: 0 0.875rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-    border: none;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-  }
-
-  .admin-ai__action-btn:hover {
-    opacity: 0.9;
-  }
-
-  .admin-ai__action-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  .admin-ai__stats-header {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .admin-ai__stats-icon {
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, rgba(99, 102, 241, 0.2) 0%, rgba(168, 85, 247, 0.2) 100%);
-    border: 1px solid rgba(99, 102, 241, 0.3);
-  }
-
-  .admin-ai__stats-icon-svg {
-    width: 20px;
-    height: 20px;
-    color: #818cf8;
-  }
-
-  .admin-ai__stats-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-  .admin-ai__stats-desc {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  .admin-ai__cards {
-    display: grid;
-    grid-template-columns: repeat(1, 1fr);
-    gap: 1rem;
-  }
-
-  @media (min-width: 768px) {
-    .admin-ai__cards {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  .admin-ai__card {
-    padding: 1rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .admin-ai__card-header {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .admin-ai__card-icon {
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .admin-ai__card-icon--blue {
-    background: linear-gradient(135deg, rgba(59, 130, 246, 0.2) 0%, rgba(6, 182, 212, 0.2) 100%);
-    border: 1px solid rgba(59, 130, 246, 0.3);
-  }
-  .admin-ai__card-icon--blue .admin-ai__card-icon-svg {
-    color: #60a5fa;
-  }
-
-  .admin-ai__card-icon--green {
-    background: linear-gradient(135deg, rgba(34, 197, 94, 0.2) 0%, rgba(16, 185, 129, 0.2) 100%);
-    border: 1px solid rgba(34, 197, 94, 0.3);
-  }
-  .admin-ai__card-icon--green .admin-ai__card-icon-svg {
-    color: #34d399;
-  }
-
-  .admin-ai__card-icon--purple {
-    background: linear-gradient(135deg, rgba(168, 85, 247, 0.2) 0%, rgba(236, 72, 153, 0.2) 100%);
-    border: 1px solid rgba(168, 85, 247, 0.3);
-  }
-  .admin-ai__card-icon--purple .admin-ai__card-icon-svg {
-    color: #c084fc;
-  }
-
-  .admin-ai__card-icon-svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  .admin-ai__card-label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  .admin-ai__card-value {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .admin-ai__breakdown {
-    display: grid;
-    grid-template-columns: repeat(1, 1fr);
-    gap: 1rem;
-  }
-
-  @media (min-width: 1024px) {
-    .admin-ai__breakdown {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  .admin-ai__breakdown-card {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    overflow: hidden;
-  }
-
-  .admin-ai__breakdown-header {
-    padding: 0.75rem 1rem;
-    background-color: rgba(24, 24, 27, 0.8);
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .admin-ai__breakdown-title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .admin-ai__breakdown-scroll {
-    overflow-x: auto;
-  }
-
-  .admin-ai__breakdown-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  .admin-ai__breakdown-th {
-    padding: 0.625rem 1rem;
-    text-align: left;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    background-color: rgba(24, 24, 27, 0.6);
-  }
-
-  .admin-ai__breakdown-th--right {
-    text-align: right;
-  }
-
-  .admin-ai__breakdown-row {
-    transition: background-color 150ms ease;
-  }
-  .admin-ai__breakdown-row:hover {
-    background-color: rgba(39, 39, 42, 0.3);
-  }
-
-  .admin-ai__breakdown-td {
-    padding: 0.625rem 1rem;
-    font-size: 0.875rem;
-    font-family: monospace;
-    color: var(--sidebar-text);
-  }
-
-  .admin-ai__breakdown-td--right {
-    text-align: right;
-  }
-  .admin-ai__breakdown-td--capitalize {
-    text-transform: capitalize;
-    font-weight: 500;
-    font-family: inherit;
-  }
-
-  .admin-ai__breakdown-empty {
-    padding: 1rem;
-    text-align: center;
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .admin-ai__breakdown-model {
-    display: flex;
-    flex-direction: column;
-  }
-  .admin-ai__breakdown-model-name {
-    font-weight: 500;
-    color: var(--sidebar-text);
-    font-family: inherit;
-  }
-  .admin-ai__breakdown-model-provider {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    text-transform: capitalize;
-    font-family: inherit;
-  }
-
-  .admin-ai__logs {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    overflow: hidden;
-  }
-
-  .admin-ai__logs-header {
-    padding: 0.875rem 1.25rem;
-    background-color: rgba(24, 24, 27, 0.8);
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .admin-ai__logs-title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .admin-ai__logs-scroll {
-    overflow-x: auto;
-  }
-
-  .admin-ai__logs-table {
-    width: 100%;
-    border-collapse: collapse;
-  }
-
-  .admin-ai__logs-th {
-    padding: 0.75rem 1.25rem;
-    text-align: left;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    background-color: rgba(24, 24, 27, 0.6);
-  }
-
-  .admin-ai__logs-row {
-    transition: background-color 150ms ease;
-  }
-  .admin-ai__logs-row:hover {
-    background-color: rgba(39, 39, 42, 0.3);
-  }
-
-  .admin-ai__logs-td {
-    padding: 1rem 1.25rem;
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    white-space: nowrap;
-  }
-
-  .admin-ai__logs-wallet {
-    font-size: 0.75rem;
-    background-color: var(--sidebar-hover);
-    padding: 0.375rem 0.625rem;
-    border-radius: 8px;
-    font-family: monospace;
-    color: var(--sidebar-text);
-  }
-
-  .admin-ai__logs-operation {
-    display: inline-flex;
-    align-items: center;
-    padding: 0.25rem 0.625rem;
-    border-radius: 8px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    background-color: rgba(59, 130, 246, 0.2);
-    color: #93c5fd;
-    border: 1px solid rgba(59, 130, 246, 0.3);
-  }
-
-  .admin-ai__logs-provider {
-    display: flex;
-    flex-direction: column;
-  }
-  .admin-ai__logs-provider-name {
-    font-weight: 500;
-    color: var(--sidebar-text);
-    text-transform: capitalize;
-  }
-  .admin-ai__logs-provider-model {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .admin-ai__logs-usage {
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-  }
-  .admin-ai__logs-duration {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-</style>

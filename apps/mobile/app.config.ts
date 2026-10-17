@@ -1,6 +1,19 @@
 import type { ConfigContext, ExpoConfig } from 'expo/config';
 
+const EAS_PROJECT_ID = 'ccd1a52f-5004-4490-9dc1-78731281fe6a';
 const IS_DEV = process.env.APP_VARIANT === 'development';
+
+/** Channel baked into local/CNG builds via requestHeaders. EAS Build also sets channel from eas.json. */
+function resolveUpdateChannel(): string {
+  if (process.env.UPDATE_CHANNEL) return process.env.UPDATE_CHANNEL;
+  if (process.env.EAS_BUILD_PROFILE === 'preview') return 'preview';
+  if (process.env.EAS_BUILD_PROFILE === 'production') return 'production';
+  if (process.env.APP_VARIANT === 'preview') return 'preview';
+  if (IS_DEV) return 'development';
+  return 'production';
+}
+
+const updateChannel = resolveUpdateChannel();
 
 export default ({ config }: ConfigContext): ExpoConfig => ({
   ...config,
@@ -11,6 +24,18 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   icon: './assets/images/icon.png',
   scheme: 'clippster',
   userInterfaceStyle: 'dark',
+  runtimeVersion: {
+    policy: 'appVersion',
+  },
+  updates: {
+    url: `https://u.expo.dev/${EAS_PROJECT_ID}`,
+    enabled: !IS_DEV,
+    checkAutomatically: 'ON_LOAD',
+    fallbackToCacheTimeout: 0,
+    requestHeaders: {
+      'expo-channel-name': updateChannel,
+    },
+  },
   ios: {
     supportsTablet: true,
     bundleIdentifier: 'app.clippster.mobile',
@@ -76,6 +101,7 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
     'expo-sqlite',
     'expo-video',
     'expo-image',
+    'expo-updates',
     [
       'expo-splash-screen',
       {
@@ -131,10 +157,11 @@ export default ({ config }: ConfigContext): ExpoConfig => ({
   },
   extra: {
     eas: {
-      projectId: 'ccd1a52f-5004-4490-9dc1-78731281fe6a',
+      projectId: EAS_PROJECT_ID,
     },
     privacyPolicyUrl: 'https://clippster.app/privacy',
     termsOfServiceUrl: 'https://clippster.app/terms',
+    updateChannel,
   },
-  owner: 'clippster',
+  owner: '120356aa',
 });

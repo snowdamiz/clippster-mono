@@ -1,0 +1,208 @@
+/*
+ * Tailwind theme: semantic colors map to the tokens in styles/theme.css.
+ * The neutral palettes (zinc/gray/neutral/slate/stone) are remapped onto a
+ * single cool-tinted neutral scale so legacy utility classes stay on-palette.
+ */
+@theme inline {
+  --font-sans: 'Inter', ui-sans-serif, system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, Consolas, monospace;
+
+  /* Type scale tuned for a dense desktop UI */
+  --text-2xs: 0.6875rem;
+  --text-2xs--line-height: 1rem;
+  --text-xs: 0.75rem;
+  --text-xs--line-height: 1.125rem;
+  --text-sm: 0.8125rem;
+  --text-sm--line-height: 1.25rem;
+  --text-base: 0.875rem;
+  --text-base--line-height: 1.375rem;
+  --text-lg: 1rem;
+  --text-lg--line-height: 1.5rem;
+  --text-xl: 1.125rem;
+  --text-xl--line-height: 1.625rem;
+  --text-2xl: 1.375rem;
+  --text-2xl--line-height: 1.875rem;
+  --text-3xl: 1.625rem;
+  --text-3xl--line-height: 2.125rem;
+
+  --radius-sm: 0.25rem;
+  --radius-md: 0.375rem;
+  --radius-lg: 0.5rem;
+  --radius-xl: 0.75rem;
+  --radius-2xl: 1rem;
+
+  /* Semantic surfaces & text */
+  --color-canvas: var(--canvas);
+  --color-panel: var(--panel);
+  --color-surface: var(--surface);
+  --color-surface-raised: var(--surface-raised);
+  --color-surface-sunken: var(--surface-sunken);
+  --color-surface-hover: var(--surface-hover);
+  --color-surface-active: var(--surface-active);
+  --color-line: var(--line);
+  --color-line-subtle: var(--line-subtle);
+  --color-line-strong: var(--line-strong);
+  --color-fg: var(--fg);
+  --color-fg-muted: var(--fg-muted);
+  --color-fg-subtle: var(--fg-subtle);
+  --color-fg-disabled: var(--fg-disabled);
+  --color-brand: var(--brand);
+  --color-brand-hover: var(--brand-hover);
+  --color-brand-fg: var(--brand-fg);
+  --color-brand-soft: var(--brand-soft);
+  --color-brand-soft-hover: var(--brand-soft-hover);
+  --color-brand-line: var(--brand-line);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-warning: var(--warning);
+  --color-warning-soft: var(--warning-soft);
+  --color-danger: var(--danger);
+  --color-danger-solid: var(--danger-solid);
+  --color-danger-soft: var(--danger-soft);
+  --color-ai: var(--ai);
+  --color-ai-soft: var(--ai-soft);
+  --color-live: var(--live);
+
+  /* shadcn contract */
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+  --color-sidebar: var(--canvas);
+  --color-sidebar-foreground: var(--fg);
+  --color-sidebar-primary: var(--brand);
+  --color-sidebar-primary-foreground: var(--brand-fg);
+  --color-sidebar-accent: var(--brand);
+  --color-sidebar-accent-foreground: var(--fg);
+  --color-sidebar-border: var(--line);
+  --color-sidebar-ring: var(--brand);
+
+  /* One neutral scale for every gray family */
+  --color-zinc-50: #f6f7f9;
+  --color-zinc-100: #eef0f4;
+  --color-zinc-200: #d9dde4;
+  --color-zinc-300: #b6bcc7;
+  --color-zinc-400: #959dab;
+  --color-zinc-500: #697181;
+  --color-zinc-600: #4f5562;
+  --color-zinc-700: #343944;
+  --color-zinc-800: #22262e;
+  --color-zinc-900: #15181e;
+  --color-zinc-950: #0b0d11;
+  --color-gray-50: #f6f7f9;
+  --color-gray-100: #eef0f4;
+  --color-gray-200: #d9dde4;
+  --color-gray-300: #b6bcc7;
+  --color-gray-400: #959dab;
+  --color-gray-500: #697181;
+  --color-gray-600: #4f5562;
+  --color-gray-700: #343944;
+  --color-gray-800: #22262e;
+  --color-gray-900: #15181e;
+  --color-gray-950: #0b0d11;
+  --color-neutral-50: #f6f7f9;
+  --color-neutral-100: #eef0f4;
+  --color-neutral-200: #d9dde4;
+  --color-neutral-300: #b6bcc7;
+  --color-neutral-400: #959dab;
+  --color-neutral-500: #697181;
+  --color-neutral-600: #4f5562;
+  --color-neutral-700: #343944;
+  --color-neutral-800: #22262e;
+  --color-neutral-900: #15181e;
+  --color-neutral-950: #0b0d11;
+  --color-slate-50: #f6f7f9;
+  --color-slate-100: #eef0f4;
+  --color-slate-200: #d9dde4;
+  --color-slate-300: #b6bcc7;
+  --color-slate-400: #959dab;
+  --color-slate-500: #697181;
+  --color-slate-600: #4f5562;
+  --color-slate-700: #343944;
+  --color-slate-800: #22262e;
+  --color-slate-900: #15181e;
+  --color-slate-950: #0b0d11;
+  --color-stone-400: #959dab;
+  --color-stone-500: #697181;
+  --color-stone-800: #22262e;
+  --color-stone-900: #15181e;
+
+  --animate-shimmer: shimmer 1.6s ease-in-out infinite;
+}
+
+/* Collection grid: media tiles, project / campaign / creator cards. */
+@utility card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(min(var(--card-grid-min), 100%), 1fr));
+  gap: 0.75rem;
+}
+
+/* ── Motion ─────────────────────────────────────────────────────────────
+ * Content that swaps in (a page, a tab panel, data replacing a skeleton)
+ * eases in instead of popping. Fill mode is `backwards` so the element's own
+ * transform/opacity apply again once the animation ends.
+ *
+ *   <div :key="activeTab" class="animate-enter">…panel…</div>
+ */
+@keyframes enter {
+  from {
+    opacity: 0;
+    translate: 0 4px;
+  }
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+}
+
+@utility animate-enter {
+  animation: enter var(--duration-base) var(--ease-out) backwards;
+}
+
+@utility animate-fade-in {
+  animation: fade-in var(--duration-base) var(--ease-out) backwards;
+}
+
+/* Wrapper for a skeleton layout (placeholder cards, rows): stays invisible for
+ * --skeleton-delay so loads that finish quickly never flash a skeleton. Every
+ * `.skeleton` block gets the same delay on its own. */
+@utility skeleton-group {
+  animation: fade-in var(--duration-base) var(--ease-out) var(--skeleton-delay) backwards;
+}
+
+/* Spinners get the same grace period as skeletons: an action or load that
+ * finishes within --skeleton-delay never flashes one. (Unlayered, so it
+ * extends Tailwind's `animate-spin` utility everywhere.) */
+.animate-spin {
+  animation:
+    var(--animate-spin),
+    fade-in var(--duration-base) var(--ease-out) var(--skeleton-delay) backwards;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-enter {
+    animation-name: fade-in;
+  }
+}

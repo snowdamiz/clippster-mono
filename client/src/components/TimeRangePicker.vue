@@ -1,18 +1,19 @@
 <template>
-  <div class="space-y-4">
-    <!-- Time Range Slider -->
-    <div class="space-y-2">
-      <div class="flex items-center justify-between text-xs text-muted-foreground">
-        <span>{{ formatTime(startTime) }}</span>
-        <span>Duration: {{ formatDuration(selectedDuration) }}</span>
-        <span>{{ formatTime(endTime) }}</span>
-      </div>
+  <div class="flex flex-col gap-2.5">
+    <div class="tabular flex items-center justify-between text-2xs text-fg-muted">
+      <span>{{ formatTime(startTime) }}</span>
+      <span class="text-fg">
+        <span class="text-fg-subtle">Selected</span> {{ formatDuration(selectedDuration) }}
+      </span>
+      <span>{{ formatTime(endTime) }}</span>
+    </div>
+
+    <!-- Range slider (padding keeps the handles inside the container) -->
+    <div class="px-[7px] py-1">
       <div ref="sliderRef" class="relative">
-        <!-- Background track -->
-        <div class="w-full h-2 bg-muted rounded-full relative">
-          <!-- Selected range -->
+        <div class="relative h-1.5 w-full rounded-full bg-surface-hover">
           <div
-            class="absolute h-full rounded-full slider-track"
+            class="absolute h-full rounded-full bg-brand"
             :style="{
               left: `${(startTime / totalDuration) * 100}%`,
               right: `${100 - (endTime / totalDuration) * 100}%`,
@@ -20,39 +21,29 @@
           ></div>
         </div>
 
-        <!-- Draggable handles -->
         <div
-          class="absolute w-4 h-4 rounded-full border-2 border-white shadow-lg cursor-grab active:cursor-grabbing z-40 slider-handle"
-          :style="{
-            left: `calc(${(startTime / totalDuration) * 100}% - 8px)`,
-            top: '-4px',
-          }"
+          class="range-handle absolute z-10 size-3.5 cursor-grab rounded-full border-2 border-brand bg-fg shadow-[var(--shadow-sm)] active:cursor-grabbing"
+          :style="{ left: `calc(${(startTime / totalDuration) * 100}% - 7px)`, top: '-4px' }"
+          role="slider"
+          aria-label="Range start"
+          :aria-valuenow="startTime"
           @mousedown="startDragging($event, 'start')"
           @touchstart="startDragging($event, 'start')"
         ></div>
 
         <div
-          class="absolute w-4 h-4 rounded-full border-2 border-white shadow-lg cursor-grab active:cursor-grabbing z-40 slider-handle"
-          :style="{
-            left: `calc(${(endTime / totalDuration) * 100}% - 8px)`,
-            top: '-4px',
-          }"
+          class="range-handle absolute z-10 size-3.5 cursor-grab rounded-full border-2 border-brand bg-fg shadow-[var(--shadow-sm)] active:cursor-grabbing"
+          :style="{ left: `calc(${(endTime / totalDuration) * 100}% - 7px)`, top: '-4px' }"
+          role="slider"
+          aria-label="Range end"
+          :aria-valuenow="endTime"
           @mousedown="startDragging($event, 'end')"
           @touchstart="startDragging($event, 'end')"
         ></div>
       </div>
     </div>
 
-    <!-- Selection Info -->
-    <div class="bg-muted/50 rounded-md p-3 space-y-2">
-      <div class="flex items-center justify-between text-sm">
-        <span class="text-muted-foreground">Selected Duration:</span>
-        <span class="font-medium text-foreground">{{ formatDuration(selectedDuration) }}</span>
-      </div>
-      <div v-if="selectionError" class="text-xs text-red-400">
-        {{ selectionError }}
-      </div>
-    </div>
+    <p v-if="selectionError" class="text-xs text-danger">{{ selectionError }}</p>
   </div>
 </template>
 
@@ -236,23 +227,15 @@
 </script>
 
 <style scoped>
-  /* Slider track - uses accent color */
-  .slider-track {
-    background-color: var(--sidebar-accent, #06b6d4);
-  }
-
-  /* Slider handles - uses accent color */
-  .slider-handle {
-    background-color: var(--sidebar-accent, #06b6d4);
+  .range-handle {
     transition: transform 150ms ease;
   }
 
-  /* Handle hover and active states */
-  .slider-handle:hover {
+  .range-handle:hover {
     transform: scale(1.1);
   }
 
-  .slider-handle:active {
+  .range-handle:active {
     transform: scale(1.2);
   }
 </style>

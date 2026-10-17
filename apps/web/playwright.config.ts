@@ -1,0 +1,30 @@
+import { defineConfig } from '@playwright/test'
+export default defineConfig({
+  testDir: './tests',
+  testMatch: '**/*.spec.ts',
+  testIgnore: '**/account-integration.spec.ts',
+  outputDir: './test-results/standalone',
+  workers: 1,
+  timeout: 120_000,
+  use: {
+    actionTimeout: 10_000,
+    baseURL: 'http://127.0.0.1:8091',
+    viewport: { width: 1440, height: 960 },
+    trace: 'retain-on-failure',
+    screenshot: 'only-on-failure'
+  },
+  webServer: [
+    {
+      command: 'node ../../node_modules/tsx/dist/cli.mjs tests/browser-server.ts',
+      url: 'http://127.0.0.1:8091/api/health',
+      reuseExistingServer: false,
+      timeout: 30_000
+    },
+    {
+      command: 'node ../../node_modules/tsx/dist/cli.mjs tests/shared-server.ts',
+      url: 'http://127.0.0.1:8093',
+      reuseExistingServer: false,
+      timeout: 30_000
+    }
+  ]
+})

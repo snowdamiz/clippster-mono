@@ -1,201 +1,176 @@
 <template>
   <PageLayout
-    title="Affiliate Dashboard"
+    title="Affiliate dashboard"
     description="Track your referrals, commissions, and payouts"
     :show-header="true"
     :icon="Handshake"
   >
-    <div class="aff-dash">
-      <!-- Loading -->
-      <div v-if="loading" class="loading-rows">
-        <div v-for="i in 3" :key="i" class="skeleton-row skeleton-row--lg"></div>
+    <!-- Loading: .skeleton blocks only, shaped like the loaded layout -->
+    <div v-if="loading && !dashboard" class="mx-auto flex w-full max-w-[1120px] flex-col gap-6 px-5 py-4" aria-busy="true">
+      <div class="flex items-center gap-6 border-b border-line-subtle pb-4">
+        <div class="flex flex-1 flex-col gap-1.5">
+          <div class="skeleton h-3 w-24" />
+          <div class="skeleton h-5 w-36" />
+        </div>
+        <div class="skeleton h-9 w-72" />
       </div>
-
-      <!-- Error -->
-      <div v-else-if="error" class="aff-dash__error">
-        <AlertTriangle class="aff-dash__error-icon" />
-        <p class="aff-dash__error-text">{{ error }}</p>
+      <div class="flex flex-col gap-2.5">
+        <div class="skeleton h-3.5 w-32" />
+        <div class="skeleton h-[74px] rounded-[var(--radius-card)]" />
       </div>
+      <div class="flex flex-col gap-2.5">
+        <div class="skeleton h-3.5 w-32" />
+        <div class="skeleton h-40 rounded-[var(--radius-card)]" />
+      </div>
+    </div>
 
-      <template v-else-if="affiliateInfo && dashboard">
-        <!-- Sign-up Stats -->
-        <div class="posts-stats-grid" v-if="dashboard && dashboard.breakdown">
-          <div class="posts-stat-card posts-stat-card--cyan">
-            <div class="posts-stat-card__icon"><UserPlus /></div>
-            <div class="posts-stat-card__content">
-              <span class="posts-stat-card__value">{{ dashboard.breakdown.first_subscription?.count || 0 }}</span>
-              <span class="posts-stat-card__label">First-time Sign-ups</span>
-            </div>
+    <!-- Error -->
+    <EmptyState
+      v-else-if="error"
+      :icon="AlertTriangle"
+      tone="danger"
+      title="Something went wrong"
+      :description="error"
+    >
+      <Button variant="secondary" @click="fetchAll">
+        <RefreshCw />
+        Retry
+      </Button>
+    </EmptyState>
+
+    <div
+      v-else-if="affiliateInfo && dashboard"
+      class="mx-auto flex w-full max-w-[1120px] animate-enter flex-col gap-6 px-5 py-4"
+    >
+      <!-- Header: referral code + sign-up figures, flat on the panel -->
+      <section class="flex flex-wrap items-center gap-x-8 gap-y-4 border-b border-line-subtle pb-4">
+        <div class="flex min-w-0 flex-[1_1_320px] items-center gap-3">
+          <div class="min-w-0">
+            <p class="flex items-center gap-1.5 text-xs text-fg-muted">
+              <Hash class="size-3.5 text-fg-subtle" />
+              Your referral code
+              <Badge :variant="affiliateStatusVariant(affiliateInfo.status)" class="capitalize">
+                {{ affiliateInfo.status }}
+              </Badge>
+            </p>
+            <code class="mt-0.5 block truncate font-mono text-base font-semibold text-fg">
+              {{ affiliateInfo.referral_code }}
+            </code>
           </div>
-          <div class="posts-stat-card posts-stat-card--purple">
-            <div class="posts-stat-card__icon"><RefreshCw /></div>
-            <div class="posts-stat-card__content">
-              <span class="posts-stat-card__value">{{ dashboard.breakdown.recurring?.count || 0 }}</span>
-              <span class="posts-stat-card__label">Recurring Sign-ups</span>
-            </div>
-          </div>
-          <div class="posts-stat-card posts-stat-card--green">
-            <div class="posts-stat-card__icon"><TrendingUp /></div>
-            <div class="posts-stat-card__content">
-              <span class="posts-stat-card__value">{{ getTotalSignups() }}</span>
-              <span class="posts-stat-card__label">Total Sign-ups</span>
-            </div>
-          </div>
+          <Button variant="secondary" size="sm" class="shrink-0" @click="copyCode">
+            <Check v-if="copied" class="text-success" />
+            <Copy v-else />
+            {{ copied ? 'Copied' : 'Copy' }}
+          </Button>
         </div>
 
-        <!-- Referral Code -->
-        <div class="aff-tab__link-card">
-          <div class="aff-tab__link-header">
-            <Hash class="aff-tab__link-icon" />
-            <span class="aff-tab__link-label">Your Referral Code</span>
-            <span class="aff-tab__status" :class="`aff-tab__status--${affiliateInfo.status}`">{{ affiliateInfo.status }}</span>
+        <StatGrid v-if="dashboard.breakdown" size="sm" class="w-full max-w-[420px]">
+          <StatCard
+            label="First-time sign-ups"
+            :value="dashboard.breakdown.first_subscription?.count || 0"
+            :icon="UserPlus"
+          />
+          <StatCard label="Recurring sign-ups" :value="dashboard.breakdown.recurring?.count || 0" :icon="RefreshCw" />
+          <StatCard label="Total sign-ups" :value="getTotalSignups()" :icon="Users" />
+        </StatGrid>
+      </section>
+
+      <!-- Earnings -->
+      <section class="flex flex-col gap-2.5">
+        <SectionHeader title="Commission earned" />
+        <StatGrid :count="4">
+          <StatCard label="This month" :value="`$${dashboard.this_month.total.toFixed(2)}`" :icon="TrendingUp" />
+          <StatCard label="Last 3 months" :value="`$${dashboard.three_months.total.toFixed(2)}`" :icon="BarChart3" />
+          <StatCard label="Year to date" :value="`$${dashboard.ytd.total.toFixed(2)}`" :icon="CalendarDays" />
+          <StatCard label="All time" :value="`$${dashboard.all_time.total.toFixed(2)}`" :icon="DollarSign" />
+        </StatGrid>
+      </section>
+
+      <!-- Recent referrals -->
+      <section class="flex flex-col gap-2.5">
+        <SectionHeader title="Recent referrals" description="Commission earned from referred users" />
+        <DataTable
+          :columns="referralColumns"
+          :rows="referrals"
+          :row-key="(r) => r.id"
+          :empty-icon="Handshake"
+          empty-title="No referrals yet"
+          empty-description="Share your code to start earning commissions"
+        >
+          <template #cell-date="{ row }">
+            <span class="tabular whitespace-nowrap text-fg-muted">{{ formatDate(row.inserted_at) }}</span>
+          </template>
+          <template #cell-type="{ row }">
+            <Badge variant="neutral">{{ formatEventType(row.event_type) }}</Badge>
+          </template>
+          <template #cell-amount="{ row }">
+            <span class="tabular text-fg">${{ row.amount_usd.toFixed(2) }}</span>
+          </template>
+          <template #cell-commission="{ row }">
+            <span class="tabular font-medium text-success">${{ row.commission_usd.toFixed(2) }}</span>
+          </template>
+          <template #cell-status="{ row }">
+            <Badge :variant="payoutStatusVariant(row.status)" class="capitalize">{{ row.status }}</Badge>
+          </template>
+        </DataTable>
+      </section>
+
+      <!-- Payout history -->
+      <section v-if="payouts.length > 0" class="flex flex-col gap-2.5">
+        <SectionHeader title="Payout history" description="Your commission payouts" />
+        <DataTable :columns="payoutColumns" :rows="payouts" :row-key="(p) => p.id">
+          <template #cell-period="{ row }">
+            <span class="tabular text-fg-muted">{{ row.period_month }}/{{ row.period_year }}</span>
+          </template>
+          <template #cell-amount="{ row }">
+            <span class="tabular font-medium text-success">${{ row.amount_usd.toFixed(2) }}</span>
+          </template>
+          <template #cell-method="{ row }">
+            <span class="capitalize text-fg-muted">{{ row.payout_method }}</span>
+          </template>
+          <template #cell-status="{ row }">
+            <Badge :variant="payoutStatusVariant(row.status)" class="capitalize">{{ row.status }}</Badge>
+          </template>
+          <template #cell-paid="{ row }">
+            <span class="tabular whitespace-nowrap text-fg-muted">{{ row.paid_at ? formatDate(row.paid_at) : '—' }}</span>
+          </template>
+        </DataTable>
+      </section>
+
+      <!-- Payout settings -->
+      <section class="flex flex-col gap-2.5">
+        <SectionHeader title="Payout settings" description="Configure how you receive commissions" />
+        <div class="flex flex-col gap-4 rounded-[var(--radius-card)] border border-line-subtle bg-surface p-4">
+          <div class="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-3">
+            <Field label="Payout method">
+              <CustomDropdown
+                v-model="settingsForm.payout_method"
+                :options="payoutMethodOptions"
+                placeholder="Select method…"
+              />
+            </Field>
+            <Field v-if="settingsForm.payout_method === 'crypto'" label="Solana USDC address" for="aff-solana-address">
+              <Input
+                id="aff-solana-address"
+                v-model="settingsForm.solana_usdc_address"
+                type="text"
+                placeholder="Enter your Solana USDC address"
+              />
+            </Field>
+            <Field v-if="settingsForm.payout_method === 'paypal'" label="PayPal email" for="aff-paypal-email">
+              <Input
+                id="aff-paypal-email"
+                v-model="settingsForm.paypal_email"
+                type="email"
+                placeholder="Enter your PayPal email"
+              />
+            </Field>
           </div>
-          <div class="aff-tab__link-row">
-            <code class="aff-tab__link-url">{{ affiliateInfo.referral_code }}</code>
-            <button class="aff-tab__copy-btn" @click="copyCode">
-              <Copy v-if="!copied" :size="14" />
-              <Check v-else :size="14" class="aff-tab__copy-ok" />
-              {{ copied ? 'Copied!' : 'Copy' }}
-            </button>
+          <div class="flex justify-end">
+            <Button variant="primary" size="sm" :loading="savingSettings" @click="handleSaveSettings">Save settings</Button>
           </div>
         </div>
-
-        <!-- Stats -->
-        <div class="posts-stats-grid">
-          <div class="posts-stat-card posts-stat-card--cyan">
-            <div class="posts-stat-card__icon"><TrendingUp /></div>
-            <div class="posts-stat-card__content">
-              <span class="posts-stat-card__value">${{ dashboard.this_month.total.toFixed(2) }}</span>
-              <span class="posts-stat-card__label">This Month</span>
-            </div>
-          </div>
-          <div class="posts-stat-card posts-stat-card--purple">
-            <div class="posts-stat-card__icon"><BarChart3 /></div>
-            <div class="posts-stat-card__content">
-              <span class="posts-stat-card__value">${{ dashboard.three_months.total.toFixed(2) }}</span>
-              <span class="posts-stat-card__label">Last 3 Months</span>
-            </div>
-          </div>
-          <div class="posts-stat-card posts-stat-card--pink">
-            <div class="posts-stat-card__icon"><Heart /></div>
-            <div class="posts-stat-card__content">
-              <span class="posts-stat-card__value">${{ dashboard.ytd.total.toFixed(2) }}</span>
-              <span class="posts-stat-card__label">Year to Date</span>
-            </div>
-          </div>
-          <div class="posts-stat-card posts-stat-card--green">
-            <div class="posts-stat-card__icon"><DollarSign /></div>
-            <div class="posts-stat-card__content">
-              <span class="posts-stat-card__value">${{ dashboard.all_time.total.toFixed(2) }}</span>
-              <span class="posts-stat-card__label">All Time</span>
-            </div>
-          </div>
-        </div>
-
-        <!-- Recent Referrals -->
-        <section class="section section-card">
-          <div class="section__header">
-            <div class="section__header-icon section__header-icon--cyan"><Handshake /></div>
-            <div class="section__header-text">
-              <h2 class="section-title">Recent Referrals</h2>
-              <p class="section-subtitle">Commission earned from referred users</p>
-            </div>
-          </div>
-          <div v-if="referrals.length === 0" class="empty-state">
-            <Handshake class="empty-state__icon" />
-            <p class="empty-state__title">No referrals yet</p>
-            <p class="empty-state__text">Share your code to start earning commissions</p>
-          </div>
-          <div v-else class="aff-tab__table-wrapper">
-            <table class="aff-tab__table">
-              <thead>
-                <tr>
-                  <th class="aff-tab__th">Date</th>
-                  <th class="aff-tab__th">Type</th>
-                  <th class="aff-tab__th">Amount</th>
-                  <th class="aff-tab__th">Commission</th>
-                  <th class="aff-tab__th">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="r in referrals" :key="r.id" class="aff-tab__row">
-                  <td class="aff-tab__td">{{ formatDate(r.inserted_at) }}</td>
-                  <td class="aff-tab__td"><span class="aff-tab__event-badge">{{ formatEventType(r.event_type) }}</span></td>
-                  <td class="aff-tab__td">${{ r.amount_usd.toFixed(2) }}</td>
-                  <td class="aff-tab__td aff-tab__td--green">${{ r.commission_usd.toFixed(2) }}</td>
-                  <td class="aff-tab__td"><span class="aff-tab__ref-status" :class="`aff-tab__ref-status--${r.status}`">{{ r.status }}</span></td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- Payout History -->
-        <section class="section section-card" v-if="payouts.length > 0">
-          <div class="section__header">
-            <div class="section__header-icon section__header-icon--green"><DollarSign /></div>
-            <div class="section__header-text">
-              <h2 class="section-title">Payout History</h2>
-              <p class="section-subtitle">Your commission payouts</p>
-            </div>
-          </div>
-          <div class="aff-tab__table-wrapper">
-            <table class="aff-tab__table">
-              <thead>
-                <tr>
-                  <th class="aff-tab__th">Period</th>
-                  <th class="aff-tab__th">Amount</th>
-                  <th class="aff-tab__th">Method</th>
-                  <th class="aff-tab__th">Status</th>
-                  <th class="aff-tab__th">Paid</th>
-                </tr>
-              </thead>
-              <tbody>
-                <tr v-for="p in payouts" :key="p.id" class="aff-tab__row">
-                  <td class="aff-tab__td">{{ p.period_month }}/{{ p.period_year }}</td>
-                  <td class="aff-tab__td aff-tab__td--green">${{ p.amount_usd.toFixed(2) }}</td>
-                  <td class="aff-tab__td">{{ p.payout_method }}</td>
-                  <td class="aff-tab__td"><span class="aff-tab__ref-status" :class="`aff-tab__ref-status--${p.status}`">{{ p.status }}</span></td>
-                  <td class="aff-tab__td">{{ p.paid_at ? formatDate(p.paid_at) : '—' }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </section>
-
-        <!-- Payout Settings -->
-        <section class="section section-card">
-          <div class="section__header">
-            <div class="section__header-icon section__header-icon--green"><Wallet /></div>
-            <div class="section__header-text">
-              <h2 class="section-title">Payout Settings</h2>
-              <p class="section-subtitle">Configure how you receive commissions</p>
-            </div>
-          </div>
-          <div class="aff-tab__settings">
-            <div class="aff-tab__field">
-              <label class="aff-tab__label">Payout Method</label>
-              <select v-model="settingsForm.payout_method" class="aff-tab__input">
-                <option value="">Select method...</option>
-                <option value="crypto">Crypto (Solana USDC)</option>
-                <option value="paypal">PayPal</option>
-              </select>
-            </div>
-            <div v-if="settingsForm.payout_method === 'crypto'" class="aff-tab__field">
-              <label class="aff-tab__label">Solana USDC Address</label>
-              <input v-model="settingsForm.solana_usdc_address" type="text" class="aff-tab__input" placeholder="Enter your Solana USDC address" />
-            </div>
-            <div v-if="settingsForm.payout_method === 'paypal'" class="aff-tab__field">
-              <label class="aff-tab__label">PayPal Email</label>
-              <input v-model="settingsForm.paypal_email" type="email" class="aff-tab__input" placeholder="Enter your PayPal email" />
-            </div>
-            <button class="aff-tab__save-btn" :disabled="savingSettings" @click="handleSaveSettings">
-              <Loader2 v-if="savingSettings" :size="14" class="animate-spin" />
-              Save Settings
-            </button>
-          </div>
-        </section>
-      </template>
+      </section>
     </div>
   </PageLayout>
 </template>
@@ -205,7 +180,6 @@
   import { formatDate as fmtDate } from '@/utils/dateTimeUtils';
   import {
     Handshake,
-    Loader2,
     AlertTriangle,
     Hash,
     Copy,
@@ -215,10 +189,19 @@
     DollarSign,
     UserPlus,
     RefreshCw,
-    Heart,
-    Wallet,
+    CalendarDays,
+    Users,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
+  import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
+  import { Badge, type BadgeVariants } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { StatCard, StatGrid } from '@/components/ui/stat-card';
   import {
     getMyDashboard,
     getMyReferrals,
@@ -252,6 +235,42 @@
     solana_usdc_address: '',
     paypal_email: '',
   });
+
+  const referralColumns: DataTableColumn[] = [
+    { key: 'date', label: 'Date' },
+    { key: 'type', label: 'Type' },
+    { key: 'amount', label: 'Amount' },
+    { key: 'commission', label: 'Commission' },
+    { key: 'status', label: 'Status' },
+  ];
+
+  const payoutColumns: DataTableColumn[] = [
+    { key: 'period', label: 'Period' },
+    { key: 'amount', label: 'Amount' },
+    { key: 'method', label: 'Method' },
+    { key: 'status', label: 'Status' },
+    { key: 'paid', label: 'Paid' },
+  ];
+
+  const payoutMethodOptions = [
+    { label: 'Crypto (Solana USDC)', value: 'crypto' },
+    { label: 'PayPal', value: 'paypal' },
+  ];
+
+  function affiliateStatusVariant(status: string): BadgeVariants['variant'] {
+    if (status === 'active') return 'success';
+    if (status === 'suspended') return 'warning';
+    if (status === 'deactivated') return 'danger';
+    return 'neutral';
+  }
+
+  function payoutStatusVariant(status: string): BadgeVariants['variant'] {
+    if (status === 'paid' || status === 'completed') return 'success';
+    if (status === 'confirmed') return 'brand';
+    if (status === 'pending') return 'warning';
+    if (status === 'cancelled') return 'danger';
+    return 'neutral';
+  }
 
   async function fetchAll() {
     loading.value = true;
@@ -342,141 +361,3 @@
     fetchAll();
   });
 </script>
-
-<style scoped>
-  .aff-dash { display: flex; flex-direction: column; gap: 1.5rem; padding: 1.5rem; }
-
-  .aff-dash__error { display: flex; align-items: center; gap: 0.5rem; padding: 0.75rem 1rem; border-radius: 0.5rem; background: rgba(239, 68, 68, 0.1); border: 1px solid rgba(239, 68, 68, 0.2); }
-  .aff-dash__error-icon { width: 1rem; height: 1rem; color: #ef4444; flex-shrink: 0; }
-  .aff-dash__error-text { font-size: 0.8125rem; color: #fca5a5; }
-
-  .loading-rows { display: flex; flex-direction: column; gap: 0.75rem; }
-  .skeleton-row { height: 2.5rem; border-radius: 8px; background: linear-gradient(90deg, rgba(255,255,255,0.03) 25%, rgba(255,255,255,0.06) 50%, rgba(255,255,255,0.03) 75%); background-size: 200% 100%; animation: shimmer 1.5s infinite; }
-  .skeleton-row--lg { height: 4rem; }
-
-  /* Referral Code Card */
-  .aff-tab__link-card {
-    padding: 1.25rem; border-radius: 10px;
-    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    background: var(--sidebar-hover, rgba(255, 255, 255, 0.02));
-  }
-  .aff-tab__link-header { display: flex; align-items: center; gap: 0.5rem; margin-bottom: 0.75rem; }
-  .aff-tab__link-icon { width: 18px; height: 18px; color: #a855f7; }
-  .aff-tab__link-label { font-size: 0.875rem; font-weight: 600; color: var(--sidebar-text, var(--color-foreground)); }
-  .aff-tab__status {
-    display: inline-block; padding: 0.125rem 0.5rem; border-radius: 9999px;
-    font-size: 0.6875rem; font-weight: 600; text-transform: uppercase; margin-left: auto;
-  }
-  .aff-tab__status--active { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
-  .aff-tab__status--suspended { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-  .aff-tab__status--deactivated { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
-  .aff-tab__link-row { display: flex; align-items: center; gap: 0.75rem; }
-  .aff-tab__link-url {
-    flex: 1; padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.8125rem;
-    background: rgba(0, 0, 0, 0.3); color: #a855f7; font-family: monospace;
-    border: 1px solid rgba(255, 255, 255, 0.06); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
-  }
-  .aff-tab__copy-btn {
-    display: flex; align-items: center; gap: 0.375rem;
-    padding: 0.5rem 0.75rem; border-radius: 6px; font-size: 0.8125rem; font-weight: 500;
-    background: #7c3aed; color: white; border: none; cursor: pointer; transition: opacity 0.15s; white-space: nowrap;
-  }
-  .aff-tab__copy-btn:hover { opacity: 0.9; }
-  .aff-tab__copy-ok { color: #22c55e; }
-
-  /* Posts Stats Grid */
-  .posts-stats-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 1rem; }
-  .posts-stat-card {
-    display: flex; align-items: center; gap: 0.75rem;
-    padding: 1rem 1.25rem; border-radius: 10px;
-    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    background: var(--sidebar-hover, rgba(255, 255, 255, 0.02));
-  }
-  .posts-stat-card__icon {
-    width: 2.25rem; height: 2.25rem; border-radius: 8px;
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-  }
-  .posts-stat-card__icon svg { width: 1.125rem; height: 1.125rem; }
-  .posts-stat-card__content { flex: 1; }
-  .posts-stat-card__value { display: block; font-size: 1.25rem; font-weight: 700; color: var(--sidebar-text, var(--color-foreground)); }
-  .posts-stat-card__label { display: block; font-size: 0.6875rem; color: var(--sidebar-text-muted, var(--color-muted-foreground)); margin-top: 0.125rem; }
-  .posts-stat-card--cyan .posts-stat-card__icon { background: rgba(34, 211, 238, 0.1); color: #22d3ee; }
-  .posts-stat-card--purple .posts-stat-card__icon { background: rgba(168, 85, 247, 0.1); color: #a855f7; }
-  .posts-stat-card--pink .posts-stat-card__icon { background: rgba(236, 72, 153, 0.1); color: #ec4899; }
-  .posts-stat-card--green .posts-stat-card__icon { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
-
-  /* Sections */
-  .section { display: flex; flex-direction: column; gap: 1rem; }
-  .section-card {
-    padding: 1.25rem; border-radius: 10px;
-    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    background: var(--sidebar-hover, rgba(255, 255, 255, 0.02));
-  }
-  .section__header { display: flex; align-items: center; gap: 0.75rem; }
-  .section__header-icon {
-    width: 2.25rem; height: 2.25rem; border-radius: 8px;
-    display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-    background: rgba(34, 211, 238, 0.1); color: #22d3ee;
-  }
-  .section__header-icon svg { width: 1.125rem; height: 1.125rem; }
-  .section__header-icon--cyan { background: rgba(34, 211, 238, 0.1); color: #22d3ee; }
-  .section__header-icon--green { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
-  .section__header-text { flex: 1; }
-  .section-title { font-size: 1rem; font-weight: 600; color: var(--sidebar-text, var(--color-foreground)); }
-  .section-subtitle { font-size: 0.75rem; color: var(--sidebar-text-muted, var(--color-muted-foreground)); margin-top: 0.125rem; }
-
-  /* Empty State */
-  .empty-state {
-    display: flex; flex-direction: column; align-items: center; justify-content: center;
-    text-align: center; padding: 2rem 1rem; gap: 0.5rem;
-  }
-  .empty-state__icon { width: 2.5rem; height: 2.5rem; color: var(--sidebar-text-muted, var(--color-muted-foreground)); opacity: 0.4; }
-  .empty-state__title { font-size: 0.875rem; font-weight: 600; color: var(--sidebar-text, var(--color-foreground)); }
-  .empty-state__text { font-size: 0.8125rem; color: var(--sidebar-text-muted, var(--color-muted-foreground)); }
-
-  /* Tables */
-  .aff-tab__table-wrapper { border-radius: 10px; border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08)); overflow-x: auto; }
-  .aff-tab__table { width: 100%; border-collapse: collapse; }
-  .aff-tab__th {
-    padding: 0.625rem 0.875rem; text-align: left; font-size: 0.6875rem; font-weight: 600;
-    color: var(--sidebar-text-muted, var(--color-muted-foreground)); text-transform: uppercase;
-    letter-spacing: 0.05em; background: rgba(255, 255, 255, 0.02); white-space: nowrap;
-  }
-  .aff-tab__row { border-top: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.06)); transition: background 0.15s; }
-  .aff-tab__row:hover { background: var(--sidebar-hover, rgba(255, 255, 255, 0.02)); }
-  .aff-tab__td { padding: 0.625rem 0.875rem; font-size: 0.8125rem; color: var(--sidebar-text, var(--color-foreground)); white-space: nowrap; }
-  .aff-tab__td--green { color: #22c55e; }
-  .aff-tab__event-badge { font-size: 0.75rem; padding: 0.125rem 0.375rem; border-radius: 4px; background: rgba(255, 255, 255, 0.05); }
-  .aff-tab__ref-status { display: inline-block; padding: 0.0625rem 0.375rem; border-radius: 9999px; font-size: 0.625rem; font-weight: 600; text-transform: uppercase; }
-  .aff-tab__ref-status--pending { background: rgba(245, 158, 11, 0.1); color: #f59e0b; }
-  .aff-tab__ref-status--confirmed { background: rgba(59, 130, 246, 0.1); color: #3b82f6; }
-  .aff-tab__ref-status--paid { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
-  .aff-tab__ref-status--cancelled { background: rgba(239, 68, 68, 0.1); color: #ef4444; }
-  .aff-tab__ref-status--completed { background: rgba(34, 197, 94, 0.1); color: #22c55e; }
-
-  /* Settings */
-  .aff-tab__settings { display: flex; flex-direction: column; gap: 0.75rem; max-width: 400px; }
-  .aff-tab__field { display: flex; flex-direction: column; gap: 0.375rem; }
-  .aff-tab__label { font-size: 0.8125rem; font-weight: 500; color: var(--sidebar-text-muted, var(--color-muted-foreground)); }
-  .aff-tab__input {
-    padding: 0.625rem 0.875rem; font-size: 0.875rem;
-    background-color: var(--sidebar-hover, rgba(255, 255, 255, 0.03));
-    border: 1px solid var(--sidebar-border, rgba(255, 255, 255, 0.08));
-    border-radius: 8px; color: var(--sidebar-text, var(--color-foreground)); outline: none;
-    transition: border-color 150ms ease;
-  }
-  .aff-tab__input:focus { border-color: #a855f7; box-shadow: 0 0 0 2px rgba(168, 85, 247, 0.15); }
-  .aff-tab__input option { background: #1a1a1a; color: #e5e5e5; }
-  .aff-tab__save-btn {
-    display: flex; align-items: center; gap: 0.375rem;
-    padding: 0.5rem 1rem; border-radius: 6px; font-size: 0.8125rem; font-weight: 600;
-    background: #7c3aed; color: white; border: none; cursor: pointer;
-    transition: opacity 0.15s; width: fit-content;
-  }
-  .aff-tab__save-btn:hover { opacity: 0.9; }
-  .aff-tab__save-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-
-  .animate-spin { animation: spin 1s linear infinite; }
-  @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
-</style>

@@ -24,6 +24,7 @@ import {
 	ArrowLeftRight,
 	RefreshCw,
 } from "lucide-vue-next";
+import MenuRow from "../chrome/MenuRow.vue";
 
 const props = defineProps<{
 	position: { x: number; y: number } | null;
@@ -276,232 +277,87 @@ function handleExportSegment() {
 		<div
 			v-if="position"
 			ref="menuRef"
-			class="fixed z-[9999] min-w-[200px] rounded-lg border border-white/10 bg-[#1e1e21] py-1 shadow-xl"
+			class="fixed z-[10060] min-w-[220px] rounded-lg bg-surface-raised p-1 shadow-[var(--shadow-md)]"
+			role="menu"
 			:style="menuStyle"
 		>
-			<!-- ── Undo / Redo ── -->
-			<button
-				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-white/10"
-				:class="canUndo ? 'text-zinc-300' : 'text-zinc-600 cursor-not-allowed'"
-				:disabled="!canUndo"
-				@click="doAction('undo')"
-			>
-				<Undo2 class="size-3.5" />
-				Undo
-				<span class="ml-auto text-zinc-500">Ctrl+Z</span>
-			</button>
-			<button
-				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-white/10"
-				:class="canRedo ? 'text-zinc-300' : 'text-zinc-600 cursor-not-allowed'"
-				:disabled="!canRedo"
-				@click="doAction('redo')"
-			>
-				<Redo2 class="size-3.5" />
-				Redo
-				<span class="ml-auto text-zinc-500">Ctrl+Y</span>
-			</button>
+			<!-- Undo / Redo -->
+			<MenuRow :icon="Undo2" shortcut="Ctrl+Z" :disabled="!canUndo" @click="doAction('undo')">Undo</MenuRow>
+			<MenuRow :icon="Redo2" shortcut="Ctrl+Y" :disabled="!canRedo" @click="doAction('redo')">Redo</MenuRow>
 
-			<div class="mx-2 my-1 h-px bg-white/10" />
+			<div class="-mx-1 my-1 h-px bg-line-subtle" />
 
-			<!-- ── Cut / Copy / Paste / Duplicate ── -->
+			<!-- Cut / Copy / Paste / Duplicate -->
 			<template v-if="hasElement">
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="doAction('cut-selected')"
-				>
-					<ScissorsLineDashed class="size-3.5" />
-					Cut
-					<span class="ml-auto text-zinc-500">Ctrl+X</span>
-				</button>
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="doAction('copy-selected')"
-				>
-					<Copy class="size-3.5" />
-					Copy
-					<span class="ml-auto text-zinc-500">Ctrl+C</span>
-				</button>
+				<MenuRow :icon="ScissorsLineDashed" shortcut="Ctrl+X" @click="doAction('cut-selected')">Cut</MenuRow>
+				<MenuRow :icon="Copy" shortcut="Ctrl+C" @click="doAction('copy-selected')">Copy</MenuRow>
 			</template>
-			<button
-				class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-white/10"
-				:class="hasClipboard ? 'text-zinc-300' : 'text-zinc-600 cursor-not-allowed'"
-				:disabled="!hasClipboard"
-				@click="doAction('paste-copied')"
-			>
-				<ClipboardPaste class="size-3.5" />
+			<MenuRow :icon="ClipboardPaste" shortcut="Ctrl+V" :disabled="!hasClipboard" @click="doAction('paste-copied')">
 				Paste
-				<span class="ml-auto text-zinc-500">Ctrl+V</span>
-			</button>
+			</MenuRow>
+			<MenuRow v-if="hasElement" :icon="CopyPlus" shortcut="Ctrl+D" @click="doAction('duplicate-selected')">
+				Duplicate
+			</MenuRow>
+
+			<!-- Split -->
 			<template v-if="hasElement">
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="doAction('duplicate-selected')"
-				>
-					<CopyPlus class="size-3.5" />
-					Duplicate
-					<span class="ml-auto text-zinc-500">Ctrl+D</span>
-				</button>
+				<div class="-mx-1 my-1 h-px bg-line-subtle" />
+				<MenuRow :icon="Scissors" shortcut="S" @click="doAction('split')">Split at playhead</MenuRow>
+				<MenuRow :icon="Scissors" shortcut="Q" @click="doAction('split-left')">Split &amp; keep left</MenuRow>
+				<MenuRow :icon="Scissors" shortcut="W" @click="doAction('split-right')">Split &amp; keep right</MenuRow>
 			</template>
 
-			<!-- ── Split ── -->
+			<!-- Element properties -->
 			<template v-if="hasElement">
-				<div class="mx-2 my-1 h-px bg-white/10" />
+				<div class="-mx-1 my-1 h-px bg-line-subtle" />
+				<MenuRow :icon="MousePointerClick" shortcut="Ctrl+A" @click="handleSelectAllInTrack">Select all in track</MenuRow>
 
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="doAction('split')"
-				>
-					<Scissors class="size-3.5" />
-					Split at playhead
-					<span class="ml-auto text-zinc-500">S</span>
-				</button>
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="doAction('split-left')"
-				>
-					<Scissors class="size-3.5" />
-					Split &amp; keep left
-					<span class="ml-auto text-zinc-500">Q</span>
-				</button>
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="doAction('split-right')"
-				>
-					<Scissors class="size-3.5" />
-					Split &amp; keep right
-					<span class="ml-auto text-zinc-500">W</span>
-				</button>
-			</template>
-
-			<!-- ── Element properties ── -->
-			<template v-if="hasElement">
-				<div class="mx-2 my-1 h-px bg-white/10" />
-
-				<!-- Select all in track -->
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleSelectAllInTrack"
-				>
-					<MousePointerClick class="size-3.5" />
-					Select all in track
-					<span class="ml-auto text-zinc-500">Ctrl+A</span>
-				</button>
-
-				<div class="mx-2 my-1 h-px bg-white/10" />
-
-				<!-- Toggle mute (only for elements that can have audio) -->
-				<button
-					v-if="canHaveAudio"
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="doAction('toggle-elements-muted-selected')"
-				>
-					<VolumeX class="size-3.5" />
-					Toggle mute
-				</button>
-
-				<!-- Toggle visibility -->
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="doAction('toggle-elements-visibility-selected')"
-				>
-					<EyeOff class="size-3.5" />
-					Toggle visibility
-				</button>
+				<div class="-mx-1 my-1 h-px bg-line-subtle" />
+				<MenuRow v-if="canHaveAudio" :icon="VolumeX" @click="doAction('toggle-elements-muted-selected')">Toggle mute</MenuRow>
+				<MenuRow :icon="EyeOff" @click="doAction('toggle-elements-visibility-selected')">Toggle visibility</MenuRow>
 
 				<!-- Speed (video/audio only) -->
-				<template v-if="isVideoElement || isAudioElement">
-					<div class="relative">
-						<button
-							class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-							@click="showSpeedMenu = !showSpeedMenu"
+				<div v-if="isVideoElement || isAudioElement" class="relative">
+					<MenuRow :icon="Gauge" :shortcut="`${currentSpeed}× ›`" @click="showSpeedMenu = !showSpeedMenu">Speed</MenuRow>
+					<div
+						v-if="showSpeedMenu"
+						class="absolute left-full top-0 ml-1 min-w-[110px] rounded-lg bg-surface-raised p-1 shadow-[var(--shadow-md)]"
+					>
+						<MenuRow
+							v-for="speed in speedOptions"
+							:key="speed"
+							checkable
+							:active="speed === currentSpeed"
+							@click="handleSetSpeed(speed)"
 						>
-							<Gauge class="size-3.5" />
-							Speed
-							<span class="ml-auto text-zinc-500">{{ currentSpeed }}x ›</span>
-						</button>
-						<div
-							v-if="showSpeedMenu"
-							class="absolute left-full top-0 ml-1 min-w-[100px] rounded-lg border border-white/10 bg-[#1e1e21] py-1 shadow-xl"
-						>
-							<button
-								v-for="speed in speedOptions"
-								:key="speed"
-								class="flex w-full items-center justify-between px-3 py-1.5 text-left text-xs hover:bg-white/10"
-								:class="speed === currentSpeed ? 'text-primary' : 'text-zinc-300'"
-								@click="handleSetSpeed(speed)"
-							>
-								{{ speed }}x
-								<span v-if="speed === currentSpeed" class="text-primary">✓</span>
-							</button>
-						</div>
+							<span class="tabular">{{ speed }}×</span>
+						</MenuRow>
 					</div>
-				</template>
+				</div>
 
-				<!-- Freeze frame (video/image only) -->
-				<template v-if="isVideoElement || elementType === 'image'">
-					<button
-						class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-						@click="doAction('freeze-frame')"
-					>
-						<Snowflake class="size-3.5" />
-						Freeze frame
-						<span class="ml-auto text-zinc-500">Shift+F</span>
-					</button>
-				</template>
-
-				<!-- Reverse (video/audio only) -->
-				<template v-if="isVideoElement || isAudioElement">
-					<button
-						class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs hover:bg-white/10"
-						:class="isReversed ? 'text-primary' : 'text-zinc-300'"
-						@click="handleToggleReverse"
-					>
-						<ArrowLeftRight class="size-3.5" />
-						{{ isReversed ? 'Unreverse' : 'Reverse' }}
-					</button>
-				</template>
-
-				<!-- Extract audio (video only) -->
-				<template v-if="isVideoElement">
-					<button
-						class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-						@click="doAction('extract-audio')"
-					>
-						<AudioLines class="size-3.5" />
-						Extract audio
-					</button>
-				</template>
-
-				<!-- Replace media (video/image only) -->
-				<template v-if="canReplaceMedia">
-					<button
-						class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-						@click="handleReplaceMedia"
-					>
-						<RefreshCw class="size-3.5" />
-						Replace media
-					</button>
-				</template>
-
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-zinc-300 hover:bg-white/10"
-					@click="handleExportSegment"
+				<MenuRow
+					v-if="isVideoElement || elementType === 'image'"
+					:icon="Snowflake"
+					shortcut="Shift+F"
+					@click="doAction('freeze-frame')"
 				>
-					<Download class="size-3.5" />
-					Export segment
-				</button>
-
-				<!-- ── Delete ── -->
-				<div class="mx-2 my-1 h-px bg-white/10" />
-
-				<button
-					class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-xs text-red-400 hover:bg-red-500/10"
-					@click="doAction('delete-selected')"
+					Freeze frame
+				</MenuRow>
+				<MenuRow
+					v-if="isVideoElement || isAudioElement"
+					:icon="ArrowLeftRight"
+					:active="isReversed"
+					@click="handleToggleReverse"
 				>
-					<Trash2 class="size-3.5" />
-					Delete
-					<span class="ml-auto text-zinc-500">Del</span>
-				</button>
+					{{ isReversed ? "Unreverse" : "Reverse" }}
+				</MenuRow>
+				<MenuRow v-if="isVideoElement" :icon="AudioLines" @click="doAction('extract-audio')">Extract audio</MenuRow>
+				<MenuRow v-if="canReplaceMedia" :icon="RefreshCw" @click="handleReplaceMedia">Replace media</MenuRow>
+				<MenuRow :icon="Download" @click="handleExportSegment">Export segment</MenuRow>
+
+				<!-- Delete -->
+				<div class="-mx-1 my-1 h-px bg-line-subtle" />
+				<MenuRow :icon="Trash2" shortcut="Del" destructive @click="doAction('delete-selected')">Delete</MenuRow>
 			</template>
 		</div>
 	</Teleport>

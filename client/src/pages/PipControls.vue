@@ -16,34 +16,54 @@
     />
     
     <!-- Live Badge - auto-hide -->
-    <Transition name="fade">
-      <div 
-        v-if="showControls"
-        class="absolute top-2 left-2 flex items-center gap-1.5 px-2 py-1 bg-red-600/90 rounded text-white text-xs font-medium pointer-events-none"
-      >
-        <div class="w-1.5 h-1.5 bg-white rounded-full animate-pulse" />
-        LIVE
-      </div>
+    <Transition
+      enter-active-class="transition-opacity duration-300"
+      enter-from-class="opacity-0"
+      leave-active-class="transition-opacity duration-300"
+      leave-to-class="opacity-0"
+    >
+      <Badge v-if="showControls" variant="live" class="pointer-events-none absolute top-2 left-2">
+        <span class="size-1.5 animate-pulse rounded-full bg-white" />
+        Live
+      </Badge>
     </Transition>
 
     <!-- Streamer Name - auto-hide -->
-    <Transition name="fade">
-      <div 
+    <Transition
+      enter-active-class="transition-opacity duration-300"
+      enter-from-class="opacity-0"
+      leave-active-class="transition-opacity duration-300"
+      leave-to-class="opacity-0"
+    >
+      <div
         v-if="showControls"
-        class="absolute top-2 right-2 px-2 py-1 bg-black/60 rounded text-white text-xs font-medium truncate max-w-[150px] pointer-events-none"
+        class="pointer-events-none absolute top-2 right-2 max-w-[150px] truncate rounded-md bg-black/60 px-1.5 py-0.5 text-2xs font-medium text-white"
       >
         {{ streamerName }}
       </div>
     </Transition>
 
     <!-- Toast Notification -->
-    <Transition name="toast">
-      <div 
+    <Transition
+      enter-active-class="transition duration-200"
+      enter-from-class="-translate-y-2 opacity-0"
+      leave-active-class="transition duration-200"
+      leave-to-class="-translate-y-2 opacity-0"
+    >
+      <div
         v-if="toastMessage"
-        class="absolute top-10 left-1/2 -translate-x-1/2 px-3 py-1.5 rounded text-white text-xs font-medium pointer-events-none z-50"
-        :class="toastType === 'success' ? 'bg-green-600/90' : 'bg-red-600/90'"
+        class="pointer-events-none absolute inset-x-0 top-10 z-50 flex justify-center"
       >
-        {{ toastMessage }}
+        <span
+          class="rounded-md border px-2.5 py-1 text-xs font-medium shadow-[var(--shadow-md)] backdrop-blur-sm"
+          :class="
+            toastType === 'success'
+              ? 'border-[var(--success-line)] bg-canvas/85 text-success'
+              : 'border-[var(--danger-line)] bg-canvas/85 text-danger'
+          "
+        >
+          {{ toastMessage }}
+        </span>
       </div>
     </Transition>
 
@@ -56,53 +76,44 @@
       <!-- Play/Pause Button -->
       <button
         @click="togglePlayPause"
-        class="p-1.5 rounded text-white hover:bg-white/10 transition-colors"
+        class="grid size-7 place-items-center rounded-md text-white/90 transition-colors hover:bg-white/15 hover:text-white"
         :title="isPlaying ? 'Pause' : 'Play'"
       >
-        <Pause v-if="isPlaying" class="w-4 h-4" />
-        <Play v-else class="w-4 h-4" />
+        <Pause v-if="isPlaying" class="size-4" />
+        <Play v-else class="size-4" />
       </button>
 
       <!-- Volume Control -->
       <div class="flex items-center gap-1 flex-1">
         <button
           @click="toggleMute"
-          class="p-1.5 rounded text-white hover:bg-white/10 transition-colors"
+          class="grid size-7 place-items-center rounded-md text-white/90 transition-colors hover:bg-white/15 hover:text-white"
           :title="isMuted ? 'Unmute' : 'Mute'"
         >
-          <VolumeX v-if="isMuted || volume === 0" class="w-4 h-4" />
-          <Volume1 v-else-if="volume < 0.5" class="w-4 h-4" />
-          <Volume2 v-else class="w-4 h-4" />
+          <VolumeX v-if="isMuted || volume === 0" class="size-4" />
+          <Volume1 v-else-if="volume < 0.5" class="size-4" />
+          <Volume2 v-else class="size-4" />
         </button>
-        <input
-          type="range"
-          min="0"
-          max="1"
-          step="0.05"
-          :value="volume"
-          @input="handleVolumeChange"
-          class="w-16 h-1 bg-zinc-600 rounded-full appearance-none cursor-pointer"
-          :style="{ '--value': `${volume * 100}%` }"
-        />
+        <MediaVolumeSlider :value="volume" class="w-16" @input="handleVolumeChange" />
       </div>
 
       <!-- Clip Button -->
       <button
         @click="createClip"
         :disabled="!canClip"
-        class="p-1.5 rounded bg-[var(--sidebar-accent)] hover:opacity-90 disabled:bg-zinc-700 disabled:cursor-not-allowed text-white transition-colors"
+        class="grid size-7 place-items-center rounded-md bg-[var(--primary-bg)] text-[var(--fg-on-light)] transition-colors hover:bg-[var(--primary-bg-hover)] disabled:cursor-not-allowed disabled:opacity-40"
         title="Create Clip (Alt+C)"
       >
-        <Scissors class="w-4 h-4" />
+        <Scissors class="size-4" />
       </button>
 
       <!-- Close Button -->
       <button
         @click="closeWindow"
-        class="p-1.5 rounded text-white hover:bg-red-600/80 transition-colors"
+        class="grid size-7 place-items-center rounded-md text-white/90 transition-colors hover:bg-danger-solid hover:text-white"
         title="Close (Double-click video)"
       >
-        <X class="w-4 h-4" />
+        <X class="size-4" />
       </button>
       </div>
     </div>
@@ -114,6 +125,8 @@ import { ref, onMounted, onUnmounted, watch } from 'vue';
 import { listen, emitTo, type UnlistenFn } from '@tauri-apps/api/event';
 import { getCurrentWindow, LogicalSize } from '@tauri-apps/api/window';
 import { Play, Pause, Volume2, Volume1, VolumeX, Scissors, X } from 'lucide-vue-next';
+import { Badge } from '@/components/ui/badge';
+import MediaVolumeSlider from '@/components/streams/MediaVolumeSlider.vue';
 import Hls from 'hls.js';
 
 const videoRef = ref<HTMLVideoElement | null>(null);
@@ -426,71 +439,3 @@ async function closeWindow() {
   getCurrentWindow().close();
 }
 </script>
-
-<style scoped>
-input[type='range'] {
-  -webkit-appearance: none;
-  appearance: none;
-  background: transparent;
-}
-
-input[type='range']::-webkit-slider-runnable-track {
-  height: 4px;
-  background: linear-gradient(
-    to right,
-    var(--sidebar-accent) 0%,
-    var(--sidebar-accent) var(--value, 50%),
-    #52525b var(--value, 50%),
-    #52525b 100%
-  );
-  border-radius: 2px;
-}
-
-input[type='range']::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  width: 10px;
-  height: 10px;
-  background: white;
-  border-radius: 50%;
-  margin-top: -3px;
-  cursor: pointer;
-}
-
-input[type='range']::-moz-range-track {
-  height: 4px;
-  background: #52525b;
-  border-radius: 2px;
-}
-
-input[type='range']::-moz-range-thumb {
-  width: 10px;
-  height: 10px;
-  background: white;
-  border-radius: 50%;
-  border: none;
-  cursor: pointer;
-}
-
-/* Fade transition for controls and badges */
-.fade-enter-active,
-.fade-leave-active {
-  transition: opacity 0.3s ease;
-}
-
-.fade-enter-from,
-.fade-leave-to {
-  opacity: 0;
-}
-
-/* Toast transition */
-.toast-enter-active,
-.toast-leave-active {
-  transition: opacity 0.2s ease, transform 0.2s ease;
-}
-
-.toast-enter-from,
-.toast-leave-to {
-  opacity: 0;
-  transform: translate(-50%, -10px);
-}
-</style>

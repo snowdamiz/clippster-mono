@@ -15,7 +15,23 @@
       showSetupDialog provides a second gate: if setup is still required, the
       hub never mounts regardless.
     -->
-    <router-view v-if="isReady && !showSetupDialog" />
+    <router-view v-if="isReady && !showSetupDialog" v-slot="{ Component, route: viewRoute }">
+      <!-- Enter-only page transition, same as DashboardLayout -->
+      <transition name="page">
+        <component :is="Component" :key="viewRoute.path" />
+      </transition>
+    </router-view>
+
+    <!-- Page-shaped placeholder while the organization loads -->
+    <div v-else-if="!isReady" class="flex h-full w-full flex-col" aria-busy="true">
+      <div class="flex h-[var(--page-header-height)] shrink-0 items-center gap-2.5 border-b border-line-subtle px-5">
+        <div class="skeleton size-5 rounded-md" />
+        <div class="skeleton h-3.5 w-40" />
+      </div>
+      <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3 px-5 py-4">
+        <div v-for="i in 4" :key="i" class="skeleton h-[66px] rounded-xl" />
+      </div>
+    </div>
   </DashboardLayout>
 </template>
 
@@ -76,5 +92,7 @@
 </script>
 
 <style scoped>
-  /* No additional styles needed - DashboardLayout handles structure */
+  .page-enter-active {
+    animation: enter var(--duration-base) var(--ease-out) backwards;
+  }
 </style>

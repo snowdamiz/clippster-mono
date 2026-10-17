@@ -3,7 +3,7 @@
  * Handles communication with the server for clipping campaigns.
  */
 
-import api from './api';
+import api from '@/services/api';
 
 // ============================================
 // Types

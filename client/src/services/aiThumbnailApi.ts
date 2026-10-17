@@ -91,6 +91,7 @@ export interface AIThumbnailSession {
   youtube_url?: string | null;
   video_title?: string | null;
   transcript?: string | null;
+  transcript_backed?: boolean;
   transcript_source?: TranscriptSource | string | null;
   concepts?: ThumbnailConcept[];
   video_summary?: Record<string, unknown> | null;
@@ -105,14 +106,16 @@ export async function listThumbnailSessions(): Promise<ThumbnailSessionSummary[]
   return response.data.sessions;
 }
 
-export async function createThumbnailSession(data: {
-  name?: string;
-  generation_mode?: ThumbnailGenerationMode;
-  media_items?: Array<Record<string, unknown>>;
-  key_frames?: Array<Record<string, unknown>>;
-  canvas_width?: number;
-  canvas_height?: number;
-} = {}): Promise<AIThumbnailSession> {
+export async function createThumbnailSession(
+  data: {
+    name?: string;
+    generation_mode?: ThumbnailGenerationMode;
+    media_items?: Array<Record<string, unknown>>;
+    key_frames?: Array<Record<string, unknown>>;
+    canvas_width?: number;
+    canvas_height?: number;
+  } = {}
+): Promise<AIThumbnailSession> {
   const response = await api.post('/ai/thumbnail/sessions', data);
   return response.data;
 }
@@ -132,7 +135,7 @@ export async function renameThumbnailSession(id: number, name: string): Promise<
 
 export async function setThumbnailMode(
   id: number,
-  generation_mode: ThumbnailGenerationMode,
+  generation_mode: ThumbnailGenerationMode
 ): Promise<AIThumbnailSession> {
   const response = await api.put(`/ai/thumbnail/sessions/${id}/mode`, { generation_mode });
   return response.data;
@@ -152,7 +155,7 @@ export async function updateThumbnailMedia(
     concepts?: ThumbnailConcept[];
     video_summary?: Record<string, unknown> | null;
     selected_concept_id?: string | null;
-  },
+  }
 ): Promise<AIThumbnailSession> {
   const response = await api.put(`/ai/thumbnail/sessions/${id}/media`, data);
   return response.data;
@@ -160,7 +163,7 @@ export async function updateThumbnailMedia(
 
 export async function setThumbnailReference(
   id: number,
-  data: { reference_image_url?: string; url?: string; meta?: Record<string, unknown> },
+  data: { reference_image_url?: string; url?: string; meta?: Record<string, unknown> }
 ): Promise<AIThumbnailSession> {
   const response = await api.post(`/ai/thumbnail/sessions/${id}/reference`, data);
   return response.data;
@@ -168,7 +171,7 @@ export async function setThumbnailReference(
 
 export async function sendThumbnailMessage(
   id: number,
-  message: string,
+  message: string
 ): Promise<{ session: AIThumbnailSession; response: Record<string, unknown> }> {
   const response = await api.post(`/ai/thumbnail/sessions/${id}/message`, { message });
   return response.data;
@@ -176,7 +179,7 @@ export async function sendThumbnailMessage(
 
 export async function generateThumbnail(
   id: number,
-  generation_mode?: ThumbnailGenerationMode,
+  generation_mode?: ThumbnailGenerationMode
 ): Promise<AIThumbnailSession> {
   const response = await api.post(`/ai/thumbnail/sessions/${id}/generate`, {
     generation_mode,
@@ -191,7 +194,7 @@ export async function generateThumbnailFromVideo(
     custom_instructions?: string;
     concept_id?: string;
     aspect_ratio?: string;
-  } = {},
+  } = {}
 ): Promise<AIThumbnailSession> {
   const response = await api.post(`/ai/thumbnail/sessions/${id}/generate-from-video`, data);
   return response.data;
@@ -199,7 +202,7 @@ export async function generateThumbnailFromVideo(
 
 export async function continueThumbnailEditable(
   id: number,
-  candidate_index = 0,
+  candidate_index = 0
 ): Promise<AIThumbnailSession> {
   const response = await api.post(`/ai/thumbnail/sessions/${id}/continue-editable`, {
     candidate_index,
@@ -208,7 +211,7 @@ export async function continueThumbnailEditable(
 }
 
 export async function analyzeThumbnailVideo(
-  id: number,
+  id: number
 ): Promise<{ session: AIThumbnailSession; concepts: ThumbnailConcept[]; summary: string }> {
   const response = await api.post(`/ai/thumbnail/sessions/${id}/analyze`);
   return response.data;
@@ -216,7 +219,7 @@ export async function analyzeThumbnailVideo(
 
 export async function applyThumbnailConcept(
   id: number,
-  concept_id: string,
+  concept_id: string
 ): Promise<AIThumbnailSession> {
   const response = await api.post(`/ai/thumbnail/sessions/${id}/apply-concept`, { concept_id });
   return response.data;
@@ -224,7 +227,7 @@ export async function applyThumbnailConcept(
 
 export async function refineThumbnail(
   id: number,
-  message: string,
+  message: string
 ): Promise<{ session: AIThumbnailSession; response: Record<string, unknown> }> {
   const response = await api.post(`/ai/thumbnail/sessions/${id}/refine`, { message });
   return response.data;
@@ -232,7 +235,7 @@ export async function refineThumbnail(
 
 export async function acceptThumbnail(
   id: number,
-  candidate_index = 0,
+  candidate_index = 0
 ): Promise<{ session: AIThumbnailSession; accept: Record<string, unknown> }> {
   const response = await api.post(`/ai/thumbnail/sessions/${id}/accept`, { candidate_index });
   return response.data;
@@ -241,7 +244,7 @@ export async function acceptThumbnail(
 async function postgen<T = Record<string, unknown>>(
   id: number,
   path: string,
-  body: Record<string, unknown> = {},
+  body: Record<string, unknown> = {}
 ): Promise<T & { session: AIThumbnailSession }> {
   const response = await api.post(`/ai/thumbnail/sessions/${id}/${path}`, body);
   return response.data;
@@ -252,7 +255,8 @@ export const thumbnailPostGen = {
   variations: (id: number, body: Record<string, unknown> = {}) => postgen(id, 'variations', body),
   optimize: (id: number, idea: string, body: Record<string, unknown> = {}) =>
     postgen(id, 'optimize', { idea, ...body }),
-  textOverlay: (id: number, body: Record<string, unknown> = {}) => postgen(id, 'text-overlay', body),
+  textOverlay: (id: number, body: Record<string, unknown> = {}) =>
+    postgen(id, 'text-overlay', body),
   edit: (id: number, prompt: string, body: Record<string, unknown> = {}) =>
     postgen(id, 'edit', { prompt, ...body }),
   faceSwap: (id: number, faceImageUrl: string, body: Record<string, unknown> = {}) =>
@@ -272,6 +276,6 @@ export const thumbnailPostGen = {
     imageUrl1: string,
     imageUrl2: string,
     prompt?: string,
-    body: Record<string, unknown> = {},
+    body: Record<string, unknown> = {}
   ) => postgen(id, 'edit/combine', { imageUrl1, imageUrl2, prompt, ...body }),
 };

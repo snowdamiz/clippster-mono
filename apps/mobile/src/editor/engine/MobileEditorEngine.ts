@@ -1,4 +1,4 @@
-import type { TargetAspectRatio } from '@clippster/shared-types';
+import type { CanvasRatio } from '../model/schema';
 import type { MobileEditProjectV3 } from '../model/schema';
 
 export type EditorTime = number;
@@ -9,7 +9,7 @@ export interface EditorChangeSet {
 }
 
 export interface ExportRequest {
-  ratios: TargetAspectRatio[];
+  ratios: CanvasRatio[];
   outputDirectory?: string;
 }
 

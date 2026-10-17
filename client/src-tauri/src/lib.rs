@@ -45,10 +45,7 @@ use downloads::ACTIVE_DOWNLOADS;
 // Import all command functions
 use commands::*;
 use once_cell::sync::Lazy;
-use std::sync::{Arc, Mutex};
-
-static CLIP_GENERATION_IN_PROGRESS: Lazy<Arc<Mutex<bool>>> =
-    Lazy::new(|| Arc::new(Mutex::new(false)));
+use std::sync::Mutex;
 
 /// Stores the localhost plugin port for production builds so child windows (PIP) can use the same origin
 #[allow(dead_code)]
@@ -1038,20 +1035,22 @@ pub fn run() {
                         downloads.len()
                     };
 
-                    // Check if clip generation is in progress
-                    let clip_gen_in_progress = {
-                        let clip_gen = CLIP_GENERATION_IN_PROGRESS.lock().unwrap();
-                        *clip_gen
-                    };
+                    // Check if clip generation is in progress (set from the frontend)
+                    let clip_gen_in_progress = commands::system::clip_generation_in_progress();
 
                     // Check if there are active recordings
                     let recording_count = pumpfun::get_active_recordings_count();
 
-                    // Show dialog if there are active downloads OR clip generation in progress OR active recordings
-                    if active_count > 0 || clip_gen_in_progress || recording_count > 0 {
+                    // Check if a screen has unsaved edits (set from the frontend)
+                    let unsaved_changes = commands::system::has_unsaved_changes();
+
+                    // Show dialog if anything would be lost, unless the user already confirmed quitting
+                    if !commands::system::close_confirmed()
+                        && (active_count > 0 || clip_gen_in_progress || recording_count > 0 || unsaved_changes)
+                    {
                         println!(
-                            "[Rust] Operations in progress - Downloads: {}, Recordings: {}, Clip Generation: {}",
-                            active_count, recording_count, clip_gen_in_progress
+                            "[Rust] Operations in progress - Downloads: {}, Recordings: {}, Clip Generation: {}, Unsaved changes: {}",
+                            active_count, recording_count, clip_gen_in_progress, unsaved_changes
                         );
 
                         // Prevent the window from closing immediately
@@ -1076,6 +1075,8 @@ pub fn run() {
             get_active_downloads_count,
             set_clip_generation_in_progress,
             is_clip_generation_in_progress,
+            set_unsaved_changes,
+            confirm_app_close,
 
 // Download management commands
 cancel_all_downloads,
@@ -1256,6 +1257,7 @@ commands::reference_video::cancel_reference_analysis,
             storage::delete_raw_video_files,
             storage::delete_proxy_files,
             storage::delete_livestream_recording,
+            storage::cleanup_watch_livestream_recordings,
             storage::get_video_duration,
             storage::get_video_metadata,
             storage::get_audio_metadata,

@@ -1,136 +1,81 @@
 <template>
-  <div class="min-h-screen bg-background flex items-center justify-center p-4">
-    <div class="w-full max-w-md">
-      <!-- Loading State -->
-      <div v-if="loading" class="text-center py-20">
-        <Loader2 class="h-8 w-8 animate-spin text-violet-500 mx-auto mb-4" />
-        <p class="text-zinc-400">Loading invitation...</p>
-      </div>
+  <div class="h-full">
+    <AccountPageCard v-if="loading" loading loading-text="Loading invitation…" />
 
-      <!-- Error State -->
-      <div v-else-if="error" class="bg-zinc-900 border border-zinc-800 rounded-2xl p-8 text-center">
-        <div class="flex justify-center mb-4">
-          <div class="p-3 rounded-full bg-red-500/10 border border-red-500/20">
-            <AlertTriangle class="h-8 w-8 text-red-400" />
-          </div>
-        </div>
-        <h2 class="text-xl font-bold text-white mb-2">Invalid Invitation</h2>
-        <p class="text-zinc-400 text-sm mb-6">{{ error }}</p>
-        <router-link to="/login" class="inline-block px-6 py-2.5 bg-violet-600 rounded-lg text-white font-medium">
-          Go to Login
-        </router-link>
-      </div>
+    <!-- Error -->
+    <AccountPageCard v-else-if="error" title="Invalid invitation" :description="error" :icon="AlertTriangle" tone="danger">
+      <template #footer>
+        <router-link to="/login" :class="buttonVariants({ variant: 'primary' })">Go to sign in</router-link>
+      </template>
+    </AccountPageCard>
 
-      <!-- Invitation Card -->
-      <div
-        v-else-if="invitation"
-        class="relative bg-gradient-to-b from-zinc-900 to-zinc-950 border border-white/10 rounded-2xl overflow-hidden"
-      >
-        <!-- Decorative top accent -->
-        <div class="h-1 w-full bg-gradient-to-r from-violet-500 via-purple-500 to-fuchsia-500" />
+    <!-- Invitation -->
+    <AccountPageCard v-else-if="invitation" title="You're invited">
+      <template #media>
+        <Avatar
+          :src="invitation.organization_logo"
+          :name="invitation.organization_name"
+          :icon="Building2"
+          shape="square"
+          class="mt-0.5"
+        />
+      </template>
+      <template #description>
+        <span class="text-fg">{{ invitation.inviter_name || 'Someone' }}</span>
+        has invited you to join
+        <span class="font-medium text-fg">{{ invitation.organization_name }}</span>.
+      </template>
 
-        <div class="p-8">
-          <!-- Organization Logo/Icon -->
-          <div class="flex justify-center mb-6">
-            <div
-              class="w-20 h-20 rounded-xl bg-zinc-800 border border-zinc-700 flex items-center justify-center overflow-hidden"
-            >
-              <img
-                v-if="invitation.organization_logo"
-                :src="invitation.organization_logo"
-                :alt="invitation.organization_name"
-                class="w-full h-full object-cover"
-              />
-              <Building2 v-else class="h-8 w-8 text-zinc-500" />
-            </div>
-          </div>
+      <InfoList class="border-t border-line-subtle">
+        <InfoRow label="Role">
+          <Badge variant="brand" size="md" class="capitalize">{{ invitation.role }}</Badge>
+        </InfoRow>
+        <InfoRow v-if="authStore.isAuthenticated" label="Signed in as" :value="authStore.user?.email" />
+        <InfoRow label="Expires" :value="formatExpiry(invitation.expires_at)" />
+      </InfoList>
 
-          <!-- Invitation Details -->
-          <div class="text-center mb-8">
-            <h2 class="text-2xl font-bold text-white mb-2">You're Invited!</h2>
-            <p class="text-zinc-400">
-              <span v-if="invitation.inviter_name" class="text-zinc-300">{{ invitation.inviter_name }}</span>
-              <span v-else>Someone</span>
-              has invited you to join
-            </p>
-            <p class="text-xl font-semibold text-white mt-2">{{ invitation.organization_name }}</p>
-          </div>
+      <p v-if="!authStore.isAuthenticated" class="mt-3 text-xs text-fg-muted">
+        Sign in or create an account to accept this invitation.
+      </p>
 
-          <!-- Role Badge -->
-          <div class="flex justify-center mb-6">
-            <span class="px-3 py-1.5 bg-violet-500/20 text-violet-400 rounded-full text-sm font-medium">
-              You'll join as {{ invitation.role }}
-            </span>
-          </div>
+      <Alert v-else-if="emailMismatch" variant="warning" class="mt-3">
+        <AlertTriangle />
+        <AlertDescription>
+          This invitation was sent to a different email address. You may need to sign out and sign in with the correct
+          account.
+        </AlertDescription>
+      </Alert>
 
-          <!-- Not Logged In -->
-          <div v-if="!authStore.isAuthenticated" class="space-y-4">
-            <p class="text-center text-sm text-zinc-400">
-              Please sign in or create an account to accept this invitation.
-            </p>
-            <button
-              @click="showAuthModal = true"
-              class="w-full px-6 py-3 bg-violet-600 hover:bg-violet-500 rounded-lg text-white font-medium transition-colors"
-            >
-              Sign In to Accept
-            </button>
-          </div>
+      <template #footer>
+        <Button v-if="!authStore.isAuthenticated" variant="primary" @click="showAuthModal = true">
+          Sign in to accept
+        </Button>
+        <template v-else>
+          <Button variant="ghost" @click="router.push('/projects')">Decline</Button>
+          <Button variant="primary" :loading="accepting" @click="acceptInvitation">
+            {{ accepting ? 'Accepting...' : 'Accept invitation' }}
+          </Button>
+        </template>
+      </template>
+    </AccountPageCard>
 
-          <!-- Logged In -->
-          <div v-else class="space-y-4">
-            <div class="bg-zinc-800/50 rounded-lg p-4 text-center">
-              <p class="text-sm text-zinc-400">Signed in as</p>
-              <p class="text-white font-medium">{{ authStore.user?.email }}</p>
-            </div>
-
-            <div v-if="emailMismatch" class="bg-amber-500/10 border border-amber-500/30 rounded-lg p-4">
-              <div class="flex items-start gap-3">
-                <AlertTriangle class="h-5 w-5 text-amber-400 flex-shrink-0" />
-                <div>
-                  <p class="text-sm text-amber-200">
-                    This invitation was sent to a different email address. You may need to sign out and sign in with the
-                    correct account.
-                  </p>
-                </div>
-              </div>
-            </div>
-
-            <button
-              @click="acceptInvitation"
-              :disabled="accepting"
-              class="w-full px-6 py-3 bg-violet-600 hover:bg-violet-500 rounded-lg text-white font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
-            >
-              <Loader2 v-if="accepting" class="h-5 w-5 animate-spin" />
-              {{ accepting ? 'Accepting...' : 'Accept Invitation' }}
-            </button>
-
-            <button
-              @click="router.push('/projects')"
-              class="w-full px-6 py-3 bg-zinc-800 hover:bg-zinc-700 rounded-lg text-zinc-300 font-medium transition-colors"
-            >
-              Decline
-            </button>
-          </div>
-
-          <!-- Expiry Notice -->
-          <p class="mt-6 text-center text-xs text-zinc-500">
-            This invitation expires {{ formatExpiry(invitation.expires_at) }}
-          </p>
-        </div>
-      </div>
-
-      <!-- Auth Modal -->
-      <AuthModal v-model="showAuthModal" @update:model-value="onAuthModalClose" />
-    </div>
+    <!-- Auth Modal -->
+    <AuthModal v-model="showAuthModal" @update:model-value="onAuthModalClose" />
   </div>
 </template>
 
 <script setup lang="ts">
   import { ref, computed, onMounted, watch } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
-  import { Building2, AlertTriangle, Loader2 } from 'lucide-vue-next';
+  import { Building2, AlertTriangle } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import AuthModal from '@/components/AuthModal.vue';
+  import AccountPageCard from '@/components/AccountPageCard.vue';
+  import { Button, buttonVariants } from '@/components/ui/button';
+  import { Badge } from '@/components/ui/badge';
+  import { Alert, AlertDescription } from '@/components/ui/alert';
+  import { Avatar } from '@/components/ui/avatar';
+  import { InfoList, InfoRow } from '@/components/ui/info-list';
 
   const route = useRoute();
   const router = useRouter();

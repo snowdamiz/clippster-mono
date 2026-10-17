@@ -40,6 +40,20 @@ config :logger, :default_formatter,
 # Use Jason for JSON parsing in Phoenix
 config :phoenix, :json_library, Jason
 
+# Keep sign-in codes and PKCE material out of request logs.
+config :phoenix, :filter_parameters, [
+  "password",
+  "password_confirmation",
+  "secret",
+  "token",
+  "code",
+  "otp",
+  "state",
+  "client_state",
+  "code_verifier",
+  "code_challenge"
+]
+
 # Ueberauth configuration for OAuth providers
 config :ueberauth, Ueberauth,
   providers: [

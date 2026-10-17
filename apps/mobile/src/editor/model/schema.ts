@@ -8,7 +8,7 @@ export const EDITOR_MAX_TICKS = EDITOR_MAX_SECONDS * EDITOR_TICKS_PER_SECOND;
 
 export type EditorId = string;
 export type EditorTick = number;
-export type CanvasRatio = TargetAspectRatio;
+export type CanvasRatio = Extract<TargetAspectRatio, '9:16' | '16:9'>;
 export type EditorFrameRate = 30 | 60;
 export type MediaKind = 'video' | 'image' | 'audio';
 export type VideoSourceKind = 'vod' | 'clip' | 'build' | 'upload' | 'recording';

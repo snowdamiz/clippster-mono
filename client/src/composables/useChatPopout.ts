@@ -33,7 +33,14 @@ export function useChatPopout() {
   const showFab = computed(() => {
     const path = route.path;
     // OpenCut editor has ChatFab in header, so hide the floating FAB
-    if (path === '/editor' || path.startsWith('/design-studio/edit')) return false;
+    if (
+      path === '/editor' ||
+      path.startsWith('/design-studio/edit') ||
+      path === '/ai-image/session' ||
+      path === '/ai-image/thumbnail'
+    ) {
+      return false;
+    }
     return true;
   });
 

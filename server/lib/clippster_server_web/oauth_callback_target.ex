@@ -3,7 +3,7 @@ defmodule ClippsterServerWeb.OAuthCallbackTarget do
 
   @default_frontend_origin "https://clippster.app"
   @localhost_hosts MapSet.new(["localhost", "127.0.0.1"])
-  @static_allowed_hosts MapSet.new(["clippster.app", "www.clippster.app"])
+  @static_allowed_hosts MapSet.new(["clippster.app", "www.clippster.app", "app.clippster.app"])
   @allow_localhost_by_default Mix.env() != :prod
 
   def default_web_origin do
@@ -136,7 +136,8 @@ defmodule ClippsterServerWeb.OAuthCallbackTarget do
       scheme != "http" ->
         {:error, :invalid_scheme}
 
-      MapSet.member?(@dev_mobile_callback_hosts, downcased_host) and allow_localhost_web_redirects?() ->
+      MapSet.member?(@dev_mobile_callback_hosts, downcased_host) and
+          allow_localhost_web_redirects?() ->
         :ok
 
       allow_localhost_web_redirects?() and private_lan_host?(downcased_host) ->

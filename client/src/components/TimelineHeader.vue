@@ -1,156 +1,110 @@
 <template>
-  <div class="flex items-center justify-between mb-2 mt-1.5 pr-1 flex-shrink-0">
-    <div class="flex items-center gap-1.5">
-      <!-- Add Clip & Edit Tools Group -->
-      <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
-        <!-- Add Clip Button -->
-        <button
-          @click="$emit('toggleAddClipMode')"
-          :disabled="!canAddClip"
-          :class="[
-            'p-1.5 rounded-md transition-all duration-150',
-            isAddClipModeActive
-              ? 'text-emerald-300 bg-gradient-to-b from-emerald-500/25 to-emerald-600/15 shadow-[0_0_8px_rgba(52,211,153,0.2)]'
-              : canAddClip
-                ? 'text-white/50 hover:text-emerald-300 hover:bg-emerald-500/15'
-                : 'text-white/20 cursor-not-allowed',
-          ]"
-          :title="
-            isAddClipModeActive
-              ? 'Add clip mode active - drag to select range'
-              : canAddClip
-                ? 'Add new clip (N key)'
-                : 'Load a video to add clips'
-          "
-        >
-          <Plus :size="14" />
-        </button>
-        <div class="w-px h-4 bg-white/8 mx-0.5"></div>
-        <!-- Cut Button -->
-        <button
-          @click="$emit('toggleCutTool')"
-          :class="[
-            'p-1.5 rounded-md transition-all duration-150',
-            isCutToolActive
-              ? 'text-orange-300 bg-gradient-to-b from-orange-500/25 to-orange-600/15 shadow-[0_0_8px_rgba(251,146,60,0.2)]'
-              : 'text-white/50 hover:text-orange-300 hover:bg-orange-500/15',
-          ]"
-          :title="isCutToolActive ? 'Cut tool active (X to deactivate)' : 'Cut tool (X key)'"
-        >
-          <Scissors :size="14" />
-        </button>
-        <!-- Merge Segments Button -->
-        <button
-          @click="$emit('mergeSegments')"
-          :disabled="!canMergeSegments"
-          :class="[
-            'p-1.5 rounded-md transition-all duration-150',
-            canMergeSegments
-              ? 'text-violet-300 hover:bg-gradient-to-b hover:from-violet-500/20 hover:to-violet-600/10 hover:shadow-[0_0_8px_rgba(139,92,246,0.15)]'
-              : 'text-white/15 cursor-not-allowed',
-          ]"
-          :title="canMergeSegments ? 'Merge selected segments (J key)' : 'Select multiple segments to merge'"
-        >
-          <Merge :size="14" />
-        </button>
-      </div>
+  <div class="flex h-8 shrink-0 items-center justify-between gap-3">
+    <div class="flex min-w-0 items-center gap-0.5">
+      <!-- Edit tools -->
+      <TimelineToolButton
+        :active="isAddClipModeActive"
+        :disabled="!canAddClip"
+        :title="
+          isAddClipModeActive
+            ? 'Add clip mode active - drag to select range'
+            : canAddClip
+              ? 'Add new clip (N key)'
+              : 'Load a video to add clips'
+        "
+        aria-label="Add clip"
+        @click="$emit('toggleAddClipMode')"
+      >
+        <template #icon><Plus /></template>
+      </TimelineToolButton>
+      <TimelineToolButton
+        :active="isCutToolActive"
+        :title="isCutToolActive ? 'Cut tool active (X to deactivate)' : 'Cut tool (X key)'"
+        aria-label="Cut tool"
+        @click="$emit('toggleCutTool')"
+      >
+        <template #icon><Scissors /></template>
+      </TimelineToolButton>
+      <TimelineToolButton
+        :disabled="!canMergeSegments"
+        :title="canMergeSegments ? 'Merge selected segments (J key)' : 'Select multiple segments to merge'"
+        aria-label="Merge segments"
+        @click="$emit('mergeSegments')"
+      >
+        <template #icon><Merge /></template>
+      </TimelineToolButton>
 
-      <!-- Playback Controls Group -->
-      <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
-        <button
-          @mousedown="$emit('startContinuousSeeking', 'reverse')"
-          @mouseup="$emit('stopContinuousSeeking')"
-          @mouseleave="$emit('stopContinuousSeeking')"
-          @touchstart="$emit('startContinuousSeeking', 'reverse')"
-          @touchend="$emit('stopContinuousSeeking')"
-          :class="[
-            'p-1.5 rounded-md transition-all duration-150',
-            isSeeking && seekDirection === 'reverse'
-              ? 'text-amber-300 bg-gradient-to-b from-amber-500/25 to-amber-600/15 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
-              : 'text-white/50 hover:text-amber-300 hover:bg-amber-500/15',
-          ]"
-          title="Seek backward (← arrow key)"
-        >
-          <Rewind :size="14" />
-        </button>
-        <button
-          @mousedown="$emit('startContinuousSeeking', 'forward')"
-          @mouseup="$emit('stopContinuousSeeking')"
-          @mouseleave="$emit('stopContinuousSeeking')"
-          @touchstart="$emit('startContinuousSeeking', 'forward')"
-          @touchend="$emit('stopContinuousSeeking')"
-          :class="[
-            'p-1.5 rounded-md transition-all duration-150',
-            isSeeking && seekDirection === 'forward'
-              ? 'text-amber-300 bg-gradient-to-b from-amber-500/25 to-amber-600/15 shadow-[0_0_8px_rgba(245,158,11,0.2)]'
-              : 'text-white/50 hover:text-amber-300 hover:bg-amber-500/15',
-          ]"
-          title="Seek forward (→ arrow key)"
-        >
-          <FastForward :size="14" />
-        </button>
-        <div class="w-px h-4 bg-white/8 mx-0.5"></div>
-        <!-- Subtitles Button -->
-        <button
-          @click="$emit('toggleSubtitles')"
-          :disabled="clipCount === 0"
-          :class="[
-            'px-2 py-1.5 rounded-md transition-all duration-150 flex items-center gap-1.5',
-            clipCount > 0
-              ? 'text-cyan-300 hover:bg-gradient-to-b hover:from-cyan-500/20 hover:to-cyan-600/10 hover:shadow-[0_0_8px_rgba(34,211,153,0.15)]'
-              : 'text-white/15 cursor-not-allowed',
-          ]"
-          :title="clipCount > 0 ? 'Add or edit subtitles' : 'Add clips to enable subtitles'"
-        >
-          <Captions :size="14" />
-          <span class="text-[11px] font-medium">Subtitles</span>
-        </button>
-        <button
-          @click="$emit('toggleText')"
-          :disabled="clipCount === 0"
-          :class="[
-            'px-2 py-1.5 rounded-md transition-all duration-150 flex items-center gap-1.5',
-            clipCount > 0
-              ? 'text-amber-300 hover:bg-gradient-to-b hover:from-amber-500/20 hover:to-amber-600/10 hover:shadow-[0_0_8px_rgba(245,158,11,0.15)]'
-              : 'text-white/15 cursor-not-allowed',
-          ]"
-          :title="clipCount > 0 ? 'Add a text box to the current clip (click the box on the video to edit)' : 'Add clips to enable text'"
-        >
-          <Type :size="14" />
-          <span class="text-[11px] font-medium">Text</span>
-        </button>
-      </div>
+      <span class="mx-1.5 h-4 w-px shrink-0 bg-line" aria-hidden="true" />
+
+      <!-- Seek -->
+      <TimelineToolButton
+        :active="isSeeking && seekDirection === 'reverse'"
+        title="Seek backward (← arrow key)"
+        aria-label="Seek backward"
+        @mousedown="$emit('startContinuousSeeking', 'reverse')"
+        @mouseup="$emit('stopContinuousSeeking')"
+        @mouseleave="$emit('stopContinuousSeeking')"
+        @touchstart="$emit('startContinuousSeeking', 'reverse')"
+        @touchend="$emit('stopContinuousSeeking')"
+      >
+        <template #icon><Rewind /></template>
+      </TimelineToolButton>
+      <TimelineToolButton
+        :active="isSeeking && seekDirection === 'forward'"
+        title="Seek forward (→ arrow key)"
+        aria-label="Seek forward"
+        @mousedown="$emit('startContinuousSeeking', 'forward')"
+        @mouseup="$emit('stopContinuousSeeking')"
+        @mouseleave="$emit('stopContinuousSeeking')"
+        @touchstart="$emit('startContinuousSeeking', 'forward')"
+        @touchend="$emit('stopContinuousSeeking')"
+      >
+        <template #icon><FastForward /></template>
+      </TimelineToolButton>
+
+      <span class="mx-1.5 h-4 w-px shrink-0 bg-line" aria-hidden="true" />
+
+      <!-- Overlays -->
+      <TimelineToolButton
+        :disabled="clipCount === 0"
+        :title="clipCount > 0 ? 'Add or edit subtitles' : 'Add clips to enable subtitles'"
+        @click="$emit('toggleSubtitles')"
+      >
+        <template #icon><Captions /></template>
+        Subtitles
+      </TimelineToolButton>
+      <TimelineToolButton
+        :disabled="clipCount === 0"
+        :title="clipCount > 0 ? 'Add a text box to the current clip (click the box on the video to edit)' : 'Add clips to enable text'"
+        @click="$emit('toggleText')"
+      >
+        <template #icon><Type /></template>
+        Text
+      </TimelineToolButton>
     </div>
 
-    <div class="flex items-center gap-2">
-      <span
-        v-if="clipCount > 0"
-        class="text-[10px] text-white/40 bg-[#161618] border border-white/[0.04] px-2 py-1 rounded-md font-medium"
-      >
+    <div class="flex shrink-0 items-center gap-3">
+      <span v-if="clipCount > 0" class="tabular text-2xs font-medium text-fg-subtle">
         {{ clipCount }} clip{{ clipCount !== 1 ? 's' : '' }}
       </span>
 
-      <!-- Zoom Controls Group -->
-      <div class="flex items-center gap-0.5 bg-[#161618] rounded-lg px-1.5 py-1 border border-white/[0.04]">
-        <button
-          @click="zoomOut"
-          :disabled="localSliderPosition <= 0"
-          class="p-1.5 rounded-md transition-all duration-150 text-white/50 hover:text-white hover:bg-white/8 disabled:text-white/15 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-          title="Zoom out"
-        >
-          <Minus :size="14" />
-        </button>
-        <span class="text-[11px] text-white/50 font-mono tabular-nums min-w-[38px] text-center select-none px-1">
+      <!-- Zoom -->
+      <div class="flex items-center gap-0.5">
+        <TimelineToolButton :disabled="!canFocusClip" title="Zoom to selected clip" aria-label="Zoom to selected clip" @click="$emit('focusClip')">
+          <template #icon><Focus /></template>
+        </TimelineToolButton>
+        <TimelineToolButton :disabled="localSliderPosition <= 0" title="Fit entire source" aria-label="Fit entire source" @click="$emit('fitSource')">
+          <template #icon><ScanLine /></template>
+        </TimelineToolButton>
+        <TimelineToolButton :disabled="localSliderPosition <= 0" title="Zoom out" aria-label="Zoom out" @click="zoomOut">
+          <template #icon><Minus /></template>
+        </TimelineToolButton>
+        <span class="tabular w-10 select-none text-center text-2xs font-medium text-fg-muted">
           {{ Math.round(localSliderPosition * 100) }}%
         </span>
-        <button
-          @click="zoomIn"
-          :disabled="localSliderPosition >= 1"
-          class="p-1.5 rounded-md transition-all duration-150 text-white/50 hover:text-white hover:bg-white/8 disabled:text-white/15 disabled:cursor-not-allowed disabled:hover:bg-transparent"
-          title="Zoom in"
-        >
-          <Plus2 :size="14" />
-        </button>
+        <TimelineToolButton :disabled="localSliderPosition >= 1" title="Zoom in" aria-label="Zoom in" @click="zoomIn">
+          <template #icon><Plus2 /></template>
+        </TimelineToolButton>
       </div>
     </div>
   </div>
@@ -158,7 +112,8 @@
 
 <script setup lang="ts">
   import { ref, watch } from 'vue';
-  import { Plus, Scissors, Merge, Rewind, FastForward, Minus, Plus as Plus2, Captions, Type } from 'lucide-vue-next';
+  import { Plus, Scissors, Merge, Rewind, FastForward, Minus, Plus as Plus2, Captions, Type, Focus, ScanLine } from 'lucide-vue-next';
+  import TimelineToolButton from './TimelineToolButton.vue';
 
   interface Props {
     isCutToolActive: boolean;
@@ -170,6 +125,7 @@
     sliderPosition: number;
     clipCount: number;
     canMergeSegments: boolean;
+    canFocusClip?: boolean;
   }
 
   const props = defineProps<Props>();
@@ -183,6 +139,8 @@
     mergeSegments: [];
     toggleSubtitles: [];
     toggleText: [];
+    focusClip: [];
+    fitSource: [];
   }>();
 
   const localSliderPosition = ref(props.sliderPosition);

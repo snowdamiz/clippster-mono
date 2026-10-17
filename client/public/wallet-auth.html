@@ -5,206 +5,46 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Connect Wallet - Clippster</title>
   <style>
+    /* Mirrors client/src/styles/theme.css tokens (page is served standalone by the app's local auth server). */
     :root {
-      /* Dark theme colors matching Tauri app */
-      --background: oklch(0.145 0 0);
-      --foreground: oklch(0.985 0 0);
-      --card: oklch(0.145 0 0);
-      --card-foreground: oklch(0.985 0 0);
-      --primary: oklch(0.985 0 0);
-      --primary-foreground: oklch(0.205 0 0);
-      --secondary: oklch(0.269 0 0);
-      --muted: oklch(0.269 0 0);
-      --muted-foreground: oklch(0.708 0 0);
-      --destructive: oklch(0.396 0.141 25.723);
-      --destructive-foreground: oklch(0.637 0.237 25.331);
-      --border: oklch(0.269 0 0);
-      --success: oklch(0.696 0.17 162.48);
-      --success-bg: oklch(0.269 0.05 162.48);
-      --radius: 0.625rem;
+      --canvas: #0a0c10; --surface: #13161c; --surface-raised: #191c23; --line: rgba(255,255,255,0.085);
+      --fg: #eef0f4; --fg-muted: #959dab; --fg-subtle: #697181; --brand: #38bdf8;
+      --primary-bg: #eef0f4; --fg-on-light: #0b0d11;
+      --success: #34d399; --danger: #f87171;
     }
-
-    * {
-      margin: 0;
-      padding: 0;
-      box-sizing: border-box;
-    }
-
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
-      display: flex;
-      flex-direction: column;
-      align-items: center;
-      justify-content: center;
-      min-height: 100vh;
-      background: var(--background);
-      color: var(--foreground);
-      padding: 1.5rem;
-    }
-
-    .container {
-      max-width: 28rem;
-      width: 100%;
-    }
-
-    .card {
-      position: relative;
-      overflow: hidden;
-      border-radius: calc(var(--radius) * 2);
-      border: 1px solid rgba(255, 255, 255, 0.05);
-      background: var(--card);
-      backdrop-filter: blur(10px);
-      box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37);
-    }
-
-    .gradient-overlay {
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(135deg, rgba(255, 255, 255, 0.02) 0%, transparent 50%, rgba(147, 51, 234, 0.03) 100%);
-      pointer-events: none;
-    }
-
-    .content {
-      position: relative;
-      padding: 2rem;
-    }
-
-    .icon-container {
-      display: flex;
-      justify-content: center;
-      margin-bottom: 1.5rem;
-    }
-
-    .icon-wrapper {
-      padding: 1rem;
-      border-radius: 9999px;
-      background: rgba(255, 255, 255, 0.05);
-      border: 1px solid rgba(255, 255, 255, 0.1);
-    }
-
-    .icon {
-      width: 3rem;
-      height: 3rem;
-      color: var(--primary);
-    }
-
-    .text-center {
-      text-align: center;
-      margin-bottom: 2rem;
-    }
-
-    h1 {
-      font-size: 1.5rem;
-      font-weight: 700;
-      margin-bottom: 0.5rem;
-      color: var(--foreground);
-    }
-
-    .subtitle {
-      font-size: 0.875rem;
-      color: var(--muted-foreground);
-    }
-
-    #connect-btn {
-      width: 100%;
-      position: relative;
-      overflow: hidden;
-      border-radius: var(--radius);
-      background: linear-gradient(to right, rgb(147, 51, 234), rgb(79, 70, 229));
-      border: none;
-      padding: 0;
-      cursor: pointer;
-      transition: all 0.3s ease;
-    }
-
-    #connect-btn:hover:not(:disabled) {
-      box-shadow: 0 10px 25px -5px rgba(147, 51, 234, 0.5);
-    }
-
-    #connect-btn:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    .btn-inner {
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      gap: 0.5rem;
-      padding: 0.75rem 1.5rem;
-      font-weight: 600;
-      color: white;
-      transition: all 0.3s ease;
-    }
-
-    #connect-btn:hover:not(:disabled) .btn-inner {
-      background: linear-gradient(to right, rgba(147, 51, 234, 0.9), rgba(79, 70, 229, 0.9));
-    }
-
-    .spinner {
-      animation: spin 1s linear infinite;
-    }
-
-    @keyframes spin {
-      from { transform: rotate(0deg); }
-      to { transform: rotate(360deg); }
-    }
-
-    .status {
-      margin-top: 1rem;
-      font-size: 0.875rem;
-      color: var(--muted-foreground);
-      text-align: center;
-    }
-
-    .message-box {
-      margin-top: 1rem;
-      padding: 0.75rem 1rem;
-      border-radius: calc(var(--radius) - 2px);
-      font-size: 0.875rem;
-      display: none;
-    }
-
-    .error {
-      color: var(--destructive-foreground);
-      background: rgba(var(--destructive), 0.1);
-      border: 1px solid rgba(var(--destructive-foreground), 0.2);
-    }
-
-    .success {
-      color: var(--success);
-      background: var(--success-bg);
-      border: 1px solid rgba(var(--success), 0.2);
-      font-weight: 500;
-    }
-
-    .divider {
-      margin-top: 1.5rem;
-      padding-top: 1.5rem;
-      border-top: 1px solid rgba(255, 255, 255, 0.05);
-    }
-
-    .info-text {
-      font-size: 0.75rem;
-      color: var(--muted-foreground);
-      text-align: center;
-    }
-
-    .info-link {
-      color: var(--primary);
-      text-decoration: none;
-      transition: text-decoration 0.2s;
-    }
-
-    .info-link:hover {
-      text-decoration: underline;
-    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body { font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased; display: flex; align-items: center; justify-content: center; min-height: 100vh; background: var(--canvas); color: var(--fg); padding: 24px; }
+    .container { width: 100%; max-width: 380px; }
+    .card { background: var(--surface); border-radius: 16px; box-shadow: 0 0 0 1px var(--line), 0 24px 64px -12px rgba(0,0,0,0.7); }
+    .content { padding: 28px 24px 24px; }
+    h1 { font-size: 17px; line-height: 24px; font-weight: 600; letter-spacing: -0.01em; color: var(--fg); margin-bottom: 4px; }
+    .subtitle { font-size: 13px; line-height: 20px; color: var(--fg-muted); }
+    #connect-btn, #pay-btn { width: 100%; height: 40px; display: flex; align-items: center; justify-content: center; gap: 8px; border: none; border-radius: 8px; background: var(--primary-bg); color: var(--fg-on-light); font: inherit; font-size: 14px; font-weight: 600; cursor: pointer; transition: background-color 0.15s ease, opacity 0.15s ease; }
+    #connect-btn:hover:not(:disabled), #pay-btn:hover:not(:disabled) { background: #ffffff; }
+    #connect-btn:disabled, #pay-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+    #connect-btn svg, #pay-btn svg { width: 18px; height: 18px; }
+    .btn-inner { display: flex; align-items: center; justify-content: center; gap: 8px; }
+    .spinner { animation: spin 1s linear infinite; }
+    .opacity-25 { opacity: 0.25; }
+    .opacity-75 { opacity: 0.75; }
+    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    .status { margin-top: 12px; font-size: 12px; color: var(--fg-muted); text-align: center; min-height: 0; }
+    .message-box { margin-top: 12px; padding: 9px 12px; border-radius: 8px; font-size: 12px; line-height: 18px; display: none; border: 1px solid; }
+    .error { color: var(--danger); background: rgba(248,113,113,0.12); border-color: rgba(248,113,113,0.3); }
+    .success { color: var(--success); background: rgba(52,211,153,0.12); border-color: rgba(52,211,153,0.3); font-weight: 500; }
+    .icon-container { display: flex; justify-content: center; margin-bottom: 16px; }
+    .icon-wrapper { width: 44px; height: 44px; border-radius: 12px; display: flex; align-items: center; justify-content: center; background: rgba(56,189,248,0.12); border: 1px solid rgba(56,189,248,0.34); }
+    .icon { width: 22px; height: 22px; color: var(--brand); }
+    .text-center { text-align: center; margin-bottom: 20px; }
+    .divider { margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--line); }
+    .info-text { font-size: 12px; color: var(--fg-subtle); text-align: center; }
+    .info-link { color: var(--brand); text-decoration: none; }
+    .info-link:hover { text-decoration: underline; }
   </style>
 </head>
 <body>
   <div class="container">
     <div class="card">
-      <div class="gradient-overlay"></div>
       <div class="content">
         <!-- Icon -->
         <div class="icon-container">
@@ -217,7 +57,7 @@
 
         <!-- Title -->
         <div class="text-center">
-          <h1>Connect Your Wallet</h1>
+          <h1>Connect your wallet</h1>
           <p class="subtitle">Sign in securely with your Phantom wallet to access Clippster</p>
         </div>
 
@@ -231,7 +71,7 @@
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
-            <span id="btn-text">Connect Phantom Wallet</span>
+            <span id="btn-text">Connect Phantom wallet</span>
           </div>
         </button>
 
@@ -298,7 +138,7 @@
       btn.disabled = loading;
       walletIcon.style.display = loading ? 'none' : 'block';
       spinner.style.display = loading ? 'block' : 'none';
-      btnText.textContent = loading ? text : 'Connect Phantom Wallet';
+      btnText.textContent = loading ? text : 'Connect Phantom wallet';
     };
 
     // Connect wallet flow

@@ -17,19 +17,24 @@ const props = defineProps<{
 	insertGapSize?: number;
 }>();
 
+// Drop indicator colors follow the timeline track palette (UI only).
 const DROP_COLORS: Record<string, string> = {
-	video: '#3b82f6',
-	image: '#3b82f6',
-	audio: '#22c55e',
-	text: '#f59e0b',
-	sticker: '#ec4899',
-	effect: '#a855f7',
+	video: 'var(--brand)',
+	image: 'var(--brand)',
+	audio: 'var(--track-audio)',
+	text: 'var(--track-text)',
+	sticker: 'var(--track-sticker)',
+	effect: '#E040FB',
 };
 
 const color = computed(() => {
-	if (!props.dragElementType) return '#3b82f6';
-	return DROP_COLORS[props.dragElementType] ?? '#3b82f6';
+	if (!props.dragElementType) return 'var(--brand)';
+	return DROP_COLORS[props.dragElementType] ?? 'var(--brand)';
 });
+
+function withAlpha(c: string, pct: number) {
+	return `color-mix(in srgb, ${c} ${pct}%, transparent)`;
+}
 
 const geometry = computed(() => {
 	if (!props.dropTarget) return null;
@@ -60,10 +65,9 @@ const newTrackLineStyle = computed(() => {
 	const c = color.value;
 	return {
 		top: `${overlayTop.value}px`,
-		height: '4px',
+		height: '2px',
 		transform: 'translateY(-50%)',
 		backgroundColor: c,
-		boxShadow: `0 0 8px ${c}80, 0 0 3px ${c}`,
 	};
 });
 
@@ -81,8 +85,8 @@ const trackHighlightStyle = computed(() => {
 	return {
 		top: `${overlayTop.value}px`,
 		height: `${geometry.value.height}px`,
-		boxShadow: `inset 0 0 0 1px ${c}66`,
-		backgroundColor: c + '0d',
+		boxShadow: `inset 0 0 0 1px ${withAlpha(c, 40)}`,
+		backgroundColor: withAlpha(c, 6),
 	};
 });
 
@@ -94,7 +98,6 @@ const verticalLineStyle = computed(() => {
 		height: `${geometry.value.height}px`,
 		left: `${lineX.value}px`,
 		backgroundColor: c,
-		boxShadow: `0 0 6px ${c}, 0 0 2px ${c}`,
 	};
 });
 </script>

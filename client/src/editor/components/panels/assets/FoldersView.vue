@@ -4,7 +4,12 @@ import { getAllAudioPlaylists, getPlaylistItemsWithAudio } from '@/services/data
 import type { AudioPlaylist, DownloadedAudio } from '@/services/database/types';
 import { useEditor } from '../../../composables/useEditor';
 import { buildLibraryAudioElement } from '../../../lib/timeline/element-utils';
-import { FolderOpen, Music, ChevronLeft, Loader2 } from 'lucide-vue-next';
+import { FolderOpen, Music, ChevronLeft, ChevronRight, Loader2, Plus } from 'lucide-vue-next';
+import { EmptyState } from '@/components/ui/empty-state';
+import { IconTile } from '@/components/ui/icon-tile';
+import PanelHeader from '../../chrome/PanelHeader.vue';
+import ToolbarButton from '../../chrome/ToolbarButton.vue';
+import AssetListRow from '../shared/AssetListRow.vue';
 
 const { editor } = useEditor({ subscribe: false });
 
@@ -86,93 +91,90 @@ onMounted(() => {
 </script>
 
 <template>
-	<div class="flex h-full flex-col bg-transparent">
+	<div class="flex h-full flex-col">
 		<!-- Loading state -->
-		<div v-if="isLoading" class="flex-1 flex items-center justify-center">
-			<Loader2 class="size-5 animate-spin text-blue-400" />
+		<div v-if="isLoading" class="flex flex-1 items-center justify-center">
+			<Loader2 class="size-5 animate-spin text-fg-subtle" />
 		</div>
 
 		<!-- Folder list view -->
-		<div v-else-if="!selectedFolder" class="flex-1 overflow-y-auto p-4">
-			<!-- Empty state -->
-			<div v-if="folders.length === 0" class="flex flex-col items-center justify-center gap-2 px-4 text-center h-full">
-				<FolderOpen class="size-8 text-zinc-500" />
-				<p class="text-sm text-zinc-400">No folders found</p>
-				<p class="text-xs text-zinc-500">Create folders in the Audio Library page</p>
-			</div>
+		<div v-else-if="!selectedFolder" class="flex-1 overflow-y-auto p-3">
+			<EmptyState
+				v-if="folders.length === 0"
+				size="sm"
+				class="h-full"
+				:icon="FolderOpen"
+				title="No folders found"
+				description="Create folders in the Audio Library page."
+			/>
 
-			<!-- Folders grid -->
-			<div v-else class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr))">
-				<div
+			<div v-else class="-mx-1 space-y-px">
+				<AssetListRow
 					v-for="folder in folders"
 					:key="folder.id"
-					class="group relative overflow-hidden rounded-lg border border-white/10 cursor-pointer hover:border-blue-500/50 transition-colors"
+					as="button"
+					:title="folder.name"
+					:meta="folder.description || undefined"
+					persistent-actions
 					@click="openFolder(folder)"
 				>
-					<div class="relative aspect-video bg-zinc-800 flex items-center justify-center">
-						<FolderOpen class="size-8 text-zinc-600" />
-					</div>
-
-					<!-- Info -->
-					<div class="px-2 py-1.5 bg-zinc-900/90">
-						<h3 class="text-xs font-medium text-zinc-200 truncate" :title="folder.name">
-							{{ folder.name }}
-						</h3>
-						<p v-if="folder.description" class="text-[10px] text-zinc-500 truncate">
-							{{ folder.description }}
-						</p>
-					</div>
-				</div>
+					<template #leading>
+						<IconTile :icon="FolderOpen" size="md" />
+					</template>
+					<template #trailing>
+						<ChevronRight class="size-3.5 text-fg-subtle" />
+					</template>
+				</AssetListRow>
 			</div>
 		</div>
 
 		<!-- Folder contents view -->
-		<div v-else class="flex-1 flex flex-col overflow-hidden">
-			<!-- Header with back button -->
-			<div class="flex items-center gap-2 border-b border-white/10 px-4 py-2 shrink-0">
-				<button
-					@click="backToFolders"
-					class="flex items-center gap-1 text-xs text-zinc-400 hover:text-zinc-200 transition-colors"
-				>
-					<ChevronLeft class="size-3.5" />
-					Back
-				</button>
-				<div class="flex-1">
-					<h3 class="text-sm font-medium text-zinc-200">{{ selectedFolder.name }}</h3>
-					<p v-if="selectedFolder.description" class="text-xs text-zinc-500">{{ selectedFolder.description }}</p>
-				</div>
-			</div>
+		<div v-else class="flex flex-1 flex-col overflow-hidden">
+			<PanelHeader class="pl-1.5">
+				<template #title>
+					<ToolbarButton label="Back to folders" @click="backToFolders">
+						<ChevronLeft />
+					</ToolbarButton>
+					<span class="min-w-0 flex-1 truncate text-xs font-medium text-fg" :title="selectedFolder.name">
+						{{ selectedFolder.name }}
+					</span>
+				</template>
+			</PanelHeader>
 
-			<!-- Empty folder state -->
-			<div v-if="folderTracks.length === 0" class="flex-1 flex flex-col items-center justify-center gap-2 px-4 text-center">
-				<Music class="size-8 text-zinc-500" />
-				<p class="text-sm text-zinc-400">No audio in this folder</p>
-			</div>
+			<EmptyState
+				v-if="folderTracks.length === 0"
+				size="sm"
+				class="flex-1"
+				:icon="Music"
+				title="No audio in this folder"
+			/>
 
-			<!-- Folder tracks grid -->
-			<div v-else class="flex-1 overflow-y-auto p-4">
-				<div class="grid gap-2" style="grid-template-columns: repeat(auto-fill, minmax(140px, 1fr))">
-					<div
+			<div v-else class="flex-1 overflow-y-auto p-3">
+				<p v-if="selectedFolder.description" class="mb-2 text-2xs text-fg-subtle">
+					{{ selectedFolder.description }}
+				</p>
+				<div class="-mx-1 space-y-px">
+					<AssetListRow
 						v-for="track in folderTracks"
 						:key="track.playlist_item_id"
 						:title="track.title"
-						class="group relative overflow-hidden rounded-lg border border-white/10 cursor-pointer hover:border-blue-500/50 transition-colors"
+						:meta="track.duration ? formatDuration(track.duration) : undefined"
+						class="cursor-pointer"
+						role="button"
+						tabindex="0"
+						:aria-label="`Add ${track.title} to the timeline`"
 						@click="addAudioToTimeline(track)"
+						@keydown.enter="addAudioToTimeline(track)"
 					>
-						<div class="relative aspect-video bg-zinc-800 flex items-center justify-center">
-							<Music class="size-8 text-zinc-600" />
-						</div>
-
-						<!-- Info -->
-						<div class="px-2 py-1.5 bg-zinc-900/90">
-							<h3 class="text-xs font-medium text-zinc-200 truncate" :title="track.title">
-								{{ track.title }}
-							</h3>
-							<div class="flex items-center gap-1 mt-0.5 text-[10px] text-zinc-500">
-								<span v-if="track.duration">{{ formatDuration(track.duration) }}</span>
+						<template #leading>
+							<div class="grid size-8 place-items-center rounded-md bg-surface-sunken">
+								<Music class="size-4 text-fg-subtle" />
 							</div>
-						</div>
-					</div>
+						</template>
+						<template #trailing>
+							<Plus class="mr-1 size-3.5 text-fg-subtle" />
+						</template>
+					</AssetListRow>
 				</div>
 			</div>
 		</div>

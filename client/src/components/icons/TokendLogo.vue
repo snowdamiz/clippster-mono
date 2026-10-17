@@ -2,7 +2,7 @@
   <img
     src="/tokend.png"
     alt="Tokend"
-    class="tokend-logo"
+    class="block shrink-0 rounded-[22%] object-cover"
     :width="size"
     :height="size"
     :style="{ width: `${size}px`, height: `${size}px` }"
@@ -18,12 +18,3 @@
     { size: 24 }
   );
 </script>
-
-<style scoped>
-  .tokend-logo {
-    display: block;
-    border-radius: 22%;
-    object-fit: cover;
-    flex-shrink: 0;
-  }
-</style>

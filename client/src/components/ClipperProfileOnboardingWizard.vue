@@ -1,446 +1,213 @@
 <template>
-  <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="show" class="onboarding-wizard__overlay" @click.self="handleClose">
-        <Transition name="dialog" appear>
-          <div class="onboarding-wizard">
-            <!-- Accent Bar -->
-            <div class="onboarding-wizard__accent" />
+  <Modal
+    :open="show"
+    :title="currentStepMeta.title"
+    :description="currentStepMeta.description"
+    :icon="currentStepMeta.icon"
+    :tone="currentStep === totalSteps ? 'success' : 'brand'"
+    size="md"
+    :dismissible="!saving"
+    :hide-close="saving"
+    body-class="flex flex-col gap-4"
+    @close="handleClose"
+  >
+    <!-- Progress -->
+    <div class="flex gap-1" role="progressbar" :aria-valuenow="currentStep" aria-valuemin="1" :aria-valuemax="totalSteps">
+      <span
+        v-for="step in totalSteps"
+        :key="step"
+        class="h-1 flex-1 rounded-full transition-colors"
+        :class="step <= currentStep ? 'bg-brand' : 'bg-surface-active'"
+      />
+    </div>
 
-            <!-- Progress Indicator -->
-            <div class="onboarding-wizard__progress">
-              <div
-                v-for="step in totalSteps"
-                :key="step"
-                class="onboarding-wizard__progress-dot"
-                :class="{ 'onboarding-wizard__progress-dot--active': step <= currentStep }"
-              />
-            </div>
+    <!-- Steps: keyed so each one eases in instead of popping -->
+    <div :key="currentStep" class="flex animate-enter flex-col gap-4">
+      <!-- Step 1: Basic info -->
+      <template v-if="currentStep === 1">
+        <Field label="Display name">
+          <Input
+            :model-value="profile.display_name ?? ''"
+            placeholder="Your public name"
+            autofocus
+            @update:model-value="(v) => (profile.display_name = String(v))"
+            @keydown.enter="nextStep"
+          />
+        </Field>
+        <Field label="Profile URL" hint="This will be your public profile URL">
+          <SlugInput
+            :model-value="profile.slug ?? ''"
+            @update:model-value="
+              (v: string) => {
+                profile.slug = v;
+                slugManuallyEdited = true;
+              }
+            "
+            @enter="nextStep"
+          />
+        </Field>
+      </template>
 
-            <!-- Close Button -->
-            <button class="onboarding-wizard__close" @click="handleClose" :disabled="saving" title="Close">
-              <X :size="18" />
-            </button>
+      <!-- Step 2: Avatar -->
+      <div v-if="currentStep === 2" class="flex items-center gap-4 py-1">
+        <div class="relative shrink-0">
+          <Avatar :src="profile.avatar_url" :icon="UserCircle" size="xl" />
+          <div v-if="uploadingAvatar" class="absolute inset-0 grid place-items-center rounded-full bg-[var(--overlay)]">
+            <Loader2 class="size-5 animate-spin text-fg" />
+          </div>
+        </div>
+        <div class="flex flex-col items-start gap-1.5">
+          <input
+            ref="avatarInputRef"
+            type="file"
+            accept="image/jpeg,image/png,image/gif,image/webp"
+            class="hidden"
+            @change="handleAvatarUpload"
+          />
+          <Button variant="secondary" size="sm" :disabled="uploadingAvatar" @click="avatarInputRef?.click()">
+            <Upload />
+            {{ profile.avatar_url ? 'Change picture' : 'Upload picture' }}
+          </Button>
+          <p class="text-xs text-fg-subtle">JPEG, PNG, GIF or WebP. Max 5 MB.</p>
+        </div>
+      </div>
 
-            <!-- Content Container -->
-            <div class="onboarding-wizard__content">
-              <!-- Step 1: Basic Info -->
-              <div v-if="currentStep === 1" class="onboarding-wizard__step">
-                <div class="onboarding-wizard__header">
-                  <div class="onboarding-wizard__icon">
-                    <UserCircle :size="28" />
-                  </div>
-                  <h2 class="onboarding-wizard__title">Let's start with the basics</h2>
-                  <p class="onboarding-wizard__subtitle">Choose how you want to be known on the platform</p>
-                </div>
+      <!-- Step 3: About you -->
+      <template v-if="currentStep === 3">
+        <Field :hint="`${(profile.bio || '').length}/500 characters`">
+          <template #label>Bio <span class="font-normal text-fg-subtle">(optional)</span></template>
+          <Textarea
+            :model-value="profile.bio ?? ''"
+            :rows="3"
+            placeholder="Tell organizations about yourself and your clipping style…"
+            @update:model-value="(v) => (profile.bio = String(v))"
+          />
+        </Field>
+        <div class="grid grid-cols-2 gap-3">
+          <Field label="Experience level">
+            <CustomDropdown v-model="profile.experience_level" :options="[...EXPERIENCE_LEVELS]" placeholder="Select level" />
+          </Field>
+          <Field>
+            <template #label>Timezone <span class="font-normal text-fg-subtle">(optional)</span></template>
+            <TimezoneSelector
+              :model-value="profile.timezone ?? null"
+              placeholder="Select timezone"
+              @update:model-value="(v: string) => (profile.timezone = v)"
+            />
+          </Field>
+        </div>
+        <div class="flex items-center justify-between gap-4 border-t border-line-subtle pt-4">
+          <div class="min-w-0">
+            <p class="text-sm font-medium text-fg">Looking for work</p>
+            <p class="text-xs text-fg-muted">Show that you're available for new campaigns</p>
+          </div>
+          <Switch v-model="profile.looking_for_work" aria-label="Looking for work" />
+        </div>
+      </template>
 
-                <div class="onboarding-wizard__fields">
-                  <div class="onboarding-wizard__field">
-                    <label class="onboarding-wizard__label">Display Name</label>
-                    <input
-                      v-model="profile.display_name"
-                      type="text"
-                      class="onboarding-wizard__input"
-                      placeholder="Your public name"
-                      @keydown.enter="nextStep"
-                    />
-                  </div>
+      <!-- Step 4: Specialties -->
+      <template v-if="currentStep === 4">
+        <Field label="Specialties">
+          <ToggleChips
+            :model-value="profile.specialty_tags ?? []"
+            :options="SPECIALTY_TAGS"
+            @update:model-value="(v) => (profile.specialty_tags = v)"
+          />
+        </Field>
+        <Field label="Content style">
+          <ToggleChips
+            :model-value="profile.content_style_tags ?? []"
+            :options="CONTENT_STYLE_TAGS"
+            @update:model-value="(v) => (profile.content_style_tags = v)"
+          />
+        </Field>
+      </template>
 
-                  <div class="onboarding-wizard__field">
-                    <label class="onboarding-wizard__label">Profile URL Slug</label>
-                    <div class="onboarding-wizard__input-group">
-                      <span class="onboarding-wizard__input-prefix">/clipper/</span>
-                      <input
-                        v-model="profile.slug"
-                        type="text"
-                        class="onboarding-wizard__input onboarding-wizard__input--with-prefix"
-                        placeholder="your-username"
-                        @input="slugManuallyEdited = true"
-                        @keydown.enter="nextStep"
-                      />
-                    </div>
-                    <p class="onboarding-wizard__hint">This will be your public profile URL</p>
-                  </div>
-                </div>
-              </div>
+      <!-- Step 5: Platforms & languages -->
+      <template v-if="currentStep === 5">
+        <Field label="Preferred platforms">
+          <ToggleChips
+            :model-value="profile.preferred_platforms ?? []"
+            :options="PREFERRED_PLATFORMS"
+            @update:model-value="(v) => (profile.preferred_platforms = v)"
+          />
+        </Field>
+        <Field label="Languages">
+          <ToggleChips
+            :model-value="profile.languages ?? []"
+            :options="languageOptions"
+            @update:model-value="(v) => (profile.languages = v)"
+          />
+        </Field>
+      </template>
 
-              <!-- Step 2: Avatar -->
-              <div v-if="currentStep === 2" class="onboarding-wizard__step">
-                <div class="onboarding-wizard__header">
-                  <div class="onboarding-wizard__icon">
-                    <ImageIcon :size="28" />
-                  </div>
-                  <h2 class="onboarding-wizard__title">Add a profile picture</h2>
-                  <p class="onboarding-wizard__subtitle">Help organizations recognize you</p>
-                </div>
+      <!-- Step 6: Review -->
+      <template v-if="currentStep === 6">
+        <div class="flex items-center gap-3 border-b border-line-subtle pb-4">
+          <component :is="profile.is_public ? Globe : Lock" class="size-4 shrink-0" :class="profile.is_public ? 'text-success' : 'text-fg-muted'" />
+          <div class="min-w-0 flex-1">
+            <p class="text-sm font-medium text-fg">{{ profile.is_public ? 'Public profile' : 'Private profile' }}</p>
+            <p class="text-xs text-fg-muted">
+              {{ profile.is_public ? 'Organizations can find you' : 'Only you can see your profile' }}
+            </p>
+          </div>
+          <Switch v-model="profile.is_public" aria-label="Public profile" />
+        </div>
 
-                <div class="onboarding-wizard__fields">
-                  <div class="onboarding-wizard__avatar-section">
-                    <div class="onboarding-wizard__avatar-preview">
-                      <img
-                        v-if="profile.avatar_url && !avatarLoadError"
-                        :src="profile.avatar_url"
-                        class="onboarding-wizard__avatar-img"
-                        @error="avatarLoadError = true"
-                      />
-                      <UserCircle v-else class="onboarding-wizard__avatar-placeholder" />
-                      <div v-if="uploadingAvatar" class="onboarding-wizard__avatar-loading">
-                        <Loader2 class="onboarding-wizard__avatar-spinner" />
-                      </div>
-                    </div>
-
-                    <input
-                      ref="avatarInputRef"
-                      type="file"
-                      accept="image/jpeg,image/png,image/gif,image/webp"
-                      class="onboarding-wizard__file-input"
-                      @change="handleAvatarUpload"
-                    />
-
-                    <button
-                      @click="avatarInputRef?.click()"
-                      :disabled="uploadingAvatar"
-                      class="onboarding-wizard__upload-btn"
-                    >
-                      <Upload :size="18" />
-                      {{ profile.avatar_url ? 'Change Picture' : 'Upload Picture' }}
-                    </button>
-
-                    <p class="onboarding-wizard__hint">JPEG, PNG, GIF, or WebP. Max 5MB.</p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Step 3: About You -->
-              <div v-if="currentStep === 3" class="onboarding-wizard__step">
-                <div class="onboarding-wizard__header">
-                  <div class="onboarding-wizard__icon">
-                    <FileText :size="28" />
-                  </div>
-                  <h2 class="onboarding-wizard__title">Tell us about yourself</h2>
-                  <p class="onboarding-wizard__subtitle">Share your experience and availability</p>
-                </div>
-
-                <div class="onboarding-wizard__fields">
-                  <div class="onboarding-wizard__field">
-                    <label class="onboarding-wizard__label">
-                      Bio
-                      <span class="onboarding-wizard__optional">(optional)</span>
-                    </label>
-                    <textarea
-                      v-model="profile.bio"
-                      rows="3"
-                      class="onboarding-wizard__textarea"
-                      placeholder="Tell organizations about yourself and your clipping style..."
-                    ></textarea>
-                    <p class="onboarding-wizard__hint">{{ (profile.bio || '').length }}/500 characters</p>
-                  </div>
-
-                  <div class="onboarding-wizard__row">
-                    <div class="onboarding-wizard__field">
-                      <label class="onboarding-wizard__label">Experience Level</label>
-                      <CustomDropdown
-                        v-model="profile.experience_level"
-                        :options="[...EXPERIENCE_LEVELS]"
-                        placeholder="Select level"
-                        class="onboarding-wizard__dropdown"
-                        trigger-class="onboarding-wizard__dropdown-trigger"
-                      />
-                    </div>
-
-                    <div class="onboarding-wizard__field">
-                      <label class="onboarding-wizard__label">
-                        Timezone
-                        <span class="onboarding-wizard__optional">(optional)</span>
-                      </label>
-                      <CustomDropdown
-                        v-model="profile.timezone"
-                        :options="TIMEZONE_OPTIONS"
-                        placeholder="Select timezone"
-                        class="onboarding-wizard__dropdown"
-                        trigger-class="onboarding-wizard__dropdown-trigger"
-                      />
-                    </div>
-                  </div>
-
-                  <div class="onboarding-wizard__toggle">
-                    <div class="onboarding-wizard__toggle-info">
-                      <div class="onboarding-wizard__toggle-title">Looking for Work</div>
-                      <div class="onboarding-wizard__toggle-desc">Show that you're available for new campaigns</div>
-                    </div>
-                    <Switch v-model="profile.looking_for_work" />
-                  </div>
-                </div>
-              </div>
-
-              <!-- Step 4: Specialties -->
-              <div v-if="currentStep === 4" class="onboarding-wizard__step">
-                <div class="onboarding-wizard__header">
-                  <div class="onboarding-wizard__icon">
-                    <Sparkles :size="28" />
-                  </div>
-                  <h2 class="onboarding-wizard__title">What's your specialty?</h2>
-                  <p class="onboarding-wizard__subtitle">Select the areas you excel in</p>
-                </div>
-
-                <div class="onboarding-wizard__fields">
-                  <div class="onboarding-wizard__field">
-                    <label class="onboarding-wizard__label">Specialty Tags</label>
-                    <div class="onboarding-wizard__tags">
-                      <button
-                        v-for="tag in SPECIALTY_TAGS"
-                        :key="tag.value"
-                        @click="toggleTag('specialty_tags', tag.value)"
-                        class="onboarding-wizard__tag"
-                        :class="{ 'onboarding-wizard__tag--selected': profile.specialty_tags?.includes(tag.value) }"
-                      >
-                        {{ tag.label }}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="onboarding-wizard__field">
-                    <label class="onboarding-wizard__label">Content Style Tags</label>
-                    <div class="onboarding-wizard__tags">
-                      <button
-                        v-for="tag in CONTENT_STYLE_TAGS"
-                        :key="tag.value"
-                        @click="toggleTag('content_style_tags', tag.value)"
-                        class="onboarding-wizard__tag"
-                        :class="{ 'onboarding-wizard__tag--selected': profile.content_style_tags?.includes(tag.value) }"
-                      >
-                        {{ tag.label }}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Step 5: Platforms & Languages -->
-              <div v-if="currentStep === 5" class="onboarding-wizard__step">
-                <div class="onboarding-wizard__header">
-                  <div class="onboarding-wizard__icon">
-                    <Globe :size="28" />
-                  </div>
-                  <h2 class="onboarding-wizard__title">Your platforms & languages</h2>
-                  <p class="onboarding-wizard__subtitle">
-                    Let organizations know where you post and what languages you speak
-                  </p>
-                </div>
-
-                <div class="onboarding-wizard__fields">
-                  <div class="onboarding-wizard__field">
-                    <label class="onboarding-wizard__label">Preferred Platforms</label>
-                    <div class="onboarding-wizard__tags">
-                      <button
-                        v-for="platform in PREFERRED_PLATFORMS"
-                        :key="platform.value"
-                        @click="toggleTag('preferred_platforms', platform.value)"
-                        class="onboarding-wizard__tag"
-                        :class="{
-                          'onboarding-wizard__tag--selected': profile.preferred_platforms?.includes(platform.value),
-                        }"
-                      >
-                        {{ platform.label }}
-                      </button>
-                    </div>
-                  </div>
-
-                  <div class="onboarding-wizard__field">
-                    <label class="onboarding-wizard__label">Languages</label>
-                    <div class="onboarding-wizard__tags">
-                      <button
-                        v-for="lang in LANGUAGES"
-                        :key="lang.code"
-                        @click="toggleTag('languages', lang.code)"
-                        class="onboarding-wizard__tag"
-                        :class="{ 'onboarding-wizard__tag--selected': profile.languages?.includes(lang.code) }"
-                      >
-                        {{ lang.name }}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Step 6: Review & Finish -->
-              <div v-if="currentStep === 6" class="onboarding-wizard__step">
-                <div class="onboarding-wizard__header">
-                  <div class="onboarding-wizard__icon onboarding-wizard__icon--success">
-                    <Check :size="28" />
-                  </div>
-                  <h2 class="onboarding-wizard__title">You're all set!</h2>
-                  <p class="onboarding-wizard__subtitle">Review your profile before publishing</p>
-                </div>
-
-                <div class="onboarding-wizard__fields">
-                  <!-- Visibility Toggle -->
-                  <div
-                    class="onboarding-wizard__visibility"
-                    :class="{ 'onboarding-wizard__visibility--public': profile.is_public }"
-                  >
-                    <div class="onboarding-wizard__visibility-info">
-                      <div class="onboarding-wizard__visibility-icon">
-                        <Globe v-if="profile.is_public" :size="20" />
-                        <Lock v-else :size="20" />
-                      </div>
-                      <div>
-                        <div class="onboarding-wizard__visibility-title">
-                          {{ profile.is_public ? 'Profile is Public' : 'Profile is Private' }}
-                        </div>
-                        <div class="onboarding-wizard__visibility-desc">
-                          {{ profile.is_public ? 'Organizations can find you' : 'Only you can see your profile' }}
-                        </div>
-                      </div>
-                    </div>
-                    <Switch v-model="profile.is_public" />
-                  </div>
-
-                  <!-- Summary Card -->
-                  <div class="onboarding-wizard__summary">
-                    <div class="onboarding-wizard__summary-header">
-                      <div class="onboarding-wizard__summary-avatar">
-                        <img
-                          v-if="profile.avatar_url && !avatarLoadError"
-                          :src="profile.avatar_url"
-                          class="onboarding-wizard__summary-avatar-img"
-                          @error="avatarLoadError = true"
-                        />
-                        <UserCircle v-else class="onboarding-wizard__summary-avatar-placeholder" />
-                      </div>
-                      <div class="onboarding-wizard__summary-info">
-                        <h3 class="onboarding-wizard__summary-name">{{ profile.display_name || 'Your Name' }}</h3>
-                        <p class="onboarding-wizard__summary-slug">/clipper/{{ profile.slug || 'your-username' }}</p>
-                      </div>
-                    </div>
-
-                    <p v-if="profile.bio" class="onboarding-wizard__summary-bio">{{ profile.bio }}</p>
-
-                    <div class="onboarding-wizard__summary-grid">
-                      <div v-if="profile.specialty_tags?.length" class="onboarding-wizard__summary-section">
-                        <div class="onboarding-wizard__summary-label">
-                          <Sparkles :size="14" />
-                          Specialties
-                        </div>
-                        <div class="onboarding-wizard__summary-tags">
-                          <span v-for="tag in profile.specialty_tags" :key="tag" class="onboarding-wizard__summary-tag">
-                            {{ getLabelForTag('specialty', tag) }}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div v-if="profile.content_style_tags?.length" class="onboarding-wizard__summary-section">
-                        <div class="onboarding-wizard__summary-label">
-                          <Sparkles :size="14" />
-                          Content Style
-                        </div>
-                        <div class="onboarding-wizard__summary-tags">
-                          <span
-                            v-for="tag in profile.content_style_tags"
-                            :key="tag"
-                            class="onboarding-wizard__summary-tag"
-                          >
-                            {{ getLabelForTag('contentStyle', tag) }}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div v-if="profile.preferred_platforms?.length" class="onboarding-wizard__summary-section">
-                        <div class="onboarding-wizard__summary-label">
-                          <Globe :size="14" />
-                          Platforms
-                        </div>
-                        <div class="onboarding-wizard__summary-tags">
-                          <span
-                            v-for="platform in profile.preferred_platforms"
-                            :key="platform"
-                            class="onboarding-wizard__summary-tag"
-                          >
-                            {{ getLabelForTag('platform', platform) }}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div v-if="profile.languages?.length" class="onboarding-wizard__summary-section">
-                        <div class="onboarding-wizard__summary-label">
-                          <Globe :size="14" />
-                          Languages
-                        </div>
-                        <div class="onboarding-wizard__summary-tags">
-                          <span v-for="lang in profile.languages" :key="lang" class="onboarding-wizard__summary-tag">
-                            {{ getLabelForTag('language', lang) }}
-                          </span>
-                        </div>
-                      </div>
-                    </div>
-
-                    <div
-                      v-if="profile.experience_level || profile.looking_for_work"
-                      class="onboarding-wizard__summary-meta"
-                    >
-                      <div v-if="profile.experience_level" class="onboarding-wizard__summary-meta-item">
-                        <Briefcase :size="14" />
-                        <span>{{ getLabelForTag('experience', profile.experience_level) }}</span>
-                      </div>
-                      <div v-if="profile.looking_for_work" class="onboarding-wizard__summary-meta-item">
-                        <CheckCircle :size="14" />
-                        <span>Available for work</span>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Error Display -->
-              <div v-if="error" class="onboarding-wizard__alert onboarding-wizard__alert--error">
-                <AlertTriangle :size="16" />
-                <p class="onboarding-wizard__alert-text">{{ error }}</p>
-              </div>
-            </div>
-
-            <!-- Footer with Navigation -->
-            <div class="onboarding-wizard__footer">
-              <div class="onboarding-wizard__footer-buttons">
-                <button
-                  v-if="currentStep > 1"
-                  @click="prevStep"
-                  :disabled="saving"
-                  class="onboarding-wizard__btn onboarding-wizard__btn--secondary"
-                >
-                  Back
-                </button>
-
-                <button
-                  v-if="currentStep < totalSteps"
-                  @click="nextStep"
-                  :disabled="!canProceed || saving"
-                  class="onboarding-wizard__btn onboarding-wizard__btn--primary"
-                  :class="{ 'onboarding-wizard__btn--full': currentStep === 1 }"
-                >
-                  Continue
-                </button>
-
-                <button
-                  v-if="currentStep === totalSteps"
-                  @click="createProfile"
-                  :disabled="!canProceed || saving"
-                  class="onboarding-wizard__btn onboarding-wizard__btn--primary"
-                >
-                  <Loader2 v-if="saving" class="onboarding-wizard__btn-spinner" />
-                  {{ saving ? 'Creating Profile...' : 'Create Profile' }}
-                </button>
-              </div>
-
-              <!-- Skip Link for Optional Steps -->
-              <button v-if="currentStep === 2 || currentStep === 3" @click="nextStep" class="onboarding-wizard__skip">
-                Skip for now
-              </button>
+        <div class="flex flex-col gap-3">
+          <div class="flex items-center gap-3">
+            <Avatar :src="profile.avatar_url" :icon="UserCircle" size="lg" />
+            <div class="min-w-0">
+              <p class="truncate text-sm font-semibold text-fg">{{ profile.display_name || 'Your name' }}</p>
+              <p class="truncate text-xs text-fg-subtle">/clippers/{{ profile.slug || 'your-username' }}</p>
             </div>
           </div>
-        </Transition>
-      </div>
-    </Transition>
-  </Teleport>
+
+          <p v-if="profile.bio" class="line-clamp-3 text-sm text-fg-muted">{{ profile.bio }}</p>
+
+          <div v-for="group in summaryGroups" :key="group.label" class="flex flex-col gap-1.5">
+            <span class="eyebrow">{{ group.label }}</span>
+            <div class="flex flex-wrap gap-1">
+              <Badge v-for="item in group.items" :key="item" variant="neutral" size="md">{{ item }}</Badge>
+            </div>
+          </div>
+
+          <div v-if="profile.experience_level || profile.looking_for_work" class="flex flex-wrap gap-1.5">
+            <Badge v-if="profile.experience_level" variant="outline" size="md">
+              <Briefcase />
+              {{ getLabelForTag('experience', profile.experience_level) }}
+            </Badge>
+            <Badge v-if="profile.looking_for_work" variant="success" size="md">
+              <CheckCircle />
+              Available for work
+            </Badge>
+          </div>
+        </div>
+      </template>
+    </div>
+
+    <!-- Error -->
+    <div
+      v-if="error"
+      class="flex items-start gap-2 rounded-lg border border-[var(--danger-line)] bg-danger-soft px-3 py-2 text-sm text-danger"
+      role="alert"
+    >
+      <AlertTriangle class="mt-0.5 size-4 shrink-0" />
+      <p>{{ error }}</p>
+    </div>
+
+    <template #footer>
+      <span class="tabular mr-auto text-xs text-fg-subtle">Step {{ currentStep }} of {{ totalSteps }}</span>
+      <Button v-if="currentStep === 2 || currentStep === 3" variant="ghost" @click="nextStep">Skip for now</Button>
+      <Button v-if="currentStep > 1" variant="ghost" :disabled="saving" @click="prevStep">Back</Button>
+      <Button v-if="currentStep < totalSteps" variant="primary" :disabled="!canProceed || saving" @click="nextStep">
+        Continue
+      </Button>
+      <Button v-else variant="primary" :disabled="!canProceed" :loading="saving" @click="createProfile">
+        {{ saving ? 'Creating profile…' : 'Create profile' }}
+      </Button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
@@ -459,9 +226,20 @@
     Lock,
     Briefcase,
     CheckCircle,
+    Tags,
   } from 'lucide-vue-next';
   import { Switch } from '@/components/ui/switch';
   import CustomDropdown from '@/components/CustomDropdown.vue';
+  import SlugInput from '@/components/clipper-profile/SlugInput.vue';
+  import { ToggleChips } from '@/components/ui/toggle-chips';
+  import TimezoneSelector from '@/components/clipper-profile/TimezoneSelector.vue';
+  import { Avatar } from '@/components/ui/avatar';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
+  import { Modal } from '@/components/ui/modal';
+  import { Textarea } from '@/components/ui/textarea';
   import {
     updateMyClipperProfile,
     uploadClipperAvatar,
@@ -472,42 +250,6 @@
     PREFERRED_PLATFORMS,
     LANGUAGES,
   } from '@/services/clipperProfilesApi';
-
-  const TIMEZONE_OPTIONS = [
-    { value: 'America/New_York', label: 'Eastern Time (US & Canada)' },
-    { value: 'America/Chicago', label: 'Central Time (US & Canada)' },
-    { value: 'America/Denver', label: 'Mountain Time (US & Canada)' },
-    { value: 'America/Los_Angeles', label: 'Pacific Time (US & Canada)' },
-    { value: 'America/Anchorage', label: 'Alaska' },
-    { value: 'Pacific/Honolulu', label: 'Hawaii' },
-    { value: 'America/Phoenix', label: 'Arizona' },
-    { value: 'America/Toronto', label: 'Toronto' },
-    { value: 'America/Vancouver', label: 'Vancouver' },
-    { value: 'America/Mexico_City', label: 'Mexico City' },
-    { value: 'America/Sao_Paulo', label: 'São Paulo' },
-    { value: 'America/Buenos_Aires', label: 'Buenos Aires' },
-    { value: 'Europe/London', label: 'London' },
-    { value: 'Europe/Paris', label: 'Paris' },
-    { value: 'Europe/Berlin', label: 'Berlin' },
-    { value: 'Europe/Madrid', label: 'Madrid' },
-    { value: 'Europe/Rome', label: 'Rome' },
-    { value: 'Europe/Amsterdam', label: 'Amsterdam' },
-    { value: 'Europe/Moscow', label: 'Moscow' },
-    { value: 'Europe/Istanbul', label: 'Istanbul' },
-    { value: 'Asia/Dubai', label: 'Dubai' },
-    { value: 'Asia/Kolkata', label: 'Mumbai, Kolkata' },
-    { value: 'Asia/Bangkok', label: 'Bangkok' },
-    { value: 'Asia/Singapore', label: 'Singapore' },
-    { value: 'Asia/Hong_Kong', label: 'Hong Kong' },
-    { value: 'Asia/Shanghai', label: 'Beijing, Shanghai' },
-    { value: 'Asia/Tokyo', label: 'Tokyo' },
-    { value: 'Asia/Seoul', label: 'Seoul' },
-    { value: 'Australia/Sydney', label: 'Sydney' },
-    { value: 'Australia/Melbourne', label: 'Melbourne' },
-    { value: 'Australia/Perth', label: 'Perth' },
-    { value: 'Pacific/Auckland', label: 'Auckland' },
-    { value: 'UTC', label: 'UTC' },
-  ];
 
   interface Props {
     show: boolean;
@@ -527,7 +269,6 @@
   const uploadingAvatar = ref(false);
   const error = ref<string | null>(null);
   const avatarInputRef = ref<HTMLInputElement | null>(null);
-  const avatarLoadError = ref(false);
 
   const profile = reactive<Partial<ClipperProfile>>({
     display_name: '',
@@ -565,14 +306,6 @@
       if (!slugManuallyEdited.value && newName) {
         profile.slug = generateSlug(newName);
       }
-    }
-  );
-
-  // Reset avatar load error when avatar_url changes
-  watch(
-    () => profile.avatar_url,
-    () => {
-      avatarLoadError.value = false;
     }
   );
 
@@ -759,6 +492,28 @@
     }
   );
 
+  // ── Presentation helpers (layout only) ───────────────────────────────
+  const STEP_META = [
+    { title: "Let's start with the basics", description: 'Choose how you want to be known on the platform', icon: UserCircle },
+    { title: 'Add a profile picture', description: 'Help organizations recognize you', icon: ImageIcon },
+    { title: 'Tell us about yourself', description: 'Share your experience and availability', icon: FileText },
+    { title: "What's your specialty?", description: 'Select the areas you excel in', icon: Tags },
+    { title: 'Your platforms & languages', description: 'Where you post and which languages you speak', icon: Globe },
+    { title: "You're all set!", description: 'Review your profile before publishing', icon: Check },
+  ];
+  const currentStepMeta = computed(() => STEP_META[currentStep.value - 1] ?? STEP_META[0]);
+
+  const languageOptions = LANGUAGES.map((l) => ({ value: l.code, label: l.name }));
+
+  const summaryGroups = computed(() =>
+    [
+      { label: 'Specialties', items: (profile.specialty_tags || []).map((v) => getLabelForTag('specialty', v)) },
+      { label: 'Content style', items: (profile.content_style_tags || []).map((v) => getLabelForTag('contentStyle', v)) },
+      { label: 'Platforms', items: (profile.preferred_platforms || []).map((v) => getLabelForTag('platform', v)) },
+      { label: 'Languages', items: (profile.languages || []).map((v) => getLabelForTag('language', v)) },
+    ].filter((g) => g.items.length > 0)
+  );
+
   // Detect and auto-fill timezone
   const detectTimezone = () => {
     try {
@@ -775,816 +530,3 @@
     detectTimezone();
   });
 </script>
-
-<style scoped>
-  /* ===== Overlay ===== */
-  .onboarding-wizard__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.75);
-    backdrop-filter: blur(6px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-    padding: 1rem;
-  }
-
-  /* ===== Dialog Container ===== */
-  .onboarding-wizard {
-    position: relative;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 14px;
-    width: 100%;
-    max-width: 600px;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-  }
-
-  /* ===== Accent Bar ===== */
-  .onboarding-wizard__accent {
-    height: 3px;
-    background: linear-gradient(90deg, #06b6d4, #0ea5e9, #3b82f6);
-    flex-shrink: 0;
-  }
-
-  /* ===== Progress Indicator ===== */
-  .onboarding-wizard__progress {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 1.25rem 0 1rem;
-  }
-
-  .onboarding-wizard__progress-dot {
-    height: 8px;
-    width: 8px;
-    border-radius: 9999px;
-    background-color: var(--sidebar-border);
-    transition: all 250ms ease;
-  }
-
-  .onboarding-wizard__progress-dot--active {
-    width: 32px;
-    background-color: var(--sidebar-accent);
-  }
-
-  /* ===== Close Button ===== */
-  .onboarding-wizard__close {
-    position: absolute;
-    top: 1.25rem;
-    right: 1.25rem;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-    z-index: 10;
-  }
-
-  .onboarding-wizard__close:hover:not(:disabled) {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .onboarding-wizard__close:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* ===== Content ===== */
-  .onboarding-wizard__content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0 2rem 1.5rem;
-    min-height: 0;
-  }
-
-  .onboarding-wizard__content::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .onboarding-wizard__content::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .onboarding-wizard__content::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  .onboarding-wizard__step {
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* ===== Header ===== */
-  .onboarding-wizard__header {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    margin-bottom: 2rem;
-  }
-
-  .onboarding-wizard__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 64px;
-    height: 64px;
-    border-radius: 14px;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-    margin-bottom: 1.25rem;
-  }
-
-  .onboarding-wizard__icon--success {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
-
-  .onboarding-wizard__title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
-    letter-spacing: -0.02em;
-  }
-
-  .onboarding-wizard__subtitle {
-    font-size: 0.9375rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    max-width: 400px;
-  }
-
-  /* ===== Fields ===== */
-  .onboarding-wizard__fields {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  .onboarding-wizard__field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .onboarding-wizard__row {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 1rem;
-  }
-
-  .onboarding-wizard__label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .onboarding-wizard__optional {
-    font-weight: 400;
-    color: var(--sidebar-text-muted);
-    opacity: 0.7;
-    font-size: 0.8125rem;
-  }
-
-  .onboarding-wizard__input,
-  .onboarding-wizard__select,
-  .onboarding-wizard__textarea {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    font-size: 0.9375rem;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .onboarding-wizard__input::placeholder,
-  .onboarding-wizard__textarea::placeholder {
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  .onboarding-wizard__input:focus,
-  .onboarding-wizard__select:focus,
-  .onboarding-wizard__textarea:focus {
-    outline: none;
-    border-color: transparent;
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
-  }
-
-  /* ===== Custom Dropdown Styling ===== */
-  .onboarding-wizard__dropdown {
-    width: 100%;
-  }
-
-  /* Dropdown trigger button styling */
-  :deep(.onboarding-wizard__dropdown-trigger) {
-    width: 100% !important;
-    height: auto !important;
-    padding: 0.75rem 1rem !important;
-    background-color: var(--sidebar-hover) !important;
-    border: 1px solid var(--sidebar-border) !important;
-    border-radius: 8px !important;
-    font-size: 0.9375rem !important;
-    color: var(--sidebar-text) !important;
-    transition: all 150ms ease !important;
-    justify-content: space-between !important;
-  }
-
-  :deep(.onboarding-wizard__dropdown-trigger:hover) {
-    border-color: rgba(255, 255, 255, 0.1) !important;
-  }
-
-  :deep(.onboarding-wizard__dropdown-trigger:focus-within) {
-    border-color: transparent !important;
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3) !important;
-  }
-
-  :deep(.onboarding-wizard__dropdown-trigger span) {
-    color: var(--sidebar-text) !important;
-  }
-
-  :deep(.onboarding-wizard__dropdown-trigger svg) {
-    width: 16px !important;
-    height: 16px !important;
-    color: var(--sidebar-text-muted) !important;
-  }
-
-  .onboarding-wizard__textarea {
-    resize: vertical;
-    min-height: 90px;
-    line-height: 1.5;
-  }
-
-  .onboarding-wizard__input-group {
-    display: flex;
-    align-items: center;
-  }
-
-  .onboarding-wizard__input-prefix {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin-right: 0.375rem;
-    flex-shrink: 0;
-  }
-
-  .onboarding-wizard__input--with-prefix {
-    flex: 1;
-  }
-
-  .onboarding-wizard__hint {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    opacity: 0.7;
-  }
-
-  /* ===== Avatar Section ===== */
-  .onboarding-wizard__avatar-section {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .onboarding-wizard__avatar-preview {
-    position: relative;
-    width: 96px;
-    height: 96px;
-    border-radius: 50%;
-    overflow: hidden;
-    background-color: var(--sidebar-hover);
-    border: 3px solid var(--sidebar-border);
-  }
-
-  .onboarding-wizard__avatar-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .onboarding-wizard__avatar-placeholder {
-    width: 100%;
-    height: 100%;
-    padding: 20px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .onboarding-wizard__avatar-loading {
-    position: absolute;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.6);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .onboarding-wizard__avatar-spinner {
-    width: 24px;
-    height: 24px;
-    color: white;
-    animation: spin 0.8s linear infinite;
-  }
-
-  .onboarding-wizard__file-input {
-    display: none;
-  }
-
-  .onboarding-wizard__upload-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1.25rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .onboarding-wizard__upload-btn:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(6, 182, 212, 0.3);
-  }
-
-  .onboarding-wizard__upload-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* ===== Toggle ===== */
-  .onboarding-wizard__toggle {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1rem 1.25rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .onboarding-wizard__toggle-title {
-    font-size: 0.9375rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .onboarding-wizard__toggle-desc {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin-top: 0.25rem;
-  }
-
-  /* ===== Tags ===== */
-  .onboarding-wizard__tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .onboarding-wizard__tag {
-    padding: 0.5rem 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 20px;
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .onboarding-wizard__tag:hover {
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-text);
-  }
-
-  .onboarding-wizard__tag--selected {
-    background-color: rgba(6, 182, 212, 0.15);
-    border-color: rgba(6, 182, 212, 0.4);
-    color: var(--sidebar-accent);
-  }
-
-  .onboarding-wizard__tag--selected:hover {
-    background-color: rgba(6, 182, 212, 0.2);
-  }
-
-  /* ===== Visibility Toggle ===== */
-  .onboarding-wizard__visibility {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1rem 1.25rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    transition: all 150ms ease;
-  }
-
-  .onboarding-wizard__visibility--public {
-    background-color: rgba(16, 185, 129, 0.1);
-    border-color: rgba(16, 185, 129, 0.3);
-  }
-
-  .onboarding-wizard__visibility-info {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-  }
-
-  .onboarding-wizard__visibility-icon {
-    color: var(--sidebar-text-muted);
-  }
-
-  .onboarding-wizard__visibility--public .onboarding-wizard__visibility-icon {
-    color: #10b981;
-  }
-
-  .onboarding-wizard__visibility-title {
-    font-size: 0.9375rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .onboarding-wizard__visibility-desc {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin-top: 0.25rem;
-  }
-
-  /* ===== Summary ===== */
-  .onboarding-wizard__summary {
-    padding: 0;
-    background-color: transparent;
-    border: none;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .onboarding-wizard__summary-header {
-    display: flex;
-    align-items: center;
-    gap: 1.25rem;
-    padding: 1.25rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .onboarding-wizard__summary-avatar {
-    width: 72px;
-    height: 72px;
-    border-radius: 50%;
-    overflow: hidden;
-    background-color: var(--sidebar-surface);
-    border: 2px solid var(--sidebar-border);
-    flex-shrink: 0;
-  }
-
-  .onboarding-wizard__summary-avatar-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .onboarding-wizard__summary-avatar-placeholder {
-    width: 100%;
-    height: 100%;
-    padding: 16px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .onboarding-wizard__summary-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .onboarding-wizard__summary-name {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
-    letter-spacing: -0.01em;
-  }
-
-  .onboarding-wizard__summary-slug {
-    font-size: 0.875rem;
-    color: var(--sidebar-accent);
-    margin: 0;
-  }
-
-  .onboarding-wizard__summary-bio {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    line-height: 1.6;
-    padding: 1rem 1.25rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .onboarding-wizard__summary-grid {
-    display: grid;
-    grid-template-columns: 1fr;
-    gap: 0.75rem;
-  }
-
-  .onboarding-wizard__summary-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding: 1rem 1.25rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .onboarding-wizard__summary-label {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--sidebar-text);
-  }
-
-  .onboarding-wizard__summary-label svg {
-    color: var(--sidebar-accent);
-  }
-
-  .onboarding-wizard__summary-tags {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .onboarding-wizard__summary-tag {
-    padding: 0.375rem 0.75rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .onboarding-wizard__summary-meta {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.75rem;
-    padding: 1rem 1.25rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .onboarding-wizard__summary-meta-item {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.75rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .onboarding-wizard__summary-meta-item svg {
-    color: #10b981;
-    flex-shrink: 0;
-  }
-
-  /* ===== Alert ===== */
-  .onboarding-wizard__alert {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    padding: 0.875rem 1rem;
-    border-radius: 8px;
-    margin-top: 1rem;
-  }
-
-  .onboarding-wizard__alert--error {
-    background-color: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.3);
-  }
-
-  .onboarding-wizard__alert svg {
-    flex-shrink: 0;
-    color: #ef4444;
-  }
-
-  .onboarding-wizard__alert-text {
-    font-size: 0.8125rem;
-    color: #ef4444;
-    margin: 0;
-  }
-
-  /* ===== Footer ===== */
-  .onboarding-wizard__footer {
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-    padding: 1.25rem 2rem;
-    border-top: 1px solid var(--sidebar-border);
-    background-color: rgba(0, 0, 0, 0.2);
-  }
-
-  .onboarding-wizard__footer-buttons {
-    display: flex;
-    gap: 0.75rem;
-  }
-
-  /* ===== Buttons ===== */
-  .onboarding-wizard__btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.875rem 1.25rem;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .onboarding-wizard__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .onboarding-wizard__btn--full {
-    width: 100%;
-  }
-
-  .onboarding-wizard__btn--secondary {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-    border: 1px solid var(--sidebar-border);
-  }
-
-  .onboarding-wizard__btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .onboarding-wizard__btn--primary {
-    background: linear-gradient(135deg, #06b6d4, #0ea5e9);
-    color: #000;
-  }
-
-  .onboarding-wizard__btn--primary:hover:not(:disabled) {
-    opacity: 0.95;
-  }
-
-  .onboarding-wizard__btn-spinner {
-    width: 18px;
-    height: 18px;
-    animation: spin 0.8s linear infinite;
-  }
-
-  .onboarding-wizard__skip {
-    width: 100%;
-    padding: 0.5rem;
-    background: transparent;
-    border: none;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: color 150ms ease;
-  }
-
-  .onboarding-wizard__skip:hover {
-    color: var(--sidebar-text);
-  }
-
-  /* ===== Animations ===== */
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  .dialog-enter-active {
-    transition: all 250ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 180ms ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.95) translateY(12px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* ===== Responsive ===== */
-  @media (max-width: 640px) {
-    .onboarding-wizard {
-      max-width: 100%;
-      border-radius: 0;
-    }
-
-    .onboarding-wizard__content {
-      padding: 0 1.5rem 1.5rem;
-    }
-
-    .onboarding-wizard__footer {
-      padding: 1.25rem 1.5rem;
-    }
-
-    .onboarding-wizard__row {
-      grid-template-columns: 1fr;
-    }
-  }
-</style>
-
-<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
-<style>
-  /* Onboarding Wizard dropdown menu styling */
-  .onboarding-wizard__dropdown + div[class*='fixed'],
-  div.fixed.bg-popover {
-    background-color: var(--sidebar-surface) !important;
-    border: 1px solid var(--sidebar-border) !important;
-    border-radius: 8px !important;
-    padding: 0.25rem !important;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
-    animation: onboardingDropdownFade 100ms ease-out !important;
-  }
-
-  @keyframes onboardingDropdownFade {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  /* Dropdown menu items */
-  .onboarding-wizard__dropdown + div[class*='fixed'] button,
-  div.fixed.bg-popover button {
-    display: flex !important;
-    align-items: center !important;
-    padding: 0.625rem 0.75rem !important;
-    border-radius: 6px !important;
-    font-size: 0.875rem !important;
-    color: var(--sidebar-text) !important;
-    transition: background-color 150ms ease !important;
-  }
-
-  .onboarding-wizard__dropdown + div[class*='fixed'] button:hover,
-  div.fixed.bg-popover button:hover {
-    background-color: var(--sidebar-hover) !important;
-  }
-
-  .onboarding-wizard__dropdown + div[class*='fixed'] button.bg-primary\/10,
-  div.fixed.bg-popover button.bg-primary\/10 {
-    background-color: rgba(6, 182, 212, 0.15) !important;
-    color: var(--sidebar-accent) !important;
-    font-weight: 600 !important;
-  }
-</style>

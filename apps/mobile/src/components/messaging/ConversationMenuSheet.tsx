@@ -2,6 +2,7 @@ import type { MessagingConversation, MessagingUserSearchResult } from '@clippste
 import { useEffect, useState } from 'react';
 import { ActivityIndicator, Pressable, ScrollView, Text, View } from 'react-native';
 import { BottomSheet } from '@/components/ui/BottomSheet';
+import { appAlert } from '@/lib/appAlert';
 import { Input } from '@/components/ui/input';
 import { useMessaging } from '@/context/MessagingContext';
 import { messagingApi } from '@/services/api';
@@ -83,14 +84,17 @@ export function ConversationMenuSheet({
     }
   };
 
+  function confirmAction(title: string, action: () => Promise<void>, closeAfter = true) {
+    appAlert(title, 'Confirm this change to the conversation.', [{text:'Cancel',style:'cancel'}, {text:'Confirm',style:'destructive',onPress:() => void run(action, closeAfter)}]);
+  }
+
   return (
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      title="Conversation"
-      variant="action"
+      title="Conversation settings"
+      variant="page"
       dismissOnBackdrop={!busy}
-      maxHeightClassName="max-h-[85%]"
     >
       <View className="gap-1 pb-2">
         {conversation.type !== 'support' ? (
@@ -107,7 +111,7 @@ export function ConversationMenuSheet({
             disabled={busy}
             destructive
             onPress={() =>
-              void run(async () => {
+              confirmAction('Leave conversation?', async () => {
                 await leaveConversation(conversation.id);
                 onLeftOrDeleted();
               })
@@ -121,7 +125,7 @@ export function ConversationMenuSheet({
             disabled={busy}
             destructive
             onPress={() =>
-              void run(async () => {
+              confirmAction('Delete conversation?', async () => {
                 await deleteConversation(conversation.id);
                 onLeftOrDeleted();
               })
@@ -133,7 +137,7 @@ export function ConversationMenuSheet({
           <View className="mt-2 rounded-lg bg-surfaceMuted px-3 py-2">
             <Text className="mb-1 text-xs font-semibold uppercase text-muted">Participants</Text>
             {conversation.participants.map((p) => (
-              <View key={p.id} className="flex-row items-center justify-between py-1.5">
+              <View key={p.id} className="min-h-[60px] flex-row items-center justify-between border-b border-border py-3">
                 <Text className="min-w-0 flex-1 text-sm text-foreground">
                   {p.user?.displayName || `User ${p.userId}`}
                   {p.role === 'admin' ? ' · admin' : ''}
@@ -142,7 +146,7 @@ export function ConversationMenuSheet({
                   <Pressable
                     disabled={busy}
                     onPress={() =>
-                      void run(async () => {
+                      confirmAction('Remove participant?', async () => {
                         await removeParticipant(conversation.id, p.userId);
                       }, false)
                     }
@@ -222,7 +226,7 @@ function MenuButton({
     <Pressable
       onPress={onPress}
       disabled={disabled}
-      className="rounded-lg bg-surfaceMuted px-4 py-3.5"
+      className="min-h-[60px] rounded-[14px] bg-surface px-4 py-4"
     >
       <Text
         className={`text-center text-[15px] font-medium ${

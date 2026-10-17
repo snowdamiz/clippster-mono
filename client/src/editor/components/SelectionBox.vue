@@ -32,6 +32,6 @@ const selectionBoxStyle = computed(() => {
 	<div
 		v-if="selectionBoxStyle"
 		:style="selectionBoxStyle"
-		class="border-foreground/50 bg-foreground/5 pointer-events-none absolute z-50 border"
+		class="pointer-events-none absolute z-50 border border-brand bg-brand-soft"
 	/>
 </template>

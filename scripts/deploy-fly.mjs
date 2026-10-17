@@ -4,6 +4,16 @@ import { spawn } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const TARGETS = {
+  web: {
+    cwd: '.',
+    config: 'apps/web/fly.toml',
+    dockerfile: 'apps/web/Dockerfile',
+    ignorefile: 'apps/web/Dockerfile.dockerignore',
+    tokenKey: 'FLY_WEB_TOKEN',
+    label: 'web app',
+    appName: 'clippster-web',
+    extraArgs: ['--ha=false']
+  },
   server: {
     cwd: 'server',
     tokenKey: 'FLY_SERVER_TOKEN',
@@ -15,6 +25,7 @@ const TARGETS = {
     cwd: '.',
     config: 'landing/fly.toml',
     dockerfile: 'landing/Dockerfile',
+    ignorefile: 'landing/Dockerfile.dockerignore',
     tokenKey: 'FLY_LANDING_TOKEN',
     label: 'landing page',
     appName: 'clippster-landing'
@@ -54,37 +65,28 @@ function parseEnvFile(fileContent) {
   return values;
 }
 
-function runDeploy({ cwd, tokenKey, label, appName, config, dockerfile }) {
-  if (!fs.existsSync(ENV_FILE)) {
-    console.error(`Error: ${ENV_FILE} not found`);
-    process.exit(1);
-  }
-
-  const envValues = parseEnvFile(fs.readFileSync(ENV_FILE, 'utf8'));
-  const flyApiToken = envValues.get(tokenKey);
-
-  if (!flyApiToken) {
-    console.error(`Error: ${tokenKey} not found in ${ENV_FILE}`);
-    process.exit(1);
-  }
+function runDeploy({ cwd, tokenKey, label, appName, config, dockerfile, ignorefile, extraArgs = [] }) {
+  const envValues = fs.existsSync(ENV_FILE) ? parseEnvFile(fs.readFileSync(ENV_FILE, 'utf8')) : new Map();
+  const flyApiToken = process.env.FLY_USE_LOGIN === '1' ? null : process.env[tokenKey] || process.env.FLY_API_TOKEN || envValues.get(tokenKey);
 
   const targetCwd = path.join(REPO_ROOT, cwd);
   console.log(`Deploying ${label} to fly.io (${appName})...`);
 
   // Positional "." keeps build context at monorepo root when cwd is "."
-  const args = ['deploy', '.', '--remote-only'];
+  const args = ['deploy', '.', '--remote-only', ...extraArgs];
   if (config) {
     args.push('--config', config);
   }
   if (dockerfile) {
-    args.push('--dockerfile', dockerfile);
+    args.push('--dockerfile', path.join(REPO_ROOT, dockerfile));
   }
+  if (ignorefile) args.push('--ignorefile', path.join(REPO_ROOT, ignorefile));
 
   const child = spawn('flyctl', args, {
     cwd: targetCwd,
     env: {
       ...process.env,
-      FLY_API_TOKEN: flyApiToken
+      ...(flyApiToken ? { FLY_API_TOKEN: flyApiToken } : {})
     },
     stdio: 'inherit'
   });
@@ -106,7 +108,7 @@ function runDeploy({ cwd, tokenKey, label, appName, config, dockerfile }) {
 function main() {
   const target = process.argv[2];
   if (!target || !(target in TARGETS)) {
-    console.error('Usage: node scripts/deploy-fly.mjs <server|landing>');
+    console.error('Usage: node scripts/deploy-fly.mjs <server|landing|web>');
     process.exit(1);
   }
 

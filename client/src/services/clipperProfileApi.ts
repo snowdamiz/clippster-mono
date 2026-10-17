@@ -3,7 +3,7 @@
  * Handles communication with the server for clipper social accounts and payment methods.
  */
 
-import api from './api';
+import api from '@/services/api';
 
 // ============================================
 // Types

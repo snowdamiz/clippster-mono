@@ -3,14 +3,14 @@ defmodule ClippsterServerWeb.CampaignController do
 
   alias ClippsterServer.Campaigns
   alias ClippsterServer.Campaigns.CampaignResource
+  alias ClippsterServer.AppSettings
   alias ClippsterServer.Organizations
   alias ClippsterServer.Storage
 
   plug ClippsterServerWeb.AuthPlug
 
   defp can_access_campaigns?(user) do
-    # Admins always have access, or users explicitly enabled by admin
-    user.is_admin or user.campaigns_enabled
+    AppSettings.is_campaigns_enabled?() or user.is_admin or user.campaigns_enabled
   end
 
   # ============================================================================

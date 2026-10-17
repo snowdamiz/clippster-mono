@@ -1,105 +1,63 @@
 <template>
-  <div class="projects">
+  <div class="audio-library h-full">
     <PageLayout
-      title="Audio Library"
+      title="Audio library"
       description="Manage your downloaded audio and playlists"
       :show-header="true"
       :icon="Music"
     >
       <template #actions>
-        <div v-if="activeTab === 'audio'" class="projects-header-actions">
-          <!-- Bulk Actions (shown when items selected) -->
-          <div v-if="selectedAudioIds.size > 0" class="projects-bulk-actions">
-            <span class="projects-bulk-actions__count">{{ selectedAudioIds.size }} selected</span>
-            <button @click="addSelectedToPlaylist" class="projects-bulk-actions__btn">
-              <ListPlus :size="16" />
-              Add to Playlist
-            </button>
-            <button @click="deleteSelectedAudio" class="projects-bulk-actions__btn projects-bulk-actions__btn--danger">
-              <Trash2 :size="16" />
-              Delete
-            </button>
-            <button @click="clearSelection" class="projects-bulk-actions__btn">
-              <X :size="16" />
-              Clear
-            </button>
-          </div>
-
-          <!-- Normal Actions -->
-          <template v-else>
-            <!-- Search -->
-            <div class="projects-header__search">
-              <Search class="projects-header__search-icon" />
-              <input
-                v-model="searchQuery"
-                type="text"
-                placeholder="Search audio..."
-                class="projects-header__search-input"
-              />
-            </div>
-
-            <!-- Select All Button -->
-            <button v-if="filteredAudio.length > 0" @click="selectAll" class="projects-bulk-actions__btn">
-              <Check :size="16" />
-              Select All
-            </button>
-
-            <!-- Upload Audio Button -->
-            <button @click="handleUploadAudio" class="projects-create-btn">
-              <Upload class="projects-create-btn__icon" />
-              Upload Audio
-            </button>
-          </template>
-        </div>
+        <Button v-if="activeTab === 'audio'" variant="primary" @click="handleUploadAudio"><Upload /> Upload audio</Button>
       </template>
 
-      <div class="projects__content">
-        <!-- Page Heading -->
-        <div
-          v-if="
-            activeTab === 'audio' &&
-            (filteredAudio.length > 0 || playlists.length > 0 || getActiveDownloads().length > 0)
-          "
-          class="projects__heading"
+      <template v-if="canUseTokend || audioFiles.length > 0 || selectedAudioIds.size > 0" #toolbar>
+        <SelectionBar
+          v-if="activeTab === 'audio' && selectedAudioIds.size > 0"
+          :count="selectedAudioIds.size"
+          :total="filteredAudio.length"
+          @clear="clearSelection"
+          @select-all="selectAll"
         >
-          <h1 class="projects__title">Audio Library</h1>
-          <p class="projects__subtitle">Manage your downloaded audio and playlists</p>
-        </div>
+          <Button variant="secondary" size="sm" @click="addSelectedToPlaylist"><ListPlus /> Add to playlist</Button>
+          <Button variant="destructive-soft" size="sm" @click="deleteSelectedAudio"><Trash2 /> Delete</Button>
+        </SelectionBar>
+        <template v-else>
+          <SegmentedControl v-if="canUseTokend" v-model="activeTab" :options="tabOptions" />
+          <SearchField
+            v-if="activeTab === 'audio'"
+            v-model="searchQuery"
+            placeholder="Search audio…"
+            class="min-w-[120px] max-w-64 flex-1"
+          />
+        </template>
+      </template>
 
-        <div class="audio-tabs">
-          <button
-            type="button"
-            :class="['audio-tab', { 'audio-tab--active': activeTab === 'audio' }]"
-            @click="activeTab = 'audio'"
-          >
-            Audio
-          </button>
-          <button
-            v-if="canUseTokend"
-            type="button"
-            :class="['audio-tab', { 'audio-tab--active': activeTab === 'circles' }]"
-            @click="activeTab = 'circles'"
-          >
-            Circles
-          </button>
-        </div>
-
+      <div :key="activeTab" class="flex min-h-full animate-enter flex-col px-5 py-4">
         <CirclesLibraryView v-if="activeTab === 'circles' && canUseTokend" />
 
-        <template v-if="activeTab === 'audio'">
-          <!-- Active Downloads Section -->
-          <div v-if="getActiveDownloads().length > 0" class="projects__section">
-            <div class="projects__section-header-row">
-              <h3 class="projects__section-header">Active Downloads</h3>
+        <!-- First load: skeleton rows (delayed, so fast loads go straight to content) -->
+        <div v-else-if="activeTab === 'audio' && !loaded" class="flex flex-col gap-3" aria-busy="true">
+          <div class="skeleton h-4 w-36" />
+          <div v-for="i in 6" :key="`skeleton-${i}`" class="flex h-12 items-center gap-3 px-3">
+            <div class="skeleton size-8 shrink-0" />
+            <div class="flex flex-1 flex-col gap-1.5">
+              <div class="skeleton h-3.5 w-1/3" />
+              <div class="skeleton h-3 w-1/5" />
             </div>
-            <div class="projects__grid projects__grid--downloads">
+          </div>
+        </div>
+
+        <div v-else-if="activeTab === 'audio'" class="flex flex-1 animate-fade-in flex-col gap-6">
+          <!-- Active downloads -->
+          <section v-if="getActiveDownloads().length > 0">
+            <SectionHeader title="Active downloads" :count="getActiveDownloads().length" class="mb-3" />
+            <div class="card-grid">
               <DownloadCard
                 v-for="download in getActiveDownloads()"
                 :key="download.id"
                 :download="{
                   id: download.id,
                   title: download.title,
-                  mintId: download.id,
                   progress: {
                     download_id: download.id,
                     progress: download.progress,
@@ -107,425 +65,343 @@
                     current_time: undefined,
                     total_time: undefined,
                   },
-                  result: undefined,
                 }"
               />
             </div>
-          </div>
+          </section>
 
-          <!-- Downloaded Audio Section -->
-          <div v-if="filteredAudio.length > 0" class="projects__section">
-            <div class="projects__section-header-row">
-              <h3 class="projects__section-header">Downloaded Audio</h3>
-              <div class="projects__section-actions">
-                <button @click="playAllAudio" class="projects-section-btn" title="Play all">
-                  <Play :size="14" />
-                  Play All
-                </button>
-                <button @click="shuffleAllAudio" class="projects-section-btn" title="Shuffle all">
-                  <Shuffle :size="14" />
-                  Shuffle All
-                </button>
-              </div>
-            </div>
-            <div class="projects__grid">
-              <div
-                v-for="audio in filteredAudio"
-                :key="audio.id"
-                class="project-card project-card--audio"
-                @click="handleAudioCardClick(audio)"
-              >
-                <!-- Selection Checkbox -->
-                <div
-                  class="project-card__checkbox"
-                  :class="{ 'project-card__checkbox--visible': isAudioSelected(audio.id) }"
-                  @click.stop="toggleAudioSelection(audio.id)"
-                >
-                  <div
-                    class="project-card__checkbox-inner"
-                    :class="{ 'project-card__checkbox-inner--checked': isAudioSelected(audio.id) }"
-                  >
-                    <Check v-if="isAudioSelected(audio.id)" class="project-card__checkbox-icon" />
-                  </div>
-                </div>
-
-                <!-- Thumbnail or Fallback -->
-                <div
-                  v-if="audio.thumbnail_url"
-                  class="project-card__thumbnail"
-                  :style="{
-                    backgroundImage: `url(${convertFileSrc(audio.thumbnail_url)})`,
-                  }"
-                >
-                  <div class="project-card__vignette"></div>
-                </div>
-                <div v-else class="project-card__thumbnail project-card__thumbnail--empty">
-                  <div class="project-card__thumbnail-gradient"></div>
-
-                  <!-- Standard Empty State -->
-                  <div class="project-card__empty-icon">
-                    <Music class="project-card__folder-icon" />
-                  </div>
-                </div>
-
-                <!-- Bottom Overlay with Info -->
-                <div class="project-card__bottom">
-                  <!-- Title -->
-                  <h3 class="project-card__title" :title="audio.title">
-                    {{ audio.title }}
-                  </h3>
-
-                  <!-- Metadata Row -->
-                  <div class="project-card__meta">
-                    <!-- Platform Icon -->
-                    <div
-                      v-if="audio.platform === 'YouTube'"
-                      class="project-card__platform project-card__platform--youtube"
-                      title="YouTube"
-                    >
-                      <img src="/youtube.svg" class="project-card__platform-icon" />
-                    </div>
-                    <div
-                      v-else-if="audio.platform === 'Upload'"
-                      class="project-card__platform project-card__platform--manual"
-                      title="Uploaded"
-                    >
-                      <Upload class="project-card__platform-svg" />
-                    </div>
-
-                    <span v-if="audio.platform" class="project-card__dot"></span>
-
-                    <!-- Duration -->
-                    <span v-if="audio.duration" class="project-card__info">
-                      {{ formatDuration(audio.duration) }}
-                    </span>
-
-                    <span v-if="audio.duration && audio.file_size" class="project-card__dot"></span>
-
-                    <!-- File Size -->
-                    <span v-if="audio.file_size" class="project-card__info">
-                      {{ formatFileSize(audio.file_size) }}
-                    </span>
-                  </div>
-                </div>
-
-                <!-- Hover Actions -->
-                <div class="project-card__hover-actions">
-                  <button @click.stop="playAudio(audio)" class="project-card__hover-btn" title="Play">
-                    <Play :size="16" />
-                  </button>
-                  <button
-                    @click.stop="openAddToPlaylistDialog(audio)"
-                    class="project-card__hover-btn"
-                    title="Add to playlist"
-                  >
-                    <ListPlus :size="16" />
-                  </button>
-                  <button
-                    @click.stop="deleteAudio(audio)"
-                    class="project-card__hover-btn project-card__hover-btn--danger"
-                    title="Delete"
-                  >
-                    <Trash2 :size="16" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Playlists Section -->
-          <div v-if="playlists.length > 0" class="projects__section">
-            <div class="projects__section-header-row">
-              <h3 class="projects__section-header">Playlists</h3>
-            </div>
-            <div class="projects__grid">
+          <!-- Playlists -->
+          <section v-if="playlists.length > 0">
+            <SectionHeader title="Playlists" :count="playlists.length" class="mb-3" />
+            <div class="card-grid">
               <div
                 v-for="playlist in playlists"
                 :key="playlist.id"
-                class="project-card project-card--playlist"
+                class="group flex min-w-0 cursor-pointer items-center gap-3 rounded-xl border border-line-subtle bg-surface p-3 outline-none transition-colors hover:border-line-strong focus-visible:shadow-[var(--focus-ring)]"
+                role="button"
+                tabindex="0"
                 @click="viewPlaylist(playlist)"
+                @keydown.enter.self="viewPlaylist(playlist)"
               >
-                <div class="project-card__thumbnail">
-                  <div class="project-card__thumbnail-placeholder">
-                    <ListMusic :size="32" />
-                  </div>
-                  <div class="project-card__playlist-count">{{ getPlaylistTrackCount(playlist.id) }} tracks</div>
-                </div>
-                <div class="project-card__content">
-                  <h3 class="project-card__title">{{ playlist.name }}</h3>
-                  <p v-if="playlist.description" class="project-card__description">
-                    {{ playlist.description }}
+                <IconTile :icon="ListMusic" size="md" />
+                <div class="min-w-0 flex-1">
+                  <p class="truncate text-sm font-medium text-fg" :title="playlist.name">{{ playlist.name }}</p>
+                  <p class="truncate text-xs text-fg-subtle" :title="playlist.description || undefined">
+                    {{ getPlaylistTrackCount(playlist.id) }} {{ getPlaylistTrackCount(playlist.id) === 1 ? 'track' : 'tracks'
+                    }}<template v-if="playlist.description"> · {{ playlist.description }}</template>
                   </p>
                 </div>
-                <div class="project-card__actions">
-                  <button @click.stop="playPlaylist(playlist)" class="project-card__action" title="Play all">
-                    <Play :size="16" />
-                  </button>
-                  <button @click.stop="editPlaylist(playlist)" class="project-card__action" title="Edit">
-                    <Pencil :size="16" />
-                  </button>
-                  <button
-                    @click.stop="deletePlaylist(playlist)"
-                    class="project-card__action project-card__action--danger"
-                    title="Delete"
+                <div class="flex shrink-0 items-center gap-0.5">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="hidden group-focus-within:inline-flex group-hover:inline-flex"
+                    title="Edit"
+                    aria-label="Edit playlist"
+                    @click.stop="editPlaylist(playlist)"
                   >
-                    <Trash2 :size="16" />
-                  </button>
+                    <Pencil />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="hidden hover:text-danger group-focus-within:inline-flex group-hover:inline-flex"
+                    title="Delete"
+                    aria-label="Delete playlist"
+                    @click.stop="deletePlaylist(playlist)"
+                  >
+                    <Trash2 />
+                  </Button>
+                  <Button
+                    variant="secondary"
+                    size="icon-sm"
+                    class="rounded-full"
+                    title="Play all"
+                    aria-label="Play playlist"
+                    @click.stop="playPlaylist(playlist)"
+                  >
+                    <Play class="ml-px" fill="currentColor" />
+                  </Button>
                 </div>
               </div>
             </div>
-          </div>
+          </section>
 
-          <!-- Empty State -->
-          <div
-            v-if="filteredAudio.length === 0 && playlists.length === 0 && getActiveDownloads().length === 0"
-            class="projects-empty"
-          >
-            <Music class="projects-empty__icon" />
-            <h3 class="projects-empty__title">No Audio Files</h3>
-            <p class="projects-empty__text">Download audio from YouTube, or upload your own audio files</p>
-            <div class="projects-empty__actions">
-              <button @click="$router.push('/download-audio')" class="projects-empty__button">
-                <Download :size="18" />
-                Download Audio
-              </button>
-              <button @click="handleUploadAudio" class="projects-empty__button projects-empty__button--secondary">
-                <Upload :size="18" />
-                Upload Audio
-              </button>
+          <!-- Downloaded audio -->
+          <section v-if="filteredAudio.length > 0">
+            <SectionHeader title="Downloaded audio" :count="filteredAudio.length" class="mb-3">
+              <Button variant="ghost" size="sm" title="Play all" @click="playAllAudio"><Play /> Play all</Button>
+              <Button variant="ghost" size="sm" title="Shuffle all" @click="shuffleAllAudio"><Shuffle /> Shuffle</Button>
+            </SectionHeader>
+            <div class="divide-y divide-line-subtle overflow-hidden rounded-xl border border-line-subtle bg-surface">
+              <div
+                v-for="audio in filteredAudio"
+                :key="audio.id"
+                class="group flex min-w-0 cursor-pointer items-center gap-3 px-3 py-1.5 transition-colors"
+                :class="isAudioSelected(audio.id) ? 'bg-brand-soft' : 'hover:bg-surface-hover'"
+                @click="handleAudioCardClick(audio)"
+              >
+                <Checkbox
+                  :model-value="isAudioSelected(audio.id)"
+                  :aria-label="`Select ${audio.title}`"
+                  @click.stop
+                  @update:model-value="toggleAudioSelection(audio.id)"
+                />
+
+                <!-- Artwork with play state -->
+                <div class="relative grid size-8 shrink-0 place-items-center overflow-hidden rounded-md bg-surface-sunken">
+                  <img
+                    v-if="audio.thumbnail_url"
+                    :src="convertFileSrc(audio.thumbnail_url)"
+                    alt=""
+                    class="size-full object-cover"
+                  />
+                  <Music v-else class="size-4 text-fg-subtle" />
+                  <div
+                    class="absolute inset-0 grid place-items-center bg-black/55 text-white transition-opacity"
+                    :class="isCurrentTrack(audio) ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'"
+                  >
+                    <Pause v-if="isCurrentTrack(audio) && isPlaying" class="size-3.5" fill="currentColor" />
+                    <Play v-else class="ml-px size-3.5" fill="currentColor" />
+                  </div>
+                </div>
+
+                <div class="min-w-0 flex-1">
+                  <p
+                    class="truncate text-sm font-medium"
+                    :class="isCurrentTrack(audio) ? 'text-brand' : 'text-fg'"
+                    :title="audio.title"
+                  >
+                    {{ audio.title }}
+                  </p>
+                  <div class="flex min-w-0 items-center gap-1.5 text-xs text-fg-subtle">
+                    <template v-if="platformLabel(audio.platform)">
+                      <img
+                        v-if="platformLabel(audio.platform) === 'YouTube'"
+                        src="/youtube.svg"
+                        alt=""
+                        class="size-3.5 shrink-0"
+                      />
+                      <Upload v-else-if="audio.platform === 'Upload'" class="size-3 shrink-0" />
+                      <span class="truncate">{{ platformLabel(audio.platform) }}</span>
+                    </template>
+                    <template v-if="audio.file_size">
+                      <span v-if="platformLabel(audio.platform)" aria-hidden="true" class="text-fg-disabled">·</span>
+                      <span class="tabular shrink-0">{{ formatFileSize(audio.file_size) }}</span>
+                    </template>
+                  </div>
+                </div>
+
+                <div class="flex shrink-0 items-center gap-0.5 opacity-0 transition-opacity group-focus-within:opacity-100 group-hover:opacity-100">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    title="Add to playlist"
+                    aria-label="Add to playlist"
+                    @click.stop="openAddToPlaylistDialog(audio)"
+                  >
+                    <ListPlus />
+                  </Button>
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    class="hover:text-danger"
+                    title="Delete"
+                    aria-label="Delete"
+                    @click.stop="deleteAudio(audio)"
+                  >
+                    <Trash2 />
+                  </Button>
+                </div>
+
+                <span v-if="audio.duration" class="tabular w-12 shrink-0 text-right text-xs text-fg-subtle">
+                  {{ formatDuration(audio.duration) }}
+                </span>
+              </div>
             </div>
-          </div>
-        </template>
+          </section>
+
+          <!-- Search found nothing while other sections are visible -->
+          <EmptyState
+            v-else-if="searchQuery && (playlists.length > 0 || getActiveDownloads().length > 0)"
+            size="sm"
+            :icon="SearchX"
+            title="No matching audio"
+            :description="`Nothing in your library matches “${searchQuery}”.`"
+          />
+
+          <!-- Empty -->
+          <template v-if="filteredAudio.length === 0 && playlists.length === 0 && getActiveDownloads().length === 0">
+            <EmptyState
+              v-if="searchQuery"
+              :icon="SearchX"
+              title="No matching audio"
+              :description="`Nothing in your library matches “${searchQuery}”.`"
+            >
+              <Button variant="secondary" @click="searchQuery = ''">Clear search</Button>
+            </EmptyState>
+            <EmptyState
+              v-else
+              :icon="Music"
+              title="No audio yet"
+              description="Download audio from YouTube, or upload your own audio files"
+            >
+              <Button variant="secondary" @click="$router.push('/download-audio')"><Download /> Download audio</Button>
+            </EmptyState>
+          </template>
+        </div>
       </div>
     </PageLayout>
 
-    <!-- Create Playlist Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showCreatePlaylistDialog" class="bug-dialog__overlay" @click.self="showCreatePlaylistDialog = false">
-          <div class="bug-dialog">
-            <div class="bug-dialog__accent"></div>
-            <div class="bug-dialog__header">
-              <button class="bug-dialog__close" @click="showCreatePlaylistDialog = false">
-                <X :size="18" />
-              </button>
-              <div class="bug-dialog__icon">
-                <ListMusic :size="24" />
-              </div>
-              <h2 class="bug-dialog__title">Create Playlist</h2>
-            </div>
-            <div class="bug-dialog__content">
-              <div class="bug-dialog__field">
-                <label class="bug-dialog__label">Playlist Name *</label>
-                <input v-model="newPlaylistName" type="text" placeholder="My Playlist" class="bug-dialog__input" />
-              </div>
-              <div class="bug-dialog__field">
-                <label class="bug-dialog__label">Description</label>
-                <textarea
-                  v-model="newPlaylistDescription"
-                  rows="3"
-                  placeholder="Optional description"
-                  class="bug-dialog__input bug-dialog__textarea"
-                ></textarea>
-              </div>
-            </div>
-            <div class="bug-dialog__footer">
-              <button @click="showCreatePlaylistDialog = false" class="bug-dialog__btn bug-dialog__btn--secondary">
-                Cancel
-              </button>
-              <button
-                @click="createPlaylist"
-                :disabled="!newPlaylistName.trim()"
-                class="bug-dialog__btn bug-dialog__btn--primary"
-              >
-                Create
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <!-- Create playlist -->
+    <Modal v-model:open="showCreatePlaylistDialog" title="New playlist" :icon="ListMusic" size="sm">
+      <div class="flex flex-col gap-4">
+        <Field label="Name" for="new-playlist-name" required>
+          <Input id="new-playlist-name" v-model="newPlaylistName" type="text" placeholder="My playlist" />
+        </Field>
+        <Field label="Description" for="new-playlist-description">
+          <Textarea
+            id="new-playlist-description"
+            v-model="newPlaylistDescription"
+            rows="3"
+            placeholder="Optional description"
+          />
+        </Field>
+      </div>
+      <template #footer>
+        <Button variant="ghost" @click="showCreatePlaylistDialog = false">Cancel</Button>
+        <Button variant="primary" :disabled="!newPlaylistName.trim()" @click="createPlaylist">Create</Button>
+      </template>
+    </Modal>
 
-    <!-- Edit Playlist Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showEditPlaylistDialog" class="bug-dialog__overlay" @click.self="showEditPlaylistDialog = false">
-          <div class="bug-dialog">
-            <div class="bug-dialog__accent"></div>
-            <div class="bug-dialog__header">
-              <button class="bug-dialog__close" @click="showEditPlaylistDialog = false">
-                <X :size="18" />
-              </button>
-              <div class="bug-dialog__icon">
-                <Pencil :size="24" />
-              </div>
-              <h2 class="bug-dialog__title">Edit Playlist</h2>
-            </div>
-            <div class="bug-dialog__content">
-              <div class="bug-dialog__field">
-                <label class="bug-dialog__label">Playlist Name *</label>
-                <input v-model="editPlaylistName" type="text" placeholder="My Playlist" class="bug-dialog__input" />
-              </div>
-              <div class="bug-dialog__field">
-                <label class="bug-dialog__label">Description</label>
-                <textarea
-                  v-model="editPlaylistDescription"
-                  rows="3"
-                  placeholder="Optional description"
-                  class="bug-dialog__input bug-dialog__textarea"
-                ></textarea>
-              </div>
-            </div>
-            <div class="bug-dialog__footer">
-              <button @click="showEditPlaylistDialog = false" class="bug-dialog__btn bug-dialog__btn--secondary">
-                Cancel
-              </button>
-              <button
-                @click="savePlaylistEdit"
-                :disabled="!editPlaylistName.trim()"
-                class="bug-dialog__btn bug-dialog__btn--primary"
-              >
-                Save
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
+    <!-- Edit playlist -->
+    <Modal v-model:open="showEditPlaylistDialog" title="Edit playlist" :icon="Pencil" size="sm">
+      <div class="flex flex-col gap-4">
+        <Field label="Name" for="edit-playlist-name" required>
+          <Input id="edit-playlist-name" v-model="editPlaylistName" type="text" placeholder="My playlist" />
+        </Field>
+        <Field label="Description" for="edit-playlist-description">
+          <Textarea
+            id="edit-playlist-description"
+            v-model="editPlaylistDescription"
+            rows="3"
+            placeholder="Optional description"
+          />
+        </Field>
+      </div>
+      <template #footer>
+        <Button variant="ghost" @click="showEditPlaylistDialog = false">Cancel</Button>
+        <Button variant="primary" :disabled="!editPlaylistName.trim()" @click="savePlaylistEdit">Save</Button>
+      </template>
+    </Modal>
 
-    <!-- Add to Playlist Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showAddToPlaylistDialog" class="bug-dialog__overlay" @click.self="showAddToPlaylistDialog = false">
-          <div class="bug-dialog">
-            <div class="bug-dialog__accent"></div>
-            <div class="bug-dialog__header">
-              <button class="bug-dialog__close" @click="showAddToPlaylistDialog = false">
-                <X :size="18" />
-              </button>
-              <div class="bug-dialog__icon">
-                <ListPlus :size="24" />
-              </div>
-              <h2 class="bug-dialog__title">Add to Playlist</h2>
-            </div>
-            <div class="bug-dialog__content">
-              <div class="playlist-select">
-                <!-- Create New Playlist Button -->
-                <button
-                  @click="
-                    showAddToPlaylistDialog = false;
-                    showCreatePlaylistDialog = true;
-                  "
-                  class="playlist-select__item playlist-select__item--create"
-                >
-                  <Plus :size="18" class="playlist-select__icon" />
-                  <div class="playlist-select__info">
-                    <div class="playlist-select__name">Create New Playlist</div>
-                  </div>
-                </button>
-
-                <!-- Existing Playlists -->
-                <button
-                  v-for="playlist in playlists"
-                  :key="playlist.id"
-                  @click="addToPlaylist(playlist.id)"
-                  class="playlist-select__item"
-                >
-                  <ListMusic :size="18" class="playlist-select__icon" />
-                  <div class="playlist-select__info">
-                    <div class="playlist-select__name">{{ playlist.name }}</div>
-                    <div class="playlist-select__count">{{ getPlaylistTrackCount(playlist.id) }} tracks</div>
-                  </div>
-                </button>
-              </div>
-            </div>
-            <div class="bug-dialog__footer">
-              <button @click="showAddToPlaylistDialog = false" class="bug-dialog__btn bug-dialog__btn--secondary">
-                Cancel
-              </button>
-            </div>
-          </div>
-        </div>
-      </Transition>
-    </Teleport>
-
-    <!-- Playlist Detail Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div
-          v-if="showPlaylistDetailDialog && selectedPlaylist"
-          class="bug-dialog__overlay"
-          @click.self="showPlaylistDetailDialog = false"
+    <!-- Add to playlist -->
+    <Modal
+      v-model:open="showAddToPlaylistDialog"
+      title="Add to playlist"
+      :description="
+        selectedAudioIds.size > 0
+          ? `${selectedAudioIds.size} selected ${selectedAudioIds.size === 1 ? 'track' : 'tracks'}`
+          : selectedAudioForPlaylist?.title
+      "
+      :icon="ListPlus"
+      size="sm"
+    >
+      <div class="-mx-2 flex flex-col gap-0.5">
+        <button
+          type="button"
+          class="flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
+          @click="
+            showAddToPlaylistDialog = false;
+            showCreatePlaylistDialog = true;
+          "
         >
-          <div class="bug-dialog bug-dialog--large">
-            <div class="bug-dialog__accent"></div>
-            <div class="bug-dialog__header">
-              <button class="bug-dialog__close" @click="showPlaylistDetailDialog = false">
-                <X :size="18" />
-              </button>
-              <div class="bug-dialog__icon">
-                <ListMusic :size="24" />
-              </div>
-              <h2 class="bug-dialog__title">{{ selectedPlaylist.name }}</h2>
-              <p v-if="selectedPlaylist.description" class="bug-dialog__subtitle">
-                {{ selectedPlaylist.description }}
-              </p>
-            </div>
-            <div class="bug-dialog__content">
-              <p v-if="playlistTracks.length === 0" class="bug-dialog__text">No tracks in this playlist yet.</p>
-              <div v-else class="playlist-tracks">
-                <div
-                  v-for="(track, index) in playlistTracks"
-                  :key="track.playlist_item_id"
-                  :class="[
-                    'playlist-track',
-                    { 'playlist-track--dragging': draggedTrackIndex === index },
-                    { 'playlist-track--drag-over': dragOverTrackIndex === index },
-                  ]"
-                  @mouseenter="handleMouseEnter(index)"
-                  @mouseleave="handleMouseLeave"
-                  @mouseup="handleMouseUp(index)"
-                >
-                  <div
-                    class="playlist-track__drag-handle"
-                    @mousedown.prevent="handleMouseDown(index)"
-                    title="Drag to reorder"
-                  >
-                    <GripVertical :size="18" />
-                  </div>
-                  <div class="playlist-track__number">{{ index + 1 }}</div>
-                  <div class="playlist-track__info">
-                    <div class="playlist-track__title">{{ track.title }}</div>
-                    <div class="playlist-track__meta">
-                      <span v-if="track.platform" class="playlist-track__platform">{{ track.platform }}</span>
-                      <span v-if="track.platform && track.duration" class="playlist-track__dot">•</span>
-                      <span v-if="track.duration">{{ formatDuration(track.duration) }}</span>
-                    </div>
-                  </div>
-                  <div class="playlist-track__actions">
-                    <button @click="playAudio(track)" class="playlist-track__btn" title="Play">
-                      <Play :size="16" />
-                    </button>
-                    <button
-                      @click="removeTrackFromPlaylist(track.playlist_item_id)"
-                      class="playlist-track__btn playlist-track__btn--danger"
-                      title="Remove from playlist"
-                    >
-                      <Trash2 :size="16" />
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-            <div class="bug-dialog__footer">
-              <button @click="showPlaylistDetailDialog = false" class="bug-dialog__btn bug-dialog__btn--secondary">
-                Close
-              </button>
-            </div>
+          <IconTile :icon="Plus" tone="brand" size="md" />
+          <span class="text-sm font-medium text-fg">New playlist</span>
+        </button>
+        <button
+          v-for="playlist in playlists"
+          :key="playlist.id"
+          type="button"
+          class="flex items-center gap-3 rounded-lg px-2 py-2 text-left transition-colors hover:bg-surface-hover focus-visible:outline-none focus-visible:shadow-[var(--focus-ring)]"
+          @click="addToPlaylist(playlist.id)"
+        >
+          <IconTile :icon="ListMusic" size="md" />
+          <span class="min-w-0 flex-1">
+            <span class="block truncate text-sm font-medium text-fg">{{ playlist.name }}</span>
+            <span class="block text-xs text-fg-subtle">{{ getPlaylistTrackCount(playlist.id) }} tracks</span>
+          </span>
+        </button>
+      </div>
+      <template #footer>
+        <Button variant="ghost" @click="showAddToPlaylistDialog = false">Cancel</Button>
+      </template>
+    </Modal>
+
+    <!-- Playlist detail -->
+    <Modal
+      :open="showPlaylistDetailDialog && !!selectedPlaylist"
+      :title="selectedPlaylist?.name"
+      :description="selectedPlaylist?.description || undefined"
+      :icon="ListMusic"
+      size="lg"
+      @close="showPlaylistDetailDialog = false"
+    >
+      <EmptyState
+        v-if="playlistTracks.length === 0"
+        size="sm"
+        :icon="ListMusic"
+        title="No tracks yet"
+        description="Add tracks from your library with the “Add to playlist” action."
+      />
+      <div v-else class="-mx-2 flex select-none flex-col gap-0.5">
+        <div
+          v-for="(track, index) in playlistTracks"
+          :key="track.playlist_item_id"
+          class="group flex min-w-0 items-center gap-2 rounded-lg px-2 py-1.5 transition-colors"
+          :class="[
+            draggedTrackIndex === index ? 'bg-surface-active' : 'hover:bg-surface-hover',
+            dragOverTrackIndex === index && 'bg-brand-soft',
+          ]"
+          @mouseenter="handleMouseEnter(index)"
+          @mouseleave="handleMouseLeave"
+          @mouseup="handleMouseUp(index)"
+        >
+          <span
+            class="grid size-6 shrink-0 cursor-grab place-items-center rounded text-fg-subtle hover:text-fg active:cursor-grabbing"
+            title="Drag to reorder"
+            @mousedown.prevent="handleMouseDown(index)"
+          >
+            <GripVertical class="size-3.5" />
+          </span>
+          <span class="tabular w-5 shrink-0 text-right text-xs text-fg-subtle">{{ index + 1 }}</span>
+          <div class="min-w-0 flex-1 px-1">
+            <p class="truncate text-sm text-fg" :title="track.title">{{ track.title }}</p>
+            <p class="flex items-center gap-1.5 text-xs text-fg-subtle">
+              <span v-if="track.platform">{{ platformLabel(track.platform) }}</span>
+              <span v-if="track.platform && track.duration" aria-hidden="true" class="text-fg-disabled">·</span>
+              <span v-if="track.duration" class="tabular">{{ formatDuration(track.duration) }}</span>
+            </p>
           </div>
+          <Button variant="ghost" size="icon-sm" title="Play" aria-label="Play" @click="playAudio(track)">
+            <Play />
+          </Button>
+          <Button
+            variant="ghost"
+            size="icon-sm"
+            class="hover:text-danger"
+            title="Remove from playlist"
+            aria-label="Remove from playlist"
+            @click="removeTrackFromPlaylist(track.playlist_item_id)"
+          >
+            <Trash2 />
+          </Button>
         </div>
-      </Transition>
-    </Teleport>
+      </div>
+      <template #footer>
+        <Button variant="secondary" @click="showPlaylistDetailDialog = false">Close</Button>
+      </template>
+    </Modal>
 
     <ConfirmationModal
       :show="showDeleteAudioDialog"
@@ -541,7 +417,7 @@
 
     <ConfirmationModal
       :show="showDeletePlaylistDialog"
-      title="Delete Playlist"
+      title="Delete playlist"
       message="Are you sure you want to delete"
       :item-name="playlistToDelete?.name"
       suffix="?"
@@ -589,27 +465,40 @@
   import { invoke } from '@tauri-apps/api/core';
   import {
     Music,
-    Search,
     Upload,
     Download,
     Play,
+    Pause,
     ListPlus,
     Trash2,
     ListMusic,
     Plus,
     Pencil,
-    X,
-    Check,
     GripVertical,
     Shuffle,
+    SearchX,
   } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
+  import { Checkbox } from '@/components/ui/checkbox';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Field } from '@/components/ui/field';
+  import { IconTile } from '@/components/ui/icon-tile';
+  import { Input } from '@/components/ui/input';
+  import { Modal } from '@/components/ui/modal';
+  import { SearchField } from '@/components/ui/search-field';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
+  import { Textarea } from '@/components/ui/textarea';
+  import { SelectionBar } from '@/components/ui/selection-bar';
 
   const router = useRouter();
   const { success, error: showError } = useToast();
   const { getActiveDownloads, uploadAudioFile } = useAudioDownloads();
-  const { playPlaylist: playPlaylistTracks } = useAudioPlayer();
+  const { playPlaylist: playPlaylistTracks, currentTrack, isPlaying } = useAudioPlayer();
 
   const audioFiles = ref<DownloadedAudio[]>([]);
+  // True once the first library load finished — gates the empty state so it never flashes in.
+  const loaded = ref(false);
   const playlists = ref<AudioPlaylist[]>([]);
   const searchQuery = ref('');
   const activeTab = ref<'audio' | 'circles'>('audio');
@@ -636,6 +525,23 @@
   const draggedTrackIndex = ref<number | null>(null);
   const dragOverTrackIndex = ref<number | null>(null);
   const isDragging = ref(false);
+
+  const tabOptions: SegmentedOption<'audio' | 'circles'>[] = [
+    { value: 'audio', label: 'Audio' },
+    { value: 'circles', label: 'Circles' },
+  ];
+
+  /** Track that is loaded in the global player (drives the row highlight). */
+  function isCurrentTrack(audio: DownloadedAudio): boolean {
+    return currentTrack.value?.id === audio.id.toString();
+  }
+
+  function platformLabel(platform: string | null | undefined): string | null {
+    if (!platform) return null;
+    if (platform.toLowerCase() === 'youtube') return 'YouTube';
+    if (platform === 'Upload') return 'Uploaded';
+    return platform;
+  }
 
   const filteredAudio = computed(() => {
     // Circles are separate; exclude any legacy Twitter/X Spaces audio rows
@@ -707,9 +613,9 @@
   const deleteAudioTitle = computed(() => {
     if (bulkDeleteAudioMode.value && selectedAudioIds.value.size > 0) {
       const count = selectedAudioIds.value.size;
-      return `Delete ${count} Audio File${count > 1 ? 's' : ''}`;
+      return `Delete ${count} audio file${count > 1 ? 's' : ''}`;
     }
-    return 'Delete Audio';
+    return 'Delete audio';
   });
 
   const deleteAudioMessage = computed(() => {
@@ -1200,7 +1106,11 @@
   }
 
   onMounted(async () => {
-    await Promise.all([loadAudioFiles(), loadPlaylists()]);
+    try {
+      await Promise.all([loadAudioFiles(), loadPlaylists()]);
+    } finally {
+      loaded.value = true;
+    }
 
     // Listen for audio library updates (after database save is complete)
     window.addEventListener('audio-library-updated', handleAudioLibraryUpdate);
@@ -1217,1103 +1127,3 @@
     window.removeEventListener('audio-library-updated', handleAudioLibraryUpdate);
   });
 </script>
-
-<style scoped>
-  /* ===== Main Container ===== */
-  .projects {
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-    width: 100%;
-    overflow: hidden;
-  }
-
-  /* ===== Audio Tabs ===== */
-  .audio-tabs {
-    display: flex;
-    gap: 0.5rem;
-    padding: 1rem 0;
-    border-bottom: 1px solid var(--sidebar-border);
-    margin-bottom: 1.5rem;
-  }
-
-  .audio-tab {
-    padding: 0.5rem 1rem;
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .audio-tab:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-text);
-  }
-
-  .audio-tab--active {
-    background: var(--sidebar-accent);
-    border-color: var(--sidebar-accent);
-    color: white;
-  }
-
-  .audio-tab--disabled {
-    opacity: 0.45;
-    cursor: not-allowed;
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-  }
-
-  .audio-tab__badge {
-    font-size: 0.5625rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    padding: 0.15rem 0.4rem;
-    border-radius: 4px;
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-  }
-
-  .audio-tab--active:hover {
-    background: var(--sidebar-accent);
-    color: white;
-  }
-
-  /* ===== Header Actions ===== */
-  .projects-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-  }
-
-  .projects-header__search {
-    position: relative;
-    display: flex;
-    align-items: center;
-    flex: 1;
-    max-width: 320px;
-  }
-
-  .projects-header__search-icon {
-    position: absolute;
-    left: 0.75rem;
-    width: 14px;
-    height: 14px;
-    color: var(--sidebar-text-muted);
-    pointer-events: none;
-  }
-
-  .projects-header__search-input {
-    width: 100%;
-    height: 32px;
-    padding: 0 0.75rem 0 2.25rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    font-size: 0.75rem;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .projects-header__search-input::placeholder {
-    color: var(--sidebar-text-muted);
-  }
-
-  .projects-header__search-input:focus {
-    border-color: var(--sidebar-accent);
-    outline: none;
-  }
-
-  .projects-create-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    height: 32px;
-    padding: 0 0.875rem;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border: none;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .projects-create-btn:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .projects-create-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .projects-create-btn__icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* ===== Sections ===== */
-  .projects__section {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .projects__section-header-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1rem;
-  }
-
-  .projects__section-header {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    padding-bottom: 0.1rem;
-  }
-
-  .projects__section-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .projects-section-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    color: var(--sidebar-text);
-    font-size: 0.75rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .projects-section-btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-accent);
-  }
-
-  /* ===== Content Container ===== */
-  .projects__content {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: 1.5rem;
-    width: 100%;
-    flex: 1;
-  }
-
-  /* ===== Page Heading ===== */
-  .projects__heading {
-    margin-bottom: 0.5rem;
-  }
-
-  .projects__title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.2rem;
-    letter-spacing: -0.02em;
-  }
-
-  .projects__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  /* ===== Projects Grid ===== */
-  .projects__grid {
-    display: grid;
-    grid-template-columns: repeat(1, 1fr);
-    gap: 1.25rem;
-  }
-
-  @media (min-width: 1024px) {
-    .projects__grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (min-width: 1400px) {
-    .projects__grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  @media (min-width: 2200px) {
-    .projects__grid {
-      grid-template-columns: repeat(5, 1fr);
-    }
-  }
-
-  /* ===== Project Card ===== */
-  .project-card {
-    position: relative;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: all 200ms ease;
-    aspect-ratio: 16 / 9;
-  }
-
-  .project-card:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-    transform: scale(1.02);
-  }
-
-  /* Thumbnail */
-  .project-card__thumbnail {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-  }
-
-  .project-card__thumbnail--empty {
-    background-color: var(--sidebar-hover);
-  }
-
-  .project-card__thumbnail-gradient {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.4) 50%, rgba(0, 0, 0, 0.5) 100%);
-  }
-
-  /* Empty State Icons */
-  .project-card__empty-icon {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.2;
-  }
-
-  .project-card__folder-icon {
-    width: 64px;
-    height: 64px;
-    color: var(--sidebar-text);
-  }
-
-  /* Bottom Info */
-  .project-card__bottom {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 5;
-    padding: 1rem;
-    padding-top: 7rem;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 50%, transparent 100%);
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .project-card__title {
-    font-size: 1rem;
-    font-weight: 700;
-    color: white;
-    margin: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-    line-height: 1.3;
-    transition: color 150ms ease;
-  }
-
-  .project-card:hover .project-card__title {
-    color: rgba(255, 255, 255, 0.9);
-  }
-
-  .project-card__meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.7);
-    flex-wrap: wrap;
-  }
-
-  .project-card__info {
-    color: rgba(255, 255, 255, 0.7);
-  }
-
-  .project-card__dot {
-    width: 3px;
-    height: 3px;
-    border-radius: 50%;
-    background-color: rgba(255, 255, 255, 0.4);
-    flex-shrink: 0;
-  }
-
-  /* Platform Icons */
-  .project-card__platform {
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  }
-
-  .project-card__platform--youtube {
-    background-color: #dc2626;
-  }
-
-  .project-card__platform--manual {
-    background-color: #475569;
-    color: white;
-  }
-
-  .project-card__platform-icon {
-    width: 10px;
-    height: 10px;
-    filter: invert(1) brightness(2);
-  }
-
-  .project-card__platform-svg {
-    width: 10px;
-    height: 10px;
-  }
-
-  /* Hover Actions */
-  .project-card__hover-actions {
-    position: absolute;
-    inset: 0;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    background-color: rgba(0, 0, 0, 0.4);
-    opacity: 0;
-    transition: opacity 200ms ease;
-  }
-
-  .project-card:hover .project-card__hover-actions {
-    opacity: 1;
-  }
-
-  .project-card__hover-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.5rem;
-    background-color: rgba(255, 255, 255, 0.9);
-    border: none;
-    border-radius: 9999px;
-    color: #1f2937;
-    cursor: pointer;
-    transition: all 150ms ease;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-  }
-
-  .project-card__hover-btn:hover {
-    background-color: white;
-    transform: scale(1.1);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  }
-
-  .project-card__hover-btn--danger:hover {
-    background-color: #ef4444;
-    color: white;
-  }
-
-  /* Playlist Card Styles */
-  .project-card__thumbnail-placeholder {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-  }
-
-  .project-card__playlist-count {
-    position: absolute;
-    bottom: 0.75rem;
-    right: 0.75rem;
-    padding: 0.25rem 0.5rem;
-    background-color: rgba(0, 0, 0, 0.75);
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: white;
-    z-index: 10;
-  }
-
-  .project-card__content {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    padding: 1rem;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 70%, transparent 100%);
-    z-index: 5;
-  }
-
-  .project-card__description {
-    font-size: 0.8125rem;
-    color: rgba(255, 255, 255, 0.7);
-    margin: 0;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  .project-card__actions {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    display: flex;
-    gap: 0.5rem;
-    opacity: 0;
-    transition: opacity 200ms ease;
-    z-index: 20;
-  }
-
-  .project-card:hover .project-card__actions {
-    opacity: 1;
-  }
-
-  .project-card__action {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    padding: 0.375rem;
-    background-color: rgba(255, 255, 255, 0.9);
-    border: none;
-    border-radius: 50%;
-    color: #1a1a1a;
-    cursor: pointer;
-    transition: all 150ms ease;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-  }
-
-  .project-card__action:hover {
-    background-color: white;
-    transform: scale(1.1);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  }
-
-  .project-card__action--danger:hover {
-    background-color: #ef4444;
-    color: white;
-  }
-
-  /* ===== Empty State ===== */
-  .projects-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    text-align: center;
-  }
-
-  .projects-empty__icon {
-    width: 64px;
-    height: 64px;
-    color: var(--sidebar-text-muted);
-    margin-bottom: 1.5rem;
-    opacity: 0.5;
-  }
-
-  .projects-empty__title {
-    font-size: 1.5rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.75rem;
-  }
-
-  .projects-empty__text {
-    font-size: 0.9375rem;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 2rem;
-    max-width: 400px;
-  }
-
-  .projects-empty__actions {
-    display: flex;
-    gap: 0.75rem;
-  }
-
-  .projects-empty__button {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1.25rem;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border: none;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .projects-empty__button:hover {
-    opacity: 0.9;
-  }
-
-  .projects-empty__button--secondary {
-    background-color: var(--sidebar-surface);
-    color: var(--sidebar-text);
-    border: 1px solid var(--sidebar-border);
-  }
-
-  .projects-empty__button--secondary:hover {
-    background-color: var(--sidebar-hover);
-    border-color: rgba(255, 255, 255, 0.15);
-  }
-
-  /* ===== Playlist Selection ===== */
-  .playlist-select {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    max-height: 300px;
-    overflow-y: auto;
-  }
-
-  .playlist-select__item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 150ms ease;
-    text-align: left;
-  }
-
-  .playlist-select__item:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: var(--sidebar-accent);
-  }
-
-  .playlist-select__icon {
-    color: var(--sidebar-accent);
-    flex-shrink: 0;
-  }
-
-  .playlist-select__info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .playlist-select__name {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .playlist-select__count {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .playlist-select__item--create {
-    background: rgba(6, 182, 212, 0.1);
-    border-color: var(--sidebar-accent);
-  }
-
-  .playlist-select__item--create:hover {
-    background: rgba(6, 182, 212, 0.15);
-  }
-
-  .playlist-select__item--create .playlist-select__icon {
-    color: var(--sidebar-accent);
-  }
-
-  .playlist-select__item--create .playlist-select__name {
-    color: var(--sidebar-accent);
-    font-weight: 600;
-  }
-
-  /* ===== Playlist Tracks ===== */
-  .playlist-tracks {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    max-height: 400px;
-    overflow-y: auto;
-  }
-
-  .playlist-track {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 0.75rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    transition: all 150ms ease;
-  }
-
-  .playlist-track:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: rgba(255, 255, 255, 0.15);
-  }
-
-  .playlist-track--dragging {
-    opacity: 0.5;
-  }
-
-  .playlist-track--drag-over {
-    border-color: var(--sidebar-accent);
-    background: rgba(59, 130, 246, 0.1);
-  }
-
-  .playlist-track__drag-handle {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--sidebar-text-muted);
-    cursor: grab;
-    padding: 0.25rem;
-    margin-left: -0.25rem;
-    border-radius: 4px;
-    transition: all 150ms ease;
-    user-select: none;
-    -webkit-user-drag: element;
-  }
-
-  .playlist-track__drag-handle:hover {
-    color: var(--sidebar-text);
-    background: rgba(255, 255, 255, 0.05);
-  }
-
-  .playlist-track__drag-handle:active {
-    cursor: grabbing;
-  }
-
-  .playlist-track {
-    user-select: none;
-  }
-
-  .playlist-track__number {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    min-width: 24px;
-    text-align: center;
-  }
-
-  .playlist-track__info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .playlist-track__title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 0.25rem;
-  }
-
-  .playlist-track__meta {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .playlist-track__platform {
-    text-transform: capitalize;
-  }
-
-  .playlist-track__dot {
-    opacity: 0.5;
-  }
-
-  .playlist-track__actions {
-    display: flex;
-    gap: 0.5rem;
-  }
-
-  .playlist-track__btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    color: var(--sidebar-text);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .playlist-track__btn:hover {
-    background: rgba(255, 255, 255, 0.05);
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-accent);
-  }
-
-  .playlist-track__btn--danger:hover {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: #ef4444;
-    color: #ef4444;
-  }
-
-  /* ===== Dialog Styling (matches ClipDetectionConfirmDialog) ===== */
-  .bug-dialog__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.75);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-    backdrop-filter: blur(4px);
-  }
-
-  .bug-dialog {
-    position: relative;
-    width: 90%;
-    max-width: 500px;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
-    overflow: hidden;
-  }
-
-  .bug-dialog--large {
-    max-width: 700px;
-  }
-
-  .bug-dialog__accent {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--sidebar-accent) 0%, rgba(6, 182, 212, 0.5) 100%);
-  }
-
-  .bug-dialog__header {
-    position: relative;
-    padding: 1.5rem 1.5rem 1rem;
-    text-align: center;
-  }
-
-  .bug-dialog__close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .bug-dialog__close:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .bug-dialog__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 56px;
-    height: 56px;
-    margin: 0 auto 1rem;
-    background-color: rgba(6, 182, 212, 0.1);
-    border-radius: 12px;
-    color: var(--sidebar-accent);
-  }
-
-  .bug-dialog__title {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .bug-dialog__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.5rem 0 0;
-  }
-
-  .bug-dialog__content {
-    padding: 0 1.5rem 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .bug-dialog__field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .bug-dialog__label {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  /* Audio card specific styles - half height, same width */
-  .project-card--audio {
-    aspect-ratio: auto;
-    height: 160px;
-  }
-
-  .project-card--audio .project-card__thumbnail {
-    height: 100px;
-  }
-
-  .project-card--audio .project-card__thumbnail--empty {
-    height: 100px;
-  }
-
-  .project-card--audio .project-card__bottom {
-    padding: 0.75rem;
-  }
-
-  .project-card--audio .project-card__title {
-    font-size: 0.875rem;
-    line-height: 1.3;
-    -webkit-line-clamp: 2;
-  }
-
-  .project-card--audio .project-card__meta {
-    margin-top: 0.25rem;
-  }
-
-  /* Checkbox styles */
-  .project-card__checkbox {
-    position: absolute;
-    top: 0.5rem;
-    right: 0.5rem;
-    z-index: 100;
-    opacity: 0;
-    transition: opacity 150ms ease;
-    pointer-events: auto;
-  }
-
-  .project-card:hover .project-card__checkbox,
-  .project-card__checkbox--visible {
-    opacity: 1;
-  }
-
-  .project-card__checkbox-inner {
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    background-color: rgba(0, 0, 0, 0.6);
-    border: 2px solid rgba(255, 255, 255, 0.3);
-    backdrop-filter: blur(10px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .project-card__checkbox-inner:hover {
-    background-color: rgba(0, 0, 0, 0.8);
-    border-color: rgba(255, 255, 255, 0.5);
-  }
-
-  .project-card__checkbox-inner--checked {
-    background-color: var(--sidebar-accent);
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-  }
-
-  .project-card__checkbox-inner--checked:hover {
-    background-color: var(--sidebar-accent);
-    border-color: var(--sidebar-accent);
-  }
-
-  .project-card__checkbox-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  /* Bulk Actions */
-  .projects-bulk-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .projects-bulk-actions__count {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    padding: 0.5rem 0.75rem;
-    background: rgba(6, 182, 212, 0.1);
-    border-radius: 6px;
-  }
-
-  .projects-bulk-actions__btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.875rem;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.1);
-    border-radius: 6px;
-    color: var(--sidebar-text);
-    font-size: 0.875rem;
-    font-weight: 500;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .projects-bulk-actions__btn:hover {
-    background: rgba(255, 255, 255, 0.1);
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-
-  .projects-bulk-actions__btn--danger {
-    color: #ef4444;
-  }
-
-  .projects-bulk-actions__btn--danger:hover {
-    background: rgba(239, 68, 68, 0.1);
-    border-color: rgba(239, 68, 68, 0.3);
-  }
-
-  .bug-dialog__input {
-    width: 100%;
-    padding: 0.75rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .bug-dialog__input::placeholder {
-    color: var(--sidebar-text-muted);
-  }
-
-  .bug-dialog__input:focus {
-    border-color: var(--sidebar-accent);
-    outline: none;
-  }
-
-  .bug-dialog__textarea {
-    resize: vertical;
-    min-height: 80px;
-    font-family: inherit;
-  }
-
-  .bug-dialog__footer {
-    display: flex;
-    gap: 0.75rem;
-    padding: 1.25rem 1.5rem;
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  .bug-dialog__btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-    border: none;
-  }
-
-  .bug-dialog__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .bug-dialog__btn--secondary {
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    color: var(--sidebar-text);
-  }
-
-  .bug-dialog__btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .bug-dialog__btn--primary {
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-  }
-
-  .bug-dialog__btn--primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  /* Modal transitions */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-</style>

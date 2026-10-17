@@ -8,13 +8,12 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
 
   require Logger
 
-  alias ClippsterServer.AI.ThumbnailSessions
+  alias ClippsterServer.AI.{ImageGenerationPolicy, ThumbnailSessions}
   alias ClippsterServer.Storage
 
   @chat_url "https://openrouter.ai/api/v1/chat/completions"
   @images_url "https://openrouter.ai/api/v1/images"
   @default_chat_model "anthropic/claude-sonnet-5"
-  @default_image_model "openai/gpt-5.4-image-2"
   @default_vision_model "google/gemini-3.7-flash"
   @max_retries 2
   @plate_qa_max_attempts 2
@@ -92,7 +91,27 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
   # Chat
   # ---------------------------------------------------------------------------
 
-  def chat(session, user_message, api_key) do
+  def complete_json(messages, api_key) do
+    with {:ok, content} <- call_chat(messages, api_key),
+         {:ok, parsed} <- parse_json_object(content) do
+      {:ok, parsed}
+    end
+  end
+
+  @doc """
+  Returns `{:ok, {:json, map}}` when the model replies with JSON, or
+  `{:ok, {:text, binary}}` when the reply is free-form prose.
+  """
+  def complete_json_or_text(messages, api_key) do
+    with {:ok, content} <- call_chat(messages, api_key) do
+      case parse_json_object(content) do
+        {:ok, parsed} -> {:ok, {:json, parsed}}
+        {:error, _} -> {:ok, {:text, content}}
+      end
+    end
+  end
+
+  def chat(session, _user_message, api_key) do
     if is_nil(api_key) or api_key == "" do
       {:error, "OpenRouter API key not configured"}
     else
@@ -102,7 +121,7 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
 
       messages = [
         %{"role" => "system", "content" => system_prompt}
-        | history ++ [%{"role" => "user", "content" => user_message}]
+        | history
       ]
 
       case call_chat(messages, api_key) do
@@ -152,6 +171,7 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
   def refine(session, user_message, api_key) do
     history = ThumbnailSessions.build_conversation_history(session.id)
     context = build_chat_context(session)
+    current_url = current_visual_url(session)
 
     result_context =
       cond do
@@ -165,12 +185,41 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
           ""
       end
 
-    system_prompt = @refinement_system_prompt <> context <> result_context
+    vision_note =
+      if is_binary(current_url) and current_url != "" do
+        "\n\n## CURRENT IMAGE\nThe current thumbnail is attached as a vision input for this turn."
+      else
+        ""
+      end
 
-    messages = [
-      %{"role" => "system", "content" => system_prompt}
-      | history ++ [%{"role" => "user", "content" => user_message}]
-    ]
+    system_prompt = @refinement_system_prompt <> context <> result_context <> vision_note
+
+    # Controller already persisted the user text turn; rebuild with vision when possible.
+    history =
+      case List.last(history) do
+        %{"role" => "user"} -> Enum.drop(history, -1)
+        _ -> history
+      end
+
+    user_content =
+      if is_binary(current_url) and current_url != "" do
+        [
+          %{
+            "type" => "text",
+            "text" =>
+              "Revision request:\n#{user_message}\n\nLook at the attached current thumbnail before answering."
+          },
+          %{"type" => "image_url", "image_url" => %{"url" => current_url}}
+        ]
+      else
+        user_message
+      end
+
+    messages =
+      [
+        %{"role" => "system", "content" => system_prompt}
+        | history
+      ] ++ [%{"role" => "user", "content" => user_content}]
 
     case call_chat(messages, api_key) do
       {:ok, content} ->
@@ -216,7 +265,10 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
   # ---------------------------------------------------------------------------
 
   def generate(session, api_key, opts \\ %{}) do
-    mode = Map.get(opts, "generation_mode") || Map.get(opts, :generation_mode) || session.generation_mode || "editable"
+    mode =
+      Map.get(opts, "generation_mode") || Map.get(opts, :generation_mode) ||
+        session.generation_mode || "editable"
+
     summary = session.brief_summary || last_summary(session) || %{}
     {width, height, aspect} = resolve_canvas(session, summary)
 
@@ -248,7 +300,86 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
         refine_recipe_text(session, change_description, api_key)
 
       true ->
-        generate(session, api_key, %{"generation_mode" => session.generation_mode})
+        case current_visual_url(session) do
+          url when is_binary(url) and url != "" ->
+            refine_from_current_image(session, change_description, api_key, url)
+
+          _ ->
+            generate(session, api_key, %{"generation_mode" => session.generation_mode})
+        end
+    end
+  end
+
+  defp refine_from_current_image(session, change_description, api_key, base_url) do
+    summary = session.brief_summary || %{}
+    {width, height, aspect} = resolve_canvas(session, summary)
+    started_at = System.monotonic_time(:millisecond)
+
+    prompt = """
+    Edit this existing thumbnail.
+    Change only: #{change_description}
+    Keep everything else the same (identity, layout, colors, typography, composition).
+    """
+
+    n = if session.generation_mode == "quick", do: 2, else: 1
+
+    with {:ok, images} <-
+           generate_images(api_key, prompt, [base_url],
+             n: n,
+             aspect_ratio: aspect,
+             width: width,
+             height: height,
+             operation: :edit,
+             base_image_urls: [base_url]
+           ),
+         {:ok, candidates} <- persist_candidates(session, images, width, height) do
+      elapsed_ms = System.monotonic_time(:millisecond) - started_at
+      policy = generation_policy([base_url], operation: :edit, base_image_urls: [base_url])
+      url = List.first(candidates)["url"]
+
+      composition =
+        Map.merge(session.composition || %{}, %{
+          "mode" => session.generation_mode || "quick",
+          "refinement" => change_description,
+          "previous_image_url" => base_url,
+          "telemetry" => %{
+            "model" => policy.model,
+            "operation" => "edit",
+            "variant_count" => length(candidates),
+            "reference_count" => 1,
+            "latency_ms" => elapsed_ms,
+            "canvas" => "#{width}x#{height}"
+          }
+        })
+
+      {:ok,
+       %{
+         generation_mode: session.generation_mode || "quick",
+         candidates: candidates,
+         plate_url: session.plate_url,
+         recipe: session.recipe,
+         composition: composition,
+         thumbnail_url: url,
+         canvas_width: width,
+         canvas_height: height
+       }}
+    end
+  end
+
+  defp current_visual_url(session) do
+    cond do
+      is_binary(session.thumbnail_url) and String.trim(session.thumbnail_url) != "" ->
+        session.thumbnail_url
+
+      is_binary(session.plate_url) and String.trim(session.plate_url) != "" ->
+        session.plate_url
+
+      true ->
+        case List.first(session.candidates || []) do
+          %{"url" => url} when is_binary(url) and url != "" -> url
+          %{url: url} when is_binary(url) and url != "" -> url
+          _ -> nil
+        end
     end
   end
 
@@ -395,7 +526,10 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
       end
 
     custom = Map.get(opts, "custom_instructions") || Map.get(opts, :custom_instructions) || ""
-    concept_id = Map.get(opts, "concept_id") || Map.get(opts, :concept_id) || session.selected_concept_id
+
+    concept_id =
+      Map.get(opts, "concept_id") || Map.get(opts, :concept_id) || session.selected_concept_id
+
     aspect = Map.get(opts, "aspect_ratio") || Map.get(opts, :aspect_ratio) || "16:9"
     {width, height, aspect} = resolve_canvas(session, %{"aspect_ratio" => aspect})
 
@@ -412,8 +546,16 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
       end
 
     title = session.video_title || "Video"
-    hook = if concept, do: Map.get(concept, "hook_text"), else: get_in(session.brief_summary || %{}, ["hook_text"])
-    base_prompt = if concept, do: Map.get(concept, "prompt"), else: get_in(session.brief_summary || %{}, ["generation_prompt"])
+
+    hook =
+      if concept,
+        do: Map.get(concept, "hook_text"),
+        else: get_in(session.brief_summary || %{}, ["hook_text"])
+
+    base_prompt =
+      if concept,
+        do: Map.get(concept, "prompt"),
+        else: get_in(session.brief_summary || %{}, ["generation_prompt"])
 
     prompt = """
     Create a high-CTR YouTube thumbnail from this video content.
@@ -434,7 +576,9 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
              n: variant_count,
              aspect_ratio: aspect,
              width: width,
-             height: height
+             height: height,
+             operation: :create,
+             base_image_urls: base_image_urls(session)
            ),
          {:ok, candidates} <- persist_candidates(session, images, width, height) do
       composition = %{
@@ -475,28 +619,56 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
           "reference_variant_url" => url
         })
 
-      session = %{session | brief_summary: summary, reference_image_url: url, generation_mode: "editable"}
-      generate_editable(session, api_key, summary, session.canvas_width || 1280, session.canvas_height || 720, "16:9")
+      session = %{
+        session
+        | brief_summary: summary,
+          reference_image_url: url,
+          generation_mode: "editable"
+      }
+
+      generate_editable(
+        session,
+        api_key,
+        summary,
+        session.canvas_width || 1280,
+        session.canvas_height || 720,
+        "16:9"
+      )
     end
   end
 
   defp generate_quick(session, api_key, summary, width, height, aspect) do
     prompt = build_quick_prompt(summary)
     refs = collect_reference_urls(session)
+    bases = base_image_urls(session)
+    started_at = System.monotonic_time(:millisecond)
 
     with {:ok, images} <-
            generate_images(api_key, prompt, refs,
              n: 2,
              aspect_ratio: aspect,
              width: width,
-             height: height
+             height: height,
+             operation: :create,
+             base_image_urls: bases
            ),
          {:ok, candidates} <- persist_candidates(session, images, width, height) do
+      elapsed_ms = System.monotonic_time(:millisecond) - started_at
+      policy = generation_policy(refs, operation: :create, base_image_urls: bases)
+
       composition = %{
         "mode" => "quick",
         "canvas" => %{"width" => width, "height" => height, "aspect_ratio" => aspect},
         "candidates" => candidates,
-        "summary" => summary
+        "summary" => summary,
+        "telemetry" => %{
+          "model" => policy.model,
+          "operation" => to_string(policy.operation),
+          "variant_count" => length(candidates),
+          "reference_count" => length(refs),
+          "latency_ms" => elapsed_ms,
+          "canvas" => "#{width}x#{height}"
+        }
       }
 
       {:ok,
@@ -526,17 +698,31 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
              n: 1,
              aspect_ratio: aspect,
              width: width,
-             height: height
+             height: height,
+             operation: :create,
+             base_image_urls: base_image_urls(session)
            ),
          {:ok, plate_url} <- persist_single_image(session, List.first(images), "plate"),
          :ok <- validate_plate_no_text(plate_url, api_key, summary, attempt),
          {:ok, recipe} <- build_recipe(session, summary, plate_url, width, height, api_key) do
+      refs = collect_reference_urls(session)
+      bases = base_image_urls(session)
+      policy = generation_policy(refs, operation: :create, base_image_urls: bases)
+
       composition = %{
         "mode" => "editable",
         "canvas" => %{"width" => width, "height" => height, "aspect_ratio" => aspect},
         "plate_url" => plate_url,
         "recipe" => recipe,
-        "summary" => summary
+        "summary" => summary,
+        "telemetry" => %{
+          "model" => policy.model,
+          "operation" => to_string(policy.operation),
+          "variant_count" => 1,
+          "reference_count" => length(refs),
+          "canvas" => "#{width}x#{height}",
+          "qa_attempt" => attempt
+        }
       }
 
       {:ok,
@@ -591,7 +777,11 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
       {:ok, content} ->
         case parse_json_object(content) do
           {:ok, recipe} ->
-            recipe = Map.put(recipe, "plate_asset", %{"url" => session.plate_url, "role" => "background_plate"})
+            recipe =
+              Map.put(recipe, "plate_asset", %{
+                "url" => session.plate_url,
+                "role" => "background_plate"
+              })
 
             composition =
               (session.composition || %{})
@@ -741,14 +931,21 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
     cta = Map.get(summary, "cta_text") || Map.get(summary, "ctaText")
     desc = Map.get(summary, "description") || "YouTube thumbnail"
     emotion = Map.get(summary, "emotion") || "curiosity"
-    subject = Map.get(summary, "focal_subject") || Map.get(summary, "focalSubject") || "main subject"
+
+    subject =
+      Map.get(summary, "focal_subject") || Map.get(summary, "focalSubject") || "main subject"
+
     layout = Map.get(summary, "layout") || "balanced"
     colors = Map.get(summary, "color_palette") || Map.get(summary, "colorPalette") || []
     notes = Map.get(summary, "style_notes") || Map.get(summary, "styleNotes") || ""
     refinement = Map.get(summary, "refinement_notes")
 
-    cta_line = if is_binary(cta) and cta != "", do: "Include secondary CTA text: \"#{cta}\".", else: ""
-    color_line = if colors != [], do: "Color accents: #{Enum.join(List.wrap(colors), ", ")}.", else: ""
+    cta_line =
+      if is_binary(cta) and cta != "", do: "Include secondary CTA text: \"#{cta}\".", else: ""
+
+    color_line =
+      if colors != [], do: "Color accents: #{Enum.join(List.wrap(colors), ", ")}.", else: ""
+
     refine_line = if is_binary(refinement), do: "Apply this refinement: #{refinement}.", else: ""
 
     """
@@ -769,14 +966,20 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
   def build_plate_prompt(summary) when is_map(summary) do
     desc = Map.get(summary, "description") || "YouTube thumbnail background"
     emotion = Map.get(summary, "emotion") || "curiosity"
-    subject = Map.get(summary, "focal_subject") || Map.get(summary, "focalSubject") || "main subject"
+
+    subject =
+      Map.get(summary, "focal_subject") || Map.get(summary, "focalSubject") || "main subject"
+
     layout = Map.get(summary, "layout") || "face left, space for text right"
     colors = Map.get(summary, "color_palette") || Map.get(summary, "colorPalette") || []
     notes = Map.get(summary, "style_notes") || Map.get(summary, "styleNotes") || ""
     refinement = Map.get(summary, "refinement_notes")
 
-    color_line = if colors != [], do: "Color accents: #{Enum.join(List.wrap(colors), ", ")}.", else: ""
-    refine_line = if is_binary(refinement), do: "Apply this visual refinement: #{refinement}.", else: ""
+    color_line =
+      if colors != [], do: "Color accents: #{Enum.join(List.wrap(colors), ", ")}.", else: ""
+
+    refine_line =
+      if is_binary(refinement), do: "Apply this visual refinement: #{refinement}.", else: ""
 
     """
     Create a YouTube thumbnail BACKGROUND PLATE only (16:9 feel).
@@ -802,7 +1005,11 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
     hook = Map.get(summary, "hook_text") || Map.get(summary, "hookText") || "WATCH THIS"
     cta = Map.get(summary, "cta_text") || Map.get(summary, "ctaText")
     layout = Map.get(summary, "layout") || "face left, text right"
-    colors = Map.get(summary, "color_palette") || Map.get(summary, "colorPalette") || ["#FFFFFF", "#FF6B00"]
+
+    colors =
+      Map.get(summary, "color_palette") || Map.get(summary, "colorPalette") ||
+        ["#FFFFFF", "#FF6B00"]
+
     primary = List.first(List.wrap(colors)) || "#FFFFFF"
     accent = Enum.at(List.wrap(colors), 1) || "#000000"
 
@@ -817,9 +1024,12 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
         {:ok, recipe}
 
       {:error, reason} ->
-        Logger.warning("[ThumbnailComposer] Recipe LLM failed (#{inspect(reason)}); using defaults")
+        Logger.warning(
+          "[ThumbnailComposer] Recipe LLM failed (#{inspect(reason)}); using defaults"
+        )
 
-        text_x = if String.contains?(String.downcase(to_string(layout)), "left"), do: 0.55, else: 0.08
+        text_x =
+          if String.contains?(String.downcase(to_string(layout)), "left"), do: 0.55, else: 0.08
 
         text_layers = [
           %{
@@ -850,7 +1060,12 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
                   "color" => "#FFFFFF",
                   "text_align" => "left",
                   "stroke" => %{"color" => "#000000", "width" => 4},
-                  "shadow" => %{"color" => "#000000", "blur" => 8, "offset_x" => 2, "offset_y" => 2},
+                  "shadow" => %{
+                    "color" => "#000000",
+                    "blur" => 8,
+                    "offset_x" => 2,
+                    "offset_y" => 2
+                  },
                   "position" => %{"x" => text_x, "y" => 0.55},
                   "scale" => 1
                 }
@@ -926,7 +1141,9 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
 
     with {:ok, content} <- call_chat(messages, api_key),
          {:ok, recipe} <- parse_json_object(content) do
-      if is_list(Map.get(recipe, "text_layers")), do: {:ok, recipe}, else: {:error, "missing text_layers"}
+      if is_list(Map.get(recipe, "text_layers")),
+        do: {:ok, recipe},
+        else: {:error, "missing text_layers"}
     end
   end
 
@@ -935,9 +1152,12 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
   # ---------------------------------------------------------------------------
 
   def generate_images(api_key, prompt, reference_urls, opts) do
-    model = System.get_env("OPENROUTER_IMAGE_MODEL") || @default_image_model
+    policy = generation_policy(reference_urls, opts)
+    model = policy.model
     n = Keyword.get(opts, :n, 1)
     aspect_ratio = Keyword.get(opts, :aspect_ratio, "16:9")
+    quality = image_quality(policy.operation)
+    resolution = image_resolution(policy.operation)
 
     input_references =
       reference_urls
@@ -953,8 +1173,18 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
         "n" => n,
         "aspect_ratio" => aspect_ratio,
         "output_format" => "png",
-        "quality" => System.get_env("OPENROUTER_IMAGE_QUALITY") || "high"
+        "quality" => quality,
+        # Pin OpenAI so we don't silently fall through to a weaker image endpoint.
+        "provider" => %{
+          "only" => ["openai"],
+          "allow_fallbacks" => false
+        }
       }
+      |> then(fn p ->
+        if is_binary(resolution) and resolution != "",
+          do: Map.put(p, "resolution", resolution),
+          else: p
+      end)
       |> then(fn p ->
         if input_references == [], do: p, else: Map.put(p, "input_references", input_references)
       end)
@@ -963,20 +1193,34 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
       {"Authorization", "Bearer #{api_key}"},
       {"Content-Type", "application/json"},
       {"HTTP-Referer", "https://github.com/snowdamiz/clippster"},
-      {"X-Title", "Clippster AI Thumbnail"}
+      {"X-Title", "Clippster AI Image Creator"}
     ]
 
-    Logger.info("[ThumbnailComposer] Generating images model=#{model} n=#{n} refs=#{length(input_references)}")
+    Logger.info(
+      "[ThumbnailComposer] Generating images model=#{model} quality=#{quality} resolution=#{inspect(resolution)} n=#{n} refs=#{length(input_references)}"
+    )
 
-    case HTTPoison.post(@images_url, Jason.encode!(payload), headers, recv_timeout: 180_000) do
+    # gpt-image-2 high quality commonly takes 90–150s; give the request room.
+    recv_timeout =
+      case Integer.parse(System.get_env("OPENROUTER_IMAGE_TIMEOUT_MS") || "") do
+        {ms, _} when ms > 0 -> ms
+        _ -> 240_000
+      end
+
+    case HTTPoison.post(@images_url, Jason.encode!(payload), headers, recv_timeout: recv_timeout) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         case Jason.decode(body) do
           {:ok, response} ->
             images = extract_image_payloads(response)
 
             if images == [] do
+              Logger.error(
+                "[ThumbnailComposer] Image API returned empty payloads: #{String.slice(to_string(body), 0, 400)}"
+              )
+
               {:error, "Image API returned no images"}
             else
+              Logger.info("[ThumbnailComposer] Image API returned #{length(images)} image(s)")
               {:ok, images}
             end
 
@@ -992,17 +1236,53 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
     end
   end
 
+  # Creation should match ChatGPT Images quality. Edits can stay lighter/faster
+  # unless overridden. Prefer high for finals; Flare already improves latency vs gpt-image-2.
+  defp image_quality(:create) do
+    System.get_env("OPENROUTER_IMAGE_QUALITY") || "high"
+  end
+
+  defp image_quality(_operation) do
+    System.get_env("OPENROUTER_IMAGE_EDIT_QUALITY") || "high"
+  end
+
+  # Optional only — current OpenAI Flare/Sunburst OpenRouter endpoints ignore resolution.
+  defp image_resolution(:create) do
+    case System.get_env("OPENROUTER_IMAGE_RESOLUTION") do
+      value when is_binary(value) and value != "" -> value
+      _ -> nil
+    end
+  end
+
+  defp image_resolution(_operation) do
+    case System.get_env("OPENROUTER_IMAGE_EDIT_RESOLUTION") do
+      value when is_binary(value) and value != "" -> value
+      _ -> nil
+    end
+  end
+
   defp extract_image_payloads(%{"data" => data}) when is_list(data) do
     Enum.flat_map(data, fn item ->
-      cond do
-        is_binary(item["b64_json"]) ->
-          [%{"b64" => item["b64_json"], "mime" => item["output_format"] || "png"}]
+      mime =
+        item["media_type"] ||
+          case item["output_format"] do
+            "jpeg" -> "image/jpeg"
+            "jpg" -> "image/jpeg"
+            "webp" -> "image/webp"
+            "png" -> "image/png"
+            other when is_binary(other) -> other
+            _ -> "image/png"
+          end
 
-        is_binary(item["url"]) ->
-          [%{"url" => item["url"], "mime" => "png"}]
+      cond do
+        is_binary(item["b64_json"]) and item["b64_json"] != "" ->
+          [%{"b64" => item["b64_json"], "mime" => mime}]
+
+        is_binary(item["url"]) and item["url"] != "" ->
+          [%{"url" => item["url"], "mime" => mime}]
 
         is_binary(get_in(item, ["image_url", "url"])) ->
-          [%{"url" => get_in(item, ["image_url", "url"]), "mime" => "png"}]
+          [%{"url" => get_in(item, ["image_url", "url"]), "mime" => mime}]
 
         true ->
           []
@@ -1027,7 +1307,11 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
               "selected" => idx == 0
             }
 
-          {:error, _} ->
+          {:error, reason} ->
+            Logger.warning(
+              "[ThumbnailComposer] Failed to persist candidate #{idx}: #{inspect(reason)}"
+            )
+
             nil
         end
       end)
@@ -1038,62 +1322,135 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
 
   def persist_single_image(_session, nil, _label), do: {:error, "No image payload"}
 
-  def persist_single_image(session, %{"url" => url}, _label) when is_binary(url) do
-    if String.starts_with?(url, "http") do
-      # Re-host if possible for permanence; otherwise keep provider URL
-      case download_and_upload(session, url) do
-        {:ok, hosted} -> {:ok, hosted}
-        {:error, _} -> {:ok, url}
-      end
-    else
-      {:ok, url}
+  def persist_single_image(session, %{"url" => url} = img, label) when is_binary(url) do
+    mime = Map.get(img, "mime", "image/png")
+
+    cond do
+      String.starts_with?(url, "data:") ->
+        case data_url_to_binary(url) do
+          {:ok, binary, content_type} ->
+            upload_or_data_url(session, binary, label, content_type)
+
+          {:error, reason} ->
+            {:error, reason}
+        end
+
+      String.starts_with?(url, "http") ->
+        case download_and_upload(session, url, label, mime) do
+          {:ok, hosted} ->
+            {:ok, hosted}
+
+          {:error, reason} ->
+            # Never keep short-lived provider URLs — they break in the browser.
+            {:error, reason}
+        end
+
+      true ->
+        {:error, "Unsupported image URL scheme"}
     end
   end
 
   def persist_single_image(session, %{"b64" => b64} = img, label) when is_binary(b64) do
-    mime = Map.get(img, "mime", "png")
-    ext = if mime in ["jpeg", "jpg"], do: "jpg", else: "png"
-    content_type = if ext == "jpg", do: "image/jpeg", else: "image/png"
+    mime = Map.get(img, "mime", "image/png")
+    content_type = normalize_content_type(mime)
 
     case Base.decode64(b64) do
       {:ok, binary} ->
-        key = "ai-thumbnails/#{session.user_id}/#{session.id}/#{label}_#{System.system_time(:millisecond)}.#{ext}"
-
-        case Storage.configured?() and Storage.upload_file(binary, key, content_type: content_type) do
-          {:ok, url} ->
-            {:ok, url}
-
-          false ->
-            {:ok, "data:#{content_type};base64,#{b64}"}
-
-          {:error, reason} ->
-            Logger.warning("[ThumbnailComposer] R2 upload failed: #{inspect(reason)}; using data URL")
-            {:ok, "data:#{content_type};base64,#{b64}"}
-        end
+        upload_or_data_url(session, binary, label, content_type)
 
       :error ->
-        {:error, "Invalid base64 image"}
+        # Some providers return URL-safe or padded base64 variants.
+        case Base.decode64(b64, padding: false) do
+          {:ok, binary} -> upload_or_data_url(session, binary, label, content_type)
+          :error -> {:error, "Invalid base64 image"}
+        end
     end
   end
 
   def persist_single_image(_, _, _), do: {:error, "Unsupported image payload"}
 
-  defp download_and_upload(session, url) do
-    case HTTPoison.get(url, [], recv_timeout: 60_000, follow_redirect: true) do
-      {:ok, %HTTPoison.Response{status_code: 200, body: body}} when is_binary(body) ->
-        key =
-          "ai-thumbnails/#{session.user_id}/#{session.id}/refetch_#{System.system_time(:millisecond)}.png"
+  defp upload_or_data_url(session, binary, label, content_type) when is_binary(binary) do
+    ext = extension_for(content_type)
 
-        if Storage.configured?() do
-          Storage.upload_file(body, key, content_type: "image/png")
-        else
-          {:ok, "data:image/png;base64,#{Base.encode64(body)}"}
+    key =
+      "#{storage_prefix(session)}/#{session.user_id}/#{session.id}/#{label}_#{System.system_time(:millisecond)}.#{ext}"
+
+    case Storage.configured?() and Storage.upload_file(binary, key, content_type: content_type) do
+      {:ok, url} ->
+        {:ok, url}
+
+      false ->
+        {:ok, "data:#{content_type};base64,#{Base.encode64(binary)}"}
+
+      {:error, reason} ->
+        Logger.warning(
+          "[ThumbnailComposer] R2 upload failed: #{inspect(reason)}; using data URL"
+        )
+
+        {:ok, "data:#{content_type};base64,#{Base.encode64(binary)}"}
+    end
+  end
+
+  defp download_and_upload(session, url, label, mime) do
+    headers =
+      case System.get_env("OPENROUTER_API_KEY") do
+        key when is_binary(key) and key != "" ->
+          [{"Authorization", "Bearer #{key}"}]
+
+        _ ->
+          []
+      end
+
+    case HTTPoison.get(url, headers, recv_timeout: 60_000, follow_redirect: true) do
+      {:ok, %HTTPoison.Response{status_code: 200, body: body}} when is_binary(body) and body != "" ->
+        upload_or_data_url(session, body, label, normalize_content_type(mime))
+
+      {:ok, %HTTPoison.Response{status_code: status}} ->
+        {:error, {:download_failed, status}}
+
+      {:error, reason} ->
+        {:error, {:download_failed, reason}}
+    end
+  end
+
+  defp data_url_to_binary(<<"data:", rest::binary>>) do
+    case String.split(rest, ",", parts: 2) do
+      [meta, data] ->
+        content_type =
+          meta
+          |> String.split(";")
+          |> List.first()
+          |> normalize_content_type()
+
+        case Base.decode64(data) do
+          {:ok, binary} -> {:ok, binary, content_type}
+          :error -> {:error, :invalid_data_url}
         end
 
       _ ->
-        {:error, :download_failed}
+        {:error, :invalid_data_url}
     end
   end
+
+  defp data_url_to_binary(_), do: {:error, :invalid_data_url}
+
+  defp normalize_content_type("image/jpeg"), do: "image/jpeg"
+  defp normalize_content_type("image/jpg"), do: "image/jpeg"
+  defp normalize_content_type("jpeg"), do: "image/jpeg"
+  defp normalize_content_type("jpg"), do: "image/jpeg"
+  defp normalize_content_type("image/webp"), do: "image/webp"
+  defp normalize_content_type("webp"), do: "image/webp"
+  defp normalize_content_type("image/png"), do: "image/png"
+  defp normalize_content_type("png"), do: "image/png"
+  defp normalize_content_type("image/" <> _ = mime), do: mime
+  defp normalize_content_type(_), do: "image/png"
+
+  defp extension_for("image/jpeg"), do: "jpg"
+  defp extension_for("image/webp"), do: "webp"
+  defp extension_for(_), do: "png"
+
+  defp storage_prefix(%{creator_mode: "image"}), do: "ai-images"
+  defp storage_prefix(_session), do: "ai-thumbnails"
 
   # ---------------------------------------------------------------------------
   # Helpers
@@ -1167,7 +1524,8 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
         ""
       end
 
-    Enum.join(parts, "\n") <> media <> frames <> ref <> video_meta <> transcript <> concepts <> brief
+    Enum.join(parts, "\n") <>
+      media <> frames <> ref <> video_meta <> transcript <> concepts <> brief
   end
 
   defp collect_reference_urls(session) do
@@ -1182,7 +1540,9 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
 
     frame_urls =
       (session.key_frames || [])
-      |> Enum.map(fn f -> Map.get(f, "url") || Map.get(f, "dataUrl") || Map.get(f, "data_url") end)
+      |> Enum.map(fn f ->
+        Map.get(f, "url") || Map.get(f, "dataUrl") || Map.get(f, "data_url")
+      end)
       |> Enum.filter(&(is_binary(&1) and &1 != ""))
 
     media_urls =
@@ -1202,6 +1562,30 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
     |> Enum.take(8)
   end
 
+  def generation_policy(reference_urls, opts) do
+    requested_operation =
+      Keyword.get(opts, :operation, if(reference_urls == [], do: :create, else: :edit))
+
+    base_image_urls = Keyword.get(opts, :base_image_urls)
+
+    has_base_image =
+      if is_list(base_image_urls) do
+        Enum.any?(base_image_urls, &(is_binary(&1) and String.trim(&1) != ""))
+      else
+        reference_urls != []
+      end
+
+    ImageGenerationPolicy.resolve(requested_operation, has_base_image)
+  end
+
+  defp base_image_urls(session) do
+    if is_binary(session.reference_image_url) and String.trim(session.reference_image_url) != "" do
+      [session.reference_image_url]
+    else
+      []
+    end
+  end
+
   defp resolve_canvas(session, summary) do
     aspect = Map.get(summary, "aspect_ratio") || Map.get(summary, "aspectRatio") || "16:9"
     aspect = if aspect in @valid_aspect_ratios, do: aspect, else: "16:9"
@@ -1213,8 +1597,14 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
         _ -> {1280, 720}
       end
 
-    width = Map.get(summary, "canvas_width") || Map.get(summary, "canvasWidth") || session.canvas_width || w
-    height = Map.get(summary, "canvas_height") || Map.get(summary, "canvasHeight") || session.canvas_height || h
+    width =
+      Map.get(summary, "canvas_width") || Map.get(summary, "canvasWidth") || session.canvas_width ||
+        w
+
+    height =
+      Map.get(summary, "canvas_height") || Map.get(summary, "canvasHeight") ||
+        session.canvas_height || h
+
     {width, height, aspect}
   end
 
@@ -1330,12 +1720,28 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
       {"X-Title", "Clippster AI Thumbnail Chat"}
     ]
 
-    case HTTPoison.post(@chat_url, Jason.encode!(payload), headers, recv_timeout: 60_000) do
+    case HTTPoison.post(@chat_url, Jason.encode!(payload), headers, recv_timeout: 90_000) do
       {:ok, %HTTPoison.Response{status_code: 200, body: body}} ->
         case Jason.decode(body) do
           {:ok, response} ->
-            content = get_in(response, ["choices", Access.at(0), "message", "content"])
-            if content, do: {:ok, content}, else: {:error, "No content in response"}
+            case extract_message_content(response) do
+              {:ok, content} ->
+                {:ok, content}
+
+              :empty when attempt < @max_retries ->
+                finish_reason =
+                  get_in(response, ["choices", Access.at(0), "finish_reason"]) || "unknown"
+
+                Logger.warning(
+                  "[ThumbnailComposer] Empty chat content (finish_reason=#{inspect(finish_reason)}) on attempt #{attempt}/#{@max_retries}; retrying"
+                )
+
+                Process.sleep(:timer.seconds(attempt * 2))
+                call_chat_retry(messages, api_key, attempt + 1)
+
+              :empty ->
+                {:error, "No content in response"}
+            end
 
           {:error, reason} ->
             {:error, "Failed to parse response: #{inspect(reason)}"}
@@ -1357,4 +1763,36 @@ defmodule ClippsterServer.AI.ThumbnailComposer do
         {:error, "Network error: #{inspect(reason)}"}
     end
   end
+
+  defp extract_message_content(response) when is_map(response) do
+    message = get_in(response, ["choices", Access.at(0), "message"]) || %{}
+    content = Map.get(message, "content")
+
+    text =
+      cond do
+        is_binary(content) ->
+          content
+
+        is_list(content) ->
+          content
+          |> Enum.map(fn
+            part when is_binary(part) -> part
+            %{"text" => text} when is_binary(text) -> text
+            %{"type" => "text", "text" => text} when is_binary(text) -> text
+            _ -> ""
+          end)
+          |> Enum.join()
+
+        true ->
+          case Map.get(message, "refusal") do
+            refusal when is_binary(refusal) -> refusal
+            _ -> ""
+          end
+      end
+
+    trimmed = text |> to_string() |> String.trim()
+    if trimmed != "", do: {:ok, trimmed}, else: :empty
+  end
+
+  defp extract_message_content(_), do: :empty
 end

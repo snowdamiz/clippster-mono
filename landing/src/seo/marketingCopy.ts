@@ -1,3 +1,4 @@
+import {productComparison} from './productComparison'
 import { CAPTION_LANGUAGES_VERIFIED, PUBLISH_PLATFORMS, publishTargetsLabel } from './productFacts'
 
 export const CLIPPING_TOOL_FAQS = [
@@ -15,7 +16,7 @@ export const CLIPPING_TOOL_FAQS = [
   },
   {
     q: 'Does Clippster work without uploading my whole VOD to the cloud?',
-    a: 'Yes. Clippster is a desktop app. Video stays on your machine until you choose to export or schedule a post.',
+    a: 'Clippster edits local video on desktop. AI processing and connected publishing use online services; do not assume every workflow stays on your device.',
   },
   {
     q: 'Can clipping teams use Clippster?',
@@ -23,31 +24,7 @@ export const CLIPPING_TOOL_FAQS = [
   },
 ]
 
-export const CLIPPING_TOOL_COMPARISON = [
-  { feature: 'Real-time live clipping', clippster: 'Yes (desktop)', opus: 'No' },
-  { feature: 'AI highlight detection', clippster: 'Live + VOD', opus: 'VOD queue' },
-  { feature: 'Download VODs', clippster: 'Yes (desktop & mobile)', opus: 'Upload / queue focused' },
-  { feature: 'Desktop timeline editor', clippster: 'Multi-track', opus: 'Basic web editor' },
-  {
-    feature: 'Custom framing & aspect ratios',
-    clippster: 'Yes (included)',
-    opus: 'Pro-gated (vendor)',
-  },
-  {
-    feature: 'Social posting & scheduling',
-    clippster: `Included on paid plans (${publishTargetsLabel()})`,
-    opus: 'Available; check plan gates',
-  },
-  {
-    feature: 'Auto-captions',
-    clippster: `${CAPTION_LANGUAGES_VERIFIED} languages (verified)`,
-    opus: '20+ languages (vendor claim)',
-  },
-  { feature: 'Picture-in-Picture stream view', clippster: 'Yes', opus: 'No' },
-  { feature: 'Clipper campaigns & hiring', clippster: 'Yes', opus: 'No' },
-  { feature: 'Local processing', clippster: 'Yes', opus: 'Cloud upload' },
-  { feature: 'Starting paid plan', clippster: '$12.99/mo', opus: 'From $15/mo' },
-]
+export const CLIPPING_TOOL_COMPARISON = productComparison.flatMap(group => group.features.map(row => ({feature: row.name, clippster: row.clippster, opus: row.opus})))
 
 export type ComparisonRow = {
   feature: string

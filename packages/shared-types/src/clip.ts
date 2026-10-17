@@ -13,6 +13,11 @@ export interface WhisperSegment {
   words?: WordInfo[];
 }
 
+export const SHORT_VIDEO_CLIP_THRESHOLD_SECONDS = 90;
+export function isShortVideoAutoClipEligible(duration: number | null | undefined): boolean {
+  return typeof duration === 'number' && Number.isFinite(duration) && duration > 0 && duration < SHORT_VIDEO_CLIP_THRESHOLD_SECONDS;
+}
+
 export interface ClipSegment {
   id?: string;
   clip_version_id?: string;

@@ -4,7 +4,9 @@ import { useRoute, useRouter } from "vue-router";
 import EditorLayout from "@/editor/components/EditorLayout.vue";
 import { EditorCore } from "@/editor/core";
 import { loadClippsterProject } from "@/editor/bridge/project-loader";
-import { Loader2 } from "lucide-vue-next";
+import { AlertTriangle, ArrowLeft, Loader2, RotateCcw } from "lucide-vue-next";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
 import { useAppTour } from "@/composables/useAppTour";
 
 const route = useRoute();
@@ -87,37 +89,29 @@ function handleBack() {
 
 <template>
 	<!-- Loading state -->
-	<div v-if="isLoading" class="flex h-screen w-screen items-center justify-center bg-background">
+	<div v-if="isLoading" class="flex h-full w-full items-center justify-center bg-panel">
 		<div class="flex flex-col items-center gap-3">
-			<Loader2 class="text-primary size-8 animate-spin" />
-			<p class="text-muted-foreground text-sm">{{ loadStage }}</p>
+			<Loader2 class="size-6 animate-spin text-brand" />
+			<p class="text-sm text-fg-muted">{{ loadStage }}</p>
 		</div>
 	</div>
 
 	<!-- Error state -->
-	<div v-else-if="error" class="flex h-screen w-screen items-center justify-center bg-background">
-		<div class="flex flex-col items-center gap-4 text-center">
-			<p class="text-destructive text-lg font-medium">Failed to load editor</p>
-			<p class="text-muted-foreground text-sm">{{ error }}</p>
-			<button
-				type="button"
-				class="rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground"
-				@click="retryLoad"
-			>
-				Try again
-			</button>
-			<button type="button" class="text-primary text-sm underline" @click="handleBack">
+	<div v-else-if="error" class="flex h-full w-full items-center justify-center bg-panel">
+		<EmptyState :icon="AlertTriangle" tone="danger" title="Couldn't open the editor" :description="error">
+			<Button variant="ghost" @click="handleBack">
+				<ArrowLeft />
 				Back to projects
-			</button>
-		</div>
+			</Button>
+			<Button variant="primary" @click="retryLoad">
+				<RotateCcw />
+				Try again
+			</Button>
+		</EmptyState>
 	</div>
 
-	<!-- Editor -->
-	<div v-else class="opencut-editor h-screen w-screen overflow-hidden">
+	<!-- Editor (fills the content area under the app title bar) -->
+	<div v-else class="opencut-editor h-full w-full overflow-hidden">
 		<EditorLayout />
 	</div>
 </template>
-
-<style scoped>
-/* FloatingChat is hidden via useChatPopout composable for this route */
-</style>

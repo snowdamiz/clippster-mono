@@ -66,6 +66,68 @@ defmodule ClippsterServer.Social.Providers.PostForMeTest do
     assert {"Authorization", "Bearer pfm_test_key"} in headers
   end
 
+  test "auth URL creation rejects unusable successful provider responses" do
+    Application.put_env(:clippster_server, :post_for_me,
+      api_key: "pfm_test_key",
+      base_url: "https://api.postforme.dev"
+    )
+
+    invalid_payloads =
+      Enum.map(
+        [nil, "", "   ", false, 123, %{}, "/auth/abc", "https://", "javascript:alert(1)"],
+        fn url ->
+          %{"url" => url, "platform" => "x"}
+        end
+      ) ++
+        [
+          %{},
+          %{"platform" => "x"},
+          %{"url" => "https://postforme.dev/auth/abc", "platform" => nil}
+        ]
+
+    for payload <- invalid_payloads do
+      Application.put_env(:clippster_server, :post_for_me_http_client, fn _, _, _, _, _ ->
+        {:ok, %HTTPoison.Response{status_code: 200, body: Jason.encode!(payload)}}
+      end)
+
+      assert {:error, %PostForMe.ApiError{type: :invalid_response, message: message}} =
+               PostForMe.create_social_account_auth_url(%{platform: "x"})
+
+      assert message ==
+               "Post For Me did not return a valid sign-in link. Please try reconnecting again."
+    end
+  end
+
+  test "auth URL creation validates the successful response after an HTTP retry" do
+    {:ok, attempts} = Agent.start_link(fn -> 0 end)
+    on_exit(fn -> if Process.alive?(attempts), do: Agent.stop(attempts) end)
+
+    Application.put_env(:clippster_server, :post_for_me,
+      api_key: "pfm_test_key",
+      base_url: "https://api.postforme.dev",
+      max_retries: 2
+    )
+
+    Application.put_env(:clippster_server, :post_for_me_http_client, fn _, _, _, _, _ ->
+      attempt = Agent.get_and_update(attempts, fn count -> {count, count + 1} end)
+
+      if attempt == 0 do
+        {:ok, %HTTPoison.Response{status_code: 503, headers: [{"retry-after", "0"}], body: ""}}
+      else
+        {:ok,
+         %HTTPoison.Response{
+           status_code: 200,
+           body: Jason.encode!(%{"url" => nil, "platform" => "x"})
+         }}
+      end
+    end)
+
+    assert {:error, %PostForMe.ApiError{type: :invalid_response}} =
+             PostForMe.create_social_account_auth_url(%{platform: "x"})
+
+    assert Agent.get(attempts, & &1) == 2
+  end
+
   test "create_upload_url retries on retryable status and succeeds" do
     {:ok, attempt_counter} = Agent.start_link(fn -> 0 end)
 

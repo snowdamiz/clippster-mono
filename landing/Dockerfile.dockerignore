@@ -21,3 +21,8 @@ scripts
 .github
 .claude
 docs
+.codex
+.agents
+**/*.apk
+**/*.aab
+**/*.zip

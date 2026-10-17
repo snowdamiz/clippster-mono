@@ -1,314 +1,194 @@
 <template>
-  <Teleport to="body">
-  <Transition name="modal">
-    <div v-if="show" class="fixed inset-0 z-[10002] flex items-center justify-center p-4">
-      <div class="absolute inset-0 bg-black/70 backdrop-blur-[4px]" @click="$emit('close')"></div>
-      <Transition name="dialog" appear>
+  <Modal
+    :open="show"
+    title="Overlay position"
+    :description="overlayLabel || 'Place the layout overlay for each output aspect ratio.'"
+    :icon="Move"
+    size="xl"
+    @close="$emit('close')"
+  >
+    <!-- Ratio + upload + enable -->
+    <div class="mb-3 flex flex-wrap items-center gap-2">
+      <RatioTabs
+        :model-value="currentAspectRatio"
+        :options="aspectRatios"
+        :marked="enabledRatios"
+        @update:model-value="selectAspectRatio"
+      />
+      <Button
+        variant="secondary"
+        size="sm"
+        :loading="uploadingRatioOverlay"
+        title="Upload overlay for this aspect ratio"
+        @click="uploadOverlayForCurrentRatio"
+      >
+        <Upload v-if="!uploadingRatioOverlay" />
+        {{ uploadingRatioOverlay ? 'Uploading…' : 'Upload' }}
+      </Button>
+      <label class="ml-auto flex items-center gap-2 text-xs text-fg-muted">
+        {{ enabledRatios[currentAspectRatio] ? 'Enabled' : 'Disabled' }}
+        <Switch :model-value="enabledRatios[currentAspectRatio]" @update:model-value="toggleCurrentRatio()" />
+      </label>
+    </div>
+
+    <!-- Preview -->
+    <div class="mb-3 flex justify-center rounded-lg border border-line-subtle bg-surface-sunken p-4">
+      <div
+        ref="previewContainer"
+        class="relative select-none overflow-hidden rounded-md border border-line bg-surface transition-all duration-300"
+        :class="enabledRatios[currentAspectRatio] ? 'cursor-crosshair' : 'cursor-not-allowed opacity-50'"
+        :style="previewContainerStyle"
+        @mousedown.prevent="enabledRatios[currentAspectRatio] && startDrag($event)"
+        @mousemove="enabledRatios[currentAspectRatio] && handleDrag($event)"
+        @mouseup="endDrag"
+        @mouseleave="endDrag"
+      >
+        <!-- Rule-of-thirds guides -->
+        <div class="pointer-events-none absolute inset-0">
+          <div class="absolute bottom-0 left-1/3 top-0 w-px bg-white/10"></div>
+          <div class="absolute bottom-0 left-2/3 top-0 w-px bg-white/10"></div>
+          <div class="absolute left-0 right-0 top-1/3 h-px bg-white/10"></div>
+          <div class="absolute left-0 right-0 top-2/3 h-px bg-white/10"></div>
+        </div>
+
+        <div class="absolute left-1.5 top-1.5 z-10 rounded bg-black/60 px-1.5 py-0.5 text-2xs text-white/80">
+          {{ currentAspectRatioLabel }}
+        </div>
+
+        <div class="absolute inset-0 flex items-center justify-center text-fg-muted">
+          <Video class="size-8 opacity-20" />
+        </div>
+
+        <div v-if="loadingOverlay" class="absolute inset-0 z-20 flex items-center justify-center bg-black/30">
+          <Loader2 class="size-4 animate-spin text-fg-muted" />
+        </div>
+
+        <!-- Watermark preview (behind the overlay, for reference) -->
         <div
-          class="relative flex flex-col w-full max-w-2xl mx-3 overflow-hidden bg-[var(--sidebar-surface)] border border-[var(--sidebar-border)] rounded-xl max-h-[90vh] shadow-[0_20px_60px_rgba(0,0,0,0.4)]"
+          v-if="watermarkDataUrl && hasWatermarkForCurrentRatio"
+          class="pointer-events-none absolute z-[1]"
+          :style="watermarkStyle"
         >
-          <!-- Accent bar -->
-          <div class="h-[3px] w-full flex-shrink-0 bg-gradient-to-r from-amber-500 to-orange-400/50"></div>
-          <!-- Header -->
+          <MediaPreview :src="watermarkDataUrl" class-name="drop-shadow-lg select-none max-w-full max-h-full object-contain" />
+        </div>
+
+        <!-- Overlay preview -->
+        <div
+          v-if="overlayDataUrl && enabledRatios[currentAspectRatio]"
+          class="group absolute"
+          :class="{
+            'pointer-events-none': !enabledRatios[currentAspectRatio],
+            'transition-all duration-75': !resizeState.isResizing && !justFinishedResize,
+          }"
+          :style="overlayStyle"
+        >
+          <MediaPreview
+            :src="overlayDataUrl"
+            :class-name="[
+              'drop-shadow-lg select-none',
+              fullFrameOverlayRatios[currentAspectRatio] || isFullFrameOverlay
+                ? 'w-full h-full object-cover'
+                : 'max-w-full max-h-full object-contain',
+            ]"
+            :style="{ opacity: currentSettings.opacity / 100 }"
+            @error="handleImageError"
+          />
+          <!-- Resize handles -->
           <div
-            class="flex items-center justify-between px-4 py-3 border-b border-[var(--sidebar-border)] flex-shrink-0"
+            v-if="!fullFrameOverlayRatios[currentAspectRatio] && !isFullFrameOverlay && enabledRatios[currentAspectRatio]"
+            class="pointer-events-none absolute inset-0"
           >
-            <div class="flex items-center gap-2.5">
-              <div
-                class="w-8 h-8 rounded-lg bg-amber-500/15 flex items-center justify-center"
-              >
-                <Move class="h-4 w-4 text-amber-400" />
-              </div>
-              <div>
-                <h2 class="text-base font-semibold text-[var(--sidebar-text)]">Overlay Position</h2>
-                <p v-if="overlayLabel" class="text-[10px] text-[var(--sidebar-text-muted)]">{{ overlayLabel }}</p>
-              </div>
-            </div>
-            <button
-              @click="$emit('close')"
-              class="p-1.5 rounded-lg text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] transition-colors"
-            >
-              <X class="w-4 h-4" />
-            </button>
-          </div>
-
-          <!-- Content -->
-          <div class="flex-1 overflow-y-auto p-4">
-            <!-- Aspect Ratio Tabs -->
-            <div class="flex items-center gap-1.5 mb-3">
-              <button
-                v-for="ar in aspectRatios"
-                :key="ar.id"
-                @click="selectAspectRatio(ar.id)"
-                class="px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1 relative"
-                :class="[
-                  currentAspectRatio === ar.id
-                    ? 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
-                    : enabledRatios[ar.id]
-                      ? 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text)] hover:bg-[var(--sidebar-active)] border border-[var(--sidebar-border)]'
-                      : 'bg-transparent text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)] hover:bg-[var(--sidebar-hover)] border border-[var(--sidebar-border)]',
-                ]"
-              >
-                <component :is="ar.icon" class="w-3 h-3" />
-                {{ ar.label }}
-                <span
-                  v-if="enabledRatios[ar.id]"
-                  class="w-1.5 h-1.5 rounded-full bg-green-500 absolute -top-0.5 -right-0.5"
-                ></span>
-              </button>
-
-              <!-- Upload Overlay Button -->
-              <button
-                @click="uploadOverlayForCurrentRatio"
-                :disabled="uploadingRatioOverlay"
-                class="px-2.5 py-1 text-xs font-medium rounded-md transition-all flex items-center gap-1.5 bg-[var(--sidebar-hover)] text-[var(--sidebar-text)] hover:bg-[var(--sidebar-active)] border border-[var(--sidebar-border)] disabled:opacity-50 disabled:cursor-not-allowed"
-                title="Upload overlay for this aspect ratio"
-              >
-                <Upload class="w-3 h-3" />
-                {{ uploadingRatioOverlay ? 'Uploading...' : 'Upload' }}
-              </button>
-
-              <!-- Enable Toggle -->
-              <div class="ml-auto flex items-center gap-2">
-                <span class="text-[10px] text-[var(--sidebar-text-muted)]">
-                  {{ enabledRatios[currentAspectRatio] ? 'Enabled' : 'Disabled' }}
-                </span>
-                <button
-                  @click="toggleCurrentRatio"
-                  class="relative w-9 h-5 rounded-full transition-colors border border-[var(--sidebar-border)]"
-                  :class="enabledRatios[currentAspectRatio] ? 'bg-amber-500' : 'bg-[var(--sidebar-hover)]'"
-                >
-                  <span
-                    class="absolute top-0.5 left-0.5 w-3.5 h-3.5 bg-white rounded-full shadow transition-transform"
-                    :class="enabledRatios[currentAspectRatio] ? 'translate-x-[18px]' : 'translate-x-0'"
-                  ></span>
-                </button>
-              </div>
-            </div>
-
-            <!-- Preview Area with dynamic aspect ratio -->
-            <div class="flex justify-center mb-3">
-              <div
-                ref="previewContainer"
-                class="relative bg-[var(--sidebar-surface)] rounded-lg overflow-hidden border transition-all duration-300 select-none"
-                :class="[
-                  enabledRatios[currentAspectRatio]
-                    ? 'cursor-crosshair border-[var(--sidebar-border)]'
-                    : 'cursor-not-allowed border-[var(--sidebar-border)] opacity-50',
-                ]"
-                :style="previewContainerStyle"
-                @mousedown.prevent="enabledRatios[currentAspectRatio] && startDrag($event)"
-                @mousemove="enabledRatios[currentAspectRatio] && handleDrag($event)"
-                @mouseup="endDrag"
-                @mouseleave="endDrag"
-              >
-                <!-- Grid lines for guidance -->
-                <div class="absolute inset-0 pointer-events-none">
-                  <div class="absolute left-1/3 top-0 bottom-0 w-px bg-[var(--sidebar-border)]"></div>
-                  <div class="absolute left-2/3 top-0 bottom-0 w-px bg-[var(--sidebar-border)]"></div>
-                  <div class="absolute top-1/3 left-0 right-0 h-px bg-[var(--sidebar-border)]"></div>
-                  <div class="absolute top-2/3 left-0 right-0 h-px bg-[var(--sidebar-border)]"></div>
-                </div>
-
-                <!-- Aspect ratio label -->
-                <div class="absolute top-1.5 left-1.5 px-1.5 py-0.5 bg-black/50 rounded text-[10px] text-white/70 z-10">
-                  {{ currentAspectRatioLabel }}
-                </div>
-
-                <!-- Sample video content indicator -->
-                <div class="absolute inset-0 flex items-center justify-center text-[var(--sidebar-text-muted)]">
-                  <Video class="w-8 h-8 opacity-20" />
-                </div>
-
-                <!-- Loading indicator -->
-                <div v-if="loadingOverlay" class="absolute inset-0 flex items-center justify-center bg-black/30 z-20">
-                  <div class="text-amber-400 text-xs">Loading...</div>
-                </div>
-
-                <!-- Watermark preview (rendered behind overlay for reference) -->
-                <div
-                  v-if="watermarkDataUrl && hasWatermarkForCurrentRatio"
-                  class="absolute pointer-events-none z-[1]"
-                  :style="watermarkStyle"
-                >
-                  <MediaPreview
-                    :src="watermarkDataUrl"
-                    class-name="drop-shadow-lg select-none max-w-full max-h-full object-contain"
-                  />
-                </div>
-
-                <!-- Overlay preview -->
-                <div
-                  v-if="overlayDataUrl && enabledRatios[currentAspectRatio]"
-                  class="absolute group"
-                  :class="{
-                    'pointer-events-none': !enabledRatios[currentAspectRatio],
-                    'transition-all duration-75': !resizeState.isResizing && !justFinishedResize
-                  }"
-                  :style="overlayStyle"
-                  @mounted="console.log('[OverlayPositionPicker] Overlay div mounted')"
-                >
-                  <MediaPreview
-                    :src="overlayDataUrl"
-                    :class-name="[
-                      'drop-shadow-lg select-none',
-                      fullFrameOverlayRatios[currentAspectRatio] || isFullFrameOverlay
-                        ? 'w-full h-full object-cover'
-                        : 'max-w-full max-h-full object-contain',
-                    ]"
-                    :style="{ opacity: currentSettings.opacity / 100 }"
-                    @error="handleImageError"
-                    @load="console.log('[OverlayPositionPicker] MediaPreview loaded successfully')"
-                  />
-                  <!-- Resize Handles -->
-                  <div
-                    v-if="!fullFrameOverlayRatios[currentAspectRatio] && !isFullFrameOverlay && enabledRatios[currentAspectRatio]"
-                    class="absolute inset-0 pointer-events-none"
-                  >
-                    <!-- Top Left -->
-                    <div
-                      class="absolute -top-1.5 -left-1.5 w-3 h-3 bg-white border border-amber-500 rounded-full cursor-nwse-resize pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity"
-                      @mousedown.stop.prevent="startResize($event, 'tl')"
-                    ></div>
-                    <!-- Top Right -->
-                    <div
-                      class="absolute -top-1.5 -right-1.5 w-3 h-3 bg-white border border-amber-500 rounded-full cursor-nesw-resize pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity"
-                      @mousedown.stop.prevent="startResize($event, 'tr')"
-                    ></div>
-                    <!-- Bottom Left -->
-                    <div
-                      class="absolute -bottom-1.5 -left-1.5 w-3 h-3 bg-white border border-amber-500 rounded-full cursor-nesw-resize pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity"
-                      @mousedown.stop.prevent="startResize($event, 'bl')"
-                    ></div>
-                    <!-- Bottom Right -->
-                    <div
-                      class="absolute -bottom-1.5 -right-1.5 w-3 h-3 bg-white border border-amber-500 rounded-full cursor-nwse-resize pointer-events-auto opacity-0 group-hover:opacity-100 transition-opacity"
-                      @mousedown.stop.prevent="startResize($event, 'br')"
-                    ></div>
-                    <!-- Border on hover -->
-                    <div class="absolute inset-0 border border-amber-500 opacity-0 group-hover:opacity-40 pointer-events-none"></div>
-                  </div>
-                </div>
-
-                <!-- Disabled overlay -->
-                <div
-                  v-if="!enabledRatios[currentAspectRatio]"
-                  class="absolute inset-0 flex items-center justify-center bg-black/10 backdrop-blur-[1px]"
-                >
-                  <span class="text-[var(--sidebar-text-muted)] text-xs">Disabled</span>
-                </div>
-
-                <!-- Position indicator -->
-                <div
-                  v-if="enabledRatios[currentAspectRatio] && !fullFrameOverlayRatios[currentAspectRatio] && !isFullFrameOverlay"
-                  class="absolute w-2.5 h-2.5 bg-amber-500 rounded-full border-2 border-white shadow-lg pointer-events-none transform -translate-x-1/2 -translate-y-1/2 transition-all duration-75"
-                  :style="{ left: `${currentSettings.x}%`, top: `${currentSettings.y}%` }"
-                ></div>
-              </div>
-            </div>
-
-            <!-- Full-frame overlay toggle -->
-            <div v-if="enabledRatios[currentAspectRatio]" class="flex items-center gap-2 mb-3">
-              <label class="flex items-center gap-2 cursor-pointer">
-                <input
-                  type="checkbox"
-                  :checked="fullFrameOverlayRatios[currentAspectRatio] || isFullFrameOverlay"
-                  @change="toggleFullFrame"
-                  :disabled="isFullFrameOverlay"
-                  class="rounded border-zinc-600 bg-zinc-800 text-amber-500 focus:ring-amber-500 w-3.5 h-3.5"
-                />
-                <span class="text-[10px] text-[var(--sidebar-text-muted)]">
-                  Full-frame overlay
-                  <span v-if="isFullFrameOverlay" class="text-amber-400">(auto-detected 1920×1080)</span>
-                </span>
-              </label>
-            </div>
-
-            <!-- Controls Row -->
-            <div :class="{ 'opacity-50 pointer-events-none': !enabledRatios[currentAspectRatio] || fullFrameOverlayRatios[currentAspectRatio] || isFullFrameOverlay }">
-              <div class="flex items-center gap-6 flex-wrap">
-                <!-- Quick positions -->
-                <div class="flex items-center gap-1.5">
-                  <span class="text-[10px] text-[var(--sidebar-text-muted)] mr-1">Position:</span>
-                  <div class="flex items-center gap-1">
-                    <button
-                      v-for="preset in presets"
-                      :key="preset.name"
-                      @click="applyPreset(preset)"
-                      :disabled="!enabledRatios[currentAspectRatio]"
-                      class="px-2 py-1 text-[10px] font-medium rounded transition-all whitespace-nowrap"
-                      :class="
-                        isPresetActive(preset)
-                          ? 'bg-amber-500/15 text-amber-400'
-                          : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)] hover:text-[var(--sidebar-text)]'
-                      "
-                    >
-                      {{ preset.name }}
-                    </button>
-                  </div>
-                </div>
-
-                <!-- Opacity Slider -->
-                <div class="flex items-center gap-2 flex-1 min-w-[160px] max-w-[220px]">
-                  <label class="text-[10px] text-[var(--sidebar-text-muted)] whitespace-nowrap">Opacity</label>
-                  <input
-                    type="range"
-                    :value="currentSettings.opacity"
-                    @input="updateOpacity(Number(($event.target as HTMLInputElement).value))"
-                    min="10"
-                    max="100"
-                    :disabled="!enabledRatios[currentAspectRatio]"
-                    class="flex-1 h-1 bg-[var(--sidebar-border)] rounded-lg appearance-none cursor-pointer accent-amber-500"
-                  />
-                  <span class="text-[10px] text-[var(--sidebar-text-muted)] whitespace-nowrap min-w-[32px] text-right">{{ currentSettings.opacity }}%</span>
-                </div>
-
-                <!-- Scale Slider -->
-                <div class="flex items-center gap-2 flex-1 min-w-[160px] max-w-[220px]">
-                  <label class="text-[10px] text-[var(--sidebar-text-muted)] whitespace-nowrap">Scale</label>
-                  <input
-                    type="range"
-                    :value="currentSettings.scale"
-                    @input="updateScale(Number(($event.target as HTMLInputElement).value))"
-                    min="5"
-                    max="100"
-                    :disabled="!enabledRatios[currentAspectRatio]"
-                    class="flex-1 h-1 bg-[var(--sidebar-border)] rounded-lg appearance-none cursor-pointer accent-amber-500"
-                  />
-                  <span class="text-[10px] text-[var(--sidebar-text-muted)] whitespace-nowrap min-w-[32px] text-right">{{ currentSettings.scale }}%</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Footer -->
-          <div
-            class="flex items-center justify-end gap-2 px-4 py-3 border-t border-[var(--sidebar-border)] flex-shrink-0"
-          >
-            <button
-              @click="$emit('close')"
-              class="px-4 py-2 bg-[var(--sidebar-hover)] hover:bg-[var(--sidebar-active)] text-[var(--sidebar-text)] hover:text-[var(--sidebar-text)] rounded-lg transition-all text-sm font-medium border border-[var(--sidebar-border)]"
-            >
-              Cancel
-            </button>
-            <button
-              @click="savePosition"
-              class="px-4 py-2 bg-gradient-to-br from-amber-500 to-orange-500 hover:opacity-90 text-white rounded-lg font-medium transition-all text-sm"
-            >
-              Save
-            </button>
+            <div
+              v-for="corner in resizeCorners"
+              :key="corner.id"
+              class="pointer-events-auto absolute size-3 rounded-full border border-brand bg-white opacity-0 transition-opacity group-hover:opacity-100"
+              :class="corner.class"
+              @mousedown.stop.prevent="startResize($event, corner.id)"
+            ></div>
+            <div class="pointer-events-none absolute inset-0 border border-brand opacity-0 group-hover:opacity-40"></div>
           </div>
         </div>
-      </Transition>
+
+        <div
+          v-if="!enabledRatios[currentAspectRatio]"
+          class="absolute inset-0 flex items-center justify-center bg-black/20"
+        >
+          <span class="text-xs text-fg-muted">Disabled</span>
+        </div>
+
+        <!-- Position indicator -->
+        <div
+          v-if="enabledRatios[currentAspectRatio] && !fullFrameOverlayRatios[currentAspectRatio] && !isFullFrameOverlay"
+          class="pointer-events-none absolute size-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-white bg-brand shadow-lg transition-all duration-75"
+          :style="{ left: `${currentSettings.x}%`, top: `${currentSettings.y}%` }"
+        ></div>
+      </div>
     </div>
-  </Transition>
-  </Teleport>
+
+    <!-- Full-frame toggle -->
+    <label v-if="enabledRatios[currentAspectRatio]" class="mb-3 flex cursor-pointer items-center gap-2 text-xs text-fg-muted">
+      <Checkbox
+        :model-value="fullFrameOverlayRatios[currentAspectRatio] || isFullFrameOverlay"
+        :disabled="isFullFrameOverlay"
+        @update:model-value="toggleFullFrame()"
+      />
+      Full-frame overlay
+      <span v-if="isFullFrameOverlay" class="text-fg-subtle">(auto-detected 1920×1080)</span>
+    </label>
+
+    <!-- Controls -->
+    <div
+      class="flex flex-col gap-3"
+      :class="{
+        'pointer-events-none opacity-50':
+          !enabledRatios[currentAspectRatio] || fullFrameOverlayRatios[currentAspectRatio] || isFullFrameOverlay,
+      }"
+    >
+      <div class="flex flex-wrap items-center gap-1.5">
+        <span class="w-14 shrink-0 text-xs text-fg-muted">Position</span>
+        <Button
+          v-for="preset in presets"
+          :key="preset.name"
+          size="xs"
+          :variant="isPresetActive(preset) ? 'secondary' : 'ghost'"
+          :class="isPresetActive(preset) && 'border-brand-line text-brand'"
+          :disabled="!enabledRatios[currentAspectRatio]"
+          @click="applyPreset(preset)"
+        >
+          {{ preset.name }}
+        </Button>
+      </div>
+      <div class="grid grid-cols-1 gap-x-6 gap-y-3 sm:grid-cols-2">
+        <RangeField
+          label="Opacity"
+          :model-value="currentSettings.opacity"
+          :min="10"
+          :max="100"
+          :disabled="!enabledRatios[currentAspectRatio]"
+          @update:model-value="updateOpacity"
+        />
+        <RangeField
+          label="Scale"
+          :model-value="currentSettings.scale"
+          :min="5"
+          :max="100"
+          :disabled="!enabledRatios[currentAspectRatio]"
+          @update:model-value="updateScale"
+        />
+      </div>
+    </div>
+
+    <template #footer>
+      <Button variant="ghost" @click="$emit('close')">Cancel</Button>
+      <Button variant="primary" @click="savePosition">Save</Button>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
   defineOptions({ inheritAttrs: false });
   import { ref, computed, watch, reactive, onUnmounted } from 'vue';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke, openFileDialog, resolveOverlayImagePath } from '@/services/creatorProfileRuntime';
   import {
     X,
     Move,
@@ -318,7 +198,14 @@
     Square,
     RectangleVertical,
     Upload,
+    Loader2,
   } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
+  import { Checkbox } from '@/components/ui/checkbox';
+  import { Modal } from '@/components/ui/modal';
+  import { Switch } from '@/components/ui/switch';
+  import RatioTabs from '@/components/branding/RatioTabs.vue';
+  import RangeField from '@/components/branding/RangeField.vue';
   import type { OverlayRatioPosition, PerRatioOverlaySettings } from '@/types';
   import MediaPreview from '@/components/MediaPreview.vue';
 
@@ -364,6 +251,13 @@
     { id: '1:1' as AspectRatioId, label: '1:1', icon: Square, width: 1, height: 1 },
     { id: '4:5' as AspectRatioId, label: '4:5', icon: RectangleVertical, width: 4, height: 5 },
   ];
+
+  const resizeCorners = [
+    { id: 'tl', class: '-left-1.5 -top-1.5 cursor-nwse-resize' },
+    { id: 'tr', class: '-right-1.5 -top-1.5 cursor-nesw-resize' },
+    { id: 'bl', class: '-bottom-1.5 -left-1.5 cursor-nesw-resize' },
+    { id: 'br', class: '-bottom-1.5 -right-1.5 cursor-nwse-resize' },
+  ] as const;
 
   const previewContainer = ref<HTMLElement | null>(null);
   const isDragging = ref(false);
@@ -533,7 +427,6 @@
     const assetIdStr = currentSettings.assetId != null ? String(currentSettings.assetId) : null;
     if (!imageUrl && !imagePath && assetIdStr) {
       try {
-        const { resolveOverlayImagePath } = await import('@/services/database/watermarks');
         const resolved = await resolveOverlayImagePath(null, assetIdStr);
         if (resolved) {
           imagePath = resolved;
@@ -548,8 +441,7 @@
       const parentAssetId = props.overlayAssetId != null ? String(props.overlayAssetId) : null;
       if (parentAssetId) {
         try {
-          const { resolveOverlayImagePath } = await import('@/services/database/watermarks');
-          const resolved = await resolveOverlayImagePath(null, parentAssetId);
+            const resolved = await resolveOverlayImagePath(null, parentAssetId);
           if (resolved) {
             imagePath = resolved;
             console.log('[OverlayPositionPicker] Resolved parent org asset to local path:', resolved);
@@ -788,7 +680,7 @@
     if (uploadingRatioOverlay.value) return;
     uploadingRatioOverlay.value = true;
     try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
+      const open = openFileDialog;
       const result = await open({
         multiple: false,
         filters: [{ name: 'Images & Videos', extensions: ['png', 'svg', 'webp', 'jpg', 'jpeg', 'mp4', 'mov', 'webm'] }],
@@ -1093,58 +985,3 @@
     emit('close');
   }
 </script>
-
-<style scoped>
-  /* Modal backdrop transition */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 0.3s ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  /* Dialog transition */
-  .dialog-enter-active {
-    transition: all 0.4s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 0.2s ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.95) translateY(10px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* Range slider styling */
-  input[type='range']::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #f59e0b;
-    cursor: pointer;
-    border: 2px solid white;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
-
-  input[type='range']::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
-    border-radius: 50%;
-    background: #f59e0b;
-    cursor: pointer;
-    border: 2px solid white;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.3);
-  }
-</style>

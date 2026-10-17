@@ -13,66 +13,46 @@
       }"
     >
       <!-- Loading State -->
-      <div v-if="videoLoading" class="absolute inset-0 flex items-center justify-center bg-zinc-950 z-10">
-        <div class="flex flex-col items-center gap-4">
-          <!-- Animated Loading Ring -->
-          <div class="relative">
-            <div class="loading-ring"></div>
-            <div class="loading-ring-inner"></div>
-            <Film class="h-6 w-6 text-white/60 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2" />
-          </div>
-          <div class="flex flex-col items-center gap-1">
-            <span class="text-white/90 text-sm font-medium tracking-wide">Loading video</span>
-            <span class="text-white/40 text-xs">Please wait...</span>
-          </div>
+      <div v-if="videoLoading" class="absolute inset-0 z-10 flex items-center justify-center bg-surface-sunken">
+        <div class="flex flex-col items-center gap-3">
+          <div class="size-8 animate-spin rounded-full border-2 border-line-strong border-t-brand" aria-hidden="true"></div>
+          <span class="text-sm text-fg-muted">Loading video…</span>
         </div>
       </div>
 
       <!-- No Video State -->
       <div v-else-if="!videoSrc && !videoError" class="absolute inset-0 flex items-center justify-center">
-        <div class="text-center group/empty">
-          <div class="relative inline-block">
-            <!-- Decorative rings -->
-            <div class="absolute inset-0 -m-4 rounded-full border border-white/5 animate-pulse-slow" />
-            <div class="absolute inset-0 -m-8 rounded-full border border-white/[0.03]" />
-            <div
-              class="p-5 rounded-2xl bg-white/[0.03] border border-white/[0.06] backdrop-blur-sm transition-all duration-300 group-hover/empty:bg-white/[0.05] group-hover/empty:border-white/[0.1]"
-            >
-              <Video
-                class="h-10 w-10 text-white/30 transition-colors group-hover/empty:text-white/50"
-                strokeWidth="{1.5}"
-              />
-            </div>
+        <div class="flex flex-col items-center px-6 text-center">
+          <div class="grid size-10 place-items-center rounded-lg bg-surface-raised text-fg-subtle">
+            <Video class="size-5" :stroke-width="1.75" />
           </div>
-          <p class="text-white/40 text-sm mt-5 font-medium">No video assigned</p>
-          <p class="text-white/20 text-xs mt-1">Select a clip to preview</p>
+          <p class="mt-3 text-sm font-medium text-fg-muted">No video assigned</p>
+          <p class="mt-0.5 text-xs text-fg-subtle">Select a clip to preview</p>
         </div>
       </div>
 
       <!-- Error State -->
-      <div v-else-if="videoError" class="absolute inset-0 flex items-center justify-center bg-zinc-950/90">
-        <div class="text-center p-6 max-w-xs">
-          <div class="relative inline-block mb-4">
-            <div class="absolute inset-0 -m-2 rounded-full bg-red-500/20 animate-pulse-slow" />
-            <div class="p-4 rounded-xl bg-red-500/10 border border-red-500/20">
-              <AlertTriangle class="h-8 w-8 text-red-400" strokeWidth="{1.5}" />
-            </div>
+      <div v-else-if="videoError" class="absolute inset-0 flex items-center justify-center bg-surface-sunken">
+        <div class="flex max-w-xs flex-col items-center p-6 text-center">
+          <div class="grid size-10 place-items-center rounded-lg bg-danger-soft text-danger">
+            <AlertTriangle class="size-5" :stroke-width="1.75" />
           </div>
-          <p class="text-white/90 text-sm font-semibold">Failed to load video</p>
-          <p class="text-white/40 text-xs mt-2 leading-relaxed">{{ videoError }}</p>
+          <p class="mt-3 text-sm font-semibold text-fg">Failed to load video</p>
+          <p class="mt-1 text-xs leading-relaxed text-fg-muted">{{ videoError }}</p>
           <button
+            type="button"
+            class="mt-4 inline-flex h-8 items-center gap-1.5 rounded-[var(--radius-control)] border border-line bg-surface-raised px-3 text-sm font-medium text-fg transition-colors hover:border-line-strong hover:bg-surface-hover focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
             @click="$emit('retryLoad')"
-            class="mt-5 px-5 py-2 bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 hover:border-red-500/50 rounded-lg text-sm text-red-300 transition-all duration-200 flex items-center gap-2 mx-auto group/retry"
           >
-            <RotateCcw class="h-3.5 w-3.5 transition-transform group-hover/retry:-rotate-45" />
-            <span>Try again</span>
+            <RotateCcw class="size-3.5" />
+            Try again
           </button>
         </div>
       </div>
       <!-- Video Element -->
       <!-- Note: For HLS URLs (.m3u8), src is not set directly - HLS.js handles it -->
       <video
-        v-else
+        v-if="videoSrc && !videoError"
         ref="videoElementRef"
         :src="videoSrc && !videoSrc.includes('.m3u8') ? videoSrc : undefined"
         crossorigin="anonymous"
@@ -146,7 +126,8 @@
             @mousedown.stop="startDragSubtitles"
             @click.stop="emit('subtitleSelected')"
           >
-            <span class="subtitle-drag-label">⠿ SUBTITLES</span>
+            <GripHorizontal class="subtitle-drag-icon" aria-hidden="true" />
+            <span class="subtitle-drag-label">Subtitles</span>
           </div>
 
           <!-- Corner resize handles for font size adjustment -->
@@ -315,7 +296,8 @@
             @mousedown.stop="startDragClipText($event)"
             @click.stop="emit('clipTextBoxSelected')"
           >
-            <span class="clip-text-drag-label">⠿ TEXT</span>
+            <GripHorizontal class="subtitle-drag-icon" aria-hidden="true" />
+            <span class="clip-text-drag-label">Text</span>
           </div>
           <template v-if="clipTextBoxInteractive">
             <div class="resize-handle resize-handle-tl" @mousedown.stop="(e) => startClipTextWidthResize(e, 'tl')" />
@@ -376,8 +358,7 @@
 
 <script setup lang="ts">
   import { ref, watch, computed, onMounted, onUnmounted, nextTick } from 'vue';
-  import { convertFileSrc } from '@tauri-apps/api/core';
-  import { Video, AlertTriangle, Film, RotateCcw } from 'lucide-vue-next';
+  import { Video, AlertTriangle, RotateCcw, GripHorizontal } from 'lucide-vue-next';
   import Hls from 'hls.js';
 
   import type {
@@ -387,7 +368,7 @@
     ManualRegion,
     ManualFramingConfig,
   } from '@/types';
-  import type { ClipTextBoxState } from '@/utils/clipTextBox';
+  import type { ClipTextBoxState } from '@clippster/shared-types';
   import { use169BlurSliderToCssPx } from '@/utils/use169Blur';
   import {
     maxWordsChunkForAspectRatioString,
@@ -397,7 +378,7 @@
     getSubtitleLineHeightMultiplier,
     getSubtitleWordSafetyPaddingPx,
     getSubtitleWordSpacingPx,
-  } from '@/services/subtitle-renderer';
+  } from '@/utils/subtitleLayout';
 
   interface WatermarkData {
     dataUrl: string; // Data URL for display
@@ -407,6 +388,8 @@
 
   interface Props {
     videoSrc: string | null;
+    /** Host adapter for local desktop assets; browser URLs pass through unchanged. */
+    resolveMediaSrc?: (path: string) => string;
     videoLoading: boolean;
     videoError: string | null;
     isPlaying: boolean;
@@ -474,6 +457,7 @@
   }
 
   const props = withDefaults(defineProps<Props>(), {
+    resolveMediaSrc: (path: string) => path,
     focalPoint: () => ({ x: 0.5, y: 0.5 }),
     subtitleSettings: () => ({
       enabled: false,
@@ -814,7 +798,7 @@
     const src = props.videoSrc;
     const isHls = !!src?.includes('.m3u8');
     if (use169 && src && !isHls) return false;
-    return regions > 0 || (use169 && isHls && !!src);
+    return regions > 0 || (['scale', 'use16x9'].includes(props.manualFramingConfig?.sourceFrameMode || '') && !!src) || (use169 && isHls && !!src);
   });
 
   const hideVideoForComposition = computed(() => showFramingCanvas.value || showUse169GpuStack.value);
@@ -894,7 +878,7 @@
       return assetId;
     }
     try {
-      return convertFileSrc(assetId);
+      return props.resolveMediaSrc(assetId);
     } catch {
       return assetId;
     }
@@ -1058,10 +1042,7 @@
 
     const fc = props.manualFramingConfig;
     const hasRegions = !!regions && regions.length > 0;
-    const use169 =
-      !hasRegions &&
-      fc?.sourceFrameMode === 'use16x9' &&
-      props.aspectRatio.width / props.aspectRatio.height < 0.95;
+    const use169 = fc?.sourceFrameMode === 'use16x9';
 
     if (use169) {
       const now = performance.now();
@@ -1078,12 +1059,10 @@
       ctx.fillStyle = '#000';
       ctx.fillRect(0, 0, cw, ch);
 
-      if (blurPx > 0) {
-        ctx.save();
-        ctx.filter = `blur(${blurPx}px)`;
-        drawVideoCover(ctx, video, cw, ch);
-        ctx.restore();
-      }
+      ctx.save();
+      if (blurPx > 0) ctx.filter = `blur(${blurPx}px)`;
+      drawVideoCover(ctx, video, cw, ch);
+      ctx.restore();
 
       const st = fc!.sourceTransform ?? { scale: 1, x: 0, y: 0 };
       const baseWidth = cw;
@@ -1095,24 +1074,28 @@
 
       ctx.drawImage(video, 0, 0, vw, vh, left, top, boxW, boxH);
 
-      framingAnimationId = video.paused ? null : requestAnimationFrame(renderFramingFrame);
-      return;
+      if (!hasRegions) {
+        framingAnimationId = video.paused ? null : requestAnimationFrame(renderFramingFrame);
+        return;
+      }
     }
 
-    if (!regions || regions.length === 0) {
+    if ((!regions || regions.length === 0) && fc?.sourceFrameMode !== 'scale') {
       framingAnimationId = null;
       return;
     }
 
-    ctx.fillStyle = '#000';
-    ctx.fillRect(0, 0, cw, ch);
+    if (!use169) {
+      ctx.fillStyle = '#000';
+      ctx.fillRect(0, 0, cw, ch);
+    }
 
     if (fc?.sourceFrameMode === 'scale') {
       drawTransformedSourceFrame(ctx, video, cw, ch, vw, vh, fc);
     }
 
     // Draw each region: source rect from video → output rect on canvas
-    for (const region of regions) {
+    for (const region of regions || []) {
       const dx = region.output.x * cw;
       const dy = region.output.y * ch;
       const dw = region.output.width * cw;
@@ -1134,7 +1117,8 @@
         const media = getRegionVideo(region.mediaAssetId);
         if (media) {
           if (Number.isFinite(video.currentTime) && media.duration) {
-            const targetTime = video.currentTime % media.duration;
+            const elapsed = video.currentTime - (props.clipAbsoluteStart || 0) + (region.mediaSourceOffset || 0);
+            const targetTime = Math.max(0, elapsed) % media.duration;
             if (Math.abs(media.currentTime - targetTime) > 0.12) {
               media.currentTime = targetTime;
             }
@@ -1372,7 +1356,13 @@
 
   // Get all words from the current segment
   const segmentWords = computed((): WordInfo[] => {
-    if (!currentSegment.value) return [];
+    if (!currentSegment.value) {
+      // Browser AI responses may contain word timestamps without Whisper segments.
+      // Keep desktop gaps empty when an explicit segment timeline is present.
+      return props.subtitleSettings?.enabled && !props.transcriptSegments?.length
+        ? props.transcriptWords ?? []
+        : [];
+    }
 
     const segment = currentSegment.value;
 
@@ -2333,24 +2323,10 @@
 </script>
 
 <style scoped>
-  /* Video player specific styles */
-  .video-container {
-    position: relative;
-    background: #000;
-    border-radius: 0.5rem;
-    overflow: hidden;
-  }
-
   .video-crop-container {
     position: relative;
     overflow: hidden;
     border-radius: 0.5rem;
-  }
-
-  .video-element {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
   }
 
   /* Smooth focal point transition */
@@ -2358,86 +2334,13 @@
     transition: object-position 1.5s ease-in-out;
   }
 
-  /* Loading Animation */
-  .loading-ring {
-    width: 56px;
-    height: 56px;
-    border-radius: 50%;
-    border: 2px solid transparent;
-    border-top-color: rgba(139, 92, 246, 0.8);
-    border-right-color: rgba(6, 182, 212, 0.4);
-    animation: loading-spin 1.2s cubic-bezier(0.5, 0, 0.5, 1) infinite;
-  }
-
-  .loading-ring-inner {
-    position: absolute;
-    top: 50%;
-    left: 50%;
-    width: 40px;
-    height: 40px;
-    margin: -20px 0 0 -20px;
-    border-radius: 50%;
-    border: 2px solid transparent;
-    border-top-color: rgba(6, 182, 212, 0.6);
-    border-left-color: rgba(139, 92, 246, 0.3);
-    animation: loading-spin 0.8s cubic-bezier(0.5, 0, 0.5, 1) infinite reverse;
-  }
-
-  @keyframes loading-spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  /* Slow pulse animation */
-  @keyframes pulse-slow {
-    0%,
-    100% {
-      opacity: 0.5;
-      transform: scale(1);
-    }
-    50% {
-      opacity: 0.3;
-      transform: scale(1.05);
-    }
-  }
-
-  .animate-pulse-slow {
-    animation: pulse-slow 3s ease-in-out infinite;
-  }
-
-  /* Focal Point Indicator */
-  .focal-point-indicator {
-    animation: focal-pulse 2s ease-in-out infinite;
-  }
-
-  @keyframes focal-pulse {
-    0%,
-    100% {
-      opacity: 0.7;
-    }
-    50% {
-      opacity: 1;
-    }
-  }
-
-  /* Smooth transitions */
-  .transition-opacity {
-    transition-property: opacity;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 150ms;
-  }
-
-  /* Backdrop blur effects */
-  .backdrop-blur-sm {
-    backdrop-filter: blur(4px);
-  }
-
-  /* Subtitle selection box — dashed border + drag bar; chrome can be toggled off via .is-hidden */
-  .subtitle-selection-box {
+  /*
+   * Editing chrome for the on-video subtitle / text boxes: dashed outline,
+   * brand drag bar and corner handles. (The subtitle rendering itself is user
+   * content and styled from settings, not here.)
+   */
+  .subtitle-selection-box,
+  .clip-text-selection-box {
     position: absolute;
     border: 1px dashed rgba(255, 255, 255, 0.45);
     border-radius: 4px;
@@ -2448,9 +2351,16 @@
     transition: border-color 0.15s;
   }
 
+  .clip-text-selection-box {
+    border-color: var(--brand-line);
+    border-radius: 6px;
+  }
+
   .subtitle-selection-box:hover,
-  .subtitle-selection-box.is-active {
-    border-color: rgba(59, 130, 246, 0.85);
+  .subtitle-selection-box.is-active,
+  .clip-text-selection-box:hover,
+  .clip-text-selection-box.is-active {
+    border-color: var(--brand);
     border-width: 2px;
   }
 
@@ -2473,8 +2383,16 @@
     pointer-events: auto;
   }
 
+  /* Passive mode: no chrome, still visible; clicks pass to pill only */
+  .clip-text-selection-box.clip-text--passive {
+    border: none;
+    padding: 0;
+    cursor: default;
+  }
+
   /* Drag bar at the top of the selection box */
-  .subtitle-drag-bar {
+  .subtitle-drag-bar,
+  .clip-text-drag-bar {
     position: absolute;
     top: 0;
     left: 0;
@@ -2483,48 +2401,59 @@
     display: flex;
     align-items: center;
     justify-content: center;
+    gap: 4px;
     cursor: move;
-    border-radius: 4px 4px 0 0;
-    background: rgba(59, 130, 246, 0.85);
-    backdrop-filter: blur(4px);
+    border-radius: 3px 3px 0 0;
+    background: var(--brand);
+    color: var(--brand-fg);
     transition: background 0.15s;
   }
 
-  .subtitle-drag-bar:hover {
-    background: rgba(59, 130, 246, 0.95);
+  .subtitle-drag-bar:hover,
+  .clip-text-drag-bar:hover {
+    background: var(--brand-hover);
   }
 
-  .subtitle-drag-label {
+  .subtitle-drag-icon {
+    width: 12px;
+    height: 12px;
+    pointer-events: none;
+  }
+
+  .subtitle-drag-label,
+  .clip-text-drag-label {
     font-size: 10px;
     font-weight: 600;
-    color: rgba(255, 255, 255, 0.95);
-    letter-spacing: 0.1em;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
     pointer-events: none;
     user-select: none;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
   }
 
-  /* Corner resize handles for font size adjustment */
+  /* Corner resize handles (font size / width adjustment) */
   .resize-handle {
     position: absolute;
     width: 10px;
     height: 10px;
-    background: rgba(59, 130, 246, 0.9);
-    border: 2px solid rgba(255, 255, 255, 0.9);
+    background: var(--fg);
+    border: 2px solid var(--brand);
     border-radius: 50%;
     z-index: 10;
     opacity: 0;
-    transition: opacity 0.15s, transform 0.15s;
+    transition:
+      opacity 0.15s,
+      transform 0.15s;
   }
 
   .subtitle-selection-box:hover .resize-handle,
-  .subtitle-selection-box.is-active .resize-handle {
+  .subtitle-selection-box.is-active .resize-handle,
+  .clip-text-selection-box:hover .resize-handle,
+  .clip-text-selection-box.is-active .resize-handle {
     opacity: 1;
   }
 
   .resize-handle:hover {
     transform: scale(1.3);
-    background: rgba(59, 130, 246, 1);
   }
 
   .resize-handle-tl {
@@ -2553,14 +2482,14 @@
 
   /*
    * Center alignment guide lines — visible while the user is dragging the subtitle box.
-   * Highlight (cyan + glow) when the subtitle box is snapped to the canvas center.
+   * Highlighted in brand when the subtitle box is snapped to the canvas center.
    */
   .subtitle-guide-line {
     position: absolute;
     background: rgba(255, 255, 255, 0.45);
     pointer-events: none;
     z-index: 30;
-    transition: background-color 0.12s ease, box-shadow 0.12s ease;
+    transition: background-color 0.12s ease;
   }
 
   .subtitle-guide-line--vertical {
@@ -2580,67 +2509,7 @@
   }
 
   .subtitle-guide-line.is-snapped {
-    background: rgba(34, 211, 238, 0.95);
-    box-shadow: 0 0 6px rgba(34, 211, 238, 0.7);
-  }
-
-  /* Clip text box selection — same chrome as subtitles (blue), shrink-wrap inner pill */
-  .clip-text-selection-box {
-    position: absolute;
-    border: 1px dashed rgba(59, 130, 246, 0.55);
-    border-radius: 6px;
-    box-sizing: border-box;
-    padding: 22px 0 0 0;
-    cursor: move;
-    user-select: none;
-    transition: border-color 0.15s;
-  }
-
-  .clip-text-selection-box:hover,
-  .clip-text-selection-box.is-active {
-    border-color: rgba(59, 130, 246, 0.85);
-    border-width: 2px;
-  }
-
-  /* Passive mode: no chrome, still visible; clicks pass to pill only */
-  .clip-text-selection-box.clip-text--passive {
-    border: none;
-    padding: 0;
-    cursor: default;
-  }
-
-  .clip-text-drag-bar {
-    position: absolute;
-    top: 0;
-    left: 0;
-    right: 0;
-    height: 22px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: move;
-    border-radius: 4px 4px 0 0;
-    background: rgba(59, 130, 246, 0.85);
-    backdrop-filter: blur(4px);
-    transition: background 0.15s;
-  }
-
-  .clip-text-drag-bar:hover {
-    background: rgba(59, 130, 246, 0.95);
-  }
-
-  .clip-text-drag-label {
-    font-size: 10px;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.95);
-    letter-spacing: 0.1em;
-    pointer-events: none;
-    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
-  }
-
-  .clip-text-selection-box:hover .resize-handle,
-  .clip-text-selection-box.is-active .resize-handle {
-    opacity: 1;
+    background: var(--brand);
   }
 
   .clip-text-pill {
@@ -2771,11 +2640,6 @@
 
   /* Video element styling */
   video {
-    background: #09090b;
-  }
-
-  /* Keyboard hint styling */
-  kbd {
-    font-family: ui-monospace, SFMono-Regular, 'SF Mono', Menlo, Monaco, Consolas, monospace;
+    background: var(--panel);
   }
 </style>

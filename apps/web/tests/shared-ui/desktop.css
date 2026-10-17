@@ -1,0 +1,3 @@
+@import '../../../../client/src/style.css';
+/* Match the desktop build's source scan when running from the isolated harness. */
+@source '../../../../client/src';

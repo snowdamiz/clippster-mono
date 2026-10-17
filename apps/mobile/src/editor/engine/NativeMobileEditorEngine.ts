@@ -5,7 +5,6 @@ import {
   type ExportRequest as NativeExportRequest,
   type PreviewQuality as NativePreviewQuality,
 } from '@clippster/editor-native';
-import type { TargetAspectRatio } from '@clippster/shared-types';
 import { EventEmitter } from 'expo-modules-core';
 import * as FileSystem from 'expo-file-system/legacy';
 
@@ -123,7 +122,7 @@ export class NativeMobileEditorEngine implements MobileEditorEngine {
         canvas: { ...document.canvas, activeRatio: ratio },
       };
       const payload = {
-        ratios: [ratio] as TargetAspectRatio[],
+        ratios: [ratio],
         documentJson: JSON.stringify(documentForRatio),
         sceneJson: JSON.stringify(documentForRatio),
         outputPath,

@@ -1,11 +1,11 @@
 <template>
   <div
-    class="bg-gradient-to-t from-[#0a0a0b]/50 to-[#0a0a0b]/20 transition-all duration-300 ease-in-out mb-4"
+    class="bg-panel transition-[height] duration-300 ease-in-out"
     :style="{
       height: calculatedHeight + 'px',
     }"
   >
-    <div class="pt-3 px-4 h-full flex flex-col">
+    <div class="flex h-full flex-col gap-2 px-4 pb-3 pt-2">
       <!-- Timeline Header -->
       <TimelineHeader
         :isCutToolActive="isCutToolActive"
@@ -16,6 +16,9 @@
         :sliderPosition="sliderPosition"
         :clipCount="displayClips.length"
         :canMergeSegments="canMergeSegments"
+        :canFocusClip="displayClips.length > 0"
+        @focusClip="focusSelectedClip"
+        @fitSource="fitSource"
         @toggleCutTool="toggleCutTool"
         @toggleAddClipMode="toggleAddClipMode"
         @startContinuousSeeking="startContinuousSeeking"
@@ -28,7 +31,7 @@
       />
       <!-- Timeline Tracks Container -->
       <div
-        class="flex-1 pr-1 mt-1 bg-[#141416] border border-white/[0.04] rounded-lg relative overflow-x-auto overflow-y-hidden backdrop-blur-sm"
+        class="relative flex-1 overflow-x-auto overflow-y-hidden rounded-lg border border-line-subtle bg-surface pr-1"
         ref="timelineScrollContainer"
         @mousemove="onTimelineMouseMove"
         @mouseleave="onTimelineMouseLeaveGlobal"
@@ -166,7 +169,7 @@
     <!-- Delete Segment Confirmation Modal -->
     <ConfirmationModal
       :show="showDeleteSegmentDialog"
-      title="Delete Segments"
+      title="Delete segments"
       :message="`Are you sure you want to delete ${segmentToDelete?.clipTitle || ''}?`"
       suffix="This action cannot be undone."
       confirm-text="Delete"
@@ -178,7 +181,7 @@
     <!-- Warning Modal -->
     <ConfirmationModal
       :show="showWarningDialog"
-      title="Cannot Delete Segment"
+      title="Cannot delete segment"
       :message="warningMessage"
       :suffix="''"
       :show-only-close-button="true"
@@ -190,7 +193,7 @@
     <!-- Merge Segments Confirmation Dialog -->
     <ConfirmationModal
       :show="showMergeSegmentsDialog"
-      title="Merge Segments"
+      title="Merge segments"
       message="Are you sure you want to merge the selected"
       suffix="segments?"
       confirm-text="Merge"
@@ -220,6 +223,7 @@
 
     <!-- Clip Context Menu (for right-click on clip track) -->
     <TimelineClipContextMenu
+      :allow-editor="props.allowEditor"
       :show="showClipContextMenu"
       :info="clipContextMenuInfo"
       @close="closeClipContextMenu"
@@ -230,6 +234,7 @@
 </template>
 
 <script setup lang="ts">
+  import { useToast } from '@/composables/useToast';
   import { ref, computed, onMounted, onUnmounted, nextTick, watch } from 'vue';
   import TimelineHeader from './TimelineHeader.vue';
   import TimelineRuler from './TimelineRuler.vue';
@@ -254,7 +259,7 @@
     deleteClip,
     createManualClip,
     addSegmentToClip,
-  } from '../services/database';
+  } from '@/services/workspaceRuntime';
   import { debounce, throttle } from '../utils/timelineUtils';
   import { createSeekEvent } from '../utils/videoSeekUtils';
   import { TRACK_DIMENSIONS, SELECTORS } from '../utils/timelineConstants';
@@ -286,14 +291,19 @@
 
   const props = withDefaults(defineProps<TimelineProps>(), {
     clips: () => [],
+    allowEditor: true,
   });
 
   // Simple two-state height: compact when no clip is visible, expanded when a clip is shown
-  const TIMELINE_HEIGHT_COMPACT = 155; // Just header + ruler + main video track
-  const TIMELINE_HEIGHT_EXPANDED = 204; // Adds space for one clip track
+  // pt-2 + 32px toolbar + gap-2 + (border + 28px ruler + 48px video track) + pb-3
+  const TIMELINE_HEIGHT_COMPACT = 138; // Just header + ruler + main video track
+  const TIMELINE_HEIGHT_EXPANDED = 210; // Selected range, title, timestamps and trim grips.
+  // Room for the horizontal scrollbar that appears once the timeline is zoomed in
+  const TIMELINE_SCROLLBAR_ALLOWANCE = 10;
 
   const calculatedHeight = computed(() => {
-    return displayClips.value.length > 0 ? TIMELINE_HEIGHT_EXPANDED : TIMELINE_HEIGHT_COMPACT;
+    const base = displayClips.value.length > 0 ? TIMELINE_HEIGHT_EXPANDED : TIMELINE_HEIGHT_COMPACT;
+    return Math.max(props.minHeight || 0, zoomLevel.value > 1 ? base + TIMELINE_SCROLLBAR_ALLOWANCE : base);
   });
 
   // With fixed heights sized appropriately, scrollbar is never needed
@@ -331,6 +341,7 @@
     timelineScrollContainer,
     computed(() => props.duration),
     {
+      maxZoom: 1000,
       onZoomChange: (zoomLevel) => emit('zoomChanged', zoomLevel),
       onDragSelection: (startPercent: number, endPercent: number) => {
         // When in add clip mode, open the create clip dialog
@@ -401,12 +412,15 @@
     (newClips) => {
       if (newClips) {
         localClips.value = sortClips(newClips);
-        
-        // Auto-reveal all clips when they load
-        // This ensures manual clips and auto-detected clips from livestreams are visible
-        newClips.forEach((clip) => {
-          visibleClipIds.value.add(clip.id);
-        });
+
+        // A refresh after trimming must retain the selected row, not reveal every clip.
+        const ids = new Set(newClips.map((clip) => clip.id));
+        visibleClipIds.value = new Set([...visibleClipIds.value].filter((id) => ids.has(id)));
+        if (!visibleClipIds.value.size && localClips.value.length) {
+          visibleClipIds.value.add(
+            props.hoveredClipId && ids.has(props.hoveredClipId) ? props.hoveredClipId : localClips.value[0].id
+          );
+        }
       }
     },
     { immediate: true, deep: true }
@@ -685,7 +699,12 @@
       const isAboveVisible = clipRect.top < containerRect.top;
       const isBelowVisible = clipRect.bottom > containerRect.bottom;
 
-      if (isAboveVisible || isBelowVisible) {
+      if (
+        isAboveVisible ||
+        isBelowVisible ||
+        clipRect.left < containerRect.left + 72 ||
+        clipRect.right > containerRect.right
+      ) {
         // Scroll the clip into view with smooth behavior
         clipElement.scrollIntoView({
           behavior: 'smooth',
@@ -694,6 +713,28 @@
         });
       }
     }
+  }
+
+  async function focusSelectedClip() {
+    const clip =
+      displayClips.value.find((c) => c.id === props.currentlyPlayingClipId || c.id === props.hoveredClipId) ??
+      displayClips.value[0];
+    if (!clip?.segments.length || !props.duration) return;
+    const start = Math.min(...clip.segments.map((s) => s.start_time));
+    const end = Math.max(...clip.segments.map((s) => s.end_time));
+    setZoomLevel(props.duration / Math.max(10, end - start + 30));
+    await nextTick();
+    const container = timelineScrollContainer.value;
+    const track = container?.querySelector('[data-video-track]') as HTMLElement | null;
+    if (container && track) {
+      const middle = ((start + end) / 2 / props.duration) * track.clientWidth;
+      container.scrollLeft = Math.max(0, middle + 72 - container.clientWidth / 2);
+    }
+  }
+
+  function fitSource() {
+    setZoomLevel(1);
+    if (timelineScrollContainer.value) timelineScrollContainer.value.scrollLeft = 0;
   }
 
   // Reveal a clip in the timeline (makes it visible, hides all others)
@@ -1375,7 +1416,7 @@
     // Transcript cleanup is now handled by useTranscriptData composable
   });
 
-  // hexToDarkerHex, generateClipGradient, and getSegmentDisplayTime are now imported from timelineUtils
+  // hexToDarkerHex and getSegmentDisplayTime are imported from timelineUtils
 
   // Calculate movement constraints for a segment
   async function calculateMovementConstraints(clipId: string, segmentIndex: number): Promise<void> {
@@ -1510,8 +1551,9 @@
 
     const { clipId, segmentIndex } = draggedSegmentInfo.value;
     const deltaX = event.clientX - draggedSegmentInfo.value.originalMouseX;
-    const timelineWidth = timelineScrollContainer.value?.clientWidth || 1;
-    const timeDelta = ((deltaX / timelineWidth) * props.duration) / zoomLevel.value;
+    const timelineWidth =
+      timelineScrollContainer.value?.querySelector('[data-video-track]')?.getBoundingClientRect().width || 1;
+    const timeDelta = (deltaX / timelineWidth) * props.duration;
 
     let newStartTime = draggedSegmentInfo.value.originalStartTime + timeDelta;
     let newEndTime = draggedSegmentInfo.value.originalEndTime + timeDelta;
@@ -1719,8 +1761,9 @@
 
     const { clipId, segmentIndex, handleType, originalStartTime, originalEndTime } = resizeHandleInfo.value;
     const deltaX = event.clientX - resizeHandleInfo.value.originalMouseX;
-    const timelineWidth = timelineScrollContainer.value?.clientWidth || 1;
-    const timeDelta = ((deltaX / timelineWidth) * props.duration) / zoomLevel.value;
+    const timelineWidth =
+      timelineScrollContainer.value?.querySelector('[data-video-track]')?.getBoundingClientRect().width || 1;
+    const timeDelta = (deltaX / timelineWidth) * props.duration;
 
     let newStartTime = originalStartTime;
     let newEndTime = originalEndTime;
@@ -2447,8 +2490,7 @@
       isCutToolActive.value = false;
       cutHoverInfo.value = null;
     } catch (error) {
-      // Show error feedback to user (could add a toast/notification here)
-      alert(`Failed to split segment: ${error instanceof Error ? error.message : 'Unknown error'}`);
+      useToast().error('Could not split segment', error instanceof Error ? error.message : undefined);
     }
   }
 
@@ -2744,120 +2786,9 @@
 </script>
 
 <style scoped>
-  /* Timeline controls */
-  .timeline-controls {
-    background: rgba(10, 10, 10, 0.5);
-    backdrop-filter: blur(4px);
-    border-radius: 0.5rem;
-    padding: 0.75rem;
-  }
-
-  .timeline-seek-bar {
-    position: relative;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .timeline-seek-bar:hover .seek-thumb {
-    opacity: 1;
-  }
-
-  .seek-thumb {
-    position: absolute;
-    top: 50%;
-    width: 12px;
-    height: 12px;
-    background: white;
-    border-radius: 50%;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-    opacity: 0;
-    transition: all 0.2s ease;
-    transform: translate(-50%, -50%);
-    border: 2px solid rgb(147, 51, 234);
-  }
-
-  /* Timeline track */
-  .timeline-track {
-    position: relative;
-    cursor: pointer;
-    transition: all 0.2s ease;
-  }
-
-  .timeline-track:hover {
-    background: rgba(0, 0, 0, 0.7);
-  }
-
-  /* Smooth transitions */
-  .transition-all {
-    transition-property: all;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 200ms;
-  }
-
-  .transition-colors {
-    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 150ms;
-  }
-
-  .backdrop-blur-sm {
-    backdrop-filter: blur(4px);
-  }
-
-  /* Custom scrollbar for timeline */
-  .overflow-y-auto::-webkit-scrollbar {
-    width: 8px;
-  }
-
-  .overflow-y-auto::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 4px;
-  }
-
-  .overflow-y-auto::-webkit-scrollbar-thumb {
-    background: rgba(255, 255, 255, 0.3);
-    border-radius: 4px;
-    border: 1px solid rgba(255, 255, 255, 0.1);
-  }
-
-  .overflow-y-auto::-webkit-scrollbar-thumb:hover {
-    background: rgba(255, 255, 255, 0.5);
-  }
-
-  /* Custom scrollbar classes */
-  .scrollbar-thin::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-track {
-    background: rgba(0, 0, 0, 0.3);
-    border-radius: 3px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb {
-    background: rgba(156, 163, 175, 0.5);
-    border-radius: 3px;
-  }
-
-  .scrollbar-thin::-webkit-scrollbar-thumb:hover {
-    background: rgba(156, 163, 175, 0.7);
-  }
-
-  .scrollbar-thumb-gray-600::-webkit-scrollbar-thumb {
-    background: rgb(75 85 99 / 0.7);
-  }
-
-  .scrollbar-track-gray-800::-webkit-scrollbar-track {
-    background: rgb(31 41 55 / 0.5);
-  }
-
-  /* Timeline content wrapper for zoom */
+  /* Zoom wrapper (queried by selector from script) */
   .timeline-content-wrapper {
     min-width: 100%;
-  }
-
-  /* Timeline cursor changes */
-  .timeline-content-wrapper {
     user-select: none;
   }
 
@@ -2865,7 +2796,7 @@
     cursor: crosshair;
   }
 
-  /* Add clip mode - show crosshair cursor to indicate selection mode */
+  /* Add clip mode - crosshair cursor indicates range selection */
   .timeline-content-wrapper.add-clip-mode {
     cursor: crosshair;
   }
@@ -2876,50 +2807,9 @@
 
   /* Prevent text selection during drag */
   .timeline-content-wrapper.dragging,
-  .timeline-content-wrapper.dragging * {
-    user-select: none;
-    -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-  }
-
-  /* Collision warning styles */
-  .clip-segment.collision-previous {
-    border-left: 3px solid #ef4444 !important;
-    box-shadow: -4px 0 12px rgba(239, 68, 68, 0.4);
-  }
-
-  .clip-segment.collision-next {
-    border-right: 3px solid #ef4444 !important;
-    box-shadow: 4px 0 12px rgba(239, 68, 68, 0.4);
-  }
-
-  /* Prevent text selection during drag */
+  .timeline-content-wrapper.dragging *,
   .timeline-content-wrapper.dragging-segment {
     user-select: none;
     -webkit-user-select: none;
-    -moz-user-select: none;
-    -ms-user-select: none;
-  }
-
-  /* Snap indicator */
-  .snap-indicator {
-    position: absolute;
-    width: 2px;
-    height: 100%;
-    background: #3b82f6;
-    z-index: 25;
-    pointer-events: none;
-    animation: snap-pulse 1s ease-in-out infinite;
-  }
-
-  @keyframes snap-pulse {
-    0%,
-    100% {
-      opacity: 0.6;
-    }
-    50% {
-      opacity: 1;
-    }
   }
 </style>

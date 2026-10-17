@@ -1,104 +1,84 @@
 <script setup lang="ts">
-import { computed } from "vue";
-import { useRouter } from "vue-router";
-import { Type, Sparkles, ExternalLink } from "lucide-vue-next";
-import { buildTextElement } from "@/editor/lib/timeline/element-utils";
-import { TIMELINE_CONSTANTS } from "@/editor/constants/timeline-constants";
-import { useEditor } from "@/editor/composables/useEditor";
-import { useAuthStore } from "@/stores/auth";
-import { canAccessAIVideo } from "@/utils/aiVideoAccess";
+  import { computed } from 'vue';
+  import { useRouter } from 'vue-router';
+  import { Sparkles, ExternalLink, Plus } from 'lucide-vue-next';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { IconTile } from '@/components/ui/icon-tile';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { AssetListRow } from '../shared';
+  import { buildTextElement } from '@/editor/lib/timeline/element-utils';
+  import { TIMELINE_CONSTANTS } from '@/editor/constants/timeline-constants';
+  import { useEditor } from '@/editor/composables/useEditor';
+  import { useAuthStore } from '@/stores/auth';
+  import { canAccessAIVideo } from '@/utils/aiVideoAccess';
 
-const router = useRouter();
-const authStore = useAuthStore();
-const { editor } = useEditor();
+  const router = useRouter();
+  const authStore = useAuthStore();
+  const { editor } = useEditor();
 
-const hasThumbnailAccess = computed(() => canAccessAIVideo(authStore.user));
+  const hasThumbnailAccess = computed(() => canAccessAIVideo(authStore.user));
 
-const quickTexts = [
-	"MAKE IT HAPPEN",
-	"THE FUTURE IS NOW",
-	"LEVEL UP",
-	"BREAKING",
-	"WATCH THIS",
-];
+  const quickTexts = ['MAKE IT HAPPEN', 'THE FUTURE IS NOW', 'LEVEL UP', 'BREAKING', 'WATCH THIS'];
 
-function addTextToCanvas(text: string) {
-	const element = buildTextElement({
-		raw: {
-			content: text,
-			name: text.slice(0, 30),
-			duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
-		},
-		startTime: editor.playback.getCurrentTime(),
-	});
-	editor.timeline.insertElement({ element, placement: { mode: "auto" } });
-}
+  function addTextToCanvas(text: string) {
+    const element = buildTextElement({
+      raw: {
+        content: text,
+        name: text.slice(0, 30),
+        duration: TIMELINE_CONSTANTS.DEFAULT_ELEMENT_DURATION,
+      },
+      startTime: editor.playback.getCurrentTime(),
+    });
+    editor.timeline.insertElement({ element, placement: { mode: 'auto' } });
+  }
 
-function openThumbnailGenerator() {
-	if (!hasThumbnailAccess.value) return;
-	router.push("/ai-thumbnail");
-}
+  function openThumbnailGenerator() {
+    if (!hasThumbnailAccess.value) return;
+    router.push('/ai-image');
+  }
 </script>
 
 <template>
-	<div class="flex h-full flex-col gap-4 overflow-y-auto p-4">
-		<div
-			class="rounded-lg border p-3"
-			:class="
-				hasThumbnailAccess
-					? 'border-purple-500/30 bg-purple-600/10'
-					: 'border-white/10 bg-white/[0.03] opacity-60'
-			"
-		>
-			<div class="mb-2 flex items-center gap-2">
-				<Sparkles class="size-4" :class="hasThumbnailAccess ? 'text-purple-400' : 'text-zinc-500'" />
-				<h3 class="text-xs font-semibold text-zinc-200">AI Thumbnail Generator</h3>
-				<span
-					v-if="!hasThumbnailAccess"
-					class="ml-auto rounded bg-white/5 px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none text-zinc-500"
-				>
-					Coming Soon
-				</span>
-			</div>
-			<p class="mb-3 text-[10px] leading-relaxed text-zinc-400">
-				Chat-based thumbnail creation with Quick (flat PNG) or Editable (layered project) modes,
-				references, and 3 refinement rounds.
-			</p>
-			<button
-				type="button"
-				class="flex w-full items-center justify-center gap-1.5 rounded-md px-3 py-2 text-xs font-medium transition-colors"
-				:class="
-					hasThumbnailAccess
-						? 'bg-purple-600 text-white hover:bg-purple-500'
-						: 'cursor-not-allowed bg-zinc-700 text-zinc-400'
-				"
-				:disabled="!hasThumbnailAccess"
-				@click="openThumbnailGenerator"
-			>
-				Open AI Thumbnail
-				<ExternalLink class="size-3" />
-			</button>
-		</div>
+  <div class="flex h-full flex-col gap-4 overflow-y-auto p-3">
+    <!-- AI Image Creator -->
+    <div
+      class="space-y-3 rounded-lg border border-line-subtle bg-surface-raised p-3"
+      :class="!hasThumbnailAccess && 'opacity-60'"
+    >
+      <div class="flex items-center gap-2">
+        <IconTile :icon="Sparkles" :tone="hasThumbnailAccess ? 'ai' : 'neutral'" size="sm" />
+        <h3 class="min-w-0 flex-1 truncate text-xs font-semibold text-fg">AI Image Creator</h3>
+        <Badge v-if="!hasThumbnailAccess" variant="neutral">Coming soon</Badge>
+      </div>
+      <p class="text-xs leading-relaxed text-fg-muted">
+        Open the Thumbnail section for chat-based creation with Quick or Editable workflows, references, and refinement
+        rounds.
+      </p>
+      <Button variant="primary" size="sm" block :disabled="!hasThumbnailAccess" @click="openThumbnailGenerator">
+        Open thumbnail creator
+        <ExternalLink />
+      </Button>
+    </div>
 
-		<div class="border-t border-white/5" />
-
-		<div>
-			<div class="mb-2 flex items-center gap-2">
-				<Type class="size-4 text-blue-400" />
-				<h3 class="text-xs font-semibold text-zinc-200">Quick text</h3>
-			</div>
-			<p class="mb-2 text-[10px] text-zinc-500">Drop a common hook onto the canvas</p>
-			<div class="space-y-1.5">
-				<button
-					v-for="text in quickTexts"
-					:key="text"
-					type="button"
-					class="flex w-full items-center rounded-md border border-white/5 px-3 py-2 text-left text-xs text-zinc-300 transition-colors hover:border-blue-500/30 hover:bg-white/5"
-					@click="addTextToCanvas(text)"
-				>
-					{{ text }}
-				</button>
-			</div>
-		</div>
-	</div>
+    <!-- Quick text -->
+    <section class="space-y-1.5">
+      <SectionHeader title="Quick text" variant="eyebrow" class="min-h-0" />
+      <p class="text-2xs text-fg-subtle">Drop a common hook onto the canvas.</p>
+      <div class="-mx-1 space-y-px pt-1">
+        <AssetListRow
+          v-for="text in quickTexts"
+          :key="text"
+          as="button"
+          :title="text"
+          :aria-label="`Add “${text}” to the canvas`"
+          @click="addTextToCanvas(text)"
+        >
+          <template #trailing>
+            <Plus class="size-3.5 text-fg-subtle" />
+          </template>
+        </AssetListRow>
+      </div>
+    </section>
+  </div>
 </template>

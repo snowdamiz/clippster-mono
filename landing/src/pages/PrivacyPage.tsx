@@ -1,5 +1,6 @@
-import { ArrowLeft, Shield, Eye, Database, Lock, UserCheck, Mail, Globe } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import {Header} from '@/components/Header';
+import {Footer} from '@/components/Footer';
+import { Shield, Eye, Database, Lock, UserCheck, Mail, Globe } from 'lucide-react'
 
 const sections = [
   {
@@ -92,23 +93,7 @@ export function PrivacyPage() {
   return (
     <div className="min-h-screen bg-[#0a0a0b] overflow-x-hidden">
       {/* Header */}
-      <header className="border-b border-zinc-800/50 backdrop-blur-md sticky top-0 z-50 bg-[#0a0a0b]/90">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3 sm:gap-6">
-            <Link to="/" className="flex items-center gap-2 sm:gap-3">
-              <img src="/logo-icon.svg" alt="Clippster" className="w-7 h-7 sm:w-8 sm:h-8" />
-              <img src="/logo.svg" alt="Clippster" className="h-4 sm:h-5" />
-            </Link>
-            <Link 
-              to="/" 
-              className="hidden sm:flex items-center gap-2 text-zinc-500 hover:text-white transition-colors text-sm group"
-            >
-              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-              Back to home
-            </Link>
-          </div>
-        </div>
-      </header>
+      <Header />
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
         {/* Page Header */}
@@ -164,21 +149,7 @@ export function PrivacyPage() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-zinc-800/50">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <img src="/logo-icon.svg" alt="Clippster" className="w-6 h-6 opacity-50" />
-            <p className="text-xs text-zinc-600">
-              © {new Date().getFullYear()} Clippster. All rights reserved.
-            </p>
-          </div>
-          <div className="flex items-center gap-6 text-xs text-zinc-600">
-            <Link to="/" className="hover:text-zinc-400 transition-colors">Home</Link>
-            <Link to="/privacy" className="text-cyan-400">Privacy</Link>
-            <Link to="/terms" className="hover:text-zinc-400 transition-colors">Terms</Link>
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   )
 }

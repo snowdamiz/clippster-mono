@@ -7,6 +7,7 @@ export interface AuthUser {
   avatar_url?: string;
   wallet_address?: string;
   is_admin?: boolean;
+  is_affiliate?: boolean;
   is_moderator?: boolean;
   account_type?: 'personal' | 'organization';
   owned_organization_id?: number | string | null;
@@ -15,6 +16,7 @@ export interface AuthUser {
   beta_activated?: boolean;
   has_selected_plan?: boolean;
   tokend_enabled?: boolean;
+  campaigns_enabled?: boolean;
   subscription?: SubscriptionStatus;
   credits?: {
     hours_remaining?: number | string;

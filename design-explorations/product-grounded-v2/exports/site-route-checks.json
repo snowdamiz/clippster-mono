@@ -1,0 +1,519 @@
+{
+  "desktop": [
+    {
+      "footer": true,
+      "h1": "AI Clipping Tool for Streamers",
+      "overflow": false,
+      "path": "/clipping-tool"
+    },
+    {
+      "footer": true,
+      "h1": "Desktop Video Editor for Creators",
+      "overflow": false,
+      "path": "/video-editor"
+    },
+    {
+      "footer": true,
+      "h1": "Live Stream Clipping Software",
+      "overflow": false,
+      "path": "/live-stream-clipping"
+    },
+    {
+      "footer": true,
+      "h1": "Clipping Campaign Software",
+      "overflow": false,
+      "path": "/clipping-campaigns"
+    },
+    {
+      "footer": true,
+      "h1": "Organizations on Clippster",
+      "overflow": false,
+      "path": "/for-organizations"
+    },
+    {
+      "footer": true,
+      "h1": "Schedule Clips to TikTok, Reels & Shorts",
+      "overflow": false,
+      "path": "/social-posting"
+    },
+    {
+      "footer": true,
+      "h1": "Clip Performance Analytics",
+      "overflow": false,
+      "path": "/clip-analytics"
+    },
+    {
+      "footer": true,
+      "h1": "Design Studio for Thumbnails (Beta)",
+      "overflow": false,
+      "path": "/design-studio"
+    },
+    {
+      "footer": true,
+      "h1": "Twitch Clipping Tool",
+      "overflow": false,
+      "path": "/platforms/twitch",
+      "tableRows": 0
+    },
+    {
+      "footer": true,
+      "h1": "Kick Clipping Tool",
+      "overflow": false,
+      "path": "/platforms/kick",
+      "tableRows": 0
+    },
+    {
+      "footer": true,
+      "h1": "YouTube Clipping & Shorts Publishing",
+      "overflow": false,
+      "path": "/platforms/youtube",
+      "tableRows": 0
+    },
+    {
+      "footer": true,
+      "h1": "Pump.fun Livestream Clipping (Desktop)",
+      "overflow": false,
+      "path": "/platforms/pumpfun",
+      "tableRows": 0
+    },
+    {
+      "footer": true,
+      "h1": "Clip X Livestreams & Post to X",
+      "overflow": false,
+      "path": "/platforms/x",
+      "tableRows": 0
+    },
+    {
+      "footer": true,
+      "h1": "Rumble Live & VOD Clipping",
+      "overflow": false,
+      "path": "/platforms/rumble",
+      "tableRows": 0
+    },
+    {
+      "footer": true,
+      "h1": "Clippster vs Opus Clip",
+      "overflow": false,
+      "path": "/vs/opus-clip",
+      "tableRows": 11
+    },
+    {
+      "footer": true,
+      "h1": "Clippster vs Eklipse",
+      "overflow": false,
+      "path": "/vs/eklipse",
+      "tableRows": 6
+    },
+    {
+      "footer": true,
+      "h1": "Clippster vs StreamLadder",
+      "overflow": false,
+      "path": "/vs/streamladder",
+      "tableRows": 5
+    },
+    {
+      "footer": true,
+      "h1": "Clippster vs Medal",
+      "overflow": false,
+      "path": "/vs/medal",
+      "tableRows": 5
+    },
+    {
+      "footer": true,
+      "h1": "Clippster vs Powder",
+      "overflow": false,
+      "path": "/vs/powder",
+      "tableRows": 5
+    },
+    {
+      "footer": true,
+      "h1": "How to Clip Twitch Streams",
+      "overflow": false,
+      "path": "/guides/how-to-clip-twitch-streams"
+    },
+    {
+      "footer": true,
+      "h1": "How to Clip Kick Streams",
+      "overflow": false,
+      "path": "/guides/how-to-clip-kick-streams"
+    },
+    {
+      "footer": true,
+      "h1": "How to Clip Pump.fun Livestreams",
+      "overflow": false,
+      "path": "/guides/clip-pumpfun-livestreams"
+    },
+    {
+      "footer": true,
+      "h1": "How to Clip During a Live Stream",
+      "overflow": false,
+      "path": "/guides/clip-during-live-stream"
+    },
+    {
+      "footer": true,
+      "h1": "Twitch to TikTok Workflow",
+      "overflow": false,
+      "path": "/guides/twitch-to-tiktok-workflow"
+    },
+    {
+      "footer": true,
+      "h1": "Stream to YouTube Shorts Workflow",
+      "overflow": false,
+      "path": "/guides/stream-to-youtube-shorts"
+    },
+    {
+      "footer": true,
+      "h1": "Vertical Crop for TikTok, Reels & Shorts",
+      "overflow": false,
+      "path": "/guides/vertical-crop-for-tiktok-reels-shorts"
+    },
+    {
+      "footer": true,
+      "h1": "Auto Captions for Clips",
+      "overflow": false,
+      "path": "/guides/auto-captions-for-clips"
+    },
+    {
+      "footer": true,
+      "h1": "How to Run a Clipping Campaign",
+      "overflow": false,
+      "path": "/guides/how-to-run-a-clipping-campaign"
+    },
+    {
+      "footer": true,
+      "h1": "How to Hire Clippers",
+      "overflow": false,
+      "path": "/guides/how-to-hire-clippers"
+    },
+    {
+      "footer": true,
+      "h1": "Make Money Clipping Streams",
+      "overflow": false,
+      "path": "/guides/make-money-clipping-streams"
+    },
+    {
+      "footer": true,
+      "h1": "Clipper Payouts & CPM Explained",
+      "overflow": false,
+      "path": "/guides/clipper-payouts-cpm"
+    },
+    {
+      "footer": true,
+      "h1": "Track Clip Views Across Platforms",
+      "overflow": false,
+      "path": "/guides/track-clip-views-across-platforms"
+    },
+    {
+      "footer": true,
+      "h1": "SEO & Product Claim Methodology",
+      "overflow": false,
+      "path": "/methodology"
+    },
+    {
+      "footer": true,
+      "h1": "Clippster Editorial",
+      "overflow": false,
+      "path": "/authors/clippster-editorial"
+    },
+    {
+      "footer": true,
+      "h1": "Case Study: Live Clipping vs VOD Queue",
+      "overflow": false,
+      "path": "/case-studies/live-clipping-vs-vod-queue"
+    },
+    {
+      "footer": true,
+      "h1": "Case Study: Organization Campaign Workflow",
+      "overflow": false,
+      "path": "/case-studies/org-campaign-clipper-workflow"
+    },
+    {
+      "footer": true,
+      "h1": "Simple, flexible pricing",
+      "overflow": false,
+      "path": "/pricing"
+    },
+    {
+      "footer": true,
+      "h1": "Your Privacy Matters",
+      "overflow": false,
+      "path": "/privacy"
+    },
+    {
+      "footer": true,
+      "h1": "Terms of Service",
+      "overflow": false,
+      "path": "/terms"
+    },
+    {
+      "footer": true,
+      "h1": "Clipper directory",
+      "overflow": false,
+      "path": "/clippers"
+    },
+    {
+      "footer": true,
+      "h1": "Clipping organizations",
+      "overflow": false,
+      "path": "/orgs"
+    }
+  ],
+  "mobile": [
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/clipping-tool"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/video-editor"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/live-stream-clipping"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/clipping-campaigns"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/for-organizations"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/social-posting"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/clip-analytics"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/design-studio"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/platforms/twitch"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/platforms/kick"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/platforms/youtube"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/platforms/pumpfun"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/platforms/x"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/platforms/rumble"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/vs/opus-clip"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/vs/eklipse"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/vs/streamladder"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/vs/medal"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/vs/powder"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/guides/how-to-clip-twitch-streams"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/guides/how-to-clip-kick-streams"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/guides/clip-pumpfun-livestreams"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/guides/clip-during-live-stream"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/guides/twitch-to-tiktok-workflow"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/guides/stream-to-youtube-shorts"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/guides/vertical-crop-for-tiktok-reels-shorts"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/guides/auto-captions-for-clips"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/guides/how-to-run-a-clipping-campaign"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/guides/how-to-hire-clippers"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/guides/make-money-clipping-streams"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/guides/clipper-payouts-cpm"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/guides/track-clip-views-across-platforms"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/methodology"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/authors/clippster-editorial"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/case-studies/live-clipping-vs-vod-queue"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/case-studies/org-campaign-clipper-workflow"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/pricing"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/privacy"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/terms"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/clippers"
+    },
+    {
+      "duplicateFooterLinks": [],
+      "footer": true,
+      "overflow": false,
+      "path": "/orgs"
+    }
+  ],
+  "homepage": {
+    "rendered": true,
+    "platforms": 6,
+    "footerDuplicates": 0
+  },
+  "interactionChecks": [
+    "Mobile header to Editor stays local",
+    "Sign-in dialog opens and closes",
+    "Other versions exposes Mac Intel download"
+  ]
+}

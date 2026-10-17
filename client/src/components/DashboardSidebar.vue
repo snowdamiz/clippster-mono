@@ -1,271 +1,150 @@
 <template>
   <aside
-    class="sidebar fixed left-0 top-0 h-screen flex flex-col bg-[var(--sidebar-bg)] transition-[width] duration-200 ease-out z-40"
-    :class="{
-      'sidebar--native': isNativeEnvironment,
-      'w-60': !isCollapsed,
-      'w-12': isCollapsed,
-      'sidebar--disabled': disabled,
-    }"
+    class="sidebar relative flex h-full shrink-0 flex-col bg-canvas transition-[width] duration-200 ease-out"
+    :class="isCollapsed ? 'w-[var(--sidebar-width-collapsed)]' : 'w-[var(--sidebar-width)]'"
   >
-    <!-- Bug Report Dialog -->
     <BugReportDialog
       :show="showBugReportDialog"
       @close="showBugReportDialog = false"
       @submitted="handleBugReportSubmitted"
     />
-
-    <!-- Account Settings Dialog -->
     <AccountSettingsDialog :show="showAccountSettingsDialog" @close="showAccountSettingsDialog = false" />
 
-    <!-- ===== Navigation Section ===== -->
-    <nav class="flex-1 overflow-hidden">
-      <div class="sidebar-nav__scroll h-full overflow-y-auto overflow-x-hidden">
-        <div class="flex flex-col" :class="isCollapsed ? 'p-1.5 gap-1' : 'p-3 gap-4'">
-          <template v-for="(group, groupIndex) in sortedNavigationGroups" :key="group.key">
-            <div v-if="getVisibleGroupItems(group.items).length > 0" class="flex flex-col gap-1">
-              <!-- Collapsed divider between groups -->
-              <div v-if="isCollapsed && groupIndex > 0" class="sidebar-collapsed-divider mx-1.5 my-1" />
-
-              <!-- Group Label (hidden when collapsed) -->
-              <div
-                v-if="group.label && !isCollapsed"
-                class="text-xs font-semibold uppercase tracking-wider text-[var(--sidebar-text-muted)] pt-2 px-3 pb-1 opacity-70"
-              >
-                {{ group.label }}
-              </div>
-
-              <!-- Navigation Items -->
-              <ul class="sidebar-nav-group__items m-0 p-0 flex flex-col gap-0.5">
-                <li v-for="item in getVisibleGroupItems(group.items)" :key="item.path">
-                  <!-- Disabled item (non-clickable) -->
-                  <div
-                    v-if="item.disabled"
-                    class="flex items-center w-full py-2 rounded-md text-[var(--sidebar-text-muted)] bg-transparent border-[none] no-underline text-sm opacity-40 cursor-not-allowed select-none"
-                    :class="{
-                      'justify-center px-0': isCollapsed,
-                      'gap-3 px-3': !isCollapsed,
-                    }"
-                    :title="isCollapsed ? item.badge || item.name : undefined"
-                    :data-tour-id="tourIdForItem(item)"
-                  >
-                    <div class="relative flex items-center justify-center shrink-0">
-                      <component :is="item.icon as Component" class="w-[18px] h-[18px]" />
-                    </div>
-                    <span v-if="!isCollapsed" class="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {{ item.name }}
-                    </span>
-                    <span
-                      v-if="item.badge && !isCollapsed"
-                      class="ml-auto px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none rounded whitespace-nowrap"
-                      :class="
-                        item.badge === 'Beta'
-                          ? 'bg-[var(--sidebar-accent)] text-black'
-                          : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)]'
-                      "
-                    >
-                      {{ item.badge }}
-                    </span>
-                  </div>
-                  <!-- Normal nav item -->
-                  <router-link
-                    v-else
-                    :to="item.path"
-                    class="flex items-center w-full py-2 rounded-md text-[var(--sidebar-text-muted)] bg-transparent border-[none] no-underline text-sm transition-all duration-150 cursor-pointer hover:bg-[var(--sidebar-hover)] hover:text-[var(--sidebar-text)]"
-                    :class="{
-                      'sidebar-nav-item--active': isActive(item.path),
-                      'justify-center px-0': isCollapsed,
-                      'gap-3 px-3': !isCollapsed,
-                    }"
-                    :title="isCollapsed ? item.badge ? `${item.name} (${item.badge})` : item.name : undefined"
-                    :data-tour-id="tourIdForItem(item)"
-                    @click="(e) => onNavClick(e, item)"
-                  >
-                    <div class="relative flex items-center justify-center shrink-0">
-                      <div
-                        v-if="item.useImage"
-                        class="sidebar-nav-item__custom-icon w-[18px] h-[18px] bg-current"
-                        :style="{
-                          maskImage: `url(${item.icon})`,
-                          WebkitMaskImage: `url(${item.icon})`,
-                        }"
-                      />
-                      <component v-else :is="item.icon as Component" class="w-[18px] h-[18px]" />
-                      <!-- Unread badge for Messages (icon badge when collapsed) -->
-                      <span
-                        v-if="item.name === 'Messages' && totalUnreadMessages > 0 && isCollapsed"
-                        class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 flex items-center justify-center text-xs font-semibold bg-[#ef4444] text-black rounded-lg"
-                      >
-                        {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
-                      </span>
-                      <!-- Live badge for Live (icon badge when collapsed) -->
-                      <span
-                        v-if="item.name === 'Live' && liveCount > 0 && isCollapsed"
-                        class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 flex items-center justify-center text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-lg"
-                      >
-                        {{ liveCount > 99 ? '99+' : liveCount }}
-                      </span>
-                      <!-- Live badge for My Creators (icon badge when collapsed) -->
-                      <span
-                        v-if="item.name === 'My Creators' && liveCreatorsCount > 0 && isCollapsed"
-                        class="absolute -top-1.5 -right-2 min-w-4 h-4 px-1 flex items-center justify-center text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-lg"
-                      >
-                        {{ liveCreatorsCount > 99 ? '99+' : liveCreatorsCount }}
-                      </span>
-                    </div>
-                    <span v-if="!isCollapsed" class="flex-1 whitespace-nowrap overflow-hidden text-ellipsis">
-                      {{ item.name }}
-                    </span>
-                    <!-- Unread badge for Messages (right side when expanded) -->
-                    <span
-                      v-if="item.name === 'Messages' && totalUnreadMessages > 0 && !isCollapsed"
-                      class="ml-auto flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold bg-[#ef4444] text-black rounded-md"
-                    >
-                      {{ totalUnreadMessages > 99 ? '99+' : totalUnreadMessages }}
-                    </span>
-                    <!-- Live badge for Live (right side when expanded) -->
-                    <span
-                      v-if="item.name === 'Live' && liveCount > 0 && !isCollapsed"
-                      class="ml-auto flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-md"
-                    >
-                      {{ liveCount > 99 ? '99+' : liveCount }}
-                    </span>
-                    <!-- Live badge for My Creators (right side when expanded) -->
-                    <span
-                      v-if="item.name === 'My Creators' && liveCreatorsCount > 0 && !isCollapsed"
-                      class="ml-auto flex items-center justify-center min-w-5 h-5 px-1.5 text-xs font-semibold bg-[var(--sidebar-accent)] text-black rounded-md"
-                    >
-                      {{ liveCreatorsCount > 99 ? '99+' : liveCreatorsCount }}
-                    </span>
-                    <span
-                      v-if="item.badge && !isCollapsed && item.name !== 'Messages' && item.name !== 'Live' && item.name !== 'My Creators'"
-                      class="ml-auto px-1.5 py-0.5 text-[0.5625rem] font-semibold leading-none rounded whitespace-nowrap"
-                      :class="
-                        item.badge === 'Beta'
-                          ? 'bg-[var(--sidebar-accent)] text-black'
-                          : 'bg-[var(--sidebar-hover)] text-[var(--sidebar-text-muted)]'
-                      "
-                    >
-                      {{ item.badge }}
-                    </span>
-                  </router-link>
-                </li>
-              </ul>
+    <!-- Navigation -->
+    <nav
+      ref="navEl"
+      class="min-h-0 flex-1 overflow-y-auto overflow-x-hidden"
+      :class="{ 'nav-fade-bottom': navOverflowsBelow, 'nav-fade-top': navOverflowsAbove }"
+      aria-label="Main"
+      @scroll.passive="updateNavOverflow"
+    >
+      <div class="flex flex-col gap-3 pb-3 pt-1" :class="isCollapsed ? 'px-2' : 'px-2.5'">
+        <template v-for="(group, groupIndex) in sortedNavigationGroups" :key="group.key">
+          <div v-if="getVisibleGroupItems(group.items).length > 0" class="flex flex-col">
+            <div v-if="isCollapsed && groupIndex > 0" class="mx-2 mb-3 h-px bg-line-subtle" />
+            <div
+              v-if="group.label && !isCollapsed"
+              class="px-2.5 pb-1 pt-1 text-2xs font-medium text-fg-subtle"
+            >
+              {{ group.label }}
             </div>
-          </template>
-        </div>
+            <ul class="m-0 flex list-none flex-col gap-px p-0">
+              <li v-for="item in getVisibleGroupItems(group.items)" :key="item.path">
+                <SidebarNavigationItem
+                  :name="item.name"
+                  :href="item.path"
+                  :icon="item.icon as Component"
+                  :use-image="item.useImage"
+                  :badge="item.badge"
+                  :disabled="item.disabled"
+                  :collapsed="isCollapsed"
+                  :active="isActive(item.path)"
+                  :link-component="RouterLink"
+                  :data-tour-id="tourIdForItem(item)"
+                  :count="
+                    item.name === 'Messages'
+                      ? totalUnreadMessages
+                      : item.name === 'Live Streams'
+                        ? liveCount
+                        : item.name === 'My Creators'
+                          ? liveCreatorsCount
+                          : 0
+                  "
+                  :count-tone="item.name === 'Messages' ? 'brand' : 'live'"
+                  @click="(e: MouseEvent) => !item.disabled && onNavClick(e, item)"
+                />
+              </li>
+            </ul>
+          </div>
+        </template>
       </div>
     </nav>
 
-    <!-- ===== Footer Section ===== -->
-    <div class="sidebar-footer p-[0.3rem] flex flex-col gap-2">
-      <!-- User Profile Section -->
-      <div class="flex" :class="isCollapsed ? 'justify-center' : ''">
-        <template v-if="authStore.isAuthenticated">
-          <DropdownMenu>
-            <DropdownMenuTrigger
-              class="sidebar-user__trigger flex items-center rounded-md bg-transparent border-[none] text-[var(--sidebar-text)] cursor-pointer transform-none hover:bg-[var(--sidebar-hover)]"
-              :class="isCollapsed ? 'justify-center p-1.5 w-full' : 'gap-2 w-full py-2 px-2'"
-              :title="isCollapsed ? formattedAddress : undefined"
-              data-tour-id="nav-profile-menu"
-            >
-              <div
-                class="shrink-0 flex items-center justify-center rounded-[20px] overflow-hidden"
-                :class="[displayAvatar ? '' : 'bg-[var(--sidebar-accent)]', isCollapsed ? 'w-6 h-6' : 'w-7 h-7']"
-              >
-                <img v-if="displayAvatar" :src="displayAvatar" :alt="displayName" class="w-full h-full object-cover" />
-                <span v-else class="text-xs font-extrabold text-[#0a0a0b] uppercase">{{ userInitials }}</span>
-              </div>
-              <span
-                v-if="!isCollapsed"
-                class="flex-1 text-xs text-left whitespace-nowrap overflow-hidden text-ellipsis text-[var(--sidebar-text-muted)]"
-                :title="displayName"
-              >
-                {{ displayName }}
-              </span>
-              <ChevronRight v-if="!isCollapsed" class="w-3.5 h-3.5 text-[var(--sidebar-text-muted)] shrink-0" />
-            </DropdownMenuTrigger>
-            <DropdownMenuContent side="right" align="end" :side-offset="12" class="sidebar-dropdown">
-              <DropdownMenuLabel class="sidebar-dropdown__label">
-                {{ displayName }}
-              </DropdownMenuLabel>
-              <DropdownMenuSeparator class="sidebar-dropdown__separator" />
-              <!-- Credits Display -->
-              <DropdownMenuItem
-                v-if="isAIAllowed"
-                class="sidebar-dropdown__item sidebar-dropdown__credits"
-                @click="goToCredits"
-              >
-                <Zap class="w-4 h-4 mr-2 text-sidebar-accent" />
-                <span class="sidebar-dropdown__credits-label">Credits</span>
-                <span v-if="!loadingBalance" class="sidebar-dropdown__credits-value">
-                  <template v-if="typeof hoursRemaining === 'string'">Unlimited</template>
-                  <template v-else>{{ Math.round(hoursRemaining as number) }} min</template>
-                </span>
-                <span v-else class="sidebar-dropdown__credits-loading"></span>
-              </DropdownMenuItem>
-              <DropdownMenuSeparator v-if="isAIAllowed" class="sidebar-dropdown__separator" />
-              <DropdownMenuItem class="sidebar-dropdown__item" @click="router.push('/clipper-profile')">
-                <UserCircle class="w-4 h-4 mr-2" />
-                Clipper Profile
-              </DropdownMenuItem>
-              <DropdownMenuSeparator class="sidebar-dropdown__separator" />
-              <!-- Account Settings -->
-              <DropdownMenuItem class="sidebar-dropdown__item" @click="showAccountSettingsDialog = true">
-                <Settings class="w-4 h-4 mr-2" />
-                Account Settings
-              </DropdownMenuItem>
-              <DropdownMenuSeparator class="sidebar-dropdown__separator" />
-              <!-- Admin Link (conditional) -->
-              <DropdownMenuItem
-                v-if="authStore.user?.is_admin"
-                class="sidebar-dropdown__item"
-                @click="router.push('/admin')"
-              >
-                <Settings class="w-4 h-4 mr-2" />
-                Admin
-              </DropdownMenuItem>
-              <!-- Moderator Link (conditional) -->
-              <DropdownMenuItem
-                v-if="authStore.user?.is_moderator && !authStore.user?.is_admin"
-                class="sidebar-dropdown__item"
-                @click="router.push('/admin')"
-              >
-                <Settings class="w-4 h-4 mr-2" />
-                Moderator
-              </DropdownMenuItem>
-              <!-- Bug Report -->
-              <DropdownMenuItem class="sidebar-dropdown__item" @click="showBugReportDialog = true">
-                <Bug class="w-4 h-4 mr-2" />
-                Bug Report
-              </DropdownMenuItem>
-              <DropdownMenuSeparator class="sidebar-dropdown__separator" />
-              <DropdownMenuItem class="sidebar-dropdown__item sidebar-dropdown__item--danger" @click="handleDisconnect">
-                <LogOut class="w-4 h-4 mr-2" />
-                {{ disconnectButtonText }}
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
-        </template>
-        <template v-else>
-          <button
-            class="flex items-center justify-center py-2 rounded-md bg-[var(--sidebar-accent)] text-[var(--sidebar-bg)] border-[none] text-sm font-medium cursor-pointer transition-all duration-150 hover:opacity-90"
-            :class="isCollapsed ? 'w-full h-9 px-0' : 'w-full px-3'"
-            :title="isCollapsed ? 'Sign In' : undefined"
-            @click="showAuthModal"
+    <!-- Account -->
+    <div class="shrink-0 p-2">
+      <template v-if="authStore.isAuthenticated">
+        <DropdownMenu>
+          <DropdownMenuTrigger
+            class="sidebar-account flex w-full items-center rounded-lg text-left transition-colors hover:bg-surface-hover data-[state=open]:bg-surface-hover"
+            :class="isCollapsed ? 'justify-center p-1.5' : 'gap-2.5 px-2 py-1.5'"
+            :title="isCollapsed ? displayName : undefined"
+            data-tour-id="nav-profile-menu"
           >
-            <span v-if="!isCollapsed">Sign In</span>
-            <LogOut v-else class="w-4 h-4 rotate-180" />
-          </button>
-        </template>
-      </div>
+            <Avatar :src="displayAvatar" :name="displayName" size="sm" tone="brand">{{ userInitials }}</Avatar>
+            <span v-if="!isCollapsed" class="min-w-0 flex-1">
+              <span class="block truncate text-xs font-medium text-fg">{{ displayName }}</span>
+              <span class="block truncate text-2xs text-fg-subtle">{{ planLabel }}</span>
+            </span>
+            <ChevronsUpDown v-if="!isCollapsed" class="size-3.5 shrink-0 text-fg-subtle" />
+          </DropdownMenuTrigger>
+          <DropdownMenuContent side="right" align="end" :side-offset="10" class="w-60">
+            <div class="flex items-center gap-2.5 px-2 py-2">
+              <Avatar :src="displayAvatar" :name="displayName" size="md" tone="brand">{{ userInitials }}</Avatar>
+              <span class="min-w-0">
+                <span class="block truncate text-sm font-medium text-fg">{{ displayName }}</span>
+                <span class="block truncate text-xs text-fg-subtle">{{ formattedAddress }}</span>
+              </span>
+            </div>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem v-if="isAIAllowed" @click="goToCredits">
+              <Zap />
+              <span class="flex-1">Credits</span>
+              <span v-if="!loadingBalance" class="tabular text-xs font-medium text-brand">
+                <template v-if="typeof hoursRemaining === 'string'">Unlimited</template>
+                <template v-else>{{ Math.round(hoursRemaining as number) }} min</template>
+              </span>
+              <Loader2 v-else class="!size-3 animate-spin" />
+            </DropdownMenuItem>
+            <DropdownMenuItem v-if="!permissionsStore.isRestricted" @click="router.push('/billing')">
+              <Receipt />
+              Billing & plan
+            </DropdownMenuItem>
+            <DropdownMenuItem @click="router.push('/clipper-profile')">
+              <UserCircle />
+              Clipper profile
+            </DropdownMenuItem>
+            <DropdownMenuItem @click="showAccountSettingsDialog = true">
+              <Settings />
+              Account settings
+            </DropdownMenuItem>
+            <template v-if="authStore.user?.is_admin || authStore.user?.is_moderator">
+              <DropdownMenuSeparator />
+              <DropdownMenuItem @click="router.push('/admin')">
+                <ShieldCheck />
+                {{ authStore.user?.is_admin ? 'Admin' : 'Moderator' }}
+              </DropdownMenuItem>
+            </template>
+            <DropdownMenuSeparator />
+            <DropdownMenuItem @click="showBugReportDialog = true">
+              <Bug />
+              Report a bug
+            </DropdownMenuItem>
+            <DropdownMenuItem class="text-danger focus:bg-danger-soft [&>svg]:!text-danger" @click="handleDisconnect">
+              <LogOut />
+              {{ disconnectButtonText }}
+            </DropdownMenuItem>
+          </DropdownMenuContent>
+        </DropdownMenu>
+      </template>
+      <Button
+        v-else
+        variant="primary"
+        block
+        :size="isCollapsed ? 'icon' : 'md'"
+        :title="isCollapsed ? 'Sign in' : undefined"
+        @click="showAuthModal"
+      >
+        <LogIn />
+        <span v-if="!isCollapsed">Sign in</span>
+      </Button>
     </div>
   </aside>
 </template>
 
 <script setup lang="ts">
+  import SidebarNavigationItem from './SidebarNavigationItem.vue';
   import { ref, computed, onMounted, onUnmounted, watch, type Component } from 'vue';
-  import { useRoute, useRouter } from 'vue-router';
+  import { RouterLink, useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '@/stores/auth';
 
   const props = defineProps<{
@@ -287,18 +166,23 @@
     DropdownMenu,
     DropdownMenuContent,
     DropdownMenuItem,
-    DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
   } from '@/components/ui/dropdown-menu';
   import api from '@/services/api';
   import { canAccessAIVideo } from '@/utils/aiVideoAccess';
+  import { canAccessCampaigns, canAccessImageEditor } from '@/utils/featureAccess';
   import { useAppTour, useTourFlags } from '@/composables/useAppTour';
+  import { Avatar } from '@/components/ui/avatar';
+  import { Button } from '@/components/ui/button';
   import {
     Zap,
     UserCircle,
-    ChevronRight,
+    ChevronsUpDown,
+    LogIn,
     LogOut,
+    Loader2,
+    ShieldCheck,
     Settings,
     Bug,
     LayoutGrid,
@@ -359,6 +243,19 @@
       e.stopPropagation();
       await handleEditorNavClick('image', router);
     }
+  }
+
+  // ===== Nav overflow hint (fade edges when the list scrolls) =====
+  const navEl = ref<HTMLElement | null>(null);
+  const navOverflowsBelow = ref(false);
+  const navOverflowsAbove = ref(false);
+  let navResizeObserver: ResizeObserver | null = null;
+
+  function updateNavOverflow() {
+    const el = navEl.value;
+    if (!el) return;
+    navOverflowsAbove.value = el.scrollTop > 2;
+    navOverflowsBelow.value = el.scrollTop + el.clientHeight < el.scrollHeight - 2;
   }
 
   // ===== Emits =====
@@ -518,77 +415,95 @@
     return '??';
   });
 
+  const planLabel = computed(() => {
+    const sub = (authStore.user as any)?.subscription;
+    const plan = sub?.plan_name || sub?.tier || sub?.plan;
+    if (plan && (sub?.status === 'active' || sub?.status === 'trialing')) {
+      return `${String(plan).charAt(0).toUpperCase()}${String(plan).slice(1)} plan`;
+    }
+    return formattedAddress.value;
+  });
+
   const disconnectButtonText = computed(() => {
-    return authStore.authProvider && ['google', 'email'].includes(authStore.authProvider) ? 'Sign Out' : 'Disconnect';
+    return authStore.authProvider && ['google', 'email'].includes(authStore.authProvider) ? 'Sign out' : 'Disconnect';
   });
 
   // ===== Navigation Filtering =====
   function getVisibleGroupItems(items: NavigationItem[]): NavigationItem[] {
     if (useOrganizationSidebar.value) {
-      return items.filter(
-        (item) => item.name !== 'Admin' && item.name !== 'Bug Report' && !item.navHidden
-      );
+      return items.filter((item) => item.name !== 'Admin' && item.name !== 'Bug Report' && !item.navHidden);
     }
 
-    return items.filter((item) => {
-      if (item.navHidden) {
-        return false;
-      }
-      // Hide Admin and Bug Report from navigation - they're now in the profile dropdown
-      if (item.name === 'Admin' || item.name === 'Bug Report') {
-        return false;
-      }
-      // Check affiliate-only items
-      if (item.affiliateOnly) {
-        return authStore.user?.is_affiliate === true;
-      }
-      // Check admin-only items
-      if (item.adminOnly) {
-        return authStore.user?.is_admin === true;
-      }
-      // Check organization owner-only items
-      if (item.orgOnly) {
-        return isOrgAccountOwner.value;
-      }
-      // Always show Organizations page (even if not a member of any organization)
-      if (item.path === '/organizations') {
+    return items
+      .filter((item) => {
+        if (item.navHidden) {
+          return false;
+        }
+        // Hide Admin and Bug Report from navigation - they're now in the profile dropdown
+        if (item.name === 'Admin' || item.name === 'Bug Report') {
+          return false;
+        }
+        // Check affiliate-only items
+        if (item.affiliateOnly) {
+          return authStore.user?.is_affiliate === true;
+        }
+        // Check admin-only items
+        if (item.adminOnly) {
+          return authStore.user?.is_admin === true;
+        }
+        // Check organization owner-only items
+        if (item.orgOnly) {
+          return isOrgAccountOwner.value;
+        }
+        // Always show Organizations page (even if not a member of any organization)
+        if (item.path === '/organizations') {
+          return true;
+        }
+        // Check organization member items
+        if (item.orgMember) {
+          if (isOrgAccountOwner.value) return true;
+          return userOrganizations.value.length > 0;
+        }
+        // Hide Live when feature is disabled
+        if (item.path === '/live-clip' && !isLiveClipEnabled.value) {
+          return false;
+        }
+        if (item.path === '/campaigns' && !canAccessCampaigns(authStore.user)) {
+          return false;
+        }
+        // Check restricted account items
+        if (item.restrictedHidden && permissionsStore.isRestricted) {
+          // Special handling for items with specific permission checks
+          if (item.path === '/assets' && permissionsStore.allowAssetUploads) {
+            return true;
+          }
+          if (item.path === '/prompts' && permissionsStore.allowCustomPrompts) {
+            return true;
+          }
+          // Otherwise hide if marked as restrictedHidden
+          return false;
+        }
         return true;
-      }
-      // Check organization member items
-      if (item.orgMember) {
-        if (isOrgAccountOwner.value) return true;
-        return userOrganizations.value.length > 0;
-      }
-      // Hide Live when feature is disabled
-      if (item.path === '/live-clip' && !isLiveClipEnabled.value) {
-        return false;
-      }
-      // Check restricted account items
-      if (item.restrictedHidden && permissionsStore.isRestricted) {
-        // Special handling for items with specific permission checks
-        if (item.path === '/assets' && permissionsStore.allowAssetUploads) {
-          return true;
+      })
+      .map((item) => {
+        if (item.path === '/ai-video') {
+          const hasAccess = canAccessAIVideo(authStore.user);
+          return {
+            ...item,
+            disabled: !hasAccess,
+            badge: hasAccess ? item.badge : 'Coming Soon',
+          };
         }
-        if (item.path === '/prompts' && permissionsStore.allowCustomPrompts) {
-          return true;
+        if (item.path === '/design-studio' || item.path === '/ai-image') {
+          const hasAccess = canAccessImageEditor(authStore.user);
+          return {
+            ...item,
+            disabled: !hasAccess,
+            badge: hasAccess ? item.badge : 'Coming Soon',
+          };
         }
-        // Otherwise hide if marked as restrictedHidden
-        return false;
-      }
-      return true;
-    }).map((item) => {
-      // Dynamically disable AI Video Editor / AI Thumbnail Creator for non-authorized users
-      // (same grant: admin, or ai_editor_enabled + Creator/Pro)
-      if (item.path === '/ai-video' || item.path === '/ai-thumbnail') {
-        const hasAccess = canAccessAIVideo(authStore.user);
-        return {
-          ...item,
-          disabled: !hasAccess,
-          badge: hasAccess ? item.badge : 'Coming Soon',
-        };
-      }
-      return item;
-    });
+        return item;
+      });
   }
 
   function isActive(path: string): boolean {
@@ -714,6 +629,11 @@
 
   // ===== Lifecycle =====
   onMounted(() => {
+    if (navEl.value) {
+      navResizeObserver = new ResizeObserver(updateNavOverflow);
+      navResizeObserver.observe(navEl.value);
+      if (navEl.value.firstElementChild) navResizeObserver.observe(navEl.value.firstElementChild);
+    }
     isNativeEnvironment.value = typeof window !== 'undefined' && '__TAURI__' in window;
     fetchBalance();
     balanceRefreshInterval = setInterval(fetchBalance, 30000);
@@ -740,6 +660,7 @@
   });
 
   onUnmounted(() => {
+    navResizeObserver?.disconnect();
     if (balanceRefreshInterval) {
       clearInterval(balanceRefreshInterval);
       balanceRefreshInterval = null;
@@ -756,186 +677,13 @@
 </script>
 
 <style scoped>
-  .sidebar {
-    border-right: 1px solid var(--sidebar-border);
+  .nav-fade-bottom {
+    mask-image: linear-gradient(to bottom, #000 calc(100% - 28px), transparent);
   }
-
-  .sidebar-header {
-    border-bottom: 1px solid var(--sidebar-border);
+  .nav-fade-top {
+    mask-image: linear-gradient(to bottom, transparent, #000 20px);
   }
-
-  .sidebar-nav-group__items {
-    list-style: none;
+  .nav-fade-top.nav-fade-bottom {
+    mask-image: linear-gradient(to bottom, transparent, #000 20px, #000 calc(100% - 28px), transparent);
   }
-
-  .sidebar-nav-item__custom-icon {
-    mask-size: contain;
-    mask-repeat: no-repeat;
-    mask-position: center;
-  }
-
-  .sidebar-footer {
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  .sidebar-user__trigger {
-    animation: none !important;
-  }
-
-  .sidebar--native {
-    padding-top: 32px; /* Account for custom titlebar */
-  }
-
-  .sidebar-nav-item--active {
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-accent);
-  }
-
-  .sidebar-nav-item--active:hover {
-    background-color: var(--sidebar-active-hover);
-  }
-
-  .sidebar-collapsed-divider {
-    height: 1px;
-    background-color: var(--sidebar-border);
-    opacity: 0.8;
-  }
-
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  .sidebar-nav__scroll::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .sidebar-nav__scroll::-webkit-scrollbar-button {
-    display: none;
-  }
-
-  .sidebar-nav__scroll::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .sidebar-nav__scroll::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  .sidebar-nav__scroll::-webkit-scrollbar-thumb:hover {
-    background-color: rgba(255, 255, 255, 0.25);
-  }
-
-  .sidebar-nav__scroll {
-    scrollbar-width: thin;
-    scrollbar-color: rgba(255, 255, 255, 0.15) transparent;
-  }
-
-  .sidebar-user__trigger[data-state='open'] {
-    background-color: var(--sidebar-hover);
-  }
-</style>
-
-<!-- Global styles for dropdown (rendered via portal outside component scope) -->
-<style>
-  .sidebar-dropdown {
-    width: 200px !important;
-    background-color: var(--sidebar-surface) !important;
-    border: 1px solid var(--sidebar-border) !important;
-    border-radius: 8px !important;
-    padding: 0.25rem !important;
-    z-index: 100 !important;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
-    /* Disable all slide/zoom animations, only fade */
-    animation: sidebarDropdownFade 100ms ease-out !important;
-    --tw-enter-translate-x: 0 !important;
-    --tw-enter-translate-y: 0 !important;
-    --tw-enter-scale: 1 !important;
-  }
-
-  @keyframes sidebarDropdownFade {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  .sidebar-dropdown__label {
-    padding: 0.5rem 0.75rem !important;
-    font-size: 0.75rem !important;
-    font-weight: 400 !important;
-    color: var(--sidebar-text-muted) !important;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .sidebar-dropdown__separator {
-    height: 1px !important;
-    margin: 0.25rem 0 !important;
-    background-color: var(--sidebar-border) !important;
-  }
-
-  .sidebar-dropdown__item {
-    display: flex !important;
-    align-items: center !important;
-    padding: 0.5rem 0.75rem !important;
-    border-radius: 4px !important;
-    font-size: 0.875rem !important;
-    color: var(--sidebar-text) !important;
-    cursor: pointer !important;
-  }
-
-  .sidebar-dropdown__item:hover,
-  .sidebar-dropdown__item:focus,
-  .sidebar-dropdown__item[data-highlighted] {
-    background-color: var(--sidebar-hover) !important;
-    outline: none !important;
-  }
-
-  .sidebar-dropdown__item--danger {
-    color: #f87171 !important;
-  }
-
-  .sidebar-dropdown__item--danger:hover,
-  .sidebar-dropdown__item--danger:focus,
-  .sidebar-dropdown__item--danger[data-highlighted] {
-    background-color: rgba(248, 113, 113, 0.1) !important;
-    color: #f87171 !important;
-  }
-
-  /* Credits item in dropdown */
-  .sidebar-dropdown__credits {
-    justify-content: flex-start !important;
-  }
-
-  .sidebar-dropdown__credits .text-sidebar-accent {
-    color: var(--sidebar-accent) !important;
-  }
-
-  .sidebar-dropdown__credits-label {
-    flex: 1;
-  }
-
-  .sidebar-dropdown__credits-value {
-    font-weight: 600;
-    color: var(--sidebar-accent) !important;
-    font-size: 0.8125rem;
-  }
-
-  .sidebar-dropdown__credits-loading {
-    width: 12px;
-    height: 12px;
-    border: 2px solid var(--sidebar-border);
-    border-top-color: var(--sidebar-accent);
-    border-radius: 50%;
-    animation: spin 0.8s linear infinite;
-  }
-
-  /* Disabled state removed - free tier users have full sidebar access */
-  /* Individual features are gated via feature flags, not the entire sidebar */
 </style>

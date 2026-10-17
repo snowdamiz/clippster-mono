@@ -1,232 +1,213 @@
 <template>
-  <Teleport to="body">
-    <Transition name="modal">
-      <div v-if="!hidden" class="clip-selector__overlay">
-        <Transition name="dialog" appear>
-          <div v-if="!hidden" class="clip-selector" role="dialog" aria-modal="true">
-            <!-- Accent bar -->
-            <div class="clip-selector__accent"></div>
-
-            <!-- Header -->
-            <div class="clip-selector__header">
-              <button class="clip-selector__close" @click="handleClose(true)" :disabled="isCreating" title="Close">
-                <X :size="18" />
-              </button>
-              <div class="clip-selector__icon">
-                <Scissors :size="24" />
-              </div>
-              <h2 class="clip-selector__title">Create Clip</h2>
-              <p class="clip-selector__subtitle">Select a range from the last {{ formatTime(maxDuration) }}</p>
-            </div>
-
-            <!-- Content -->
-            <div class="clip-selector__content">
-              <!-- Progress State -->
-              <div v-if="isCreating" class="clip-selector__state-panel">
-                <div class="clip-selector__progress-ring">
-                  <svg class="clip-selector__progress-svg">
-                    <circle cx="32" cy="32" r="28" stroke-width="6" stroke="var(--sidebar-hover)" fill="none" />
-                    <circle
-                      cx="32" cy="32" r="28" stroke-width="6"
-                      stroke="var(--sidebar-accent)" fill="none"
-                      :stroke-dasharray="176"
-                      :stroke-dashoffset="176 - (176 * progress) / 100"
-                      stroke-linecap="round"
-                      class="clip-selector__progress-circle"
-                    />
-                  </svg>
-                  <div class="clip-selector__progress-text">{{ Math.round(progress) }}%</div>
-                </div>
-                <p class="clip-selector__state-title">Creating clip...</p>
-                <p class="clip-selector__state-subtitle">{{ progressMessage }}</p>
-                <button
-                  type="button"
-                  class="clip-selector__btn clip-selector__btn--secondary clip-selector__cancel-extract"
-                  @click="requestCancelClipExtraction"
-                >
-                  Cancel extraction
-                </button>
-              </div>
-
-              <!-- Success State -->
-              <div v-else-if="clipCreated" class="clip-selector__state-panel">
-                <div class="clip-selector__success-icon">
-                  <Check :size="32" />
-                </div>
-                <p class="clip-selector__state-title">Clip created successfully!</p>
-                <p class="clip-selector__state-subtitle">{{ clipName }}</p>
-              </div>
-
-              <!-- Error State -->
-              <div v-else-if="error" class="clip-selector__state-panel">
-                <div class="clip-selector__error-icon">
-                  <AlertCircle :size="32" />
-                </div>
-                <p class="clip-selector__state-title">Failed to create clip</p>
-                <p class="clip-selector__state-subtitle clip-selector__state-subtitle--error">{{ error }}</p>
-                <button @click="resetState" class="clip-selector__btn clip-selector__btn--secondary" style="margin-top: 1rem;">
-                  Try Again
-                </button>
-              </div>
-
-              <!-- Selection State -->
-              <template v-else>
-                <!-- Video Preview -->
-                <div class="clip-selector__preview" @click="togglePlayPause">
-                  <video
-                    ref="previewVideoRef"
-                    class="clip-selector__video"
-                    @timeupdate="onVideoTimeUpdate"
-                    @ended="onVideoEnded"
-                  />
-                  <!-- Play/Pause overlay -->
-                  <div class="clip-selector__play-overlay" :class="{ 'clip-selector__play-overlay--playing': isPreviewPlaying }">
-                    <div class="clip-selector__play-btn">
-                      <Play v-if="!isPreviewPlaying" :size="24" style="margin-left: 2px;" />
-                      <Pause v-else :size="24" />
-                    </div>
-                  </div>
-                  <!-- Loading indicator -->
-                  <div v-if="isLoadingPreview" class="clip-selector__loading">
-                    <svg class="clip-selector__spinner" viewBox="0 0 24 24"><circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4" fill="none"/><path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z"/></svg>
-                    Loading preview...
-                  </div>
-                  <!-- Volume control (bottom-left, shown on hover) -->
-                  <div
-                    class="clip-selector__volume-ctrl"
-                    @click.stop
-                    @mouseenter="showVolumeSlider = true"
-                    @mouseleave="showVolumeSlider = false"
-                  >
-                    <button class="clip-selector__volume-btn" @click="toggleMute" :title="isMuted ? 'Unmute' : 'Mute'">
-                      <VolumeX v-if="isMuted || volume === 0" :size="14" />
-                      <Volume2 v-else :size="14" />
-                    </button>
-                    <Transition name="volume-slider">
-                      <input
-                        v-if="showVolumeSlider"
-                        type="range"
-                        min="0"
-                        max="1"
-                        step="0.02"
-                        :value="volumeSliderDisplay"
-                        class="clip-selector__volume-slider"
-                        @pointerdown="onVolumeSliderPointerDown"
-                        @input="onVolumeSliderInput"
-                        @change="onVolumeSliderCommit"
-                        @pointercancel="onVolumeSliderCommit"
-                      />
-                    </Transition>
-                  </div>
-
-                  <!-- Time badge -->
-                  <div class="clip-selector__time-badge">
-                    {{ formatTime(currentPlaybackTime) }} / {{ formatTime(maxDuration) }}
-                  </div>
-                </div>
-
-                <!-- Clip Name -->
-                <div class="clip-selector__field">
-                  <input
-                    v-model="clipName"
-                    type="text"
-                    :placeholder="defaultClipName"
-                    maxlength="50"
-                    class="clip-selector__input"
-                  />
-                  <div class="clip-selector__char-count">{{ clipName.length }}/50</div>
-                </div>
-
-                <!-- Timeline -->
-                <div class="clip-selector__field">
-                  <div
-                    ref="timelineRef"
-                    class="clip-selector__timeline"
-                    @mousedown="handleTimelineMouseDown"
-                    @mousemove="handleTimelineMouseMove"
-                    @mouseleave="isTimelineHovering = false"
-                    @mouseenter="isTimelineHovering = true"
-                  >
-                    <!-- Selected Range -->
-                    <div
-                      class="clip-selector__range"
-                      :style="{ left: `${startPercentage}%`, width: `${endPercentage - startPercentage}%` }"
-                    />
-                    <!-- Start Handle -->
-                    <div
-                      class="clip-selector__handle"
-                      :style="{ left: `calc(${startPercentage}% - 6px)` }"
-                      @mousedown.stop="handleStartHandleMouseDown"
-                    ><div class="clip-selector__handle-grip" /></div>
-                    <!-- End Handle -->
-                    <div
-                      class="clip-selector__handle"
-                      :style="{ left: `calc(${endPercentage}% - 6px)` }"
-                      @mousedown.stop="handleEndHandleMouseDown"
-                    ><div class="clip-selector__handle-grip" /></div>
-                    <!-- Playhead -->
-                    <div class="clip-selector__playhead" :style="{ left: `${playheadPercentage}%` }" />
-                    <!-- Hover indicator -->
-                    <div
-                      v-if="isTimelineHovering && !isDragging"
-                      class="clip-selector__hover-line"
-                      :style="{ left: `${hoverPercentage}%` }"
-                    />
-                  </div>
-                  <!-- Time Labels -->
-                  <div class="clip-selector__time-labels">
-                    <span>{{ formatTime(startTime) }}</span>
-                    <span class="clip-selector__duration-label">{{ formatTime(endTime - startTime) }}</span>
-                    <span>{{ formatTime(endTime) }}</span>
-                  </div>
-                  <div class="clip-selector__range-info">0:00 - {{ formatTime(maxDuration) }}</div>
-                </div>
-
-                <!-- Presets -->
-                <div class="clip-selector__presets">
-                  <button
-                    v-for="preset in [30, 60, 90]"
-                    :key="preset"
-                    @click="applyPreset(preset)"
-                    :disabled="preset > maxDuration"
-                    class="clip-selector__preset-btn"
-                  >
-                    {{ preset }}s
-                  </button>
-                </div>
-              </template>
-            </div>
-
-            <!-- Footer -->
-            <div class="clip-selector__footer">
-              <template v-if="clipCreated">
-                <button @click="() => handleClose()" class="clip-selector__btn clip-selector__btn--secondary">
-                  Not Now
-                </button>
-                <button @click="handlePublishNow" class="clip-selector__btn clip-selector__btn--primary">
-                  <Share2 :size="16" />
-                  Publish Now
-                </button>
-              </template>
-              <template v-else-if="!isCreating && !error">
-                <button @click="() => handleClose()" class="clip-selector__btn clip-selector__btn--secondary">
-                  Cancel
-                </button>
-                <button
-                  @click="handleCreateClip"
-                  :disabled="!isValidSelection"
-                  class="clip-selector__btn clip-selector__btn--primary"
-                >
-                  <Scissors :size="16" />
-                  Clip
-                </button>
-              </template>
-            </div>
-          </div>
-        </Transition>
+  <Modal
+    :open="!hidden"
+    title="Create clip"
+    :description="`Select a range from the last ${formatTime(maxDuration)}`"
+    :icon="Scissors"
+    size="md"
+    :dismissible="false"
+    :hide-close="isCreating"
+    @close="handleClose(true)"
+  >
+    <!-- Keyed by state so progress / result / selection ease in -->
+    <div :key="isCreating ? 'creating' : clipCreated ? 'created' : error ? 'error' : 'select'" class="animate-enter">
+      <!-- Progress state -->
+      <div v-if="isCreating" class="flex flex-col items-center gap-1 py-6 text-center">
+        <div class="relative mb-3 size-16">
+          <svg class="size-16 -rotate-90">
+            <circle cx="32" cy="32" r="28" stroke-width="5" stroke="var(--surface-active)" fill="none" />
+            <circle
+              cx="32"
+              cy="32"
+              r="28"
+              stroke-width="5"
+              stroke="var(--brand)"
+              fill="none"
+              :stroke-dasharray="176"
+              :stroke-dashoffset="176 - (176 * progress) / 100"
+              stroke-linecap="round"
+              class="transition-[stroke-dashoffset] duration-300"
+            />
+          </svg>
+          <span class="tabular absolute inset-0 grid place-items-center text-sm font-semibold text-fg">
+            {{ Math.round(progress) }}%
+          </span>
+        </div>
+        <p class="text-sm font-semibold text-fg">Creating clip…</p>
+        <p class="text-xs text-fg-muted">{{ progressMessage }}</p>
+        <Button variant="secondary" size="sm" class="mt-3" @click="requestCancelClipExtraction">
+          Cancel extraction
+        </Button>
       </div>
-    </Transition>
-  </Teleport>
+
+      <!-- Success state -->
+      <div v-else-if="clipCreated" class="flex flex-col items-center gap-1 py-6 text-center">
+        <IconTile :icon="Check" tone="success" size="lg" class="mb-2" />
+        <p class="text-sm font-semibold text-fg">Clip created</p>
+        <p class="max-w-full truncate text-xs text-fg-muted">{{ clipName }}</p>
+      </div>
+
+      <!-- Error state -->
+      <div v-else-if="error" class="flex flex-col items-center gap-1 py-6 text-center">
+        <IconTile :icon="AlertCircle" tone="danger" size="lg" class="mb-2" />
+        <p class="text-sm font-semibold text-fg">Failed to create clip</p>
+        <p class="max-w-sm text-xs text-danger">{{ error }}</p>
+        <Button variant="secondary" size="sm" class="mt-3" @click="resetState">Try again</Button>
+      </div>
+
+      <!-- Selection state -->
+      <div v-else class="flex flex-col gap-4">
+        <!-- Video preview -->
+        <div
+          class="group relative aspect-video cursor-pointer overflow-hidden rounded-lg border border-line-subtle bg-black"
+          @click="togglePlayPause"
+        >
+          <video
+            ref="previewVideoRef"
+            class="size-full object-contain"
+            @timeupdate="onVideoTimeUpdate"
+            @ended="onVideoEnded"
+          />
+          <!-- Play / pause -->
+          <div
+            class="absolute inset-0 grid place-items-center transition-opacity"
+            :class="isPreviewPlaying ? 'opacity-0 group-hover:opacity-100' : 'opacity-100'"
+          >
+            <span class="grid size-12 place-items-center rounded-full bg-black/60 text-white backdrop-blur-sm">
+              <Play v-if="!isPreviewPlaying" class="ml-0.5 size-5" />
+              <Pause v-else class="size-5" />
+            </span>
+          </div>
+          <!-- Loading -->
+          <div
+            v-if="isLoadingPreview"
+            class="absolute inset-0 flex items-center justify-center gap-2 bg-surface-sunken text-sm text-fg-muted"
+          >
+            <Loader2 class="size-4 animate-spin" />
+            Loading preview…
+          </div>
+          <!-- Volume (bottom-left, slider on hover) -->
+          <div
+            class="absolute bottom-2 left-2 z-[5] flex items-center gap-1.5"
+            @click.stop
+            @mouseenter="showVolumeSlider = true"
+            @mouseleave="showVolumeSlider = false"
+          >
+            <button
+              type="button"
+              class="grid size-7 place-items-center rounded-full bg-black/65 text-white backdrop-blur-sm transition-colors hover:bg-black/85"
+              :title="isMuted ? 'Unmute' : 'Mute'"
+              @click="toggleMute"
+            >
+              <VolumeX v-if="isMuted || volume === 0" class="size-3.5" />
+              <Volume2 v-else class="size-3.5" />
+            </button>
+            <Transition
+              enter-active-class="transition duration-150"
+              enter-from-class="-translate-x-1 opacity-0"
+              leave-active-class="transition duration-100"
+              leave-to-class="-translate-x-1 opacity-0"
+            >
+              <MediaVolumeSlider
+                v-if="showVolumeSlider"
+                :value="volumeSliderDisplay"
+                step="0.02"
+                class="w-[88px]"
+                @pointerdown="onVolumeSliderPointerDown"
+                @input="onVolumeSliderInput"
+                @change="onVolumeSliderCommit"
+                @pointercancel="onVolumeSliderCommit"
+              />
+            </Transition>
+          </div>
+          <!-- Time -->
+          <span
+            class="tabular pointer-events-none absolute right-2 bottom-2 rounded-md bg-black/70 px-1.5 py-0.5 text-2xs font-medium text-white"
+          >
+            {{ formatTime(currentPlaybackTime) }} / {{ formatTime(maxDuration) }}
+          </span>
+        </div>
+
+        <!-- Clip name -->
+        <Field label="Clip name">
+          <template #label-end>
+            <span class="tabular text-2xs text-fg-subtle">{{ clipName.length }}/50</span>
+          </template>
+          <Input v-model="clipName" :placeholder="defaultClipName" maxlength="50" />
+        </Field>
+
+        <!-- Range -->
+        <Field label="Range">
+          <template #label-end>
+            <div class="flex items-center gap-1">
+              <Button
+                v-for="preset in [30, 60, 90]"
+                :key="preset"
+                variant="ghost"
+                size="xs"
+                class="tabular"
+                :disabled="preset > maxDuration"
+                @click="applyPreset(preset)"
+              >
+                {{ preset }}s
+              </Button>
+            </div>
+          </template>
+          <div
+            ref="timelineRef"
+            class="clip-timeline"
+            @mousedown="handleTimelineMouseDown"
+            @mousemove="handleTimelineMouseMove"
+            @mouseleave="isTimelineHovering = false"
+            @mouseenter="isTimelineHovering = true"
+          >
+            <div
+              class="clip-timeline__range"
+              :style="{ left: `${startPercentage}%`, width: `${endPercentage - startPercentage}%` }"
+            />
+            <div
+              class="clip-timeline__handle"
+              :style="{ left: `calc(${startPercentage}% - 6px)` }"
+              @mousedown.stop="handleStartHandleMouseDown"
+            ><span class="clip-timeline__grip" /></div>
+            <div
+              class="clip-timeline__handle"
+              :style="{ left: `calc(${endPercentage}% - 6px)` }"
+              @mousedown.stop="handleEndHandleMouseDown"
+            ><span class="clip-timeline__grip" /></div>
+            <div class="clip-timeline__playhead" :style="{ left: `${playheadPercentage}%` }" />
+            <div
+              v-if="isTimelineHovering && !isDragging"
+              class="clip-timeline__hover"
+              :style="{ left: `${hoverPercentage}%` }"
+            />
+          </div>
+          <div class="tabular flex items-center justify-between text-xs text-fg-muted">
+            <span>{{ formatTime(startTime) }}</span>
+            <span class="font-semibold text-fg">{{ formatTime(endTime - startTime) }}</span>
+            <span>{{ formatTime(endTime) }}</span>
+          </div>
+        </Field>
+      </div>
+    </div>
+
+    <template v-if="clipCreated || (!isCreating && !error)" #footer>
+      <template v-if="clipCreated">
+        <Button variant="ghost" @click="() => handleClose()">Not now</Button>
+        <Button variant="primary" @click="handlePublishNow">
+          <Share2 />
+          Publish now
+        </Button>
+      </template>
+      <template v-else>
+        <Button variant="ghost" @click="() => handleClose()">Cancel</Button>
+        <Button variant="primary" :disabled="!isValidSelection" @click="handleCreateClip">
+          <Scissors />
+          Create clip
+        </Button>
+      </template>
+    </template>
+  </Modal>
 </template>
 
 <script setup lang="ts">
@@ -234,7 +215,13 @@
   import { invoke } from '@tauri-apps/api/core';
   import { formatTime as formatTimeUtil } from '@/utils/dateTimeUtils';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
-  import { Scissors, X, Check, AlertCircle, Share2, Play, Pause, Volume2, VolumeX } from 'lucide-vue-next';
+  import { Scissors, Check, AlertCircle, Share2, Play, Pause, Volume2, VolumeX, Loader2 } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
+  import { Field } from '@/components/ui/field';
+  import { IconTile } from '@/components/ui/icon-tile';
+  import { Input } from '@/components/ui/input';
+  import { Modal } from '@/components/ui/modal';
+  import MediaVolumeSlider from '@/components/streams/MediaVolumeSlider.vue';
   import { createLivestreamClipProject, createClip as createClipRecord } from '@/services/database';
   import { createClipVersion } from '@/services/database/clip-versions';
   import { updateClip } from '@/services/database/clips';
@@ -985,619 +972,56 @@
 </script>
 
 <style scoped>
-  /* ===== Overlay ===== */
-  .clip-selector__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 10000;
-  }
-
-  /* ===== Dialog Container ===== */
-  .clip-selector {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 540px;
-    margin: 1rem;
-    max-height: 90vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-  }
-
-  /* ===== Accent Bar ===== */
-  .clip-selector__accent {
-    height: 3px;
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
-    flex-shrink: 0;
-  }
-
-  /* ===== Header ===== */
-  .clip-selector__header {
+  /* Range timeline — positions are driven by the script (getBoundingClientRect on timelineRef). */
+  .clip-timeline {
     position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1.5rem 1.5rem 1rem;
-    text-align: center;
-  }
-
-  .clip-selector__close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    width: 32px;
     height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .clip-selector__close:hover:not(:disabled) {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .clip-selector__close:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .clip-selector__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 12px;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-    margin-bottom: 0.875rem;
-  }
-
-  .clip-selector__title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.02em;
-  }
-
-  .clip-selector__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  /* ===== Content ===== */
-  .clip-selector__content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0.5rem 1.5rem 1.5rem;
-  }
-
-  .clip-selector__content::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .clip-selector__content::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .clip-selector__content::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  /* ===== State Panels (progress, success, error) ===== */
-  .clip-selector__state-panel {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    text-align: center;
-    padding: 2rem 0;
-  }
-
-  .clip-selector__state-title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .clip-selector__state-subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  .clip-selector__state-subtitle--error {
-    color: #f87171;
-  }
-
-  .clip-selector__cancel-extract {
-    margin-top: 1.25rem;
-    flex: 0 0 auto;
-    min-width: 11rem;
-    max-width: 100%;
-  }
-
-  .clip-selector__progress-ring {
-    position: relative;
-    width: 64px;
-    height: 64px;
-    margin-bottom: 1rem;
-  }
-
-  .clip-selector__progress-svg {
-    width: 100%;
-    height: 100%;
-    transform: rotate(-90deg);
-  }
-
-  .clip-selector__progress-circle {
-    transition: stroke-dashoffset 300ms ease;
-  }
-
-  .clip-selector__progress-text {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .clip-selector__success-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    background-color: rgba(34, 197, 94, 0.15);
-    color: #22c55e;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 1rem;
-  }
-
-  .clip-selector__error-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 50%;
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 1rem;
-  }
-
-  /* ===== Video Preview ===== */
-  .clip-selector__preview {
-    position: relative;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    aspect-ratio: 16 / 9;
     overflow: hidden;
     cursor: pointer;
-    margin-bottom: 1rem;
+    border: 1px solid var(--line);
+    border-radius: var(--radius-control);
+    background: var(--surface-sunken);
   }
-
-  .clip-selector__video {
-    width: 100%;
+  .clip-timeline__range {
+    position: absolute;
+    top: 0;
     height: 100%;
-    object-fit: contain;
+    background: var(--brand-soft);
+    border-inline: 2px solid var(--brand);
   }
-
-  .clip-selector__play-overlay {
+  .clip-timeline__handle {
     position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    transition: opacity 150ms ease;
-  }
-
-  .clip-selector__play-overlay--playing {
-    opacity: 0;
-  }
-
-  .clip-selector__preview:hover .clip-selector__play-overlay--playing {
-    opacity: 1;
-  }
-
-  .clip-selector__play-btn {
-    width: 48px;
-    height: 48px;
-    border-radius: 50%;
-    background-color: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-  }
-
-  .clip-selector__loading {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    font-size: 0.8125rem;
-  }
-
-  .clip-selector__spinner {
-    width: 16px;
-    height: 16px;
-    animation: clip-selector-spin 0.8s linear infinite;
-  }
-
-  /* ===== Volume Control ===== */
-  .clip-selector__volume-ctrl {
-    position: absolute;
-    bottom: 0.5rem;
-    left: 0.5rem;
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    z-index: 5;
-  }
-
-  .clip-selector__volume-btn {
-    width: 28px;
-    height: 28px;
-    border-radius: 50%;
-    background-color: rgba(0, 0, 0, 0.65);
-    backdrop-filter: blur(4px);
-    border: none;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: white;
-    cursor: pointer;
-    flex-shrink: 0;
-    transition: background-color 150ms ease;
-  }
-
-  .clip-selector__volume-btn:hover {
-    background-color: rgba(0, 0, 0, 0.85);
-  }
-
-  .clip-selector__volume-slider {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 88px;
-    height: 20px;
-    margin: 0;
-    padding: 0;
-    background: transparent;
-    cursor: pointer;
-    accent-color: var(--sidebar-accent);
-  }
-
-  .clip-selector__volume-slider:focus {
-    outline: none;
-  }
-
-  .clip-selector__volume-slider:focus-visible {
-    outline: 2px solid var(--sidebar-accent);
-    outline-offset: 2px;
-    border-radius: 4px;
-  }
-
-  /* Track (visible bar) — WebKit */
-  .clip-selector__volume-slider::-webkit-slider-runnable-track {
-    height: 5px;
-    border-radius: 999px;
-    background: linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.55) 0%,
-      rgba(255, 255, 255, 0.28) 100%
-    );
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
-  }
-
-  .clip-selector__volume-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
+    top: 0;
+    z-index: 2;
+    display: grid;
+    place-items: center;
     width: 12px;
-    height: 12px;
-    margin-top: -3.5px;
-    border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
-    border: 1px solid rgba(0, 0, 0, 0.2);
+    height: 100%;
+    background: var(--brand);
+    cursor: ew-resize;
   }
-
-  /* Track + thumb — Firefox */
-  .clip-selector__volume-slider::-moz-range-track {
-    height: 5px;
-    border-radius: 999px;
-    background: linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.55) 0%,
-      rgba(255, 255, 255, 0.28) 100%
-    );
-    box-shadow: inset 0 0 0 1px rgba(0, 0, 0, 0.35);
-  }
-
-  .clip-selector__volume-slider::-moz-range-thumb {
-    width: 12px;
-    height: 12px;
-    border: 1px solid rgba(0, 0, 0, 0.2);
-    border-radius: 50%;
-    background: #fff;
-    box-shadow: 0 1px 4px rgba(0, 0, 0, 0.45);
-  }
-
-  .volume-slider-enter-active,
-  .volume-slider-leave-active {
-    transition: opacity 150ms ease, transform 150ms ease;
-  }
-
-  .volume-slider-enter-from,
-  .volume-slider-leave-to {
-    opacity: 0;
-    transform: translateX(-6px);
-  }
-
-  .clip-selector__time-badge {
-    position: absolute;
-    bottom: 0.5rem;
-    right: 0.5rem;
-    padding: 0.125rem 0.5rem;
-    background-color: rgba(0, 0, 0, 0.7);
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-family: monospace;
-    color: white;
-  }
-
-  /* ===== Form Field ===== */
-  .clip-selector__field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-    margin-bottom: 1rem;
-  }
-
-  .clip-selector__input {
-    width: 100%;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    color: var(--sidebar-text);
-    transition: all 150ms ease;
-  }
-
-  .clip-selector__input::placeholder {
-    color: var(--sidebar-text-muted);
+  .clip-timeline__grip {
+    width: 2px;
+    height: 14px;
+    border-radius: 1px;
+    background: var(--brand-fg);
     opacity: 0.6;
   }
-
-  .clip-selector__input:focus {
-    outline: none;
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.15);
-  }
-
-  .clip-selector__char-count {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    text-align: right;
-  }
-
-  /* ===== Timeline ===== */
-  .clip-selector__timeline {
-    position: relative;
-    height: 32px;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    cursor: pointer;
-    overflow: hidden;
-  }
-
-  .clip-selector__range {
+  .clip-timeline__playhead {
     position: absolute;
     top: 0;
-    height: 100%;
-    background-color: rgba(6, 182, 212, 0.2);
-    border-left: 2px solid var(--sidebar-accent);
-    border-right: 2px solid var(--sidebar-accent);
-  }
-
-  .clip-selector__handle {
-    position: absolute;
-    top: 0;
-    height: 100%;
-    width: 12px;
-    background-color: var(--sidebar-accent);
-    cursor: ew-resize;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 2;
-  }
-
-  .clip-selector__handle-grip {
-    width: 2px;
-    height: 16px;
-    background-color: white;
-    border-radius: 1px;
-  }
-
-  .clip-selector__playhead {
-    position: absolute;
-    top: 0;
-    height: 100%;
-    width: 2px;
-    background-color: white;
-    pointer-events: none;
     z-index: 3;
-  }
-
-  .clip-selector__hover-line {
-    position: absolute;
-    top: 0;
+    width: 2px;
     height: 100%;
-    width: 1px;
-    background-color: rgba(255, 255, 255, 0.4);
+    background: var(--fg);
     pointer-events: none;
   }
-
-  .clip-selector__time-labels {
-    display: flex;
-    justify-content: space-between;
-    align-items: center;
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .clip-selector__duration-label {
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .clip-selector__range-info {
-    text-align: center;
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    opacity: 0.7;
-  }
-
-  /* ===== Presets ===== */
-  .clip-selector__presets {
-    display: flex;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
-  }
-
-  .clip-selector__preset-btn {
-    flex: 1;
-    padding: 0.5rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    border-radius: 8px;
-    border: 1px solid var(--sidebar-border);
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .clip-selector__preset-btn:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .clip-selector__preset-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  /* ===== Footer ===== */
-  .clip-selector__footer {
-    display: flex;
-    gap: 0.625rem;
-    padding: 1.25rem 1.5rem;
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  /* ===== Buttons ===== */
-  .clip-selector__btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .clip-selector__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .clip-selector__btn--secondary {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-    border: 1px solid var(--sidebar-border);
-  }
-
-  .clip-selector__btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .clip-selector__btn--primary {
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, #0891b2 100%);
-    color: #000;
-  }
-
-  .clip-selector__btn--primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  /* ===== Transitions ===== */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  .dialog-enter-active {
-    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 150ms ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.96) translateY(8px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  @keyframes clip-selector-spin {
-    to {
-      transform: rotate(360deg);
-    }
+  .clip-timeline__hover {
+    position: absolute;
+    top: 0;
+    width: 1px;
+    height: 100%;
+    background: var(--line-strong);
+    pointer-events: none;
   }
 </style>

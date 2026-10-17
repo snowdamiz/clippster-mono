@@ -4,7 +4,7 @@
  * Instant mock connect is allowed only when Phoenix explicitly reports `mock` mode.
  */
 
-import api from './api';
+import api from '@/services/api';
 import {
   fetchTokendMode,
   getTokendConnectStrategy,
@@ -102,7 +102,7 @@ export async function connectUserTokend(): Promise<TokendConnectResult> {
 export async function startUserTokendOAuth(
   onResult?: (result: TokendConnectResult) => void
 ): Promise<() => void> {
-  const { invoke } = await import('@tauri-apps/api/core');
+  const { openSocialOAuth } = await import('@/services/socialOAuthRuntime');
 
   const connectResponse = await api.post<TokendConnectUrlResponse>('/user/tokend/connect-url', {
     return_mode: 'tauri',
@@ -121,7 +121,7 @@ export async function startUserTokendOAuth(
     throw new Error('Tokend connect-url did not include connection_id');
   }
 
-  await invoke('start_social_oauth', { authUrl: connectResponse.data.auth_url });
+  await openSocialOAuth(connectResponse.data.auth_url);
 
   let cancelled = false;
 
@@ -261,7 +261,7 @@ export async function startOrgTokendOAuth(
   organizationId: number | string,
   onResult?: (result: TokendConnectResult) => void
 ): Promise<() => void> {
-  const { invoke } = await import('@tauri-apps/api/core');
+  const { openSocialOAuth } = await import('@/services/socialOAuthRuntime');
 
   const connectResponse = await api.post<TokendConnectUrlResponse>(
     `/organizations/${organizationId}/tokend/connect-url`,
@@ -281,7 +281,7 @@ export async function startOrgTokendOAuth(
     throw new Error('Tokend connect-url did not include connection_id');
   }
 
-  await invoke('start_social_oauth', { authUrl: connectResponse.data.auth_url });
+  await openSocialOAuth(connectResponse.data.auth_url);
 
   let cancelled = false;
 

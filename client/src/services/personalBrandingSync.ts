@@ -140,6 +140,7 @@ export async function syncPersonalBranding(): Promise<{
 
     const body = {
       client_id: profile.id,
+      platform_links: profile.platform_links.map(link => ({ platform: link.platform, platform_id: link.platform_id, is_primary: Boolean(link.is_primary) })),
       name: profile.name,
       description: profile.description,
       scope:

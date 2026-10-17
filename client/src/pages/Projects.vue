@@ -1,1337 +1,622 @@
 <template>
-  <PageLayout
-    title="Video Library"
-    description="Manage and organize your video projects"
-    :show-header="true"
-    :icon="Folder"
-  >
-    <template #actions>
-      <div class="projects-header-actions">
-        <!-- Search -->
-        <div class="projects-header__search">
-          <Search class="projects-header__search-icon" />
-          <Input
-            v-model="searchQuery"
-            placeholder="Search projects..."
-            class="projects-header__search-input"
-            @focus="openSearchPalette"
-            readonly
-          />
-        </div>
+  <ProjectLibraryView :model="libraryModel">
+    <template #dialogs>
+      <!-- Project Dialog -->
+      <ProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
+      <!-- Project Workspace Dialog -->
+      <ProjectWorkspaceDialog
+        v-model="showWorkspaceDialog"
+        :project="workspaceProject"
+        :initial-clip-id="workspaceInitialClipId"
+      />
+      <!-- Project-Level Clip Detection Dialog -->
+      <ClipDetectionConfirmDialog
+        :model-value="showProjectDetectDialog"
+        :video-duration="segmentsToDetect.length === 1 ? totalDetectionDuration : 0"
+        :segment-count="segmentsToDetect.length > 1 ? segmentsToDetect.length : 0"
+        :total-duration="totalDetectionDuration"
+        @update:model-value="showProjectDetectDialog = $event"
+        @confirm="onProjectDetectClipsConfirmed"
+      />
+      <!-- Transcription Confirm Dialog -->
+      <TranscriptionConfirmDialog
+        :model-value="showTranscribeDialog"
+        :video-duration="0"
+        :segment-count="segmentsToTranscribe.length"
+        :total-duration="totalTranscribeDuration"
+        :is-transcribed="segmentsToTranscribe.length === 1 && projectTranscriptStatus[segmentsToTranscribe[0]?.id]"
+        @update:model-value="showTranscribeDialog = $event"
+        @confirm="onTranscribeConfirmed"
+      />
+      <!-- Folder Clip Build Dialog -->
+      <ClipBuildSettingsDialog
+        v-model="showFolderBuildDialog"
+        :clip="folderClipToBuild"
+        :watermark-settings="folderCreatorWatermarkSettings"
+        :default-intro="folderCreatorDefaultIntro"
+        :default-outro="folderCreatorDefaultOutro"
+        :creator-profile="folderCreatorProfile"
+        :creator-profile-server-id="folderCreatorProfileServerId"
+        @confirm="onFolderBuildConfirm"
+      />
 
-        <!-- Status Filter -->
-        <CustomDropdown
-          v-model="statusFilter"
-          :options="statusOptions"
-          placeholder="Status"
-          class="projects-header__filter"
-          trigger-class="projects-header__dropdown-trigger"
-        />
+      <!-- Free Tier Limit Dialog -->
+      <FreeTierLimitDialog
+        :show="showFreeTierLimitDialog"
+        :limit-info="freeTierLimitInfo"
+        @close="showFreeTierLimitDialog = false"
+      />
 
-        <!-- Sort Filter -->
-        <CustomDropdown
-          v-model="sortBy"
-          :options="sortOptions"
-          placeholder="Sort By"
-          class="projects-header__sort"
-          trigger-class="projects-header__dropdown-trigger"
-        />
-
-        <!-- View Mode -->
-        <div
-          class="projects-header__view-toggle"
-          :class="{ 'projects-header__view-toggle--disabled': searchQuery || statusFilter === 'has_clips' }"
-        >
-          <button
-            @click="viewMode = 'folders'"
-            :disabled="!!searchQuery || statusFilter === 'has_clips'"
-            class="projects-header__view-btn"
-            :class="{ 'projects-header__view-btn--active': viewMode === 'folders' }"
-            title="Folder View"
-          >
-            <Folder class="projects-header__view-icon" />
-          </button>
-          <button
-            @click="viewMode = 'list'"
-            :disabled="!!searchQuery || statusFilter === 'has_clips'"
-            class="projects-header__view-btn"
-            :class="{ 'projects-header__view-btn--active': viewMode === 'list' }"
-            title="List View"
-          >
-            <List class="projects-header__view-icon" />
-          </button>
-        </div>
-
-        <!-- New Project Button -->
-        <button @click="openCreateDialog" class="projects-create-btn">
-          <Plus class="projects-create-btn__icon" />
-          New Project
-        </button>
-      </div>
-    </template>
-
-    <div
-      class="projects__content"
-      :class="{
-        'projects__content--empty':
-          !loading && projects.length === 0 && getActiveDownloads().length === 0 && getQueuedDownloads().length === 0,
-      }"
-    >
-      <!-- Page Heading -->
-      <div
-        v-if="projects.length > 0 || loading || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0 || mockProjectActive"
-        class="projects__heading"
+      <!-- Folder Contents Dialog -->
+      <Modal
+        :open="showFolderDialog && !!folderProject"
+        :title="folderProject?.name"
+        :icon="FolderOpen"
+        :size="folderDialogSize"
+        flush
+        :class="folderActiveTab === 'clips' ? 'h-[min(720px,calc(100vh-3rem))]' : undefined"
+        footer-class="block border-t-0 bg-transparent p-0"
+        @close="showFolderDialog = false"
       >
-        <h1 class="projects__title">Video Library</h1>
-        <p class="projects__subtitle">Manage and organize your downloaded videos and detect clips</p>
-      </div>
-
-      <!-- Tour demo project -->
-      <div v-if="mockProjectActive" class="projects__section" style="margin-bottom: 1rem">
-        <h3 class="projects__section-header">Tour Demo</h3>
-        <div class="projects__grid">
-          <div class="project-card" data-tour-id="tour-mock-project">
-            <div class="project-card__thumbnail project-card__thumbnail--empty">
-              <div class="project-card__thumbnail-gradient"></div>
-              <div class="project-card__empty-icon">
-                <Folder class="project-card__folder-icon" />
-              </div>
-            </div>
-            <div class="project-card__bottom">
-              <h3 class="project-card__title">Demo VOD Project</h3>
-              <div class="project-card__meta">Sample project for the tour</div>
-              <div class="project-card__actions" style="display: flex; gap: 0.35rem; margin-top: 0.5rem">
-                <button type="button" class="projects-section-btn" data-tour-id="tour-mock-detect" @click.prevent>
-                  Detect Clips
-                </button>
-                <button type="button" class="projects-section-btn" data-tour-id="tour-mock-transcribe" @click.prevent>
-                  Transcribe
-                </button>
-                <button type="button" class="projects-section-btn" data-tour-id="tour-mock-preedit" @click.prevent>
-                  Pre-Edit VOD
-                </button>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Loading State -->
-      <div v-if="loading" class="projects__loading">
-        <!-- Skeleton Cards Grid -->
-        <div class="projects__grid">
-          <div v-for="i in 6" :key="`skeleton-${i}`" class="project-card project-card--skeleton">
-            <div class="project-card__skeleton-bg"></div>
-            <div class="project-card__bottom">
-              <div class="projects-skeleton__card-title"></div>
-              <div class="projects-skeleton__card-meta"></div>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Projects Content -->
-      <div
-        v-else-if="projects.length > 0 || getActiveDownloads().length > 0 || getQueuedDownloads().length > 0"
-        class="projects__main"
-      >
-        <!-- Selection Bar (shown when items selected) -->
-        <Transition name="selection-bar">
-          <div v-if="selectedProjects.size > 0" class="projects__selection-bar">
-            <div class="projects__selection-info">
-              <Check class="projects__selection-icon" />
-              <span>{{ selectedProjects.size }} selected</span>
-              <button
-                v-if="paginatedProjects.length > 0 && selectedProjects.size < paginatedProjects.length"
-                @click="selectAllCurrentPage"
-                class="projects__selection-action"
-              >
-                Select all on page
-              </button>
-            </div>
-            <div class="projects__selection-actions">
-              <button @click="clearSelection" class="projects__selection-clear">Clear</button>
-              <button
-                @click="confirmBulkDelete"
-                :disabled="hasAnySelectedProjectDetecting()"
-                class="projects__selection-delete"
-                :class="{ 'projects__selection-delete--disabled': hasAnySelectedProjectDetecting() }"
-                :title="hasAnySelectedProjectDetecting() ? 'Cannot delete while detection is in progress' : ''"
-              >
-                <Trash2 class="projects__selection-delete-icon" />
-                Delete Selected
-              </button>
-            </div>
-          </div>
-        </Transition>
-
-        <!-- Active Downloads Section -->
-        <div v-if="getActiveDownloads().length > 0 || getQueuedDownloads().length > 0" class="projects__section">
-          <div class="projects__section-header-row">
-            <h3 class="projects__section-header">Active Downloads</h3>
-            <button class="projects__cancel-all-btn" @click="handleCancelAllDownloads" title="Cancel all downloads">
-              <XCircle :size="16" />
-              Cancel All
-            </button>
-          </div>
-          <div class="projects__grid projects__grid--downloads">
-            <DownloadCard
-              v-for="download in [...getActiveDownloads(), ...getQueuedDownloads()]"
-              :key="download.id"
-              :download="download"
+        <div v-if="folderProject" class="flex flex-col" :class="folderActiveTab === 'clips' && 'h-full min-h-0'">
+          <!-- Tabs + guidance / selection -->
+          <div
+            class="sticky top-0 z-10 flex min-h-12 shrink-0 flex-wrap items-center gap-x-4 gap-y-1.5 border-b border-line-subtle bg-surface-raised px-5 py-2"
+          >
+            <SegmentedControl
+              :model-value="folderActiveTab"
+              :options="folderTabOptions"
+              size="sm"
+              @update:model-value="onFolderTabChange"
             />
-          </div>
-        </div>
-
-        <!-- Projects Grid -->
-        <div v-if="filteredProjects.length > 0" class="projects__section">
-          <div v-for="group in groupedProjects" :key="group.dateLabel" class="projects__date-group">
-            <!-- Date Header -->
-            <h3 class="projects__section-header">{{ group.dateLabel }}</h3>
-
-            <div class="projects__grid" :class="{ 'projects__grid--list': viewMode === 'list' }">
-              <div
-                v-for="project in group.projects"
-                :key="project.id"
-                class="project-card"
-                :class="{
-                  'project-card--selected': isProjectSelected(project.id),
-                  'project-card--list': viewMode === 'list',
-                }"
-                @click="handleProjectClick(project)"
-              >
-                <!-- Selection Checkbox (visible on hover or when selected) -->
-                <div
-                  class="project-card__checkbox"
-                  :class="{ 'project-card__checkbox--visible': isProjectSelected(project.id) }"
-                  @click.stop="toggleProjectSelection(project.id)"
-                >
-                  <div
-                    class="project-card__checkbox-inner"
-                    :class="{ 'project-card__checkbox-inner--checked': isProjectSelected(project.id) }"
-                  >
-                    <Check v-if="isProjectSelected(project.id)" class="project-card__checkbox-icon" />
-                  </div>
-                </div>
-
-                <!-- Processing Indicator (if project or any segment is being detected) -->
-                <div v-if="isProjectDetecting(project.id)" class="project-card__badge project-card__badge--detecting">
-                  <Loader2 class="project-card__badge-icon project-card__badge-icon--spin" />
-                  <span>Detecting...</span>
-                </div>
-                <!-- Folder Badge (if has children and in folder view, only show if not detecting/merging) -->
-                <div
-                  v-else-if="viewMode === 'folders' && hasChildren(project.id) && getChildCount(project.id) > 1"
-                  class="project-card__badge project-card__badge--folder"
-                >
-                  <FolderOpen class="project-card__badge-icon" />
-                  <span>{{ getChildCount(project.id) }} Parts</span>
-                </div>
-
-                <!-- VOD Preset Badge -->
-                <div
-                  v-if="hasVodPreset(project.id) && !isLiveClipsContainerProject(project)"
-                  class="project-card__preset-badge"
-                >
-                  <LayoutDashboard class="project-card__badge-icon" />
-                  <span>{{ vodPresetConfigs[project.id]?.targetAspectRatio }} Pre-Edit</span>
-                </div>
-
-                <!-- Thumbnail background with vignette -->
-                <div
-                  v-if="getThumbnailUrl(project.id)"
-                  class="project-card__thumbnail"
-                  :style="{
-                    backgroundImage: `url(${getThumbnailUrl(project.id)})`,
-                  }"
-                >
-                  <!-- Vignette overlay -->
-                  <div class="project-card__vignette"></div>
-                </div>
-                <!-- Fallback background for projects without thumbnails -->
-                <div v-else class="project-card__thumbnail project-card__thumbnail--empty">
-                  <div class="project-card__thumbnail-gradient"></div>
-
-                  <!-- Live Empty State -->
-                  <div v-if="isProjectLive(project.id)" class="project-card__empty-live">
-                    <div class="project-card__empty-live-pulse">
-                      <div class="project-card__empty-live-ring"></div>
-                      <Radio class="project-card__empty-live-icon" />
-                    </div>
-                    <span class="project-card__empty-live-text">Monitoring</span>
-                  </div>
-                  <!-- Standard Empty State -->
-                  <div v-else class="project-card__empty-icon">
-                    <Folder class="project-card__folder-icon" />
-                  </div>
-                </div>
-
-                <!-- Bottom Overlay with Info -->
-                <div class="project-card__bottom">
-                  <!-- Title -->
-                  <h3 class="project-card__title" :title="project.name">
-                    {{ project.name }}
-                    <!-- Cloud sync badge disabled: desktop/mobile are independent apps. -->
-                  </h3>
-
-                  <!-- Metadata Row -->
-                  <div class="project-card__meta">
-                    <!-- Platform Icon -->
-                    <div
-                      v-if="getProjectPlatform(project) === 'YouTube'"
-                      class="project-card__platform project-card__platform--youtube"
-                      title="YouTube"
-                    >
-                      <img src="/youtube.svg" class="project-card__platform-icon" />
-                    </div>
-                    <div
-                      v-else-if="getProjectPlatform(project) === 'Twitch'"
-                      class="project-card__platform project-card__platform--twitch"
-                      title="Twitch"
-                    >
-                      <img src="/twitch.svg" class="project-card__platform-icon" />
-                    </div>
-                    <div
-                      v-else-if="getProjectPlatform(project) === 'Kick'"
-                      class="project-card__platform project-card__platform--kick"
-                      title="Kick"
-                    >
-                      <img src="/kick.svg" class="project-card__platform-icon project-card__platform-icon--kick" />
-                    </div>
-                    <div
-                      v-else-if="getProjectPlatform(project) === 'Rumble'"
-                      class="project-card__platform project-card__platform--rumble"
-                      title="Rumble"
-                    >
-                      <img src="/rumble.svg" class="project-card__platform-icon" />
-                    </div>
-                    <div
-                      v-else-if="getProjectPlatform(project) === 'Twitter'"
-                      class="project-card__platform project-card__platform--twitter"
-                      title="Twitter"
-                    >
-                      <img src="/x.svg" class="project-card__platform-icon" />
-                    </div>
-                    <div
-                      v-else-if="getProjectPlatform(project) === 'PumpFun'"
-                      class="project-card__platform project-card__platform--pumpfun"
-                      title="PumpFun"
-                    >
-                      <img
-                        src="/capsule.svg"
-                        class="project-card__platform-icon project-card__platform-icon--pumpfun"
-                      />
-                    </div>
-                    <div
-                      v-else-if="getProjectPlatform(project) === 'Manual'"
-                      class="project-card__platform project-card__platform--manual"
-                      title="Manual"
-                    >
-                      <Monitor class="project-card__platform-svg" />
-                    </div>
-
-                    <!-- Live Indicator -->
-                    <div v-if="isProjectLive(project.id)" class="project-card__live">
-                      <span class="project-card__live-dot">
-                        <span class="project-card__live-ping"></span>
-                        <span class="project-card__live-core"></span>
-                      </span>
-                      <span class="project-card__live-text">Live</span>
-                    </div>
-
-                    <span
-                      v-if="!isProjectLive(project.id) && getProjectPlatform(project)"
-                      class="project-card__dot"
-                    ></span>
-
-                    <!-- Time -->
-                    <span class="project-card__meta-text">{{ getRelativeTime(project.updated_at) }}</span>
-
-                    <!-- Duration -->
-                    <template v-if="getProjectDuration(project.id)">
-                      <span class="project-card__dot"></span>
-                      <span class="project-card__meta-text">{{ getProjectDuration(project.id) }}</span>
-                    </template>
-
-                    <span class="project-card__dot"></span>
-
-                    <!-- Clip Count -->
-                    <span class="project-card__meta-text">{{ getClipCount(project.id) }} clips</span>
-                  </div>
-                </div>
-
-                <!-- Hover Overlay Buttons -->
-                <div class="project-card__hover-actions">
-                  <button
-                    v-if="canDetectClips(project.id) && !isProjectDetecting(project.id) && isAIAllowed"
-                    class="project-card__action-btn"
-                    title="Detect Clips"
-                    @click.stop="startProjectDetection(project)"
-                  >
-                    <Sparkles class="project-card__action-icon" />
-                  </button>
-
-                  <button
-                    v-if="canTranscribe(project.id)"
-                    class="project-card__action-btn"
-                    :class="{ 'project-card__action-btn--transcribed': isProjectTranscribed(project.id) }"
-                    :title="isProjectTranscribed(project.id) ? 'Transcribed' : 'Transcribe'"
-                    @click.stop="startTranscription(project)"
-                  >
-                    <FileText class="project-card__action-icon" />
-                  </button>
-
-                  <button
-                    v-if="
-                      (hasDirectVideos(project.id) || hasChildren(project.id)) &&
-                      !isLiveClipsContainerProject(project)
-                    "
-                    class="project-card__action-btn"
-                    :class="{ 'project-card__action-btn--preset-active': hasVodPreset(project.id) }"
-                    title="Pre-Edit VOD"
-                    @click.stop="openVodPresetEditor(project)"
-                  >
-                    <LayoutDashboard class="project-card__action-icon" />
-                  </button>
-
-                  <button class="project-card__action-btn" title="Edit" @click.stop="editProject(project)">
-                    <Edit class="project-card__action-icon" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-        <!-- Pagination Footer -->
-        <PaginationFooter
-          v-if="!loading && filteredProjects.length > 0"
-          :current-page="currentPage"
-          :total-pages="totalPages"
-          :total-items="filteredProjects.length"
-          item-label="project"
-          @go-to-page="goToPage"
-          @previous="previousPage"
-          @next="nextPage"
-        />
-
-        <!-- No Results State (only show if no active downloads) -->
-        <div
-          v-if="filteredProjects.length === 0 && getActiveDownloads().length === 0 && getQueuedDownloads().length === 0"
-          class="projects__no-results"
-        >
-          <div class="projects__no-results-icon-wrapper">
-            <Search class="projects__no-results-icon" />
-          </div>
-          <h3 class="projects__no-results-title">No projects found</h3>
-          <p class="projects__no-results-description">
-            We couldn't find any projects matching your search filters. Try adjusting your search query or filters.
-          </p>
-          <button
-            @click="
-              searchQuery = '';
-              statusFilter = 'all';
-            "
-            class="projects__no-results-btn"
-          >
-            Clear filters
-          </button>
-        </div>
-      </div>
-
-      <!-- Empty State -->
-      <div v-else class="projects__empty">
-        <div class="projects__empty-icon-wrapper">
-          <Folder class="projects__empty-icon" />
-        </div>
-        <h3 class="projects__empty-title">No projects found</h3>
-        <p class="projects__empty-description">Create a new project to get started</p>
-      </div>
-    </div>
-
-    <!-- Project Dialog -->
-    <ProjectDialog v-model="showDialog" :project="selectedProject" @submit="handleProjectSubmit" />
-    <!-- Project Workspace Dialog -->
-    <ProjectWorkspaceDialog
-      v-model="showWorkspaceDialog"
-      :project="workspaceProject"
-      :initial-clip-id="workspaceInitialClipId"
-    />
-    <!-- Project-Level Clip Detection Dialog -->
-    <ClipDetectionConfirmDialog
-      :model-value="showProjectDetectDialog"
-      :video-duration="segmentsToDetect.length === 1 ? totalDetectionDuration : 0"
-      :segment-count="segmentsToDetect.length > 1 ? segmentsToDetect.length : 0"
-      :total-duration="totalDetectionDuration"
-      @update:model-value="showProjectDetectDialog = $event"
-      @confirm="onProjectDetectClipsConfirmed"
-    />
-    <!-- Transcription Confirm Dialog -->
-    <TranscriptionConfirmDialog
-      :model-value="showTranscribeDialog"
-      :video-duration="0"
-      :segment-count="segmentsToTranscribe.length"
-      :total-duration="totalTranscribeDuration"
-      :is-transcribed="segmentsToTranscribe.length === 1 && projectTranscriptStatus[segmentsToTranscribe[0]?.id]"
-      @update:model-value="showTranscribeDialog = $event"
-      @confirm="onTranscribeConfirmed"
-    />
-    <!-- Folder Clip Build Dialog -->
-    <ClipBuildSettingsDialog
-      v-model="showFolderBuildDialog"
-      :clip="folderClipToBuild"
-      :watermark-settings="folderCreatorWatermarkSettings"
-      :default-intro="folderCreatorDefaultIntro"
-      :default-outro="folderCreatorDefaultOutro"
-      :creator-profile="folderCreatorProfile"
-      :creator-profile-server-id="folderCreatorProfileServerId"
-      @confirm="onFolderBuildConfirm"
-    />
-
-    <!-- Free Tier Limit Dialog -->
-    <FreeTierLimitDialog
-      :show="showFreeTierLimitDialog"
-      :limit-info="freeTierLimitInfo"
-      @close="showFreeTierLimitDialog = false"
-    />
-
-    <!-- Folder Contents Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div
-          v-if="showFolderDialog && folderProject"
-          class="folder-dialog__overlay"
-          @click.self="showFolderDialog = false"
-        >
-          <Transition name="dialog" appear>
-            <div
-              v-if="showFolderDialog"
-              class="folder-dialog"
-              :class="folderDialogSizeClass"
-              role="dialog"
-              aria-modal="true"
+            <SelectionBar
+              v-if="selectedFolderChildren.size > 0"
+              :count="selectedFolderChildren.size"
+              @clear="clearFolderChildSelection"
             >
-              <!-- Accent bar -->
-              <div class="folder-dialog__accent"></div>
-
-              <!-- Header (compact) -->
-              <div class="folder-dialog__header">
-                <div class="folder-dialog__header-left">
-                  <!-- Selection Controls (visible when items selected) -->
-                  <template v-if="selectedFolderChildren.size > 0">
-                    <button
-                      @click="confirmBulkDeleteFolderChildren"
-                      :disabled="hasAnySelectedFolderChildDetecting()"
-                      class="folder-dialog__selection-delete"
-                      :class="{ 'folder-dialog__selection-delete--disabled': hasAnySelectedFolderChildDetecting() }"
-                      :title="
-                        hasAnySelectedFolderChildDetecting() ? 'Cannot delete while detection is in progress' : ''
-                      "
-                    >
-                      <Trash2 :size="14" />
-                      Delete ({{ selectedFolderChildren.size }})
-                    </button>
-                    <span class="folder-dialog__selection-count">{{ selectedFolderChildren.size }} selected</span>
-                    <button @click="clearFolderChildSelection" class="folder-dialog__selection-clear">Clear</button>
-                  </template>
-
-                  <!-- Normal header (hidden when items selected) -->
-                  <template v-else>
-                    <div class="folder-dialog__header-icon">
-                      <FolderOpen :size="16" />
-                    </div>
-                    <h2 class="folder-dialog__title" :title="folderProject.name">{{ folderProject.name }}</h2>
-                  </template>
-                </div>
-
-                <button class="folder-dialog__close" @click="showFolderDialog = false" title="Close">
-                  <X :size="18" />
-                </button>
-              </div>
-
-              <!-- Tabs -->
-              <div class="folder-dialog__tabs">
-                <button
-                  @click="onFolderTabChange('segments')"
-                  class="folder-dialog__tab"
-                  :class="{ 'folder-dialog__tab--active': folderActiveTab === 'segments' }"
-                >
-                  <FolderOpen :size="14" />
-                  <span>Segments</span>
-                  <span class="folder-dialog__tab-count">{{ getEffectiveSegmentCount(folderProject.id) }}</span>
-                </button>
-                <button
-                  @click="onFolderTabChange('clips')"
-                  class="folder-dialog__tab"
-                  :class="{ 'folder-dialog__tab--active': folderActiveTab === 'clips' }"
-                >
-                  <Video :size="14" />
-                  <span>Clips</span>
-                  <span class="folder-dialog__tab-count">{{ folderTotalClipsCount }}</span>
-                </button>
-              </div>
-
-              <!-- Tab-specific guidance -->
-              <div
-                class="folder-dialog__guidance"
-                :class="`folder-dialog__guidance--${folderActiveTab}`"
+              <Button
+                variant="destructive-soft"
+                size="sm"
+                :disabled="hasAnySelectedFolderChildDetecting()"
+                :title="
+                  hasAnySelectedFolderChildDetecting() ? 'Cannot delete while detection is in progress' : undefined
+                "
+                @click="confirmBulkDeleteFolderChildren"
               >
-                <div v-if="folderActiveTab === 'segments'" class="folder-dialog__guidance-inner">
-                  <div class="folder-dialog__guidance-icon folder-dialog__guidance-icon--edit">
-                    <Edit :size="16" />
-                  </div>
-                  <div class="folder-dialog__guidance-text">
-                    <p class="folder-dialog__guidance-title">Edit segments</p>
-                    <p class="folder-dialog__guidance-body">
-                      Open a segment to edit subtitles, adjust subtitle positioning, change framing, fine-tune
-                      timing, and modify clip details.
-                    </p>
-                  </div>
-                </div>
-                <div v-else class="folder-dialog__guidance-inner">
-                  <div class="folder-dialog__guidance-icon folder-dialog__guidance-icon--publish">
-                    <Hammer :size="16" />
-                  </div>
-                  <div class="folder-dialog__guidance-text">
-                    <p class="folder-dialog__guidance-title">Quick build &amp; publish</p>
-                    <p class="folder-dialog__guidance-body">
-                      Preview detected clips, build exports, and publish from here. This tab is not for editing
-                      subtitles or positioning — use Segments for that.
-                    </p>
-                  </div>
-                </div>
-              </div>
+                <Trash2 />
+                Delete
+              </Button>
+            </SelectionBar>
+            <p v-else class="min-w-0 flex-1 basis-[260px] text-xs text-fg-muted">
+              {{
+                folderActiveTab === 'segments'
+                  ? 'Open a segment to edit subtitles, positioning, framing, timing and clip details.'
+                  : 'Preview, build and publish detected clips. To edit subtitles or positioning, open the segment from Segments.'
+              }}
+            </p>
+          </div>
 
-              <!-- Content -->
+          <!-- Segments Tab -->
+          <div
+            v-if="folderActiveTab === 'segments'"
+            class="grid animate-enter gap-3 p-5"
+            :class="
+              paginatedFolderChildren.length <= 1
+                ? 'grid-cols-1'
+                : paginatedFolderChildren.length === 2
+                  ? 'grid-cols-2'
+                  : 'grid-cols-[repeat(auto-fill,minmax(var(--card-grid-min),1fr))]'
+            "
+          >
+            <LibraryProjectCard
+              v-for="project in paginatedFolderChildren"
+              :key="project.id"
+              :name="project.name"
+              :thumbnail="getThumbnailUrl(project.id)"
+              :selected="isFolderChildSelected(project.id)"
+              @open="openWorkspace(project)"
+            >
+              <template #badges>
+                <LibrarySelectCheckbox
+                  :checked="isFolderChildSelected(project.id)"
+                  :label="`Select ${project.name}`"
+                  :visible="selectedFolderChildren.size > 0"
+                  class="absolute left-2 top-2 z-20 flex"
+                  @toggle="toggleFolderChildSelection(project.id)"
+                />
+                <div class="pointer-events-none absolute bottom-2 left-2 z-10 flex gap-1">
+                  <MediaChip v-if="isDetectionActive(project.id)">
+                    <Loader2 class="animate-spin text-ai" />
+                    Detecting…
+                  </MediaChip>
+                  <MediaChip v-else-if="activeTranscriptions.has(project.id)">
+                    <Loader2 class="animate-spin text-success" />
+                    Transcribing…
+                  </MediaChip>
+                  <MediaChip v-else-if="projectTranscriptStatus[project.id]">
+                    <FileText class="text-success" />
+                    Transcribed
+                  </MediaChip>
+                </div>
+                <MediaChip
+                  v-if="getProjectDuration(project.id)"
+                  class="tabular pointer-events-none absolute bottom-2 right-2 z-10"
+                >
+                  {{ getProjectDuration(project.id) }}
+                </MediaChip>
+              </template>
+              <template #meta>
+                <span class="truncate">{{ project.description || 'No description' }}</span>
+                <span class="size-[3px] shrink-0 rounded-full bg-fg-subtle" />
+                <span class="shrink-0">{{ getRelativeTime(project.updated_at) }}</span>
+              </template>
+              <template #actions>
+                <LibraryCardAction
+                  title="Edit segment — subtitles, positioning, framing, and clip details"
+                  @click.stop="openWorkspace(project)"
+                >
+                  <Edit />
+                </LibraryCardAction>
+                <LibraryCardAction
+                  v-if="
+                    canDetectClips(project.id) &&
+                    !isDetectionActive(project.id) &&
+                    !isProjectDetecting(folderProject?.id || '') &&
+                    isAIAllowed
+                  "
+                  title="Detect clips"
+                  @click.stop="startProjectDetection(project)"
+                >
+                  <Sparkles />
+                </LibraryCardAction>
+                <LibraryCardAction
+                  v-if="
+                    canTranscribe(project.id) && !isDetectionActive(project.id) && !activeTranscriptions.has(project.id)
+                  "
+                  :title="projectTranscriptStatus[project.id] ? 'Already transcribed' : 'Transcribe'"
+                  :active="!!projectTranscriptStatus[project.id]"
+                  @click.stop="startTranscription(project)"
+                >
+                  <FileText />
+                </LibraryCardAction>
+                <LibraryCardAction
+                  v-if="!isDetectionActive(project.id) && !isProjectDetecting(folderProject?.id || '')"
+                  title="Delete"
+                  tone="danger"
+                  @click.stop="confirmDelete(project)"
+                >
+                  <Trash2 />
+                </LibraryCardAction>
+              </template>
+            </LibraryProjectCard>
+          </div>
+
+          <!-- Clips Tab - list + preview player -->
+          <div v-else-if="folderActiveTab === 'clips'" class="flex min-h-0 flex-1 animate-enter">
+            <!-- Left Column: Clips List -->
+            <div
+              class="w-[44%] min-w-[300px] max-w-[480px] shrink-0 overflow-y-auto border-r border-line-subtle px-4 pb-4"
+            >
               <div
-                class="folder-dialog__content"
-                :class="{ 'folder-dialog__content--clips': folderActiveTab === 'clips' }"
+                v-if="folderClipsLoading && !folderClips.length"
+                class="skeleton-group grid place-items-center py-12 text-fg-muted"
               >
-                <!-- Segments Tab -->
-                <div v-if="folderActiveTab === 'segments'" class="folder-dialog__segments">
-                  <div
-                    class="folder-dialog__segments-grid"
-                    :class="{
-                      'folder-dialog__segments-grid--1': paginatedFolderChildren.length <= 1,
-                      'folder-dialog__segments-grid--2': paginatedFolderChildren.length === 2,
-                      'folder-dialog__segments-grid--3': paginatedFolderChildren.length >= 3,
-                    }"
-                  >
-                    <div
-                      v-for="project in paginatedFolderChildren"
-                      :key="project.id"
-                      class="folder-dialog__segment-card"
-                      :class="{ 'folder-dialog__segment-card--selected': isFolderChildSelected(project.id) }"
-                      @click="openWorkspace(project)"
-                    >
-                      <!-- Selection Checkbox -->
-                      <div
-                        class="folder-dialog__segment-checkbox"
-                        :class="{ 'folder-dialog__segment-checkbox--visible': isFolderChildSelected(project.id) }"
-                        @click.stop="toggleFolderChildSelection(project.id)"
-                      >
-                        <div
-                          class="folder-dialog__segment-checkbox-box"
-                          :class="{ 'folder-dialog__segment-checkbox-box--checked': isFolderChildSelected(project.id) }"
-                        >
-                          <Check v-if="isFolderChildSelected(project.id)" :size="14" />
-                        </div>
-                      </div>
-
-                      <!-- Thumbnail background -->
-                      <div
-                        v-if="getThumbnailUrl(project.id)"
-                        class="folder-dialog__segment-thumb"
-                        :style="{ backgroundImage: `url(${getThumbnailUrl(project.id)})` }"
-                      >
-                        <div class="folder-dialog__segment-thumb-overlay"></div>
-                      </div>
-                      <div v-else class="folder-dialog__segment-thumb folder-dialog__segment-thumb--empty">
-                        <div class="folder-dialog__segment-thumb-overlay"></div>
-                        <div class="folder-dialog__segment-thumb-placeholder">
-                          <Play :size="32" />
-                        </div>
-                      </div>
-
-                      <!-- Detection Progress Indicator -->
-                      <div v-if="isDetectionActive(project.id)" class="folder-dialog__segment-detecting">
-                        <Loader2 :size="12" class="folder-dialog__spin" />
-                        <span>Detecting...</span>
-                      </div>
-                      <!-- Transcription Progress Indicator -->
-                      <div
-                        v-else-if="activeTranscriptions.has(project.id)"
-                        class="folder-dialog__segment-detecting"
-                        style="background: rgba(34, 197, 94, 0.85)"
-                      >
-                        <Loader2 :size="12" class="folder-dialog__spin" />
-                        <span>Transcribing...</span>
-                      </div>
-                      <!-- Transcribed Badge -->
-                      <div
-                        v-else-if="projectTranscriptStatus[project.id]"
-                        class="folder-dialog__segment-duration"
-                        style="background: rgba(34, 197, 94, 0.85)"
-                      >
-                        <FileText :size="12" />
-                        Transcribed
-                      </div>
-                      <!-- Duration Badge -->
-                      <div v-else-if="getProjectDuration(project.id)" class="folder-dialog__segment-duration">
-                        <Clock :size="12" />
-                        {{ getProjectDuration(project.id) }}
-                      </div>
-
-                      <!-- Info -->
-                      <div class="folder-dialog__segment-info">
-                        <h3 class="folder-dialog__segment-name">{{ project.name }}</h3>
-                        <p class="folder-dialog__segment-meta">
-                          {{ project.description || 'No description' }} • {{ getRelativeTime(project.updated_at) }}
-                        </p>
-                      </div>
-
-                      <!-- Hover Overlay -->
-                      <div class="folder-dialog__segment-hover">
-                        <button
-                          class="folder-dialog__segment-action"
-                          title="Edit segment — subtitles, positioning, framing, and clip details"
-                          @click.stop="openWorkspace(project)"
-                        >
-                          <Edit :size="20" />
-                        </button>
-                        <button
-                          v-if="
-                            canDetectClips(project.id) &&
-                            !isDetectionActive(project.id) &&
-                            !isProjectDetecting(folderProject?.id || '') &&
-                            isAIAllowed
-                          "
-                          class="folder-dialog__segment-action"
-                          title="Detect Clips"
-                          @click.stop="startProjectDetection(project)"
-                        >
-                          <Sparkles :size="20" />
-                        </button>
-                        <button
-                          v-if="
-                            canTranscribe(project.id) &&
-                            !isDetectionActive(project.id) &&
-                            !activeTranscriptions.has(project.id)
-                          "
-                          class="folder-dialog__segment-action"
-                          :class="{ 'folder-dialog__segment-action--transcribed': projectTranscriptStatus[project.id] }"
-                          :title="projectTranscriptStatus[project.id] ? 'Already Transcribed' : 'Transcribe'"
-                          @click.stop="startTranscription(project)"
-                        >
-                          <FileText :size="20" />
-                        </button>
-                        <button
-                          v-if="!isDetectionActive(project.id) && !isProjectDetecting(folderProject?.id || '')"
-                          class="folder-dialog__segment-action"
-                          title="Delete"
-                          @click.stop="confirmDelete(project)"
-                        >
-                          <Trash2 :size="20" />
-                        </button>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Clips Tab - 2 Column Layout -->
-                <div v-else-if="folderActiveTab === 'clips'" class="folder-dialog__clips-layout">
-                  <!-- Left Column: Clips List -->
-                  <div class="folder-dialog__clips-list">
-                    <!-- Loading State -->
-                    <div v-if="folderClipsLoading" class="folder-dialog__clips-loading">
-                      <Loader2 :size="24" class="folder-dialog__spin" />
-                    </div>
-
-                    <!-- Empty State -->
-                    <div v-else-if="folderClips.length === 0" class="folder-dialog__clips-empty">
-                      <div class="folder-dialog__clips-empty-icon">
-                        <Video :size="32" />
-                      </div>
-                      <h3 class="folder-dialog__clips-empty-title">No Clips Detected</h3>
-                      <p class="folder-dialog__clips-empty-text">
-                        Run clip detection on a segment first. Detected clips will appear here for preview, quick
-                        builds, and publishing.
-                      </p>
-                    </div>
-
-                    <!-- Clips List -->
-                    <div v-else class="folder-dialog__clips-items">
-                      <ClipsTab
-                        :clips="folderClips"
-                        :project-id="folderProject?.id || null"
-                        :hide-header="true"
-                        :play-on-card-click="true"
-                        :is-generating="false"
-                        :generation-progress="0"
-                        :generation-stage="''"
-                        :generation-message="''"
-                        :generation-error="''"
-                        :playing-clip-id="clipToPreview?.id || null"
-                        :is-playing-segments="false"
-                        :hovered-timeline-clip-id="null"
-                        :video-duration="0"
-                        :prompts="folderPrompts"
-                        :transcript-data="null"
-                        :show-adjust-clip-button="true"
-                        :vod-preset-config="folderProject ? vodPresetConfigs[folderProject.id] || null : null"
-                        @play-clip="onClipsTabPlayClip"
-                        @delete-clip="deleteFolderClip"
-                        @edit-clip="onClipsTabEditClip"
-                        @adjust-clip="onClipsTabAdjustClip"
-                        @refresh-clips="onClipsTabRefreshClips"
-                        @detect-clips="onClipsTabDetectClips"
-                        @publish-now="onClipsTabPublishNow"
-                      />
-                    </div>
-                  </div>
-
-                  <!-- Right Column: Video Player -->
-                  <div class="folder-dialog__player">
-                    <!-- No clip selected state -->
-                    <div v-if="!clipToPreview" class="folder-dialog__player-empty">
-                      <div class="folder-dialog__player-empty-icon">
-                        <PlayIcon :size="40" />
-                      </div>
-                      <h3 class="folder-dialog__player-empty-title">Select a Clip to Preview</h3>
-                      <p class="folder-dialog__player-empty-text">
-                        Click a clip to preview, build, or publish. To edit subtitles or positioning, open the segment
-                        from the Segments tab.
-                      </p>
-                    </div>
-
-                    <!-- Video Player -->
-                    <template v-else>
-                      <!-- Clip Info Header -->
-                      <div class="folder-dialog__player-header">
-                        <div class="folder-dialog__player-info">
-                          <h3 class="folder-dialog__player-title">
-                            {{ clipToPreview.current_version?.name || clipToPreview.name || 'Untitled Clip' }}
-                          </h3>
-                          <p class="folder-dialog__player-segment">{{ clipToPreview.segment_name }}</p>
-                        </div>
-                      </div>
-
-                      <!-- Video Container -->
-                      <div
-                        ref="inlineVideoContainerRef"
-                        class="folder-dialog__player-video"
-                        :class="{ 'inline-video-fullscreen': isInlineVideoFullscreen }"
-                      >
-                        <video
-                          v-if="inlineVideoSrc"
-                          ref="inlineVideoRef"
-                          class="folder-dialog__player-video-el"
-                          :src="inlineVideoSrc"
-                          @loadedmetadata="onInlineVideoLoaded"
-                          @timeupdate="onInlineVideoTimeUpdate"
-                          @ended="onInlineVideoEnded"
-                          @click="toggleInlineVideoPlay"
-                        ></video>
-                        <div v-else-if="inlineVideoLoading" class="folder-dialog__player-loading">
-                          <Loader2 :size="32" class="folder-dialog__spin" />
-                        </div>
-                        <div v-else class="folder-dialog__player-no-source">
-                          <p>No video source available</p>
-                        </div>
-
-                        <!-- Watermark Overlay -->
-                        <div
-                          v-if="previewWatermarkData && previewWatermarkSettings && inlineVideoSrc"
-                          class="folder-dialog__player-watermark"
-                          :style="getPreviewWatermarkStyle"
-                        >
-                          <img
-                            :src="previewWatermarkData.dataUrl"
-                            alt="Watermark"
-                            :class="isPreviewWatermarkFullFrame ? '' : 'folder-dialog__player-watermark-img'"
-                            :style="getPreviewWatermarkImageStyle"
-                          />
-                        </div>
-
-                        <!-- Custom Video Controls -->
-                        <div
-                          v-if="inlineVideoSrc"
-                          class="folder-dialog__player-controls"
-                          :class="{ 'folder-dialog__player-controls--visible': isInlineVideoFullscreen }"
-                        >
-                          <!-- Progress Bar -->
-                          <div
-                            ref="inlineProgressBarRef"
-                            class="folder-dialog__player-progress"
-                            @mousedown="startInlineSeekDrag"
-                            @mousemove="onInlineTimelineHover"
-                            @mouseleave="onInlineTimelineLeave"
-                          >
-                            <div class="folder-dialog__player-progress-track">
-                              <div class="folder-dialog__player-progress-bg"></div>
-                              <div
-                                class="folder-dialog__player-progress-bar"
-                                :class="{ 'folder-dialog__player-progress-bar--smooth': !inlineSeekDragging }"
-                                :style="{ width: `${inlineVideoProgress}%` }"
-                              ></div>
-                            </div>
-                            <div
-                              class="folder-dialog__player-progress-thumb"
-                              :class="{
-                                'folder-dialog__player-progress-thumb--large': inlineSeekDragging,
-                                'folder-dialog__player-progress-thumb--smooth': !inlineSeekDragging,
-                              }"
-                              :style="{ left: `${inlineVideoProgress}%` }"
-                            ></div>
-                            <div
-                              v-if="inlineHoverTime !== null || inlineSeekDragging"
-                              class="folder-dialog__player-progress-tooltip"
-                              :style="{ left: `${inlineSeekDragging ? inlineVideoProgress : inlineHoverPosition}%` }"
-                            >
-                              {{
-                                formatDuration(
-                                  inlineSeekDragging
-                                    ? (inlineVideoProgress / 100) * inlineVideoClipDuration
-                                    : (inlineHoverTime ?? 0)
-                                )
-                              }}
-                            </div>
-                          </div>
-
-                          <!-- Controls Row -->
-                          <div class="folder-dialog__player-controls-row">
-                            <div class="folder-dialog__player-controls-left">
-                              <button @click="toggleInlineVideoPlay" class="folder-dialog__player-btn">
-                                <PlayIcon v-if="!inlineVideoPlaying" :size="20" />
-                                <Pause v-else :size="20" />
-                              </button>
-                              <div class="folder-dialog__player-volume">
-                                <button @click="toggleInlineVideoMute" class="folder-dialog__player-btn">
-                                  <VolumeX v-if="inlineVideoMuted || inlineVideoVolume === 0" :size="16" />
-                                  <Volume2 v-else :size="16" />
-                                </button>
-                                <input
-                                  type="range"
-                                  min="0"
-                                  max="1"
-                                  step="0.1"
-                                  :value="inlineVideoMuted ? 0 : inlineVideoVolume"
-                                  @input="setInlineVideoVolume"
-                                  class="folder-dialog__player-volume-slider"
-                                />
-                              </div>
-                              <span class="folder-dialog__player-time">
-                                {{ formatClipTime(inlineVideoCurrentTime) }} /
-                                {{ formatClipTime(inlineVideoClipDuration) }}
-                              </span>
-                            </div>
-                            <button
-                              @click="toggleInlineVideoFullscreen"
-                              class="folder-dialog__player-btn"
-                              :title="isInlineVideoFullscreen ? 'Exit Fullscreen' : 'Fullscreen'"
-                            >
-                              <Minimize2 v-if="isInlineVideoFullscreen" :size="16" />
-                              <Maximize2 v-else :size="16" />
-                            </button>
-                          </div>
-                        </div>
-
-                        <!-- Play overlay when paused -->
-                        <div
-                          v-if="inlineVideoSrc && !inlineVideoPlaying && !inlineVideoLoading"
-                          class="folder-dialog__player-play-overlay"
-                          @click="toggleInlineVideoPlay"
-                        >
-                          <div class="folder-dialog__player-play-btn">
-                            <PlayIcon :size="32" />
-                          </div>
-                        </div>
-                      </div>
-
-                      <!-- Clip Description -->
-                      <div
-                        v-if="clipToPreview.current_version_detection_reason"
-                        class="folder-dialog__player-description"
-                      >
-                        <p>"{{ clipToPreview.current_version_detection_reason }}"</p>
-                      </div>
-                    </template>
-                  </div>
-                </div>
+                <Loader2 class="size-6 animate-spin" />
               </div>
 
-              <!-- Footer with Pagination (only for segments tab) -->
-              <div v-if="folderActiveTab === 'segments' && folderTotalPages > 1" class="folder-dialog__footer">
-                <PaginationFooter
-                  :current-page="folderCurrentPage"
-                  :total-pages="folderTotalPages"
-                  :total-items="getEffectiveSegmentCount(folderProject.id)"
-                  item-label="part"
-                  @go-to-page="(page) => (folderCurrentPage = page)"
-                  @previous="folderCurrentPage--"
-                  @next="folderCurrentPage++"
+              <EmptyState
+                v-else-if="folderClips.length === 0"
+                size="sm"
+                :icon="Video"
+                title="No clips detected"
+                description="Run clip detection on a segment first. Detected clips appear here for preview, quick builds and publishing."
+                class="py-12"
+              />
+
+              <div v-else class="animate-fade-in pb-4">
+                <ClipsTab
+                  :clips="folderClips"
+                  :project-id="folderProject?.id || null"
+                  :hide-header="true"
+                  :play-on-card-click="true"
+                  :is-generating="false"
+                  :generation-progress="0"
+                  :generation-stage="''"
+                  :generation-message="''"
+                  :generation-error="''"
+                  :playing-clip-id="clipToPreview?.id || null"
+                  :is-playing-segments="false"
+                  :hovered-timeline-clip-id="null"
+                  :video-duration="0"
+                  :prompts="folderPrompts"
+                  :transcript-data="null"
+                  :show-adjust-clip-button="true"
+                  :vod-preset-config="folderProject ? vodPresetConfigs[folderProject.id] || null : null"
+                  @play-clip="onClipsTabPlayClip"
+                  @delete-clip="deleteFolderClip"
+                  @edit-clip="onClipsTabEditClip"
+                  @adjust-clip="onClipsTabAdjustClip"
+                  @refresh-clips="onClipsTabRefreshClips"
+                  @detect-clips="onClipsTabDetectClips"
+                  @publish-now="onClipsTabPublishNow"
                 />
               </div>
             </div>
-          </Transition>
-        </div>
-      </Transition>
-    </Teleport>
 
-    <!-- Delete Confirmation Modal -->
-    <!-- Delete Project Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showDeleteDialog" class="delete-dialog__overlay" @click.self="handleDeleteDialogClose">
-          <Transition name="dialog" appear>
-            <div class="delete-dialog">
-              <!-- Accent Bar -->
-              <div class="delete-dialog__accent" />
+            <!-- Right Column: Video Player -->
+            <div class="flex min-w-0 flex-1 flex-col overflow-y-auto p-4">
+              <EmptyState
+                v-if="!clipToPreview"
+                size="sm"
+                :icon="PlayIcon"
+                title="Select a clip to preview"
+                description="Click a clip to preview, build or publish it. To edit subtitles or positioning, open the segment from Segments."
+                class="flex-1 rounded-xl border border-line-subtle bg-surface-sunken"
+              />
 
-              <!-- Header -->
-              <div class="delete-dialog__header">
-                <button
-                  class="delete-dialog__close"
-                  @click="handleDeleteDialogClose"
-                  :disabled="deletingProject"
-                  title="Close"
-                >
-                  <X :size="18" />
-                </button>
-                <div class="delete-dialog__icon">
-                  <AlertTriangle :size="24" />
+              <template v-else>
+                <div class="mb-3 min-w-0">
+                  <h3 class="truncate text-sm font-semibold text-fg">
+                    {{ clipToPreview.current_version?.name || clipToPreview.name || 'Untitled clip' }}
+                  </h3>
+                  <p class="truncate text-xs text-fg-muted">{{ clipToPreview.segment_name }}</p>
                 </div>
-                <h2 class="delete-dialog__title">Delete Project</h2>
-                <p class="delete-dialog__subtitle">
-                  {{
-                    projectHasVideos || projectHasClips
-                      ? 'This project contains content'
-                      : 'This action cannot be undone'
-                  }}
+
+                <!-- Video Container -->
+                <div
+                  ref="inlineVideoContainerRef"
+                  class="group/player relative aspect-video w-full overflow-hidden rounded-lg bg-black"
+                  :class="{ 'inline-video-fullscreen': isInlineVideoFullscreen }"
+                >
+                  <video
+                    v-if="inlineVideoSrc"
+                    ref="inlineVideoRef"
+                    class="size-full object-contain"
+                    :src="inlineVideoSrc"
+                    @loadedmetadata="onInlineVideoLoaded"
+                    @timeupdate="onInlineVideoTimeUpdate"
+                    @ended="onInlineVideoEnded"
+                    @click="toggleInlineVideoPlay"
+                  ></video>
+                  <div v-else-if="inlineVideoLoading" class="grid size-full place-items-center text-fg-muted">
+                    <Loader2 class="size-7 animate-spin" />
+                  </div>
+                  <div v-else class="grid size-full place-items-center text-sm text-fg-muted">
+                    No video source available
+                  </div>
+
+                  <!-- Watermark Overlay -->
+                  <div
+                    v-if="previewWatermarkData && previewWatermarkSettings && inlineVideoSrc"
+                    class="pointer-events-none absolute z-[1] transition-opacity duration-300"
+                    :style="getPreviewWatermarkStyle"
+                  >
+                    <img
+                      :src="previewWatermarkData.dataUrl"
+                      alt="Watermark"
+                      :class="isPreviewWatermarkFullFrame ? '' : 'max-h-full max-w-full object-contain'"
+                      :style="getPreviewWatermarkImageStyle"
+                    />
+                  </div>
+
+                  <!-- Custom Video Controls -->
+                  <div
+                    v-if="inlineVideoSrc"
+                    class="absolute inset-x-0 bottom-0 z-[2] bg-black/60 backdrop-blur-sm transition-opacity duration-150"
+                    :class="isInlineVideoFullscreen ? 'opacity-100' : 'opacity-0 group-hover/player:opacity-100'"
+                  >
+                    <!-- Progress Bar -->
+                    <div
+                      ref="inlineProgressBarRef"
+                      class="relative flex h-4 w-full cursor-pointer items-center"
+                      @mousedown="startInlineSeekDrag"
+                      @mousemove="onInlineTimelineHover"
+                      @mouseleave="onInlineTimelineLeave"
+                    >
+                      <div class="absolute inset-x-0 top-1/2 h-1 -translate-y-1/2">
+                        <div class="absolute inset-0 bg-white/20"></div>
+                        <div
+                          class="absolute h-full bg-brand"
+                          :class="{ 'transition-[width] duration-75': !inlineSeekDragging }"
+                          :style="{ width: `${inlineVideoProgress}%` }"
+                        ></div>
+                      </div>
+                      <div
+                        class="pointer-events-none absolute top-1/2 -translate-x-1/2 -translate-y-1/2 rounded-full bg-brand shadow-[var(--shadow-sm)]"
+                        :class="inlineSeekDragging ? 'size-4' : 'size-3 transition-[left,width,height] duration-75'"
+                        :style="{ left: `${inlineVideoProgress}%` }"
+                      ></div>
+                      <div
+                        v-if="inlineHoverTime !== null || inlineSeekDragging"
+                        class="tabular pointer-events-none absolute -top-8 z-20 -translate-x-1/2 whitespace-nowrap rounded bg-black/90 px-2 py-1 text-xs font-medium text-white"
+                        :style="{ left: `${inlineSeekDragging ? inlineVideoProgress : inlineHoverPosition}%` }"
+                      >
+                        {{
+                          formatDuration(
+                            inlineSeekDragging
+                              ? (inlineVideoProgress / 100) * inlineVideoClipDuration
+                              : (inlineHoverTime ?? 0)
+                          )
+                        }}
+                      </div>
+                    </div>
+
+                    <!-- Controls Row -->
+                    <div class="flex items-center justify-between px-3 pb-2 pt-1 text-white">
+                      <div class="flex items-center gap-3">
+                        <button
+                          type="button"
+                          class="inline-player__btn"
+                          :title="inlineVideoPlaying ? 'Pause' : 'Play'"
+                          @click="toggleInlineVideoPlay"
+                        >
+                          <PlayIcon v-if="!inlineVideoPlaying" :size="18" />
+                          <Pause v-else :size="18" />
+                        </button>
+                        <div class="group/volume flex items-center gap-1.5">
+                          <button type="button" class="inline-player__btn" title="Mute" @click="toggleInlineVideoMute">
+                            <VolumeX v-if="inlineVideoMuted || inlineVideoVolume === 0" :size="16" />
+                            <Volume2 v-else :size="16" />
+                          </button>
+                          <input
+                            type="range"
+                            min="0"
+                            max="1"
+                            step="0.1"
+                            :value="inlineVideoMuted ? 0 : inlineVideoVolume"
+                            aria-label="Volume"
+                            class="inline-player__volume opacity-0 transition-opacity group-hover/volume:opacity-100"
+                            @input="setInlineVideoVolume"
+                          />
+                        </div>
+                        <span class="tabular font-mono text-xs">
+                          {{ formatClipTime(inlineVideoCurrentTime) }} / {{ formatClipTime(inlineVideoClipDuration) }}
+                        </span>
+                      </div>
+                      <button
+                        type="button"
+                        class="inline-player__btn"
+                        :title="isInlineVideoFullscreen ? 'Exit fullscreen' : 'Fullscreen'"
+                        @click="toggleInlineVideoFullscreen"
+                      >
+                        <Minimize2 v-if="isInlineVideoFullscreen" :size="16" />
+                        <Maximize2 v-else :size="16" />
+                      </button>
+                    </div>
+                  </div>
+
+                  <!-- Play overlay when paused -->
+                  <div
+                    v-if="inlineVideoSrc && !inlineVideoPlaying && !inlineVideoLoading"
+                    class="absolute inset-0 flex cursor-pointer items-center justify-center"
+                    @click="toggleInlineVideoPlay"
+                  >
+                    <div
+                      class="grid size-14 place-items-center rounded-full bg-black/50 pl-1 text-white backdrop-blur-sm"
+                    >
+                      <PlayIcon :size="28" />
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Clip Description -->
+                <p
+                  v-if="clipToPreview.current_version_detection_reason"
+                  class="mt-3 line-clamp-2 text-xs italic text-fg-muted"
+                >
+                  "{{ clipToPreview.current_version_detection_reason }}"
                 </p>
-              </div>
-
-              <!-- Content -->
-              <div class="delete-dialog__content">
-                <div class="delete-dialog__message">
-                  <p class="delete-dialog__text">
-                    Are you sure you want to delete "
-                    <span class="delete-dialog__text--highlight">{{ projectToDelete?.name }}</span>
-                    "?
-                  </p>
-                  <p class="delete-dialog__warning">This action cannot be undone.</p>
-                </div>
-
-                <!-- Content warnings -->
-                <div v-if="projectHasVideos || projectHasClips" class="delete-dialog__info-card">
-                  <div class="delete-dialog__info-icon">
-                    <Info :size="16" />
-                  </div>
-                  <div class="delete-dialog__info-content">
-                    <p class="delete-dialog__info-title">What will be deleted:</p>
-                    <ul class="delete-dialog__info-list">
-                      <li v-if="projectHasVideos">
-                        <strong>Delete:</strong>
-                        Raw video files from disk
-                      </li>
-                      <li v-if="projectHasClips">
-                        <strong>Delete:</strong>
-                        Unbuilt clips not being edited
-                      </li>
-                      <li v-if="projectHasClips">
-                        <strong>Keep:</strong>
-                        Built clips (available in My Clips)
-                      </li>
-                      <li v-if="projectHasClips">
-                        <strong>Keep:</strong>
-                        Clips currently in the editor
-                      </li>
-                    </ul>
-                  </div>
-                </div>
-
-                <!-- Segments deletion option - only show if more than 1 segment -->
-                <div
-                  v-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') > 1"
-                  class="delete-dialog__segments-section"
-                >
-                  <p class="delete-dialog__segments-title">
-                    This project contains
-                    <span class="delete-dialog__text--highlight">
-                      {{ getChildCount(projectToDelete?.id || '') }} segments
-                    </span>
-                    . What would you like to do with them?
-                  </p>
-                  <div class="delete-dialog__segments-options">
-                    <label
-                      class="delete-dialog__segment-option"
-                      :class="{ 'delete-dialog__segment-option--selected': !deleteSegmentsToo }"
-                    >
-                      <input type="radio" :value="false" v-model="deleteSegmentsToo" class="delete-dialog__radio" />
-                      <div class="delete-dialog__segment-option-content">
-                        <span class="delete-dialog__segment-option-title">Keep segments</span>
-                        <p class="delete-dialog__segment-option-desc">
-                          Segments will be un-grouped and remain in your library
-                        </p>
-                      </div>
-                    </label>
-                    <label
-                      class="delete-dialog__segment-option"
-                      :class="{ 'delete-dialog__segment-option--selected': deleteSegmentsToo }"
-                    >
-                      <input type="radio" :value="true" v-model="deleteSegmentsToo" class="delete-dialog__radio" />
-                      <div class="delete-dialog__segment-option-content">
-                        <span class="delete-dialog__segment-option-title">Delete all segments</span>
-                        <p class="delete-dialog__segment-option-desc">
-                          All {{ getChildCount(projectToDelete?.id || '') }} segments will be permanently deleted
-                        </p>
-                      </div>
-                    </label>
-                  </div>
-                </div>
-
-                <!-- Single segment notice - auto-deleted with parent -->
-                <div
-                  v-else-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') === 1"
-                  class="delete-dialog__info-card"
-                >
-                  <div class="delete-dialog__info-icon">
-                    <Info :size="16" />
-                  </div>
-                  <div class="delete-dialog__info-content">
-                    <p class="delete-dialog__info-text">
-                      This project contains
-                      <span class="delete-dialog__text--highlight">1 segment</span>
-                      which will also be deleted along with its video files.
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              <!-- Footer -->
-              <div class="delete-dialog__footer">
-                <button
-                  class="delete-dialog__btn delete-dialog__btn--secondary"
-                  @click="handleDeleteDialogClose"
-                  :disabled="deletingProject"
-                >
-                  Cancel
-                </button>
-                <button
-                  class="delete-dialog__btn delete-dialog__btn--primary"
-                  @click="deleteProjectConfirmed"
-                  :disabled="deletingProject"
-                >
-                  <Loader2 v-if="deletingProject" :size="16" class="delete-dialog__spinner" />
-                  {{
-                    deletingProject
-                      ? 'Deleting...'
-                      : deleteSegmentsToo && hasChildren(projectToDelete?.id || '')
-                        ? getChildCount(projectToDelete?.id || '') === 1
-                          ? 'Delete Project & Segment'
-                          : `Delete Project & ${getChildCount(projectToDelete?.id || '')} Segments`
-                        : 'Delete Project'
-                  }}
-                </button>
-              </div>
+              </template>
             </div>
-          </Transition>
+          </div>
         </div>
-      </Transition>
-    </Teleport>
 
-    <!-- Bulk Delete Confirmation Modal -->
-    <ConfirmationModal
-      :show="showBulkDeleteDialog"
-      :title="`Delete ${selectedProjects.size} Projects`"
-      subtitle="This action cannot be undone"
-      :message="`Are you sure you want to delete ${selectedProjects.size} projects? This will also delete all associated segments and video files.`"
-      :confirm-text="bulkDeleting ? 'Deleting...' : `Delete ${selectedProjects.size} Projects`"
-      close-text="Cancel"
-      variant="destructive"
-      @close="handleBulkDeleteDialogClose"
-      @confirm="bulkDeleteConfirmed"
-    />
+        <!-- Pagination (segments tab only) -->
+        <template v-if="folderProject && folderActiveTab === 'segments' && folderTotalPages > 1" #footer>
+          <PaginationFooter
+            mode="static"
+            :current-page="folderCurrentPage"
+            :total-pages="folderTotalPages"
+            :total-items="getEffectiveSegmentCount(folderProject.id)"
+            item-label="part"
+            @go-to-page="(page) => (folderCurrentPage = page)"
+            @previous="folderCurrentPage--"
+            @next="folderCurrentPage++"
+          />
+        </template>
+      </Modal>
 
-    <!-- Bulk Delete Folder Children Confirmation Modal -->
-    <ConfirmationModal
-      :show="showBulkDeleteFolderChildrenDialog"
-      :title="`Delete ${selectedFolderChildren.size} Segments`"
-      subtitle="This action cannot be undone"
-      :message="`Are you sure you want to delete ${selectedFolderChildren.size} segment${selectedFolderChildren.size !== 1 ? 's' : ''}? This will also delete all associated video files.`"
-      :confirm-text="`Delete ${selectedFolderChildren.size} Segments`"
-      close-text="Cancel"
-      variant="destructive"
-      @close="handleBulkDeleteFolderChildrenDialogClose"
-      @confirm="bulkDeleteFolderChildrenConfirmed"
-    />
+      <!-- Delete Project Dialog -->
+      <Modal
+        :open="showDeleteDialog"
+        title="Delete project"
+        :description="
+          projectHasVideos || projectHasClips ? 'This project contains content' : 'This action cannot be undone'
+        "
+        :icon="AlertTriangle"
+        tone="danger"
+        size="md"
+        :dismissible="!deletingProject"
+        :hide-close="deletingProject"
+        @close="handleDeleteDialogClose"
+      >
+        <div class="flex flex-col gap-4">
+          <p class="text-sm text-fg-muted">
+            Are you sure you want to delete
+            <span class="font-medium text-fg">"{{ projectToDelete?.name }}"</span>
+            ? This action cannot be undone.
+          </p>
 
-    <!-- Search Palette Modal -->
-    <SearchPalette
-      v-model="showSearchPalette"
-      :search-query="paletteSearchQuery"
-      :active-tab="paletteActiveTab"
-      :placeholder="
-        paletteActiveTab === 'search'
-          ? 'Search projects by name or description...'
-          : paletteActiveTab === 'live'
-            ? 'Filter live projects...'
-            : 'Filter projects with clips...'
-      "
-      :tabs="projectsPaletteTabs"
-      @update:search-query="paletteSearchQuery = $event"
-      @update:active-tab="onPaletteTabChange"
-      @close="closeSearchPalette"
-    >
-      <!-- Search Results -->
-      <template v-if="paletteSearchResults.length > 0">
-        <div class="search-palette__results">
-          <div class="search-palette__results-header">
-            <span class="search-palette__results-label">
-              {{
-                paletteActiveTab === 'live'
-                  ? 'Live Projects'
-                  : paletteActiveTab === 'with_clips'
-                    ? 'Projects with Clips'
-                    : 'Results'
-              }}
+          <!-- Content warnings -->
+          <div v-if="projectHasVideos || projectHasClips" class="border-t border-line-subtle pt-3">
+            <p class="eyebrow mb-2">What will be deleted</p>
+            <ul class="flex flex-col gap-1.5 text-sm text-fg-muted">
+              <li v-if="projectHasVideos" class="flex items-start gap-2">
+                <Trash2 class="mt-0.5 size-3.5 shrink-0 text-danger" />
+                <span>
+                  <span class="font-medium text-fg">Delete:</span>
+                  raw video files from disk
+                </span>
+              </li>
+              <li v-if="projectHasClips" class="flex items-start gap-2">
+                <Trash2 class="mt-0.5 size-3.5 shrink-0 text-danger" />
+                <span>
+                  <span class="font-medium text-fg">Delete:</span>
+                  unbuilt clips not being edited
+                </span>
+              </li>
+              <li v-if="projectHasClips" class="flex items-start gap-2">
+                <Check class="mt-0.5 size-3.5 shrink-0 text-success" />
+                <span>
+                  <span class="font-medium text-fg">Keep:</span>
+                  built clips (available in My Clips)
+                </span>
+              </li>
+              <li v-if="projectHasClips" class="flex items-start gap-2">
+                <Check class="mt-0.5 size-3.5 shrink-0 text-success" />
+                <span>
+                  <span class="font-medium text-fg">Keep:</span>
+                  clips currently in the editor
+                </span>
+              </li>
+            </ul>
+          </div>
+
+          <!-- Segments deletion option - only show if more than 1 segment -->
+          <div
+            v-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') > 1"
+            class="flex flex-col gap-2"
+          >
+            <p class="text-sm text-fg-muted">
+              This project contains
+              <span class="font-medium text-fg">{{ getChildCount(projectToDelete?.id || '') }} segments</span>
+              . What would you like to do with them?
+            </p>
+            <RadioGroup v-model="segmentDeleteMode" class="gap-2">
+              <label
+                v-for="option in segmentDeleteOptions"
+                :key="option.value"
+                class="flex cursor-pointer items-start gap-3 rounded-lg border p-3 transition-colors"
+                :class="
+                  segmentDeleteMode === option.value
+                    ? 'border-brand-line bg-brand-soft'
+                    : 'border-line-subtle hover:bg-surface-hover'
+                "
+              >
+                <RadioGroupItem :value="option.value" class="mt-0.5" />
+                <span class="min-w-0">
+                  <span class="block text-sm font-medium text-fg">{{ option.title }}</span>
+                  <span class="block text-xs text-fg-muted">{{ option.description }}</span>
+                </span>
+              </label>
+            </RadioGroup>
+          </div>
+
+          <!-- Single segment notice - auto-deleted with parent -->
+          <p
+            v-else-if="hasChildren(projectToDelete?.id || '') && getChildCount(projectToDelete?.id || '') === 1"
+            class="flex items-start gap-2 text-sm text-fg-muted"
+          >
+            <Info class="mt-0.5 size-4 shrink-0 text-fg-subtle" />
+            <span>
+              This project contains
+              <span class="font-medium text-fg">1 segment</span>
+              , which will also be deleted along with its video files.
             </span>
-            <span class="search-palette__results-count">{{ paletteSearchResults.length }} found</span>
-          </div>
-          <div class="search-palette__list">
-            <div
-              v-for="item in paletteSearchResults"
-              :key="item.id"
-              class="search-palette__item"
-              @click="selectPaletteResult(item)"
-            >
-              <div class="search-palette__item-thumb-wrap">
-                <div
-                  v-if="item.thumbnailUrl"
-                  class="search-palette__item-thumb"
-                  :style="{ backgroundImage: `url(${item.thumbnailUrl})` }"
-                ></div>
-                <div v-else class="search-palette__item-thumb search-palette__item-thumb--empty">
-                  <Folder class="w-5 h-5" />
-                </div>
-                <div v-if="item.isLive" class="search-palette__item-live-badge" title="Live">
-                  <Radio class="w-3 h-3" />
-                </div>
-              </div>
-
-              <div class="search-palette__item-content">
-                <div class="search-palette__item-title">{{ item.project.name }}</div>
-                <div class="search-palette__item-meta">
-                  <!-- Platform -->
-                  <span v-if="item.platform" class="search-palette__item-platform">
-                    {{ item.platform }}
-                  </span>
-                  <!-- Live Badge -->
-                  <span v-if="item.isLive" class="search-palette__item-live-tag">
-                    <span class="search-palette__live-dot"></span>
-                    Live
-                  </span>
-                  <!-- Clip Count -->
-                  <span v-if="item.clipCount > 0" class="search-palette__item-clips">
-                    {{ item.clipCount }} clip{{ item.clipCount !== 1 ? 's' : '' }}
-                  </span>
-                </div>
-              </div>
-
-              <div class="search-palette__item-arrow">
-                <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
-                  <path
-                    d="M6 4L10 8L6 12"
-                    stroke="currentColor"
-                    stroke-width="1.5"
-                    stroke-linecap="round"
-                    stroke-linejoin="round"
-                  />
-                </svg>
-              </div>
-            </div>
-          </div>
-        </div>
-      </template>
-
-      <!-- No Results -->
-      <template v-else-if="paletteSearchQuery || paletteActiveTab !== 'search'">
-        <div class="search-palette__empty-state">
-          <div class="search-palette__empty-icon-wrap">
-            <Search v-if="paletteActiveTab === 'search'" class="search-palette__empty-icon" />
-            <Radio v-else-if="paletteActiveTab === 'live'" class="search-palette__empty-icon" />
-            <Video v-else class="search-palette__empty-icon" />
-          </div>
-          <h3 class="search-palette__empty-title">
-            {{
-              paletteActiveTab === 'live'
-                ? 'No live projects'
-                : paletteActiveTab === 'with_clips'
-                  ? 'No projects with clips'
-                  : 'No projects found'
-            }}
-          </h3>
-          <p class="search-palette__empty-desc">
-            {{
-              paletteActiveTab === 'live'
-                ? 'Start monitoring a livestream to see it here'
-                : paletteActiveTab === 'with_clips'
-                  ? 'Detect clips in your projects to see them here'
-                  : 'Try a different search term'
-            }}
           </p>
         </div>
-      </template>
 
-      <!-- Initial State -->
-      <template v-else>
-        <div class="search-palette__empty-state">
-          <div class="search-palette__empty-icon-wrap search-palette__empty-icon-wrap--subtle">
-            <Search class="search-palette__empty-icon" />
-          </div>
-          <h3 class="search-palette__empty-title">Search your projects</h3>
-          <p class="search-palette__empty-desc">Find projects by name or description</p>
-        </div>
-      </template>
-    </SearchPalette>
+        <template #footer>
+          <Button variant="ghost" :disabled="deletingProject" @click="handleDeleteDialogClose">Cancel</Button>
+          <Button variant="destructive" :loading="deletingProject" @click="deleteProjectConfirmed">
+            {{
+              deletingProject
+                ? 'Deleting...'
+                : deleteSegmentsToo && hasChildren(projectToDelete?.id || '')
+                  ? getChildCount(projectToDelete?.id || '') === 1
+                    ? 'Delete project & segment'
+                    : `Delete project & ${getChildCount(projectToDelete?.id || '')} segments`
+                  : 'Delete project'
+            }}
+          </Button>
+        </template>
+      </Modal>
 
-    <!-- Existing Project Dialog -->
-    <ExistingProjectDialog
-      :show="showExistingProjectDialog"
-      :existing-project="existingProjectForClip"
-      @open-existing="onOpenExistingProject"
-      @create-new="onCreateNewProject"
-    />
+      <!-- Bulk Delete Confirmation Modal -->
+      <ConfirmationModal
+        :show="showBulkDeleteDialog"
+        :title="`Delete ${selectedProjects.size} projects`"
+        subtitle="This action cannot be undone"
+        :message="`Are you sure you want to delete ${selectedProjects.size} projects? This will also delete all associated segments and video files.`"
+        :confirm-text="bulkDeleting ? 'Deleting...' : `Delete ${selectedProjects.size} projects`"
+        close-text="Cancel"
+        suffix=""
+        :show-cannot-undone-text="false"
+        variant="destructive"
+        @close="handleBulkDeleteDialogClose"
+        @confirm="bulkDeleteConfirmed"
+      />
 
-    <!-- Auth Modal -->
-    <AuthModal v-model="showAuthModal" />
+      <!-- Bulk Delete Folder Children Confirmation Modal -->
+      <ConfirmationModal
+        :show="showBulkDeleteFolderChildrenDialog"
+        :title="`Delete ${selectedFolderChildren.size} segment${selectedFolderChildren.size !== 1 ? 's' : ''}`"
+        subtitle="This action cannot be undone"
+        :message="`Are you sure you want to delete ${selectedFolderChildren.size} segment${selectedFolderChildren.size !== 1 ? 's' : ''}? This will also delete all associated video files.`"
+        :confirm-text="`Delete ${selectedFolderChildren.size} segment${selectedFolderChildren.size !== 1 ? 's' : ''}`"
+        close-text="Cancel"
+        suffix=""
+        :show-cannot-undone-text="false"
+        variant="destructive"
+        @close="handleBulkDeleteFolderChildrenDialogClose"
+        @confirm="bulkDeleteFolderChildrenConfirmed"
+      />
 
-    <!-- Quick Publish Wizard -->
-    <QuickPublishWizard
-      :show="showFolderPublishWizard"
-      :clip="folderClipToPublish"
-      :clip-path="folderClipToPublishPath"
-      :project-id="folderProject?.id || ''"
-      :thumbnail-url="folderClipToPublishThumbnail"
-      @close="onFolderPublishWizardClose"
-    />
+      <!-- Search Palette Modal -->
+      <ProjectLibrarySearch :model="searchPaletteModel" />
 
-    <!-- VOD Preset Editor -->
-    <VodPresetEditor
-      v-model="showVodPresetEditor"
-      :project-id="vodPresetProject?.id || ''"
-      :initial-config="vodPresetInitialConfig"
-      :creator-profile-id="vodPresetProject?.creator_profile_id"
-      :thumbnail-url="vodPresetProject ? thumbnailCache.get(vodPresetProject.id) : null"
-      :video-path="(vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.file_path) || null"
-      :video-duration="(vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.duration) || 0"
-      @confirm="onVodPresetConfirmed"
-      @clear="onVodPresetCleared"
-    />
-  </PageLayout>
+      <!-- Existing Project Dialog -->
+      <ExistingProjectDialog
+        :show="showExistingProjectDialog"
+        :existing-project="existingProjectForClip"
+        @open-existing="onOpenExistingProject"
+        @create-new="onCreateNewProject"
+      />
+
+      <!-- Auth Modal -->
+      <AuthModal v-model="showAuthModal" />
+
+      <!-- Quick Publish Wizard -->
+      <QuickPublishWizard
+        :show="showFolderPublishWizard"
+        :clip="folderClipToPublish"
+        :clip-path="folderClipToPublishPath"
+        :project-id="folderProject?.id || ''"
+        :thumbnail-url="folderClipToPublishThumbnail"
+        @close="onFolderPublishWizardClose"
+      />
+
+      <!-- VOD Preset Editor -->
+      <VodPresetEditor
+        v-model="showVodPresetEditor"
+        :project-id="vodPresetProject?.id || ''"
+        :initial-config="vodPresetInitialConfig"
+        :creator-profile-id="vodPresetProject?.creator_profile_id"
+        :thumbnail-url="vodPresetProject ? thumbnailCache.get(vodPresetProject.id) : null"
+        :video-path="(vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.file_path) || null"
+        :video-duration="(vodPresetProject && projectVideos[vodPresetProject.id]?.[0]?.duration) || 0"
+        @confirm="onVodPresetConfirmed"
+        @clear="onVodPresetCleared"
+      />
+    </template>
+  </ProjectLibraryView>
 </template>
 
 <script setup lang="ts">
-  import { ref, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
+  import type { ProjectFormData } from '@/components/ProjectDialog.vue';
+  import ProjectLibraryView from '@/components/ProjectLibraryView.vue';
+  import { statusOptions, getDateLabel } from '@/lib/projectLibraryPresentation';
+  import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import { invoke } from '@tauri-apps/api/core';
   import { formatDateTime, formatDate, toDate } from '@/utils/dateTimeUtils';
   import { listen, type UnlistenFn } from '@tauri-apps/api/event';
@@ -1345,28 +630,18 @@
     Radio,
     List,
     FolderOpen,
-    X,
     XCircle,
     Search,
-    Clock,
-    Monitor,
     Check,
     Sparkles,
     Loader2,
     Video,
-    Flame,
-    ExternalLink,
     PlayIcon,
-    Hammer,
-    DownloadIcon,
-    ChevronDownIcon,
-    BrainIcon,
     Pause,
     VolumeX,
     Volume2,
     Maximize2,
     Minimize2,
-    HelpCircle,
     AlertTriangle,
     Info,
     FileText,
@@ -1401,10 +676,7 @@
     hasTranscriptForProject,
     isLiveClipsContainerProject,
   } from '@/services/database';
-  import {
-    isShortVideoAutoClipEligible,
-    SHORT_VIDEO_CLIP_THRESHOLD_SECONDS,
-  } from '@/services/database/auto-clips';
+  import { isShortVideoAutoClipEligible, SHORT_VIDEO_CLIP_THRESHOLD_SECONDS } from '@/services/database/auto-clips';
   import { useInEditorClips } from '@/stores/useInEditorClips';
   import { useClipThumbnailStore } from '@/stores/clipThumbnails';
   import { persistentCache } from '@/utils/persistentCache';
@@ -1417,14 +689,26 @@
   import { useDownloads } from '@/composables/useDownloads';
   import { resolveAutoBrandingProfile } from '@/composables/useBrandingProfileSelection';
   import PageLayout from '@/components/PageLayout.vue';
-  import SkeletonGrid from '@/components/SkeletonGrid.vue';
-  import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue';
   import ProjectWorkspaceDialog from '@/components/ProjectWorkspaceDialog.vue';
   import PaginationFooter from '@/components/PaginationFooter.vue';
-  import { Input } from '@/components/ui/input';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import DownloadCard from '@/components/DownloadCard.vue';
-  import SearchPalette, { type SearchPaletteTab } from '@/components/SearchPalette.vue';
+  import SearchPaletteItem from '@/components/SearchPaletteItem.vue';
+  import SearchPaletteTrigger from '@/components/SearchPaletteTrigger.vue';
+  import LibraryCardAction from '@/components/library/LibraryCardAction.vue';
+  import LibrarySelectCheckbox from '@/components/library/LibrarySelectCheckbox.vue';
+  import ProjectLibrarySearch from '@/components/ProjectLibrarySearch.vue';
+  import { Badge } from '@/components/ui/badge';
+  import { Button } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { Modal } from '@/components/ui/modal';
+  import { RadioGroup, RadioGroupItem } from '@/components/ui/radio-group';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
+  import { PlatformLogo, platformLabel } from '@/components/ui/platform-logo';
+  import { SelectionBar } from '@/components/ui/selection-bar';
+  import { MediaChip } from '@/components/ui/media-tile';
+  import { type SearchPaletteTab } from '@/components/SearchPalette.vue';
   import ClipDetectionConfirmDialog from '@/components/ClipDetectionConfirmDialog.vue';
   import TranscriptionConfirmDialog from '@/components/TranscriptionConfirmDialog.vue';
   import ClipBuildSettingsDialog, {
@@ -1610,19 +894,15 @@
   const paletteSearchQuery = ref('');
   const paletteActiveTab = ref<'search' | 'live' | 'with_clips'>('search');
 
-  const statusOptions = [
-    { label: 'All Status', value: 'all' },
-    { label: 'Live Now', value: 'live' },
-    { label: 'Has Clips', value: 'has_clips' },
-  ];
+  // Folder / list view switch (hierarchy is ignored while searching or filtering by clips)
 
   const sortOptions = [
-    { label: 'Updated: Newest', value: 'updated-desc' },
-    { label: 'Updated: Oldest', value: 'updated-asc' },
-    { label: 'Created: Newest', value: 'created-desc' },
-    { label: 'Created: Oldest', value: 'created-asc' },
-    { label: 'Name: A-Z', value: 'name-asc' },
-    { label: 'Name: Z-A', value: 'name-desc' },
+    { label: 'Updated: newest', value: 'updated-desc' },
+    { label: 'Updated: oldest', value: 'updated-asc' },
+    { label: 'Created: newest', value: 'created-desc' },
+    { label: 'Created: oldest', value: 'created-asc' },
+    { label: 'Name: A–Z', value: 'name-asc' },
+    { label: 'Name: Z–A', value: 'name-desc' },
   ];
 
   // Count live projects and projects with clips for palette tabs
@@ -1636,16 +916,16 @@
 
   // Computed tabs for search palette
   const projectsPaletteTabs = computed((): SearchPaletteTab[] => [
-    { id: 'search', label: 'Search All', icon: Search },
+    { id: 'search', label: 'All', icon: Search },
     {
       id: 'live',
-      label: 'Live Projects',
+      label: 'Live',
       icon: Radio,
       badge: liveProjectsCount.value > 0 ? liveProjectsCount.value : undefined,
     },
     {
       id: 'with_clips',
-      label: 'With Clips',
+      label: 'With clips',
       icon: Video,
       badge: projectsWithClipsCount.value > 0 ? projectsWithClipsCount.value : undefined,
     },
@@ -2217,18 +1497,28 @@
   // Store unlisten functions for Tauri event cleanup
   const clipBuildUnlistenFunctions = ref<UnlistenFn[]>([]);
 
-  // Computed class for folder dialog size based on active tab and content
-  const folderDialogSizeClass = computed(() => {
+  // Modal size for the folder dialog based on active tab and content
+  const folderDialogSize = computed(() => {
     if (folderActiveTab.value === 'clips') {
       // Wide layout for 2-column view with inline video player
-      return 'folder-dialog--xl';
+      return '2xl' as const;
     }
     // For segments tab, base width on segment count
     const segmentCount = folderProject.value ? getEffectiveSegmentCount(folderProject.value.id) : 0;
-    if (segmentCount <= 1) return 'folder-dialog--sm';
-    if (segmentCount === 2) return 'folder-dialog--md';
-    return 'folder-dialog--lg';
+    if (segmentCount <= 1) return 'md' as const;
+    if (segmentCount === 2) return 'lg' as const;
+    return 'xl' as const;
   });
+
+  const folderTabOptions = computed((): SegmentedOption<'segments' | 'clips'>[] => [
+    {
+      value: 'segments',
+      label: 'Segments',
+      icon: FolderOpen,
+      count: folderProject.value ? getEffectiveSegmentCount(folderProject.value.id) : 0,
+    },
+    { value: 'clips', label: 'Clips', icon: Video, count: folderTotalClipsCount.value },
+  ]);
   const folderDropdownButtonRefs = ref<Map<string, HTMLElement>>(new Map());
   const clipToPreview = ref<ClipWithVersionAndSegment | null>(null);
 
@@ -2920,10 +2210,7 @@
       let watermarkSettingsRaw: string | null = null;
 
       // Validate stored project watermark against current auto-branding rules
-      async function isStoredWatermarkValid(
-        projectId: string,
-        storedWatermarkId: string
-      ): Promise<boolean> {
+      async function isStoredWatermarkValid(projectId: string, storedWatermarkId: string): Promise<boolean> {
         const autoProfile = await resolveAutoBrandingProfile(projectId);
         if (!autoProfile?.watermark_id) return false;
         return String(autoProfile.watermark_id) === String(storedWatermarkId);
@@ -3278,9 +2565,7 @@
             const segEnd = typeof seg.end_time === 'number' ? seg.end_time : 0;
             const segStart = typeof seg.start_time === 'number' ? seg.start_time : 0;
             const looksZeroBased = clipDuration > 0 && segEnd <= clipDuration + 0.5 && segStart >= 0;
-            const start_time = looksZeroBased
-              ? Math.max(0, segStart)
-              : Math.max(0, segStart - clipStartOffset);
+            const start_time = looksZeroBased ? Math.max(0, segStart) : Math.max(0, segStart - clipStartOffset);
             const end_time = looksZeroBased
               ? Math.min(clipDuration || segEnd, segEnd)
               : Math.min(clipDuration, segEnd - clipStartOffset);
@@ -5189,22 +4474,6 @@
     return groups;
   });
 
-  function getDateLabel(timestamp: number): string {
-    const d = toDate(timestamp);
-    if (isNaN(d.getTime())) return 'Unknown';
-    const now = new Date();
-    const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-    const yesterday = new Date(today);
-    yesterday.setDate(yesterday.getDate() - 1);
-
-    const projectDate = new Date(d.getFullYear(), d.getMonth(), d.getDate());
-
-    if (projectDate.getTime() === today.getTime()) return 'Today';
-    if (projectDate.getTime() === yesterday.getTime()) return 'Yesterday';
-
-    return formatDate(d);
-  }
-
   // Pagination functions
   function goToPage(page: number) {
     if (page >= 1 && page <= totalPages.value) {
@@ -5419,6 +4688,26 @@
       showDeleteDialog.value = true;
     }
   }
+
+  // Radio values can't be booleans, so map the "delete segments too" flag
+  const segmentDeleteMode = computed({
+    get: () => (deleteSegmentsToo.value ? 'delete' : 'keep'),
+    set: (value: string) => {
+      deleteSegmentsToo.value = value === 'delete';
+    },
+  });
+
+  const segmentDeleteOptions = computed(() => {
+    const count = projectToDelete.value ? getChildCount(projectToDelete.value.id) : 0;
+    return [
+      { value: 'keep', title: 'Keep segments', description: 'Segments will be un-grouped and remain in your library' },
+      {
+        value: 'delete',
+        title: 'Delete all segments',
+        description: `All ${count} segments will be permanently deleted`,
+      },
+    ];
+  });
 
   function handleDeleteDialogClose() {
     showDeleteDialog.value = false;
@@ -5765,9 +5054,7 @@
         const dur = getProjectVideoDurationSeconds(projectId);
         return dur > 0 && isShortVideoAutoClipEligible(dur);
       }
-      return segmentsWithVideo.every((child) =>
-        isShortVideoAutoClipEligible(getProjectVideoDurationSeconds(child.id))
-      );
+      return segmentsWithVideo.every((child) => isShortVideoAutoClipEligible(getProjectVideoDurationSeconds(child.id)));
     }
 
     const duration = getProjectVideoDurationSeconds(projectId);
@@ -6216,1167 +5503,102 @@
     });
     clipBuildUnlistenFunctions.value = [];
   });
+
+  const searchPaletteModel = reactive({
+    closeSearchPalette,
+    onPaletteTabChange,
+    paletteActiveTab,
+    paletteSearchQuery,
+    paletteSearchResults,
+    projectsPaletteTabs,
+    selectPaletteResult,
+    showSearchPalette,
+  });
+  const libraryModel = reactive({
+    canDetectClips,
+    canTranscribe,
+    clearSelection,
+    confirmBulkDelete,
+    currentPage,
+    editProject,
+    filteredProjects,
+    getActiveDownloads,
+    getChildCount,
+    getClipCount,
+    getProjectDuration,
+    getProjectPlatform,
+    getQueuedDownloads,
+    getRelativeTime,
+    getThumbnailUrl,
+    goToPage,
+    groupedProjects,
+    handleCancelAllDownloads,
+    handleProjectClick,
+    hasAnySelectedProjectDetecting,
+    hasChildren,
+    hasDirectVideos,
+    hasVodPreset,
+    isAIAllowed,
+    isLiveClipsContainerProject,
+    isProjectDetecting,
+    isProjectLive,
+    isProjectSelected,
+    isProjectTranscribed,
+    loading,
+    mockProjectActive,
+    nextPage,
+    openCreateDialog,
+    openSearchPalette,
+    openVodPresetEditor,
+    paginatedProjects,
+    previousPage,
+    projects,
+    searchQuery,
+    selectAllCurrentPage,
+    selectedProjects,
+    sortBy,
+    sortOptions,
+    startProjectDetection,
+    startTranscription,
+    statusFilter,
+    statusOptions,
+    toggleProjectSelection,
+    totalPages,
+    viewMode,
+    vodPresetConfigs,
+  });
 </script>
 
 <style scoped>
-  /* ===== Content Container ===== */
-  .projects__content {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: 1.5rem;
-    width: 100%;
-    flex: 1;
-  }
-
-  .projects__content--empty {
-    justify-content: center;
-    align-items: center;
-  }
-
-  .projects__main {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding-bottom: 2rem;
-  }
-
-  .projects__loading {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-  }
-
-  /* ===== Page Heading ===== */
-  .projects__heading {
-    margin-bottom: 0.5rem;
-  }
-
-  .projects__title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.2rem;
-    letter-spacing: -0.02em;
-  }
-
-  .projects__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  /* ===== Header Actions ===== */
-  .projects-header-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .projects-header__search {
-    position: relative;
-    width: 200px;
-  }
-
-  .projects-header__search-icon {
-    position: absolute;
-    left: 0.625rem;
-    top: 50%;
-    transform: translateY(-50%);
-    width: 14px;
-    height: 14px;
-    color: var(--sidebar-text-muted);
-    pointer-events: none;
-  }
-
-  .projects-header__search-input {
-    width: 100%;
-    padding-left: 2rem;
-    height: 32px;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    font-size: 0.75rem;
-  }
-
-  .projects-header__search-input:focus {
-    border-color: var(--sidebar-accent);
-    outline: none;
-  }
-
-  .projects-header__filter {
-    width: 110px;
-    flex-shrink: 0;
-  }
-
-  .projects-header__sort {
-    width: 140px;
-    flex-shrink: 0;
-  }
-
-  /* Dropdown trigger button styling */
-  :deep(.projects-header__dropdown-trigger) {
-    height: 32px !important;
-    padding: 0 0.625rem !important;
-    background-color: var(--sidebar-surface) !important;
-    border: 1px solid var(--sidebar-border) !important;
-    border-radius: 6px !important;
-    font-size: 0.75rem !important;
-    color: var(--sidebar-text) !important;
-    transition: all 150ms ease !important;
-  }
-
-  :deep(.projects-header__dropdown-trigger:hover) {
-    border-color: rgba(255, 255, 255, 0.15) !important;
-  }
-
-  :deep(.projects-header__dropdown-trigger span) {
-    color: var(--sidebar-text) !important;
-  }
-
-  :deep(.projects-header__dropdown-trigger svg) {
-    width: 12px !important;
-    height: 12px !important;
-    color: var(--sidebar-text-muted) !important;
-  }
-
-  .projects-header__view-toggle {
-    display: flex;
-    align-items: center;
-    padding: 0.125rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    transition: opacity 150ms ease;
-  }
-
-  .projects-header__view-toggle--disabled {
-    opacity: 0.5;
-    pointer-events: none;
-  }
-
-  .projects-header__view-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 26px;
-    height: 26px;
-    background: transparent;
-    border: none;
-    border-radius: 4px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .projects-header__view-btn:hover:not(:disabled) {
-    color: var(--sidebar-text);
-  }
-
-  .projects-header__view-btn--active {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .projects-header__view-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  .projects-create-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    height: 32px;
-    padding: 0 0.875rem;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border: none;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .projects-create-btn:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .projects-create-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .projects-create-btn__icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* ===== Skeleton Loading States ===== */
-  .projects-skeleton__card-title {
-    height: 16px;
-    width: 70%;
-    background: linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.1) 25%,
-      rgba(255, 255, 255, 0.2) 50%,
-      rgba(255, 255, 255, 0.1) 75%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    border-radius: 4px;
-    margin-bottom: 0.5rem;
-  }
-
-  .projects-skeleton__card-meta {
-    height: 12px;
-    width: 50%;
-    background: linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.1) 25%,
-      rgba(255, 255, 255, 0.2) 50%,
-      rgba(255, 255, 255, 0.1) 75%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    animation-delay: 0.15s;
-    border-radius: 4px;
-  }
-
-  @keyframes shimmer {
-    0% {
-      background-position: 200% 0;
-    }
-    100% {
-      background-position: -200% 0;
-    }
-  }
-
-  /* ===== Selection Bar ===== */
-  .projects__selection-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .projects__selection-info {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    font-weight: 500;
-  }
-
-  .projects__selection-icon {
-    width: 16px;
-    height: 16px;
-    color: var(--sidebar-accent);
-  }
-
-  .projects__selection-action {
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--sidebar-accent);
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    padding: 0.375rem 0;
-    transition: opacity 150ms ease;
-  }
-
-  .projects__selection-action:hover {
-    opacity: 0.8;
-  }
-
-  .projects__selection-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .projects__selection-clear {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .projects__selection-clear:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .projects__selection-delete {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: white;
-    background-color: #ef4444;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .projects__selection-delete:hover:not(:disabled) {
-    background-color: #dc2626;
-  }
-
-  .projects__selection-delete--disabled {
-    background-color: #6b7280;
-    cursor: not-allowed;
-    opacity: 0.5;
-  }
-
-  .projects__selection-delete-icon {
-    width: 13px;
-    height: 13px;
-  }
-
-  /* Selection Bar Transitions */
-  .selection-bar-enter-active {
-    animation: slideDown 0.2s ease-out;
-  }
-
-  .selection-bar-leave-active {
-    animation: slideUp 0.15s ease-in;
-  }
-
-  @keyframes slideDown {
-    from {
-      opacity: 0;
-      transform: translateY(-8px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  @keyframes slideUp {
-    from {
-      opacity: 1;
-      transform: translateY(0);
-    }
-    to {
-      opacity: 0;
-      transform: translateY(-8px);
-    }
-  }
-
-  /* ===== Sections ===== */
-  .projects__section {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .projects__date-group {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .projects__section-header-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1rem;
-  }
-
-  .projects__section-header {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    padding-bottom: 0.1rem;
-  }
-
-  .projects__cancel-all-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 0.875rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--text-secondary);
-    background: var(--bg-secondary);
-    border: 1px solid var(--border-color);
-    border-radius: 0.5rem;
-    cursor: pointer;
-    transition: all 0.15s ease;
-  }
-
-  .projects__cancel-all-btn:hover {
-    background: var(--bg-tertiary);
-    color: var(--text-primary);
-    border-color: var(--border-hover);
-  }
-
-  .projects__cancel-all-btn:active {
-    transform: scale(0.98);
-  }
-
-  /* ===== Projects Grid ===== */
-  .projects__grid {
+  /* Inline clip preview player (folder dialog → Clips tab) */
+  .inline-player__btn {
     display: grid;
-    grid-template-columns: repeat(1, 1fr);
-    gap: 1.25rem;
-  }
-
-  @media (min-width: 640px) {
-    .projects__grid {
-      grid-template-columns: repeat(1, 1fr);
-    }
-  }
-
-  @media (min-width: 1024px) {
-    .projects__grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (min-width: 1400px) {
-    .projects__grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  @media (min-width: 1800px) {
-    .projects__grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  @media (min-width: 2200px) {
-    .projects__grid {
-      grid-template-columns: repeat(5, 1fr);
-    }
-  }
-
-  /* List View Override */
-  .projects__grid--list {
-    grid-template-columns: 1fr !important;
-  }
-
-  /* ===== Project Card ===== */
-  .project-card {
-    position: relative;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: all 200ms ease;
-    aspect-ratio: 16 / 9;
-  }
-
-  .project-card:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.25);
-    transform: scale(1.02);
-  }
-
-  .project-card--selected {
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
-  }
-
-  .project-card--selected:hover {
-    border-color: var(--sidebar-accent);
-  }
-
-  .project-card--skeleton {
-    pointer-events: none;
-  }
-
-  /* List View Card */
-  .project-card--list {
-    aspect-ratio: unset !important;
-    display: flex;
-    flex-direction: row;
-    align-items: center;
-    min-height: 96px;
-    padding: 0.75rem;
-    gap: 1rem;
-    background-color: rgba(255, 255, 255, 0.02);
-    border-radius: 8px;
-  }
-
-  .project-card--list:hover {
-    transform: translateY(-1px);
-    background-color: rgba(255, 255, 255, 0.04);
-    border-color: rgba(255, 255, 255, 0.2);
-  }
-
-  .project-card--list .project-card__thumbnail,
-  .project-card--list .project-card__thumbnail--empty {
-    position: relative;
-    width: 140px;
-    min-width: 140px;
-    height: 80px;
-    border-radius: 6px;
-    overflow: hidden;
-  }
-
-  .project-card--list .project-card__vignette {
-    display: none;
-  }
-
-  .project-card--list .project-card__bottom {
-    position: relative;
-    background: transparent;
-    padding: 0;
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    justify-content: center;
-    gap: 0.375rem;
-    min-width: 0;
-  }
-
-  .project-card--list .project-card__title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.95);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    letter-spacing: -0.01em;
-  }
-
-  .project-card__cloud-badge {
-    margin-left: 0.5rem;
-    font-size: 0.625rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    color: rgba(139, 92, 246, 0.9);
-    vertical-align: middle;
-  }
-
-  .project-card--list .project-card__meta {
-    opacity: 0.65;
-    font-size: 0.8125rem;
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .project-card--list .project-card__hover-actions {
-    position: relative;
-    opacity: 1;
-    transform: none;
-    margin-left: auto;
-    padding-right: 0;
-    display: flex;
-    gap: 0.375rem;
-    align-items: center;
-  }
-
-  .project-card--list .project-card__badge {
-    left: 0.5rem;
-    top: 0.5rem;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-  }
-
-  .project-card--list .project-card__badge-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  .project-card--list .project-card__checkbox {
-    position: relative;
-    left: 0;
-    right: auto;
-    top: 0;
-    transform: none;
-    margin-right: 0.5rem;
-    opacity: 1;
-  }
-
-  .project-card--list .project-card__platform-icon,
-  .project-card--list .project-card__platform-svg {
-    width: 14px;
-    height: 14px;
-  }
-
-  .project-card--list .project-card__live {
-    font-size: 0.75rem;
-    padding: 0.125rem 0.5rem;
-  }
-
-  .project-card--list .project-card__live-dot {
-    width: 6px;
-    height: 6px;
-  }
-
-  .project-card--list .project-card__live-ping,
-  .project-card--list .project-card__live-core {
-    width: 6px;
-    height: 6px;
-  }
-
-  .project-card--list .project-card__dot {
-    width: 3px;
-    height: 3px;
-    opacity: 0.4;
-  }
-
-  .project-card--list .project-card__empty-icon {
-    transform: scale(0.7);
-  }
-
-  .project-card--list .project-card__empty-live {
-    transform: scale(0.7);
-  }
-
-  .project-card__skeleton-bg {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, var(--sidebar-hover) 0%, var(--sidebar-surface) 100%);
-  }
-
-  /* Checkbox */
-  .project-card__checkbox {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    z-index: 30;
-    opacity: 0;
-    transition: opacity 150ms ease;
-  }
-
-  .project-card:hover .project-card__checkbox,
-  .project-card__checkbox--visible {
-    opacity: 1;
-  }
-
-  .project-card__checkbox-inner {
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(0, 0, 0, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.45);
-    color: white;
-    cursor: pointer;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-    transition: all 150ms ease;
-  }
-
-  .project-card__checkbox-inner:hover {
-    background-color: rgba(0, 0, 0, 0.8);
-  }
-
-  .project-card__checkbox-inner--checked {
-    background-color: var(--sidebar-accent);
-    border-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-  }
-
-  .project-card__checkbox-inner--checked:hover {
-    background-color: var(--sidebar-accent);
-    border-color: var(--sidebar-accent);
-  }
-
-  .project-card__checkbox-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  /* Badges */
-  .project-card__badge {
-    position: absolute;
-    top: 1rem;
-    left: 1rem;
-    z-index: 20;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.3125rem 0.5rem;
-    border-radius: 5px;
-    font-size: 0.625rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-    backdrop-filter: blur(8px);
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  }
-
-  .project-card__badge--detecting {
-    background-color: rgba(147, 51, 234, 0.3);
-    color: #c4b5fd;
-  }
-
-  .project-card__badge--folder {
-    background-color: rgba(59, 130, 246, 0.3);
-    color: #93c5fd;
-  }
-
-  .project-card__badge-icon {
-    width: 10px;
-    height: 10px;
-  }
-
-  .project-card__badge-icon--spin {
-    animation: spin 0.8s linear infinite;
-  }
-
-  .project-card__preset-badge {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.625rem;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    border-radius: 0.375rem;
-    backdrop-filter: blur(8px);
-    z-index: 5;
-    background-color: rgba(16, 185, 129, 0.3);
-    color: #6ee7b7;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-  }
-
-  @keyframes spin {
-    from {
-      transform: rotate(0deg);
-    }
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  /* Thumbnail */
-  .project-card__thumbnail {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-  }
-
-  .project-card__vignette {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.85) 0%, rgba(0, 0, 0, 0.4) 40%, transparent 70%);
-  }
-
-  .project-card__thumbnail--empty {
-    background-color: var(--sidebar-hover);
-  }
-
-  .project-card__thumbnail-gradient {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(135deg, rgba(0, 0, 0, 0.5) 0%, rgba(0, 0, 0, 0.4) 50%, rgba(0, 0, 0, 0.5) 100%);
-  }
-
-  /* Empty State Icons */
-  .project-card__empty-live {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    opacity: 0.5;
-  }
-
-  .project-card__empty-live-pulse {
-    position: relative;
-  }
-
-  .project-card__empty-live-ring {
-    position: absolute;
-    inset: 0;
-    background-color: #ef4444;
-    border-radius: 9999px;
-    animation: ping 1.5s cubic-bezier(0, 0, 0.2, 1) infinite;
-    opacity: 0.2;
-  }
-
-  .project-card__empty-live-icon {
-    width: 48px;
-    height: 48px;
-    color: #ef4444;
-    position: relative;
-    z-index: 10;
-  }
-
-  .project-card__empty-live-text {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .project-card__empty-icon {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    opacity: 0.2;
-  }
-
-  .project-card__folder-icon {
-    width: 64px;
-    height: 64px;
-    color: var(--sidebar-text);
-  }
-
-  @keyframes ping {
-    75%,
-    100% {
-      transform: scale(2);
-      opacity: 0;
-    }
-  }
-
-  /* Bottom Info */
-  .project-card__bottom {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 5;
-    padding: 1rem;
-    padding-top: 7rem;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.9) 0%, rgba(0, 0, 0, 0.7) 50%, transparent 100%);
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .project-card__title {
-    font-size: 1rem;
-    font-weight: 700;
-    color: white;
-    margin: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-    line-height: 1.3;
+    place-items: center;
+    color: #fff;
     transition: color 150ms ease;
   }
 
-  .project-card:hover .project-card__title {
-    color: rgba(255, 255, 255, 0.9);
+  .inline-player__btn:hover {
+    color: var(--brand);
   }
 
-  .project-card__meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.7);
-    flex-wrap: wrap;
-  }
-
-  .project-card__meta-text {
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .project-card__dot {
-    width: 3px;
-    height: 3px;
-    border-radius: 50%;
-    background-color: rgba(255, 255, 255, 0.4);
-    flex-shrink: 0;
-  }
-
-  /* Platform Icons */
-  .project-card__platform {
-    width: 16px;
-    height: 16px;
-    border-radius: 4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.2);
-  }
-
-  .project-card__platform--youtube {
-    background-color: #dc2626;
-  }
-
-  .project-card__platform--twitch {
-    background-color: #9146ff;
-  }
-
-  .project-card__platform--kick {
-    background-color: #53fc18;
-  }
-
-  .project-card__platform--rumble {
-    background-color: #85c742;
-  }
-
-  .project-card__platform--twitter {
-    background-color: #000000;
-  }
-
-  .project-card__platform--pumpfun {
-    background-color: #10b981;
-  }
-
-  .project-card__platform--manual {
-    background-color: #475569;
-    color: white;
-  }
-
-  .project-card__platform-icon {
-    width: 10px;
-    height: 10px;
-    filter: invert(1) brightness(2);
-  }
-
-  .project-card__platform-icon--kick {
-    filter: none;
-  }
-
-  .project-card__platform-icon--pumpfun {
-    filter: brightness(2);
-  }
-
-  .project-card__platform-svg {
-    width: 10px;
-    height: 10px;
-  }
-
-  /* Live Indicator */
-  .project-card__live {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.125rem 0.375rem;
-    background-color: rgba(239, 68, 68, 0.1);
-    border: 1px solid rgba(239, 68, 68, 0.2);
-    border-radius: 9999px;
-    color: #ef4444;
-    font-weight: 700;
-  }
-
-  .project-card__live-dot {
-    position: relative;
-    display: flex;
-    width: 6px;
-    height: 6px;
-  }
-
-  .project-card__live-ping {
-    position: absolute;
-    inset: 0;
-    border-radius: 9999px;
-    background-color: #f87171;
-    opacity: 0.75;
-    animation: ping 1s cubic-bezier(0, 0, 0.2, 1) infinite;
-  }
-
-  .project-card__live-core {
-    position: relative;
-    width: 6px;
-    height: 6px;
-    border-radius: 9999px;
-    background-color: #ef4444;
-  }
-
-  .project-card__live-text {
-    font-size: 0.625rem;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  /* Hover Actions */
-  .project-card__hover-actions {
-    position: absolute;
-    inset: 0;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    background-color: rgba(0, 0, 0, 0.4);
-    opacity: 0;
-    transition: opacity 200ms ease;
-  }
-
-  .project-card:hover .project-card__hover-actions {
-    opacity: 1;
-  }
-
-  .project-card__action-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.5rem;
-    background-color: rgba(255, 255, 255, 0.9);
-    border: none;
-    border-radius: 9999px;
-    color: #1f2937;
-    cursor: pointer;
-    transition: all 150ms ease;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-  }
-
-  .project-card__action-btn--transcribed {
-    background-color: rgba(34, 197, 94, 0.9);
-    color: white;
-  }
-
-  .project-card__action-btn--transcribed:hover {
-    background-color: #22c55e;
-  }
-
-  .project-card__action-btn--preset-active {
-    background-color: rgba(16, 185, 129, 0.9);
-    color: white;
-  }
-
-  .project-card__action-btn--preset-active:hover {
-    background-color: #10b981;
-  }
-
-  .project-card__action-btn:hover {
-    background-color: white;
-    transform: scale(1.1);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  }
-
-  .project-card__action-icon {
-    width: 20px;
-    height: 20px;
-  }
-
-  /* ===== No Results State ===== */
-  .projects__no-results {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 1rem;
-    text-align: center;
-  }
-
-  .projects__no-results-icon-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: center;
+  .inline-player__volume {
     width: 64px;
-    height: 64px;
-    background-color: var(--sidebar-hover);
+    height: 4px;
+    appearance: none;
     border-radius: 9999px;
-    margin-bottom: 1rem;
-  }
-
-  .projects__no-results-icon {
-    width: 32px;
-    height: 32px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .projects__no-results-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.25rem;
-  }
-
-  .projects__no-results-description {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 1rem;
-    max-width: 24rem;
-  }
-
-  .projects__no-results-btn {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-accent);
-    background: transparent;
-    border: none;
+    background-color: rgba(255, 255, 255, 0.2);
     cursor: pointer;
-    transition: opacity 150ms ease;
   }
 
-  .projects__no-results-btn:hover {
-    opacity: 0.8;
-    text-decoration: underline;
+  .inline-player__volume::-webkit-slider-thumb {
+    width: 10px;
+    height: 10px;
+    appearance: none;
+    border-radius: 9999px;
+    background-color: #fff;
   }
 
-  /* ===== Empty State ===== */
-  .projects__empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-  }
-
-  .projects__empty-icon-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 72px;
-    height: 72px;
-    background-color: var(--sidebar-hover);
-    border-radius: 16px;
-    margin-bottom: 1.5rem;
-  }
-
-  .projects__empty-icon {
-    width: 36px;
-    height: 36px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .projects__empty-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
-  }
-
-  .projects__empty-description {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    max-width: 300px;
-  }
-
-  /* ===== Fullscreen Video Player ===== */
   .inline-video-fullscreen {
     position: fixed !important;
     inset: 0 !important;
@@ -7394,2063 +5616,5 @@
     width: 100% !important;
     height: 100% !important;
     object-fit: contain !important;
-  }
-
-  /* ========================================
-     FOLDER DIALOG STYLES
-     ======================================== */
-
-  /* ===== Overlay ===== */
-  .folder-dialog__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-  }
-
-  /* ===== Dialog Container ===== */
-  .folder-dialog {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    width: 100%;
-    margin: 1rem;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  }
-
-  .folder-dialog--sm {
-    max-width: 520px;
-  }
-
-  .folder-dialog--md {
-    max-width: 768px;
-  }
-
-  .folder-dialog--lg {
-    max-width: 1024px;
-  }
-
-  .folder-dialog--xl {
-    max-width: 1280px;
-  }
-
-  /* ===== Accent Bar ===== */
-  .folder-dialog__accent {
-    height: 3px;
-    background: linear-gradient(90deg, var(--sidebar-accent), rgba(6, 182, 212, 0.5));
-    flex-shrink: 0;
-  }
-
-  /* ===== Header (Compact) ===== */
-  .folder-dialog__header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.625rem 0.75rem;
-    background-color: rgba(0, 0, 0, 0.3);
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .folder-dialog__header-left {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    min-width: 0;
-  }
-
-  .folder-dialog__header-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    border-radius: 6px;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-    flex-shrink: 0;
-  }
-
-  .folder-dialog__title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .folder-dialog__close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-    flex-shrink: 0;
-  }
-
-  .folder-dialog__close:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  /* ===== Selection Controls ===== */
-  .folder-dialog__selection-delete {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-    border: none;
-    border-radius: 6px;
-    color: white;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .folder-dialog__selection-delete:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .folder-dialog__selection-delete--disabled,
-  .folder-dialog__selection-delete:disabled {
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    cursor: not-allowed;
-    opacity: 0.6;
-  }
-
-  .folder-dialog__selection-count {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .folder-dialog__selection-clear {
-    background: none;
-    border: none;
-    padding: 0.25rem 0.5rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: color 150ms ease;
-  }
-
-  .folder-dialog__selection-clear:hover {
-    color: var(--sidebar-text);
-  }
-
-  /* ===== Tabs ===== */
-  .folder-dialog__tabs {
-    display: flex;
-    gap: 0.25rem;
-    padding: 0 1rem;
-    background-color: rgba(0, 0, 0, 0.2);
-    border-bottom: 1px solid var(--sidebar-border);
-    flex-shrink: 0;
-  }
-
-  .folder-dialog__tab {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.625rem 1rem;
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-    margin-bottom: -1px;
-  }
-
-  .folder-dialog__tab:hover {
-    color: var(--sidebar-text);
-  }
-
-  .folder-dialog__tab--active {
-    color: var(--sidebar-accent);
-    border-bottom-color: var(--sidebar-accent);
-  }
-
-  .folder-dialog__tab-count {
-    padding: 0.125rem 0.5rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 9999px;
-    font-size: 0.6875rem;
-    font-weight: 600;
-  }
-
-  .folder-dialog__tab--active .folder-dialog__tab-count {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-  }
-
-  /* ===== Tab guidance ===== */
-  .folder-dialog__guidance {
-    flex-shrink: 0;
-    padding: 0.75rem 1rem;
-    border-bottom: 1px solid var(--sidebar-border);
-    background-color: rgba(0, 0, 0, 0.15);
-  }
-
-  .folder-dialog__guidance--segments {
-    border-left: 3px solid var(--sidebar-accent);
-  }
-
-  .folder-dialog__guidance--clips {
-    border-left: 3px solid rgba(34, 197, 94, 0.85);
-  }
-
-  .folder-dialog__guidance-inner {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-  }
-
-  .folder-dialog__guidance-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-    width: 2rem;
-    height: 2rem;
-    border-radius: 8px;
-  }
-
-  .folder-dialog__guidance-icon--edit {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-  }
-
-  .folder-dialog__guidance-icon--publish {
-    background-color: rgba(34, 197, 94, 0.15);
-    color: #4ade80;
-  }
-
-  .folder-dialog__guidance-text {
-    min-width: 0;
-  }
-
-  .folder-dialog__guidance-title {
-    margin: 0 0 0.25rem;
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    line-height: 1.3;
-  }
-
-  .folder-dialog__guidance-body {
-    margin: 0;
-    font-size: 0.8125rem;
-    line-height: 1.45;
-    color: var(--sidebar-text-muted);
-  }
-
-  /* ===== Content ===== */
-  .folder-dialog__content {
-    flex: 1;
-    min-height: 0;
-    overflow-y: auto;
-    padding: 1.5rem;
-  }
-
-  .folder-dialog__content--clips {
-    display: flex;
-    padding: 0;
-    overflow: hidden;
-  }
-
-  .folder-dialog__content::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .folder-dialog__content::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .folder-dialog__content::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  /* ===== Segments Tab ===== */
-  .folder-dialog__segments {
-    width: 100%;
-  }
-
-  .folder-dialog__segments-grid {
-    display: grid;
-    gap: 1.25rem;
-  }
-
-  .folder-dialog__segments-grid--1 {
-    grid-template-columns: 1fr;
-  }
-
-  .folder-dialog__segments-grid--2 {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
-  .folder-dialog__segments-grid--3 {
-    grid-template-columns: repeat(3, 1fr);
-  }
-
-  /* ===== Segment Card ===== */
-  .folder-dialog__segment-card {
-    position: relative;
-    aspect-ratio: 16 / 9;
-    border-radius: 10px;
-    overflow: hidden;
-    cursor: pointer;
-    border: 1px solid var(--sidebar-border);
-    transition: all 200ms ease;
-  }
-
-  .folder-dialog__segment-card:hover {
-    transform: scale(1.02);
-    border-color: rgba(255, 255, 255, 0.15);
-  }
-
-  .folder-dialog__segment-card--selected {
-    border-color: var(--sidebar-accent);
-    box-shadow:
-      0 0 0 2px var(--sidebar-surface),
-      0 0 0 4px var(--sidebar-accent);
-  }
-
-  /* ===== Segment Checkbox ===== */
-  .folder-dialog__segment-checkbox {
-    position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
-    z-index: 30;
-    opacity: 0;
-    transition: opacity 150ms ease;
-  }
-
-  .folder-dialog__segment-card:hover .folder-dialog__segment-checkbox,
-  .folder-dialog__segment-checkbox--visible {
-    opacity: 1;
-  }
-
-  .folder-dialog__segment-checkbox-box {
-    width: 24px;
-    height: 24px;
-    border-radius: 6px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(0, 0, 0, 0.6);
-    border: 1px solid rgba(255, 255, 255, 0.45);
-    color: white;
-    cursor: pointer;
-    transition: all 150ms ease;
-    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
-  }
-
-  .folder-dialog__segment-checkbox-box:hover {
-    background-color: rgba(0, 0, 0, 0.8);
-  }
-
-  .folder-dialog__segment-checkbox-box--checked {
-    background-color: var(--sidebar-accent);
-    border-color: var(--sidebar-accent);
-  }
-
-  /* ===== Segment Thumbnail ===== */
-  .folder-dialog__segment-thumb {
-    position: absolute;
-    inset: 0;
-    background-size: cover;
-    background-position: center;
-    background-repeat: no-repeat;
-  }
-
-  .folder-dialog__segment-thumb--empty {
-    background-color: var(--sidebar-hover);
-  }
-
-  .folder-dialog__segment-thumb-overlay {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(to bottom right, rgba(0, 0, 0, 0.5), rgba(0, 0, 0, 0.2), rgba(0, 0, 0, 0.6));
-  }
-
-  .folder-dialog__segment-thumb-placeholder {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--sidebar-text);
-    opacity: 0.2;
-  }
-
-  /* ===== Segment Badges ===== */
-  .folder-dialog__segment-detecting {
-    position: absolute;
-    top: 0.75rem;
-    left: 0.75rem;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    background-color: rgba(147, 51, 234, 0.9);
-    backdrop-filter: blur(4px);
-    border-radius: 6px;
-    color: white;
-    font-size: 0.6875rem;
-    font-weight: 700;
-  }
-
-  .folder-dialog__segment-duration {
-    position: absolute;
-    top: 0.75rem;
-    left: 0.75rem;
-    z-index: 5;
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.625rem;
-    background-color: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    border-radius: 6px;
-    color: white;
-    font-size: 0.6875rem;
-    font-weight: 500;
-  }
-
-  /* ===== Segment Info ===== */
-  .folder-dialog__segment-info {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 5;
-    padding: 0.75rem;
-    background-color: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-  }
-
-  .folder-dialog__segment-name {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: white;
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .folder-dialog__segment-meta {
-    font-size: 0.6875rem;
-    color: rgba(255, 255, 255, 0.7);
-    margin: 0.25rem 0 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  /* ===== Segment Hover Overlay ===== */
-  .folder-dialog__segment-hover {
-    position: absolute;
-    inset: 0;
-    z-index: 10;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    background-color: rgba(0, 0, 0, 0.4);
-    opacity: 0;
-    transition: opacity 200ms ease;
-  }
-
-  .folder-dialog__segment-card:hover .folder-dialog__segment-hover {
-    opacity: 1;
-  }
-
-  .folder-dialog__segment-action {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    background-color: rgba(255, 255, 255, 0.9);
-    border: none;
-    border-radius: 9999px;
-    color: #1f2937;
-    cursor: pointer;
-    transition: all 150ms ease;
-    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.25);
-  }
-
-  .folder-dialog__segment-action--transcribed {
-    background-color: rgba(34, 197, 94, 0.9);
-    color: white;
-  }
-
-  .folder-dialog__segment-action--transcribed:hover {
-    background-color: #22c55e;
-  }
-
-  .folder-dialog__segment-action:hover {
-    background-color: white;
-    transform: scale(1.1);
-    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.35);
-  }
-
-  /* ===== Clips Tab Layout ===== */
-  .folder-dialog__clips-layout {
-    display: flex;
-    flex: 1;
-    height: 100%;
-    min-height: 0;
-  }
-
-  /* ===== Clips List Column ===== */
-  .folder-dialog__clips-list {
-    width: 480px;
-    flex-shrink: 0;
-    max-height: calc(85vh - 120px);
-    border-right: 1px solid var(--sidebar-border);
-    overflow-y: auto;
-    padding: 0 1rem 1rem 1rem;
-  }
-
-  .folder-dialog__clips-list::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .folder-dialog__clips-list::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .folder-dialog__clips-list::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  .folder-dialog__clips-loading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem 0;
-    color: var(--sidebar-text-muted);
-  }
-
-  .folder-dialog__clips-empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem 1rem;
-    text-align: center;
-  }
-
-  .folder-dialog__clips-empty-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 64px;
-    height: 64px;
-    background-color: var(--sidebar-hover);
-    border-radius: 9999px;
-    color: var(--sidebar-text-muted);
-    margin-bottom: 1rem;
-  }
-
-  .folder-dialog__clips-empty-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
-  }
-
-  .folder-dialog__clips-empty-text {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    max-width: 280px;
-  }
-
-  .folder-dialog__clips-items {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-    padding-bottom: 1rem;
-  }
-
-  /* ===== Clip Sections (Completed / Found) ===== */
-  .folder-dialog__clips-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-    margin-top: 0.75rem;
-  }
-
-  .folder-dialog__clips-section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.25rem 0.125rem;
-    color: var(--sidebar-text-muted);
-    font-size: 0.75rem;
-    letter-spacing: 0.02em;
-    text-transform: uppercase;
-  }
-
-  .folder-dialog__clips-section-title {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.4rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-  }
-
-  .folder-dialog__clips-section-label {
-    font-size: 0.8rem;
-    letter-spacing: 0.06em;
-    text-transform: uppercase;
-  }
-
-  .folder-dialog__clips-section-count {
-    font-variant-numeric: tabular-nums;
-    color: var(--sidebar-text-muted);
-    font-weight: 600;
-    opacity: 0.8;
-  }
-
-  .folder-dialog__clips-section-dot {
-    width: 9px;
-    height: 9px;
-    border-radius: 9999px;
-    display: inline-block;
-  }
-
-  .folder-dialog__clips-section-dot--completed {
-    background-color: #22c55e;
-  }
-
-  .folder-dialog__clips-section-dot--found {
-    background-color: #9ca3af;
-  }
-
-  /* ===== Clip Card ===== */
-  .folder-dialog__clip-card {
-    position: relative;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 200ms ease;
-    overflow: hidden;
-  }
-
-  .folder-dialog__clip-card:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-    background-color: var(--sidebar-active);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.2);
-  }
-
-  .folder-dialog__clip-card--active {
-    border-color: rgba(6, 182, 212, 0.5);
-    background-color: rgba(6, 182, 212, 0.05);
-    box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.3);
-  }
-
-  .folder-dialog__clip-accent {
-    position: absolute;
-    left: 0;
-    top: 0;
-    bottom: 0;
-    width: 3px;
-    opacity: 0.6;
-    border-radius: 10px 0 0 10px;
-  }
-
-  .folder-dialog__clip-content {
-    display: flex;
-    gap: 0.75rem;
-    padding: 0.75rem;
-    padding-left: 1rem;
-  }
-
-  /* ===== Clip Thumbnail ===== */
-  .folder-dialog__clip-thumb {
-    position: relative;
-    flex-shrink: 0;
-    width: 144px;
-    aspect-ratio: 16 / 9;
-    border-radius: 8px;
-    overflow: hidden;
-    background-color: rgba(0, 0, 0, 0.5);
-  }
-
-  .folder-dialog__clip-thumb-img {
-    position: absolute;
-    inset: 0;
-    background-size: cover;
-    background-position: center;
-  }
-
-  .folder-dialog__clip-thumb-placeholder {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--sidebar-text-muted);
-    opacity: 0.4;
-  }
-
-  .folder-dialog__clip-thumb-duration {
-    position: absolute;
-    bottom: 0.25rem;
-    right: 0.25rem;
-    padding: 0.125rem 0.375rem;
-    background-color: rgba(0, 0, 0, 0.7);
-    border-radius: 4px;
-    font-size: 0.625rem;
-    font-weight: 500;
-    color: white;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .folder-dialog__clip-thumb-hover {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(0, 0, 0, 0.4);
-    color: white;
-    opacity: 0;
-    transition: opacity 150ms ease;
-  }
-
-  .folder-dialog__clip-card:hover .folder-dialog__clip-thumb-hover {
-    opacity: 1;
-  }
-
-  /* ===== Clip Details ===== */
-  .folder-dialog__clip-details {
-    flex: 1;
-    min-width: 0;
-    display: flex;
-    flex-direction: column;
-    justify-content: space-between;
-    padding: 0.125rem 0;
-  }
-
-  .folder-dialog__clip-header {
-    display: flex;
-    align-items: flex-start;
-    justify-content: space-between;
-    gap: 0.5rem;
-  }
-
-  .folder-dialog__clip-title-row {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-    min-width: 0;
-  }
-
-  .folder-dialog__clip-index {
-    font-size: 0.6875rem;
-    font-weight: 700;
-    color: var(--sidebar-text-muted);
-    opacity: 0.5;
-    margin-top: 0.125rem;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .folder-dialog__clip-title {
-    font-size: 0.8125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    line-height: 1.4;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  /* ===== Clip Actions ===== */
-  .folder-dialog__clip-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.125rem;
-    flex-shrink: 0;
-    margin: -0.25rem -0.25rem 0 0;
-    opacity: 0;
-    transition: opacity 200ms ease;
-  }
-
-  .folder-dialog__clip-card:hover .folder-dialog__clip-actions,
-  .folder-dialog__clip-actions--visible {
-    opacity: 1;
-  }
-
-  .folder-dialog__clip-action {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    padding: 0.375rem;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .folder-dialog__clip-action--preview:hover {
-    background-color: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
-  }
-
-  .folder-dialog__clip-action--edit:hover {
-    background-color: rgba(59, 130, 246, 0.15);
-    color: #60a5fa;
-  }
-
-  .folder-dialog__clip-action--build:hover {
-    background-color: rgba(34, 197, 94, 0.15);
-    color: #4ade80;
-  }
-
-  .folder-dialog__clip-action--download {
-    display: flex;
-    align-items: center;
-    gap: 0.125rem;
-    color: rgba(34, 197, 94, 0.8);
-  }
-
-  .folder-dialog__clip-action--download:hover {
-    background-color: rgba(34, 197, 94, 0.15);
-    color: #4ade80;
-  }
-
-  .folder-dialog__clip-action--delete:hover {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-  }
-
-  .folder-dialog__clip-download {
-    position: relative;
-  }
-
-  /* ===== Download Menu ===== */
-  .folder-dialog__download-menu {
-    position: fixed;
-    z-index: 99999;
-    min-width: 260px;
-    max-width: 340px;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.4);
-    padding: 0.25rem 0;
-    max-height: 300px;
-    overflow-y: auto;
-  }
-
-  .folder-dialog__download-header {
-    padding: 0.5rem 0.75rem;
-    font-size: 0.625rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--sidebar-text-muted);
-    border-bottom: 1px solid var(--sidebar-border);
-    margin-bottom: 0.25rem;
-  }
-
-  .folder-dialog__download-item {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    width: 100%;
-    padding: 0.625rem 0.75rem;
-    background: transparent;
-    border: none;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-    font-size: 0.8125rem;
-    color: var(--sidebar-text);
-    text-align: left;
-    cursor: pointer;
-    transition: background-color 150ms ease;
-  }
-
-  .folder-dialog__download-item:last-child {
-    border-bottom: none;
-  }
-
-  .folder-dialog__download-item:hover {
-    background-color: var(--sidebar-hover);
-  }
-
-  .folder-dialog__download-item-icon {
-    flex-shrink: 0;
-    color: #4ade80;
-  }
-
-  .folder-dialog__download-item-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .folder-dialog__download-item-name {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-  }
-
-  .folder-dialog__download-item-ratio {
-    color: var(--sidebar-accent);
-    font-weight: 600;
-  }
-
-  .folder-dialog__download-item-number {
-    color: var(--sidebar-text-muted);
-    opacity: 0.7;
-  }
-
-  .folder-dialog__download-item-filename {
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .folder-dialog__download-item-meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    margin-top: 0.125rem;
-    font-size: 0.625rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  /* ===== Clip Metrics ===== */
-  .folder-dialog__clip-metrics {
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.5rem;
-  }
-
-  .folder-dialog__clip-badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    font-size: 0.6875rem;
-    font-weight: 500;
-  }
-
-  .folder-dialog__clip-badge--segment {
-    background-color: rgba(6, 182, 212, 0.1);
-    border: 1px solid rgba(6, 182, 212, 0.2);
-    color: var(--sidebar-text);
-    opacity: 0.7;
-  }
-
-  .folder-dialog__clip-badge--segment span {
-    max-width: 100px;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .folder-dialog__clip-badge--confidence {
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  /* ===== Clip Footer ===== */
-  .folder-dialog__clip-footer {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-top: auto;
-  }
-
-  .folder-dialog__clip-time {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    font-size: 0.6875rem;
-    font-family: ui-monospace, monospace;
-    font-variant-numeric: tabular-nums;
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  .folder-dialog__clip-status {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-  }
-
-  .folder-dialog__clip-status--building {
-    color: #60a5fa;
-  }
-
-  .folder-dialog__clip-status--built {
-    color: #4ade80;
-  }
-
-  .folder-dialog__clip-run {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  .folder-dialog__clip-run-dot {
-    width: 8px;
-    height: 8px;
-    border-radius: 9999px;
-  }
-
-  /* ===== Player Column ===== */
-  .folder-dialog__player {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    padding: 1rem;
-    overflow-y: auto;
-  }
-
-  .folder-dialog__player-empty {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-    background-color: rgba(0, 0, 0, 0.2);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-  }
-
-  .folder-dialog__player-empty-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 80px;
-    height: 80px;
-    background-color: var(--sidebar-hover);
-    border-radius: 9999px;
-    color: var(--sidebar-text-muted);
-    opacity: 0.4;
-    margin-bottom: 1rem;
-  }
-
-  .folder-dialog__player-empty-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    opacity: 0.8;
-    margin: 0 0 0.5rem;
-  }
-
-  .folder-dialog__player-empty-text {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-    margin: 0;
-    max-width: 280px;
-  }
-
-  .folder-dialog__player-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 0.75rem;
-  }
-
-  .folder-dialog__player-info {
-    min-width: 0;
-    flex: 1;
-  }
-
-  .folder-dialog__player-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .folder-dialog__player-segment {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .folder-dialog__player-close {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 28px;
-    height: 28px;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-    flex-shrink: 0;
-  }
-
-  .folder-dialog__player-close:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  /* ===== Video Container ===== */
-  .folder-dialog__player-video {
-    position: relative;
-    width: 100%;
-    aspect-ratio: 16 / 9;
-    background-color: black;
-    border-radius: 10px;
-    overflow: hidden;
-  }
-
-  .folder-dialog__player-video-el {
-    width: 100%;
-    height: 100%;
-    object-fit: contain;
-  }
-
-  .folder-dialog__player-loading,
-  .folder-dialog__player-no-source {
-    width: 100%;
-    height: 100%;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: var(--sidebar-text-muted);
-    font-size: 0.875rem;
-  }
-
-  .folder-dialog__player-watermark {
-    position: absolute;
-    pointer-events: none;
-    z-index: 1;
-    transition: opacity 300ms ease;
-  }
-
-  .folder-dialog__player-watermark-img {
-    max-width: 100%;
-    max-height: 100%;
-    object-fit: contain;
-  }
-
-  /* ===== Video Controls ===== */
-  .folder-dialog__player-controls {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 2;
-    background-color: rgba(0, 0, 0, 0.6);
-    backdrop-filter: blur(4px);
-    opacity: 0;
-    transition: opacity 150ms ease;
-  }
-
-  .folder-dialog__player-video:hover .folder-dialog__player-controls,
-  .folder-dialog__player-controls--visible {
-    opacity: 1;
-  }
-
-  .folder-dialog__player-progress {
-    position: relative;
-    height: 16px;
-    width: 100%;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-  }
-
-  .folder-dialog__player-progress-track {
-    position: absolute;
-    left: 0;
-    right: 0;
-    height: 4px;
-    top: 50%;
-    transform: translateY(-50%);
-  }
-
-  .folder-dialog__player-progress-bg {
-    position: absolute;
-    inset: 0;
-    background-color: rgba(255, 255, 255, 0.2);
-  }
-
-  .folder-dialog__player-progress-bar {
-    position: absolute;
-    height: 100%;
-    background-color: var(--sidebar-accent);
-  }
-
-  .folder-dialog__player-progress-bar--smooth {
-    transition: width 75ms ease;
-  }
-
-  .folder-dialog__player-progress-thumb {
-    position: absolute;
-    top: 50%;
-    width: 12px;
-    height: 12px;
-    background-color: var(--sidebar-accent);
-    border-radius: 9999px;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-    pointer-events: none;
-    transform: translate(-50%, -50%);
-  }
-
-  .folder-dialog__player-progress-thumb--large {
-    width: 16px;
-    height: 16px;
-  }
-
-  .folder-dialog__player-progress-thumb--smooth {
-    transition:
-      left 75ms ease,
-      width 75ms ease,
-      height 75ms ease;
-  }
-
-  .folder-dialog__player-progress-tooltip {
-    position: absolute;
-    top: -32px;
-    padding: 0.25rem 0.5rem;
-    background-color: rgba(0, 0, 0, 0.9);
-    backdrop-filter: blur(4px);
-    border-radius: 4px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: white;
-    white-space: nowrap;
-    pointer-events: none;
-    z-index: 20;
-    transform: translateX(-50%);
-  }
-
-  .folder-dialog__player-controls-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.5rem 0.75rem;
-  }
-
-  .folder-dialog__player-controls-left {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .folder-dialog__player-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    color: white;
-    cursor: pointer;
-    transition: color 150ms ease;
-    padding: 0;
-  }
-
-  .folder-dialog__player-btn:hover {
-    color: var(--sidebar-accent);
-  }
-
-  .folder-dialog__player-volume {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-  }
-
-  .folder-dialog__player-volume-slider {
-    width: 64px;
-    height: 4px;
-    background-color: rgba(255, 255, 255, 0.2);
-    border-radius: 9999px;
-    appearance: none;
-    cursor: pointer;
-    opacity: 0;
-    transition: opacity 150ms ease;
-  }
-
-  .folder-dialog__player-volume:hover .folder-dialog__player-volume-slider {
-    opacity: 1;
-  }
-
-  .folder-dialog__player-volume-slider::-webkit-slider-thumb {
-    appearance: none;
-    width: 10px;
-    height: 10px;
-    background-color: white;
-    border-radius: 9999px;
-  }
-
-  .folder-dialog__player-time {
-    font-size: 0.75rem;
-    font-family: ui-monospace, monospace;
-    font-variant-numeric: tabular-nums;
-    color: white;
-  }
-
-  /* ===== Play Overlay ===== */
-  .folder-dialog__player-play-overlay {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    cursor: pointer;
-  }
-
-  .folder-dialog__player-play-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 64px;
-    height: 64px;
-    background-color: rgba(0, 0, 0, 0.5);
-    backdrop-filter: blur(4px);
-    border-radius: 9999px;
-    color: white;
-    padding-left: 4px;
-  }
-
-  /* ===== Player Description ===== */
-  .folder-dialog__player-description {
-    margin-top: 0.75rem;
-    padding: 0.75rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 8px;
-  }
-
-  .folder-dialog__player-description p {
-    font-size: 0.75rem;
-    font-style: italic;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    display: -webkit-box;
-    -webkit-line-clamp: 2;
-    line-clamp: 2;
-    -webkit-box-orient: vertical;
-    overflow: hidden;
-  }
-
-  /* ===== Footer ===== */
-  .folder-dialog__footer {
-    display: flex;
-    justify-content: center;
-    padding: 1rem 1.5rem;
-    border-top: 1px solid var(--sidebar-border);
-    background-color: var(--sidebar-hover);
-  }
-
-  /* ===== Utility ===== */
-  .folder-dialog__spin {
-    animation: folder-dialog-spin 0.8s linear infinite;
-  }
-
-  @keyframes folder-dialog-spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  /* ===== Transitions ===== */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  .dialog-enter-active {
-    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 150ms ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.96) translateY(8px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* ===== Search Palette Content Styles ===== */
-  /* Results */
-  .search-palette__results {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .search-palette__results-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1.25rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.04);
-  }
-
-  .search-palette__results-label {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: rgba(255, 255, 255, 0.35);
-  }
-
-  .search-palette__results-count {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.4);
-  }
-
-  .search-palette__list {
-    display: flex;
-    flex-direction: column;
-  }
-
-  /* Item */
-  .search-palette__item {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 0.75rem 1.25rem;
-    cursor: pointer;
-    transition: all 120ms ease;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.03);
-  }
-
-  .search-palette__item:hover {
-    background: rgba(255, 255, 255, 0.04);
-  }
-
-  .search-palette__item:last-child {
-    border-bottom: none;
-  }
-
-  .search-palette__item:active {
-    background: rgba(255, 255, 255, 0.06);
-  }
-
-  .search-palette__item-thumb-wrap {
-    position: relative;
-    flex-shrink: 0;
-  }
-
-  .search-palette__item-thumb {
-    width: 72px;
-    height: 42px;
-    border-radius: 6px;
-    background-size: cover;
-    background-position: center;
-    background-color: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-  }
-
-  .search-palette__item-thumb--empty {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    color: rgba(255, 255, 255, 0.25);
-  }
-
-  .search-palette__item-live-badge {
-    position: absolute;
-    bottom: -4px;
-    right: -4px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 18px;
-    height: 18px;
-    background: rgba(239, 68, 68, 0.9);
-    border-radius: 9999px;
-    color: white;
-    box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-  }
-
-  .search-palette__item-content {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .search-palette__item-title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.9);
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    margin-bottom: 0.25rem;
-    letter-spacing: -0.01em;
-  }
-
-  .search-palette__item:hover .search-palette__item-title {
-    color: white;
-  }
-
-  .search-palette__item-meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-    flex-wrap: wrap;
-  }
-
-  .search-palette__item-platform {
-    color: rgba(255, 255, 255, 0.45);
-    font-weight: 450;
-  }
-
-  .search-palette__item-live-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.125rem 0.5rem;
-    background: rgba(239, 68, 68, 0.15);
-    border-radius: 4px;
-    color: #f87171;
-    font-weight: 600;
-    font-size: 0.6875rem;
-  }
-
-  .search-palette__live-dot {
-    width: 5px;
-    height: 5px;
-    border-radius: 9999px;
-    background: #f87171;
-    animation: pulse-live 1.5s ease-in-out infinite;
-  }
-
-  @keyframes pulse-live {
-    0%,
-    100% {
-      opacity: 1;
-    }
-    50% {
-      opacity: 0.5;
-    }
-  }
-
-  .search-palette__item-clips {
-    color: rgba(255, 255, 255, 0.4);
-    font-weight: 450;
-  }
-
-  .search-palette__item-arrow {
-    flex-shrink: 0;
-    color: rgba(255, 255, 255, 0.2);
-    transition: all 150ms ease;
-  }
-
-  .search-palette__item:hover .search-palette__item-arrow {
-    color: rgba(255, 255, 255, 0.5);
-    transform: translateX(2px);
-  }
-
-  /* Empty State */
-  .search-palette__empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3.5rem 1.5rem;
-    text-align: center;
-  }
-
-  .search-palette__empty-icon-wrap {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 56px;
-    height: 56px;
-    background: rgba(255, 255, 255, 0.05);
-    border: 1px solid rgba(255, 255, 255, 0.08);
-    border-radius: 14px;
-    margin-bottom: 1.25rem;
-  }
-
-  .search-palette__empty-icon-wrap--subtle {
-    background: rgba(255, 255, 255, 0.03);
-    border-color: rgba(255, 255, 255, 0.05);
-  }
-
-  .search-palette__empty-icon {
-    width: 26px;
-    height: 26px;
-    color: rgba(255, 255, 255, 0.3);
-  }
-
-  .search-palette__empty-title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.85);
-    margin: 0 0 0.375rem;
-    letter-spacing: -0.01em;
-  }
-
-  .search-palette__empty-desc {
-    font-size: 0.8125rem;
-    color: rgba(255, 255, 255, 0.4);
-    margin: 0;
-    max-width: 280px;
-    line-height: 1.5;
-  }
-
-  /* ===== Delete Dialog ===== */
-  .delete-dialog__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 9999;
-  }
-
-  .delete-dialog {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 480px;
-    margin: 1rem;
-    max-height: 85vh;
-    display: flex;
-    flex-direction: column;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  }
-
-  .delete-dialog__accent {
-    height: 3px;
-    flex-shrink: 0;
-    background: linear-gradient(90deg, #ef4444, rgba(239, 68, 68, 0.5));
-  }
-
-  .delete-dialog__header {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    padding: 1.5rem 1.5rem 1rem;
-    text-align: center;
-  }
-
-  .delete-dialog__close {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .delete-dialog__close:hover:not(:disabled) {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .delete-dialog__close:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .delete-dialog__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 52px;
-    height: 52px;
-    border-radius: 12px;
-    margin-bottom: 0.875rem;
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-  }
-
-  .delete-dialog__title {
-    font-size: 1.25rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.02em;
-  }
-
-  .delete-dialog__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  .delete-dialog__content {
-    flex: 1;
-    overflow-y: auto;
-    padding: 0.5rem 1.5rem 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .delete-dialog__content::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .delete-dialog__content::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .delete-dialog__content::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.15);
-    border-radius: 3px;
-  }
-
-  .delete-dialog__message {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .delete-dialog__text {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    line-height: 1.6;
-  }
-
-  .delete-dialog__text--highlight {
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .delete-dialog__warning {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.75rem 0 0;
-    opacity: 0.7;
-  }
-
-  .delete-dialog__info-card {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    padding: 1rem;
-    background-color: rgba(59, 130, 246, 0.05);
-    border: 1px solid rgba(59, 130, 246, 0.15);
-    border-radius: 10px;
-  }
-
-  .delete-dialog__info-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    border-radius: 8px;
-    flex-shrink: 0;
-    background-color: rgba(59, 130, 246, 0.15);
-    color: #3b82f6;
-  }
-
-  .delete-dialog__info-content {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .delete-dialog__info-title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
-  }
-
-  .delete-dialog__info-text {
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  .delete-dialog__info-list {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .delete-dialog__info-list li {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    line-height: 1.5;
-  }
-
-  .delete-dialog__info-list li strong {
-    color: var(--sidebar-text);
-    font-weight: 600;
-  }
-
-  .delete-dialog__segments-section {
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .delete-dialog__segments-title {
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  .delete-dialog__segments-options {
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-  }
-
-  .delete-dialog__segment-option {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.75rem;
-    padding: 0.875rem 1rem;
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .delete-dialog__segment-option:hover {
-    background-color: var(--sidebar-active);
-    border-color: rgba(6, 182, 212, 0.3);
-  }
-
-  .delete-dialog__segment-option--selected {
-    background-color: rgba(6, 182, 212, 0.08);
-    border-color: rgba(6, 182, 212, 0.3);
-  }
-
-  .delete-dialog__radio {
-    width: 16px;
-    height: 16px;
-    margin-top: 0.125rem;
-    flex-shrink: 0;
-    accent-color: #06b6d4;
-    cursor: pointer;
-  }
-
-  .delete-dialog__segment-option-content {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 0.25rem;
-  }
-
-  .delete-dialog__segment-option-title {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .delete-dialog__segment-option-desc {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-  }
-
-  .delete-dialog__footer {
-    display: flex;
-    gap: 0.625rem;
-    padding: 1.25rem 1.5rem;
-    border-top: 1px solid var(--sidebar-border);
-  }
-
-  .delete-dialog__btn {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.75rem 1rem;
-    border-radius: 8px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-    border: none;
-  }
-
-  .delete-dialog__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .delete-dialog__btn--secondary {
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    color: var(--sidebar-text);
-  }
-
-  .delete-dialog__btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .delete-dialog__btn--primary {
-    background: linear-gradient(135deg, #ef4444 0%, #dc2626 100%);
-    color: white;
-  }
-
-  .delete-dialog__btn--primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .delete-dialog__spinner {
-    animation: delete-dialog-spin 0.8s linear infinite;
-  }
-
-  @keyframes delete-dialog-spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  /* Modal transitions */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  .dialog-enter-active {
-    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 150ms ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.96) translateY(8px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-</style>
-
-<!-- Global styles for dropdown menu (rendered via Teleport outside component scope) -->
-<style>
-  /* Projects page dropdown menu styling */
-  .projects-header__filter + div[class*='fixed'],
-  .projects-header__sort + div[class*='fixed'],
-  div.fixed.bg-popover {
-    background-color: var(--sidebar-surface) !important;
-    border: 1px solid var(--sidebar-border) !important;
-    border-radius: 8px !important;
-    padding: 0.25rem !important;
-    box-shadow: 0 10px 40px rgba(0, 0, 0, 0.5) !important;
-    animation: projectsDropdownFade 100ms ease-out !important;
-  }
-
-  @keyframes projectsDropdownFade {
-    from {
-      opacity: 0;
-    }
-    to {
-      opacity: 1;
-    }
-  }
-
-  /* Dropdown menu items */
-  div.fixed.bg-popover button {
-    display: flex !important;
-    align-items: center !important;
-    padding: 0.5rem 0.75rem !important;
-    border-radius: 5px !important;
-    font-size: 0.75rem !important;
-    color: var(--sidebar-text) !important;
-    transition: background-color 150ms ease !important;
-  }
-
-  div.fixed.bg-popover button:hover {
-    background-color: var(--sidebar-hover) !important;
-  }
-
-  div.fixed.bg-popover button.bg-primary\/10 {
-    background-color: rgba(6, 182, 212, 0.15) !important;
-    color: var(--sidebar-accent) !important;
   }
 </style>

@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { Button } from "@/components/ui/button";
 import { ref, computed, watch, onMounted, onUnmounted } from "vue";
 import type { ColorCurves, ColorCurvePoint } from "../../../types/timeline";
 
@@ -248,16 +249,18 @@ onUnmounted(() => {
 <template>
 	<div class="space-y-2">
 		<!-- Channel selector -->
-		<div class="flex gap-1">
+		<div class="flex h-7 gap-0.5 rounded-md border border-line-subtle bg-surface p-0.5" role="tablist" aria-label="Curve channel">
 			<button
 				v-for="ch in (['master', 'red', 'green', 'blue'] as const)"
 				:key="ch"
 				type="button"
+				role="tab"
+				:aria-selected="activeChannel === ch"
 				:class="[
-					'flex-1 rounded px-1.5 py-1 text-[10px] font-medium capitalize transition-colors',
+					'flex-1 rounded-[calc(var(--radius-control)-2px)] text-xs font-medium capitalize transition-colors',
 					activeChannel === ch
-						? 'bg-white/10 text-white'
-						: 'text-zinc-500 hover:text-zinc-300',
+						? 'bg-surface-raised text-fg shadow-[inset_0_0_0_1px_var(--line)]'
+						: 'text-fg-muted hover:text-fg',
 				]"
 				:style="activeChannel === ch ? { color: CHANNEL_COLORS[ch] } : {}"
 				@click="activeChannel = ch"
@@ -267,12 +270,12 @@ onUnmounted(() => {
 		</div>
 
 		<!-- Curve canvas -->
-		<div class="relative">
+		<div class="relative overflow-hidden rounded-md border border-line-subtle">
 			<canvas
 				ref="canvasRef"
 				:width="SIZE"
 				:height="SIZE"
-				class="w-full rounded cursor-crosshair"
+				class="block w-full cursor-crosshair"
 				style="image-rendering: pixelated;"
 				@mousedown="onMouseDown"
 				@dblclick="onDblClick"
@@ -280,23 +283,11 @@ onUnmounted(() => {
 		</div>
 
 		<!-- Reset buttons -->
-		<div class="flex items-center gap-2">
-			<button
-				type="button"
-				class="flex-1 rounded border border-white/10 bg-white/5 py-1 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
-				@click="resetChannel"
-			>
-				Reset channel
-			</button>
-			<button
-				type="button"
-				class="flex-1 rounded border border-white/10 bg-white/5 py-1 text-[10px] text-zinc-400 transition-colors hover:bg-white/10 hover:text-zinc-200"
-				@click="resetAll"
-			>
-				Reset all
-			</button>
+		<div class="grid grid-cols-2 gap-2">
+			<Button variant="secondary" size="xs" @click="resetChannel">Reset channel</Button>
+			<Button variant="secondary" size="xs" @click="resetAll">Reset all</Button>
 		</div>
 
-		<p class="text-[9px] text-zinc-600">Click to add points · Double-click a point to remove · Drag to move</p>
+		<p class="text-2xs text-fg-subtle">Click to add points · Double-click a point to remove · Drag to move</p>
 	</div>
 </template>

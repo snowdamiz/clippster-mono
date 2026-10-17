@@ -1,205 +1,144 @@
 <template>
-  <div class="flex flex-col h-full overflow-hidden">
-    <!-- Header (can be hidden when integrated into parent tabs) -->
-    <div v-if="!hideHeader" class="flex items-center justify-between py-3 border-b border-border/30">
-      <div class="flex items-center gap-3">
-        <div
-          class="w-8 h-8 bg-gradient-to-br from-green-500/15 to-emerald-500/15 rounded-lg flex items-center justify-center border border-green-500/20"
-        >
-          <FileText class="h-4 w-4 text-green-400" />
-        </div>
-        <div>
-          <h3 class="text-sm font-semibold text-foreground">Transcript</h3>
-          <p class="text-[10px] text-muted-foreground">
-            {{ transcriptData?.words?.length ? `${transcriptData.words.length} words` : 'No transcript' }}
-          </p>
-        </div>
-      </div>
-    </div>
-
+  <div class="flex h-full flex-col overflow-hidden">
     <!-- Loading state -->
-    <div v-if="loadingTranscript" class="flex-1 flex items-center justify-center">
-      <div class="text-center text-muted-foreground px-6 animate-fade-in">
-        <div class="relative">
-          <Loader2 class="animate-spin h-8 w-8 mx-auto mb-3 text-primary" />
-          <div class="absolute inset-0 flex items-center justify-center">
-            <div class="h-3 w-3 rounded-full bg-primary/20 animate-pulse"></div>
-          </div>
-        </div>
-        <p class="text-sm font-medium">Loading transcript...</p>
-        <p class="text-[10px] text-muted-foreground/70 mt-1">Processing audio</p>
-      </div>
+    <div v-if="loadingTranscript" class="flex flex-1 flex-col items-center justify-center gap-2 text-fg-muted">
+      <Loader2 class="size-5 animate-spin text-fg-subtle" />
+      <p class="text-sm">Loading transcript...</p>
     </div>
 
     <!-- No transcript state -->
-    <div
+    <EmptyState
       v-else-if="!transcriptData || !transcriptData.words.length"
-      class="flex-1 flex items-center justify-center px-4"
-    >
-      <div class="text-center text-muted-foreground max-w-xs">
-        <div class="mb-6 flex flex-col items-center">
-          <div
-            class="w-16 h-16 bg-gradient-to-br from-green-500/10 to-emerald-500/10 rounded-lg flex items-center justify-center mb-4 border border-green-500/20"
-          >
-            <FileText class="h-7 w-7 text-green-400/70" />
-          </div>
-          <h4 class="text-sm font-semibold text-foreground mb-1.5">No Transcript Yet</h4>
-          <p class="text-xs text-muted-foreground leading-relaxed">
-            Generate clips first to automatically transcribe audio from your video
-          </p>
-        </div>
-      </div>
-    </div>
+      :icon="FileText"
+      size="sm"
+      title="No transcript yet"
+      description="Generate clips first to automatically transcribe audio from your video."
+      class="flex-1"
+    />
 
-    <!-- Transcript with Toolbar -->
+    <!-- Transcript with toolbar -->
     <template v-else>
-      <!-- Search Bar (only shown when header is visible) -->
-      <div v-if="!hideHeader" class="py-2">
-        <div class="relative flex items-center gap-1">
-          <div class="relative flex-1">
-            <div class="absolute left-2.5 top-1/2 transform -translate-y-1/2 pointer-events-none">
-              <Search class="h-3.5 w-3.5 text-muted-foreground/50" />
-            </div>
-            <input
-              ref="searchInputRef"
-              v-model="internalSearchQuery"
-              type="text"
-              placeholder="Search transcript..."
-              class="w-full pl-8 py-1.5 text-xs bg-muted/30 border border-border/40 rounded-md focus:outline-none focus:ring-1 focus:ring-primary/50 focus:border-primary/50 transition-all duration-200 placeholder:text-muted-foreground/50"
-              :class="{ 'pr-20': internalSearchQuery.trim(), 'pr-3': !internalSearchQuery.trim() }"
-              @keydown.enter.prevent="navigateMatch(1)"
-              @keydown.shift.enter.prevent="navigateMatch(-1)"
-            />
-            <!-- Match count + clear inside the input -->
-            <div v-if="internalSearchQuery.trim()" class="absolute right-2 top-1/2 -translate-y-1/2 flex items-center gap-1">
-              <span class="text-[10px] tabular-nums whitespace-nowrap" :class="matchOccurrences.length > 0 ? 'text-muted-foreground/70' : 'text-red-400/70'">
-                {{ matchOccurrences.length > 0 ? `${currentMatchIndex + 1} of ${matchOccurrences.length}` : 'No results' }}
-              </span>
-              <button
-                @click="clearSearch"
-                class="p-0.5 hover:bg-white/10 rounded transition-colors text-muted-foreground/50 hover:text-muted-foreground"
-                title="Clear search"
-              >
-                <XIcon class="h-3 w-3" />
-              </button>
-            </div>
-          </div>
-          <!-- Navigation arrows -->
-          <template v-if="internalSearchQuery.trim() && matchOccurrences.length > 0">
-            <button
-              @click="navigateMatch(-1)"
-              class="p-1 hover:bg-white/10 rounded transition-colors text-muted-foreground/60 hover:text-foreground border border-border/40"
+      <!-- Search (only when the header is shown; otherwise the parent drives searchQuery) -->
+      <div
+        v-if="!hideHeader"
+        class="flex h-11 shrink-0 items-center gap-1 border-b border-line-subtle px-3"
+        @keydown.enter.exact.prevent="navigateMatch(1)"
+        @keydown.shift.enter.prevent="navigateMatch(-1)"
+      >
+        <SearchField
+          ref="searchInputRef"
+          v-model="internalSearchQuery"
+          size="sm"
+          placeholder="Search transcript..."
+          class="flex-1"
+          @clear="clearSearch"
+        />
+        <template v-if="internalSearchQuery.trim()">
+          <span
+            class="tabular shrink-0 whitespace-nowrap px-1 text-2xs"
+            :class="matchOccurrences.length > 0 ? 'text-fg-muted' : 'text-danger'"
+          >
+            {{ matchOccurrences.length > 0 ? `${currentMatchIndex + 1} of ${matchOccurrences.length}` : 'No results' }}
+          </span>
+          <template v-if="matchOccurrences.length > 0">
+            <Button
+              variant="ghost"
+              size="icon-sm"
               title="Previous match (Shift+Enter)"
+              aria-label="Previous match"
+              @click="navigateMatch(-1)"
             >
-              <ChevronUp class="h-3.5 w-3.5" />
-            </button>
-            <button
-              @click="navigateMatch(1)"
-              class="p-1 hover:bg-white/10 rounded transition-colors text-muted-foreground/60 hover:text-foreground border border-border/40"
-              title="Next match (Enter)"
-            >
-              <ChevronDown class="h-3.5 w-3.5" />
-            </button>
+              <ChevronUp />
+            </Button>
+            <Button variant="ghost" size="icon-sm" title="Next match (Enter)" aria-label="Next match" @click="navigateMatch(1)">
+              <ChevronDown />
+            </Button>
           </template>
-        </div>
-      </div>
-
-      <!-- Strikethrough Toolbar -->
-      <div class="flex items-center gap-1.5 px-2 py-1.5 border-b border-border/20">
-        <button
-          @click="strikethroughMode = !strikethroughMode"
-          :class="[
-            'flex items-center gap-1 px-2 py-1 text-[10px] font-medium rounded transition-colors border',
-            strikethroughMode
-              ? 'bg-red-500/20 text-red-400 border-red-500/30'
-              : 'bg-muted/30 text-muted-foreground border-border/40 hover:text-foreground hover:bg-muted/50',
-          ]"
-          :title="strikethroughMode ? 'Exit strikethrough mode' : 'Strikethrough mode — click words to mark for removal'"
-        >
-          <Strikethrough class="h-3 w-3" />
-          {{ strikethroughMode ? 'Marking...' : 'Mark' }}
-        </button>
-        <template v-if="strikethroughCount > 0">
-          <span class="text-[10px] text-red-400/80 tabular-nums">{{ strikethroughCount }} marked</span>
-          <button
-            @click="clearStrikethrough"
-            class="flex items-center gap-1 px-1.5 py-0.5 text-[10px] text-muted-foreground hover:text-foreground bg-muted/30 rounded transition-colors"
-            title="Clear all marks"
-          >
-            <Undo2 class="h-2.5 w-2.5" />
-          </button>
-          <button
-            @click="commitStrikethrough"
-            class="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-red-400 hover:text-red-300 bg-red-500/15 hover:bg-red-500/25 rounded transition-colors border border-red-500/20"
-            title="Delete all marked words (ripple-delete from timeline)"
-          >
-            <Trash2 class="h-2.5 w-2.5" />
-            Delete Marked
-          </button>
         </template>
       </div>
 
+      <!-- Strikethrough toolbar -->
+      <div class="flex h-9 shrink-0 items-center gap-1.5 border-b border-line-subtle px-3">
+        <Button
+          :variant="strikethroughMode ? 'destructive-soft' : 'ghost'"
+          size="xs"
+          :aria-pressed="strikethroughMode"
+          :title="strikethroughMode ? 'Exit strikethrough mode' : 'Strikethrough mode — click words to mark for removal'"
+          @click="strikethroughMode = !strikethroughMode"
+        >
+          <Strikethrough />
+          {{ strikethroughMode ? 'Marking...' : 'Mark' }}
+        </Button>
+        <template v-if="strikethroughCount > 0">
+          <span class="tabular whitespace-nowrap text-2xs text-danger">{{ strikethroughCount }} marked</span>
+          <Button variant="ghost" size="icon-xs" title="Clear all marks" aria-label="Clear all marks" @click="clearStrikethrough">
+            <Undo2 />
+          </Button>
+          <Button
+            variant="destructive-soft"
+            size="xs"
+            title="Delete all marked words (ripple-delete from timeline)"
+            @click="commitStrikethrough"
+          >
+            <Trash2 />
+            Delete marked
+          </Button>
+        </template>
+        <span v-if="strikethroughCount === 0" class="tabular ms-auto shrink-0 text-2xs text-fg-subtle">
+          {{ transcriptData.words.length }} words
+        </span>
+      </div>
+
       <!-- Transcript content -->
-      <div ref="transcriptContent" class="flex-1 overflow-y-auto custom-scrollbar relative mt-3">
-        <!-- Floating Selection Toolbar -->
+      <div ref="transcriptContent" class="relative flex-1 overflow-y-auto px-3 pt-3">
+        <!-- Floating selection toolbar -->
         <Transition name="toolbar-fade">
           <div
             v-if="showSelectionToolbar && selectionTimeRange"
-            class="absolute z-20 -translate-x-1/2 pointer-events-auto"
+            class="pointer-events-auto absolute z-20 -translate-x-1/2"
             :style="{ top: `${selectionToolbarPos.top}px`, left: `${selectionToolbarPos.left}px` }"
           >
-            <div class="flex items-center gap-1.5 px-2.5 py-1.5 bg-zinc-900 border border-white/15 rounded-lg shadow-xl shadow-black/40 backdrop-blur-sm">
-              <!-- Time range display -->
-              <span class="text-[10px] font-mono text-muted-foreground/80 tabular-nums">
+            <div class="flex items-center gap-1 rounded-lg bg-surface-raised p-1 shadow-[var(--shadow-md)]">
+              <span class="tabular px-1.5 text-2xs text-fg-muted">
                 {{ formatTime(selectionTimeRange.startTime) }} – {{ formatTime(selectionTimeRange.endTime) }}
               </span>
-              <div class="w-px h-3.5 bg-white/10"></div>
-              <!-- Create Clip button -->
-              <button
-                @click.stop="onCreateClipFromSelection"
-                class="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-emerald-400 hover:text-emerald-300 bg-emerald-500/10 hover:bg-emerald-500/20 rounded transition-colors border border-emerald-500/20"
-                title="Create clip from selection"
-              >
-                <Scissors class="h-3 w-3" />
+              <span class="h-4 w-px bg-line" aria-hidden="true"></span>
+              <Button variant="ghost" size="xs" title="Create clip from selection" @click.stop="onCreateClipFromSelection">
+                <Scissors />
                 Clip
-              </button>
-              <!-- Split button -->
-              <button
-                @click.stop="splitAtWordBoundary(selectionStartIndex)"
-                class="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-blue-400 hover:text-blue-300 bg-blue-500/10 hover:bg-blue-500/20 rounded transition-colors border border-blue-500/20"
+              </Button>
+              <Button
+                variant="ghost"
+                size="xs"
                 title="Split video at selection start"
+                @click.stop="splitAtWordBoundary(selectionStartIndex)"
               >
-                <SplitSquareHorizontal class="h-3 w-3" />
+                <SplitSquareHorizontal />
                 Split
-              </button>
-              <!-- Delete button -->
-              <button
-                @click.stop="deleteSelectedWords"
-                class="flex items-center gap-1 px-2 py-0.5 text-[10px] font-medium text-red-400 hover:text-red-300 bg-red-500/10 hover:bg-red-500/20 rounded transition-colors border border-red-500/20"
+              </Button>
+              <Button
+                variant="destructive-soft"
+                size="xs"
                 title="Delete selected words (ripple-delete from timeline)"
+                @click.stop="deleteSelectedWords"
               >
-                <Trash2 class="h-3 w-3" />
+                <Trash2 />
                 Delete
-              </button>
-              <!-- Close button -->
-              <button
-                @click.stop="clearWordSelection"
-                class="p-0.5 text-muted-foreground/50 hover:text-muted-foreground rounded transition-colors hover:bg-white/10"
-                title="Clear selection"
-              >
-                <XIcon class="h-3 w-3" />
-              </button>
+              </Button>
+              <Button variant="ghost" size="icon-xs" title="Clear selection" aria-label="Clear selection" @click.stop="clearWordSelection">
+                <XIcon />
+              </Button>
             </div>
           </div>
         </Transition>
 
-        <div class="text-sm text-foreground leading-relaxed break-words pb-4 min-h-full select-none transcript-content">
+        <div class="transcript-content min-h-full select-none break-words pb-4 text-sm leading-7 text-fg">
           <span
             v-for="(word, index) in transcriptData.words"
             :key="`word-${index}`"
             :ref="(el) => setWordRef(el, index)"
             :class="getWordClasses(word, index)"
-            class="inline-block px-1 py-0.5 mx-0.5 rounded-md cursor-pointer whitespace-normal word-interactive"
+            class="word-interactive mx-px inline-block cursor-pointer whitespace-normal rounded px-[3px] leading-6 transition-colors"
             @click="onWordClick(word, index)"
             @dblclick="onWordDoubleClick(word, index)"
             @mousedown="onWordMouseDown($event, index)"
@@ -214,7 +153,7 @@
               v-model="editingWordText"
               @blur="saveWordEdit()"
               @keydown="onWordKeydown($event)"
-              class="bg-transparent border-b border-primary outline-none text-inherit min-w-[20px] px-0"
+              class="min-w-[20px] px-0 outline-none"
               style="font: inherit"
             />
             <!-- Show normal word text when not editing -->
@@ -227,9 +166,13 @@
 </template>
 
 <script setup lang="ts">
+  import { useToast } from '@/composables/useToast';
   import { ref, computed, watch, nextTick, onUnmounted, onMounted } from 'vue';
   import { useTranscriptData } from '../composables/useTranscriptData';
-  import { Loader2, FileText, Search, ChevronUp, ChevronDown, X as XIcon, Scissors, Film, Strikethrough, Trash2, SplitSquareHorizontal, Undo2 } from 'lucide-vue-next';
+  import { Loader2, FileText, ChevronUp, ChevronDown, X as XIcon, Scissors, Strikethrough, Trash2, SplitSquareHorizontal, Undo2 } from 'lucide-vue-next';
+  import { Button } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { SearchField } from '@/components/ui/search-field';
 
   interface Props {
     projectId?: string | null;
@@ -254,6 +197,7 @@
   }
 
   const emit = defineEmits<Emits>();
+  let autoscrollTimeout: ReturnType<typeof setTimeout> | null = null;
 
   const transcriptContent = ref<HTMLElement>();
   const loadingTranscript = ref(false);
@@ -282,7 +226,7 @@
   // Search state - internal query for when header is shown, prop for when hidden
   const internalSearchQuery = ref('');
   const debouncedSearchQuery = ref('');
-  const searchInputRef = ref<HTMLInputElement>();
+  const searchInputRef = ref<{ focus: () => void } | null>(null);
   const currentMatchIndex = ref(0);
   let searchDebounceTimeout: ReturnType<typeof setTimeout> | null = null;
 
@@ -484,13 +428,13 @@
   function getWordClasses(word: any, index: number): string {
     // Strikethrough takes highest priority
     if (strikethroughIndices.value.has(index)) {
-      return 'line-through text-red-400/60 bg-red-500/10 border border-red-500/20';
+      return 'line-through text-danger/70 bg-danger-soft';
     }
 
     // Determine the basic state (current, spoken, future) first
     let stateClasses = '';
     if (currentWordIndex.value === -1 || props.currentTime === undefined || props.duration === 0) {
-      stateClasses = 'text-muted-foreground/80 ';
+      stateClasses = 'text-fg-muted ';
     } else {
       const currentWord = transcriptData.value?.words[currentWordIndex.value];
       if (currentWord) {
@@ -501,35 +445,35 @@
 
         // Current word (being spoken) - highest priority
         if (currentStart === wordStart && currentEnd === wordEnd) {
-          return 'bg-primary text-primary-foreground current-word';
+          return 'bg-brand text-brand-fg current-word';
         }
 
         // Already spoken words
         if (wordEnd < props.currentTime) {
-          stateClasses = 'text-foreground font-medium ';
+          stateClasses = 'text-fg ';
         } else {
           // Future words
-          stateClasses = 'text-muted-foreground/70 ';
+          stateClasses = 'text-fg-subtle ';
         }
       } else {
-        stateClasses = 'text-muted-foreground/80 ';
+        stateClasses = 'text-fg-muted ';
       }
     }
 
     // Check for word range selection (clip creation) - blue highlight
     if (isWordInSelection(index)) {
-      return 'bg-blue-500/30 text-blue-200 border border-blue-400/40 word-selected';
+      return 'bg-brand-soft text-fg ring-1 ring-inset ring-[var(--brand-line)] word-selected';
     }
 
     // Check for active match (currently navigated to) - orange highlight
     if (isActiveMatch(index)) {
-      return 'bg-orange-500/40 text-orange-200 border border-orange-400/50 ring-1 ring-orange-400/30 active-match';
+      return 'bg-warning/35 text-fg ring-1 ring-inset ring-warning active-match';
     }
 
     // Check for search match and overlay on top of state
     if (isWordMatched(word, index)) {
       // Search match takes precedence but we maintain font weight from state
-      return 'bg-yellow-500/20 text-yellow-300 border border-yellow-500/30';
+      return 'bg-warning-soft text-warning word-match';
     } else {
       return stateClasses.trim();
     }
@@ -726,22 +670,22 @@
       preventAutoscroll.value = true;
 
       // Clear any existing timeout
-      if (window.autoscrollTimeout) {
-        clearTimeout(window.autoscrollTimeout);
+      if (autoscrollTimeout) {
+        clearTimeout(autoscrollTimeout);
       }
 
       // Set new timeout - longer duration for better UX
-      window.autoscrollTimeout = setTimeout(() => {
+      autoscrollTimeout = setTimeout(() => {
         preventAutoscroll.value = false;
-        window.autoscrollTimeout = null;
+        autoscrollTimeout = null;
       }, 5000); // Prevent autoscroll for 5 seconds after manual click
 
       // DIRECT DOM MANIPULATION for instant feedback
       const wordElement = wordElements.value.get(index);
       if (wordElement) {
         // Apply instant visual feedback directly to DOM
-        wordElement.style.background = 'hsl(var(--blue-500) / 0.9)';
-        wordElement.style.color = 'white';
+        wordElement.style.background = 'var(--brand)';
+        wordElement.style.color = 'var(--brand-fg)';
         wordElement.style.zIndex = '10';
         wordElement.style.position = 'relative';
 
@@ -766,14 +710,14 @@
     preventAutoscroll.value = true;
 
     // Clear any existing timeout
-    if (window.autoscrollTimeout) {
-      clearTimeout(window.autoscrollTimeout);
+    if (autoscrollTimeout) {
+      clearTimeout(autoscrollTimeout);
     }
 
     // Set new timeout for editing
-    window.autoscrollTimeout = setTimeout(() => {
+    autoscrollTimeout = setTimeout(() => {
       preventAutoscroll.value = false;
-      window.autoscrollTimeout = null;
+      autoscrollTimeout = null;
     }, 5000); // Prevent autoscroll for 5 seconds during editing
 
     // Start editing this word
@@ -830,7 +774,7 @@
 
     try {
       // Import database function dynamically to avoid circular imports
-      const { updateTranscriptWord } = await import('@/services/database');
+      const { updateTranscriptWord } = await import('@/services/workspaceRuntime');
 
       const result = await updateTranscriptWord(props.projectId, index, newText);
 
@@ -860,12 +804,12 @@
       } else {
         console.error('[TranscriptPanel] Failed to update word:', result.error);
         // Show error feedback to user
-        alert(`Failed to update word: ${result.error}`);
+        useToast().error('Could not update word', result.error);
         cancelWordEdit();
       }
     } catch (error) {
       console.error('[TranscriptPanel] Error updating word:', error);
-      alert('An error occurred while updating the word');
+      useToast().error('Could not update word', 'Something went wrong. Please try again.');
       cancelWordEdit();
     }
   }
@@ -1140,270 +1084,64 @@
     }
 
     // Clear autoscroll timeout
-    if (window.autoscrollTimeout) {
-      clearTimeout(window.autoscrollTimeout);
-      window.autoscrollTimeout = null;
+    if (autoscrollTimeout) {
+      clearTimeout(autoscrollTimeout);
+      autoscrollTimeout = null;
     }
   });
 </script>
 
 <style scoped>
-  /* Custom scrollbar - consistent with other tabs */
-  .custom-scrollbar {
-    scrollbar-width: thin;
-    scrollbar-color: hsl(var(--muted-foreground) / 0.3) transparent;
+  /* Word hover wash (state classes come from getWordClasses). */
+  .word-interactive:hover {
+    background-color: var(--surface-active);
+    color: var(--fg);
   }
 
-  .custom-scrollbar::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-track {
-    background: transparent;
-    margin: 4px 0;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb {
-    background: hsl(var(--muted-foreground) / 0.3);
-    border-radius: 3px;
-    border: 1px solid transparent;
-    background-clip: padding-box;
-  }
-
-  .custom-scrollbar::-webkit-scrollbar-thumb:hover {
-    background: hsl(var(--muted-foreground) / 0.5);
-    background-clip: padding-box;
-  }
-
-  /* Fade in animation */
-  @keyframes fade-in {
-    from {
-      opacity: 0;
-      transform: translateY(10px);
-    }
-    to {
-      opacity: 1;
-      transform: translateY(0);
-    }
-  }
-
-  .animate-fade-in {
-    animation: fade-in 0.5s ease-out;
-  }
-
-  /* Current word pulse animation */
-  .current-word {
-    animation: pulse-glow 1.2s ease-in-out infinite;
-    position: relative;
-  }
-
-  .current-word::after {
-    content: '';
-    position: absolute;
-    inset: -3px;
-    background: hsl(var(--primary) / 0.1);
-    border-radius: 0.375rem;
-    pointer-events: none;
-    animation: pulse-border 1.2s ease-in-out infinite;
-  }
-
-  @keyframes pulse-glow {
-    0%,
-    100% {
-      box-shadow: 0 0 8px hsl(var(--primary) / 0.2);
-    }
-    50% {
-      box-shadow: 0 0 12px hsl(var(--primary) / 0.3);
-    }
-  }
-
-  @keyframes pulse-border {
-    0%,
-    100% {
-      opacity: 0;
-    }
-    50% {
-      opacity: 0.5;
-    }
-  }
-
-  /* Interactive word effects */
-  .word-interactive {
-    position: relative;
-  }
-
-  .word-interactive::before {
-    content: '';
-    position: absolute;
-    inset: -2px;
-    background: hsl(var(--primary) / 0.15);
-    border-radius: 0.375rem;
-    opacity: 0;
-    pointer-events: none;
-  }
-
-  .word-interactive:hover::before {
-    opacity: 1;
-  }
-
-  .word-interactive:active::before {
-    background: hsl(var(--primary) / 0.25);
-    opacity: 1;
-  }
-
-  /* Smooth transitions */
-  .transition-colors {
-    transition-property: color, background-color, border-color, text-decoration-color, fill, stroke;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 150ms;
-  }
-
-  .transition-transform {
-    transition-property: transform;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 300ms;
-  }
-
-  .ease-in-out {
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-  }
-
-  .ease-out {
-    transition-timing-function: cubic-bezier(0, 0, 0.2, 1);
-  }
-
-  .rotate-180 {
-    transform: rotate(180deg);
-  }
-
-  .transition-all {
-    transition-property: all;
-    transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-    transition-duration: 200ms;
-  }
-
-  /* User select for copy functionality */
-  .select-text {
-    user-select: text;
-    -webkit-user-select: text;
-    -moz-user-select: text;
-  }
-
-  /* Word editing input styles - use maximum specificity */
-  div.transcript-content .word-interactive input[type='text'],
-  .word-interactive input[type='text'] {
-    all: initial !important;
-    font-family: inherit !important;
-    font-size: inherit !important;
-    font-weight: inherit !important;
-    line-height: inherit !important;
-
-    background: #0f172a !important;
-    border: none !important;
-    border-bottom: 2px solid #3b82f6 !important;
-    outline: none !important;
-    color: #ffffff !important;
-    padding: 2px 4px !important;
-    margin: 0 !important;
-    min-width: 1ch !important;
-    border-radius: 4px !important;
-    transition: all 0.2s ease !important;
-    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
-
-    /* Force text color with multiple approaches */
-    color: #ffffff !important;
-    -webkit-text-fill-color: #ffffff !important;
-    text-shadow: none !important;
-  }
-
-  .word-interactive input[type='text']:focus {
-    background: #020617 !important;
-    border-bottom-color: #60a5fa !important;
-    color: #ffffff !important;
-    -webkit-text-fill-color: #ffffff !important;
-    box-shadow:
-      0 0 0 2px rgba(59, 130, 246, 0.3),
-      0 1px 3px rgba(0, 0, 0, 0.3) !important;
-  }
-
-  /* Override any inherited color from parent elements */
-  .word-interactive:has(input[type='text']) {
-    color: inherit !important;
-  }
-
-  .word-interactive:has(input[type='text']) * {
-    color: #ffffff !important;
-  }
-
-  .word-interactive input[type='text']::selection {
-    background: hsl(var(--primary) / 0.3);
-    color: hsl(var(--primary-foreground));
-  }
-
-  /* Visual feedback for words being edited */
-  .word-interactive:has(input:focus) {
-    background: hsl(var(--muted));
-    border-radius: 0.375rem;
-    padding: 2px;
-  }
-
-  /* Fix hover effect for already selected/highlighted words */
   .word-interactive.current-word:hover {
-    background: hsl(var(--primary) / 0.9) !important;
-    color: hsl(var(--primary-foreground)) !important;
+    background-color: var(--brand-hover);
+    color: var(--brand-fg);
   }
 
-  .word-interactive.current-word:hover::before {
-    opacity: 0; /* Hide the default hover effect on current word */
+  .word-interactive.word-selected:hover,
+  .word-interactive.word-match:hover {
+    background-color: var(--brand-soft-hover);
   }
 
-  .word-interactive.text-foreground.font-medium:hover {
-    background: hsl(var(--muted) / 0.7) !important;
-    color: hsl(var(--foreground)) !important;
+  /* Inline word editor */
+  .word-interactive input {
+    font: inherit;
+    color: var(--fg);
+    -webkit-text-fill-color: var(--fg);
+    background: var(--surface-sunken);
+    border: none;
+    border-bottom: 2px solid var(--brand);
+    border-radius: 4px;
+    padding: 0 4px;
+    margin: 0;
+    min-width: 1ch;
   }
 
-  .word-interactive.text-muted-foreground\:\/70:hover {
-    background: hsl(var(--muted) / 0.5) !important;
-    color: hsl(var(--foreground)) !important;
+  .word-interactive:has(input) {
+    background: var(--surface-raised);
   }
 
-  /* Add hover effect for search matches */
-  .word-interactive[class*='bg-yellow-500']:hover {
-    background: hsl(var(--yellow-500) / 0.3) !important;
-    color: hsl(var(--yellow-300)) !important;
+  .word-interactive input::selection {
+    background: var(--brand-soft-hover);
   }
 
-  /* Word selection highlight for clip creation */
-  .word-selected {
-    cursor: pointer;
-  }
-
-  .word-interactive.word-selected:hover {
-    background: rgba(59, 130, 246, 0.4) !important;
-    color: rgb(191, 219, 254) !important;
-  }
-
-  /* Floating toolbar transitions */
+  /* Floating toolbar transition (horizontal centering uses the `translate` property) */
   .toolbar-fade-enter-active {
-    transition: all 150ms ease-out;
+    transition: opacity 150ms ease-out, transform 150ms ease-out;
   }
 
   .toolbar-fade-leave-active {
-    transition: all 100ms ease-in;
+    transition: opacity 100ms ease-in, transform 100ms ease-in;
   }
 
-  .toolbar-fade-enter-from {
-    opacity: 0;
-    transform: translateX(-50%) translateY(4px);
-  }
-
+  .toolbar-fade-enter-from,
   .toolbar-fade-leave-to {
     opacity: 0;
-    transform: translateX(-50%) translateY(4px);
-  }
-
-  .toolbar-fade-enter-to,
-  .toolbar-fade-leave-from {
-    transform: translateX(-50%) translateY(0);
+    transform: translateY(4px);
   }
 </style>

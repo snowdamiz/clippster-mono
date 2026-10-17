@@ -1,124 +1,126 @@
-import { useCallback, useEffect, useState } from 'react';
-import { Pressable, Switch, Text, View } from 'react-native';
-import type { UserPreferences } from '@clippster/api-client';
-import { BottomSheet } from '@/components/ui/BottomSheet';
-import { userPreferencesApi } from '@/services/api';
-import { appAlert } from '@/lib/appAlert';
-import { tokens } from '@/theme/tokens';
+import { useCallback, useEffect, useState } from 'react'
+import { ActivityIndicator, Pressable, Switch, Text, View } from 'react-native'
+import type { UserPreferences } from '@clippster/api-client'
+import { AppIcon, type AppIconName } from '@/components/AppIcon'
+import { BottomSheet } from '@/components/ui/BottomSheet'
+import { SectionCard } from '@/components/ui/SectionCard'
+import { Tabs } from '@/components/ui/tabs'
+import { userPreferencesApi } from '@/services/api'
+import { appAlert } from '@/lib/appAlert'
+import { tokens } from '@/theme/tokens'
 
-interface PreferencesSheetProps {
-  visible: boolean;
-  onClose: () => void;
-}
+const ROWS: { key: keyof UserPreferences; label: string; icon: AppIconName }[] = [
+  { key: 'notify_livestream', label: 'Livestream alerts', icon: 'Radio' },
+  { key: 'notify_clips', label: 'Clip alerts', icon: 'Scissors' },
+  { key: 'notify_downloads', label: 'Download alerts', icon: 'Download' },
+  { key: 'notify_projects', label: 'Project alerts', icon: 'FolderOpen' },
+  { key: 'notify_social', label: 'Social alerts', icon: 'Share2' },
+  { key: 'notify_organization', label: 'Organization alerts', icon: 'Building2' },
+  { key: 'notify_system', label: 'System alerts', icon: 'Settings' },
+  { key: 'toast_enabled', label: 'Toasts enabled', icon: 'MessageSquare' },
+  { key: 'toast_sound_enabled', label: 'Toast sound', icon: 'Volume2' }
+]
 
-const ROWS: { key: keyof UserPreferences; label: string }[] = [
-  { key: 'notify_livestream', label: 'Livestream alerts' },
-  { key: 'notify_clips', label: 'Clip alerts' },
-  { key: 'notify_downloads', label: 'Download alerts' },
-  { key: 'notify_projects', label: 'Project alerts' },
-  { key: 'notify_social', label: 'Social alerts' },
-  { key: 'notify_organization', label: 'Organization alerts' },
-  { key: 'notify_system', label: 'System alerts' },
-  { key: 'toast_enabled', label: 'Toasts enabled' },
-  { key: 'toast_sound_enabled', label: 'Toast sound' },
-];
-
-export function PreferencesSheet({ visible, onClose }: PreferencesSheetProps) {
-  const [prefs, setPrefs] = useState<UserPreferences>({});
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-
+export function PreferencesSheet({
+  visible,
+  onClose,
+  mode = 'notifications'
+}: {
+  visible: boolean
+  onClose: () => void
+  mode?: 'notifications' | 'time'
+}) {
+  const [prefs, setPrefs] = useState<UserPreferences>({})
+  const [loading, setLoading] = useState(true)
+  const [saving, setSaving] = useState(false)
+  const [loadError, setLoadError] = useState(false)
   const load = useCallback(async () => {
-    setLoading(true);
+    setLoading(true)
+    setLoadError(false)
     try {
-      const result = await userPreferencesApi.get();
-      if (result.success && result.preferences) {
-        setPrefs(result.preferences);
-      }
+      const result = await userPreferencesApi.get()
+      if (!result.success || !result.preferences) throw new Error(result.error ?? 'Could not load preferences')
+      setPrefs(result.preferences)
+    } catch (error) {
+      setLoadError(true)
+      appAlert('Could not load', error instanceof Error ? error.message : 'Please try again.')
     } finally {
-      setLoading(false);
+      setLoading(false)
     }
-  }, []);
-
+  }, [])
   useEffect(() => {
-    if (!visible) return;
-    void load();
-  }, [visible, load]);
-
-  if (!visible) return null;
-
-  function toggle(key: keyof UserPreferences, value: boolean) {
-    setPrefs((prev) => ({ ...prev, [key]: value }));
-  }
-
+    if (visible) void load()
+  }, [visible, load])
   async function save() {
-    setSaving(true);
+    if (saving || loading || loadError) return
+    setSaving(true)
     try {
-      const result = await userPreferencesApi.update(prefs);
-      if (!result.success) {
-        appAlert('Could not save', result.error ?? 'Try again');
-        return;
-      }
-      if (result.preferences) setPrefs(result.preferences);
-      appAlert('Saved', 'Preferences synced to your account.');
+      const result = await userPreferencesApi.update(prefs)
+      if (!result.success) throw new Error(result.error ?? 'Could not save preferences')
+      if (result.preferences) setPrefs(result.preferences)
+      onClose()
+    } catch (error) {
+      appAlert('Could not save', error instanceof Error ? error.message : 'Please try again.')
     } finally {
-      setSaving(false);
+      setSaving(false)
     }
   }
-
+  const renderRow = (row: (typeof ROWS)[number]) => (
+    <View key={row.key} className="min-h-[60px] flex-row items-center gap-3 border-b border-border py-3">
+      <AppIcon name={row.icon} size={24} color={tokens.colors.foreground} />
+      <Text className="flex-1 text-sm text-foreground">{row.label}</Text>
+      <Switch
+        accessibilityLabel={row.label}
+        value={Boolean(prefs[row.key])}
+        onValueChange={(value) => setPrefs((prev) => ({ ...prev, [row.key]: value }))}
+        trackColor={{ false: tokens.colors.border, true: tokens.colors.accent }}
+        disabled={loading || saving || loadError}
+      />
+    </View>
+  )
   return (
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      variant="sheet"
-      title="Preferences"
-      subtitle="Notifications and time format (synced)"
-      headerIcon="options-outline"
-      scrollable
-      maxHeightClassName="max-h-[92%]"
-      primaryAction={{
-        title: saving ? 'Saving…' : 'Save preferences',
-        onPress: () => void save(),
-        disabled: saving || loading,
-      }}
-    >
-      <Text className="text-sm text-muted">
-        These settings sync with your Clippster account on desktop and mobile.
-      </Text>
-
-      <View className="overflow-hidden rounded-xl border border-border bg-surface">
+      variant="page"
+      title={mode === 'time' ? 'Time format' : 'Notifications'}
+      headerAccessory={
         <Pressable
-          className="flex-row items-center justify-between border-b border-border px-4 py-3"
-          onPress={() =>
-            setPrefs((prev) => ({
-              ...prev,
-              time_format_preference: prev.time_format_preference === '24h' ? '12h' : '24h',
-            }))
-          }
+          accessibilityRole="button"
+          disabled={saving || loading || loadError}
+          onPress={() => void save()}
+          className="min-h-11 justify-center px-2"
         >
-          <Text className="text-foreground">Time format</Text>
-          <Text className="text-muted">
-            {prefs.time_format_preference === '24h' ? '24-hour' : '12-hour'}
-          </Text>
+          <Text className="font-semibold text-accent">{saving ? 'Saving…' : 'Save'}</Text>
         </Pressable>
-
-        {ROWS.map((row, index) => (
-          <View
-            key={String(row.key)}
-            className={`flex-row items-center justify-between px-4 py-3 ${
-              index < ROWS.length - 1 ? 'border-b border-border' : ''
-            }`}
-          >
-            <Text className="text-foreground">{row.label}</Text>
-            <Switch
-              value={Boolean(prefs[row.key])}
-              onValueChange={(value) => toggle(row.key, value)}
-              trackColor={{ true: tokens.colors.accent }}
-              disabled={loading}
-            />
-          </View>
-        ))}
-      </View>
+      }
+    >
+      <Text className="text-sm leading-[21px] text-muted">
+        {mode === 'time'
+          ? 'Choose how times appear across your Clippster account.'
+          : 'Choose what you’d like to be notified about. You can change these at any time.'}
+      </Text>
+      {loading ? (
+        <ActivityIndicator color={tokens.colors.accent} />
+      ) : loadError ? (
+        <Pressable onPress={() => void load()} className="min-h-11 justify-center">
+          <Text className="text-accent">Retry loading preferences</Text>
+        </Pressable>
+      ) : mode === 'time' ? (
+        <Tabs
+          items={[
+            { key: '12h', label: '12-hour' },
+            { key: '24h', label: '24-hour' }
+          ]}
+          value={prefs.time_format_preference ?? '12h'}
+          onChange={(value) => setPrefs((prev) => ({ ...prev, time_format_preference: value as '12h' | '24h' }))}
+        />
+      ) : (
+        <>
+          <SectionCard>{ROWS.slice(0, 7).map(renderRow)}</SectionCard>
+          <SectionCard title="Toasts">{ROWS.slice(7).map(renderRow)}</SectionCard>
+        </>
+      )}
     </BottomSheet>
-  );
+  )
 }

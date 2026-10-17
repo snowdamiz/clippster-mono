@@ -14,6 +14,14 @@ import PropertiesPanel from "./panels/PropertiesPanel.vue";
 import LayersPanel from "./panels/LayersPanel.vue";
 import ImageToolRail from "./ImageToolRail.vue";
 import ImageOptionsBar from "./ImageOptionsBar.vue";
+import PanelHeader from "./chrome/PanelHeader.vue";
+import ToolbarButton from "./chrome/ToolbarButton.vue";
+import {
+	DropdownMenu,
+	DropdownMenuContent,
+	DropdownMenuItem,
+	DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
 import {
 	FolderOpen,
 	Headphones,
@@ -125,7 +133,11 @@ onMounted(() => {
 // Timeline resize
 const TIMELINE_MIN_HEIGHT = 160;
 const TIMELINE_MAX_HEIGHT = 600;
-const timelineHeight = ref(330);
+// Default to ~36% of the window (clamped) so the preview keeps room at the
+// 680px default window height; the user can still drag the handle.
+const timelineHeight = ref(
+	Math.round(Math.min(330, Math.max(TIMELINE_MIN_HEIGHT + 60, window.innerHeight * 0.36))),
+);
 
 function startTimelineResize(e: MouseEvent) {
 	e.preventDefault();
@@ -161,7 +173,7 @@ onUnmounted(() => {
 </script>
 
 <template>
-	<div class="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-[#0e0e10] text-white">
+	<div class="flex h-full w-full min-w-0 max-w-full flex-col overflow-hidden bg-panel text-fg">
 		<!-- Header -->
 		<EditorHeader
 			:preview-container="previewPanelRef?.containerRef ?? null"
@@ -170,7 +182,7 @@ onUnmounted(() => {
 		/>
 
 		<!-- Image mode: tools · options · canvas · one docked panel column -->
-		<div v-if="isImageMode" class="flex flex-1 min-h-0 flex-col overflow-hidden">
+		<div v-if="isImageMode" class="flex min-h-0 flex-1 flex-col overflow-hidden">
 			<ImageOptionsBar />
 
 			<div class="flex min-h-0 min-w-0 flex-1 overflow-hidden">
@@ -178,63 +190,60 @@ onUnmounted(() => {
 					<ImageToolRail />
 				</div>
 
-				<div class="min-w-0 flex-1 overflow-hidden bg-[#2b2b2b]" data-tour-id="tour-image-canvas">
+				<div class="min-w-0 flex-1 overflow-hidden bg-canvas" data-tour-id="tour-image-canvas">
 					<PreviewPanel ref="previewPanelRef" />
 				</div>
 
-				<aside class="box-border flex w-[280px] shrink-0 flex-col overflow-hidden border-l border-black/40 bg-[#1e1e1e]">
-					<div class="relative flex h-7 shrink-0 items-stretch border-b border-black/40 bg-[#2a2a2a] pr-1">
+				<aside class="box-border flex w-[280px] shrink-0 flex-col overflow-hidden border-l border-line-subtle bg-panel">
+					<!-- Dock tab rail -->
+					<div class="flex h-9 shrink-0 items-stretch gap-1 border-b border-line-subtle px-2" role="tablist">
 						<button
 							v-for="tabKey in IMAGE_DOCK_PRIMARY"
 							:key="tabKey"
 							type="button"
+							role="tab"
+							:aria-selected="imageDockTab === tabKey"
 							:data-tour-id="tabKey === 'media' ? 'tour-image-media' : undefined"
 							:class="[
-								'px-2.5 text-[11px] leading-none transition-colors',
+								'px-2 text-xs font-medium transition-colors',
 								imageDockTab === tabKey
-									? 'bg-[#1e1e1e] text-zinc-100'
-									: 'text-zinc-500 hover:bg-white/[0.04] hover:text-zinc-300',
+									? 'text-fg shadow-[inset_0_-2px_0_var(--brand)]'
+									: 'text-fg-subtle hover:text-fg',
 							]"
 							@click="setImageDockTab(tabKey)"
 						>
 							{{ tabKey === "properties" ? "Properties" : "Media" }}
 						</button>
-						<button
-							type="button"
-							:class="[
-								'ml-auto flex shrink-0 items-center gap-0.5 px-2 text-[11px]',
-								IMAGE_DOCK_MORE.includes(imageDockTab as Tab)
-									? 'bg-[#1e1e1e] text-zinc-100'
-									: 'text-zinc-500 hover:text-zinc-300',
-							]"
-							@click="imageMoreOpen = !imageMoreOpen"
-						>
-							<span class="max-w-[72px] truncate">{{ imageDockMoreLabel }}</span>
-							<ChevronDown class="size-3 shrink-0" />
-						</button>
-						<div
-							v-if="imageMoreOpen"
-							class="fixed inset-0 z-20"
-							@click="imageMoreOpen = false"
-						/>
-						<div
-							v-if="imageMoreOpen"
-							class="absolute right-0 top-full z-30 min-w-[140px] border border-black/50 bg-[#2a2a2a] py-1 shadow-lg"
-						>
-							<button
-								v-for="tabKey in IMAGE_DOCK_MORE"
-								:key="tabKey"
-								type="button"
-								class="flex w-full items-center gap-2 px-3 py-1.5 text-left text-[11px] text-zinc-300 hover:bg-white/5"
-								@click="setImageDockTab(tabKey)"
-							>
-								<component :is="tabConfig[tabKey].icon" class="size-3.5 text-zinc-500" />
-								{{ tabConfig[tabKey].label }}
-							</button>
-						</div>
+						<DropdownMenu v-model:open="imageMoreOpen">
+							<DropdownMenuTrigger as-child>
+								<button
+									type="button"
+									:class="[
+										'ml-auto flex shrink-0 items-center gap-1 px-2 text-xs font-medium transition-colors',
+										IMAGE_DOCK_MORE.includes(imageDockTab as Tab)
+											? 'text-fg shadow-[inset_0_-2px_0_var(--brand)]'
+											: 'text-fg-subtle hover:text-fg',
+									]"
+								>
+									<span class="max-w-[88px] truncate">{{ imageDockMoreLabel }}</span>
+									<ChevronDown class="size-3 shrink-0 opacity-60" />
+								</button>
+							</DropdownMenuTrigger>
+							<DropdownMenuContent align="end" class="min-w-44">
+								<DropdownMenuItem
+									v-for="tabKey in IMAGE_DOCK_MORE"
+									:key="tabKey"
+									:class="imageDockTab === tabKey && 'bg-brand-soft text-brand focus:bg-brand-soft'"
+									@select="setImageDockTab(tabKey)"
+								>
+									<component :is="tabConfig[tabKey].icon" />
+									{{ tabConfig[tabKey].label }}
+								</DropdownMenuItem>
+							</DropdownMenuContent>
+						</DropdownMenu>
 					</div>
 
-					<div class="min-h-0 flex-[0.9] overflow-hidden border-b border-black/40">
+					<div class="min-h-0 flex-[0.9] overflow-hidden border-b border-line-subtle">
 						<PropertiesPanel v-if="imageDockTab === 'properties'" />
 						<AssetsPanel v-else :active-tab="imageDockTab" />
 					</div>
@@ -246,89 +255,85 @@ onUnmounted(() => {
 			</div>
 		</div>
 
-		<!-- ============ VIDEO MODE LAYOUT (original) ============ -->
-		<template v-else>
-			<div class="flex flex-1 min-h-0 overflow-hidden">
-				<!-- Icon sidebar -->
-				<div
-					class="flex w-12 shrink-0 flex-col items-center gap-4 border-r border-white/10 bg-[#0e0e10] py-3 overflow-y-auto scrollbar-hidden"
-					data-tour-id="tour-editor-left-rail"
+		<!-- ============ VIDEO MODE LAYOUT ============ -->
+		<div v-else class="flex min-h-0 flex-1 overflow-hidden">
+			<!-- Panel rail (full height) -->
+			<nav
+				class="flex w-12 shrink-0 flex-col items-center gap-1 overflow-y-auto border-r border-line-subtle bg-panel py-2"
+				aria-label="Editor panels"
+				data-tour-id="tour-editor-left-rail"
+			>
+				<ToolbarButton
+					v-for="tabKey in visibleTabs"
+					:key="tabKey"
+					:label="tabConfig[tabKey].label"
+					:active="activeTab === tabKey"
+					size="icon"
+					:data-tour-id="tabKey === 'media' ? 'tour-editor-media' : undefined"
+					class="shrink-0 [&_svg]:size-[18px]"
+					@click="activeTab = tabKey"
 				>
-					<button
-						v-for="tabKey in visibleTabs"
-						:key="tabKey"
-						type="button"
-						:title="tabConfig[tabKey].label"
-						:data-tour-id="tabKey === 'media' ? 'tour-editor-media' : undefined"
+					<component :is="tabConfig[tabKey].icon" />
+				</ToolbarButton>
+			</nav>
+
+			<div class="flex min-w-0 flex-1 flex-col overflow-hidden">
+				<div class="flex min-h-0 flex-1 overflow-hidden">
+					<!-- Left panel: assets -->
+					<div class="w-56 shrink-0 overflow-hidden border-r border-line-subtle bg-panel lg:w-64">
+						<AssetsPanel :active-tab="activeTab" />
+					</div>
+
+					<!-- Center: preview -->
+					<div class="min-w-0 flex-1 overflow-hidden bg-canvas" data-tour-id="tour-editor-preview">
+						<PreviewPanel />
+					</div>
+
+					<!-- Right panel: pinned so selection changes never resize the preview -->
+					<div
+						data-tour-id="tour-editor-properties"
 						:class="[
-							'flex flex-col items-center justify-center rounded-md p-1.5 transition-colors',
-							activeTab === tabKey
-								? 'text-blue-400'
-								: 'text-zinc-500 hover:text-zinc-300',
+							'flex shrink-0 flex-col overflow-hidden border-l border-line-subtle bg-panel transition-[width] duration-150',
+							propertiesCollapsed ? 'w-11' : 'w-72 lg:w-80',
 						]"
-						@click="activeTab = tabKey"
 					>
-						<component :is="tabConfig[tabKey].icon" class="size-[18px]" />
-					</button>
+						<PanelHeader :title="propertiesCollapsed ? undefined : 'Properties'" :class="propertiesCollapsed && 'justify-center px-0'">
+							<ToolbarButton
+								:label="propertiesCollapsed ? 'Expand properties panel' : 'Collapse properties panel'"
+								:aria-pressed="propertiesCollapsed"
+								@click="propertiesCollapsed = !propertiesCollapsed"
+							>
+								<PanelRightOpen v-if="propertiesCollapsed" />
+								<PanelRightClose v-else />
+							</ToolbarButton>
+						</PanelHeader>
+						<div v-if="!propertiesCollapsed" class="min-h-0 flex-1">
+							<PropertiesPanel />
+						</div>
+					</div>
 				</div>
 
-				<!-- Left panel: Assets content -->
-				<div class="w-64 shrink-0 border-r border-white/10 bg-[#18181b] overflow-hidden">
-					<AssetsPanel :active-tab="activeTab" />
-				</div>
-
-				<!-- Center: Preview -->
-				<div class="flex-1 min-w-0 overflow-hidden bg-[#0e0e10]" data-tour-id="tour-editor-preview">
-					<PreviewPanel />
-				</div>
-
-				<!-- Right panel: pinned so selection changes never resize the preview -->
+				<!-- Timeline resize handle -->
 				<div
-					data-tour-id="tour-editor-properties"
-					:class="[
-						'flex shrink-0 flex-col border-l border-white/10 bg-[#18181b] overflow-hidden transition-[width] duration-150',
-						propertiesCollapsed ? 'w-10' : 'w-80',
-					]"
+					class="group relative z-10 -my-0.5 h-[5px] shrink-0 cursor-row-resize"
+					role="separator"
+					aria-orientation="horizontal"
+					aria-label="Resize timeline"
+					@mousedown="startTimelineResize"
 				>
-					<div class="flex h-9 items-center border-b border-white/10 px-2">
-						<span v-if="!propertiesCollapsed" class="flex-1 text-xs font-medium text-zinc-400">Properties</span>
-						<button
-							type="button"
-							class="ml-auto flex size-6 items-center justify-center rounded text-zinc-500 transition-colors hover:bg-white/5 hover:text-zinc-200"
-							:aria-label="propertiesCollapsed ? 'Expand properties panel' : 'Collapse properties panel'"
-							:aria-pressed="propertiesCollapsed"
-							:title="propertiesCollapsed ? 'Expand properties panel' : 'Collapse properties panel'"
-							@click="propertiesCollapsed = !propertiesCollapsed"
-						>
-							<PanelRightOpen v-if="propertiesCollapsed" class="size-3.5" />
-							<PanelRightClose v-else class="size-3.5" />
-						</button>
-					</div>
-					<div v-if="!propertiesCollapsed" class="min-h-0 flex-1">
-						<PropertiesPanel />
-					</div>
+					<div class="pointer-events-none absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-transparent transition-colors group-hover:bg-brand group-active:bg-brand" />
+				</div>
+
+				<!-- Bottom: timeline -->
+				<div
+					class="shrink-0 overflow-hidden border-t border-line-subtle bg-panel"
+					data-tour-id="tour-editor-timeline"
+					:style="{ height: `${timelineHeight}px` }"
+				>
+					<Timeline />
 				</div>
 			</div>
-
-			<!-- Timeline resize handle -->
-			<div
-				class="group relative h-[5px] shrink-0 cursor-row-resize bg-transparent hover:bg-blue-500/30 active:bg-blue-500/50 transition-colors"
-				@mousedown="startTimelineResize"
-			>
-				<div class="pointer-events-none absolute inset-x-0 top-1/2 -translate-y-1/2 flex justify-center">
-					<div class="h-[3px] w-10 rounded-full bg-white/20 group-hover:bg-blue-400/60 transition-colors" />
-				</div>
-			</div>
-
-			<!-- Bottom: Timeline -->
-			<div
-				class="shrink-0 border-t border-white/10 overflow-hidden bg-[#18181b]"
-				data-tour-id="tour-editor-timeline"
-				:style="{ height: `${timelineHeight}px` }"
-			>
-				<Timeline />
-			</div>
-		</template>
+		</div>
 
 		<KeyboardShortcutsModal :open="shortcutsOpen" @close="shortcutsOpen = false" />
 	</div>

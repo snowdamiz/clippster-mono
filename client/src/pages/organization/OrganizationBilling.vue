@@ -1,340 +1,225 @@
 <template>
   <PageLayout
-    title="Billing & Credits"
+    title="Billing"
     description="Manage your organization's credits and view payment history"
-    :show-header="true"
     :icon="Wallet"
-    :breadcrumbs="[{ label: 'Organizations', path: '/organizations' }, { label: 'Billing & Credits' }]"
+    :breadcrumbs="[{ label: 'Organization' }, { label: 'Billing' }]"
   >
     <template #firstBreadcrumb>
       <OrganizationBreadcrumb />
     </template>
     <template #actions>
-      <Button v-if="isAdmin" size="sm" @click="showBuyCreditsModal = true" class="org-billing__buy-btn">
-        <Plus class="org-billing__buy-btn-icon" />
-        Buy Credits
+      <Button v-if="isAdmin" variant="primary" size="sm" @click="showBuyCreditsModal = true">
+        <Plus />
+        Buy credits
       </Button>
     </template>
+    <template v-if="isAdmin" #toolbar>
+      <SegmentedControl v-model="activeTab" :options="tabs" />
+    </template>
 
-    <div class="org-billing">
-      <!-- Page Heading -->
-      <div class="org-billing__heading">
-        <h1 class="org-billing__title">Billing, credits, and subscriptions</h1>
-        <p class="org-billing__subtitle">
-          Monitor your credit pool, allocate to team members, and track payment history
-        </p>
-      </div>
-
-      <!-- Tab Navigation (Admin Only) -->
-      <nav v-if="isAdmin" class="org-billing__tabs">
-        <button
-          v-for="tab in tabs"
-          :key="tab.id"
-          class="org-billing__tab"
-          :class="{ 'org-billing__tab--active': activeTab === tab.id }"
-          @click="activeTab = tab.id"
-        >
-          <component :is="tab.icon" class="org-billing__tab-icon" />
-          {{ tab.label }}
-        </button>
-      </nav>
-
-      <!-- Member Allocations Section (Admin Only) -->
-      <section v-if="isAdmin && activeTab === 'allocations'" class="org-billing__section">
-        <!-- Credit Overview Cards -->
-        <div class="org-billing__cards">
-          <!-- Pool Balance Card -->
-          <div class="org-billing__card org-billing__card--pool">
-            <div class="org-billing__card-indicator org-billing__card-indicator--pool"></div>
-            <div class="org-billing__card-inner">
-              <div class="org-billing__card-header">
-                <div class="org-billing__card-icon org-billing__card-icon--pool">
-                  <Coins />
-                </div>
-                <div class="org-billing__card-header-text">
-                  <h3 class="org-billing__card-title">Pool Balance</h3>
-                  <p class="org-billing__card-subtitle">Available for allocation</p>
-                </div>
-              </div>
-              <div class="org-billing__card-body">
-                <div class="org-billing__card-value">
-                  <span class="org-billing__card-amount org-billing__card-amount--pool">
-                    {{ credits.hoursRemaining }}
-                  </span>
-                  <span class="org-billing__card-unit">min</span>
-                </div>
-              </div>
+    <!-- Keyed by tab so each panel eases in instead of popping -->
+    <div :key="activeTab" class="flex animate-enter flex-col gap-6 px-5 py-4">
+      <!-- ───────────── Credits ───────────── -->
+      <template v-if="isAdmin && activeTab === 'allocations'">
+        <!-- No subscription callout -->
+        <Alert v-if="!hasActiveSubscription" variant="warning">
+          <Crown />
+          <div class="flex flex-wrap items-center gap-x-3 gap-y-2">
+            <div class="min-w-[200px] flex-1">
+              <AlertTitle>No active subscription</AlertTitle>
+              <AlertDescription>
+                Your organization needs an active subscription to access credits and features.
+              </AlertDescription>
             </div>
+            <Button variant="secondary" size="sm" @click="activeTab = 'subscriptions'">
+              <Crown />
+              Set up subscription
+            </Button>
           </div>
+        </Alert>
 
-          <!-- Total Used Card -->
-          <div class="org-billing__card">
-            <div class="org-billing__card-indicator"></div>
-            <div class="org-billing__card-inner">
-              <div class="org-billing__card-header">
-                <div class="org-billing__card-icon">
-                  <TrendingUp />
-                </div>
-                <div class="org-billing__card-header-text">
-                  <h3 class="org-billing__card-title">Total Used</h3>
-                  <p class="org-billing__card-subtitle">All time usage</p>
-                </div>
-              </div>
-              <div class="org-billing__card-body">
-                <div class="org-billing__card-value">
-                  <span class="org-billing__card-amount">{{ credits.hoursUsed }}</span>
-                  <span class="org-billing__card-unit">min</span>
-                </div>
-              </div>
-            </div>
-          </div>
+        <StatGrid :count="3">
+          <StatCard
+            label="Pool balance"
+            :value="`${credits.hoursRemaining} min`"
+            hint="Available for allocation"
+            :icon="Coins"
+            tone="brand"
+          />
+          <StatCard label="Total used" :value="`${credits.hoursUsed} min`" hint="All-time usage" :icon="TrendingUp" />
+          <StatCard
+            label="My allocation"
+            :value="`${formatAllocation(myAllocation?.hours_remaining)} min`"
+            hint="Your remaining credits"
+            :icon="User"
+          />
+        </StatGrid>
 
-          <!-- My Allocation Card -->
-          <div class="org-billing__card org-billing__card--accent">
-            <div class="org-billing__card-indicator org-billing__card-indicator--accent"></div>
-            <div class="org-billing__card-inner">
-              <div class="org-billing__card-header">
-                <div class="org-billing__card-icon org-billing__card-icon--accent">
-                  <User />
-                </div>
-                <div class="org-billing__card-header-text">
-                  <h3 class="org-billing__card-title">My Allocation</h3>
-                  <p class="org-billing__card-subtitle">Your remaining credits</p>
-                </div>
-              </div>
-              <div class="org-billing__card-body">
-                <div class="org-billing__card-value">
-                  <span class="org-billing__card-amount org-billing__card-amount--accent">
-                    {{ formatAllocation(myAllocation?.hours_remaining) }}
-                  </span>
-                  <span class="org-billing__card-unit">min</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <div class="org-billing__section-header">
-          <div class="org-billing__section-title-group">
-            <div class="org-billing__section-icon">
-              <Users />
-            </div>
-            <div>
-              <h2 class="org-billing__section-title">Member Allocations</h2>
-              <p class="org-billing__section-subtitle">Distribute credits to {{ members.length }} team members</p>
-            </div>
-          </div>
-        </div>
-
-        <!-- Members Table -->
-        <div class="org-billing__table-wrapper">
-          <table class="org-billing__table">
-            <thead>
-              <tr>
-                <th>Member</th>
-                <th>Allocated</th>
-                <th>Used</th>
-                <th>Remaining</th>
-                <th>Pool Fallback</th>
-                <th>Add Credits</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr v-for="member in members" :key="member.id" class="org-billing__table-row">
-                <td>
-                  <div class="org-billing__member-cell">
-                    <div
-                      class="org-billing__member-avatar"
-                      :class="{ 'org-billing__member-avatar--has-image': member.user?.avatar_url && !avatarFailed[member.user_id] }"
-                    >
-                      <img
-                        v-if="member.user?.avatar_url && !avatarFailed[member.user_id]"
-                        :src="member.user.avatar_url"
-                        :alt="member.user?.name || member.user?.email || 'User'"
-                        class="org-billing__member-avatar-img"
-                        referrerpolicy="no-referrer"
-                        @error="avatarFailed[member.user_id] = true"
-                      />
-                      <span v-else>{{ getMemberInitials(member) }}</span>
-                    </div>
-                    <div class="org-billing__member-details">
-                      <span class="org-billing__member-name">
-                        {{ member.user?.name || member.user?.email }}
-                      </span>
-                      <span v-if="member.user?.name && member.user?.email" class="org-billing__member-email">
-                        {{ member.user?.email }}
-                      </span>
-                    </div>
-                  </div>
-                </td>
-                <td>
-                  <span class="org-billing__table-value">
+        <section class="flex flex-col gap-2.5">
+          <SectionHeader
+            title="Member allocations"
+            :count="members.length"
+            description="Distribute pool credits to team members."
+          />
+          <div class="@container overflow-hidden rounded-xl border border-line-subtle bg-surface">
+            <table class="w-full table-fixed text-sm">
+              <thead>
+                <tr class="eyebrow border-b border-line-subtle text-left [&>th]:px-4 [&>th]:py-2 [&>th]:font-semibold">
+                  <th>Member</th>
+                  <th class="hidden w-24 text-right @[50rem]:table-cell">Allocated</th>
+                  <th class="hidden w-24 text-right @[50rem]:table-cell">Used</th>
+                  <th class="w-24 text-right">Remaining</th>
+                  <th class="w-[4.5rem] @[50rem]:w-24" title="Let this member draw from the pool once their allocation runs out">
+                    Fallback
+                  </th>
+                  <th class="w-40 @[50rem]:w-[11rem]">Add credits</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr
+                  v-for="member in members"
+                  :key="member.id"
+                  class="border-b border-line-subtle last:border-b-0 [&>td]:px-4 [&>td]:py-2"
+                >
+                  <td class="min-w-0"><OrgUserCell :user="member.user" /></td>
+                  <td class="tabular hidden whitespace-nowrap text-right text-fg @[50rem]:table-cell">
                     {{ formatAllocation(member.allocation?.hours_allocated) }}
-                    <span class="org-billing__table-value-unit">min</span>
-                  </span>
-                </td>
-                <td>
-                  <span class="org-billing__table-value org-billing__table-value--muted">
+                    <span class="text-xs text-fg-subtle">min</span>
+                  </td>
+                  <td class="tabular hidden whitespace-nowrap text-right text-fg-muted @[50rem]:table-cell">
                     {{ formatAllocation(member.allocation?.hours_used) }}
-                    <span class="org-billing__table-value-unit">min</span>
-                  </span>
-                </td>
-                <td>
-                  <span class="org-billing__table-value org-billing__table-value--accent">
+                    <span class="text-xs text-fg-subtle">min</span>
+                  </td>
+                  <td class="tabular whitespace-nowrap text-right font-medium text-fg">
                     {{ formatAllocation(member.allocation?.hours_remaining) }}
-                    <span class="org-billing__table-value-unit">min</span>
-                  </span>
-                </td>
-                <td>
-                  <div class="org-billing__toggle-cell">
-                    <button
-                      class="org-billing__toggle"
-                      :class="{ 'org-billing__toggle--active': member.allocation?.allow_pool_fallback }"
-                      @click="handleTogglePoolFallback(member.user_id, !member.allocation?.allow_pool_fallback)"
-                      :title="member.allocation?.allow_pool_fallback ? 'Disable pool fallback' : 'Enable pool fallback'"
-                    >
-                      <span class="org-billing__toggle-slider"></span>
-                    </button>
-                    <span class="org-billing__toggle-label">
-                      {{ member.allocation?.allow_pool_fallback ? 'Enabled' : 'Disabled' }}
-                    </span>
-                  </div>
-                </td>
-                <td>
-                  <div class="org-billing__allocate-form">
-                    <div class="org-billing__input-wrap">
-                      <Input
-                        type="number"
-                        v-model="allocations[member.user_id]"
-                        min="0"
-                        :max="poolBalance"
-                        step="0.5"
-                        placeholder="0"
-                        class="org-billing__allocate-input"
-                        :disabled="poolBalance === 0"
+                    <span class="text-xs font-normal text-fg-subtle">min</span>
+                  </td>
+                  <td>
+                    <label class="flex items-center gap-2 text-xs text-fg-muted">
+                      <Switch
+                        :model-value="!!member.allocation?.allow_pool_fallback"
+                        :title="member.allocation?.allow_pool_fallback ? 'Disable pool fallback' : 'Enable pool fallback'"
+                        @update:model-value="handleTogglePoolFallback(member.user_id, !member.allocation?.allow_pool_fallback)"
                       />
-                      <span class="org-billing__input-unit">min</span>
+                      <span class="hidden @[50rem]:inline">{{ member.allocation?.allow_pool_fallback ? 'On' : 'Off' }}</span>
+                    </label>
+                  </td>
+                  <td>
+                    <div class="flex items-center gap-1.5">
+                      <div class="relative min-w-0 flex-1">
+                        <Input
+                          v-model="allocations[member.user_id]"
+                          type="number"
+                          min="0"
+                          :max="poolBalance"
+                          step="0.5"
+                          placeholder="0"
+                          class="tabular h-[var(--control-sm)] appearance-none pr-9 text-xs [&::-webkit-inner-spin-button]:appearance-none [&::-webkit-outer-spin-button]:appearance-none"
+                          :disabled="poolBalance === 0"
+                          :aria-label="`Minutes to allocate to ${member.user?.name || member.user?.email || 'member'}`"
+                        />
+                        <span class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 text-2xs text-fg-subtle">
+                          min
+                        </span>
+                      </div>
+                      <Button
+                        size="sm"
+                        variant="secondary"
+                        :disabled="
+                          poolBalance === 0 ||
+                          !allocations[member.user_id] ||
+                          allocations[member.user_id] <= 0 ||
+                          allocations[member.user_id] > poolBalance
+                        "
+                        @click="handleAllocateCredits(member.user_id)"
+                      >
+                        Add
+                      </Button>
                     </div>
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      @click="handleAllocateCredits(member.user_id)"
-                      :disabled="
-                        poolBalance === 0 ||
-                        !allocations[member.user_id] ||
-                        allocations[member.user_id] <= 0 ||
-                        allocations[member.user_id] > poolBalance
-                      "
-                      class="org-billing__allocate-btn"
-                    >
-                      <Plus class="h-3.5 w-3.5" />
-                      Add
-                    </Button>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </template>
+
+      <!-- ───────────── Payment history ───────────── -->
+      <section v-if="isAdmin && activeTab === 'history'" class="flex flex-col gap-2.5">
+        <SectionHeader
+          title="Payment history"
+          :description="transactionsTotal > 0 ? `${transactionsTotal} transactions recorded` : 'Credit purchases and subscription payments'"
+        >
+          <Button
+            v-if="transactionsLoaded || invoicesLoaded"
+            variant="ghost"
+            size="sm"
+            :disabled="transactionsLoading || invoicesLoading"
+            @click="loadTransactions(transactionsPage); loadInvoices()"
+          >
+            <RefreshCw :class="{ 'animate-spin': transactionsLoading || invoicesLoading }" />
+            Refresh
+          </Button>
+        </SectionHeader>
+
+        <!-- Not loaded yet -->
+        <EmptyState
+          v-if="!transactionsLoaded && !invoicesLoaded && !transactionsLoading && !invoicesLoading"
+          :icon="Receipt"
+          size="sm"
+          title="Payment history isn't loaded"
+          description="Load your organization's payment records to review past purchases."
+        >
+          <Button variant="secondary" size="sm" @click="loadTransactions(1); loadInvoices()">
+            <Download />
+            Load history
+          </Button>
+        </EmptyState>
+
+        <!-- Loading (first load only; refreshes keep the records on screen) -->
+        <div
+          v-else-if="(transactionsLoading || invoicesLoading) && invoices.length === 0 && transactions.length === 0"
+          class="skeleton-group overflow-hidden rounded-xl border border-line-subtle bg-surface"
+          aria-busy="true"
+        >
+          <div v-for="i in 4" :key="i" class="flex items-center gap-3 border-b border-line-subtle px-4 py-3 last:border-b-0">
+            <div class="skeleton size-8 shrink-0 rounded-lg" />
+            <div class="flex flex-1 flex-col gap-1.5">
+              <div class="skeleton h-3.5 w-32" />
+              <div class="skeleton h-3 w-52 max-w-full" />
+            </div>
+            <div class="skeleton h-3.5 w-14" />
+          </div>
+        </div>
+
+        <div v-else-if="invoicesLoaded || transactionsLoaded" class="flex animate-enter flex-col gap-6">
+          <!-- Subscription invoices -->
+          <div v-if="invoices.length > 0" class="flex flex-col gap-2">
+            <SectionHeader title="Subscription payments" />
+            <ul class="overflow-hidden rounded-xl border border-line-subtle bg-surface">
+              <li
+                v-for="inv in invoices"
+                :key="inv.id"
+                class="flex items-center gap-3 border-b border-line-subtle px-4 py-2 last:border-b-0"
+              >
+                <IconTile :icon="CreditCard" size="md" />
+                <div class="min-w-0 flex-1">
+                  <div class="flex items-center gap-2">
+                    <span class="truncate text-sm font-medium text-fg">{{ inv.number || 'Subscription invoice' }}</span>
+                    <Badge :variant="invoiceStatusVariant(inv.status)" class="capitalize">{{ inv.status }}</Badge>
                   </div>
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </section>
-
-      <!-- Payment History Section (Admin Only) -->
-      <section v-if="isAdmin && activeTab === 'history'" class="org-billing__section">
-        <div class="org-billing__section-header">
-          <div class="org-billing__section-title-group">
-            <div class="org-billing__section-icon">
-              <History />
-            </div>
-            <div>
-              <h2 class="org-billing__section-title">Payment History</h2>
-              <p class="org-billing__section-subtitle">
-                {{
-                  transactionsTotal > 0 ? `${transactionsTotal} transactions recorded` : 'Track all credit purchases'
-                }}
-              </p>
-            </div>
-          </div>
-          <div class="org-billing__section-actions">
-            <button
-              v-if="!transactionsLoaded && !invoicesLoaded"
-              @click="loadTransactions(1); loadInvoices()"
-              class="org-billing__load-btn"
-              :disabled="transactionsLoading || invoicesLoading"
-            >
-              <Loader2 v-if="transactionsLoading || invoicesLoading" class="org-billing__load-btn-spinner" />
-              <Download v-else class="org-billing__load-btn-icon" />
-              <span>{{ (transactionsLoading || invoicesLoading) ? 'Loading...' : 'Load History' }}</span>
-            </button>
-            <button
-              v-else
-              @click="loadTransactions(transactionsPage); loadInvoices()"
-              class="org-billing__load-btn"
-              :disabled="transactionsLoading || invoicesLoading"
-            >
-              <RefreshCw
-                class="org-billing__load-btn-icon"
-                :class="{ 'org-billing__load-btn-icon--spin': transactionsLoading || invoicesLoading }"
-              />
-              <span>Refresh</span>
-            </button>
-          </div>
-        </div>
-
-        <!-- Not Loaded Yet -->
-        <div v-if="!transactionsLoaded && !invoicesLoaded && !transactionsLoading && !invoicesLoading" class="org-billing__empty-state">
-          <div class="org-billing__empty-icon">
-            <Receipt />
-          </div>
-          <h3 class="org-billing__empty-title">No history loaded</h3>
-          <p class="org-billing__empty-desc">Click "Load History" to view your payment records</p>
-        </div>
-
-        <!-- Loading Skeleton -->
-        <div v-else-if="(transactionsLoading || invoicesLoading) && invoices.length === 0 && transactions.length === 0" class="org-billing__skeleton-list">
-          <div v-for="i in 3" :key="i" class="org-billing__skeleton-item">
-            <div class="org-billing__skeleton-icon"></div>
-            <div class="org-billing__skeleton-lines">
-              <div class="org-billing__skeleton-line" style="width: 120px"></div>
-              <div class="org-billing__skeleton-line org-billing__skeleton-line--sm" style="width: 200px"></div>
-            </div>
-            <div class="org-billing__skeleton-amount"></div>
-          </div>
-        </div>
-
-        <template v-else-if="invoicesLoaded || transactionsLoaded">
-          <!-- Subscription Invoices -->
-          <div v-if="invoices.length > 0" class="org-billing__history-card" style="margin-bottom: 16px">
-            <div class="org-billing__history-subsection-label">Subscription Payments</div>
-            <div class="org-billing__history-list">
-              <div v-for="inv in invoices" :key="inv.id" class="org-billing__history-item">
-                <div class="org-billing__history-icon org-billing__history-icon--stripe">
-                  <CreditCard />
-                </div>
-                <div class="org-billing__history-info">
-                  <div class="org-billing__history-row">
-                    <span class="org-billing__history-pack">
-                      {{ inv.number || 'Subscription Invoice' }}
-                    </span>
-                    <span
-                      class="org-billing__history-status"
-                      :class="`org-billing__history-status--${inv.status}`"
-                    >{{ inv.status }}</span>
-                  </div>
-                  <div class="org-billing__history-meta">
-                    <span>{{ inv.created ? formatTransactionDate(new Date(inv.created * 1000).toISOString()) : '—' }}</span>
-                    <span class="org-billing__history-dot">•</span>
-                    <span>Stripe</span>
+                  <p class="truncate text-xs text-fg-subtle">
+                    {{ inv.created ? formatTransactionDate(new Date(inv.created * 1000).toISOString()) : '—' }}
+                    · Stripe
                     <template v-if="inv.period_start && inv.period_end">
-                      <span class="org-billing__history-dot">•</span>
-                      <span>
-                        {{ new Date(inv.period_start * 1000).toLocaleDateString() }} –
-                        {{ new Date(inv.period_end * 1000).toLocaleDateString() }}
-                      </span>
+                      · {{ new Date(inv.period_start * 1000).toLocaleDateString() }} –
+                      {{ new Date(inv.period_end * 1000).toLocaleDateString() }}
                     </template>
-                  </div>
+                  </p>
                 </div>
-                <div class="org-billing__history-amount">
-                  <span class="org-billing__history-usd">
+                <div class="flex shrink-0 items-center gap-3">
+                  <span class="tabular text-sm font-semibold text-fg">
                     ${{ inv.amount_paid != null ? (inv.amount_paid / 100).toFixed(2) : '—' }}
                   </span>
                   <a
@@ -342,430 +227,231 @@
                     :href="inv.hosted_invoice_url"
                     target="_blank"
                     rel="noopener"
-                    class="org-billing__invoice-link"
-                  >View</a>
+                    :class="buttonVariants({ variant: 'ghost', size: 'xs' })"
+                  >
+                    View
+                    <ExternalLink />
+                  </a>
                 </div>
-              </div>
-            </div>
+              </li>
+            </ul>
           </div>
 
-          <!-- Credit Pack Transactions -->
-          <div v-if="transactions.length > 0" class="org-billing__history-card">
-            <div v-if="invoices.length > 0" class="org-billing__history-subsection-label">Credit Purchases</div>
-            <div class="org-billing__history-list">
-              <div v-for="tx in transactions" :key="tx.id" class="org-billing__history-item">
-                <div
-                  class="org-billing__history-icon"
-                  :class="
-                    tx.payment_method === 'stripe'
-                      ? 'org-billing__history-icon--stripe'
-                      : 'org-billing__history-icon--crypto'
-                  "
-                >
-                  <CreditCard v-if="tx.payment_method === 'stripe'" />
-                  <Wallet v-else />
-                </div>
-                <div class="org-billing__history-info">
-                  <div class="org-billing__history-row">
-                    <span class="org-billing__history-pack">{{ getPackLabel(tx.pack_type) }}</span>
-                    <span class="org-billing__history-status">{{ tx.status }}</span>
-                  </div>
-                  <div class="org-billing__history-meta">
-                    <span>{{ formatTransactionDate(tx.purchased_at) }}</span>
-                    <span class="org-billing__history-dot">•</span>
-                    <span>{{ getPaymentMethodLabel(tx.payment_method) }}</span>
-                    <template v-if="tx.purchased_by">
-                      <span class="org-billing__history-dot">•</span>
-                      <span>{{ tx.purchased_by.name || tx.purchased_by.email }}</span>
-                    </template>
-                  </div>
-                </div>
-                <div class="org-billing__history-amount">
-                  <span class="org-billing__history-usd">${{ parseFloat(tx.amount_usd).toFixed(2) }}</span>
-                  <span class="org-billing__history-mins">+{{ parseFloat(tx.hours_purchased).toFixed(0) }} min</span>
-                </div>
-              </div>
+          <!-- Credit pack transactions -->
+          <div v-if="transactions.length > 0" class="flex flex-col gap-2">
+            <SectionHeader v-if="invoices.length > 0" title="Credit purchases" />
+            <div class="@container overflow-hidden rounded-xl border border-line-subtle bg-surface">
+              <table class="w-full table-fixed text-sm">
+                <thead>
+                  <tr class="eyebrow border-b border-line-subtle text-left [&>th]:px-4 [&>th]:py-2 [&>th]:font-semibold">
+                    <th>Purchase</th>
+                    <th class="hidden w-48 @[44rem]:table-cell">Date</th>
+                    <th class="hidden w-40 @[56rem]:table-cell">Purchased by</th>
+                    <th class="w-24">Status</th>
+                    <th class="w-28 text-right">Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr
+                    v-for="tx in transactions"
+                    :key="tx.id"
+                    class="border-b border-line-subtle last:border-b-0 [&>td]:px-4 [&>td]:py-2"
+                  >
+                    <td>
+                      <div class="flex min-w-0 items-center gap-2.5">
+                        <IconTile :icon="tx.payment_method === 'stripe' ? CreditCard : Wallet" size="md" />
+                        <div class="min-w-0">
+                          <p class="truncate font-medium text-fg">{{ getPackLabel(tx.pack_type) }}</p>
+                          <p class="truncate text-xs text-fg-subtle">
+                            {{ getPaymentMethodLabel(tx.payment_method) }}
+                            <span class="@[44rem]:hidden">· {{ formatTransactionDate(tx.purchased_at) }}</span>
+                          </p>
+                        </div>
+                      </div>
+                    </td>
+                    <td class="hidden truncate text-xs text-fg-muted @[44rem]:table-cell">
+                      {{ formatTransactionDate(tx.purchased_at) }}
+                    </td>
+                    <td class="hidden truncate text-xs text-fg-muted @[56rem]:table-cell">
+                      {{ tx.purchased_by ? tx.purchased_by.name || tx.purchased_by.email : '—' }}
+                    </td>
+                    <td>
+                      <Badge :variant="invoiceStatusVariant(tx.status)" class="capitalize">{{ tx.status }}</Badge>
+                    </td>
+                    <td class="text-right">
+                      <p class="tabular font-semibold text-fg">${{ parseFloat(tx.amount_usd).toFixed(2) }}</p>
+                      <p class="tabular text-2xs text-fg-subtle">+{{ parseFloat(tx.hours_purchased).toFixed(0) }} min</p>
+                    </td>
+                  </tr>
+                </tbody>
+              </table>
             </div>
 
-            <!-- Pagination -->
-            <div v-if="totalTransactionPages > 1" class="org-billing__pagination">
-              <span class="org-billing__pagination-info">Page {{ transactionsPage }} of {{ totalTransactionPages }}</span>
-              <div class="org-billing__pagination-btns">
-                <button
-                  @click="loadTransactions(transactionsPage - 1)"
-                  :disabled="transactionsPage <= 1 || transactionsLoading"
-                  class="org-billing__pagination-btn"
-                >
-                  <ChevronLeft class="h-3.5 w-3.5" />
-                  Previous
-                </button>
-                <button
-                  @click="loadTransactions(transactionsPage + 1)"
-                  :disabled="transactionsPage >= totalTransactionPages || transactionsLoading"
-                  class="org-billing__pagination-btn"
-                >
-                  Next
-                  <ChevronRight class="h-3.5 w-3.5" />
-                </button>
-              </div>
-            </div>
+            <PaginationFooter
+              v-if="totalTransactionPages > 1"
+              mode="static"
+              :current-page="transactionsPage"
+              :total-pages="totalTransactionPages"
+              :total-items="transactionsTotal"
+              item-label="transaction"
+              @go-to-page="loadTransactions"
+              @previous="loadTransactions(transactionsPage - 1)"
+              @next="loadTransactions(transactionsPage + 1)"
+            />
           </div>
 
-          <!-- Empty State: both loaded but nothing found -->
-          <div v-if="invoices.length === 0 && transactions.length === 0" class="org-billing__empty-state">
-            <div class="org-billing__empty-icon">
-              <Receipt />
-            </div>
-            <h3 class="org-billing__empty-title">No payment history</h3>
-            <p class="org-billing__empty-desc">Payments will appear here once they are processed</p>
-          </div>
-        </template>
+          <!-- Nothing found -->
+          <EmptyState
+            v-if="invoices.length === 0 && transactions.length === 0"
+            :icon="Receipt"
+            size="sm"
+            title="No payment history"
+            description="Payments will appear here once they are processed."
+          />
+        </div>
       </section>
 
-      <!-- Subscriptions Section (Admin Only) -->
-      <section v-if="isAdmin && activeTab === 'subscriptions'" class="org-billing__section">
-        <!-- Subscription Stats Cards -->
-        <div class="org-billing__cards">
-          <!-- Current Plan Card -->
-          <div class="org-billing__card" :class="{ 'org-billing__card--active': hasActiveSubscription }">
-            <div
-              class="org-billing__card-indicator"
-              :class="{
-                'org-billing__card-indicator--active': hasActiveSubscription && subscription?.status === 'active',
-                'org-billing__card-indicator--warning': subscription?.status === 'cancelled',
-              }"
-            ></div>
-            <div class="org-billing__card-inner">
-              <div class="org-billing__card-header">
-                <div
-                  class="org-billing__card-icon"
-                  :class="{ 'org-billing__card-icon--active': hasActiveSubscription }"
-                >
-                  <Crown v-if="hasActiveSubscription" />
-                  <CreditCard v-else />
-                </div>
-                <div class="org-billing__card-header-text">
-                  <h3 class="org-billing__card-title">Current Plan</h3>
-                  <p class="org-billing__card-subtitle">
-                    {{ hasActiveSubscription ? subscription?.tier_name || 'Active' : 'No subscription' }}
-                  </p>
-                </div>
-              </div>
-              <div class="org-billing__card-body">
-                <div v-if="hasActiveSubscription" class="org-billing__card-value">
-                  <span
-                    class="org-billing__card-status-badge"
-                    :class="{
-                      'org-billing__card-status-badge--active': subscription?.status === 'active',
-                      'org-billing__card-status-badge--cancelled': subscription?.status === 'cancelled',
-                    }"
-                  >
+      <!-- ───────────── Subscription ───────────── -->
+      <template v-if="isAdmin && activeTab === 'subscriptions'">
+        <!-- Current plan -->
+        <section v-if="hasActiveSubscription" class="flex flex-col gap-2.5">
+          <SectionHeader title="Current plan" />
+          <div class="overflow-hidden rounded-xl border border-line-subtle bg-surface">
+            <div class="flex flex-wrap items-center gap-3 px-4 py-3">
+              <IconTile
+                :icon="subscription?.status === 'active' ? Crown : AlertCircle"
+                :tone="subscription?.status === 'active' ? 'brand' : 'warning'"
+                size="md"
+              />
+              <div class="min-w-0 flex-1">
+                <div class="flex items-center gap-2">
+                  <h3 class="truncate text-sm font-semibold text-fg">{{ subscription?.tier_name || 'Subscription' }}</h3>
+                  <Badge :variant="subscription?.status === 'active' ? 'success' : 'warning'">
                     {{ subscription?.status === 'active' ? 'Active' : 'Cancelled' }}
-                  </span>
+                  </Badge>
                 </div>
-                <div v-else class="org-billing__card-value">
-                  <span class="org-billing__card-amount" style="font-size: 1.25rem">No active plan</span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Seats Usage Card -->
-          <div class="org-billing__card">
-            <div class="org-billing__card-indicator"></div>
-            <div class="org-billing__card-inner">
-              <div class="org-billing__card-header">
-                <div class="org-billing__card-icon">
-                  <Users />
-                </div>
-                <div class="org-billing__card-header-text">
-                  <h3 class="org-billing__card-title">Team Seats</h3>
-                  <p class="org-billing__card-subtitle">Members in organization</p>
-                </div>
-              </div>
-              <div class="org-billing__card-body">
-                <div class="org-billing__card-value">
-                  <span class="org-billing__card-amount">
-                    {{ subscription?.current_members || members.length || 0 }}
-                  </span>
-                  <span class="org-billing__card-unit"> / </span>
-                  <span class="org-billing__card-amount" style="color: var(--sidebar-text-muted)">
-                    {{ subscription?.total_seats || '∞' }}
-                  </span>
-                </div>
-              </div>
-            </div>
-          </div>
-
-          <!-- Monthly Credits Card -->
-          <div class="org-billing__card org-billing__card--accent">
-            <div class="org-billing__card-indicator org-billing__card-indicator--accent"></div>
-            <div class="org-billing__card-inner">
-              <div class="org-billing__card-header">
-                <div class="org-billing__card-icon org-billing__card-icon--accent">
-                  <Zap />
-                </div>
-                <div class="org-billing__card-header-text">
-                  <h3 class="org-billing__card-title">Monthly Credits</h3>
-                  <p class="org-billing__card-subtitle">From subscription</p>
-                </div>
-              </div>
-              <div class="org-billing__card-body">
-                <div class="org-billing__card-value">
-                  <span class="org-billing__card-amount org-billing__card-amount--accent">
-                    {{ subscription?.total_monthly_credits?.toLocaleString() || 0 }}
-                  </span>
-                  <span class="org-billing__card-unit">min</span>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-
-        <!-- Subscription Overview Card (if subscribed) -->
-        <div v-if="hasActiveSubscription" class="org-billing__subscription-card">
-          <div
-            class="org-billing__subscription-indicator"
-            :class="{
-              'org-billing__subscription-indicator--active': subscription?.status === 'active',
-              'org-billing__subscription-indicator--cancelled': subscription?.status === 'cancelled',
-            }"
-          ></div>
-          <div class="org-billing__subscription-inner">
-            <div class="org-billing__subscription-header">
-              <div class="org-billing__subscription-icon">
-                <Crown v-if="subscription?.status === 'active'" />
-                <AlertCircle v-else />
-              </div>
-              <div class="org-billing__subscription-header-text">
-                <h3 class="org-billing__subscription-title">{{ subscription?.tier_name || 'Subscription' }}</h3>
-                <p class="org-billing__subscription-subtitle">
-                  {{ subscription?.status === 'active' ? 'Active' : 'Cancelled' }}
+                <p v-if="subscription?.end_date" class="text-xs text-fg-muted">
+                  <template v-if="subscription.status === 'active'">
+                    Renews {{ formatDate(subscription.end_date) }} · {{ subscription.days_remaining }} days left
+                  </template>
+                  <template v-else>Access until {{ formatDate(subscription.end_date) }}</template>
                 </p>
               </div>
-              <div v-if="subscription?.status === 'active' && isAdmin" class="org-billing__sub-actions">
-                <button @click="showChangePlanDialog = true" class="org-billing__change-plan-btn">
-                  Change Plan
-                </button>
-                <button @click="showCancelSubscriptionDialog = true" class="org-billing__cancel-btn">
-                  Cancel
-                </button>
+              <div v-if="subscription?.status === 'active' && isAdmin" class="flex items-center gap-1.5">
+                <Button variant="ghost" size="sm" class="hover:bg-danger-soft hover:text-danger" @click="showCancelSubscriptionDialog = true">
+                  Cancel plan
+                </Button>
+                <Button variant="secondary" size="sm" @click="showChangePlanDialog = true">Change plan</Button>
               </div>
             </div>
-            <div class="org-billing__subscription-body">
-              <div class="org-billing__subscription-stats">
-                <div class="org-billing__subscription-stat">
-                  <Users class="org-billing__subscription-stat-icon" />
-                  <div class="org-billing__subscription-stat-info">
-                    <span class="org-billing__subscription-stat-value">
-                      {{ subscription?.current_members || 0 }} / {{ subscription?.total_seats || '∞' }}
-                    </span>
-                    <span class="org-billing__subscription-stat-label">Seats Used</span>
-                  </div>
-                </div>
-                <div class="org-billing__subscription-stat">
-                  <Zap class="org-billing__subscription-stat-icon" />
-                  <div class="org-billing__subscription-stat-info">
-                    <span class="org-billing__subscription-stat-value">
-                      {{ subscription?.total_monthly_credits?.toLocaleString() || 0 }}
-                    </span>
-                    <span class="org-billing__subscription-stat-label">Credits/Month</span>
-                  </div>
-                </div>
-              </div>
-              <div v-if="subscription?.pending_subscription_tier" class="org-billing__subscription-renewal org-billing__subscription-renewal--warning" style="margin-bottom: 0.5rem">
-                <AlertTriangle class="org-billing__subscription-renewal-icon" />
-                <span>Downgrading to {{ subscription.pending_subscription_tier }} at end of billing period</span>
-              </div>
-              <div v-if="subscription?.end_date" class="org-billing__subscription-renewal">
-                <CalendarCheck class="org-billing__subscription-renewal-icon" />
-                <span v-if="subscription.status === 'active'">
-                  Renews {{ formatDate(subscription.end_date) }} ({{ subscription.days_remaining }} days)
-                </span>
-                <span v-else class="org-billing__subscription-renewal--warning">
-                  Access until {{ formatDate(subscription.end_date) }}
-                </span>
-              </div>
+            <div class="border-t border-line-subtle px-4 py-3">
+              <StatGrid size="sm" :items="planStats" />
             </div>
-          </div>
-        </div>
-
-        <!-- Subscription Plans Section -->
-        <div v-if="!hasActiveSubscription" class="org-billing__plans-section">
-          <div class="org-billing__section-header">
-            <div class="org-billing__section-title-group">
-              <div class="org-billing__section-icon">
-                <Sparkles />
-              </div>
-              <div>
-                <h2 class="org-billing__section-title">Choose Your Plan</h2>
-                <p class="org-billing__section-subtitle">Select a base subscription to get started</p>
-              </div>
-            </div>
-          </div>
-
-          <div class="org-billing__plans-grid">
             <div
+              v-if="subscription?.pending_subscription_tier"
+              class="flex items-center gap-2 border-t border-line-subtle bg-warning-soft px-4 py-2.5 text-xs text-warning"
+            >
+              <AlertTriangle class="size-3.5 shrink-0" />
+              Downgrading to {{ subscription.pending_subscription_tier }} at the end of the billing period
+            </div>
+          </div>
+        </section>
+
+        <!-- No subscription: plan picker -->
+        <section v-else class="flex flex-col gap-2.5">
+          <SectionHeader title="Choose a plan" description="Select a base subscription to get started." />
+          <div class="grid grid-cols-[repeat(auto-fill,minmax(220px,1fr))] gap-3">
+            <OrgPlanCard
               v-for="tier in sortedBaseTiers"
               :key="tier.id"
-              class="org-billing__plan-card"
-              :class="{ 'org-billing__plan-card--popular': tier.id === 'enterprise_ai' }"
+              :tier="tier"
+              :highlighted="tier.id === 'enterprise_ai'"
             >
-              <div class="org-billing__plan-content">
-                <div v-if="tier.monthly_credits > 0" class="org-billing__plan-corner-badge">
-                  <Star class="org-billing__plan-corner-badge-icon" />
-                  <span>Includes AI</span>
-                </div>
-                <div class="org-billing__plan-corner-badge org-billing__plan-corner-badge--fees">
-                  <span>0% Fees</span>
-                </div>
-                <h3 class="org-billing__plan-name">{{ tier.name }}</h3>
-                <div class="org-billing__plan-price">
-                  <span class="org-billing__plan-price-currency">$</span>
-                  <span class="org-billing__plan-price-amount">{{ tier.usd }}</span>
-                  <span class="org-billing__plan-price-period">/mo</span>
-                </div>
-                <ul class="org-billing__plan-features">
-                  <li class="org-billing__plan-feature">
-                    <Check class="org-billing__plan-feature-icon" />
-                    <span>{{ tier.seats === null ? 'Unlimited team seats' : tier.seats === 0 ? 'Owner only (no team seats)' : `${tier.seats} team seats` }}</span>
-                  </li>
-                  <li v-if="tier.monthly_credits > 0" class="org-billing__plan-feature">
-                    <Check class="org-billing__plan-feature-icon" />
-                    <span>{{ tier.monthly_credits.toLocaleString() }} credits/month</span>
-                  </li>
-                  <li class="org-billing__plan-feature">
-                    <Check class="org-billing__plan-feature-icon" />
-                    <span>Team collaboration tools</span>
-                  </li>
-                  <li class="org-billing__plan-feature">
-                    <Check class="org-billing__plan-feature-icon" />
-                    <span>Shared assets & profiles</span>
-                  </li>
-                  <li class="org-billing__plan-feature">
-                    <Check class="org-billing__plan-feature-icon" />
-                    <span>Unlimited marketing campaigns</span>
-                  </li>
-                  <li class="org-billing__plan-feature">
-                    <Check class="org-billing__plan-feature-icon" />
-                    <span>Browse clipper talent directory</span>
-                  </li>
-                  <li class="org-billing__plan-feature">
-                    <Check class="org-billing__plan-feature-icon" />
-                    <span>Post job listings for clippers & video editors</span>
-                  </li>
-                </ul>
-                <Button
-                  @click="selectSubscription(tier, 'base')"
-                  class="org-billing__plan-btn"
-                  :class="{ 'org-billing__plan-btn--primary': tier.id === 'enterprise_ai' }"
-                >
-                  Get Started
-                </Button>
-              </div>
-            </div>
+              <Button
+                :variant="tier.id === 'enterprise_ai' ? 'brand' : 'secondary'"
+                size="sm"
+                block
+                @click="selectSubscription(tier, 'base')"
+              >
+                Get started
+              </Button>
+            </OrgPlanCard>
           </div>
-        </div>
+        </section>
 
-        <!-- Add-ons Section (only if has base subscription) -->
-        <div v-if="hasActiveSubscription" class="org-billing__addons-section">
-          <div class="org-billing__section-header">
-            <div class="org-billing__section-title-group">
-              <div class="org-billing__section-icon">
-                <Package />
-              </div>
-              <div>
-                <h2 class="org-billing__section-title">Add-ons</h2>
-                <p class="org-billing__section-subtitle">Expand your organization's capacity</p>
-              </div>
+        <!-- Add-ons -->
+        <section v-if="hasActiveSubscription" class="flex flex-col gap-2.5">
+          <SectionHeader title="Add-ons" description="Expand your organization's capacity." />
+          <div class="overflow-hidden rounded-xl border border-line-subtle bg-surface">
+            <div
+              class="eyebrow grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] gap-3 border-b border-line-subtle px-4 py-2"
+            >
+              <span>Seats</span>
+              <span class="flex items-center gap-1.5"><Users class="size-3" />Standard</span>
+              <span class="flex items-center gap-1.5 text-ai"><Sparkles class="size-3" />Includes AI</span>
             </div>
-          </div>
-
-          <div class="org-billing__addons-table">
-            <div class="org-billing__addons-table-header">
-              <div class="org-billing__addons-col-label"></div>
-              <div class="org-billing__addons-col-head">
-                <Users class="org-billing__addons-col-head-icon" />
-                <span>Standard</span>
-              </div>
-              <div class="org-billing__addons-col-head org-billing__addons-col-head--ai">
-                <Zap class="org-billing__addons-col-head-icon" />
-                <span>Includes AI</span>
-              </div>
-            </div>
-            <div v-for="group in groupedAddons" :key="group.seats" class="org-billing__addons-row">
-              <div class="org-billing__addons-row-seats">
-                <span class="org-billing__addons-row-count">{{ group.seats }}</span>
-                <span class="org-billing__addons-row-unit">seats</span>
-              </div>
-              <div class="org-billing__addons-cell">
+            <div
+              v-for="group in groupedAddons"
+              :key="group.seats"
+              class="grid grid-cols-[5rem_minmax(0,1fr)_minmax(0,1fr)] items-center gap-3 border-b border-line-subtle px-4 py-3 last:border-b-0"
+            >
+              <p class="tabular text-sm font-semibold text-fg">
+                +{{ group.seats }} <span class="text-xs font-normal text-fg-subtle">seats</span>
+              </p>
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                 <template v-if="group.standard">
-                  <div class="org-billing__addons-cell-price">
-                    <span class="org-billing__addons-cell-currency">$</span>
-                    <span class="org-billing__addons-cell-amount">{{ group.standard.usd }}</span>
-                    <span class="org-billing__addons-cell-period">/mo</span>
-                  </div>
-                  <Button size="sm" variant="outline" @click="selectSubscription(group.standard, 'addon')" class="org-billing__addons-cell-btn">
-                    Add to Plan
+                  <p class="tabular text-sm text-fg">
+                    ${{ group.standard.usd }}<span class="text-xs text-fg-subtle">/mo</span>
+                  </p>
+                  <Button size="xs" variant="secondary" @click="selectSubscription(group.standard, 'addon')">
+                    Add to plan
                   </Button>
                 </template>
-                <span v-else class="org-billing__addons-cell-na">—</span>
+                <span v-else class="text-fg-disabled">—</span>
               </div>
-              <div class="org-billing__addons-cell org-billing__addons-cell--ai">
+              <div class="flex flex-wrap items-center gap-x-3 gap-y-1.5">
                 <template v-if="group.ai">
-                  <div class="org-billing__addons-cell-price">
-                    <span class="org-billing__addons-cell-currency">$</span>
-                    <span class="org-billing__addons-cell-amount">{{ group.ai.usd }}</span>
-                    <span class="org-billing__addons-cell-period">/mo</span>
+                  <div>
+                    <p class="tabular text-sm text-fg">
+                      ${{ group.ai.usd }}<span class="text-xs text-fg-subtle">/mo</span>
+                    </p>
+                    <p v-if="group.ai.monthly_credits > 0" class="tabular text-2xs text-fg-subtle">
+                      {{ group.ai.monthly_credits.toLocaleString() }} credits/mo
+                    </p>
                   </div>
-                  <div v-if="group.ai.monthly_credits > 0" class="org-billing__addons-cell-credits">
-                    <Zap class="org-billing__addons-cell-credits-icon" />
-                    <span>{{ group.ai.monthly_credits.toLocaleString() }} credits/mo</span>
-                  </div>
-                  <Button size="sm" @click="selectSubscription(group.ai, 'addon')" class="org-billing__addons-cell-btn org-billing__addons-cell-btn--ai">
-                    Add to Plan
+                  <Button size="xs" variant="secondary" @click="selectSubscription(group.ai, 'addon')">
+                    Add to plan
                   </Button>
                 </template>
-                <span v-else class="org-billing__addons-cell-na">—</span>
+                <span v-else class="text-fg-disabled">—</span>
               </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      </template>
 
-      <!-- Non-Admin View -->
-      <div v-if="!isAdmin" class="org-billing__member-view">
-        <div class="org-billing__member-view-icon">
-          <Zap />
-        </div>
-        <h3 class="org-billing__member-view-title">Your allocation is displayed above</h3>
-        <p class="org-billing__member-view-desc">
-          Contact your organization admin if you need additional credits allocated to your account
+      <!-- ───────────── Non-admin ───────────── -->
+      <template v-if="!isAdmin">
+        <StatCard
+          label="My allocation"
+          :value="`${formatAllocation(myAllocation?.hours_remaining)} min`"
+          hint="Your remaining credits"
+          :icon="Zap"
+          tone="brand"
+          class="max-w-xs"
+        />
+        <p class="text-sm text-fg-muted">
+          Contact your organization admin if you need additional credits allocated to your account.
         </p>
-      </div>
-      
-      <!-- Owner without subscription - redirect to subscription setup -->
-      <div v-if="isAdmin && !hasActiveSubscription && activeTab === 'allocations'" class="org-billing__no-subscription">
-        <div class="org-billing__no-subscription-icon">
-          <Crown />
-        </div>
-        <h3 class="org-billing__no-subscription-title">No Active Subscription</h3>
-        <p class="org-billing__no-subscription-desc">
-          Your organization needs an active subscription to access credits and features.
-        </p>
-        <Button @click="activeTab = 'subscriptions'" size="lg">
-          <Crown class="org-billing__no-subscription-btn-icon" />
-          Set Up Subscription
-        </Button>
-      </div>
+      </template>
     </div>
 
-    <!-- Buy Credits Modal -->
-    <BuyCreditsModal
+    <!-- Buy credits for the organization's pool -->
+    <BuyCreditsDialog
+      v-if="organizationId"
       v-model:open="showBuyCreditsModal"
-      :organization-id="organizationId ?? ''"
-      :organization-name="organization?.name ?? ''"
-      @success="handleCreditsSuccess"
+      :target="{ type: 'organization', id: organizationId, name: organization?.name ?? undefined }"
+      @success="loadOrganization(true)"
     />
 
     <!-- Subscribe Dialog -->
@@ -783,164 +469,83 @@
     />
 
     <!-- Change Plan Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showChangePlanDialog" class="org-billing-modal__overlay" @click.self="closeChangePlanDialog">
-          <Transition name="dialog" appear>
-            <div class="org-billing-modal" style="max-width: 900px">
-              <div class="org-billing-modal__content">
-                <div class="org-billing-modal__header">
-                  <div class="org-billing-modal__icon" style="background-color: rgba(6, 182, 212, 0.15); color: #22d3ee">
-                    <Crown />
-                  </div>
-                  <h2 class="org-billing-modal__title">Change Plan</h2>
-                  <p class="org-billing-modal__subtitle">Current: {{ subscription?.tier_name }}</p>
-                </div>
+    <Modal
+      :open="showChangePlanDialog"
+      title="Change plan"
+      :description="`Current plan: ${subscription?.tier_name || '—'}`"
+      :icon="Crown"
+      size="xl"
+      @close="closeChangePlanDialog"
+    >
+      <div class="grid grid-cols-[repeat(auto-fit,minmax(200px,1fr))] gap-3">
+        <OrgPlanCard
+          v-for="tier in sortedBaseTiers.filter((t: any) => t.id !== subscription?.tier)"
+          :key="tier.id"
+          :tier="tier"
+          :highlighted="tier.id === 'enterprise_ai'"
+          selectable
+          :selected="changePlanTier === tier.id"
+          @select="selectChangePlanTier(tier.id)"
+        />
+      </div>
 
-                <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; margin-bottom: 1.5rem">
-                  <div
-                    v-for="tier in sortedBaseTiers.filter((t: any) => t.id !== subscription?.tier)"
-                    :key="tier.id"
-                    @click="selectChangePlanTier(tier.id)"
-                    class="org-billing__change-tier-card"
-                    :class="{ 
-                      'org-billing__change-tier-card--selected': changePlanTier === tier.id,
-                      'org-billing__change-tier-card--popular': tier.id === 'enterprise_ai'
-                    }"
-                  >
-                    <div class="org-billing__change-tier-content">
-                      <div v-if="tier.monthly_credits > 0" class="org-billing__plan-corner-badge">
-                        <Star class="org-billing__plan-corner-badge-icon" />
-                        <span>Includes AI</span>
-                      </div>
-                      <div class="org-billing__plan-corner-badge org-billing__plan-corner-badge--fees">
-                        <span>0% Fees</span>
-                      </div>
-                      <h3 class="org-billing__change-tier-name">{{ tier.name }}</h3>
-                      <div class="org-billing__change-tier-price">
-                        <span class="org-billing__change-tier-price-currency">$</span>
-                        <span class="org-billing__change-tier-price-amount">{{ tier.usd }}</span>
-                        <span class="org-billing__change-tier-price-period">/mo</span>
-                      </div>
-                      <ul class="org-billing__change-tier-features">
-                        <li class="org-billing__change-tier-feature">
-                          <Check class="org-billing__change-tier-feature-icon" />
-                          <span>{{ tier.seats === null ? 'Unlimited team seats' : tier.seats === 0 ? 'Owner only (no team seats)' : `${tier.seats} team seats` }}</span>
-                        </li>
-                        <li v-if="tier.monthly_credits > 0" class="org-billing__change-tier-feature">
-                          <Check class="org-billing__change-tier-feature-icon" />
-                          <span>{{ tier.monthly_credits.toLocaleString() }} credits/month</span>
-                        </li>
-                        <li class="org-billing__change-tier-feature">
-                          <Check class="org-billing__change-tier-feature-icon" />
-                          <span>Team collaboration tools</span>
-                        </li>
-                        <li class="org-billing__change-tier-feature">
-                          <Check class="org-billing__change-tier-feature-icon" />
-                          <span>Shared assets & profiles</span>
-                        </li>
-                        <li class="org-billing__change-tier-feature">
-                          <Check class="org-billing__change-tier-feature-icon" />
-                          <span>Unlimited marketing campaigns</span>
-                        </li>
-                        <li class="org-billing__change-tier-feature">
-                          <Check class="org-billing__change-tier-feature-icon" />
-                          <span>Browse clipper talent directory</span>
-                        </li>
-                        <li class="org-billing__change-tier-feature">
-                          <Check class="org-billing__change-tier-feature-icon" />
-                          <span>Post job listings for clippers & video editors</span>
-                        </li>
-                      </ul>
-                    </div>
-                  </div>
-                </div>
+      <div v-if="prorationLoading" class="flex justify-center py-4">
+        <Loader2 class="size-5 animate-spin text-fg-subtle" />
+      </div>
 
-                <div v-if="prorationLoading" style="display:flex;justify-content:center;padding:1rem">
-                  <Loader2 style="width:20px;height:20px;color:#22d3ee;animation:spin 1s linear infinite" />
-                </div>
+      <InfoList v-if="prorationPreview && !prorationLoading" class="mt-4 animate-enter border-t border-line-subtle pt-1">
+        <InfoRow label="Type">
+          <Badge :variant="prorationPreview.change_type === 'upgrade' ? 'success' : 'warning'">
+            {{ prorationPreview.change_type === 'upgrade' ? 'Upgrade' : 'Downgrade' }}
+          </Badge>
+        </InfoRow>
+        <InfoRow label="New price" :value="`$${prorationPreview.new_price}/mo`" strong />
+        <InfoRow
+          v-if="prorationPreview.change_type === 'upgrade' && prorationPreview.proration_amount > 0"
+          label="Prorated charge now"
+          :value="`$${prorationPreview.proration_amount}`"
+          strong
+        />
+        <InfoRow
+          label="Effective"
+          :value="prorationPreview.effective_date === 'immediate' ? 'Immediately' : formatDate(prorationPreview.effective_date)"
+        />
+      </InfoList>
 
-                <div v-if="prorationPreview && !prorationLoading" class="org-billing__proration-preview">
-                  <div class="org-billing__proration-row">
-                    <span>Type</span>
-                    <span :style="{ color: prorationPreview.change_type === 'upgrade' ? '#4ade80' : '#fbbf24', fontWeight: 600 }">
-                      {{ prorationPreview.change_type === 'upgrade' ? 'Upgrade' : 'Downgrade' }}
-                    </span>
-                  </div>
-                  <div class="org-billing__proration-row">
-                    <span>New price</span>
-                    <span style="color:white;font-weight:600">${{ prorationPreview.new_price }}/mo</span>
-                  </div>
-                  <div v-if="prorationPreview.change_type === 'upgrade' && prorationPreview.proration_amount > 0" class="org-billing__proration-row">
-                    <span>Prorated charge now</span>
-                    <span style="color:white;font-weight:600">${{ prorationPreview.proration_amount }}</span>
-                  </div>
-                  <div class="org-billing__proration-row">
-                    <span>Effective</span>
-                    <span style="color:white">{{ prorationPreview.effective_date === 'immediate' ? 'Immediately' : formatDate(prorationPreview.effective_date) }}</span>
-                  </div>
-                </div>
-
-                <div class="org-billing-modal__actions">
-                  <button
-                    class="org-billing-modal__btn org-billing-modal__btn--primary"
-                    :disabled="!changePlanTier || changePlanLoading"
-                    @click="handleChangePlan"
-                  >
-                    <Loader2 v-if="changePlanLoading" style="width:16px;height:16px;animation:spin 1s linear infinite" />
-                    {{ changePlanLoading ? 'Changing...' : 'Confirm Change' }}
-                  </button>
-                  <button class="org-billing-modal__btn org-billing-modal__btn--secondary" @click="closeChangePlanDialog">
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            </div>
-          </Transition>
-        </div>
-      </Transition>
-    </Teleport>
+      <template #footer>
+        <Button variant="ghost" @click="closeChangePlanDialog">Cancel</Button>
+        <Button
+          variant="primary"
+          :loading="changePlanLoading"
+          :disabled="!changePlanTier || changePlanLoading"
+          @click="handleChangePlan"
+        >
+          {{ changePlanLoading ? 'Changing…' : 'Confirm change' }}
+        </Button>
+      </template>
+    </Modal>
 
     <!-- Cancel Subscription Confirmation -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showCancelSubscriptionDialog" class="org-billing-modal__overlay" @click.self="showCancelSubscriptionDialog = false">
-          <Transition name="dialog" appear>
-            <div class="org-billing-modal">
-              <div class="org-billing-modal__content">
-                <div class="org-billing-modal__header">
-                  <div class="org-billing-modal__icon org-billing-modal__icon--danger">
-                    <AlertTriangle />
-                  </div>
-                  <h2 class="org-billing-modal__title">Cancel Subscription?</h2>
-                  <p class="org-billing-modal__subtitle">Your organization will lose access after the current period ends</p>
-                </div>
-
-                <div class="org-billing-modal__body">
-                  <div class="org-billing-modal__info">
-                    <p>
-                      Your subscription will remain active until
-                      <strong>{{ formatDate(subscription?.end_date || '') }}</strong>.
-                      After that, your organization will lose access to subscription features.
-                    </p>
-                    <p class="org-billing-modal__info-muted">Your credits will remain in your organization pool.</p>
-                  </div>
-
-                  <div class="org-billing-modal__actions">
-                    <button class="org-billing-modal__btn org-billing-modal__btn--danger" @click="cancelSubscription">
-                      Yes, Cancel Subscription
-                    </button>
-                    <button class="org-billing-modal__btn org-billing-modal__btn--secondary" @click="showCancelSubscriptionDialog = false">
-                      Keep Subscription
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Transition>
-        </div>
-      </Transition>
-    </Teleport>
+    <Modal
+      :open="showCancelSubscriptionDialog"
+      title="Cancel subscription?"
+      description="Your organization will lose access after the current period ends."
+      :icon="AlertTriangle"
+      tone="danger"
+      size="sm"
+      @close="showCancelSubscriptionDialog = false"
+    >
+      <p class="text-sm text-fg-muted">
+        Your subscription stays active until
+        <span class="font-medium text-fg">{{ formatDate(subscription?.end_date || '') }}</span>. After that, your
+        organization loses access to subscription features.
+      </p>
+      <p class="mt-2 text-xs text-fg-subtle">Your credits will remain in your organization pool.</p>
+      <template #footer>
+        <Button variant="ghost" @click="showCancelSubscriptionDialog = false">Keep subscription</Button>
+        <Button variant="destructive" @click="cancelSubscription">Cancel subscription</Button>
+      </template>
+    </Modal>
   </PageLayout>
 </template>
 
@@ -955,8 +560,6 @@
     Receipt,
     CreditCard,
     RefreshCw,
-    ChevronLeft,
-    ChevronRight,
     Loader2,
     Plus,
     History,
@@ -964,19 +567,28 @@
     Zap,
     Crown,
     AlertCircle,
-    CalendarCheck,
     Sparkles,
-    Star,
-    Check,
-    Package,
-    X,
     AlertTriangle,
+    ExternalLink,
   } from 'lucide-vue-next';
-  import { Button } from '@/components/ui/button';
+  import { Badge } from '@/components/ui/badge';
+  import { Button, buttonVariants } from '@/components/ui/button';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { IconTile } from '@/components/ui/icon-tile';
   import { Input } from '@/components/ui/input';
+  import { Modal } from '@/components/ui/modal';
+  import { SectionHeader } from '@/components/ui/section-header';
+  import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
+  import { StatCard, StatGrid } from '@/components/ui/stat-card';
+  import { InfoList, InfoRow } from '@/components/ui/info-list';
+  import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+  import { Switch } from '@/components/ui/switch';
   import PageLayout from '@/components/PageLayout.vue';
+  import PaginationFooter from '@/components/PaginationFooter.vue';
+  import OrgPlanCard from './components/OrgPlanCard.vue';
+  import OrgUserCell from './components/OrgUserCell.vue';
   import OrganizationBreadcrumb from '@/components/OrganizationBreadcrumb.vue';
-  import BuyCreditsModal from '@/components/organization/BuyCreditsModal.vue';
+  import BuyCreditsDialog from '@/components/billing/BuyCreditsDialog.vue';
   import SubscribeDialog from '@/components/SubscribeDialog.vue';
   import { useOrganization } from '@/composables/useOrganization';
   import { useToast } from '@/composables/useToast';
@@ -1019,16 +631,17 @@
     formatDate,
   } = useOrganization();
 
-  const tabs = [
-    { id: 'allocations', label: 'Credits', icon: markRaw(Users) },
-    { id: 'history', label: 'History', icon: markRaw(History) },
-    { id: 'subscriptions', label: 'Subscriptions', icon: markRaw(Crown) },
+  type BillingTab = 'allocations' | 'history' | 'subscriptions';
+
+  const tabs: SegmentedOption<BillingTab>[] = [
+    { value: 'allocations', label: 'Credits', icon: markRaw(Coins) },
+    { value: 'history', label: 'Payment history', icon: markRaw(History) },
+    { value: 'subscriptions', label: 'Subscription', icon: markRaw(Crown) },
   ];
 
-  const activeTab = ref('allocations');
+  const activeTab = ref<BillingTab>('allocations');
   const showBuyCreditsModal = ref(false);
   const allocations = ref<Record<number, number>>({});
-  const avatarFailed = ref<Record<number, boolean>>({});
 
   // Subscription state
   const loadingTiers = ref(true);
@@ -1051,6 +664,20 @@
     return [...baseTiers.value].sort((a, b) => a.usd - b.usd);
   });
 
+  const planStats = computed(() => [
+    {
+      label: 'Seats used',
+      value: subscription.value?.current_members || members.value.length || 0,
+      hint: `/ ${subscription.value?.total_seats || '∞'}`,
+    },
+    {
+      label: 'Monthly credits',
+      value: subscription.value?.total_monthly_credits?.toLocaleString() || 0,
+      hint: 'min',
+    },
+    { label: 'Add-ons', value: subscription.value?.addons?.length || 0 },
+  ]);
+
   const groupedAddons = computed(() => {
     if (!subscription.value) return [];
     const groups: Record<number, { standard: any | null; ai: any | null }> = {};
@@ -1064,14 +691,25 @@
       .map(([seats, opts]) => ({ seats: Number(seats), ...opts }));
   });
 
-  function getMemberInitials(member: any): string {
-    const name = member.user?.name || member.user?.email || '';
-    if (!name) return '??';
-    const parts = name.split(/[\s@]/);
-    if (parts.length >= 2) {
-      return (parts[0][0] + parts[1][0]).toUpperCase();
+  // Payment / invoice status → badge tone
+  function invoiceStatusVariant(status?: string) {
+    switch (status) {
+      case 'paid':
+      case 'completed':
+      case 'succeeded':
+        return 'success' as const;
+      case 'pending':
+      case 'open':
+      case 'processing':
+        return 'warning' as const;
+      case 'failed':
+      case 'void':
+      case 'uncollectible':
+      case 'refunded':
+        return 'danger' as const;
+      default:
+        return 'neutral' as const;
     }
-    return name.slice(0, 2).toUpperCase();
   }
 
   async function handleAllocateCredits(userId: number) {
@@ -1084,11 +722,6 @@
 
   async function handleTogglePoolFallback(userId: number, allowFallback: boolean) {
     await togglePoolFallback(userId, allowFallback);
-  }
-
-  function handleCreditsSuccess() {
-    showBuyCreditsModal.value = false;
-    loadOrganization();
   }
 
   // Subscription functions
@@ -1200,2001 +833,3 @@
   });
 </script>
 
-<style scoped>
-  /* ===== Container ===== */
-  .org-billing {
-    width: 100%;
-    max-width: 1200px;
-    margin: 0 auto;
-    padding: 1.5rem;
-    display: flex;
-    flex-direction: column;
-    gap: 2.5rem;
-  }
-
-  /* ===== Page Heading ===== */
-  .org-billing__heading {
-    margin-bottom: -0.3rem;
-  }
-
-  .org-billing__title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
-    letter-spacing: -0.025em;
-  }
-
-  .org-billing__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  /* ===== Buy Credits Button ===== */
-  .org-billing__buy-btn {
-    height: 32px;
-    padding: 0 0.75rem;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    transition: all 150ms ease;
-  }
-
-  .org-billing__buy-btn:hover {
-    opacity: 0.9;
-  }
-
-  .org-billing__buy-btn-icon {
-    width: 14px;
-    height: 14px;
-    margin-right: 0.25rem;
-  }
-
-  /* ===== Cards Grid ===== */
-  .org-billing__cards {
-    display: grid;
-    grid-template-columns: repeat(1, 1fr);
-    gap: 1rem;
-    margin-top: -0.5rem;
-    margin-bottom: 0.7rem;
-  }
-
-  @media (min-width: 768px) {
-    .org-billing__cards {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  /* ===== Card (Flat Style) ===== */
-  .org-billing__card {
-    position: relative;
-    display: flex;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    overflow: hidden;
-    transition: all 200ms ease;
-  }
-
-  .org-billing__card:hover {
-    border-color: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-  }
-
-  .org-billing__card-indicator {
-    width: 4px;
-    flex-shrink: 0;
-    background-color: var(--sidebar-border);
-  }
-
-  .org-billing__card-indicator--pool {
-    background-color: #10b981;
-  }
-
-  .org-billing__card-indicator--accent {
-    background-color: var(--sidebar-accent);
-  }
-
-  .org-billing__card-indicator--active {
-    background-color: #10b981;
-  }
-
-  .org-billing__card-indicator--warning {
-    background-color: #fbbf24;
-  }
-
-  .org-billing__card-inner {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .org-billing__card-header {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-    padding: 1rem 1.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .org-billing__card-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    flex-shrink: 0;
-  }
-
-  .org-billing__card-icon svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .org-billing__card-icon--pool {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
-
-  .org-billing__card-icon--accent {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-  }
-
-  .org-billing__card-icon--active {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
-
-  .org-billing__card-header-text {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .org-billing__card-title {
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .org-billing__card-subtitle {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-  }
-
-  .org-billing__card-body {
-    padding: 1.25rem;
-  }
-
-  .org-billing__card-value {
-    display: flex;
-    align-items: baseline;
-    gap: 0.375rem;
-  }
-
-  .org-billing__card-amount {
-    font-size: 2rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    letter-spacing: -0.03em;
-    line-height: 1;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .org-billing__card-amount--pool {
-    color: #10b981;
-  }
-
-  .org-billing__card-amount--accent {
-    color: var(--sidebar-accent);
-  }
-
-  .org-billing__card-unit {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    font-weight: 500;
-  }
-
-  .org-billing__card-status-badge {
-    padding: 0.5rem 1rem;
-    border-radius: 6px;
-    font-size: 0.875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    display: inline-block;
-  }
-
-  .org-billing__card-status-badge--active {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #34d399;
-  }
-
-  .org-billing__card-status-badge--cancelled {
-    background-color: rgba(251, 191, 36, 0.15);
-    color: #fbbf24;
-  }
-
-  /* ===== Tabs ===== */
-  .org-billing__tabs {
-    display: flex;
-    gap: 0.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .org-billing__tab {
-    display: flex;
-    align-items: center;
-    gap: 0.4375rem;
-    padding: 0.625rem 0.875rem;
-    background: transparent;
-    border: none;
-    border-bottom: 2px solid transparent;
-    margin-bottom: -1px;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-billing__tab:hover {
-    color: var(--sidebar-text);
-  }
-
-  .org-billing__tab--active {
-    color: var(--sidebar-text);
-    border-bottom-color: var(--sidebar-accent);
-  }
-
-  .org-billing__tab-icon {
-    width: 15px;
-    height: 15px;
-  }
-
-  /* ===== Section Styles ===== */
-  .org-billing__section {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  .org-billing__section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-  }
-
-  .org-billing__section-title-group {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .org-billing__section-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: var(--sidebar-hover);
-    color: var(--sidebar-text-muted);
-    flex-shrink: 0;
-  }
-
-  .org-billing__section-icon svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .org-billing__section-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .org-billing__section-subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.125rem 0 0;
-  }
-
-  .org-billing__section-actions {
-    flex-shrink: 0;
-  }
-
-  /* ===== Table Wrapper ===== */
-  .org-billing__table-wrapper {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    overflow: hidden;
-  }
-
-  .org-billing__table {
-    width: 100%;
-    border-collapse: collapse;
-    table-layout: fixed;
-  }
-
-  .org-billing__table thead {
-    background-color: rgba(0, 0, 0, 0.2);
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .org-billing__table th {
-    padding: 0.875rem 1.25rem;
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    color: var(--sidebar-text-muted);
-    text-align: left;
-  }
-
-  /* Column 1: Member - left aligned */
-  .org-billing__table th:nth-child(1),
-  .org-billing__table td:nth-child(1) {
-    width: 25%;
-    text-align: left;
-  }
-
-  /* Column 2: Allocated - right aligned */
-  .org-billing__table th:nth-child(2),
-  .org-billing__table td:nth-child(2) {
-    width: 12%;
-    text-align: right;
-  }
-
-  /* Column 3: Used - right aligned */
-  .org-billing__table th:nth-child(3),
-  .org-billing__table td:nth-child(3) {
-    width: 12%;
-    text-align: right;
-  }
-
-  /* Column 4: Remaining - right aligned */
-  .org-billing__table th:nth-child(4),
-  .org-billing__table td:nth-child(4) {
-    width: 12%;
-    text-align: right;
-  }
-
-  /* Column 5: Pool Fallback - center aligned */
-  .org-billing__table th:nth-child(5),
-  .org-billing__table td:nth-child(5) {
-    width: 14%;
-    text-align: center;
-  }
-
-  /* Column 6: Add Credits - right aligned */
-  .org-billing__table th:nth-child(6),
-  .org-billing__table td:nth-child(6) {
-    width: 25%;
-    text-align: right;
-  }
-
-  .org-billing__table-row {
-    border-bottom: 1px solid var(--sidebar-border);
-    transition: background-color 150ms ease;
-  }
-
-  .org-billing__table-row:last-child {
-    border-bottom: none;
-  }
-
-  .org-billing__table-row:hover {
-    background-color: var(--sidebar-hover);
-  }
-
-  .org-billing__table td {
-    padding: 1rem 1.25rem;
-    vertical-align: middle;
-  }
-
-  .org-billing__table-value {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    font-variant-numeric: tabular-nums;
-  }
-
-  .org-billing__table-value--muted {
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-billing__table-value--accent {
-    color: var(--sidebar-accent);
-  }
-
-  .org-billing__table-value-unit {
-    font-size: 0.6875rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    margin-left: 0.25rem;
-  }
-
-  /* ===== Toggle Cell ===== */
-  .org-billing__toggle-cell {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-  }
-
-  .org-billing__toggle {
-    position: relative;
-    width: 44px;
-    height: 24px;
-    background-color: var(--sidebar-border);
-    border: none;
-    border-radius: 12px;
-    cursor: pointer;
-    transition: background-color 200ms ease;
-    padding: 0;
-  }
-
-  .org-billing__toggle:hover {
-    background-color: rgba(255, 255, 255, 0.15);
-  }
-
-  .org-billing__toggle--active {
-    background-color: var(--sidebar-accent);
-  }
-
-  .org-billing__toggle--active:hover {
-    background-color: rgba(6, 182, 212, 0.8);
-  }
-
-  .org-billing__toggle-slider {
-    position: absolute;
-    top: 2px;
-    left: 2px;
-    width: 20px;
-    height: 20px;
-    background-color: white;
-    border-radius: 50%;
-    transition: transform 200ms ease;
-  }
-
-  .org-billing__toggle--active .org-billing__toggle-slider {
-    transform: translateX(20px);
-  }
-
-  .org-billing__toggle-label {
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-  }
-
-  /* ===== Member Cell ===== */
-  .org-billing__member-cell {
-    display: flex;
-    align-items: center;
-    gap: 0.875rem;
-  }
-
-  .org-billing__member-avatar {
-    width: 36px;
-    height: 36px;
-    border-radius: 8px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, var(--sidebar-accent), rgba(6, 182, 212, 0.6));
-    font-size: 0.6875rem;
-    font-weight: 700;
-    color: var(--sidebar-bg);
-    flex-shrink: 0;
-    overflow: hidden;
-  }
-
-  .org-billing__member-avatar--has-image {
-    background: transparent;
-  }
-
-  .org-billing__member-avatar-img {
-    width: 100%;
-    height: 100%;
-    object-fit: cover;
-  }
-
-  .org-billing__member-details {
-    min-width: 0;
-  }
-
-  .org-billing__member-name {
-    display: block;
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-  }
-
-  .org-billing__member-email {
-    display: block;
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    margin-top: 0.125rem;
-  }
-
-  /* ===== Allocate Form ===== */
-  .org-billing__allocate-form {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    justify-content: flex-end;
-  }
-
-  .org-billing__input-wrap {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-  }
-
-  .org-billing__allocate-input {
-    width: 72px;
-    text-align: right;
-    font-size: 0.8125rem;
-    font-variant-numeric: tabular-nums;
-  }
-
-  .org-billing__input-unit {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-billing__allocate-btn {
-    font-size: 0.75rem;
-    gap: 0.25rem;
-  }
-
-  /* ===== Load Button ===== */
-  .org-billing__load-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    padding: 0.5rem 1rem;
-    font-size: 0.8125rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-billing__load-btn:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.12);
-  }
-
-  .org-billing__load-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .org-billing__load-btn-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  .org-billing__load-btn-icon--spin {
-    animation: spin 0.8s linear infinite;
-  }
-
-  .org-billing__load-btn-spinner {
-    width: 16px;
-    height: 16px;
-    animation: spin 0.8s linear infinite;
-  }
-
-  /* ===== Empty State ===== */
-  .org-billing__empty-state {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    text-align: center;
-  }
-
-  .org-billing__empty-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: var(--sidebar-hover);
-    margin-bottom: 1.25rem;
-  }
-
-  .org-billing__empty-icon svg {
-    width: 28px;
-    height: 28px;
-    color: var(--sidebar-accent);
-  }
-
-  .org-billing__empty-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
-  }
-
-  .org-billing__empty-desc {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    max-width: 300px;
-  }
-
-  /* ===== Skeleton Loaders ===== */
-  .org-billing__skeleton-list {
-    display: flex;
-    flex-direction: column;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    overflow: hidden;
-  }
-
-  .org-billing__skeleton-item {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .org-billing__skeleton-item:last-child {
-    border-bottom: none;
-  }
-
-  .org-billing__skeleton-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    background: linear-gradient(
-      90deg,
-      var(--sidebar-hover) 25%,
-      rgba(255, 255, 255, 0.08) 50%,
-      var(--sidebar-hover) 75%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-  }
-
-  .org-billing__skeleton-lines {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .org-billing__skeleton-line {
-    height: 14px;
-    border-radius: 4px;
-    background: linear-gradient(
-      90deg,
-      var(--sidebar-hover) 25%,
-      rgba(255, 255, 255, 0.08) 50%,
-      var(--sidebar-hover) 75%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-  }
-
-  .org-billing__skeleton-line--sm {
-    height: 12px;
-  }
-
-  .org-billing__skeleton-amount {
-    width: 70px;
-    height: 40px;
-    border-radius: 6px;
-    background: linear-gradient(
-      90deg,
-      var(--sidebar-hover) 25%,
-      rgba(255, 255, 255, 0.08) 50%,
-      var(--sidebar-hover) 75%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-  }
-
-  /* ===== History Card ===== */
-  .org-billing__history-card {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    overflow: hidden;
-  }
-
-  .org-billing__history-list {
-    max-height: 440px;
-    overflow-y: auto;
-  }
-
-  .org-billing__history-list::-webkit-scrollbar {
-    width: 6px;
-  }
-
-  .org-billing__history-list::-webkit-scrollbar-track {
-    background: transparent;
-  }
-
-  .org-billing__history-list::-webkit-scrollbar-thumb {
-    background-color: rgba(255, 255, 255, 0.1);
-    border-radius: 3px;
-  }
-
-  .org-billing__history-item {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1.125rem 1.25rem;
-    border-bottom: 1px solid var(--sidebar-border);
-    transition: background-color 150ms ease;
-  }
-
-  .org-billing__history-item:last-child {
-    border-bottom: none;
-  }
-
-  .org-billing__history-item:hover {
-    background-color: var(--sidebar-hover);
-  }
-
-  .org-billing__history-icon {
-    width: 44px;
-    height: 44px;
-    border-radius: 10px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    flex-shrink: 0;
-  }
-
-  .org-billing__history-icon svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .org-billing__history-icon--stripe {
-    background-color: rgba(99, 91, 255, 0.12);
-    color: #635bff;
-  }
-
-  .org-billing__history-icon--crypto {
-    background-color: rgba(139, 92, 246, 0.12);
-    color: #a78bfa;
-  }
-
-  .org-billing__history-info {
-    flex: 1;
-    min-width: 0;
-  }
-
-  .org-billing__history-row {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-  }
-
-  .org-billing__history-pack {
-    font-size: 0.9375rem;
-    font-weight: 500;
-    color: var(--sidebar-text);
-  }
-
-  .org-billing__history-status {
-    font-size: 0.625rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-    padding: 0.25rem 0.5rem;
-    border-radius: 4px;
-    background-color: rgba(16, 185, 129, 0.12);
-    color: #34d399;
-  }
-
-  .org-billing__history-status--paid {
-    background-color: rgba(16, 185, 129, 0.12);
-    color: #34d399;
-  }
-
-  .org-billing__history-status--open,
-  .org-billing__history-status--draft {
-    background-color: rgba(251, 191, 36, 0.12);
-    color: #fbbf24;
-  }
-
-  .org-billing__history-status--void,
-  .org-billing__history-status--uncollectible {
-    background-color: rgba(239, 68, 68, 0.12);
-    color: #f87171;
-  }
-
-  .org-billing__history-subsection-label {
-    font-size: 0.6875rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.06em;
-    color: var(--sidebar-text-muted);
-    padding: 0.75rem 1rem 0.5rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  }
-
-  .org-billing__invoice-link {
-    font-size: 0.6875rem;
-    color: var(--accent-color, #3b82f6);
-    text-decoration: none;
-    margin-top: 0.25rem;
-    &:hover { text-decoration: underline; }
-  }
-
-  .org-billing__history-meta {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin-top: 0.25rem;
-    display: flex;
-    align-items: center;
-    flex-wrap: wrap;
-    gap: 0.375rem;
-  }
-
-  .org-billing__history-dot {
-    opacity: 0.4;
-  }
-
-  .org-billing__history-amount {
-    text-align: right;
-    flex-shrink: 0;
-  }
-
-  .org-billing__history-usd {
-    display: block;
-    font-size: 0.9375rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .org-billing__history-mins {
-    display: block;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--sidebar-accent);
-    margin-top: 0.125rem;
-  }
-
-  /* ===== Pagination ===== */
-  .org-billing__pagination {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 1rem 1.25rem;
-    border-top: 1px solid var(--sidebar-border);
-    background-color: rgba(0, 0, 0, 0.15);
-  }
-
-  .org-billing__pagination-info {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-billing__pagination-btns {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .org-billing__pagination-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.875rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    background-color: var(--sidebar-hover);
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-billing__pagination-btn:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-    color: var(--sidebar-text);
-  }
-
-  .org-billing__pagination-btn:disabled {
-    opacity: 0.4;
-    cursor: not-allowed;
-  }
-
-  /* ===== Non-Admin View ===== */
-  .org-billing__member-view {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 4rem 2rem;
-    background: linear-gradient(135deg, rgba(6, 182, 212, 0.08) 0%, transparent 60%);
-    border: 1px solid rgba(6, 182, 212, 0.2);
-    border-radius: 12px;
-    text-align: center;
-  }
-
-  .org-billing__member-view-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 16px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: rgba(6, 182, 212, 0.15);
-    margin-bottom: 1.25rem;
-  }
-
-  .org-billing__member-view-icon svg {
-    width: 28px;
-    height: 28px;
-    color: var(--sidebar-accent);
-  }
-
-  .org-billing__member-view-title {
-    font-size: 1rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.375rem;
-  }
-
-  .org-billing__member-view-desc {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    max-width: 360px;
-    line-height: 1.5;
-  }
-
-  /* ===== No Subscription View ===== */
-  .org-billing__no-subscription {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    padding: 3rem 1.5rem;
-    background: var(--sidebar-card);
-    border-radius: 12px;
-    border: 1px solid var(--sidebar-border);
-    text-align: center;
-  }
-
-  .org-billing__no-subscription-icon {
-    width: 64px;
-    height: 64px;
-    border-radius: 16px;
-    background: linear-gradient(135deg, var(--sidebar-accent) 0%, var(--sidebar-accent-hover) 100%);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    margin-bottom: 1.25rem;
-  }
-
-  .org-billing__no-subscription-icon svg {
-    width: 28px;
-    height: 28px;
-    color: white;
-  }
-
-  .org-billing__no-subscription-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
-  }
-
-  .org-billing__no-subscription-desc {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0 0 1.5rem;
-    max-width: 400px;
-  }
-
-  .org-billing__no-subscription-btn-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  /* ===== Subscription Card ===== */
-  .org-billing__subscription-card {
-    position: relative;
-    display: flex;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    overflow: hidden;
-    margin-bottom: 2rem;
-  }
-
-  .org-billing__subscription-indicator {
-    width: 4px;
-    flex-shrink: 0;
-    background-color: var(--sidebar-border);
-  }
-
-  .org-billing__subscription-indicator--active {
-    background-color: #10b981;
-  }
-
-  .org-billing__subscription-indicator--cancelled {
-    background-color: #fbbf24;
-  }
-
-  .org-billing__subscription-inner {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-  }
-
-  .org-billing__subscription-header {
-    display: flex;
-    align-items: center;
-    gap: 1rem;
-    padding: 1.25rem 1.5rem;
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .org-billing__subscription-icon {
-    width: 48px;
-    height: 48px;
-    border-radius: 12px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #10b981;
-  }
-
-  .org-billing__subscription-icon svg {
-    width: 24px;
-    height: 24px;
-  }
-
-  .org-billing__subscription-header-text {
-    flex: 1;
-  }
-
-  .org-billing__subscription-title {
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .org-billing__subscription-subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  .org-billing__sub-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .org-billing__change-plan-btn {
-    padding: 0.5rem 1rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: #22d3ee;
-    background: transparent;
-    border: 1px solid rgba(6, 182, 212, 0.3);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-billing__change-plan-btn:hover {
-    background-color: rgba(6, 182, 212, 0.1);
-  }
-
-  .org-billing__cancel-btn {
-    padding: 0.5rem 1rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-billing__cancel-btn:hover {
-    color: #f87171;
-    border-color: rgba(248, 113, 113, 0.3);
-    background-color: rgba(248, 113, 113, 0.1);
-  }
-
-  .org-billing__tier-option {
-    display: flex;
-    flex-direction: column;
-    padding: 1rem;
-    border-radius: 8px;
-    border: 1px solid var(--sidebar-border);
-    background: var(--sidebar-hover);
-    cursor: pointer;
-    transition: all 150ms ease;
-    text-align: left;
-  }
-
-  .org-billing__tier-option:hover {
-    border-color: rgba(255, 255, 255, 0.15);
-  }
-
-  .org-billing__tier-option--selected {
-    border-color: rgba(6, 182, 212, 0.6);
-    background: rgba(6, 182, 212, 0.1);
-    box-shadow: 0 0 0 1px rgba(6, 182, 212, 0.3);
-  }
-
-  .org-billing__tier-option-name {
-    font-size: 0.875rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin-bottom: 0.25rem;
-  }
-
-  .org-billing__tier-option-price {
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin-bottom: 0.5rem;
-  }
-
-  .org-billing__tier-option-info {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  /* Change Plan Dialog Tier Cards */
-  .org-billing__change-tier-card {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    border-radius: 12px;
-    border: 1px solid var(--sidebar-border);
-    background: var(--sidebar-hover);
-    cursor: pointer;
-    transition: all 200ms ease;
-    overflow: hidden;
-  }
-
-  .org-billing__change-tier-card:hover {
-    border-color: rgba(255, 255, 255, 0.2);
-    transform: translateY(-2px);
-  }
-
-  .org-billing__change-tier-card--selected {
-    border-color: rgba(6, 182, 212, 0.6);
-    background: rgba(6, 182, 212, 0.08);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
-  }
-
-  .org-billing__change-tier-card--popular {
-    border-color: rgba(6, 182, 212, 0.4);
-  }
-
-  .org-billing__change-tier-content {
-    position: relative;
-    padding: 1.25rem;
-    display: flex;
-    flex-direction: column;
-    height: 100%;
-  }
-
-  .org-billing__change-tier-name {
-    font-size: 1rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.75rem;
-  }
-
-  .org-billing__change-tier-price {
-    display: flex;
-    align-items: baseline;
-    margin-bottom: 1rem;
-  }
-
-  .org-billing__change-tier-price-currency {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin-right: 0.125rem;
-  }
-
-  .org-billing__change-tier-price-amount {
-    font-size: 1.75rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    line-height: 1;
-  }
-
-  .org-billing__change-tier-price-period {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin-left: 0.25rem;
-  }
-
-  .org-billing__change-tier-features {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .org-billing__change-tier-feature {
-    display: flex;
-    align-items: flex-start;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    line-height: 1.4;
-  }
-
-  .org-billing__change-tier-feature-icon {
-    width: 14px;
-    height: 14px;
-    color: #4ade80;
-    flex-shrink: 0;
-    margin-top: 0.125rem;
-  }
-
-  .org-billing__proration-preview {
-    padding: 1rem;
-    background: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 8px;
-    margin-bottom: 1.5rem;
-    font-size: 0.875rem;
-  }
-
-  .org-billing__proration-row {
-    display: flex;
-    justify-content: space-between;
-    padding: 0.375rem 0;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-billing__proration-row:not(:last-child) {
-    border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-  }
-
-  .org-billing__subscription-body {
-    padding: 1.5rem;
-  }
-
-  .org-billing__subscription-stats {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 1rem;
-    margin-bottom: 1rem;
-  }
-
-  .org-billing__subscription-stat {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 8px;
-  }
-
-  .org-billing__subscription-stat-icon {
-    width: 20px;
-    height: 20px;
-    color: var(--sidebar-accent);
-  }
-
-  .org-billing__subscription-stat-info {
-    display: flex;
-    flex-direction: column;
-  }
-
-  .org-billing__subscription-stat-value {
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-  }
-
-  .org-billing__subscription-stat-label {
-    font-size: 0.6875rem;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-  }
-
-  .org-billing__subscription-renewal {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-billing__subscription-renewal-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  .org-billing__subscription-renewal--warning {
-    color: #fbbf24;
-  }
-
-  /* ===== Plans Section ===== */
-  .org-billing__plans-section,
-  .org-billing__addons-section {
-    margin-bottom: 2rem;
-  }
-
-  .org-billing__plans-grid {
-    display: grid;
-    grid-template-columns: repeat(1, 1fr);
-    gap: 1.25rem;
-    margin-top: 1.6rem;
-  }
-
-  @media (min-width: 768px) {
-    .org-billing__plans-grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (min-width: 1400px) {
-    .org-billing__plans-grid {
-      grid-template-columns: repeat(4, 1fr);
-    }
-  }
-
-  .org-billing__plan-card {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    overflow: hidden;
-    transition: all 200ms ease;
-  }
-
-  .org-billing__plan-card:hover {
-    border-color: rgba(255, 255, 255, 0.1);
-    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.15);
-    transform: translateY(-2px);
-  }
-
-  .org-billing__plan-card--popular {
-    border-color: rgba(6, 182, 212, 0.4);
-  }
-
-  .org-billing__plan-content {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    flex: 1;
-    padding: 1.5rem;
-  }
-
-  .org-billing__plan-corner-badge {
-    position: absolute;
-    top: 0.75rem;
-    right: 0.75rem;
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.3rem 0.6rem;
-    background: linear-gradient(135deg, var(--sidebar-accent), rgba(6, 182, 212, 0.8));
-    color: var(--sidebar-bg);
-    font-size: 0.625rem;
-    font-weight: 700;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    border-radius: 4px;
-    box-shadow: 0 2px 8px rgba(6, 182, 212, 0.3);
-  }
-
-  .org-billing__plan-corner-badge-icon {
-    width: 11px;
-    height: 11px;
-  }
-
-  .org-billing__plan-corner-badge--fees {
-    top: 2.75rem;
-    background: linear-gradient(135deg, #10b981, #059669);
-    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.3);
-  }
-
-  /* When there's no AI badge, position fees badge at the top */
-  .org-billing__plan-content:not(:has(.org-billing__plan-corner-badge:not(.org-billing__plan-corner-badge--fees))) .org-billing__plan-corner-badge--fees {
-    top: 0.75rem;
-  }
-
-  .org-billing__plan-name {
-    font-size: 1.125rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
-  }
-
-  .org-billing__plan-price {
-    display: flex;
-    align-items: baseline;
-    margin-bottom: 1.5rem;
-  }
-
-  .org-billing__plan-price-currency {
-    font-size: 1.25rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .org-billing__plan-price-amount {
-    font-size: 2.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    letter-spacing: -0.03em;
-  }
-
-  .org-billing__plan-price-period {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin-left: 0.25rem;
-  }
-
-  .org-billing__plan-features {
-    list-style: none;
-    margin: 0 0 1.5rem;
-    padding: 0;
-    display: flex;
-    flex-direction: column;
-    gap: 0.75rem;
-  }
-
-  .org-billing__plan-feature {
-    display: flex;
-    align-items: center;
-    gap: 0.625rem;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .org-billing__plan-feature-icon {
-    width: 15px;
-    height: 15px;
-    color: #34d399;
-    flex-shrink: 0;
-  }
-
-  .org-billing__plan-btn {
-    width: 100%;
-    margin-top: auto;
-  }
-
-  .org-billing__plan-btn--primary {
-    background-color: var(--sidebar-accent) !important;
-    color: var(--sidebar-bg) !important;
-  }
-
-  /* ===== Add-ons Comparison Table ===== */
-  .org-billing__addons-table {
-    margin-top: 1rem;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    overflow: hidden;
-  }
-
-  .org-billing__addons-table-header {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    background-color: rgba(255, 255, 255, 0.03);
-    border-bottom: 1px solid var(--sidebar-border);
-  }
-
-  .org-billing__addons-col-label {
-    padding: 0.875rem 1.25rem;
-  }
-
-  .org-billing__addons-col-head {
-    display: flex;
-    align-items: center;
-    gap: 0.4rem;
-    padding: 0.875rem 1.25rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: var(--sidebar-text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.05em;
-    border-left: 1px solid var(--sidebar-border);
-  }
-
-  .org-billing__addons-col-head--ai {
-    color: var(--sidebar-accent);
-  }
-
-  .org-billing__addons-col-head-icon {
-    width: 13px;
-    height: 13px;
-    flex-shrink: 0;
-  }
-
-  .org-billing__addons-row {
-    display: grid;
-    grid-template-columns: 1fr 1fr 1fr;
-    border-top: 1px solid var(--sidebar-border);
-    transition: background-color 150ms ease;
-  }
-
-  .org-billing__addons-row:first-of-type {
-    border-top: none;
-  }
-
-  .org-billing__addons-row:hover {
-    background-color: rgba(255, 255, 255, 0.02);
-  }
-
-  .org-billing__addons-row-seats {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 1rem 1.25rem;
-  }
-
-  .org-billing__addons-row-count {
-    font-size: 1.375rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    line-height: 1;
-  }
-
-  .org-billing__addons-row-unit {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    padding-top: 0.2rem;
-  }
-
-  .org-billing__addons-cell {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    padding: 1rem 1.25rem;
-    border-left: 1px solid var(--sidebar-border);
-  }
-
-  .org-billing__addons-cell--ai {
-    background-color: rgba(6, 182, 212, 0.03);
-  }
-
-  .org-billing__addons-cell-price {
-    display: flex;
-    align-items: baseline;
-    gap: 0.1rem;
-    flex-shrink: 0;
-  }
-
-  .org-billing__addons-cell-currency {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .org-billing__addons-cell-amount {
-    font-size: 1.375rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    letter-spacing: -0.02em;
-    line-height: 1;
-  }
-
-  .org-billing__addons-cell-period {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-    margin-left: 0.1rem;
-  }
-
-  .org-billing__addons-cell-credits {
-    display: flex;
-    align-items: center;
-    gap: 0.25rem;
-    font-size: 0.75rem;
-    color: var(--sidebar-accent);
-    flex-shrink: 0;
-  }
-
-  .org-billing__addons-cell-credits-icon {
-    width: 11px;
-    height: 11px;
-    flex-shrink: 0;
-  }
-
-  .org-billing__addons-cell-btn {
-    margin-left: auto;
-    flex-shrink: 0;
-  }
-
-  .org-billing__addons-cell-btn--ai {
-    background-color: var(--sidebar-accent) !important;
-    color: var(--sidebar-bg) !important;
-    border-color: var(--sidebar-accent) !important;
-  }
-
-  .org-billing__addons-cell-btn--ai:hover {
-    opacity: 0.9;
-  }
-
-  .org-billing__addons-cell-na {
-    color: var(--sidebar-text-muted);
-    font-size: 1rem;
-  }
-
-  @media (max-width: 639px) {
-    .org-billing__addons-table-header {
-      display: none;
-    }
-
-    .org-billing__addons-row {
-      grid-template-columns: 1fr;
-      gap: 0;
-    }
-
-    .org-billing__addons-row-seats {
-      background-color: rgba(255, 255, 255, 0.03);
-      border-bottom: 1px solid var(--sidebar-border);
-      padding: 0.625rem 1.25rem;
-    }
-
-    .org-billing__addons-cell {
-      border-left: none;
-      border-top: 1px solid var(--sidebar-border);
-      flex-wrap: wrap;
-    }
-
-    .org-billing__addons-cell--ai::before {
-      content: 'Includes AI';
-      font-size: 0.6875rem;
-      font-weight: 600;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-      color: var(--sidebar-accent);
-      width: 100%;
-      margin-bottom: 0.25rem;
-    }
-  }
-
-  /* ===== Modal Styles ===== */
-  .org-billing-modal__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.7);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 50;
-  }
-
-  .org-billing-modal {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 420px;
-    margin: 1rem;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  }
-
-  .org-billing-modal__accent-bar {
-    height: 3px;
-    background-color: var(--sidebar-accent);
-  }
-
-  .org-billing-modal__content {
-    padding: 1.75rem;
-  }
-
-  .org-billing-modal__content--centered {
-    text-align: center;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 1rem;
-  }
-
-  .org-billing-modal__header {
-    position: relative;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    margin-bottom: 1.5rem;
-  }
-
-  .org-billing-modal__close {
-    position: absolute;
-    top: 0;
-    right: 0;
-    width: 32px;
-    height: 32px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: transparent;
-    border: none;
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-billing-modal__close:hover:not(:disabled) {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .org-billing-modal__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 56px;
-    height: 56px;
-    border-radius: 14px;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-    margin-bottom: 0.875rem;
-  }
-
-  .org-billing-modal__icon svg {
-    width: 26px;
-    height: 26px;
-  }
-
-  .org-billing-modal__icon--loading {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-  }
-
-  .org-billing-modal__icon--success {
-    background-color: rgba(16, 185, 129, 0.15);
-    color: #34d399;
-  }
-
-  .org-billing-modal__icon--danger {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-  }
-
-  .org-billing-modal__icon-spinner {
-    animation: spin 0.8s linear infinite;
-  }
-
-  .org-billing-modal__title {
-    font-size: 1.1875rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-  }
-
-  .org-billing-modal__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0.25rem 0 0;
-  }
-
-  .org-billing-modal__body {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  .org-billing-modal__summary {
-    padding: 1.125rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 8px;
-  }
-
-  .org-billing-modal__summary-row {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    padding: 0.375rem 0;
-  }
-
-  .org-billing-modal__summary-row strong {
-    color: var(--sidebar-text);
-  }
-
-  .org-billing-modal__summary-row--total {
-    border-top: 1px solid var(--sidebar-border);
-    margin-top: 0.625rem;
-    padding-top: 0.875rem;
-  }
-
-  .org-billing-modal__summary-total {
-    font-size: 1.0625rem;
-    font-weight: 700;
-    color: var(--sidebar-accent);
-  }
-
-  .org-billing-modal__info {
-    padding: 1.125rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 8px;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    line-height: 1.6;
-  }
-
-  .org-billing-modal__info p {
-    margin: 0 0 0.5rem;
-  }
-
-  .org-billing-modal__info p:last-child {
-    margin-bottom: 0;
-  }
-
-  .org-billing-modal__info strong {
-    color: var(--sidebar-text);
-  }
-
-  .org-billing-modal__info-muted {
-    opacity: 0.7;
-  }
-
-  .org-billing-modal__actions {
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-  }
-
-  .org-billing-modal__payment-btns {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 0.625rem;
-  }
-
-  .org-billing-modal__btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.875rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .org-billing-modal__btn svg {
-    width: 18px;
-    height: 18px;
-  }
-
-  .org-billing-modal__btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .org-billing-modal__btn--primary {
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-  }
-
-  .org-billing-modal__btn--primary:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .org-billing-modal__btn--secondary {
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    color: var(--sidebar-text);
-  }
-
-  .org-billing-modal__btn--secondary:hover:not(:disabled) {
-    background-color: var(--sidebar-active);
-  }
-
-  .org-billing-modal__btn--danger {
-    background-color: #ef4444;
-    color: white;
-  }
-
-  .org-billing-modal__btn--danger:hover:not(:disabled) {
-    background-color: #dc2626;
-  }
-
-  .org-billing-modal__btn--success {
-    background-color: #10b981;
-    color: white;
-  }
-
-  .org-billing-modal__btn--success:hover:not(:disabled) {
-    background-color: #059669;
-  }
-
-  /* ===== Modal Animations ===== */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 200ms ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  .dialog-enter-active {
-    transition: all 200ms cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 150ms ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.96) translateY(8px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* ===== Animations ===== */
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  @keyframes shimmer {
-    0% {
-      background-position: 200% 0;
-    }
-    100% {
-      background-position: -200% 0;
-    }
-  }
-</style>

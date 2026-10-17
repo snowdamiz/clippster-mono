@@ -53,7 +53,11 @@ defmodule ClippsterServerWeb.UserCreatorProfileController do
       {:error, changeset} ->
         conn
         |> put_status(422)
-        |> json(%{success: false, error: "Validation failed", details: changeset_errors(changeset)})
+        |> json(%{
+          success: false,
+          error: "Validation failed",
+          details: changeset_errors(changeset)
+        })
     end
   end
 
@@ -130,11 +134,12 @@ defmodule ClippsterServerWeb.UserCreatorProfileController do
       id: profile.id,
       user_id: profile.user_id,
       client_id: profile.client_id,
+      platform_links: profile.platform_links || [],
       name: profile.name,
       description: profile.description,
       profile_image_url:
         if(profile.profile_image_url,
-          do: Storage.presigned_url!(profile.profile_image_url),
+          do: Storage.browser_accessible_url(profile.profile_image_url),
           else: nil
         ),
       intro_id: profile.intro_id,
@@ -144,14 +149,47 @@ defmodule ClippsterServerWeb.UserCreatorProfileController do
       intro_outro_settings: profile.intro_outro_settings,
       intro_ratio_settings: profile.intro_ratio_settings,
       outro_ratio_settings: profile.outro_ratio_settings,
-      layout_overlays: profile.layout_overlays || [],
+      layout_overlays: resolve_overlay_assets(profile.layout_overlays || [], profile.user_id),
       scope: profile.scope,
       disabled: profile.disabled,
-      clip_build_defaults: profile.clip_build_defaults,
+      auto_dvr_enabled: profile.auto_dvr_enabled,
+      clip_build_defaults: resolve_reference_image(profile.clip_build_defaults, profile.user_id),
       inserted_at: profile.inserted_at,
       updated_at: profile.updated_at
     }
   end
+
+  # Cloud profiles store owned asset IDs. Resolve fresh URLs when read so branding
+  # remains usable across clients and does not depend on an expired signed URL.
+  defp owned_asset_url(user_id, id) do
+    case UserBranding.get_user_asset(user_id, id) do
+      %{url: url} when is_binary(url) -> Storage.presigned_url!(url)
+      _ -> nil
+    end
+  end
+
+  defp resolve_overlay_assets(overlays, user_id) do
+    Enum.map(overlays, fn overlay ->
+      overlay = resolve_overlay_asset(overlay, user_id)
+
+      case overlay["perRatioSettings"] do
+        settings when is_map(settings) ->
+          resolved = Map.new(settings, fn {ratio, config} -> {ratio, resolve_overlay_asset(config, user_id)} end)
+          Map.put(overlay, "perRatioSettings", resolved)
+        _ -> overlay
+      end
+    end)
+  end
+
+  defp resolve_overlay_asset(%{"assetId" => id} = overlay, user_id) when is_integer(id) do
+    Map.put(overlay, "imagePath", owned_asset_url(user_id, id))
+  end
+  defp resolve_overlay_asset(overlay, _user_id), do: overlay
+
+  defp resolve_reference_image(%{"referenceImageAssetId" => id} = defaults, user_id) when is_integer(id) do
+    Map.put(defaults, "referenceImageUrl", owned_asset_url(user_id, id))
+  end
+  defp resolve_reference_image(defaults, _user_id), do: defaults
 
   defp changeset_errors(changeset) do
     Ecto.Changeset.traverse_errors(changeset, fn {msg, opts} ->

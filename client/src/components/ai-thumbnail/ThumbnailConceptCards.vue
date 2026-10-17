@@ -1,43 +1,29 @@
 <template>
-  <div v-if="concepts.length" class="space-y-2">
-    <div class="flex items-center justify-between gap-2">
-      <p class="text-xs font-semibold uppercase tracking-wide text-zinc-500">Thumbnail concepts</p>
-      <button
-        v-if="!analyzing"
-        type="button"
-        class="text-[11px] text-sky-400 hover:text-sky-300"
-        :disabled="disabled"
-        @click="$emit('reanalyze')"
-      >
+  <div v-if="concepts.length" class="flex animate-enter flex-col gap-2">
+    <SectionHeader title="Thumbnail concepts" variant="eyebrow" class="min-h-5">
+      <Button v-if="!analyzing" variant="link" size="xs" :disabled="disabled" @click="$emit('reanalyze')">
         Re-analyze
-      </button>
-    </div>
-    <p v-if="summary" class="text-xs text-zinc-500 line-clamp-3">{{ summary }}</p>
-    <div class="grid gap-2">
+      </Button>
+    </SectionHeader>
+    <p v-if="summary" class="line-clamp-3 text-xs text-fg-muted">{{ summary }}</p>
+    <!-- One framed list of concept rows (not a card per concept) -->
+    <div class="flex flex-col divide-y divide-line-subtle overflow-hidden rounded-lg border border-line-subtle">
       <button
         v-for="c in concepts"
         :key="c.id"
         type="button"
-        class="rounded-lg border p-3 text-left transition-colors"
-        :class="
-          selectedId === c.id
-            ? 'border-sky-500 bg-sky-500/10 ring-1 ring-sky-500/30'
-            : 'border-white/10 bg-zinc-900/50 hover:border-white/20'
-        "
+        class="px-3 py-2.5 text-left transition-colors duration-[var(--duration-fast)] focus-visible:bg-surface-hover focus-visible:outline-none disabled:pointer-events-none disabled:opacity-60"
+        :class="selectedId === c.id ? 'bg-brand-soft' : 'hover:bg-surface-hover'"
+        :aria-pressed="selectedId === c.id"
         :disabled="disabled"
         @click="$emit('select', c.id)"
       >
         <div class="flex items-start justify-between gap-2">
-          <p class="text-sm font-medium text-zinc-100">{{ c.title }}</p>
-          <span
-            v-if="selectedId === c.id"
-            class="rounded bg-sky-600 px-1.5 py-0.5 text-[10px] font-semibold text-white"
-          >
-            Selected
-          </span>
+          <p class="text-sm font-medium text-fg">{{ c.title }}</p>
+          <Badge v-if="selectedId === c.id" variant="brand">Selected</Badge>
         </div>
-        <p v-if="c.hook_text" class="mt-1 text-xs font-semibold text-sky-300">“{{ c.hook_text }}”</p>
-        <p class="mt-1 text-xs text-zinc-500 line-clamp-2">{{ c.description || c.prompt }}</p>
+        <p v-if="c.hook_text" class="mt-1 text-xs font-medium text-fg">“{{ c.hook_text }}”</p>
+        <p class="mt-1 line-clamp-2 text-xs text-fg-subtle">{{ c.description || c.prompt }}</p>
       </button>
     </div>
   </div>
@@ -45,6 +31,9 @@
 
 <script setup lang="ts">
 import type { ThumbnailConcept } from '@/services/aiThumbnailApi';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { SectionHeader } from '@/components/ui/section-header';
 
 defineProps<{
   concepts: ThumbnailConcept[];

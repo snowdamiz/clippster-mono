@@ -134,36 +134,6 @@ export function hexToRgba(hex: string, alpha: number = 1): string {
   return `rgba(${r}, ${g}, ${b}, ${alpha})`;
 }
 
-// Generate gradient colors based on run color - modern glass-like design
-export function generateClipGradient(runColor: string | undefined) {
-  const color = runColor || '#10B981'; // Default emerald if no run color
-
-  // Create color variants
-  const baseColor = hexToRgba(color, 0.35);
-  const lighterColor = hexToRgba(color, 0.25);
-  const accentColor = hexToRgba(color, 0.85);
-  const glowColor = hexToRgba(color, 0.15);
-
-  // Multi-layered gradient: top shine + base gradient + subtle bottom darkening
-  const background = `linear-gradient(180deg, 
-    ${hexToRgba(color, 0.45)} 0%, 
-    ${baseColor} 15%, 
-    ${lighterColor} 50%, 
-    ${baseColor} 85%, 
-    ${hexToRgba(color, 0.5)} 100%)`;
-
-  return {
-    background,
-    // Strong left accent border for visual hierarchy
-    borderLeft: `3px solid ${accentColor}`,
-    borderTop: `1px solid ${hexToRgba(color, 0.4)}`,
-    borderRight: `1px solid ${hexToRgba(color, 0.3)}`,
-    borderBottom: `1px solid ${hexToRgba(color, 0.25)}`,
-    // Subtle inner glow
-    boxShadow: `inset 0 1px 0 ${hexToRgba('#ffffff', 0.08)}, inset 0 -1px 0 ${hexToRgba('#000000', 0.15)}, 0 2px 8px ${glowColor}`,
-  };
-}
-
 // Get display time for segment
 export function getSegmentDisplayTime(segment: ClipSegment, type: 'start' | 'end'): number {
   return type === 'start' ? segment.start_time : segment.end_time;

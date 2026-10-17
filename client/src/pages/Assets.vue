@@ -1,5 +1,5 @@
 <template>
-  <div class="assets">
+  <div class="assets h-full">
     <PageLayout
       title="Assets"
       description="Manage your intros, outros, watermarks, and images"
@@ -7,457 +7,165 @@
       :icon="Archive"
     >
       <template #actions>
-        <div class="assets-actions">
-          <!-- Refresh button for organization assets -->
-          <button
-            v-if="hasOrganizations"
-            @click="triggerSync"
-            :disabled="isSyncing"
-            title="Refresh organization assets"
-            class="assets-action-btn"
-          >
-            <Loader2 v-if="isSyncing" class="assets-action-btn__icon assets-action-btn__icon--spin" />
-            <RefreshCw v-else class="assets-action-btn__icon" />
-          </button>
-          <button @click="openIntrosFolder" title="Open assets folder" class="assets-action-btn">
-            <Folder class="assets-action-btn__icon" />
-          </button>
-          <button @click="handleUpload" :disabled="uploading" class="assets-upload-btn">
-            <Upload class="assets-upload-btn__icon" />
-            {{ uploading ? 'Uploading...' : 'Upload Asset' }}
-          </button>
-        </div>
+        <Button
+          v-if="hasOrganizations"
+          variant="ghost"
+          size="icon"
+          :disabled="isSyncing"
+          title="Refresh organization assets"
+          aria-label="Refresh organization assets"
+          @click="triggerSync"
+        >
+          <Loader2 v-if="isSyncing" class="animate-spin" />
+          <RefreshCw v-else />
+        </Button>
+        <Button variant="ghost" size="icon" title="Open assets folder" aria-label="Open assets folder" @click="openIntrosFolder">
+          <Folder />
+        </Button>
+        <Button variant="primary" :disabled="uploading" @click="handleUpload">
+          <Upload />
+          {{ uploading ? 'Uploading…' : 'Upload asset' }}
+        </Button>
       </template>
 
-      <!-- Loading State -->
-      <div v-if="loading" class="assets__content">
-        <!-- Skeleton Page Heading -->
-        <div class="assets__heading">
-          <div class="assets-skeleton__title"></div>
-          <div class="assets-skeleton__subtitle"></div>
-        </div>
+      <template v-if="selectedAssets.size > 0" #toolbar>
+        <SelectionBar :count="selectedAssets.size" @clear="clearSelection">
+          <Button variant="destructive-soft" size="sm" @click="confirmBulkDelete"><Trash2 /> Delete</Button>
+        </SelectionBar>
+      </template>
 
-        <!-- Skeleton Item Count -->
-        <div class="assets-skeleton__item-count"></div>
-
-        <!-- Skeleton Cards Grid -->
-        <div class="assets__grid">
-          <div v-for="i in 6" :key="`skeleton-${i}`" class="asset-card asset-card--skeleton">
-            <div class="asset-card__skeleton-bg"></div>
-            <div class="asset-card__bottom">
-              <div class="assets-skeleton__card-title"></div>
-              <div class="assets-skeleton__card-meta"></div>
-            </div>
+      <!-- Loading (first load only; syncs and reloads keep the current grid) -->
+      <div v-if="loading && !allAssets.length" class="skeleton-group px-5 py-4" aria-busy="true">
+        <div class="skeleton mb-3 h-4 w-28" />
+        <div class="card-grid">
+          <div v-for="i in 6" :key="`skeleton-${i}`" class="flex flex-col gap-2">
+            <div class="skeleton aspect-video rounded-xl" />
+            <div class="skeleton h-3.5 w-2/3" />
+            <div class="skeleton h-3 w-1/3" />
           </div>
         </div>
       </div>
 
-      <!-- Content when not loading -->
-      <div v-else class="assets__content" :class="{ 'assets__content--empty': allAssets.length === 0 && !uploading }">
-        <!-- Page Heading -->
-        <div v-if="allAssets.length > 0 || uploading" class="assets__heading">
-          <h1 class="assets__title">Manage Your Assets</h1>
-          <p class="assets__subtitle">Organize intros, outros, watermarks, audio, and images for your content</p>
-        </div>
+      <!-- Empty -->
+      <EmptyState
+        v-else-if="allAssets.length === 0 && !uploading"
+        :icon="Package"
+        title="No assets yet"
+        description="Upload your first intro, outro, watermark, audio, or image to get started"
+      >
+        <Button variant="secondary" @click="handleUpload"><Upload /> Upload asset</Button>
+      </EmptyState>
 
-        <!-- Selection Controls Bar (visible when items selected) -->
-        <div v-if="selectedAssets.size > 0" class="assets__selection-bar">
-          <div class="assets__selection-info">
-            <Check class="assets__selection-icon" />
-            <span>{{ selectedAssets.size }} selected</span>
-          </div>
-          <div class="assets__selection-actions">
-            <button @click="clearSelection" class="assets__selection-clear">Clear</button>
-            <button @click="confirmBulkDelete" class="assets__selection-delete">
-              <Trash2 class="assets__selection-delete-icon" />
-              Delete Selected
-            </button>
-          </div>
-        </div>
+      <!-- Content -->
+      <div v-else class="flex animate-enter flex-col gap-6 px-5 py-4">
+        <template v-for="section in assetSections" :key="section.key">
+          <section v-if="section.items.length > 0 || (section.key === 'personal' && showSkeletonCard)">
+            <SectionHeader :title="section.title" :icon="section.icon" :count="section.items.length" class="mb-3" />
 
-        <!-- Organization Assets Section -->
-        <div v-if="orgAssetsForDisplay.length > 0" class="assets__section">
-          <div class="assets__section-header">
-            <div class="assets__section-title-wrapper">
-              <Building2 class="assets__section-icon" />
-              <h2 class="assets__section-title">Organization Assets</h2>
-            </div>
-            <div class="assets__item-count">
-              {{ orgAssetsForDisplay.length }} {{ orgAssetsForDisplay.length === 1 ? 'item' : 'items' }}
-            </div>
-          </div>
-
-          <TransitionGroup name="card-list" tag="div" class="assets__grid">
-          <!-- Asset cards -->
-          <div
-            v-for="asset in orgAssetsForDisplay"
-            :key="`asset-${asset.isOrgAsset ? 'org' : 'local'}-${asset.id}`"
-            class="asset-card group"
-            :class="{
-              'asset-card--selected': isAssetSelected(String(asset.id)),
-              'asset-card--watermark': asset.assetType === 'watermark',
-              'asset-card--image': asset.assetType === 'image',
-            }"
-            @click="handleAssetClick(asset)"
-          >
-            <!-- Thumbnail background -->
-            <div
-              v-if="getThumbnailUrl(asset)"
-              class="asset-card__thumbnail-bg"
-              :style="{
-                backgroundImage: `url(${getThumbnailUrl(asset)})`,
-                backgroundSize: asset.assetType === 'watermark' || asset.assetType === 'image' ? 'contain' : 'cover',
-                backgroundPosition: 'center',
-                backgroundRepeat: 'no-repeat',
-              }"
-            ></div>
-
-            <!-- Vignette overlay -->
-            <div class="asset-card__vignette"></div>
-
-            <!-- Selection checkbox -->
-            <div
-              v-if="!asset.isOrgAsset"
-              class="asset-card__checkbox"
-              :class="{ 'asset-card__checkbox--visible': isAssetSelected(String(asset.id)) }"
-              @click.stop="toggleAssetSelection(String(asset.id))"
-            >
-              <div
-                class="asset-card__checkbox-box"
-                :class="{ 'asset-card__checkbox-box--checked': isAssetSelected(String(asset.id)) }"
-              >
-                <Check v-if="isAssetSelected(String(asset.id))" class="asset-card__checkbox-icon" />
+            <div class="card-grid">
+              <!-- Upload in progress -->
+              <div v-if="section.key === 'personal' && showSkeletonCard" class="flex animate-fade-in flex-col gap-2">
+                <div class="grid aspect-video place-items-center rounded-xl border border-dashed border-line bg-surface-sunken">
+                  <div class="flex flex-col items-center gap-2">
+                    <Loader2 class="size-5 animate-spin text-brand" />
+                    <span class="text-xs text-fg-muted">Uploading…</span>
+                  </div>
+                </div>
+                <div class="skeleton h-3.5 w-2/3" />
+                <div class="skeleton h-3 w-1/3" />
               </div>
-            </div>
 
-            <!-- Badges -->
-            <div class="asset-card__badges">
-              <span
-                class="asset-card__badge"
-                :class="{
-                  'asset-card__badge--intro': asset.assetType === 'intro',
-                  'asset-card__badge--outro': asset.assetType === 'outro',
-                  'asset-card__badge--watermark': asset.assetType === 'watermark',
-                  'asset-card__badge--audio': asset.assetType === 'audio',
-                  'asset-card__badge--image': asset.assetType === 'image',
-                }"
+              <!-- Tiles fade in on first render and when added (keyed, so existing tiles stay put) -->
+              <MediaTile
+                v-for="asset in section.items"
+                :key="`asset-${asset.isOrgAsset ? 'org' : 'local'}-${asset.id}`"
+                class="animate-fade-in"
+                :title="asset.name"
+                :thumbnail="tileThumbnail(asset)"
+                :fit="isImageLike(asset) ? 'contain' : 'cover'"
+                :icon="assetTypeMeta(asset.assetType).icon"
+                :meta="assetMeta(asset)"
+                :selectable="!asset.isOrgAsset"
+                :selected="isAssetSelected(String(asset.id))"
+                :actions-visible="asset.assetType === 'audio' && isAudioPlaying(asset.id, asset.isOrgAsset)"
+                @open="handleAssetClick(asset)"
+                @toggle-select="toggleAssetSelection(String(asset.id))"
               >
-                <component
-                  :is="
-                    asset.assetType === 'watermark' || asset.assetType === 'image'
-                      ? ImageIcon
-                      : asset.assetType === 'audio'
-                        ? Music
-                        : Package
-                  "
-                  class="asset-card__badge-icon"
-                />
-                {{
-                  asset.assetType === 'intro'
-                    ? 'Intro'
-                    : asset.assetType === 'outro'
-                      ? 'Outro'
-                      : asset.assetType === 'audio'
-                        ? 'Audio'
-                        : asset.assetType === 'image'
-                          ? 'Image'
-                          : 'Watermark'
-                }}
-              </span>
-              <span
-                v-if="asset.isOrgAsset || asset.organization_id"
-                class="asset-card__badge asset-card__badge--org"
-                :title="`From: ${asset.organization_name || 'Organization'}`"
-              >
-                <Building2 class="asset-card__badge-icon" />
-                {{ asset.organization_name || 'Org' }}
-              </span>
-            </div>
+                <template #badges>
+                  <Badge variant="neutral" class="bg-surface-raised">
+                    <component :is="assetTypeMeta(asset.assetType).icon" />
+                    {{ assetTypeMeta(asset.assetType).label }}
+                  </Badge>
+                  <Badge
+                    v-if="asset.isOrgAsset || asset.organization_id"
+                    variant="neutral"
+                    class="min-w-0 bg-surface-raised"
+                    :title="`From: ${asset.organization_name || 'Organization'}`"
+                  >
+                    <Building2 />
+                    <span class="truncate">{{ asset.organization_name || 'Org' }}</span>
+                  </Badge>
+                </template>
 
-            <!-- Downloading overlay -->
-            <div v-if="isAssetDownloading(asset)" class="asset-card__downloading">
-              <Loader2 class="asset-card__downloading-spinner" />
-              <span class="asset-card__downloading-text">Downloading...</span>
-            </div>
+                <template #overlay>
+                  <div
+                    v-if="isAssetDownloading(asset)"
+                    class="absolute inset-0 z-20 flex flex-col items-center justify-center gap-2 bg-[var(--overlay)]"
+                  >
+                    <Loader2 class="size-5 animate-spin text-brand" />
+                    <span class="text-xs text-fg">Downloading…</span>
+                  </div>
+                </template>
 
-            <!-- Hover actions -->
-            <div
-              class="asset-card__actions"
-              :class="{
-                'asset-card__actions--visible':
-                  asset.assetType === 'audio' && isAudioPlaying(asset.id, asset.isOrgAsset),
-              }"
-            >
-              <button
-                v-if="asset.assetType === 'intro' || asset.assetType === 'outro'"
-                class="asset-card__action-btn"
-                title="Play"
-                @click.stop="playAsset(asset as any)"
-              >
-                <Play class="asset-card__action-icon" />
-              </button>
-              <button
-                v-if="asset.assetType === 'audio'"
-                class="asset-card__action-btn"
-                :title="isAudioPlaying(asset.id, asset.isOrgAsset) ? 'Pause' : 'Play'"
-                @click.stop="toggleAudioPlayback(asset as any)"
-              >
-                <Pause v-if="isAudioPlaying(asset.id, asset.isOrgAsset)" class="asset-card__action-icon" />
-                <Play v-else class="asset-card__action-icon" />
-              </button>
-              <button
-                v-if="asset.assetType === 'image' || asset.assetType === 'watermark'"
-                class="asset-card__action-btn"
-                title="View full size"
-                @click.stop="openImagePreview(asset)"
-              >
-                <Maximize2 class="asset-card__action-icon" />
-              </button>
-              <button
-                v-if="!asset.isOrgAsset"
-                class="asset-card__action-btn asset-card__action-btn--danger"
-                title="Delete"
-                @click.stop="confirmDelete(asset)"
-              >
-                <Trash2 class="asset-card__action-icon" />
-              </button>
+                <template #actions>
+                  <Button
+                    v-if="asset.assetType === 'intro' || asset.assetType === 'outro'"
+                    variant="secondary"
+                    size="icon-xs"
+                    title="Play"
+                    aria-label="Play"
+                    @click.stop="playAsset(asset as any)"
+                  >
+                    <Play />
+                  </Button>
+                  <Button
+                    v-if="asset.assetType === 'audio'"
+                    variant="secondary"
+                    size="icon-xs"
+                    :title="isAudioPlaying(asset.id, asset.isOrgAsset) ? 'Pause' : 'Play'"
+                    :aria-label="isAudioPlaying(asset.id, asset.isOrgAsset) ? 'Pause' : 'Play'"
+                    @click.stop="toggleAudioPlayback(asset as any)"
+                  >
+                    <Pause v-if="isAudioPlaying(asset.id, asset.isOrgAsset)" />
+                    <Play v-else />
+                  </Button>
+                  <Button
+                    v-if="isImageLike(asset)"
+                    variant="secondary"
+                    size="icon-xs"
+                    title="View full size"
+                    aria-label="View full size"
+                    @click.stop="openImagePreview(asset)"
+                  >
+                    <Maximize2 />
+                  </Button>
+                  <Button
+                    v-if="!asset.isOrgAsset"
+                    variant="secondary"
+                    size="icon-xs"
+                    class="hover:text-danger"
+                    title="Delete"
+                    aria-label="Delete"
+                    @click.stop="confirmDelete(asset)"
+                  >
+                    <Trash2 />
+                  </Button>
+                </template>
+              </MediaTile>
             </div>
-
-            <!-- Bottom Info Overlay -->
-            <div class="asset-card__bottom">
-              <h3 class="asset-card__name" :title="asset.name">{{ asset.name }}</h3>
-              <div class="asset-card__meta">
-                <span v-if="asset.assetType === 'watermark'">
-                  {{
-                    (asset as WatermarkImage).width && (asset as WatermarkImage).height
-                      ? `${(asset as WatermarkImage).width}×${(asset as WatermarkImage).height}`
-                      : 'Image'
-                  }}
-                </span>
-                <span v-else-if="asset.assetType === 'image'">
-                  {{
-                    (asset as ImageAsset).width && (asset as ImageAsset).height
-                      ? `${(asset as ImageAsset).width}×${(asset as ImageAsset).height}`
-                      : 'Image'
-                  }}
-                </span>
-                <span v-else-if="asset.assetType === 'audio'">
-                  {{ formatDuration((asset as AudioAsset).duration || undefined) }}
-                </span>
-                <span v-else>{{ formatDuration((asset as IntroOutro).duration || undefined) }}</span>
-                <span class="asset-card__meta-dot"></span>
-                <span>
-                  {{ formatRelativeTime(asset.isOrgAsset ? (asset as any).inserted_at : (asset as any).created_at) }}
-                </span>
-              </div>
-            </div>
-          </div>
-        </TransitionGroup>
+          </section>
+        </template>
       </div>
-
-      <!-- User Assets Section -->
-      <div v-if="personalAssets.length > 0 || showSkeletonCard" class="assets__section">
-        <div class="assets__section-header">
-          <div class="assets__section-title-wrapper">
-            <Archive class="assets__section-icon" />
-            <h2 class="assets__section-title">Your Assets</h2>
-          </div>
-          <div class="assets__item-count">
-            {{ personalAssets.length }} {{ personalAssets.length === 1 ? 'item' : 'items' }}
-          </div>
-        </div>
-
-        <TransitionGroup name="card-list" tag="div" class="assets__grid">
-          <!-- Upload progress card -->
-          <div v-if="showSkeletonCard" key="upload-skeleton" class="asset-card asset-card--uploading">
-            <div class="asset-card__upload-overlay">
-              <div class="asset-card__upload-icon">
-                <Loader2 class="asset-card__upload-spinner" />
-              </div>
-              <span class="asset-card__upload-text">Uploading...</span>
-              <span class="asset-card__upload-subtext">Processing asset</span>
-            </div>
-          </div>
-
-          <!-- Asset cards -->
-          <div
-            v-for="asset in personalAssets"
-            :key="`asset-${asset.isOrgAsset ? 'org' : 'local'}-${asset.id}`"
-            class="asset-card group"
-            :class="{
-              'asset-card--selected': isAssetSelected(String(asset.id)),
-              'asset-card--watermark': asset.assetType === 'watermark',
-              'asset-card--image': asset.assetType === 'image',
-            }"
-            @click="handleAssetClick(asset)"
-          >
-            <!-- Thumbnail background -->
-            <div
-              v-if="getThumbnailUrl(asset)"
-              class="asset-card__thumbnail-bg"
-              :style="{
-                backgroundImage: `url(${getThumbnailUrl(asset)})`,
-                backgroundSize: asset.assetType === 'watermark' || asset.assetType === 'image' ? 'contain' : 'cover',
-                backgroundPosition: 'center',
-                backgroundRepeat: 'no-repeat',
-              }"
-            ></div>
-
-            <!-- Vignette overlay -->
-            <div class="asset-card__vignette"></div>
-
-            <!-- Selection checkbox -->
-            <div
-              v-if="!asset.isOrgAsset"
-              class="asset-card__checkbox"
-              :class="{ 'asset-card__checkbox--visible': isAssetSelected(String(asset.id)) }"
-              @click.stop="toggleAssetSelection(String(asset.id))"
-            >
-              <div
-                class="asset-card__checkbox-box"
-                :class="{ 'asset-card__checkbox-box--checked': isAssetSelected(String(asset.id)) }"
-              >
-                <Check v-if="isAssetSelected(String(asset.id))" class="asset-card__checkbox-icon" />
-              </div>
-            </div>
-
-            <!-- Badges -->
-            <div class="asset-card__badges">
-              <span
-                class="asset-card__badge"
-                :class="{
-                  'asset-card__badge--intro': asset.assetType === 'intro',
-                  'asset-card__badge--outro': asset.assetType === 'outro',
-                  'asset-card__badge--watermark': asset.assetType === 'watermark',
-                  'asset-card__badge--audio': asset.assetType === 'audio',
-                  'asset-card__badge--image': asset.assetType === 'image',
-                }"
-              >
-                <component
-                  :is="
-                    asset.assetType === 'watermark' || asset.assetType === 'image'
-                      ? ImageIcon
-                      : asset.assetType === 'audio'
-                        ? Music
-                        : Package
-                  "
-                  class="asset-card__badge-icon"
-                />
-                {{
-                  asset.assetType === 'intro'
-                    ? 'Intro'
-                    : asset.assetType === 'outro'
-                      ? 'Outro'
-                      : asset.assetType === 'audio'
-                        ? 'Audio'
-                        : asset.assetType === 'image'
-                          ? 'Image'
-                          : 'Watermark'
-                }}
-              </span>
-              <span
-                v-if="asset.isOrgAsset || asset.organization_id"
-                class="asset-card__badge asset-card__badge--org"
-                :title="`From: ${asset.organization_name || 'Organization'}`"
-              >
-                <Building2 class="asset-card__badge-icon" />
-                {{ asset.organization_name || 'Org' }}
-              </span>
-            </div>
-
-            <!-- Downloading overlay -->
-            <div v-if="isAssetDownloading(asset)" class="asset-card__downloading">
-              <Loader2 class="asset-card__downloading-spinner" />
-              <span class="asset-card__downloading-text">Downloading...</span>
-            </div>
-
-            <!-- Hover actions -->
-            <div
-              class="asset-card__actions"
-              :class="{
-                'asset-card__actions--visible':
-                  asset.assetType === 'audio' && isAudioPlaying(asset.id, asset.isOrgAsset),
-              }"
-            >
-              <button
-                v-if="asset.assetType === 'intro' || asset.assetType === 'outro'"
-                class="asset-card__action-btn"
-                title="Play"
-                @click.stop="playAsset(asset as any)"
-              >
-                <Play class="asset-card__action-icon" />
-              </button>
-              <button
-                v-if="asset.assetType === 'audio'"
-                class="asset-card__action-btn"
-                :title="isAudioPlaying(asset.id, asset.isOrgAsset) ? 'Pause' : 'Play'"
-                @click.stop="toggleAudioPlayback(asset as any)"
-              >
-                <Pause v-if="isAudioPlaying(asset.id, asset.isOrgAsset)" class="asset-card__action-icon" />
-                <Play v-else class="asset-card__action-icon" />
-              </button>
-              <button
-                v-if="asset.assetType === 'image' || asset.assetType === 'watermark'"
-                class="asset-card__action-btn"
-                title="View full size"
-                @click.stop="openImagePreview(asset)"
-              >
-                <Maximize2 class="asset-card__action-icon" />
-              </button>
-              <button
-                v-if="!asset.isOrgAsset"
-                class="asset-card__action-btn asset-card__action-btn--danger"
-                title="Delete"
-                @click.stop="confirmDelete(asset)"
-              >
-                <Trash2 class="asset-card__action-icon" />
-              </button>
-            </div>
-
-            <!-- Bottom Info Overlay -->
-            <div class="asset-card__bottom">
-              <h3 class="asset-card__name" :title="asset.name">{{ asset.name }}</h3>
-              <div class="asset-card__meta">
-                <span v-if="asset.assetType === 'watermark'">
-                  {{
-                    (asset as WatermarkImage).width && (asset as WatermarkImage).height
-                      ? `${(asset as WatermarkImage).width}×${(asset as WatermarkImage).height}`
-                      : 'Image'
-                  }}
-                </span>
-                <span v-else-if="asset.assetType === 'image'">
-                  {{
-                    (asset as ImageAsset).width && (asset as ImageAsset).height
-                      ? `${(asset as ImageAsset).width}×${(asset as ImageAsset).height}`
-                      : 'Image'
-                  }}
-                </span>
-                <span v-else-if="asset.assetType === 'audio'">
-                  {{ formatDuration((asset as AudioAsset).duration || undefined) }}
-                </span>
-                <span v-else>{{ formatDuration((asset as IntroOutro).duration || undefined) }}</span>
-                <span class="asset-card__meta-dot"></span>
-                <span>
-                  {{ formatRelativeTime(asset.isOrgAsset ? (asset as any).inserted_at : (asset as any).created_at) }}
-                </span>
-              </div>
-            </div>
-          </div>
-        </TransitionGroup>
-      </div>
-
-      <!-- Empty State -->
-      <div v-if="allAssets.length === 0 && !uploading" class="assets__empty">
-          <div class="assets__empty-icon-wrapper">
-            <Package class="assets__empty-icon" />
-          </div>
-          <h3 class="assets__empty-title">No assets yet</h3>
-          <p class="assets__empty-description">
-            Upload your first intro, outro, watermark, audio, or image to get started
-          </p>
-        </div>
-      </div>
-      <!-- Close content when not loading -->
     </PageLayout>
 
     <!-- Asset Player Dialog -->
@@ -466,7 +174,7 @@
     <!-- Delete Confirmation Modal -->
     <ConfirmationModal
       :show="showDeleteDialog"
-      title="Delete Asset"
+      title="Delete asset"
       message="Are you sure you want to delete"
       :item-name="assetToDelete?.name || (assetToDelete as any)?.file_path?.split(/[\\\\/]/).pop()"
       suffix="?"
@@ -476,6 +184,18 @@
       @confirm="deleteAssetConfirmed"
     />
 
+    <!-- Bulk Delete Confirmation Modal -->
+    <ConfirmationModal
+      :show="showBulkDeleteDialog"
+      :title="`Delete ${bulkDeleteLabel}`"
+      :message="`You are about to delete ${bulkDeleteLabel}. The files will be permanently removed from your computer.`"
+      suffix=""
+      :confirm-text="`Delete ${bulkDeleteLabel}`"
+      variant="destructive"
+      @close="handleBulkDeleteDialogClose"
+      @confirm="bulkDeleteConfirmed"
+    />
+
     <!-- Asset Upload Dialog -->
     <AssetUploadDialog :show="showUploadDialog" @close="showUploadDialog = false" @uploaded="handleUploadComplete" />
 
@@ -483,126 +203,55 @@
     <AuthModal v-model="showAuthModal" />
 
     <!-- Image Preview Dialog -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showImagePreview && imageToPreview" class="assets-modal__overlay" @click.self="closeImagePreview">
-          <Transition name="dialog" appear>
-            <div class="assets-modal assets-modal--preview">
-              <!-- Close Button -->
-              <button @click="closeImagePreview" class="assets-modal__close">
-                <X class="assets-modal__close-icon" />
-              </button>
-
-              <!-- Image Container -->
-              <div class="assets-modal__image-container">
-                <img :src="getImagePreviewUrl(imageToPreview)" :alt="imageToPreview.name" class="assets-modal__image" />
-              </div>
-
-              <!-- Image Info Footer -->
-              <div class="assets-modal__image-footer">
-                <div class="assets-modal__image-info">
-                  <div
-                    class="assets-modal__image-icon"
-                    :class="
-                      imageToPreview.assetType === 'watermark'
-                        ? 'assets-modal__image-icon--watermark'
-                        : 'assets-modal__image-icon--image'
-                    "
-                  >
-                    <ImageIcon class="assets-modal__image-icon-svg" />
-                  </div>
-                  <div class="assets-modal__image-details">
-                    <p class="assets-modal__image-name">{{ imageToPreview.name }}</p>
-                    <div class="assets-modal__image-meta">
-                      <span
-                        class="assets-modal__image-type"
-                        :class="
-                          imageToPreview.assetType === 'watermark'
-                            ? 'assets-modal__image-type--watermark'
-                            : 'assets-modal__image-type--image'
-                        "
-                      >
-                        {{ imageToPreview.assetType === 'watermark' ? 'Watermark' : 'Image' }}
-                      </span>
-                      <span v-if="getImageDimensions(imageToPreview)" class="assets-modal__image-dimensions">
-                        {{ getImageDimensions(imageToPreview) }}
-                      </span>
-                      <span
-                        v-if="imageToPreview.isOrgAsset || imageToPreview.organization_id"
-                        class="assets-modal__image-org"
-                      >
-                        {{ (imageToPreview as any).organization_name || 'Organization' }}
-                      </span>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Delete Button (only for personal assets) -->
-                <button
-                  v-if="!imageToPreview.isOrgAsset && !imageToPreview.organization_id"
-                  @click="
-                    confirmDelete(imageToPreview);
-                    closeImagePreview();
-                  "
-                  class="assets-modal__image-delete"
-                >
-                  <Trash2 class="assets-modal__image-delete-icon" />
-                  Delete
-                </button>
-              </div>
-            </div>
-          </Transition>
+    <Modal
+      :open="showImagePreview && !!imageToPreview"
+      :title="imageToPreview?.name"
+      :icon="imageToPreview ? assetTypeMeta(imageToPreview.assetType).icon : undefined"
+      size="xl"
+      @close="closeImagePreview"
+    >
+      <div v-if="imageToPreview" class="flex flex-col gap-3">
+        <div class="flex items-center gap-1.5">
+          <Badge variant="neutral">{{ imageToPreview.assetType === 'watermark' ? 'Watermark' : 'Image' }}</Badge>
+          <Badge v-if="getImageDimensions(imageToPreview)" variant="outline" class="tabular">
+            {{ getImageDimensions(imageToPreview) }}
+          </Badge>
+          <Badge v-if="imageToPreview.isOrgAsset || imageToPreview.organization_id" variant="neutral">
+            <Building2 />
+            {{ (imageToPreview as any).organization_name || 'Organization' }}
+          </Badge>
         </div>
-      </Transition>
-    </Teleport>
-
-    <!-- Bulk Delete Confirmation Modal -->
-    <Teleport to="body">
-      <Transition name="modal">
-        <div v-if="showBulkDeleteDialog" class="assets-modal__overlay" @click.self="handleBulkDeleteDialogClose">
-          <Transition name="dialog" appear>
-            <div class="assets-modal">
-              <div class="assets-modal__accent-bar assets-modal__accent-bar--danger"></div>
-              <div class="assets-modal__content">
-                <div class="assets-modal__header">
-                  <div class="assets-modal__icon assets-modal__icon--danger">
-                    <Trash2 />
-                  </div>
-                  <h2 class="assets-modal__title">Delete {{ selectedAssets.size }} Assets</h2>
-                  <p class="assets-modal__subtitle">Are you sure you want to permanently delete these assets?</p>
-                </div>
-
-                <div class="assets-modal__body">
-                  <div class="assets-modal__warning">
-                    <p>
-                      You are about to delete
-                      <strong>{{ selectedAssets.size }} {{ selectedAssets.size === 1 ? 'asset' : 'assets' }}</strong>
-                      . The files will be permanently removed from your computer.
-                    </p>
-                    <p class="assets-modal__warning-note">This action cannot be undone.</p>
-                  </div>
-
-                  <div class="assets-modal__actions">
-                    <button @click="bulkDeleteConfirmed" class="assets-modal__btn assets-modal__btn--danger">
-                      <Trash2 class="assets-modal__btn-icon" />
-                      Delete {{ selectedAssets.size }} {{ selectedAssets.size === 1 ? 'Asset' : 'Assets' }}
-                    </button>
-                    <button @click="handleBulkDeleteDialogClose" class="assets-modal__btn assets-modal__btn--secondary">
-                      Cancel
-                    </button>
-                  </div>
-                </div>
-              </div>
-            </div>
-          </Transition>
+        <div class="grid min-h-[240px] place-items-center rounded-lg border border-line-subtle bg-surface-sunken p-4">
+          <img
+            :src="getImagePreviewUrl(imageToPreview)"
+            :alt="imageToPreview.name"
+            class="max-h-[calc(100vh-18rem)] max-w-full rounded object-contain"
+          />
         </div>
-      </Transition>
-    </Teleport>
+      </div>
+
+      <template #footer>
+        <!-- Close comes first in DOM so it receives initial focus; `order` keeps Delete on the left. -->
+        <Button variant="secondary" class="order-2" @click="closeImagePreview">Close</Button>
+        <Button
+          v-if="imageToPreview && !imageToPreview.isOrgAsset && !imageToPreview.organization_id"
+          variant="destructive-soft"
+          class="order-1 mr-auto"
+          @click="
+            confirmDelete(imageToPreview);
+            closeImagePreview();
+          "
+        >
+          <Trash2 />
+          Delete
+        </Button>
+      </template>
+    </Modal>
   </div>
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted, computed, watch, Teleport, Transition, TransitionGroup } from 'vue';
+  import { ref, onMounted, onUnmounted, computed, watch } from 'vue';
   import { formatDate } from '@/utils/dateTimeUtils';
   import {
     getAllIntroOutros,
@@ -614,6 +263,7 @@
   } from '@/services/database';
   import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
   import { getUserOrganizationAssets, type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
+  import type { Component } from 'vue';
   import {
     Archive,
     Folder,
@@ -622,14 +272,15 @@
     Trash2,
     Package,
     Image as ImageIcon,
-    Check,
     Music,
     Pause,
     Building2,
     RefreshCw,
     Loader2,
-    X,
     Maximize2,
+    Clapperboard,
+    Stamp,
+    Layers,
   } from 'lucide-vue-next';
   import { useSyncProgress } from '@/services/orgAssetSync';
   import { useAuthStore } from '@/stores/auth';
@@ -643,14 +294,17 @@
   import { invoke } from '@tauri-apps/api/core';
   import { utf8ToBase64Url } from '@/utils/encoding';
   import { Button } from '@/components/ui/button';
+  import { Badge } from '@/components/ui/badge';
+  import { Modal } from '@/components/ui/modal';
+  import { EmptyState } from '@/components/ui/empty-state';
+  import { SectionHeader } from '@/components/ui/section-header';
   import PageLayout from '@/components/PageLayout.vue';
-  import EmptyState from '@/components/EmptyState.vue';
-  import SkeletonGrid from '@/components/SkeletonGrid.vue';
   import VideoPlayerDialog from '@/components/VideoPlayerDialog.vue';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
-  import PaginationFooter from '@/components/PaginationFooter.vue';
   import AssetUploadDialog from '@/components/AssetUploadDialog.vue';
   import AuthModal from '@/components/AuthModal.vue';
+  import { MediaTile } from '@/components/ui/media-tile';
+  import { SelectionBar } from '@/components/ui/selection-bar';
 
   // Combined asset type for display
   type DisplayAsset =
@@ -1146,6 +800,56 @@
     return getAssetThumbnailUrl(asset as IntroOutro);
   }
 
+  // ===== Display helpers (presentation only) =====
+  const ASSET_TYPE_META: Record<string, { label: string; icon: Component }> = {
+    intro: { label: 'Intro', icon: Clapperboard },
+    outro: { label: 'Outro', icon: Clapperboard },
+    watermark: { label: 'Watermark', icon: Stamp },
+    audio: { label: 'Audio', icon: Music },
+    image: { label: 'Image', icon: ImageIcon },
+    overlay: { label: 'Overlay', icon: Layers },
+  };
+
+  function assetTypeMeta(type: string) {
+    return ASSET_TYPE_META[type] ?? { label: 'Asset', icon: Package };
+  }
+
+  function isImageLike(asset: DisplayAsset): boolean {
+    return asset.assetType === 'watermark' || asset.assetType === 'image';
+  }
+
+  // The built-in fallback artwork above is a data-URI SVG (200×120); show a neutral icon instead.
+  const PLACEHOLDER_THUMB_PREFIX =
+    'data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIyMDAiIGhlaWdodD0iMTIw';
+
+  function tileThumbnail(asset: DisplayAsset): string | null {
+    const url = getThumbnailUrl(asset);
+    return url && !url.startsWith(PLACEHOLDER_THUMB_PREFIX) ? url : null;
+  }
+
+  function assetMeta(asset: DisplayAsset): string[] {
+    let primary: string;
+    if (asset.assetType === 'watermark') {
+      const wm = asset as WatermarkImage;
+      primary = wm.width && wm.height ? `${wm.width}×${wm.height}` : 'Image';
+    } else if (asset.assetType === 'image') {
+      const img = asset as ImageAsset;
+      primary = img.width && img.height ? `${img.width}×${img.height}` : 'Image';
+    } else if (asset.assetType === 'audio') {
+      primary = formatDuration((asset as AudioAsset).duration || undefined);
+    } else {
+      primary = formatDuration((asset as IntroOutro).duration || undefined);
+    }
+    return [primary, formatRelativeTime(asset.isOrgAsset ? (asset as any).inserted_at : (asset as any).created_at)];
+  }
+
+  const assetSections = computed(() => [
+    { key: 'org', title: 'Organization assets', icon: Building2, items: orgAssetsForDisplay.value },
+    { key: 'personal', title: 'Your assets', icon: Archive, items: personalAssets.value },
+  ]);
+
+  const bulkDeleteLabel = computed(() => `${selectedAssets.value.size} ${selectedAssets.value.size === 1 ? 'asset' : 'assets'}`);
+
   function handleUpload() {
     if (!authStore.isAuthenticated) {
       showAuthModal.value = true;
@@ -1497,1150 +1201,3 @@
     }
   });
 </script>
-
-<style scoped>
-  /* ===== Page Container ===== */
-  .assets {
-    width: 100%;
-    min-height: 100%;
-  }
-
-  .assets__content {
-    display: flex;
-    flex-direction: column;
-    gap: 1.5rem;
-    padding: 1.5rem;
-    width: 100%;
-    flex: 1;
-  }
-
-  .assets__content--empty {
-    justify-content: center;
-    align-items: center;
-  }
-
-  /* ===== Page Heading ===== */
-  .assets__heading {
-    flex-shrink: 0;
-    margin-bottom: 1rem;
-  }
-
-  .assets__title {
-    font-size: 1.5rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0 0 0.2rem;
-    letter-spacing: -0.02em;
-  }
-
-  .assets__subtitle {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  /* ===== Section Headers ===== */
-  .assets__section {
-    margin-bottom: 1rem;
-  }
-
-  .assets__section:first-child {
-    margin-top: 1rem;
-  }
-
-  .assets__section:last-child {
-    margin-bottom: 0;
-  }
-
-  .assets__section-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin-bottom: 1.25rem;
-    padding-bottom: 0.5rem;
-    border-bottom: 1px solid rgba(255, 255, 255, 0.06);
-  }
-
-  .assets__section-title-wrapper {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .assets__section-icon {
-    width: 16px;
-    height: 16px;
-    color: var(--sidebar-text-muted);
-    opacity: 0.6;
-  }
-
-  .assets__section-title {
-    font-size: 0.875rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    letter-spacing: 0.01em;
-    text-transform: uppercase;
-  }
-
-  /* ===== Item Count ===== */
-  .assets__item-count {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    font-weight: 500;
-  }
-
-  /* ===== Actions Bar ===== */
-  .assets-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .assets-action-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 32px;
-    height: 32px;
-    background-color: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    color: var(--sidebar-text-muted);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .assets-action-btn:hover:not(:disabled) {
-    background-color: var(--sidebar-hover);
-    border-color: rgba(255, 255, 255, 0.15);
-    color: var(--sidebar-text);
-  }
-
-  .assets-action-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .assets-action-btn__icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  .assets-action-btn__icon--spin {
-    animation: spin 0.8s linear infinite;
-  }
-
-  .assets-upload-btn {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    height: 32px;
-    padding: 0 0.875rem;
-    background-color: var(--sidebar-accent);
-    color: var(--sidebar-bg);
-    border: none;
-    border-radius: 6px;
-    font-size: 0.75rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .assets-upload-btn:hover:not(:disabled) {
-    opacity: 0.9;
-  }
-
-  .assets-upload-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  .assets-upload-btn__icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* ===== Skeleton Loading States ===== */
-  .asset-card--skeleton {
-    pointer-events: none;
-  }
-
-  .assets-skeleton__title {
-    height: 28px;
-    width: 200px;
-    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    border-radius: 6px;
-  }
-
-  .assets-skeleton__subtitle {
-    height: 16px;
-    width: 380px;
-    max-width: 100%;
-    margin-top: 0.5rem;
-    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    animation-delay: 0.1s;
-    border-radius: 4px;
-  }
-
-  .assets-skeleton__item-count {
-    height: 16px;
-    width: 80px;
-    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    border-radius: 4px;
-  }
-
-  .assets-skeleton__card-title {
-    height: 16px;
-    width: 65%;
-    background: linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.05) 25%,
-      rgba(255, 255, 255, 0.1) 50%,
-      rgba(255, 255, 255, 0.05) 75%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    border-radius: 4px;
-  }
-
-  .assets-skeleton__card-meta {
-    height: 12px;
-    width: 40%;
-    background: linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.03) 25%,
-      rgba(255, 255, 255, 0.08) 50%,
-      rgba(255, 255, 255, 0.03) 75%
-    );
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    animation-delay: 0.15s;
-    border-radius: 3px;
-  }
-
-  /* Stagger animation delays for skeleton cards */
-  .asset-card--skeleton:nth-child(1) .asset-card__skeleton-bg {
-    animation-delay: 0s;
-  }
-  .asset-card--skeleton:nth-child(2) .asset-card__skeleton-bg {
-    animation-delay: 0.1s;
-  }
-  .asset-card--skeleton:nth-child(3) .asset-card__skeleton-bg {
-    animation-delay: 0.2s;
-  }
-  .asset-card--skeleton:nth-child(4) .asset-card__skeleton-bg {
-    animation-delay: 0.3s;
-  }
-  .asset-card--skeleton:nth-child(5) .asset-card__skeleton-bg {
-    animation-delay: 0.4s;
-  }
-  .asset-card--skeleton:nth-child(6) .asset-card__skeleton-bg {
-    animation-delay: 0.5s;
-  }
-
-  /* ===== Selection Bar ===== */
-  .assets__selection-bar {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 0.75rem 1rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .assets__selection-info {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.875rem;
-    color: var(--sidebar-text);
-    font-weight: 500;
-  }
-
-  .assets__selection-icon {
-    width: 16px;
-    height: 16px;
-    color: var(--sidebar-accent);
-  }
-
-  .assets__selection-actions {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-  }
-
-  .assets__selection-clear {
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: var(--sidebar-text-muted);
-    background: transparent;
-    border: 1px solid var(--sidebar-border);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .assets__selection-clear:hover {
-    background-color: var(--sidebar-hover);
-    color: var(--sidebar-text);
-  }
-
-  .assets__selection-delete {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.375rem 0.75rem;
-    font-size: 0.75rem;
-    font-weight: 600;
-    color: white;
-    background-color: #ef4444;
-    border: none;
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .assets__selection-delete:hover {
-    background-color: #dc2626;
-  }
-
-  .assets__selection-delete-icon {
-    width: 13px;
-    height: 13px;
-  }
-
-  /* ===== Assets Grid ===== */
-  .assets__grid {
-    display: grid;
-    grid-template-columns: repeat(1, 1fr);
-    gap: 1rem;
-  }
-
-  @media (min-width: 640px) {
-    .assets__grid {
-      grid-template-columns: repeat(1, 1fr);
-    }
-  }
-
-  @media (min-width: 1024px) {
-    .assets__grid {
-      grid-template-columns: repeat(2, 1fr);
-    }
-  }
-
-  @media (min-width: 1400px) {
-    .assets__grid {
-      grid-template-columns: repeat(3, 1fr);
-    }
-  }
-
-  @media (min-width: 1800px) {
-    .assets__grid {
-      grid-template-columns: repeat(4, 1fr);
-    }
-  }
-
-  @media (min-width: 2200px) {
-    .assets__grid {
-      grid-template-columns: repeat(5, 1fr);
-    }
-  }
-
-  /* ===== Asset Card ===== */
-  .asset-card {
-    position: relative;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-    overflow: hidden;
-    cursor: pointer;
-    transition: all 200ms ease;
-    aspect-ratio: 16 / 9;
-  }
-
-  .asset-card:hover {
-    border-color: rgba(255, 255, 255, 0.2);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
-    transform: scale(1.02);
-  }
-
-  .asset-card--selected {
-    border-color: var(--sidebar-accent);
-    box-shadow: 0 0 0 2px rgba(6, 182, 212, 0.3);
-  }
-
-  .asset-card--selected:hover {
-    border-color: var(--sidebar-accent);
-  }
-
-  /* Watermark/Image cards need contained background */
-  .asset-card--watermark,
-  .asset-card--image {
-    background-color: #1a1a1a;
-  }
-
-  /* Card Thumbnail Background */
-  .asset-card__thumbnail-bg {
-    position: absolute;
-    inset: 0;
-    z-index: 0;
-  }
-
-  /* Vignette Overlay */
-  .asset-card__vignette {
-    position: absolute;
-    inset: 0;
-    z-index: 1;
-    background: linear-gradient(to top, rgba(0, 0, 0, 0.75) 0%, rgba(0, 0, 0, 0.3) 40%, rgba(0, 0, 0, 0.1) 100%);
-    pointer-events: none;
-  }
-
-  /* Upload overlay */
-  .asset-card--uploading {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background: linear-gradient(135deg, var(--sidebar-hover) 0%, var(--sidebar-surface) 100%);
-  }
-
-  .asset-card__upload-overlay {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    text-align: center;
-    z-index: 10;
-  }
-
-  .asset-card__upload-icon {
-    width: 44px;
-    height: 44px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(6, 182, 212, 0.15);
-    border-radius: 12px;
-    color: var(--sidebar-accent);
-  }
-
-  .asset-card__upload-spinner {
-    width: 22px;
-    height: 22px;
-    animation: spin 0.8s linear infinite;
-  }
-
-  .asset-card__upload-text {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-  }
-
-  .asset-card__upload-subtext {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  /* Skeleton card background */
-  .asset-card__skeleton-bg {
-    position: absolute;
-    inset: 0;
-    background: linear-gradient(90deg, var(--sidebar-hover) 25%, var(--sidebar-border) 50%, var(--sidebar-hover) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-  }
-
-  /* Selection Checkbox */
-  .asset-card__checkbox {
-    position: absolute;
-    top: 1rem;
-    right: 1rem;
-    z-index: 20;
-    opacity: 0;
-    transition: opacity 150ms ease;
-  }
-
-  .asset-card:hover .asset-card__checkbox,
-  .asset-card__checkbox--visible {
-    opacity: 1;
-  }
-
-  .asset-card__checkbox-box {
-    width: 24px;
-    height: 24px;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    background-color: rgba(0, 0, 0, 0.6);
-    border: 1.5px solid rgba(255, 255, 255, 0.45);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-  }
-
-  .asset-card__checkbox-box:hover {
-    background-color: rgba(0, 0, 0, 0.8);
-    border-color: rgba(255, 255, 255, 0.6);
-  }
-
-  .asset-card__checkbox-box--checked {
-    background-color: var(--sidebar-accent);
-    border-color: var(--sidebar-accent);
-  }
-
-  .asset-card__checkbox-box--checked:hover {
-    background-color: var(--sidebar-accent);
-    border-color: var(--sidebar-accent);
-  }
-
-  .asset-card__checkbox-icon {
-    width: 14px;
-    height: 14px;
-    color: var(--sidebar-bg);
-  }
-
-  /* Badges */
-  .asset-card__badges {
-    position: absolute;
-    top: 1rem;
-    left: 1rem;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 0.375rem;
-    z-index: 5;
-  }
-
-  .asset-card__badge {
-    display: inline-flex;
-    align-items: center;
-    gap: 0.25rem;
-    padding: 0.3125rem 0.5rem;
-    background-color: rgba(255, 255, 255, 0.1);
-    backdrop-filter: blur(8px);
-    border-radius: 5px;
-    font-size: 0.625rem;
-    font-weight: 600;
-    color: rgba(255, 255, 255, 0.75);
-    text-transform: uppercase;
-    letter-spacing: 0.02em;
-  }
-
-  .asset-card__badge--intro {
-    background-color: rgba(59, 130, 246, 0.2);
-    color: #93c5fd;
-  }
-
-  .asset-card__badge--outro {
-    background-color: rgba(139, 92, 246, 0.2);
-    color: #c4b5fd;
-  }
-
-  .asset-card__badge--watermark {
-    background-color: rgba(245, 158, 11, 0.2);
-    color: #fcd34d;
-  }
-
-  .asset-card__badge--audio {
-    background-color: rgba(16, 185, 129, 0.2);
-    color: #6ee7b7;
-  }
-
-  .asset-card__badge--image {
-    background-color: rgba(6, 182, 212, 0.2);
-    color: #67e8f9;
-  }
-
-  .asset-card__badge--org {
-    background-color: rgba(99, 102, 241, 0.3);
-    color: #c4b5fd;
-  }
-
-  .asset-card__badge-icon {
-    width: 10px;
-    height: 10px;
-  }
-
-  /* Downloading overlay */
-  .asset-card__downloading {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    background-color: rgba(0, 0, 0, 0.7);
-    z-index: 25;
-  }
-
-  .asset-card__downloading-spinner {
-    width: 32px;
-    height: 32px;
-    color: white;
-    animation: spin 0.8s linear infinite;
-  }
-
-  .asset-card__downloading-text {
-    font-size: 0.8125rem;
-    color: white;
-    font-weight: 500;
-  }
-
-  /* Hover Actions */
-  .asset-card__actions {
-    position: absolute;
-    inset: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.75rem;
-    background-color: rgba(0, 0, 0, 0.4);
-    opacity: 0;
-    transition: opacity 200ms ease;
-    z-index: 10;
-  }
-
-  .asset-card:hover .asset-card__actions,
-  .asset-card__actions--visible {
-    opacity: 1;
-  }
-
-  .asset-card__action-btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    background-color: rgba(255, 255, 255, 0.9);
-    border: none;
-    border-radius: 50%;
-    color: #1f2937;
-    cursor: pointer;
-    transition: all 150ms ease;
-    box-shadow: 0 2px 10px rgba(0, 0, 0, 0.25);
-  }
-
-  .asset-card__action-btn:hover {
-    background-color: white;
-    transform: scale(1.1);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.35);
-  }
-
-  .asset-card__action-btn--danger:hover {
-    background-color: #fef2f2;
-    color: #ef4444;
-  }
-
-  .asset-card__action-icon {
-    width: 18px;
-    height: 18px;
-  }
-
-  /* Bottom Info Overlay */
-  .asset-card__bottom {
-    position: absolute;
-    bottom: 0;
-    left: 0;
-    right: 0;
-    z-index: 5;
-    padding: 1rem;
-    display: flex;
-    flex-direction: column;
-    gap: 0.375rem;
-  }
-
-  .asset-card__name {
-    font-size: 1rem;
-    font-weight: 700;
-    color: white;
-    margin: 0;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    text-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
-    line-height: 1.3;
-  }
-
-  .asset-card__meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: rgba(255, 255, 255, 0.7);
-  }
-
-  .asset-card__meta-dot {
-    width: 3px;
-    height: 3px;
-    border-radius: 50%;
-    background-color: rgba(255, 255, 255, 0.4);
-  }
-
-  /* ===== Empty State ===== */
-  .assets__empty {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    justify-content: center;
-    text-align: center;
-  }
-
-  .assets__empty-icon-wrapper {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 72px;
-    height: 72px;
-    background-color: var(--sidebar-hover);
-    border-radius: 16px;
-    margin-bottom: 1.5rem;
-  }
-
-  .assets__empty-icon {
-    width: 36px;
-    height: 36px;
-    color: var(--sidebar-text-muted);
-  }
-
-  .assets__empty-title {
-    font-size: 1.125rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.5rem;
-  }
-
-  .assets__empty-description {
-    font-size: 0.875rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    max-width: 320px;
-    line-height: 1.5;
-  }
-
-  /* ===== Modal ===== */
-  .assets-modal__overlay {
-    position: fixed;
-    inset: 0;
-    background-color: rgba(0, 0, 0, 0.8);
-    backdrop-filter: blur(4px);
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    z-index: 50;
-  }
-
-  .assets-modal {
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    width: 100%;
-    max-width: 420px;
-    margin: 1rem;
-    overflow: hidden;
-    box-shadow: 0 20px 60px rgba(0, 0, 0, 0.4);
-  }
-
-  .assets-modal--preview {
-    width: fit-content;
-    max-width: 90vw;
-    max-height: 90vh;
-    background-color: transparent;
-    border: none;
-    box-shadow: none;
-    display: flex;
-    flex-direction: column;
-    position: relative;
-    margin: 0;
-  }
-
-  .assets-modal__accent-bar {
-    height: 3px;
-    background-color: var(--sidebar-accent);
-  }
-
-  .assets-modal__accent-bar--danger {
-    background-color: #ef4444;
-  }
-
-  .assets-modal__close {
-    position: absolute;
-    top: -48px;
-    right: 0;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 36px;
-    height: 36px;
-    background-color: rgba(255, 255, 255, 0.1);
-    border: none;
-    border-radius: 50%;
-    color: rgba(255, 255, 255, 0.7);
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .assets-modal__close:hover {
-    background-color: rgba(255, 255, 255, 0.2);
-    color: white;
-  }
-
-  .assets-modal__close-icon {
-    width: 20px;
-    height: 20px;
-  }
-
-  .assets-modal__content {
-    padding: 1.75rem;
-  }
-
-  .assets-modal__header {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 0.5rem;
-    margin-bottom: 1.5rem;
-    text-align: center;
-  }
-
-  .assets-modal__icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 56px;
-    height: 56px;
-    border-radius: 14px;
-    background-color: rgba(6, 182, 212, 0.15);
-    color: var(--sidebar-accent);
-    margin-bottom: 0.5rem;
-  }
-
-  .assets-modal__icon svg {
-    width: 26px;
-    height: 26px;
-  }
-
-  .assets-modal__icon--danger {
-    background-color: rgba(239, 68, 68, 0.15);
-    color: #f87171;
-  }
-
-  .assets-modal__title {
-    font-size: 1.1875rem;
-    font-weight: 700;
-    color: var(--sidebar-text);
-    margin: 0;
-    letter-spacing: -0.01em;
-  }
-
-  .assets-modal__subtitle {
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    margin: 0;
-    line-height: 1.5;
-  }
-
-  .assets-modal__body {
-    display: flex;
-    flex-direction: column;
-    gap: 1.25rem;
-  }
-
-  .assets-modal__warning {
-    padding: 1rem;
-    background-color: var(--sidebar-hover);
-    border-radius: 8px;
-    font-size: 0.8125rem;
-    color: var(--sidebar-text-muted);
-    line-height: 1.6;
-  }
-
-  .assets-modal__warning p {
-    margin: 0;
-  }
-
-  .assets-modal__warning strong {
-    color: var(--sidebar-text);
-  }
-
-  .assets-modal__warning-note {
-    margin-top: 0.5rem !important;
-    color: #f87171;
-    font-weight: 500;
-  }
-
-  .assets-modal__actions {
-    display: flex;
-    flex-direction: column;
-    gap: 0.625rem;
-  }
-
-  .assets-modal__btn {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 0.5rem;
-    padding: 0.875rem 1rem;
-    font-size: 0.875rem;
-    font-weight: 600;
-    border-radius: 8px;
-    border: none;
-    cursor: pointer;
-    transition: all 150ms ease;
-  }
-
-  .assets-modal__btn svg {
-    width: 16px;
-    height: 16px;
-  }
-
-  .assets-modal__btn--danger {
-    background-color: #ef4444;
-    color: white;
-  }
-
-  .assets-modal__btn--danger:hover {
-    background-color: #dc2626;
-  }
-
-  .assets-modal__btn--secondary {
-    background-color: var(--sidebar-hover);
-    border: 1px solid var(--sidebar-border);
-    color: var(--sidebar-text);
-  }
-
-  .assets-modal__btn--secondary:hover {
-    background-color: var(--sidebar-active);
-    border-color: rgba(255, 255, 255, 0.1);
-  }
-
-  .assets-modal__btn-icon {
-    width: 16px;
-    height: 16px;
-  }
-
-  /* Image Preview Modal Specific */
-  .assets-modal__image-container {
-    background-color: rgba(0, 0, 0, 0.5);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 12px;
-    overflow: hidden;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-
-  .assets-modal__image {
-    display: block;
-    max-width: 85vw;
-    max-height: 70vh;
-    object-fit: contain;
-  }
-
-  .assets-modal__image-footer {
-    display: flex;
-    width: 100%;
-    align-items: center;
-    justify-content: space-between;
-    gap: 1rem;
-    margin-top: 1rem;
-    padding: 1rem;
-    background-color: var(--sidebar-surface);
-    border: 1px solid var(--sidebar-border);
-    border-radius: 10px;
-  }
-
-  .assets-modal__image-info {
-    display: flex;
-    align-items: center;
-    gap: 0.75rem;
-    min-width: 0;
-  }
-
-  .assets-modal__image-icon {
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    width: 40px;
-    height: 40px;
-    border-radius: 10px;
-    flex-shrink: 0;
-  }
-
-  .assets-modal__image-icon--watermark {
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-  }
-
-  .assets-modal__image-icon--image {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: #06b6d4;
-  }
-
-  .assets-modal__image-icon-svg {
-    width: 20px;
-    height: 20px;
-  }
-
-  .assets-modal__image-details {
-    min-width: 0;
-  }
-
-  .assets-modal__image-name {
-    font-size: 0.875rem;
-    font-weight: 600;
-    color: var(--sidebar-text);
-    margin: 0 0 0.25rem;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-
-  .assets-modal__image-meta {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    flex-wrap: wrap;
-  }
-
-  .assets-modal__image-type {
-    display: inline-block;
-    padding: 0.1875rem 0.5rem;
-    font-size: 0.625rem;
-    font-weight: 600;
-    text-transform: uppercase;
-    letter-spacing: 0.03em;
-    border-radius: 4px;
-  }
-
-  .assets-modal__image-type--watermark {
-    background-color: rgba(245, 158, 11, 0.15);
-    color: #fbbf24;
-  }
-
-  .assets-modal__image-type--image {
-    background-color: rgba(6, 182, 212, 0.15);
-    color: #06b6d4;
-  }
-
-  .assets-modal__image-dimensions {
-    font-size: 0.75rem;
-    color: var(--sidebar-text-muted);
-  }
-
-  .assets-modal__image-org {
-    display: inline-block;
-    padding: 0.1875rem 0.5rem;
-    font-size: 0.625rem;
-    font-weight: 600;
-    background-color: rgba(139, 92, 246, 0.15);
-    color: #a78bfa;
-    border-radius: 4px;
-  }
-
-  .assets-modal__image-delete {
-    display: flex;
-    align-items: center;
-    gap: 0.375rem;
-    padding: 0.5rem 0.875rem;
-    font-size: 0.75rem;
-    font-weight: 500;
-    color: #f87171;
-    background: transparent;
-    border: 1px solid rgba(248, 113, 113, 0.3);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 150ms ease;
-    flex-shrink: 0;
-  }
-
-  .assets-modal__image-delete:hover {
-    background-color: rgba(248, 113, 113, 0.1);
-    border-color: rgba(248, 113, 113, 0.5);
-  }
-
-  .assets-modal__image-delete-icon {
-    width: 14px;
-    height: 14px;
-  }
-
-  /* ===== Modal Transitions ===== */
-  .modal-enter-active,
-  .modal-leave-active {
-    transition: opacity 0.2s ease;
-  }
-
-  .modal-enter-from,
-  .modal-leave-to {
-    opacity: 0;
-  }
-
-  .dialog-enter-active {
-    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .dialog-leave-active {
-    transition: all 0.15s ease-in;
-  }
-
-  .dialog-enter-from {
-    opacity: 0;
-    transform: scale(0.96) translateY(8px);
-  }
-
-  .dialog-leave-to {
-    opacity: 0;
-    transform: scale(0.98);
-  }
-
-  /* ===== Card List Transitions ===== */
-  .card-list-enter-active {
-    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
-  }
-
-  .card-list-leave-active {
-    transition: all 0.2s ease-out;
-    position: absolute;
-  }
-
-  .card-list-enter-from {
-    opacity: 0;
-    transform: scale(0.92) translateY(12px);
-  }
-
-  .card-list-leave-to {
-    opacity: 0;
-    transform: scale(0.96);
-  }
-
-  .card-list-move {
-    transition: transform 0.3s ease;
-  }
-
-  /* ===== Animations ===== */
-  @keyframes spin {
-    to {
-      transform: rotate(360deg);
-    }
-  }
-
-  @keyframes shimmer {
-    0% {
-      background-position: -200% 0;
-    }
-    100% {
-      background-position: 200% 0;
-    }
-  }
-</style>

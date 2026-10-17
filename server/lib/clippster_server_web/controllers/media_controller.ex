@@ -102,7 +102,8 @@ defmodule ClippsterServerWeb.MediaController do
         limit = parse_int(Map.get(params, "limit"), 20) |> min(50)
         offset = parse_int(Map.get(params, "offset"), 0)
 
-        case MediaResolver.list_vods(platform, channel, limit: limit, offset: offset) do
+        tab = if Map.get(params, "tab") == "videos", do: "videos", else: "streams"
+        case MediaResolver.list_vods(platform, channel, limit: limit, offset: offset, tab: tab) do
           {:ok, result} ->
             json(conn, Map.put(result, :success, true))
 

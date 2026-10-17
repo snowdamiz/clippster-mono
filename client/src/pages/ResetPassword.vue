@@ -1,140 +1,94 @@
 <template>
-  <div class="flex items-center justify-center min-h-screen">
-    <div class="w-full max-w-md">
-      <div class="relative overflow-hidden rounded-lg border border-border/50 bg-card backdrop-blur-sm">
-        <!-- Gradient overlay -->
-        <div
-          class="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-purple-500/5 pointer-events-none"
+  <AccountPageCard v-if="loading" loading loading-text="Processing…" />
+
+  <!-- Success -->
+  <AccountPageCard
+    v-else-if="success"
+    title="Password reset"
+    description="Your password has been reset. You can now sign in with your new password."
+    :icon="CheckCircle"
+    tone="success"
+  >
+    <template #footer>
+      <router-link to="/login" :class="buttonVariants({ variant: 'primary' })">Go to sign in</router-link>
+    </template>
+  </AccountPageCard>
+
+  <!-- Invalid / expired token -->
+  <AccountPageCard
+    v-else-if="error && !canRetry"
+    title="Link expired"
+    :description="error"
+    :icon="AlertTriangle"
+    tone="danger"
+  >
+    <template #footer>
+      <router-link to="/login" :class="buttonVariants({ variant: 'primary' })">Request new link</router-link>
+    </template>
+  </AccountPageCard>
+
+  <!-- Reset form -->
+  <AccountPageCard v-else title="Set new password" description="Enter your new password below." :icon="KeyRound">
+    <form id="reset-password-form" class="flex flex-col gap-4" @submit.prevent="handleResetPassword">
+      <Field label="New password" for="password">
+        <Input
+          id="password"
+          v-model="password"
+          type="password"
+          required
+          minlength="8"
+          autocomplete="new-password"
+          placeholder="At least 8 characters"
         />
+      </Field>
+      <Field
+        label="Confirm password"
+        for="confirm"
+        :error="password && confirmPassword && password !== confirmPassword ? 'Passwords do not match' : null"
+      >
+        <Input
+          id="confirm"
+          v-model="confirmPassword"
+          type="password"
+          required
+          minlength="8"
+          autocomplete="new-password"
+          placeholder="Confirm your password"
+          :aria-invalid="(!!confirmPassword && password !== confirmPassword) || undefined"
+        />
+      </Field>
 
-        <div class="relative p-8">
-          <!-- Logo -->
-          <div class="flex justify-center mb-6">
-            <img src="/logo.svg" alt="Clippster" class="h-12 w-auto" />
-          </div>
+      <Alert v-if="error && canRetry" variant="destructive">
+        <AlertTriangle />
+        <AlertDescription>{{ error }}</AlertDescription>
+      </Alert>
+    </form>
 
-          <!-- Loading State -->
-          <template v-if="loading">
-            <div class="text-center">
-              <Loader2 class="h-8 w-8 animate-spin text-primary mx-auto mb-4" />
-              <p class="text-muted-foreground">Processing...</p>
-            </div>
-          </template>
-
-          <!-- Success State -->
-          <template v-else-if="success">
-            <div class="text-center">
-              <div class="flex justify-center mb-4">
-                <div class="p-3 rounded-full bg-green-500/10 border border-green-500/20">
-                  <CheckCircle class="h-8 w-8 text-green-500" />
-                </div>
-              </div>
-              <h2 class="text-2xl font-bold text-foreground mb-2">Password Reset!</h2>
-              <p class="text-muted-foreground text-sm mb-6">
-                Your password has been successfully reset. You can now sign in with your new password.
-              </p>
-              <router-link
-                to="/login"
-                class="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-md bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold hover:shadow-lg hover:shadow-purple-500/50 transition-all"
-              >
-                Go to Sign In
-              </router-link>
-            </div>
-          </template>
-
-          <!-- Error State (Invalid/Expired Token) -->
-          <template v-else-if="error && !canRetry">
-            <div class="text-center">
-              <div class="flex justify-center mb-4">
-                <div class="p-3 rounded-full bg-destructive/10 border border-destructive/20">
-                  <AlertTriangle class="h-8 w-8 text-destructive" />
-                </div>
-              </div>
-              <h2 class="text-2xl font-bold text-foreground mb-2">Link Expired</h2>
-              <p class="text-muted-foreground text-sm mb-6">
-                {{ error }}
-              </p>
-              <router-link
-                to="/login"
-                class="inline-flex items-center justify-center gap-2 px-6 py-2.5 rounded-md bg-gradient-to-r from-purple-600 to-indigo-600 text-white font-semibold hover:shadow-lg hover:shadow-purple-500/50 transition-all"
-              >
-                Request New Link
-              </router-link>
-            </div>
-          </template>
-
-          <!-- Reset Form -->
-          <template v-else>
-            <div class="text-center mb-6">
-              <h2 class="text-2xl font-bold text-foreground mb-2">Set New Password</h2>
-              <p class="text-muted-foreground text-sm">Enter your new password below</p>
-            </div>
-
-            <form @submit.prevent="handleResetPassword" class="space-y-4">
-              <div>
-                <label for="password" class="block text-sm font-medium text-foreground mb-1.5">New Password</label>
-                <input
-                  id="password"
-                  v-model="password"
-                  type="password"
-                  required
-                  minlength="8"
-                  placeholder="At least 8 characters"
-                  class="w-full px-3 py-2.5 rounded-md border border-border/50 bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
-                />
-              </div>
-              <div>
-                <label for="confirm" class="block text-sm font-medium text-foreground mb-1.5">Confirm Password</label>
-                <input
-                  id="confirm"
-                  v-model="confirmPassword"
-                  type="password"
-                  required
-                  minlength="8"
-                  placeholder="Confirm your password"
-                  class="w-full px-3 py-2.5 rounded-md border border-border/50 bg-background text-foreground placeholder:text-muted-foreground focus:outline-none focus:ring-2 focus:ring-primary/50 focus:border-primary"
-                />
-              </div>
-
-              <p v-if="password && confirmPassword && password !== confirmPassword" class="text-sm text-destructive">
-                Passwords do not match
-              </p>
-
-              <div v-if="error && canRetry" class="rounded-md bg-destructive/10 border border-destructive/20 p-4">
-                <div class="flex items-start gap-3">
-                  <AlertTriangle class="h-5 w-5 text-destructive flex-shrink-0 mt-0.5" />
-                  <p class="text-sm text-destructive">{{ error }}</p>
-                </div>
-              </div>
-
-              <button
-                type="submit"
-                :disabled="submitting || password !== confirmPassword || password.length < 8"
-                class="w-full group relative overflow-hidden rounded-md bg-gradient-to-r from-purple-600 to-indigo-600 p-[1px] transition-all hover:shadow-lg hover:shadow-purple-500/50 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:shadow-none"
-              >
-                <div
-                  class="relative rounded-md bg-gradient-to-r from-purple-600 to-indigo-600 px-6 py-2.5 transition-all group-hover:from-purple-500 group-hover:to-indigo-500"
-                >
-                  <span class="flex items-center justify-center gap-2 font-semibold text-white">
-                    <Loader2 v-if="submitting" class="h-5 w-5 animate-spin" />
-                    <KeyRound v-else class="h-5 w-5" />
-                    {{ submitting ? 'Resetting...' : 'Reset Password' }}
-                  </span>
-                </div>
-              </button>
-            </form>
-          </template>
-        </div>
-      </div>
-    </div>
-  </div>
+    <template #footer>
+      <Button
+        type="submit"
+        form="reset-password-form"
+        variant="primary"
+        :loading="submitting"
+        :disabled="password !== confirmPassword || password.length < 8"
+      >
+        <KeyRound v-if="!submitting" />
+        {{ submitting ? 'Resetting...' : 'Reset password' }}
+      </Button>
+    </template>
+  </AccountPageCard>
 </template>
 
 <script setup lang="ts">
   import { ref, onMounted } from 'vue';
   import { useRoute, useRouter } from 'vue-router';
   import { useAuthStore } from '../stores/auth';
-  import { Loader2, CheckCircle, AlertTriangle, KeyRound } from 'lucide-vue-next';
+  import { CheckCircle, AlertTriangle, KeyRound } from 'lucide-vue-next';
+  import AccountPageCard from '@/components/AccountPageCard.vue';
+  import { Button, buttonVariants } from '@/components/ui/button';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
+  import { Alert, AlertDescription } from '@/components/ui/alert';
 
   const route = useRoute();
   const router = useRouter();

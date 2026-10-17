@@ -1,52 +1,52 @@
-import { Ionicons } from '@expo/vector-icons';
-import type { SocialPlatform } from '@clippster/api-client';
-import { ActivityIndicator, Pressable, Text, View } from 'react-native';
-import {
-  getDistributionPlatforms,
-  type DistributionPlatformConfig,
-} from '@/config/distributionPlatforms';
-import { TokendPlatformIcon } from '@/components/icons/TokendLogo';
-import { BottomSheet } from '@/components/ui/BottomSheet';
-import { tokens } from '@/theme/tokens';
+import { AppIcon } from '@/components/AppIcon'
+import type { SocialPlatform } from '@clippster/api-client'
+import { ActivityIndicator, Pressable, Text, View } from 'react-native'
+import { getDistributionPlatforms, type DistributionPlatformConfig } from '@/config/distributionPlatforms'
+import { TokendPlatformIcon } from '@/components/icons/TokendLogo'
+import { BottomSheet } from '@/components/ui/BottomSheet'
+import { tokens } from '@/theme/tokens'
 
 interface ConnectPlatformSheetProps {
-  visible: boolean;
-  connectingPlatform: SocialPlatform | null;
-  includeTokend?: boolean;
-  onClose: () => void;
-  onConnect: (platform: SocialPlatform) => void;
+  visible: boolean
+  connectingPlatform: SocialPlatform | null
+  includeTokend?: boolean
+  onClose: () => void
+  onConnect: (platform: SocialPlatform) => void
 }
 
 function PlatformOption({
   platform,
   connecting,
-  onPress,
+  onPress
 }: {
-  platform: DistributionPlatformConfig;
-  connecting: boolean;
-  onPress: () => void;
+  platform: DistributionPlatformConfig
+  connecting: boolean
+  onPress: () => void
 }) {
   return (
     <Pressable
       onPress={onPress}
       disabled={connecting}
-      className="flex-row items-center gap-3 rounded-lg border border-border bg-background px-4 py-3 active:bg-white/5"
+      className="min-h-[60px] flex-row items-center gap-3 border-b border-border py-[13px] active:bg-white/5"
     >
-      <View className="h-10 w-10 items-center justify-center rounded-lg bg-foreground/10">
+      <View className="h-[38px] w-[38px] items-center justify-center rounded-xl bg-surfaceMuted">
         {platform.id === 'tokend' ? (
           <TokendPlatformIcon size={22} />
         ) : (
-          <Ionicons name={platform.icon} size={22} color={tokens.colors.foreground} />
+          <AppIcon name={platform.icon} size={22} color={tokens.colors.foreground} />
         )}
       </View>
-      <Text className="flex-1 text-base font-medium text-foreground">{platform.name}</Text>
+      <View className="flex-1">
+        <Text className="text-sm font-semibold text-foreground">{platform.name}</Text>
+        <Text className="text-xs text-muted">Continue to authorization</Text>
+      </View>
       {connecting ? (
         <ActivityIndicator size="small" color={tokens.colors.accent} />
       ) : (
-        <Ionicons name="chevron-forward" size={18} color={tokens.colors.muted} />
+        <AppIcon name="ChevronRight" size={18} color={tokens.colors.muted} />
       )}
     </Pressable>
-  );
+  )
 }
 
 export function ConnectPlatformSheet({
@@ -54,23 +54,23 @@ export function ConnectPlatformSheet({
   connectingPlatform,
   includeTokend = false,
   onClose,
-  onConnect,
+  onConnect
 }: ConnectPlatformSheetProps) {
-  const platforms = getDistributionPlatforms({ includeTokend });
+  const platforms = getDistributionPlatforms({ includeTokend })
 
   return (
     <BottomSheet
       visible={visible}
       onClose={onClose}
-      variant="dialog"
-      title="Connect Social Account"
-      subtitle="Choose a platform to connect and start posting"
-      headerIcon="share-social-outline"
+      variant="page"
+      title="Connect an account"
+      subtitle="Choose a platform. A secure browser opens for authorization."
+      headerIcon="Share2"
       dismissOnBackdrop={!connectingPlatform}
       secondaryAction={{
         title: 'Cancel',
         onPress: onClose,
-        disabled: !!connectingPlatform,
+        disabled: !!connectingPlatform
       }}
     >
       <View className="gap-2">
@@ -84,5 +84,5 @@ export function ConnectPlatformSheet({
         ))}
       </View>
     </BottomSheet>
-  );
+  )
 }

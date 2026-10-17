@@ -10,6 +10,11 @@ import { buildImageElement } from "../../../lib/timeline/element-utils";
 import { TIMELINE_CONSTANTS } from "../../../constants/timeline-constants";
 import { fileNameFromPathOrName } from "@/utils/fsNames";
 import { Upload, Loader2, Check, AlertCircle, FolderOpen } from "lucide-vue-next";
+import { Button } from "@/components/ui/button";
+import { EmptyState } from "@/components/ui/empty-state";
+import { IconTile } from "@/components/ui/icon-tile";
+import { SectionHeader } from "@/components/ui/section-header";
+import AssetListRow from "../shared/AssetListRow.vue";
 
 const { editor, version } = useEditor({
 	subscribe: {
@@ -201,87 +206,77 @@ const {
 			@change="handleFileChange"
 		/>
 
-		<!-- Drop zone -->
-		<div class="flex-1 overflow-y-auto p-4">
+		<div class="flex min-h-0 flex-1 flex-col gap-4 overflow-y-auto px-5 py-4">
+			<!-- Drop zone -->
 			<div
 				:class="[
-					'flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed p-8 text-center transition-colors',
+					'flex min-h-[220px] flex-1 cursor-pointer flex-col items-center justify-center rounded-lg border border-dashed transition-colors',
 					isDragOver
-						? 'border-blue-500 bg-blue-500/10'
-						: 'border-white/15 hover:border-white/25',
+						? 'border-brand-line bg-brand-soft'
+						: 'border-line hover:border-line-strong hover:bg-surface-hover',
 				]"
-				@click="browseFiles"
 				role="button"
 				tabindex="0"
+				aria-label="Upload media files"
+				@click="browseFiles"
 				@keydown.enter="browseFiles"
+				@keydown.space.prevent="browseFiles"
 			>
-				<Upload :class="['size-10', isDragOver ? 'text-blue-400' : 'text-zinc-500']" />
-				<div>
-					<p :class="['text-sm font-medium', isDragOver ? 'text-blue-400' : 'text-zinc-300']">
-						{{ isDragOver ? 'Drop files to upload' : 'Drop files here or click to browse' }}
-					</p>
-					<p class="mt-1 text-[11px] text-zinc-500">
-						PNG, JPG, GIF, WEBP, MP4, MOV, MKV, MP3, WAV, FLAC
-					</p>
-				</div>
-				<button
-					type="button"
-					class="mt-1 flex items-center gap-1.5 rounded-md border border-white/10 bg-white/5 px-3 py-1.5 text-xs text-zinc-300 transition-colors hover:bg-white/10"
-					@click.stop="browseFiles"
+				<EmptyState
+					size="sm"
+					:icon="Upload"
+					:tone="isDragOver ? 'brand' : 'neutral'"
+					:title="isDragOver ? 'Drop files to upload' : 'Drop files here or click to browse'"
+					description="PNG, JPG, GIF, WEBP, MP4, MOV, MKV, MP3, WAV, FLAC"
 				>
-					<FolderOpen class="size-3.5" />
-					Browse Files
-				</button>
+					<Button variant="primary" size="sm" @click.stop="browseFiles">
+						<FolderOpen />
+						Browse files
+					</Button>
+				</EmptyState>
 			</div>
 
 			<!-- Processing progress -->
-			<div v-if="isProcessing" class="mt-3 space-y-1.5">
-				<div class="flex items-center justify-between text-xs text-zinc-400">
-					<span>Processing...</span>
-					<span>{{ progress }}%</span>
+			<div v-if="isProcessing" class="flex shrink-0 flex-col gap-1.5">
+				<div class="flex items-center justify-between text-xs">
+					<span class="text-fg-muted">Processing…</span>
+					<span class="tabular text-fg-subtle">{{ progress }}%</span>
 				</div>
-				<div class="h-1.5 overflow-hidden rounded-full bg-white/10">
+				<div class="h-1 overflow-hidden rounded-full bg-surface-hover">
 					<div
-						class="h-full rounded-full bg-blue-500 transition-[width] duration-200"
+						class="h-full rounded-full bg-brand transition-[width] duration-200"
 						:style="{ width: `${progress}%` }"
 					/>
 				</div>
 			</div>
 
-			<!-- Uploaded This Session -->
-			<div v-if="sessionItems.length > 0" class="mt-4">
-				<p class="mb-2 text-[11px] font-medium text-zinc-500 uppercase tracking-wide">
-					Uploaded This Session
-				</p>
-				<div class="space-y-1">
-					<div
+			<!-- Uploaded this session -->
+			<section v-if="sessionItems.length > 0" class="shrink-0">
+				<SectionHeader variant="eyebrow" title="Uploaded this session" :count="sessionItems.length" class="mb-1" />
+				<div class="-mx-2 space-y-px">
+					<AssetListRow
 						v-for="(item, i) in sessionItems"
 						:key="i"
-						class="flex items-center gap-2 rounded-md px-2 py-1.5 text-xs"
+						:title="item.name"
+						:meta="
+							item.status === 'processing'
+								? 'Processing…'
+								: item.status === 'done'
+									? 'Added to media'
+									: 'Could not import this file'
+						"
 					>
-						<Loader2
-							v-if="item.status === 'processing'"
-							class="size-3.5 shrink-0 animate-spin text-blue-400"
-						/>
-						<Check
-							v-else-if="item.status === 'done'"
-							class="size-3.5 shrink-0 text-green-400"
-						/>
-						<AlertCircle
-							v-else
-							class="size-3.5 shrink-0 text-red-400"
-						/>
-						<span
-							:class="[
-								'truncate',
-								item.status === 'error' ? 'text-red-400' : 'text-zinc-300',
-							]"
-						>
-							{{ item.name }}
-						</span>
-					</div>
+						<template #leading>
+							<IconTile
+								:icon="item.status === 'processing' ? Loader2 : item.status === 'done' ? Check : AlertCircle"
+								:tone="item.status === 'processing' ? 'brand' : item.status === 'done' ? 'success' : 'danger'"
+								size="sm"
+								:class="item.status === 'processing' && '[&_svg]:animate-spin'"
+							/>
+						</template>
+					</AssetListRow>
 				</div>
-			</div>
+			</section>
 		</div>
 	</div>
 </template>

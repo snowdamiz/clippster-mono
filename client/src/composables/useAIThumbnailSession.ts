@@ -35,10 +35,26 @@ export function useAIThumbnailSession() {
     () => maxMessagesPerRound.value - refinementMessagesUsed.value,
   );
 
+  const stuckFailedGeneration = computed(() => {
+    const current = session.value;
+    if (!current || current.status !== 'generating') return false;
+    const hasThumb = typeof current.thumbnail_url === 'string' && current.thumbnail_url.length > 0;
+    const hasPlate = typeof current.plate_url === 'string' && current.plate_url.length > 0;
+    const hasCandidates = (current.candidates?.length || 0) > 0;
+    return !hasThumb && !hasPlate && !hasCandidates;
+  });
+
   const readyToGenerate = computed(() => {
-    if (!messages.value.length) return false;
     const lastAssistant = [...messages.value].reverse().find((m) => m.role === 'assistant');
-    return lastAssistant?.metadata?.ready_to_generate === true;
+    const hasReadyPrompt = lastAssistant?.metadata?.ready_to_generate === true;
+    const brief = session.value?.brief_summary;
+    const hasBrief = !!brief && typeof brief === 'object' && Object.keys(brief).length > 0;
+    const status = session.value?.status;
+
+    return (
+      (status === 'discovery' || stuckFailedGeneration.value) &&
+      (hasReadyPrompt || (stuckFailedGeneration.value && hasBrief))
+    );
   });
 
   function applySession(data: AIThumbnailSession) {
@@ -144,10 +160,23 @@ export function useAIThumbnailSession() {
     isSending.value = true;
     error.value = null;
     try {
+      // Recover stuck generating sessions before chatting.
+      if (session.value.status === 'generating') {
+        await loadSession(session.value.id);
+      }
+      if (!session.value) return;
+
       const { session: updated } = await api.sendThumbnailMessage(session.value.id, message.trim());
       applySession(updated);
     } catch (e: any) {
       error.value = e.response?.data?.error || e.message || 'Failed to send message';
+      if (session.value?.id) {
+        try {
+          await loadSession(session.value.id);
+        } catch {
+          /* ignore refresh errors */
+        }
+      }
       throw e;
     } finally {
       isSending.value = false;
@@ -155,10 +184,14 @@ export function useAIThumbnailSession() {
   }
 
   async function generate() {
-    if (!session.value) return;
+    if (!session.value || !readyToGenerate.value) return;
     isGenerating.value = true;
     error.value = null;
     try {
+      // Reload first so a stuck "generating" session can be recovered server-side.
+      await loadSession(session.value.id);
+      if (!session.value) return;
+
       const updated = await api.generateThumbnail(
         session.value.id,
         session.value.generation_mode,
@@ -166,6 +199,13 @@ export function useAIThumbnailSession() {
       applySession(updated);
     } catch (e: any) {
       error.value = e.response?.data?.error || e.message || 'Generation failed';
+      if (session.value?.id) {
+        try {
+          await loadSession(session.value.id);
+        } catch {
+          /* ignore refresh errors */
+        }
+      }
       throw e;
     } finally {
       isGenerating.value = false;
@@ -308,6 +348,7 @@ export function useAIThumbnailSession() {
     maxMessagesPerRound,
     canRefine,
     refinementMessagesRemaining,
+    stuckFailedGeneration,
     readyToGenerate,
     listSessions,
     createSession,

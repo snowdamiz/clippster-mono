@@ -29,6 +29,7 @@ primary_region = 'iad'
 [env]
   API_URL = 'https://api.clippster.app/api'
   SITE_URL = 'https://clippster.app'
+  WORKSPACE_URL = 'http://clippster-web.internal:8080'
 
 [[vm]]
   memory = '512mb'

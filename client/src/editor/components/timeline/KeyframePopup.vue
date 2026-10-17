@@ -212,23 +212,26 @@ onUnmounted(() => {
 		<div
 			id="keyframe-popup"
 			:style="popupStyle"
-			class="w-56 rounded-lg border border-white/10 bg-[#1e1e22] shadow-2xl shadow-black/50"
+			class="z-[10060] w-60 rounded-lg bg-surface-raised shadow-[var(--shadow-md)]"
 		>
 			<!-- Header -->
-			<div class="flex items-center justify-between border-b border-white/10 px-3 py-1.5">
-				<span class="text-[11px] font-medium text-yellow-400">
-					Keyframe @ {{ (offset * 100).toFixed(0) }}%
+			<div class="flex h-9 items-center justify-between border-b border-line-subtle pl-3 pr-1.5">
+				<span class="flex items-center gap-1.5 text-xs font-medium text-fg">
+					<svg width="9" height="9" viewBox="0 0 12 12" aria-hidden="true"><polygon points="6,0 12,6 6,12 0,6" fill="#facc15" /></svg>
+					Keyframe at <span class="tabular">{{ (offset * 100).toFixed(0) }}%</span>
 				</span>
 				<div class="flex items-center gap-1">
 					<button
-						class="flex size-5 items-center justify-center rounded text-zinc-500 hover:bg-red-500/10 hover:text-red-400"
+						class="grid size-6 place-items-center rounded text-fg-subtle transition-colors hover:bg-danger-soft hover:text-danger"
 						title="Delete all at this offset"
+						aria-label="Delete all keyframes at this offset"
 						@click="deleteAllAtOffset"
 					>
 						<Trash2 class="size-3" />
 					</button>
 					<button
-						class="flex size-5 items-center justify-center rounded text-zinc-500 hover:bg-white/10 hover:text-zinc-300"
+						class="grid size-6 place-items-center rounded text-fg-subtle transition-colors hover:bg-surface-hover hover:text-fg"
+						aria-label="Close"
 						@click="emit('close')"
 					>
 						<X class="size-3" />
@@ -239,18 +242,19 @@ onUnmounted(() => {
 			<!-- Keyframe entries -->
 			<div class="max-h-48 overflow-y-auto p-2 space-y-2">
 				<div v-if="keyframesAtOffset.length === 0" class="py-2 text-center">
-					<p class="text-[10px] text-zinc-600">No keyframes at this offset</p>
+					<p class="text-xs text-fg-subtle">No keyframes at this offset</p>
 				</div>
 
 				<div
 					v-for="{ property, keyframe } in keyframesAtOffset"
 					:key="keyframe.id"
-					class="space-y-1 rounded-md border border-white/5 bg-white/[0.02] p-2"
+					class="space-y-1.5 rounded-md border border-line-subtle bg-surface p-2"
 				>
 					<div class="flex items-center justify-between">
-						<span class="text-[10px] font-medium text-zinc-300">{{ getKeyframePropertyLabel(property) }}</span>
+						<span class="text-xs font-medium text-fg">{{ getKeyframePropertyLabel(property) }}</span>
 						<button
-							class="flex size-4 items-center justify-center rounded text-zinc-600 hover:bg-red-500/10 hover:text-red-400"
+							class="grid size-5 place-items-center rounded text-fg-subtle transition-colors hover:bg-danger-soft hover:text-danger"
+							aria-label="Delete keyframe"
 							@click="deleteKeyframe(property, keyframe.id)"
 						>
 							<Trash2 class="size-2.5" />
@@ -259,32 +263,32 @@ onUnmounted(() => {
 
 					<!-- Value -->
 					<div class="flex items-center gap-1.5">
-						<label class="w-10 text-[9px] text-zinc-500">Value{{ property === 'scale' ? ' %' : property === 'opacity' ? ' %' : '' }}</label>
+						<label class="w-12 text-2xs text-fg-subtle">Value{{ property === 'scale' ? ' %' : property === 'opacity' ? ' %' : '' }}</label>
 						<input
 							type="number"
 							:value="displayValue(property, keyframe.value)"
 							:step="valueStep(property)"
-							class="h-5 flex-1 rounded border border-white/10 bg-white/5 px-1.5 text-[10px] text-zinc-300 outline-none focus:border-yellow-500/30"
+							class="tabular h-6 min-w-0 flex-1 rounded-md border border-line bg-surface-raised px-1.5 text-xs text-fg outline-none transition-colors hover:border-line-strong focus:border-brand-line"
 							@change="(e) => onValueChange(property, keyframe.id, Number((e.target as HTMLInputElement).value))"
 						/>
 					</div>
 
 					<!-- Easing -->
 					<div class="flex items-center gap-1.5">
-						<label class="w-10 text-[9px] text-zinc-500">Easing</label>
+						<label class="w-12 text-2xs text-fg-subtle">Easing</label>
 						<Select
 							:model-value="keyframe.interpolation"
 							@update:model-value="(v) => updateEasing(property, keyframe.id, v as KeyframeInterpolation)"
 						>
-							<SelectTrigger class="h-5 flex-1 rounded-md border border-white/10 bg-white/5 px-1.5 text-[10px] text-zinc-200">
+							<SelectTrigger class="h-6 min-w-0 flex-1 px-1.5 text-xs">
 								<SelectValue />
 							</SelectTrigger>
-							<SelectContent class="max-h-[250px] border-white/10 bg-zinc-900">
+							<SelectContent class="max-h-[250px]">
 								<SelectItem
 									v-for="opt in EASING_OPTIONS"
 									:key="opt.id"
 									:value="opt.id"
-									class="text-xs text-zinc-200"
+									class="text-xs"
 								>
 									{{ opt.label }}
 								</SelectItem>
