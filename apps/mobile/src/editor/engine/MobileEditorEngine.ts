@@ -1,5 +1,4 @@
-import type { CanvasRatio } from '../model/schema';
-import type { MobileEditProjectV3 } from '../model/schema';
+import type { CanvasRatio, MobileEditProjectV3 } from '../model/schema';
 
 export type EditorTime = number;
 export type PreviewQuality = 'proxy' | 'balanced' | 'full';
