@@ -6,7 +6,7 @@ WORKDIR /repo/apps/web
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN npm ci --workspaces=false --no-audit --no-fund
 
-FROM dependencies AS build
+FROM dependencies AS source
 COPY apps/web/ ./
 COPY packages/shared-types/ /repo/packages/shared-types/
 COPY packages/email-composer/ /repo/packages/email-composer/
@@ -16,7 +16,25 @@ COPY packages/api-client/ /repo/packages/api-client/
 COPY packages/cloud-sync-schema/ /repo/packages/cloud-sync-schema/
 COPY client/src/ /repo/client/src/
 COPY client/public/ /repo/client/public/
+
+FROM source AS build
 RUN npm run typecheck && npm run build
+
+# Reproduce the web CI checks without any host/root/client node_modules.
+# Run from apps/web with: npm run verify:ci --workspaces=false
+FROM source AS verify
+COPY package.json tsconfig.json /repo/
+COPY client/package.json client/tsconfig*.json /repo/client/
+COPY scripts/deploy-fly*.mjs scripts/dev-setup*.mjs /repo/scripts/
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core \
+    && npx playwright install --with-deps chromium \
+    && rm -rf /var/lib/apt/lists/*
+RUN test ! -e /repo/node_modules && test ! -e /repo/client/node_modules \
+    && npm run typecheck --workspaces=false \
+    && npm test --workspaces=false \
+    && node --test ../../scripts/deploy-fly.test.mjs ../../scripts/dev-setup.test.mjs \
+    && npm run build --workspaces=false \
+    && npm run test:e2e --workspaces=false
 
 FROM node:24-bookworm-slim AS media
 RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core python3 python3-venv ca-certificates tini util-linux \

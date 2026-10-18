@@ -1,5 +1,6 @@
 import { defineConfig } from '@playwright/test'
 export default defineConfig({
+  tsconfig: './tsconfig.json',
   testDir: './tests', testMatch: 'account-integration.spec.ts', workers: 1, timeout: 120_000,
   outputDir: './test-results/account',
   use: { actionTimeout: 10_000, baseURL: 'http://127.0.0.1:8097', viewport: { width: 1440, height: 960 },

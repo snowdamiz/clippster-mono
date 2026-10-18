@@ -1,5 +1,8 @@
 import { defineConfig } from '@playwright/test'
 export default defineConfig({
+  // Shared package sources must resolve through the standalone web install,
+  // rather than each package's workspace-oriented tsconfig.
+  tsconfig: './tsconfig.json',
   testDir: './tests',
   testMatch: '**/*.spec.ts',
   testIgnore: '**/account-integration.spec.ts',
