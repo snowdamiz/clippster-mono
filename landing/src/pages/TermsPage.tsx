@@ -6,7 +6,9 @@ const sections = [
   {
     icon: FileText,
     title: 'Acceptance of Terms',
-    content: `By accessing or using Clippster ("the Service"), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our Service.
+    content: `Clippster is operated by OpenWorth Technologies Inc. ("we," "us," or "our"). These Terms of Service form an agreement between you and OpenWorth Technologies Inc.
+
+By accessing or using Clippster ("the Service"), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our Service.
 
 These Terms apply to all users, including visitors, registered users, and anyone who accesses or uses the Service.
 
@@ -102,9 +104,9 @@ Dispute Resolution: Any disputes arising from these Terms or your use of the Ser
 
 Class Action Waiver: You agree to resolve disputes individually and waive any right to participate in class action lawsuits.
 
-Contact: For legal inquiries, contact legal@clippster.io
+Contact: For legal inquiries, contact OpenWorth Technologies Inc. at legal@clippster.io
 
-These Terms of Service were last updated on January 12, 2026.`,
+These Terms of Service were last updated on October 17, 2026.`,
   },
 ]
 

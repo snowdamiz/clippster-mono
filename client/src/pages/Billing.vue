@@ -135,23 +135,24 @@
       <section class="flex flex-col gap-3">
         <SectionHeader
           :title="!loadingBalance && hasActiveSubscription ? 'Change plan' : 'Choose a plan'"
-          description="Select the plan that works best for you"
+          description="Personal plans · Choose your processing allowance"
         >
           <Badge variant="success" class="max-[560px]:hidden">Save 1 month</Badge>
           <SegmentedControl v-model="billingInterval" :options="intervalOptions" size="sm" />
         </SectionHeader>
+        <Button v-if="!isSubscriptionGateMode && !isNewUserFlow" variant="ghost" size="sm" class="self-start" @click="router.push(authStore.user?.owned_organization_id ? `/organization/${authStore.user.owned_organization_id}/billing` : '/organizations')">Business plans &amp; organization billing</Button>
 
-        <div v-if="loadingTiers" class="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3">
-          <PriceCard v-for="i in 4" :key="i" loading />
+        <div v-if="loadingTiers" class="grid grid-cols-1 gap-3 md:grid-cols-3">
+          <PriceCard v-for="i in 3" :key="i" loading />
         </div>
         <div v-else class="flex animate-fade-in flex-col gap-3">
-          <div class="grid grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3">
+          <div class="grid grid-cols-1 gap-3 md:grid-cols-3">
             <PriceCard
               v-for="plan in paidPlans"
               :key="plan.tier.id"
               :name="plan.tier.name"
               :price="plan.price"
-              :period="billingInterval === 'yearly' ? '/yr' : '/mo'"
+              period="/mo"
               :price-note="plan.priceNote"
               :credits="plan.credits"
               :credits-label="plan.creditsLabel"
@@ -174,6 +175,21 @@
             </PriceCard>
           </div>
 
+          <div v-if="basicTier && basicQuote" class="flex flex-wrap items-center justify-between gap-4 rounded-[var(--radius-card)] border border-line-subtle bg-surface px-4 py-3">
+            <div>
+              <div class="flex items-center gap-2">
+                <h3 class="text-sm font-semibold text-fg">Basic · ${{ basicQuote.monthlyPrice }}/mo</h3>
+                <Badge v-if="isCurrentTier('basic')" variant="success">Current plan</Badge>
+              </div>
+              <p class="text-xs text-fg-muted">Editing &amp; publishing · 0 included minutes · No AI clip detection or AI Video Creator</p>
+              <p class="text-xs text-fg-subtle">${{ basicQuote.billedPrice }} {{ basicQuote.billingLabel }} · Unlimited clip builds · Social scheduling</p>
+              <p class="text-xs text-fg-subtle">Eligible top-up: 1,800 minutes for $39.99. Top-ups do not unlock AI features.</p>
+            </div>
+            <Button variant="secondary" size="sm" :disabled="isCurrentTier('basic') || isPendingTier('basic')" @click="handleBasicTierClick">
+              {{ isCurrentTier('basic') ? 'Current plan' : isPendingTier('basic') ? 'Switching at period end' : 'Choose Basic' }}
+            </Button>
+          </div>
+          <p class="text-xs text-fg-subtle">1 credit = 1 processing minute. AI Video Creator usage is separate. Paid minutes roll over; downgrading to Basic resets your balance.</p>
           <!-- Free plan (always available) -->
           <div
             class="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-[var(--radius-card)] border border-line-subtle bg-surface px-4 py-3"
@@ -185,7 +201,7 @@
               </div>
               <p class="text-xs text-fg-muted">
                 <span class="tabular font-semibold text-fg">$0</span>
-                · 60 one-time credits
+                · 60 free minutes every 30 days · Free balance capped at 60
               </p>
             </div>
             <ul class="flex min-w-0 flex-1 basis-[320px] flex-wrap gap-x-4 gap-y-1">
@@ -351,7 +367,7 @@
         </p>
         <p class="text-xs text-fg-subtle">
           On the free plan you'll have daily limits and admin watermarks. Your remaining credits will stay in your
-          account but you will <strong class="font-medium text-fg-muted">not</strong> receive the 60 free credits again.
+          account. Recurring free credit grants resume when eligible after paid access ends.
         </p>
       </div>
       <template #footer>
@@ -475,6 +491,7 @@
   import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
 
   import { useRoute, useRouter } from 'vue-router';
+  import { PLAN_PRESENTATION, PERSONAL_PLAN_ORDER, personalPlanQuote } from '../../../packages/shared-types/src/pricingPresentation';
   import { getDefaultRoute } from '@/router';
 
   const authStore = useAuthStore();
@@ -585,32 +602,11 @@
     { label: 'Campaign participation', included: false },
   ];
 
-  const basicPlanFeatures: PriceFeature[] = [
-    { label: 'Mobile app' },
-    { label: 'Unlimited clip builds' },
-    { label: 'Social posting & scheduling' },
-    { label: 'Custom watermark & intro/outro' },
-    { label: 'Campaign participation' },
-    { label: 'AI clip detection', included: false },
-    { label: 'Organization membership', included: false },
-    { label: 'AI Video Creator', included: false },
-    { label: 'Large credit pack only (1,800 @ $39.99)', note: true },
-  ];
+  const basicTier = computed(() => subscriptionTiers.value.find(t => t.id === 'basic'));
+  const basicQuote = computed(() => basicTier.value
+    ? personalPlanQuote(basicTier.value.price_usd, 0, billingInterval.value === 'yearly') : null);
 
-  function getPaidPlanFeatures(tierId: string): PriceFeature[] {
-    return [
-      { label: 'Mobile app' },
-      { label: 'Unlimited clip builds' },
-      { label: 'Social posting & scheduling' },
-      { label: 'Custom watermark & intro/outro' },
-      { label: 'AI clip detection' },
-      { label: 'Organization membership' },
-      { label: 'AI Video Creator', included: tierId === 'creator' || tierId === 'pro' },
-      { label: 'Credits roll over' },
-    ];
-  }
-
-  /** Paid plan cards: Basic first, then the remaining tiers in API order. */
+  /** Main AI plans, with Basic presented separately below. */
   const paidPlans = computed(() => {
     const yearly = billingInterval.value === 'yearly';
     const plans: {
@@ -622,26 +618,17 @@
       features: PriceFeature[];
       recommended: boolean;
     }[] = [];
-    const basicTier = subscriptionTiers.value.find((t: any) => t.id === 'basic');
-    if (basicTier) {
-      plans.push({
-        tier: basicTier,
-        price: yearly ? '$142.89' : '$12.99',
-        priceNote: yearly ? '$11.91/mo effective' : undefined,
-        credits: '0',
-        creditsLabel: 'credits/month',
-        features: basicPlanFeatures,
-        recommended: false,
-      });
-    }
-    for (const tier of subscriptionTiers.value.filter((t: any) => t.id !== 'basic')) {
+    for (const id of PERSONAL_PLAN_ORDER) {
+      const tier = subscriptionTiers.value.find(t => t.id === id);
+      if (!tier) continue;
+      const quote = personalPlanQuote(tier.price_usd, tier.monthly_credits, yearly);
       plans.push({
         tier,
-        price: `$${getDisplayPrice(tier)}`,
-        priceNote: yearly ? `$${getEffectiveMonthly(tier)}/mo effective` : undefined,
-        credits: yearly ? (tier.monthly_credits * 12).toLocaleString() : tier.monthly_credits.toLocaleString(),
-        creditsLabel: yearly ? 'credits upfront' : 'credits/month',
-        features: getPaidPlanFeatures(tier.id),
+        price: `$${quote.monthlyPrice}`,
+        priceNote: `$${quote.billedPrice} ${quote.billingLabel}`,
+        credits: quote.minutes.toLocaleString(),
+        creditsLabel: quote.allowanceLabel,
+        features: PLAN_PRESENTATION[id].features.map(label => ({ label })),
         recommended: tier.id === 'creator',
       });
     }
@@ -867,7 +854,7 @@
     try {
       const response = await api.post('/subscription/cancel');
       if (response.data.success) {
-        showSuccessToast('Switching to Free', 'Your subscription will end at the current billing period. You will NOT receive the 60 free credits again.');
+        showSuccessToast('Switching to Free', 'Your subscription will end at the current billing period. Free credit grants resume when eligible after paid access ends.');
         subscriptionStatus.value = response.data.subscription;
         showFreeDowngradeConfirm.value = false;
       } else {
@@ -930,22 +917,6 @@
     window.dispatchEvent(new CustomEvent('auth-state-changed', { detail: { userId: authStore.user?.id } }));
     const targetRoute = getDefaultRoute(authStore.user);
     router.push(targetRoute);
-  }
-
-  /** Get displayed price for a tier based on billing interval */
-  function getDisplayPrice(tier: any): string {
-    if (billingInterval.value === 'yearly') {
-      return (tier.price_usd * 11).toFixed(2);
-    }
-    return tier.price_usd.toFixed(2);
-  }
-
-  /** Get effective monthly price for yearly billing */
-  function getEffectiveMonthly(tier: any): string {
-    if (billingInterval.value === 'yearly') {
-      return ((tier.price_usd * 11) / 12).toFixed(2);
-    }
-    return tier.price_usd.toFixed(2);
   }
 
   async function handleSubscribeSuccess() {

@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './browser-fixture'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'

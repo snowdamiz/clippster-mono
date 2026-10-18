@@ -59,7 +59,7 @@ client/src-tauri/gen/
 client/src-tauri/binaries/
 
 
-client/public/fonts
+# Bundled fonts are runtime assets for both the desktop and web applications.
 
 # ===========================
 # Server (Elixir/Phoenix)

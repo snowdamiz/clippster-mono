@@ -325,7 +325,7 @@
               />
               <div class="min-w-0 flex-1">
                 <div class="flex items-center gap-2">
-                  <h3 class="truncate text-sm font-semibold text-fg">{{ subscription?.tier_name || 'Subscription' }}</h3>
+                  <h3 class="truncate text-sm font-semibold text-fg">{{ businessPlanName(subscription?.tier_name || 'Subscription') }}</h3>
                   <Badge :variant="subscription?.status === 'active' ? 'success' : 'warning'">
                     {{ subscription?.status === 'active' ? 'Active' : 'Cancelled' }}
                   </Badge>
@@ -352,7 +352,7 @@
               class="flex items-center gap-2 border-t border-line-subtle bg-warning-soft px-4 py-2.5 text-xs text-warning"
             >
               <AlertTriangle class="size-3.5 shrink-0" />
-              Downgrading to {{ subscription.pending_subscription_tier }} at the end of the billing period
+              Downgrading to {{ businessPlanName(subscription.pending_subscription_tier) }} at the end of the billing period
             </div>
           </div>
         </section>
@@ -472,7 +472,7 @@
     <Modal
       :open="showChangePlanDialog"
       title="Change plan"
-      :description="`Current plan: ${subscription?.tier_name || '—'}`"
+      :description="`Current plan: ${businessPlanName(subscription?.tier_name || '—')}`"
       :icon="Crown"
       size="xl"
       @close="closeChangePlanDialog"
@@ -550,6 +550,7 @@
 </template>
 
 <script setup lang="ts">
+  import { businessPlanName } from '../../../../packages/shared-types/src/pricingPresentation';
   import { ref, markRaw, computed, onMounted } from 'vue';
   import {
     Wallet,
@@ -732,7 +733,7 @@
     try {
       const response = await api.get(`/organizations/${organizationId.value}/subscription/tiers`);
       if (response.data.success) {
-        baseTiers.value = response.data.base_tiers;
+        baseTiers.value = response.data.base_tiers.map((tier: (typeof baseTiers.value)[number]) => ({ ...tier, name: businessPlanName(tier.id) }));
         addonTiers.value = response.data.addon_tiers;
       }
     } catch (err) {

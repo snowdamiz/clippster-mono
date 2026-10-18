@@ -77,10 +77,8 @@ function runDeploy({ cwd, tokenKey, label, appName, config, dockerfile, ignorefi
   if (config) {
     args.push('--config', config);
   }
-  if (dockerfile) {
-    args.push('--dockerfile', path.join(REPO_ROOT, dockerfile));
-  }
-  if (ignorefile) args.push('--ignorefile', path.join(REPO_ROOT, ignorefile));
+  if (dockerfile) args.push('--dockerfile', dockerfile);
+  if (ignorefile) args.push('--ignorefile', ignorefile);
 
   const child = spawn('flyctl', args, {
     cwd: targetCwd,

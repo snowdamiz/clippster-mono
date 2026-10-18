@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './browser-fixture'
 
 test('the shared Google button completes a browser-bound handoff and restores the cookie session on reload', async ({
   page,
@@ -20,14 +20,14 @@ test('the shared Google button completes a browser-bound handoff and restores th
   ).toBeVisible()
   await expect(page.getByAltText('Clippster')).toBeVisible()
   await page.getByRole('button', { name: 'Google', exact: true }).click()
-  await expect(page.locator('.page-header__title')).toHaveText('Video Library')
+  await expect(page.getByRole('heading', { name: 'Video library', exact: true })).toHaveText('Video library')
   expect(page.url()).toBe('http://127.0.0.1:8091/')
   const cookies = await context.cookies()
   expect(cookies.find((c) => c.name === 'clippster_web')?.httpOnly).toBe(true)
   expect(cookies.find((c) => c.name === 'clippster_oauth')).toBeUndefined()
   expect(await page.evaluate(() => JSON.stringify(localStorage))).not.toContain('token')
   await page.reload()
-  await expect(page.locator('.page-header__title')).toHaveText('Video Library')
+  await expect(page.getByRole('heading', { name: 'Video library', exact: true })).toHaveText('Video library')
   await page.screenshot({ path: info.outputPath('shared-library-web.png') })
   await page.getByRole('link', { name: 'Sign out' }).click()
   await expect(page.getByRole('button', { name: 'Google', exact: true })).toBeVisible()
@@ -71,7 +71,7 @@ test('the web adapter preserves registration, OTP errors, unverified login, and 
   await expect(page.getByRole('alert')).toContainText('Invalid verification code')
   await page.getByLabel('Verification code').fill('123456')
   await page.getByRole('button', { name: 'Verify', exact: true }).click()
-  await expect(page.locator('.page-header__title')).toHaveText('Video Library')
+  await expect(page.getByRole('heading', { name: 'Video library', exact: true })).toHaveText('Video library')
   await page.getByRole('link', { name: 'Sign out' }).click()
   await page.goto('/reset-password/fixture-reset-token')
   await page.getByLabel('Password', { exact: true }).fill('replacement-password')

@@ -1,6 +1,6 @@
 import { useEventListener } from 'expo'
 import { useVideoPlayer, VideoView } from 'expo-video'
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ActivityIndicator, PanResponder, Pressable, Text, View } from 'react-native'
 import { AppIcon } from '@/components/AppIcon'
 import { FilmstripFrames } from '@/components/timeline/FilmstripFrames'
@@ -58,7 +58,8 @@ export function ManualClipPicker({ videoPath, duration, value, onChange, fallbac
     seek(next.startTime)
   }
   const lastX = useRef(0)
-  const pan = useMemo(() => PanResponder.create({
+  const pan = useRef<ReturnType<typeof PanResponder.create> | null>(null)
+  const panResponder = pan.current ??= PanResponder.create({
     onStartShouldSetPanResponder: () => true,
     onMoveShouldSetPanResponder: () => true,
     onPanResponderGrant: event => { lastX.current = event.nativeEvent.pageX },
@@ -66,7 +67,7 @@ export function ManualClipPicker({ videoPath, duration, value, onChange, fallbac
       moveRange.current(event.nativeEvent.pageX - lastX.current)
       lastX.current = event.nativeEvent.pageX
     }
-  }), [])
+  })
   function trim(edge: 'start' | 'end', dx: number) {
     const current = rangeRef.current
     const minimum = Math.min(1, total)
@@ -103,7 +104,7 @@ export function ManualClipPicker({ videoPath, duration, value, onChange, fallbac
         <View pointerEvents="none" style={{ position: 'absolute', left: 0, top: 0, bottom: 0, width: left, backgroundColor: '#0009' }} />
         <View pointerEvents="none" style={{ position: 'absolute', left: right, right: 0, top: 0, bottom: 0, backgroundColor: '#0009' }} />
         <View style={{ position: 'absolute', left, width: Math.max(2, right - left), top: 0, bottom: 0, borderTopWidth: 3, borderBottomWidth: 3, borderColor: tokens.colors.accent }}>
-          <View {...pan.panHandlers} style={{ position: 'absolute', left: 20, right: 20, top: 0, bottom: 0 }} />
+          <View {...panResponder.panHandlers} style={{ position: 'absolute', left: 20, right: 20, top: 0, bottom: 0 }} />
           <TrimHandle edge="start" onMove={dx => trim('start', dx)} />
           <TrimHandle edge="end" onMove={dx => trim('end', dx)} />
         </View>

@@ -17,6 +17,8 @@ RUN yarn install --frozen-lockfile
 COPY landing/ ./
 COPY packages/app-tour /packages/app-tour
 COPY packages/shared-types /packages/shared-types
+COPY packages/email-composer /packages/email-composer
+COPY server/priv/email /server/priv/email
 
 # Build the application
 RUN yarn build

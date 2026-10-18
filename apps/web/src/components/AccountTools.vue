@@ -18,37 +18,25 @@
           <template v-if="view === 'campaigns'">
             <button
               class="button-secondary"
-              @click="
-                campaignScope = 'all'
-                load()
-              "
+              @click="campaignScope = 'all', load()"
             >
               Discover
             </button>
             <button
               class="button-secondary"
-              @click="
-                campaignScope = 'mine'
-                load()
-              "
+              @click="campaignScope = 'mine', load()"
             >
               My Campaigns
             </button>
             <button
               class="button-secondary"
-              @click="
-                campaignScope = 'submissions'
-                load()
-              "
+              @click="campaignScope = 'submissions', load()"
             >
               My Submissions
             </button>
             <button
               class="button-secondary"
-              @click="
-                campaignScope = 'earnings'
-                load()
-              "
+              @click="campaignScope = 'earnings', load()"
             >
               Earnings
             </button>

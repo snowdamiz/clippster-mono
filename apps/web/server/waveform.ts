@@ -11,7 +11,7 @@ const cache = new Map<string, Buffer>()
 const MAX_CACHE_BYTES = 64 * 1024 ** 2
 
 /** Decode only mono audio. Preserve a peak for each 10ms without astats text output. */
-export async function waveformData(project: WebProject, config: Config): Promise<Buffer> {
+export async function waveformData(project: WebProject, config: Config, signal?: AbortSignal): Promise<Buffer> {
   if (!project.hasAudio) return Buffer.alloc(0)
   const directory = projectDirectory(config, project.id), source = join(directory, 'source.mp4')
   const metadata = await stat(source), key = `${source}-${metadata.size}-${metadata.mtimeMs}`
@@ -25,7 +25,7 @@ export async function waveformData(project: WebProject, config: Config): Promise
       try { if ((await readFile(output + '.source', 'utf8')) === stamp) data = await readFile(output) } catch { /* First use or changed source. */ }
       if (!data) {
         const peaks: number[] = []; let carry = Buffer.alloc(0), peak = 0, samples = 0
-        await run(config.ffmpeg, ['-v', 'error', '-protocol_whitelist', 'file,pipe', '-i', source, '-map', '0:a:0', '-vn', '-ac', '1', '-ar', '8000', '-c:a', 'pcm_s16le', '-f', 's16le', 'pipe:1'], AbortSignal.timeout(10 * 60_000), 10 * 60_000, undefined, false, chunk => {
+        await run(config.ffmpeg, ['-v', 'error', '-protocol_whitelist', 'file,pipe', '-i', source, '-map', '0:a:0', '-vn', '-ac', '1', '-ar', '8000', '-c:a', 'pcm_s16le', '-f', 's16le', 'pipe:1'], signal ?? AbortSignal.timeout(10 * 60_000), 10 * 60_000, undefined, false, chunk => {
           const input = carry.length ? Buffer.concat([carry, chunk]) : chunk
           const complete = input.length - input.length % 2
           for (let offset = 0; offset < complete; offset += 2) {

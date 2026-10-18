@@ -15,6 +15,7 @@
     "typecheck": "vue-tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.server.json",
     "test": "vitest run",
     "test:e2e": "playwright test",
+    "verify:ci": "docker build --target verify -f Dockerfile ../..",
     "test:account": "playwright test --config playwright.account.config.ts"
   },
   "dependencies": {

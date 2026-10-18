@@ -4,6 +4,7 @@ import { AlertCircle, Check, Loader2, Zap } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/lib/api'
 import { needsPlanSelection, subscriptionCoversAccess } from '@/lib/accountRouting'
+import { PERSONAL_PLAN_ORDER, PLAN_PRESENTATION, personalPlanQuote } from '../../../../packages/shared-types/src/pricingPresentation'
 
 interface SubscriptionTier {
   id: string
@@ -20,7 +21,8 @@ const FREE_FEATURES = [
   '5 clip builds/day',
   '1 editor export/day',
   '2 VOD downloads/day',
-  '60 one-time credits',
+  '60 free minutes every 30 days (free balance capped at 60)',
+  'Watermark applied · No social posting',
 ]
 
 export function AccountBilling() {
@@ -37,6 +39,7 @@ export function AccountBilling() {
   const gateMode = isNewUserFlow || needsPlanSelection(user)
   const currentTier = user?.subscription?.tier || null
   const hasActiveSubscription = subscriptionCoversAccess(user?.subscription)
+  const availableMinutes = user?.credits?.minutes_remaining ?? user?.credits?.hours_remaining
 
   useEffect(() => {
     let cancelled = false
@@ -63,23 +66,9 @@ export function AccountBilling() {
 
   const basicTier = useMemo(() => tiers.find((t) => t.id === 'basic'), [tiers])
   const apiTiers = useMemo(
-    () => tiers.filter((t) => ['starter', 'creator', 'pro'].includes(t.id)),
+    () => PERSONAL_PLAN_ORDER.flatMap(id => tiers.filter(t => t.id === id)),
     [tiers],
   )
-
-  function displayPrice(tier: SubscriptionTier): string {
-    if (billingInterval === 'yearly') {
-      return (tier.price_usd * 11).toFixed(2)
-    }
-    return tier.price_usd.toFixed(2)
-  }
-
-  function effectiveMonthly(tier: SubscriptionTier): string {
-    if (billingInterval === 'yearly') {
-      return ((tier.price_usd * 11) / 12).toFixed(2)
-    }
-    return tier.price_usd.toFixed(2)
-  }
 
   async function selectFree() {
     setBusyTier('free')
@@ -138,12 +127,20 @@ export function AccountBilling() {
       )}
 
       <div className="mb-6">
-        <h1 className="text-2xl font-bold text-white m-0 mb-2">Billing</h1>
+        <h1 className="text-2xl font-bold text-white m-0 mb-2">Subscription & usage</h1>
         <p className="text-sm text-zinc-500 m-0">
           {hasActiveSubscription
             ? `Current plan: ${user?.subscription?.tier_name || currentTier}`
             : 'Choose the plan that works for you'}
         </p>
+      </div>
+
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-900/40 p-5">
+        <div><p className="m-0 text-xs text-zinc-500">Current plan</p><p className="m-0 mt-1 font-semibold text-white">{user?.subscription?.tier_name || 'Free'}</p>
+          {user?.subscription?.end_date && <p className="m-0 mt-1 text-xs text-zinc-400">{user.subscription.status === 'cancelled' ? 'Access until' : 'Current period ends'} {new Date(user.subscription.end_date).toLocaleDateString()}</p>}
+        </div>
+        <div><p className="m-0 text-xs text-zinc-500">Available processing balance</p><p className="m-0 mt-1 font-semibold text-white">{availableMinutes === undefined ? 'Unavailable' : availableMinutes === 'unlimited' ? 'Unlimited' : `${Number(availableMinutes).toLocaleString()} min`}</p></div>
+        {!gateMode && <button type="button" onClick={() => navigate(user?.owned_organization_id ? `/dashboard/org/${user.owned_organization_id}/billing` : '/pricing?audience=business')} className="rounded-lg bg-zinc-800 px-4 py-2 text-sm text-white hover:bg-zinc-700">Business plans</button>}
       </div>
 
       <div className="flex items-center gap-1 p-1 rounded-lg bg-zinc-900 border border-zinc-800 w-fit mb-6">
@@ -184,9 +181,20 @@ export function AccountBilling() {
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {apiTiers.map((tier) => (
+            <TierCard key={tier.id} tier={tier} billingInterval={billingInterval}
+              isCurrent={isCurrent(tier.id)} busy={busyTier === tier.id}
+              onSelect={() => checkout(tier.id)} />
+          ))}
+          {basicTier && (
+            <div className="sm:col-span-2 lg:col-span-3">
+              <TierCard tier={basicTier} billingInterval={billingInterval}
+                isCurrent={isCurrent('basic')} busy={busyTier === 'basic'} onSelect={() => checkout('basic')} compact />
+            </div>
+          )}
           {/* Free */}
           <div
-            className={`rounded-xl border p-5 flex flex-col ${
+            className={`sm:col-span-2 lg:col-span-3 rounded-xl border p-5 flex flex-col ${
               !hasActiveSubscription ? 'border-cyan-500/40 bg-cyan-500/5' : 'border-zinc-800 bg-zinc-900/40'
             }`}
           >
@@ -201,9 +209,9 @@ export function AccountBilling() {
             </p>
             <div className="flex items-center gap-1.5 mt-3 text-sm text-zinc-400">
               <Zap className="w-4 h-4 text-cyan-400" />
-              60 one-time credits
+              60 free minutes every 30 days · Free balance capped at 60
             </div>
-            <ul className="mt-4 mb-6 space-y-2 flex-1 list-none p-0">
+            <ul className="mt-4 mb-6 grid gap-2 sm:grid-cols-2 flex-1 list-none p-0">
               {FREE_FEATURES.map((f) => (
                 <li key={f} className="flex items-start gap-2 text-sm text-zinc-400">
                   <Check className="w-4 h-4 text-zinc-500 shrink-0 mt-0.5" />
@@ -229,32 +237,7 @@ export function AccountBilling() {
             </button>
           </div>
 
-          {/* Basic */}
-          {basicTier && (
-            <TierCard
-              tier={basicTier}
-              billingInterval={billingInterval}
-              displayPrice={displayPrice(basicTier)}
-              effectiveMonthly={effectiveMonthly(basicTier)}
-              isCurrent={isCurrent('basic')}
-              busy={busyTier === 'basic'}
-              onSelect={() => checkout('basic')}
-            />
-          )}
-
-          {/* API tiers */}
-          {apiTiers.map((tier) => (
-            <TierCard
-              key={tier.id}
-              tier={tier}
-              billingInterval={billingInterval}
-              displayPrice={displayPrice(tier)}
-              effectiveMonthly={effectiveMonthly(tier)}
-              isCurrent={isCurrent(tier.id)}
-              busy={busyTier === tier.id}
-              onSelect={() => checkout(tier.id)}
-            />
-          ))}
+          <p className="sm:col-span-2 lg:col-span-3 text-xs text-zinc-500">1 credit = 1 processing minute. AI Video Creator usage is separate. Paid minutes roll over; downgrading to Basic resets your balance.</p>
         </div>
       )}
     </div>
@@ -264,24 +247,24 @@ export function AccountBilling() {
 function TierCard({
   tier,
   billingInterval,
-  displayPrice,
-  effectiveMonthly,
   isCurrent,
   busy,
   onSelect,
+  compact = false,
 }: {
   tier: SubscriptionTier
   billingInterval: BillingInterval
-  displayPrice: string
-  effectiveMonthly: string
   isCurrent: boolean
   busy: boolean
   onSelect: () => void
+  compact?: boolean
 }) {
+  const quote = personalPlanQuote(tier.price_usd, tier.monthly_credits, billingInterval === 'yearly')
+  const presentation = PLAN_PRESENTATION[tier.id]
   return (
     <div
       className={`rounded-xl border p-5 flex flex-col ${
-        isCurrent ? 'border-cyan-500/40 bg-cyan-500/5' : 'border-zinc-800 bg-zinc-900/40'
+        isCurrent || tier.id === 'creator' ? 'border-cyan-500/40 bg-cyan-500/5' : 'border-zinc-800 bg-zinc-900/40'
       }`}
     >
       {isCurrent && (
@@ -290,19 +273,22 @@ function TierCard({
         </span>
       )}
       <h3 className="text-lg font-semibold text-white m-0">{tier.name}</h3>
+      {tier.id === 'creator' && !isCurrent && <span className="text-xs font-semibold text-cyan-400">Recommended</span>}
+      <p className="text-xs text-zinc-400 mt-2">{presentation?.description}</p>
       <p className="text-3xl font-bold text-white m-0 mt-2">
-        ${displayPrice}
+        ${quote.monthlyPrice}
         <span className="text-sm font-medium text-zinc-500">
-          /{billingInterval === 'yearly' ? 'yr' : 'mo'}
+          /mo
         </span>
       </p>
-      {billingInterval === 'yearly' && (
-        <p className="text-xs text-zinc-500 m-0 mt-1">${effectiveMonthly}/mo effective</p>
-      )}
+      <p className="text-xs text-zinc-500 m-0 mt-1">${quote.billedPrice} {quote.billingLabel}</p>
       <div className="flex items-center gap-1.5 mt-3 text-sm text-zinc-400">
         <Zap className="w-4 h-4 text-cyan-400" />
-        {tier.monthly_credits} credits/month
+        {quote.minutes.toLocaleString()} {quote.allowanceLabel}
       </div>
+      <ul className={`mt-4 list-none p-0 text-sm text-zinc-400 ${compact ? 'grid gap-2 sm:grid-cols-2' : 'space-y-2'}`}>
+        {presentation?.features.map(feature => <li key={feature} className="flex gap-2"><Check className="w-4 h-4 shrink-0 mt-0.5" />{feature}</li>)}
+      </ul>
       <div className="flex-1" />
       <button
         type="button"
