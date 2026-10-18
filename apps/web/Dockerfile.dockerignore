@@ -15,6 +15,9 @@ client/src-tauri
 apps/mobile
 landing
 server
+!server/priv/
+!server/priv/email/
+!server/priv/email/**
 package
 .gitnexus
 **/*.apk

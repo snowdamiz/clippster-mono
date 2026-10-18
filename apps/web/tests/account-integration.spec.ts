@@ -28,7 +28,7 @@ test('account navigation includes videos and preserves organization and billing,
   await page.screenshot({ path: info.outputPath('account-dashboard.png') })
   await page.locator('aside').first().getByRole('link', { name: 'Video Library', exact: true }).click()
   const workspace = page.frameLocator('iframe[title="Clippster video workspace"]')
-  await expect(workspace.locator('.page-header__title')).toHaveText('Video Library')
+  await expect(workspace.getByRole('heading', { name: 'Video library', exact: true })).toHaveText('Video library')
   await expect(workspace.getByRole('heading', { name: 'Sign In', exact: true })).toBeHidden()
   await expect(workspace.getByRole('navigation', { name: 'Main navigation' })).toHaveCount(0)
   await page.screenshot({ path: info.outputPath('account-videos.png') })

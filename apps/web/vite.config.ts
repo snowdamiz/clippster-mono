@@ -2,12 +2,23 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import { fileURLToPath } from 'node:url'
 import { createRequire } from 'node:module'
+import ts from 'typescript'
 const resolve = (path: string) => fileURLToPath(new URL(path, import.meta.url))
 const require = createRequire(import.meta.url)
+const clientTsconfig = resolve('../../client/tsconfig.json').replace(/\\/g, '/')
+// Shared SFC macros must use the web app's dependency paths, including in a
+// standalone CI/Docker install with no client or root node_modules directory.
+const vueTypeFs = {
+  ...ts.sys,
+  fileExists: (file: string) => file.replace(/\\/g, '/') === clientTsconfig || ts.sys.fileExists(file),
+  readFile: (file: string) => file.replace(/\\/g, '/') === clientTsconfig
+    ? JSON.stringify({ extends: resolve('./tsconfig.json') })
+    : ts.sys.readFile(file)
+}
 export default defineConfig({
   base: '/workspace/',
   publicDir: '../../client/public',
-  plugins: [vue()],
+  plugins: [vue({ script: { fs: vueTypeFs } })],
   resolve: {
     alias: {
       '@/services/api': resolve('./src/nativeAccountApi.ts'),
@@ -43,7 +54,8 @@ export default defineConfig({
       // Shared desktop CSS must also resolve with only the web dependencies installed.
       tailwindcss: require.resolve('tailwindcss/index.css')
     },
-    dedupe: ['vue']
+    // Resolve shared-source dependencies from this app's standalone install.
+    dedupe: Object.keys(require('./package.json').dependencies)
   },
   server: {
     host: process.env.HOST || '127.0.0.1',

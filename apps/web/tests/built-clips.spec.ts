@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './browser-fixture'
 import { execFileSync } from 'node:child_process'
 import { readFileSync } from 'node:fs'
 test('built clips library supports folders, filters, playback, download, publish and deletion',async({page},testInfo)=>{
@@ -22,12 +22,13 @@ test('built clips library supports folders, filters, playback, download, publish
   await card.hover();await card.getByTitle('Play',{exact:true}).click()
   await expect(page.locator('video')).toHaveJSProperty('readyState',4)
   await page.getByTitle('Close',{exact:true}).click()
-  const downloading=page.waitForEvent('download');await card.hover();await card.getByTitle('Save to...',{exact:true}).click();expect((await downloading).suggestedFilename()).toContain('Library highlight')
-  await card.getByTitle('Publish',{exact:true}).click();await expect(page.getByRole('dialog',{name:'Publish built clip'})).toBeVisible();await page.getByRole('button',{name:'Cancel',exact:true}).click()
+  await card.hover();await card.getByRole('button',{name:'More actions',exact:true}).click()
+  const downloading=page.waitForEvent('download');await page.getByRole('menuitem',{name:'Save to…',exact:true}).click();expect((await downloading).suggestedFilename()).toContain('Library highlight')
+  await card.getByTitle('Publish',{exact:true}).click();await expect(page.getByRole('dialog',{name:'Publish Library highlight'})).toBeVisible();await page.getByRole('button',{name:'Cancel',exact:true}).click()
   await page.getByPlaceholder('Search clips...').fill('no matching clip');await expect(page.getByText('No matching clips',{exact:true})).toBeVisible();await page.getByPlaceholder('Search clips...').fill('')
   await page.screenshot({path:testInfo.outputPath('built-clips.png')})
-  await card.hover();await card.getByTitle('Open in project workspace',{exact:true}).click();await expect(page.getByRole('region',{name:'Project workspace'})).toBeVisible()
+  await card.hover();await card.getByRole('button',{name:'More actions',exact:true}).click();await page.getByRole('menuitem',{name:'Open in project',exact:true}).click();await expect(page.getByRole('region',{name:'Project workspace'})).toBeVisible()
   await page.goto('/?view=built');await page.getByTitle('List View',{exact:true}).click()
-  await card.hover();await card.getByTitle('Delete build',{exact:true}).click();await page.getByRole('button',{name:'Delete Build',exact:true}).click();await expect(card).toHaveCount(0)
+  await card.hover();await card.getByRole('button',{name:'More actions',exact:true}).click();await page.getByRole('menuitem',{name:'Delete build',exact:true}).click();await page.getByRole('button',{name:'Delete Build',exact:true}).click();await expect(card).toHaveCount(0)
   expect(errors).toEqual([])
 })

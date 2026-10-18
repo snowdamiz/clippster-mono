@@ -31,6 +31,8 @@ export async function startFixture(
     res.setHeader('Content-Type', 'application/json')
     const chunks: Buffer[] = []
     for await (const chunk of req) chunks.push(Buffer.from(chunk))
+    const creatorProfiles = req.headers.authorization === 'Bearer fixture-token-1'
+      ? options.creatorProfiles || [] : []
     if (req.url === '/api/auth/google/start') {
       const input = JSON.parse(Buffer.concat(chunks).toString())
       oauth.set(`fixture-google-${input.client_state}`, input)
@@ -138,9 +140,9 @@ export async function startFixture(
         res.statusCode = 201; res.end(JSON.stringify({ success: true, asset }))
       } else res.end(JSON.stringify({ success: true, assets }))
     } else if (req.url === '/api/user/creator-profiles' && req.method === 'GET') {
-      res.end(JSON.stringify({ success: true, profiles: req.headers.authorization === 'Bearer fixture-token-1' ? options.creatorProfiles || [] : [] }))
+      res.end(JSON.stringify({ success: true, profiles: creatorProfiles }))
     } else if (req.url === '/api/user/branding') {
-      res.end(JSON.stringify({ success: true, profiles: req.headers.authorization === 'Bearer fixture-token-1' ? options.creatorProfiles || [] : [], assets: [] }))
+      res.end(JSON.stringify({ success: true, profiles: creatorProfiles, assets: [] }))
     } else if (req.url === '/api/user/campaigns/global-branding' || req.url?.startsWith('/api/user/campaigns/by-creator/')) {
       res.end(JSON.stringify({ success: true, campaigns: [] }))
     } else if (req.url === '/api/user/assigned-creator-profiles') {
