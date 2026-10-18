@@ -288,7 +288,7 @@ export async function startFixture(
             })
         )
       )
-      if (!options.directory) await rm(directory, { recursive: true, force: true })
+      if (!options.directory) await rm(directory, { recursive: true, force: true, maxRetries: 5 })
     }
   }
 }

@@ -19,6 +19,8 @@ export class Jobs {
   private running: { job: StoredJob; abort: AbortController; promise: Promise<void> } | null = null
   private stopped = false
   private cancellations = new Set<string>()
+  private preparationAbort = new AbortController()
+  private preparations: Promise<unknown>[] = []
   constructor(
     private store: Store,
     private config: Config,
@@ -164,7 +166,12 @@ export class Jobs {
         signal.throwIfAborted()
         await rename(join(work, 'source.mp4'), join(directory, 'source.mp4'))
         Object.assign(project, metadata, { status: 'ready', sourceUrl: job.payload.url || null })
-        void waveformData(project, this.config).catch(() => { /* Opening the timeline can retry preparation. */ })
+        const preparation = waveformData(project, this.config, this.preparationAbort.signal).catch(() => { /* Opening the timeline can retry preparation. */ })
+        this.preparations.push(preparation)
+        preparation.finally(() => {
+          const index = this.preparations.indexOf(preparation)
+          if (index >= 0) this.preparations.splice(index, 1)
+        })
       } else if (job.kind === 'transcribe' && job.payload.clipId) {
         const clip = project.clips.find(value => value.id === job.payload.clipId)
         requireValue(clip, 404, 'Clip not found.')
@@ -263,9 +270,12 @@ export class Jobs {
   }
   async stop() {
     this.stopped = true
+    this.preparationAbort.abort()
     if (this.running) {
       this.running.abort.abort()
       await this.running.promise
     }
+    // Import returns before peaks are cached. Wait so shutdown cannot delete files still being written.
+    await Promise.allSettled(this.preparations)
   }
 }
