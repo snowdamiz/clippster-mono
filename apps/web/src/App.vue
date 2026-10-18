@@ -45,10 +45,7 @@
             href="#new-project"
             :icon="Video"
             :collapsed="compact"
-            @click.prevent="
-              toolView = 'download'
-              creating = false
-            "
+            @click.prevent="toolView = 'download', (creating = false)"
           />
           <p
             class="mb-1 mt-4 hidden px-3 pb-1 pt-2 text-xs font-semibold uppercase tracking-wider text-[var(--sidebar-text-muted)] opacity-70 md:block"
@@ -61,10 +58,7 @@
             :icon="Folder"
             :collapsed="compact"
             :active="!toolView"
-            @click.prevent="
-              toolView = ''
-              creating = false
-            "
+            @click.prevent="toolView = '', (creating = false)"
           />
           <SidebarNavigationItem
             name="Built Clips"
@@ -72,10 +66,7 @@
             :icon="LayoutGrid"
             :collapsed="compact"
             :active="toolView === 'built'"
-            @click.prevent="
-              toolView = 'built'
-              creating = false
-            "
+            @click.prevent="toolView = 'built', (creating = false)"
           />
         </nav>
         <div class="p-2">
