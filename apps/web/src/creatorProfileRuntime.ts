@@ -13,7 +13,10 @@ export const getUserAssignedCreatorProfiles = () => workspaceClient.get<{ succes
 export async function getAllCreatorProfiles(): Promise<CreatorProfileWithLinks[]> { const result = await workspaceClient.get<{ profiles: any[] }>(account + '/user/creator-profiles'); return result.profiles.map(profile => ({ ...profile, id: String(profile.id) })) }
 export function selectedVideoFile(path: string) { const file = files.get(path); if (!file) throw new Error('Choose the video file again.'); return file }
 const prefix = new URLSearchParams(location.search).has('embedded') ? '/workspace/api' : '/api'
-export function creatorAvatarUrl(id: number | string, assigned: boolean) { return prefix + account + '/creator-avatar/' + (assigned ? 'assigned/' : 'personal/') + String(id).replace(/^org-/, '') }
+export function creatorAvatarUrl(id: number | string, assigned: boolean) {
+  const campaign = /^campaign-\d+-(\d+)$/.exec(String(id))
+  return prefix + account + '/creator-avatar/' + (campaign ? 'campaign/' : assigned ? 'assigned/' : 'personal/') + (campaign?.[1] || String(id).replace(/^org-/, ''))
+}
 type Asset = ServerOrganizationAsset & { user_id?: number }
 const files = new Map<string, File>()
 const uploadedFiles = new Map<string, Asset>()

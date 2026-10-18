@@ -35,6 +35,7 @@ interface ServerUserCreatorProfile {
   id: number;
   client_id: string | null;
   name: string;
+  updated_at?: string;
 }
 
 async function ensurePersonalServerIdColumn(): Promise<void> {
@@ -78,7 +79,7 @@ async function markLocalAssetServerId(
   ]);
 }
 
-export async function syncPersonalBranding(): Promise<{
+export async function syncPersonalBranding(options: { onlyLocalChanges?: boolean } = {}): Promise<{
   uploadedAssets: number;
   upsertedProfiles: number;
   downloadedAssets: number;
@@ -93,10 +94,18 @@ export async function syncPersonalBranding(): Promise<{
   let downloadedAssets = 0;
 
   const profiles = await getAllCreatorProfiles();
-  const personal = profiles.filter((p) => !String(p.id).startsWith('org-'));
+  const personal = profiles.filter((p) => !String(p.id).startsWith('org-') && !p.organization_id && !p.campaign_id);
+  // Automatic refresh must not overwrite a more recent edit made on the web.
+  const existing = options.onlyLocalChanges ? await api.get('/user/branding') : null;
+  if (existing && !existing.data?.success) throw new Error(existing.data?.error || 'Could not check cloud creator profiles');
+  const remoteProfiles = (existing?.data.profiles ?? []) as ServerUserCreatorProfile[];
   const localToServerAsset = new Map<string, number>();
 
   for (const profile of personal) {
+    const remote = remoteProfiles.find(remote => remote.client_id === profile.id);
+    // SQLite rows use Unix seconds; older toggle handlers wrote milliseconds.
+    const localUpdatedAt = profile.updated_at < 1e12 ? profile.updated_at * 1000 : profile.updated_at;
+    if (remote?.updated_at && Date.parse(remote.updated_at) >= localUpdatedAt) continue;
     for (const [field, assetType] of [
       ['intro_id', 'intro'],
       ['outro_id', 'outro'],
@@ -140,7 +149,15 @@ export async function syncPersonalBranding(): Promise<{
 
     const body = {
       client_id: profile.id,
-      platform_links: profile.platform_links.map(link => ({ platform: link.platform, platform_id: link.platform_id, is_primary: Boolean(link.is_primary) })),
+      platform_links: profile.platform_links.map(link => ({
+        platform: link.platform,
+        platform_id: link.platform_id,
+        display_name: link.display_name,
+        profile_image_url: link.profile_image_url,
+        is_primary: Boolean(link.is_primary),
+      })),
+      profile_image_url: profile.platform_links.find(link => link.is_primary && link.profile_image_url)?.profile_image_url
+        || profile.platform_links.find(link => link.profile_image_url)?.profile_image_url || null,
       name: profile.name,
       description: profile.description,
       scope:
@@ -150,6 +167,7 @@ export async function syncPersonalBranding(): Promise<{
             ? 'streamer'
             : 'personal_studio',
       disabled: Boolean(profile.disabled),
+      auto_dvr_enabled: Boolean(profile.auto_dvr_enabled),
       intro_id: profile.intro_id ? localToServerAsset.get(profile.intro_id) ?? null : null,
       outro_id: profile.outro_id ? localToServerAsset.get(profile.outro_id) ?? null : null,
       watermark_id: profile.watermark_id
@@ -174,6 +192,8 @@ export async function syncPersonalBranding(): Promise<{
         profile.id,
       ]);
       upsertedProfiles += 1;
+    } else {
+      throw new Error(response.data?.error || `Could not sync creator "${profile.name}"`);
     }
   }
 

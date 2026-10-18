@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { spawn } from 'child_process';
+import { spawn, execFileSync } from 'child_process';
 import { fileURLToPath } from 'url';
 
 const TARGETS = {
@@ -79,6 +79,10 @@ function runDeploy({ cwd, tokenKey, label, appName, config, dockerfile, ignorefi
   }
   if (dockerfile) args.push('--dockerfile', dockerfile);
   if (ignorefile) args.push('--ignorefile', ignorefile);
+  if (appName === 'clippster-web') {
+    const revision = process.env.GITHUB_SHA || execFileSync('git', ['rev-parse', 'HEAD'], { cwd: REPO_ROOT, encoding: 'utf8' }).trim();
+    args.push('--build-arg', `APP_REVISION=${revision}`);
+  }
 
   const child = spawn('flyctl', args, {
     cwd: targetCwd,

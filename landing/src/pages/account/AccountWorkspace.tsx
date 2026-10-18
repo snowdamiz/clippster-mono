@@ -70,7 +70,7 @@ export function AccountWorkspace({ viewOverride, onClose }: { viewOverride?: str
     key={pathname}
     src={`/workspace/?embedded=1&view=${viewOverride || (fromBuiltClips ? 'built' : ({ settings: 'settings', profile: 'profile', clips: 'built', downloads: 'download', creators: 'creators', campaigns: 'campaigns', prompts: 'prompts', calendar: 'calendar' } as Record<string, string>)[pathname.split('/').at(-1) || ''] || 'library')}${new URLSearchParams(search).get('tab') ? `&tab=${encodeURIComponent(new URLSearchParams(search).get('tab')!)}` : ''}${projectId && /^[\da-f-]{36}$/i.test(projectId) ? `&project=${encodeURIComponent(projectId)}` : ''}${clipId && /^[\da-f-]{36}$/i.test(clipId) ? `&clip=${encodeURIComponent(clipId)}` : ''}`}
     title="Clippster video workspace"
-    className="h-full min-h-[600px] w-full border-0"
+    className="h-full min-h-0 w-full border-0"
     allow="fullscreen"
   />
 }

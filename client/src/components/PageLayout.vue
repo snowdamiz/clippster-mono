@@ -1,5 +1,5 @@
 <template>
-  <div class="page-layout flex h-full w-full min-w-0 flex-col">
+  <div class="page-layout flex h-full min-h-0 w-full min-w-0 flex-col">
     <!-- Page header: title on the left, primary actions on the right -->
     <header
       v-if="showHeader"

@@ -185,6 +185,7 @@ createRoot(document.getElementById('root')!).render(
                   <Route index element={<AccountHome />} />
                   <Route path="messages" element={<AccountMessages />} />
                   <Route path="profile" element={<AccountWorkspace />} />
+                  <Route path="profile/edit" element={<AccountWorkspace viewOverride="profile-edit" />} />
                   <Route path="social" element={<Navigate to="/account/profile?tab=accounts" replace />} />
                   <Route path="posts" element={<Navigate to="/account/profile?tab=posts" replace />} />
                   <Route path="settings" element={<AccountWorkspace />} />

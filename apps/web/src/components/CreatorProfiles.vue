@@ -57,16 +57,27 @@ const organizationProfiles = computed(() => filteredCreators.value.filter(creato
 async function load() {
   loading.value = true; error.value = ''
   try {
-    const [personal, assigned, joined] = await Promise.all([
+    const [personal, assigned, joined] = await Promise.allSettled([
       workspaceClient.get<{ profiles: Creator[] }>(account + '/user/creator-profiles'),
       workspaceClient.get<{ profiles: Creator[] }>(account + '/user/assigned-creator-profiles'),
-      workspaceClient.get<{ campaigns: Campaign[] }>(account + '/user/campaigns').catch(() => ({ campaigns: [] }))
+      workspaceClient.get<{ campaigns: Campaign[] }>(account + '/user/campaigns')
     ])
-    creators.value = [
-      ...(await hydrateCreatorAssets(personal.profiles)).map(profile => ({ ...profile, scope: profile.scope || 'streamer', platform_links: profile.platform_links || [], isOrgProfile: false })),
-      ...assigned.profiles.map(profile => ({ ...profile, id: `org-${profile.id}`, server_id: Number(profile.id), scope: profile.scope || 'streamer', platform_links: profile.platform_links || [], isOrgProfile: true }))
-    ]
-    campaigns.value = convertCampaignsToGroupedDisplay(joined.campaigns)
+    let assetError = ''
+    const hydrated = personal.status === 'fulfilled'
+      ? await hydrateCreatorAssets(personal.value.profiles).catch(cause => {
+        assetError = `Could not load branding previews: ${errorMessage(cause)}`
+        return personal.value.profiles
+      }) : []
+    const personalProfiles = personal.status === 'fulfilled'
+      ? hydrated.map(profile => ({ ...profile, scope: profile.scope || 'streamer', platform_links: profile.platform_links || [], isOrgProfile: false }))
+      : creators.value.filter(profile => !profile.isOrgProfile)
+    const assignedProfiles = assigned.status === 'fulfilled'
+      ? assigned.value.profiles.map(profile => ({ ...profile, id: `org-${profile.id}`, server_id: Number(profile.id), scope: profile.scope || 'streamer', platform_links: profile.platform_links || [], isOrgProfile: true }))
+      : creators.value.filter(profile => profile.isOrgProfile)
+    creators.value = [...personalProfiles, ...assignedProfiles]
+    if (joined.status === 'fulfilled') campaigns.value = convertCampaignsToGroupedDisplay(joined.value.campaigns)
+    error.value = [personal, assigned, joined].flatMap((result, index) => result.status === 'rejected'
+      ? [`Could not load ${['personal creators', 'organization creators', 'campaign creators'][index]}: ${errorMessage(result.reason)}`] : []).concat(assetError ? [assetError] : []).join(' ')
   } catch (cause) { error.value = errorMessage(cause) }
   finally { loading.value = false }
 }
@@ -112,7 +123,7 @@ const model = reactive({
   syncingPersonal: loading, syncPersonalToCloud: load, syncPersonalLabel: 'Refresh', openCreateDialog: () => edit(), openEditDialog: edit,
   confirmDeleteCreator: (creator: Creator) => { deletingCreator.value = creator }, toggleProfileDisabled: toggleDisabled, openDownloadDialog: download, viewCreatorVods: viewVods,
   openPersonalPostDialog: () => { showPersonalPost.value = true }, openPostSubmitDialog: (creator: Creator) => { postingCreator.value = creator },
-  getCreatorProfileImage: (creator: Creator) => (creator.profile_image_url || creator.platform_links.some(link => link.profile_image_url)) ? creatorAvatarUrl(creator.id, Boolean(creator.isOrgProfile)) : undefined,
+  getCreatorProfileImage: (creator: Creator & { profile_image_path?: string | null }) => (creator.profile_image_url || creator.profile_image_path || creator.platform_links.some(link => link.profile_image_url)) ? creatorAvatarUrl(creator.id, Boolean(creator.isOrgProfile)) : undefined,
   handleImageError: (event: Event) => { (event.target as HTMLImageElement).style.display = 'none' },
   getPlatformIcon: (platform: PlatformId) => getPlatformIcon(platform, '/workspace/'), getPlatformFilter,
   isLiveClipEnabled: false, liveCreatorsCount: 0, monitoringCreatorsCount: 0,

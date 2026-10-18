@@ -77,9 +77,13 @@ export function creatorMediaRoutes(auth: Auth, config: Config) {
     } finally { await rm(directory, { recursive: true, force: true }) }
   })
   router.get('/creator-avatar/:scope/:id', async (req, res) => {
-    requireValue(['personal', 'assigned'].includes(String(req.params.scope)), 400, 'Unsupported creator scope.')
+    requireValue(['personal', 'assigned', 'campaign'].includes(String(req.params.scope)), 400, 'Unsupported creator scope.')
     const upstream = auth.upstream(auth.token(res.locals.session))
-    const result = await upstream.get<{ success: boolean; profiles: { id: number; profile_image_url?: string; platform_links?: { is_primary?: boolean; profile_image_url?: string }[] }[] }>(req.params.scope === 'personal' ? '/user/creator-profiles' : '/user/assigned-creator-profiles')
+    type AvatarProfile = { id: number; profile_image_url?: string; platform_links?: { is_primary?: boolean; profile_image_url?: string }[] }
+    const result = req.params.scope === 'campaign'
+      ? await upstream.get<{ success: boolean; campaigns: { creator_profiles?: AvatarProfile[]; creator_profile?: AvatarProfile }[] }>('/user/campaigns')
+        .then(bundle => ({ success: bundle.success, profiles: bundle.campaigns?.flatMap(campaign => campaign.creator_profiles?.length ? campaign.creator_profiles : campaign.creator_profile ? [campaign.creator_profile] : []) }))
+      : await upstream.get<{ success: boolean; profiles: AvatarProfile[] }>(req.params.scope === 'personal' ? '/user/creator-profiles' : '/user/assigned-creator-profiles')
     const profile = result.profiles?.find(profile => String(profile.id) === req.params.id)
     const url = profile?.profile_image_url || profile?.platform_links?.find(link => link.is_primary && link.profile_image_url)?.profile_image_url || profile?.platform_links?.find(link => link.profile_image_url)?.profile_image_url
     requireValue(result.success && url, 404, 'Creator avatar was not found.')

@@ -8,6 +8,7 @@ export const route = reactive({ query, path: location.pathname, fullPath: '/acco
 function destination(path: string) {
   if (path === '/campaigns') return '/account/campaigns'
   if (path === '/clipper-profile') return '/account/profile'
+  if (path === '/clipper-profile/edit') return '/account/profile/edit'
   return path
 }
 export const router = {
@@ -35,14 +36,15 @@ declare module 'vue' {
   }
 }
 export const RouterLink = defineComponent({
+  inheritAttrs: false,
   props: { to: { type: [String, Object], required: true } },
-  setup(props, { slots }) {
+  setup(props, { slots, attrs }) {
     const href = computed(() => {
       if (typeof props.to === 'string') return destination(props.to)
       const target = props.to as { path: string; query?: Record<string, string> }
       const query = new URLSearchParams(target.query).toString()
       return destination(target.path) + (query ? '?' + query : '')
     })
-    return () => h('a', { href: href.value, target: '_top' }, slots.default?.())
+    return () => h('a', { ...attrs, href: href.value, target: '_top' }, slots.default?.())
   }
 })

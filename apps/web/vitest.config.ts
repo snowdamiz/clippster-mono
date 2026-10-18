@@ -7,6 +7,7 @@ export default mergeConfig(
     test: {
       include: [
         'tests/**/*.test.ts',
+        '../../client/src/services/personalBrandingSync.test.ts',
         '../../packages/clip-export/src/buildClipExport{,.ffmpeg}.test.ts'
       ],
       testTimeout: 90_000,

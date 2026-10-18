@@ -51,6 +51,7 @@
     </template>
 
     <div class="flex flex-1 flex-col gap-6 px-5 py-4">
+      <slot name="notice" />
       <!-- Tour demo project -->
       <section v-if="mockProjectActive" class="flex flex-col gap-2.5">
         <SectionHeader title="Tour demo" />
@@ -209,6 +210,7 @@
                 </template>
 
                 <template #meta>
+                  <slot name="project-status" :project="project" />
                   <template v-if="viewMode !== 'list'">
                     <PlatformLogo
                       v-if="getProjectPlatform(project)"
@@ -249,6 +251,7 @@
 
                 <!-- Hover actions -->
                 <template #actions>
+                  <slot name="extra-actions" :project="project" />
                   <div class="flex items-center gap-0.5" :class="viewMode === 'list' && 'w-[118px] justify-end'">
                     <LibraryCardAction
                       v-if="canDetectClips(project.id) && !isProjectDetecting(project.id) && isAIAllowed"

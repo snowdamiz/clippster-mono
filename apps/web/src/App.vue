@@ -110,6 +110,7 @@
         <StreamVods v-else-if="toolView === 'download'" :platform="vodSearch.platform" :channel="vodSearch.channel" />
         <BuiltClips v-else-if="toolView === 'built'" @open="openBuiltProject" />
         <ClipperProfile v-else-if="toolView === 'profile'" style="height: 100%; min-height: 0" />
+        <ClipperProfileEdit v-else-if="toolView === 'profile-edit'" style="height: 100%; min-height: 0" />
         <WebAccountSettings v-else-if="toolView === 'settings'" />
         <AccountTools v-else-if="toolView" :view="toolView" :billing-url="accountBilling" />
         <ProjectLibraryView v-else :model="libraryModel">
@@ -119,7 +120,7 @@
           <template #project-status="{ project }">
             <span
               v-if="project.status === 'error'"
-              class="project-card__badge bg-red-500/20 text-red-300"
+              class="rounded bg-danger-soft px-1.5 py-0.5 text-xs text-danger"
               :title="project.error || 'Download failed'"
             >
               Download failed
@@ -129,10 +130,10 @@
             <button
               v-if="project.status === 'error' && project.sourceUrl"
               title="Retry download"
-              class="project-card__action-btn"
+              class="grid size-7 place-items-center rounded-md bg-surface-raised text-fg hover:bg-surface-hover"
               @click.stop="retryDownload(project)"
             >
-              <Download class="project-card__action-icon" />
+              <Download class="size-4" />
             </button>
           </template>
         </ProjectLibraryView>
@@ -159,7 +160,7 @@
 <script setup lang="ts">
   import { ref, reactive, computed, onMounted, onUnmounted, watch, defineAsyncComponent } from 'vue'
   import { refreshWorkspacePermissions } from './workspacePermissions'
-  import { Folder, Search, Radio, Video, Download, LogOut, LayoutGrid } from 'lucide-vue-next'
+  import { Folder, Search, Radio, Video, Download, LogOut, LayoutGrid, Loader2 } from 'lucide-vue-next'
   import type { AuthUser, WebProject, WebJob } from '@clippster/shared-types'
   import { needsPlanSelection } from '@clippster/shared-types'
   import AppBrand from '@/components/AppBrand.vue'
@@ -178,6 +179,7 @@
   const ProjectWorkspacePage = defineAsyncComponent(() => import('./components/ProjectWorkspacePage.vue'))
   const BuiltClips = defineAsyncComponent(() => import('./components/BuiltClips.vue'))
   const ClipperProfile = defineAsyncComponent(() => import('@/pages/ClipperProfilePage.vue'))
+  const ClipperProfileEdit = defineAsyncComponent(() => import('@/pages/ClipperProfileEditPage.vue'))
   const WebAccountSettings = defineAsyncComponent(() => import('./components/WebAccountSettings.vue'))
   import { auth, client, workspaceClient, projects, sessionExpired, sourcePath, errorMessage } from './api'
   import { useWorkspace } from './useWorkspace'
@@ -186,7 +188,7 @@
   watch(user, (value) => setWorkspaceAccount(value), { immediate: true })
   const params = new URLSearchParams(location.search)
   const embedded = params.has('embedded')
-  const toolViews = ['download', 'creators', 'campaigns', 'prompts', 'calendar', 'built', 'profile', 'settings']
+  const toolViews = ['download', 'creators', 'campaigns', 'prompts', 'calendar', 'built', 'profile', 'profile-edit', 'settings']
   const toolView = ref(toolViews.includes(params.get('view') || '') ? params.get('view')! : '')
   const initialClipId = ref<string | null>(params.get('clip'))
   const vodSearch = ref({
