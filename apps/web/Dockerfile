@@ -9,6 +9,8 @@ RUN npm ci --workspaces=false --no-audit --no-fund
 FROM dependencies AS build
 COPY apps/web/ ./
 COPY packages/shared-types/ /repo/packages/shared-types/
+COPY packages/email-composer/ /repo/packages/email-composer/
+COPY server/priv/email/ /repo/server/priv/email/
 COPY packages/clip-export/ /repo/packages/clip-export/
 COPY packages/api-client/ /repo/packages/api-client/
 COPY packages/cloud-sync-schema/ /repo/packages/cloud-sync-schema/
@@ -34,6 +36,8 @@ WORKDIR /repo/apps/web
 COPY --from=dependencies --chown=node:node /repo/apps/web/node_modules ./node_modules
 COPY apps/web/ ./
 COPY packages/shared-types/ /repo/packages/shared-types/
+COPY packages/email-composer/ /repo/packages/email-composer/
+COPY server/priv/email/ /repo/server/priv/email/
 COPY packages/clip-export/ /repo/packages/clip-export/
 COPY packages/api-client/ /repo/packages/api-client/
 COPY packages/cloud-sync-schema/ /repo/packages/cloud-sync-schema/

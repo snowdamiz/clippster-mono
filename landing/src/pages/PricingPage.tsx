@@ -1,7 +1,8 @@
 import {ProductComparison} from '@/components/marketing/ProductComparison'
+import { PLAN_PRESENTATION, personalPlanQuote } from '../../../packages/shared-types/src/pricingPresentation'
 import {Header} from '@/components/Header';
 import {Footer} from '@/components/Footer';
-import { Check, X, Sparkles, Zap, Crown, Building2, Plus, ChevronDown, Package, TrendingUp, Trophy, Clock } from 'lucide-react'
+import { Check, Sparkles, Zap, Crown, Building2, Plus, ChevronDown, Package, TrendingUp, Trophy, Clock } from 'lucide-react'
 import { useDownloads } from '../hooks/usePlatform'
 import { CTA } from '../components/CTA'
 import { useState } from 'react'
@@ -15,100 +16,46 @@ const subscriptionPlans = [
     price: 0,
     period: 'forever',
     credits: 60,
-    description: 'Try Clippster',
     icon: Package,
-    features: [
-      '60 credits/month',
-      '5 clip builds/day',
-      '1 editor export/day',
-      '2 VOD downloads/day',
-    ],
-    limitations: [
-      'Admin watermark applied',
-      'No social posting',
-      'No AI Video Creator',
-    ],
     cta: 'Get Started',
     highlight: false,
-    accentColor: 'zinc'
   },
   {
     name: 'Basic',
     price: 12.99,
     period: 'month',
     credits: 0,
-    description: 'Essential features',
     icon: Zap,
-    features: [
-      'Unlimited clip builds',
-      'Social posting & scheduling',
-      'Campaign participation',
-      'Custom watermark',
-    ],
-    limitations: [
-      'No AI clip detection',
-      'No AI Video Creator',
-      'No organization features',
-      'Large credit pack only (1,800 @ $39.99)',
-    ],
     cta: 'Get Started',
     highlight: false,
-    accentColor: 'sky'
   },
   {
     name: 'Starter',
     price: 24.99,
     period: 'month',
     credits: 600,
-    description: 'Perfect for beginners',
     icon: Zap,
-    features: [
-      '600 credits/month (10 hours)',
-      'Full AI clip detection',
-      'HD export (1080p)',
-      'Credits roll over',
-    ],
-    limitations: [],
     cta: 'Get Started',
     highlight: false,
-    accentColor: 'blue'
   },
   {
     name: 'Creator',
     price: 49.99,
     period: 'month',
     credits: 1800,
-    description: 'For growing creators',
     icon: Crown,
     popular: true,
-    features: [
-      '1,800 credits/month (30 hours)',
-      'Full AI clip detection',
-      'HD export (1080p)',
-      'Credits roll over',
-    ],
-    limitations: [],
     cta: 'Start Creating',
     highlight: true,
-    accentColor: 'violet'
   },
   {
     name: 'Pro',
     price: 199.99,
     period: 'month',
     credits: 9000,
-    description: 'For power users & teams',
     icon: Building2,
-    features: [
-      '9,000 credits/month (150 hours)',
-      'Full AI clip detection',
-      'HD export (1080p)',
-      'Credits roll over',
-    ],
-    limitations: [],
     cta: 'Go Pro',
     highlight: false,
-    accentColor: 'emerald'
   },
 ]
 
@@ -123,7 +70,7 @@ const creditPacks = [
 // Organization plans (base tiers only, no add-ons)
 const organizationPlans = [
   {
-    name: 'Solo',
+    name: 'Business Solo',
     price: 149.99,
     period: 'month',
     seats: 0,
@@ -142,7 +89,7 @@ const organizationPlans = [
     highlight: false,
   },
   {
-    name: 'Enterprise Base',
+    name: 'Business',
     price: 349.99,
     period: 'month',
     seats: 5,
@@ -161,7 +108,7 @@ const organizationPlans = [
     highlight: false,
   },
   {
-    name: 'Enterprise AI',
+    name: 'Business AI',
     price: 549.99,
     period: 'month',
     seats: 5,
@@ -182,7 +129,7 @@ const organizationPlans = [
     highlight: true,
   },
   {
-    name: 'Enterprise Unlimited',
+    name: 'Business Scale',
     price: 2199.99,
     period: 'month',
     seats: null,
@@ -276,6 +223,9 @@ function FAQItem({ question, answer, isOpen, onClick, index }: {
 export function PricingPage() {
   const { primaryDownload } = useDownloads()
   const [openFAQ, setOpenFAQ] = useState<number | null>(0)
+  const [audience, setAudience] = useState<'creators' | 'business'>(() =>
+    new URLSearchParams(window.location.search).get('audience') === 'business' ? 'business' : 'creators')
+  const [yearly, setYearly] = useState(false)
 
   const trackPricingDownload = (source: string, label: string) => {
     if (primaryDownload) {
@@ -321,11 +271,24 @@ export function PricingPage() {
           </p>
         </div>
 
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-10">
+          <div className="flex gap-1 rounded-lg border border-zinc-800 bg-zinc-900 p-1" aria-label="Plan audience">
+            {(['creators', 'business'] as const).map(value => <button key={value} type="button" aria-pressed={audience === value} onClick={() => setAudience(value)} className={`rounded-md px-4 py-2 text-sm ${audience === value ? 'bg-zinc-700 text-white' : 'text-zinc-400'}`}>For {value}</button>)}
+          </div>
+          {audience === 'creators' && <div>
+            <div className="flex gap-1 rounded-lg border border-zinc-800 bg-zinc-900 p-1" aria-label="Billing interval">
+              {[false, true].map(value => <button key={String(value)} type="button" aria-pressed={yearly === value} onClick={() => setYearly(value)} className={`rounded-md px-4 py-2 text-sm ${yearly === value ? 'bg-zinc-700 text-white' : 'text-zinc-400'}`}>{value ? 'Yearly' : 'Monthly'}</button>)}
+            </div>
+            <p className="mt-2 text-xs text-cyan-400">Yearly: pay for 11 months, get 12</p>
+          </div>}
+        </div>
         {/* Subscription Plans */}
-        <section className="mb-24">
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-6 max-w-7xl mx-auto">
-            {subscriptionPlans.map((plan, index) => {
+        <section className="mb-6" hidden={audience !== 'creators'}>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-7xl mx-auto">
+            {subscriptionPlans.filter(plan => !['Free', 'Basic'].includes(plan.name)).map((plan, index) => {
               const Icon = plan.icon
+              const presentation = PLAN_PRESENTATION[plan.name.toLowerCase()]
+              const quote = personalPlanQuote(plan.price, plan.credits, yearly)
               
               return (
                 <div
@@ -383,7 +346,7 @@ export function PricingPage() {
                         </div>
                         <div>
                           <h3 className="text-lg font-semibold text-white">{plan.name}</h3>
-                          <p className="text-xs text-zinc-500">{plan.description}</p>
+                          <p className="text-xs text-zinc-500">{presentation.description}</p>
                         </div>
                       </div>
                       
@@ -395,7 +358,7 @@ export function PricingPage() {
                               ? 'bg-gradient-to-r from-white to-cyan-200 bg-clip-text text-transparent' 
                               : 'text-white'
                           }`}>
-                            ${plan.price}
+                            ${quote.monthlyPrice}
                           </span>
                           {plan.period !== 'forever' && (
                             <span className="text-zinc-500 text-sm">/{plan.period}</span>
@@ -403,6 +366,7 @@ export function PricingPage() {
                         </div>
                       </div>
 
+                      <p className="mb-4 text-xs text-zinc-400">${quote.billedPrice} {quote.billingLabel}</p>
                       {/* Credits highlight */}
                       <div className={`py-3 px-4 rounded-xl mb-5 ${
                         plan.highlight 
@@ -412,7 +376,7 @@ export function PricingPage() {
                         <div className="flex items-center gap-2">
                           <Sparkles className={`w-4 h-4 ${plan.highlight ? 'text-cyan-400' : 'text-zinc-500'}`} />
                           <span className={`font-semibold ${plan.highlight ? 'text-cyan-300' : 'text-zinc-300'}`}>
-                            {plan.credits.toLocaleString()} credits/month
+                            {quote.minutes.toLocaleString()} {quote.allowanceLabel}
                           </span>
                         </div>
                       </div>
@@ -441,7 +405,7 @@ export function PricingPage() {
                       
                       {/* Features list */}
                       <ul className="space-y-2.5">
-                        {plan.features.map((feature) => (
+                        {presentation.features.map((feature) => (
                           <li key={feature} className="flex items-start gap-2.5 text-sm">
                             <div className={`w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 ${
                               plan.highlight 
@@ -455,16 +419,7 @@ export function PricingPage() {
                             </span>
                           </li>
                         ))}
-                        {plan.limitations.map((limitation) => (
-                          <li key={limitation} className="flex items-start gap-2.5 text-sm">
-                            <div className="w-4 h-4 rounded-full flex items-center justify-center shrink-0 mt-0.5 bg-zinc-800/50 text-zinc-600">
-                              <X className="w-2.5 h-2.5" />
-                            </div>
-                            <span className="text-zinc-600 text-[13px]">
-                              {limitation}
-                            </span>
-                          </li>
-                        ))}
+
                       </ul>
                     </div>
                   </div>
@@ -474,8 +429,22 @@ export function PricingPage() {
           </div>
         </section>
 
+        <section className="mb-16 space-y-3" hidden={audience !== 'creators'}>
+          {subscriptionPlans.filter(plan => ['Basic', 'Free'].includes(plan.name)).reverse().map(plan => {
+            const quote = personalPlanQuote(plan.price, plan.credits, yearly)
+            return <div key={plan.name} className="flex flex-wrap items-center justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+              <div><h3 className="text-lg font-semibold text-white">{plan.name} · ${plan.price ? quote.monthlyPrice : '0'}{plan.price ? '/mo' : ''}</h3>
+                <p className="mt-1 text-sm text-zinc-400">{plan.name === 'Basic' ? 'Editing & publishing · 0 included minutes · No AI clip detection or AI Video Creator' : '60 free minutes every 30 days · Free balance capped at 60'}</p>
+                <p className="mt-1 text-xs text-zinc-500">{plan.name === 'Basic' ? `$${quote.billedPrice} ${quote.billingLabel} · Unlimited clip builds · Social scheduling` : '5 clip builds/day · 1 editor export/day · 2 VOD downloads/day · Watermark · No social posting'}</p>
+              </div>
+              <a href={primaryDownload?.downloadUrl || '#'} onClick={() => trackPricingDownload(`pricing_user_plan_${plan.name.toLowerCase()}`, plan.cta)} className="rounded-lg bg-zinc-800 px-5 py-2.5 text-sm font-medium text-white hover:bg-zinc-700">{plan.name === 'Free' ? 'Start free' : 'Choose Basic'}</a>
+            </div>
+          })}
+          <p className="pt-3 text-center text-xs text-zinc-500">1 credit = 1 minute of video processing. AI Video Creator usage is separate from processing time.</p>
+        </section>
+
         {/* Organization Plans */}
-        <section className="mb-24 relative">
+        <section className="mb-24 relative" hidden={audience !== 'business'}>
           <div className="section-divider absolute top-0 left-0 right-0" />
           <div className="pt-20">
             <div className="text-center mb-12">
@@ -486,7 +455,7 @@ export function PricingPage() {
               </div>
               
               <h2 className="font-display text-3xl sm:text-4xl font-bold text-white mb-4 tracking-tight">
-                Team & Enterprise Plans
+                Business plans
               </h2>
               <p className="text-zinc-500 max-w-lg mx-auto px-4 leading-relaxed">
                 Powerful collaboration tools for teams of all sizes
@@ -500,8 +469,8 @@ export function PricingPage() {
               </div>
             </div>
 
-            <div className="grid grid-cols-1 md:grid-cols-4 gap-6 max-w-7xl mx-auto">
-              {organizationPlans.map((plan, index) => {
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-6 max-w-7xl mx-auto">
+              {organizationPlans.filter(plan => plan.name !== 'Business Scale').map((plan, index) => {
                 const Icon = plan.icon
                 
                 return (
@@ -650,6 +619,13 @@ export function PricingPage() {
           </div>
         </section>
 
+        {audience === 'business' && organizationPlans.filter(plan => plan.name === 'Business Scale').map(plan => (
+          <div key={plan.name} className="mb-16 flex flex-wrap items-center justify-between gap-4 rounded-xl border border-zinc-800 bg-zinc-900 p-5">
+            <div><h3 className="text-lg font-semibold text-white">{plan.name} · ${plan.price.toLocaleString('en-US', { minimumFractionDigits: 2 })}/month</h3>
+              <p className="mt-1 text-sm text-zinc-400">{plan.credits.toLocaleString()} processing minutes/month · Unlimited team seats</p></div>
+            <a href={primaryDownload?.downloadUrl || '#'} onClick={() => trackPricingDownload('pricing_org_plan_business_scale', plan.cta)} className="rounded-lg bg-zinc-800 px-5 py-2.5 text-sm font-medium text-white hover:bg-zinc-700">Choose Business Scale</a>
+          </div>
+        ))}
         <ProductComparison />
 
         {/* Credit Packs Section */}
@@ -670,7 +646,7 @@ export function PricingPage() {
                 </span>
               </h2>
               <p className="text-zinc-500 max-w-lg mx-auto leading-relaxed">
-                Buy extra credits whenever you need them. Credits stack with your subscription; plan changes can affect your balance.
+                One-time processing top-ups. Available packs depend on your plan; buying minutes does not unlock restricted features.
               </p>
             </div>
 

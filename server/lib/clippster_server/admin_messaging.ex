@@ -63,9 +63,15 @@ defmodule ClippsterServer.AdminMessaging do
     preheader = input(attrs, "preheader")
     test_email = input(attrs, "test_email")
 
+    audience =
+      case input(attrs, "audience") do
+        value when value in ["waitlist", "all_users", "individual"] -> value
+        _ -> "individual"
+      end
+
     with :ok <- validate_campaign_content(subject, body),
          {:ok, [recipient]} <- resolve_recipients("individual", test_email) do
-      case deliver_email(recipient, subject, body, preheader, "individual") do
+      case deliver_email(recipient, subject, body, preheader, audience) do
         :ok -> {:ok, recipient}
         {:error, reason} -> {:error, reason}
       end

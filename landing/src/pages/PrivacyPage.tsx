@@ -4,6 +4,11 @@ import { Shield, Eye, Database, Lock, UserCheck, Mail, Globe } from 'lucide-reac
 
 const sections = [
   {
+    icon: Shield,
+    title: 'Who We Are',
+    content: `OpenWorth Technologies Inc. ("we," "us," or "our") operates Clippster. This Privacy Policy explains how we collect, use, and share personal information when you use our services.`,
+  },
+  {
     icon: Database,
     title: 'Information We Collect',
     content: `We collect information you provide directly to us, including:
@@ -79,13 +84,13 @@ For users in the European Economic Area (EEA), we comply with GDPR requirements 
   {
     icon: Mail,
     title: 'Contact Us',
-    content: `If you have any questions about this Privacy Policy or our data practices, please contact us:
+    content: `If you have any questions about this Privacy Policy or our data practices, please contact OpenWorth Technologies Inc.:
 
 Email: privacy@clippster.io
 
 We will respond to your inquiry within 30 days.
 
-This Privacy Policy was last updated on January 12, 2026.`,
+This Privacy Policy was last updated on October 17, 2026.`,
   },
 ]
 
