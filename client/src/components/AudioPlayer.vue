@@ -8,7 +8,6 @@
     <AudioPlayerBar
       v-if="currentTrack"
       :title="currentTrack.title"
-      :subtitle="currentTrack.platform"
       :is-playing="isPlaying"
       :progress="progress"
       :current-time-label="formattedCurrentTime"
@@ -29,6 +28,7 @@
       @toggle-mute="toggleMute"
       @volume="setVolume"
       @seek="handleSeek"
+      @restart="restart"
       @close="stop"
     />
   </Transition>
@@ -57,6 +57,7 @@
     toggleShuffle,
     toggleRepeat,
     seek,
+    restart,
     setVolume,
     toggleMute,
     stop,

@@ -22,14 +22,8 @@
     </main>
     <!-- Authentication Modal -->
     <AuthModal v-model="showAuthModal" />
-    <!-- Global Audio Player -->
-    <GlobalAudioPlayer />
     <!-- App tour -->
-    <AppTourWelcomeDialog
-      :show="showWelcome"
-      @take="acceptWelcome"
-      @skip="skipWelcome"
-    />
+    <AppTourWelcomeDialog :show="showWelcome" @take="acceptWelcome" @skip="skipWelcome" />
   </div>
 </template>
 
@@ -38,7 +32,6 @@
   import { useRoute } from 'vue-router';
   import DashboardSidebar from '@/components/DashboardSidebar.vue';
   import AuthModal from '@/components/AuthModal.vue';
-  import GlobalAudioPlayer from '@/components/GlobalAudioPlayer.vue';
   import AppTourWelcomeDialog from '@/components/tour/AppTourWelcomeDialog.vue';
   import { useAuthStore } from '@/stores/auth';
   import { useUserPreferencesStore } from '@/stores/userPreferences';
@@ -49,12 +42,7 @@
   const route = useRoute();
   const authStore = useAuthStore();
   const { expand } = useSidebarState();
-  const {
-    showWelcome,
-    acceptWelcome,
-    skipWelcome,
-    maybeShowSidebarWelcome,
-  } = useAppTour();
+  const { showWelcome, acceptWelcome, skipWelcome, maybeShowSidebarWelcome } = useAppTour();
   const preferencesStore = useUserPreferencesStore();
   const { forceSidebarExpanded } = useTourFlags();
   const showAuthModal = ref(false);
