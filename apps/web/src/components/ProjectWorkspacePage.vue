@@ -325,19 +325,22 @@
     }
     if (event.code === 'KeyF') { event.preventDefault(); fullscreen() }
   }
-  function unload(event: BeforeUnloadEvent) {
+  function unload(event: Event) {
     if (props.uploadProgress !== null) {
       event.preventDefault()
     }
   }
+  watch(() => props.initialClipId, id => { if (id) void selectById(id) })
   onMounted(() => {
     if (props.initialClipId) selectById(props.initialClipId)
     window.addEventListener('keydown', keydown)
     window.addEventListener('beforeunload', unload)
+    window.top?.addEventListener('clippster-before-workspace-navigation', unload)
   })
   onUnmounted(() => {
     window.removeEventListener('keydown', keydown)
     window.removeEventListener('beforeunload', unload)
+    window.top?.removeEventListener('clippster-before-workspace-navigation', unload)
   })
 </script>
 <style scoped src="@/styles/projectWorkspace.css"></style>

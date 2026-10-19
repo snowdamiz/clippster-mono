@@ -50,6 +50,7 @@
     </template>
 
     <div class="flex flex-1 flex-col px-5 py-4" data-tour-id="tour-creators-list">
+      <slot name="notice" />
       <!-- Not authenticated -->
       <EmptyState
         v-if="!authStore.isAuthenticated && creators.length === 0"

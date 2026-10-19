@@ -18,6 +18,4 @@ fi
 
 echo "Deploying landing page to fly.io (clippster-landing)..."
 cd "$REPO_ROOT"
-FLY_API_TOKEN="$FLY_LANDING_TOKEN" flyctl deploy . --remote-only \
-  --config landing/fly.toml \
-  --dockerfile landing/Dockerfile
+FLY_LANDING_TOKEN="$FLY_LANDING_TOKEN" node scripts/deploy-fly.mjs landing

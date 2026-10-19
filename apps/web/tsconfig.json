@@ -12,6 +12,7 @@
     "types": ["vite/client", "node"],
     "baseUrl": ".",
     "paths": {
+      "@/composables/useUnsavedChanges": ["src/useUnsavedChanges.ts"],
       "@/services/api": ["src/nativeAccountApi.ts"],
       "@/services/profileMediaRuntime": ["src/profileMediaRuntime.ts"],
       "@/services/settingsRuntime": ["src/settingsRuntime.ts"],

@@ -1,8 +1,10 @@
 name: Web workspace
 on:
+  workflow_call:
   pull_request:
     paths:
       - 'apps/web/**'
+      - 'landing/**'
       - 'packages/**'
       - 'client/src/**'
       - 'client/public/**'
@@ -20,6 +22,7 @@ on:
       - 'scripts/dev-setup*'
       - 'scripts/deploy-fly*'
       - '.github/workflows/web.yml'
+      - '.github/workflows/release.yml'
   workflow_dispatch:
 permissions:
   contents: read
@@ -50,6 +53,15 @@ jobs:
       - run: npm run build --workspaces=false
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e --workspaces=false
+      - name: Build account website and test embedded workspace
+        run: |
+          corepack enable
+          yarn --cwd ../../landing install --frozen-lockfile
+          yarn --cwd ../../landing build
+          npm run test:account --workspaces=false
+      - name: Landing production image
+        working-directory: .
+        run: docker build -f landing/Dockerfile -t clippster-landing:ci .
       - name: Linux production image
         working-directory: .
         run: docker build -f apps/web/Dockerfile -t clippster-web:ci .

@@ -66,6 +66,8 @@ EXPOSE 5175 8090
 CMD ["node", "scripts/dev.mjs"]
 
 FROM media AS runtime
+ARG APP_REVISION=development
+ENV APP_REVISION=$APP_REVISION
 ENV NODE_ENV=production PORT=8080 HOST=0.0.0.0 WEB_DATA_DIR=/data
 WORKDIR /app
 COPY apps/web/package.json apps/web/package-lock.json ./

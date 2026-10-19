@@ -427,12 +427,12 @@
     return sortedCreators.value.filter((c) => !c.isOrgProfile && !c.campaign_id);
   });
 
-  async function syncPersonalToCloud() {
+  async function syncPersonalToCloud(notify = true) {
     if (syncingPersonal.value) return;
     syncingPersonal.value = true;
     try {
-      const result = await syncPersonalBranding();
-      success(
+      const result = await syncPersonalBranding({ onlyLocalChanges: !notify });
+      if (notify) success(
         `Personal branding synced — ${result.upsertedProfiles} profiles, ${result.uploadedAssets} uploaded, ${result.downloadedAssets} downloaded`
       );
       await loadCreators();
@@ -446,6 +446,7 @@
   // Load creators on mount
   onMounted(async () => {
     await loadCreators();
+    void syncPersonalToCloud(false);
     checkAllLiveStatuses(true); // Include Kick on initial load
     liveStatusInterval.value = window.setInterval(() => {
       checkAllLiveStatuses(false); // Skip Kick on interval to save API requests
@@ -1103,9 +1104,10 @@
     creatorToEdit.value = null;
   }
 
-  function handleCreatorSaved() {
+  async function handleCreatorSaved() {
     closeProfileDialog();
-    loadCreators();
+    await loadCreators();
+    await syncPersonalToCloud(false);
   }
 
   function confirmDeleteCreator(creator: DisplayCreatorProfile) {
@@ -1137,6 +1139,7 @@
         const action = nowDisabled ? 'disabled' : 'enabled';
         success('Profile Updated', `"${creator.name}" has been ${action}`);
         await loadCreators();
+        await syncPersonalToCloud(false);
       } else if (creator.organization_id && creator.server_id) {
         // Org-assigned profile — toggle via server API
         const response = await toggleCreatorProfileDisabled(creator.organization_id, creator.server_id);

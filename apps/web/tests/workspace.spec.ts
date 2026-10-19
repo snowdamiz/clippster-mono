@@ -40,7 +40,7 @@ test('dedicated workspace uses desktop timeline, framing, export and persisted d
   await expect(page.getByTitle('Download clip', {exact:true})).toBeVisible({timeout:60000})
   await page.getByTitle('Download clip', {exact:true}).click()
   await expect(page.getByRole('menu')).toContainText('Downloads (2)')
-  const downloaded = page.waitForEvent('download'); await page.getByRole('menuitem').filter({hasText:'1:1'}).click(); const download = await downloaded
+  const downloaded = page.waitForEvent('download'); await page.getByRole('menuitem').filter({has: page.getByText('1:1', {exact:true})}).click(); const download = await downloaded
   expect(download.suggestedFilename()).toContain('1x1.mp4'); const output = testInfo.outputPath('square.mp4'); await download.saveAs(output)
   const metadata = JSON.parse(execFileSync(process.env.FFPROBE_PATH || 'ffprobe',['-v','error','-show_streams','-of','json',output],{encoding:'utf8'})).streams.find((stream:any)=>stream.codec_type==='video')
   expect(metadata.width).toBe(1080); expect(metadata.height).toBe(1080); expect(metadata.r_frame_rate).toBe('60/1')

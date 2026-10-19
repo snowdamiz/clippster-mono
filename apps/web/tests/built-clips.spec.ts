@@ -15,7 +15,7 @@ test('built clips library supports folders, filters, playback, download, publish
   await page.request.post(path+'/clips/'+saved.project.clips[0].id+'/build',{headers,data:{}})
   await expect.poll(async()=>(await(await page.request.get(path)).json()).project.clips[0].builds?.length,{timeout:60000}).toBe(1)
   await page.goto('/?view=built')
-  await expect(page.locator('.clips__title')).toHaveText('Built Clips')
+  await expect(page.getByRole('heading', { name: 'Built Clips', exact: true })).toBeVisible()
   await page.getByRole('button',{name:/Built library fixture/}).click()
   const card=page.locator('[data-build-id]').filter({hasText:'Library highlight'})
   await expect(card).toBeVisible()

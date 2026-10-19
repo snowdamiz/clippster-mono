@@ -361,6 +361,7 @@
               />
             </SettingRow>
             <SettingRow
+              v-if="desktopToolsAvailable"
               inset
               label="Background notifications"
               description="Show notifications when the app is minimized"
@@ -488,15 +489,15 @@
   const positionSegments = computed(() => positionOptions.map((opt) => ({ ...opt, disabled: prefsStore.saving })));
 
   // Category options
-  const categoryOptions = [
-    { key: 'notify_livestream', label: 'Livestream', desc: 'Streamer went live, recording started/stopped' },
+  const categoryOptions = computed(() => [
+    ...(props.desktopToolsAvailable ? [{ key: 'notify_livestream', label: 'Livestream', desc: 'Streamer went live, recording started/stopped' }] : []),
     { key: 'notify_clips', label: 'Clips & video', desc: 'Clips detected, export complete, transcription done' },
     { key: 'notify_downloads', label: 'Downloads & uploads', desc: 'Download complete, upload complete' },
     { key: 'notify_projects', label: 'Projects & editor', desc: 'Project saved, auto-save, editor warnings' },
     { key: 'notify_social', label: 'Social & publishing', desc: 'Post published, scheduled post sent' },
     { key: 'notify_organization', label: 'Organization', desc: 'Invitations, member activity, shared content' },
     { key: 'notify_system', label: 'System', desc: 'Success confirmations, errors, warnings' },
-  ];
+  ]);
 
   // Form state
   const newEmail = ref('');

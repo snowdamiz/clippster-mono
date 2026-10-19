@@ -21,6 +21,7 @@ export default defineConfig({
   plugins: [vue({ script: { fs: vueTypeFs } })],
   resolve: {
     alias: {
+      '@/composables/useUnsavedChanges': resolve('./src/useUnsavedChanges.ts'),
       '@/services/api': resolve('./src/nativeAccountApi.ts'),
       '@/services/profileMediaRuntime': resolve('./src/profileMediaRuntime.ts'),
       '@/services/settingsRuntime': resolve('./src/settingsRuntime.ts'),

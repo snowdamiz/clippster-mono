@@ -32,7 +32,8 @@ export async function createWebApp(config: Config) {
   })
   app.get('/api/health', (_req, res) => {
     store.db.prepare('SELECT 1').get()
-    res.json({ status: 'ok' })
+      res.setHeader('Cache-Control', 'no-store')
+      res.json({ status: 'ok', revision: process.env.APP_REVISION || 'development' })
   })
   app.use(express.json({ limit: '8mb' }))
   app.use('/api/auth', auth.router)
