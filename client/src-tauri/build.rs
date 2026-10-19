@@ -3,6 +3,32 @@ use std::fs::{self, File};
 use std::io::{self, Cursor, Read, Write};
 use std::path::{Path, PathBuf};
 
+include!("src/native_commands.rs");
+
+macro_rules! native_command_paths {
+    ($($command:path),* $(,)?) => { &[$(stringify!($command)),*] };
+}
+
+fn native_command_manifest() -> tauri_build::AppManifest {
+    println!("cargo:rerun-if-changed=src/native_commands.rs");
+    let commands: Vec<&str> = with_native_commands!(native_command_paths)
+        .iter()
+        .map(|path| path.rsplit("::").next().unwrap().trim())
+        .collect();
+    let pip_commands = ["get_platform", "save_window_size"];
+    for command in pip_commands {
+        assert!(commands.contains(&command), "Unregistered PIP command: {command}");
+    }
+    let permission_file = PathBuf::from(env::var("OUT_DIR").unwrap()).join("native-commands.toml");
+    let permission = format!(
+        "[[permission]]\nidentifier = \"allow-native-commands\"\ndescription = \"Commands registered for the main Clippster UI.\"\ncommands.allow = {:?}\n\n[[permission]]\nidentifier = \"allow-pip-native-commands\"\ndescription = \"Platform and window-size commands used by PIP.\"\ncommands.allow = {:?}\n",
+        commands, pip_commands
+    );
+    fs::write(&permission_file, permission).expect("Failed to generate native command permissions");
+    let pattern = permission_file.to_string_lossy().replace('\\', "/");
+    tauri_build::AppManifest::new().permissions_path_pattern(Box::leak(pattern.into_boxed_str()))
+}
+
 const NODE_VERSION: &str = "v20.11.0";
 const FFMPEG_STATIC_VERSION: &str = "b6.0";
 const YTDLP_VERSION: &str = "2026.02.20.235452";
@@ -141,7 +167,10 @@ fn main() {
     }
 
     // Run tauri-build
-    tauri_build::build();
+    tauri_build::try_build(
+        tauri_build::Attributes::new().app_manifest(native_command_manifest()),
+    )
+    .expect("Failed to build Tauri application manifest");
 }
 
 #[cfg(unix)]

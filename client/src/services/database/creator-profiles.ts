@@ -196,7 +196,7 @@ export async function createCreatorProfile(
   const db = await getDatabase();
   await ensureCreatorProfilesSchema(db);
   const id = generateId();
-  const now = timestamp();
+  const now = Date.now() / 1000;
   const userId = getCurrentUserId();
 
   await db.execute(
@@ -326,7 +326,7 @@ export async function updateCreatorProfile(
   }
 
   fields.push('updated_at = ?');
-  values.push(timestamp());
+  values.push(Date.now() / 1000);
   values.push(id);
 
   await db.execute(`UPDATE creator_profiles SET ${fields.join(', ')} WHERE id = ?`, values);
@@ -334,6 +334,21 @@ export async function updateCreatorProfile(
 
 export async function deleteCreatorProfile(id: string): Promise<void> {
   const db = await getDatabase();
+  const profile = await getCreatorProfile(id);
+  if (profile?.server_id) {
+    // Keep the local row if the cloud deletion fails, so background sync cannot
+    // recreate a profile the user thought was deleted.
+    if (profile.user_id != null && String(profile.user_id) !== String(getCurrentUserId())) {
+      throw new Error('This creator belongs to another account');
+    }
+    const { default: api } = await import('../api');
+    try {
+      const response = await api.delete(`/user/creator-profiles/${profile.server_id}`);
+      if (!response.data?.success) throw new Error(response.data?.error || 'Could not delete cloud creator');
+    } catch (error) {
+      if ((error as { response?: { status: number } }).response?.status !== 404) throw error;
+    }
+  }
   // Platform links will be cascade deleted
   await db.execute('DELETE FROM creator_profiles WHERE id = ?', [id]);
 }
@@ -451,7 +466,7 @@ export async function setProjectBrandingProfile(
 ): Promise<void> {
   const db = await getDatabase();
   await ensureProjectBrandingSchema(db);
-  const now = timestamp();
+  const now = Date.now() / 1000;
   await db.execute(
     'UPDATE projects SET selected_branding_profile_id = ?, updated_at = ? WHERE id = ?',
     [brandingProfileId, now, projectId]
@@ -585,10 +600,12 @@ export async function updatePlatformLink(
   values.push(id);
 
   await db.execute(`UPDATE creator_platform_links SET ${fields.join(', ')} WHERE id = ?`, values);
+  await db.execute('UPDATE creator_profiles SET updated_at = ? WHERE id = (SELECT creator_profile_id FROM creator_platform_links WHERE id = ?)', [Date.now() / 1000, id]);
 }
 
 export async function deletePlatformLink(id: string): Promise<void> {
   const db = await getDatabase();
+  await db.execute('UPDATE creator_profiles SET updated_at = ? WHERE id = (SELECT creator_profile_id FROM creator_platform_links WHERE id = ?)', [Date.now() / 1000, id]);
   await db.execute('DELETE FROM creator_platform_links WHERE id = ?', [id]);
 }
 

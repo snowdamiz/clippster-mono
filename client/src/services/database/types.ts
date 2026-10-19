@@ -584,6 +584,7 @@ export type RatioAssetMap = Record<AspectRatioId, CreatorRatioAssetConfig | null
 
 export interface CreatorProfile {
   id: string;
+  server_id?: number | null;
   name: string;
   description: string | null;
   profile_image_path: string | null;

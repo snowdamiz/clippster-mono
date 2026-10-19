@@ -25,7 +25,8 @@ export interface ServerUserCreatorProfile {
   id: number;
   user_id: number;
   client_id: string | null;
-  platform_links?: Array<{ platform: string; platform_id: string; is_primary?: boolean }>;
+  platform_links?: Array<{ platform: string; platform_id: string; display_name?: string | null; profile_image_url?: string | null; is_primary?: boolean }>;
+  auto_dvr_enabled?: boolean;
   name: string;
   description: string | null;
   profile_image_url: string | null;
