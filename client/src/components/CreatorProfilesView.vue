@@ -31,8 +31,9 @@
           class="hidden min-w-0 items-center gap-3 overflow-hidden text-xs text-fg-muted @min-[50rem]:flex"
         >
           <span class="whitespace-nowrap">
-            <span class="tabular font-medium text-fg">{{ creators.length }}</span>
-            {{ creators.length === 1 ? 'creator' : 'creators' }}
+            <span class="tabular font-medium text-fg">{{ filteredCreators.length }}</span>
+            {{ activeTab === 'global' ? 'global branding' : 'streamer' }}
+            {{ filteredCreators.length === 1 ? 'profile' : 'profiles' }}
           </span>
           <span class="flex items-center gap-1.5 whitespace-nowrap">
             <span class="size-1.5 rounded-full" :class="liveCreatorsCount > 0 ? 'bg-live' : 'bg-fg-disabled'" />

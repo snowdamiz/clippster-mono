@@ -431,7 +431,7 @@
     if (syncingPersonal.value) return;
     syncingPersonal.value = true;
     try {
-      const result = await syncPersonalBranding({ onlyLocalChanges: !notify });
+      const result = await syncPersonalBranding();
       if (notify) success(
         `Personal branding synced — ${result.upsertedProfiles} profiles, ${result.uploadedAssets} uploaded, ${result.downloadedAssets} downloaded`
       );
@@ -445,6 +445,7 @@
 
   // Load creators on mount
   onMounted(async () => {
+    window.addEventListener('personal-creators-synced', refreshSyncedCreators);
     await loadCreators();
     void syncPersonalToCloud(false);
     checkAllLiveStatuses(true); // Include Kick on initial load
@@ -455,11 +456,16 @@
   });
 
   onUnmounted(() => {
+    window.removeEventListener('personal-creators-synced', refreshSyncedCreators);
     if (liveStatusInterval.value) {
       clearInterval(liveStatusInterval.value);
       liveStatusInterval.value = null;
     }
   });
+
+  function refreshSyncedCreators() {
+    void loadCreators();
+  }
 
   async function checkAllLiveStatuses(includeKick: boolean = true) {
     const pumpfunLinksToCheck: { platformId: string; mintId: string }[] = [];
@@ -793,6 +799,7 @@
 
       const displayProfiles: DisplayCreatorProfile[] = localProfiles.map((p) => ({
         ...p,
+        server_id: p.server_id ?? undefined,
         disabled: p.disabled ? true : false,
         isOrgProfile: false,
       }));
