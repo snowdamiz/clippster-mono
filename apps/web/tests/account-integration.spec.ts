@@ -82,12 +82,20 @@ test('account navigation includes videos and preserves organization and billing,
 
 test('account sidebar opens every embedded workspace page without falling back to the library', async ({ page }, info) => {
   const errors: string[] = []
+  const startups: string[] = []
+  let libraryLoads = 0
+  page.on('request', request => {
+    const path = new URL(request.url()).pathname
+    if (path === '/workspace/' || path === '/workspace/api/auth/session') startups.push(path)
+    if (path === '/workspace/api/web/projects') libraryLoads++
+  })
   page.on('pageerror', error => errors.push(error.message))
   await account(page)
   await page.route('**/api/settings/feature-flags', route => route.fulfill({ json: { success: true, feature_flags: { campaigns_enabled: true } } }))
   await page.route('**/api/user/restrictions', route => route.fulfill({ json: { success: true, restricted: false, restrictions: {} } }))
   await page.goto('/account')
   const workspace = page.frameLocator('iframe[title="Clippster video workspace"]')
+  let initialStartups: string[] = []
   for (const [label, heading] of [
     ['My Creators', 'Creator profiles'], ['Download Video', 'Download video'],
     ['Video Library', 'Video library'], ['Built Clips', 'Built Clips'],
@@ -95,10 +103,44 @@ test('account sidebar opens every embedded workspace page without falling back t
   ]) {
     await page.locator('aside').first().getByRole('link', { name: label, exact: true }).click()
     await expect(workspace.getByRole('heading', { name: heading, exact: true }).first()).toBeVisible()
+    if (label === 'My Creators') {
+      initialStartups = [...startups]
+      expect(libraryLoads).toBe(0)
+      await workspace.locator('body').evaluate(element => element.setAttribute('data-workspace-instance', 'original'))
+    }
+    expect(startups).toEqual(initialStartups)
+    await expect(workspace.locator('body')).toHaveAttribute('data-workspace-instance', 'original')
     await expect(workspace.getByRole('dialog', { name: /New project|Create Project/ })).toHaveCount(0)
     await page.screenshot({ path: info.outputPath(`${label.replaceAll(' ', '-')}.png`) })
   }
+  await page.goBack()
+  await expect(workspace.getByRole('heading', { name: 'Prompts', exact: true }).first()).toBeVisible()
+  await page.goForward()
+  await expect(workspace.getByRole('heading', { name: 'Calendar', exact: true }).first()).toBeVisible()
+  await page.evaluate(() => window.addEventListener('clippster-before-workspace-navigation', event => event.preventDefault(), { once: true }))
+  page.once('dialog', dialog => dialog.dismiss())
+  await page.locator('aside').first().getByRole('link', { name: 'Video Library', exact: true }).click()
+  await expect(page).toHaveURL(/\/account\/calendar$/)
+  await expect(workspace.getByRole('heading', { name: 'Calendar', exact: true }).first()).toBeVisible()
+  expect(startups).toEqual(initialStartups)
   expect(errors).toEqual([])
+})
+
+test('workspace uses the latest route when navigation changes during startup', async ({ page }) => {
+  await account(page)
+  let releasePermissions!: () => void
+  const permissions = new Promise<void>(resolve => { releasePermissions = resolve })
+  await page.route('**/workspace/api/web/account/user/restrictions', async route => {
+    await permissions
+    await route.fulfill({ json: { success: true, restricted: false, restrictions: {} } })
+  })
+  await page.goto('/account/videos')
+  const workspace = page.frameLocator('iframe[title="Clippster video workspace"]')
+  await expect(workspace.getByText('Opening your workspace…', { exact: true })).toBeVisible()
+  await page.locator('aside').first().getByRole('link', { name: 'Download Video', exact: true }).click()
+  releasePermissions()
+  await expect(workspace.getByRole('heading', { name: 'Download video', exact: true })).toBeVisible()
+  await expect(page).toHaveURL(/\/account\/downloads$/)
 })
 
 test('new users choose a plan before accessing videos and Free selection returns to the combined account', async ({ page }) => {

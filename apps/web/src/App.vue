@@ -109,10 +109,10 @@
         <CreatorProfiles v-else-if="toolView === 'creators'" />
         <StreamVods v-else-if="toolView === 'download'" :platform="vodSearch.platform" :channel="vodSearch.channel" />
         <BuiltClips v-else-if="toolView === 'built'" @open="openBuiltProject" />
-        <ClipperProfile v-else-if="toolView === 'profile'" style="height: 100%; min-height: 0" />
+        <ClipperProfile v-else-if="toolView === 'profile'" :key="profileTab" style="height: 100%; min-height: 0" />
         <ClipperProfileEdit v-else-if="toolView === 'profile-edit'" style="height: 100%; min-height: 0" />
         <WebAccountSettings v-else-if="toolView === 'settings'" />
-        <AccountTools v-else-if="toolView" :view="toolView" :billing-url="accountBilling" />
+        <AccountTools v-else-if="toolView" :key="toolView" :view="toolView" :billing-url="accountBilling" />
         <ProjectLibraryView v-else :model="libraryModel">
           <template #notice>
             <p v-if="error" role="alert" class="m-6 rounded-lg bg-red-500/10 p-3 text-red-300">{{ error }}</p>
@@ -184,6 +184,7 @@
   import { auth, client, workspaceClient, projects, sessionExpired, sourcePath, errorMessage } from './api'
   import { useWorkspace } from './useWorkspace'
   import { setWorkspaceAccount } from './workspaceAccount'
+  import { syncAccountRoute } from './accountRouter'
   const user = ref<AuthUser | null>(null)
   watch(user, (value) => setWorkspaceAccount(value), { immediate: true })
   const params = new URLSearchParams(location.search)
@@ -191,6 +192,7 @@
   const toolViews = ['download', 'creators', 'campaigns', 'prompts', 'calendar', 'built', 'profile', 'profile-edit', 'settings']
   const toolView = ref(toolViews.includes(params.get('view') || '') ? params.get('view')! : '')
   const initialClipId = ref<string | null>(params.get('clip'))
+  const profileTab = ref(params.get('tab') || '')
   const vodSearch = ref({
     platform: params.get('platform') || '',
     channel: params.get('channel') || params.get('id') || ''
@@ -508,7 +510,10 @@
   async function signedIn(value: AuthUser) {
     sessionExpired.value = false
     user.value = value
-    if (!needsPlanSelection(value)) await Promise.allSettled([load(), refreshWorkspacePermissions()])
+    if (!needsPlanSelection(value)) {
+      await Promise.allSettled([refreshWorkspacePermissions()])
+      if (!booting.value) restoreWorkspace()
+    }
   }
   async function logout() {
     await client.post('/auth/logout')
@@ -536,7 +541,7 @@
     error.value = ''
     try {
       await state.open(id)
-      updateWorkspaceUrl(id)
+      if (state.workspace.value?.project.id === id) updateWorkspaceUrl(id)
     } catch (cause) {
       error.value = errorMessage(cause)
     }
@@ -553,15 +558,34 @@
   }
   const restoreWorkspace = () => {
     const query = new URL(location.href).searchParams
+    syncAccountRoute()
+    profileTab.value = query.get('tab') || ''
     initialClipId.value = query.get('clip')
     const id = query.get('project')
-    if (id && user.value) void open(id)
-    else {
+    const nextView = toolViews.includes(query.get('view') || '') ? query.get('view')! : ''
+    if (id !== state.workspace.value?.project.id || nextView !== toolView.value) {
       state.close()
-      toolView.value = toolViews.includes(query.get('view') || '') ? query.get('view')! : ''
-      void load()
+      toolView.value = nextView
     }
+    creating.value = false
+    showLibrarySearch.value = false
+    if (id && user.value && !needsPlanSelection(user.value)) {
+      if (state.workspace.value?.project.id !== id) void open(id)
+    } else if (!nextView && user.value) void load()
   }
+  const receiveRoute = (event: MessageEvent) => {
+    if (!embedded || event.origin !== location.origin || event.source !== window.parent ||
+        event.data?.type !== 'clippster-workspace-route' || typeof event.data.search !== 'string') return
+    const query = new URLSearchParams(event.data.search)
+    query.set('embedded', '1')
+    const url = new URL(location.href)
+    url.search = query.toString()
+    if (url.href === location.href) return
+    history.replaceState(null, '', url)
+    if (!booting.value) restoreWorkspace()
+  }
+  window.addEventListener('message', receiveRoute)
+  onUnmounted(() => window.removeEventListener('message', receiveRoute))
   window.addEventListener('popstate', restoreWorkspace)
   onUnmounted(() => window.removeEventListener('popstate', restoreWorkspace))
   watch(toolView, (next, previous) => {
@@ -574,6 +598,7 @@
       const url = new URL(location.href)
       url.searchParams.set('view', next || 'library')
       if (url.href !== location.href) history.pushState(null, '', url)
+      if (!next && user.value) void load()
     }
   })
   async function submitProject(data: ProjectFormData) {
@@ -619,19 +644,20 @@
     }
   }
   onMounted(async () => {
-    const settings = await client.get<{ accountOrigin: string }>('/auth/config').catch(() => null)
-    if (settings && !embedded) accountBilling.value = `${settings.accountOrigin}/account/billing`
+    if (!embedded) void client.get<{ accountOrigin: string }>('/auth/config').then((settings) => {
+      accountBilling.value = `${settings.accountOrigin}/account/billing`
+    }).catch(() => {})
     try {
       const result = await auth.me()
       if (result.success && result.user) {
         await signedIn(result.user)
-        const projectId = params.get('project')
-        if (projectId && !needsPlanSelection(result.user)) await open(projectId)
       }
     } catch {
       error.value = 'Unable to connect to Clippster.'
     } finally {
       booting.value = false
+      if (user.value && !needsPlanSelection(user.value)) restoreWorkspace()
+      if (embedded) window.parent.postMessage({ type: 'clippster-workspace-ready' }, location.origin)
     }
   })
 </script>

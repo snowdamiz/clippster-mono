@@ -184,19 +184,21 @@ createRoot(document.getElementById('root')!).render(
                 >
                   <Route index element={<AccountHome />} />
                   <Route path="messages" element={<AccountMessages />} />
-                  <Route path="profile" element={<AccountWorkspace />} />
-                  <Route path="profile/edit" element={<AccountWorkspace viewOverride="profile-edit" />} />
+                  <Route element={<AccountWorkspace />}>
+                    <Route path="profile" element={null} />
+                    <Route path="profile/edit" element={null} />
+                    <Route path="settings" element={null} />
+                    <Route path="videos" element={null} />
+                    <Route path="clips" element={null} />
+                    <Route path="downloads" element={null} />
+                    <Route path="creators" element={null} />
+                    <Route path="campaigns" element={null} />
+                    <Route path="prompts" element={null} />
+                    <Route path="calendar" element={null} />
+                  </Route>
                   <Route path="social" element={<Navigate to="/account/profile?tab=accounts" replace />} />
                   <Route path="posts" element={<Navigate to="/account/profile?tab=posts" replace />} />
-                  <Route path="settings" element={<AccountWorkspace />} />
                   <Route path="billing" element={<AccountBilling />} />
-                  <Route path="videos" element={<AccountWorkspace />} />
-                  <Route path="clips" element={<AccountWorkspace />} />
-                  <Route path="downloads" element={<AccountWorkspace />} />
-                  <Route path="creators" element={<AccountWorkspace />} />
-                  <Route path="campaigns" element={<AccountWorkspace />} />
-                  <Route path="prompts" element={<AccountWorkspace />} />
-                  <Route path="calendar" element={<AccountWorkspace />} />
                 </Route>
 
                 <Route
