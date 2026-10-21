@@ -71,15 +71,23 @@
 
 <script setup lang="ts">
   import { ref } from 'vue';
-  import { useDownloads, type ActiveDownload } from '@/composables/useDownloads';
+  import { useCreatorDownloadRuntime } from '@/services/creatorDownloadRuntime';
   import { Loader2, X, Clock } from 'lucide-vue-next';
   import ConfirmationModal from './ConfirmationModal.vue';
   import { Badge } from '@/components/ui/badge';
 
-  const { cancelDownload, cancelGroup } = useDownloads();
+  const { cancelDownload, cancelGroup } = useCreatorDownloadRuntime();
 
   interface Props {
-    download: ActiveDownload;
+    download: {
+      id: string;
+      title: string;
+      message?: string;
+      groupId?: string;
+      segmentNumber?: number;
+      isQueued?: boolean;
+      progress: { progress: number; download_id?: string; current_time?: number; total_time?: number; status?: string };
+    };
   }
 
   const props = defineProps<Props>();

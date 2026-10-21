@@ -39,18 +39,17 @@ services:
       - "127.0.0.1:8090:8090"
     volumes:
       - web_data:/data
-      - ../apps/web/src:/workspace/apps/web/src:ro
-      - ../apps/web/server:/workspace/apps/web/server:ro
-      - ../apps/web/scripts:/workspace/apps/web/scripts:ro
-      - ../apps/web/vite.config.ts:/workspace/apps/web/vite.config.ts:ro
-      - ../apps/web/index.html:/workspace/apps/web/index.html:ro
-      - ../client/src:/workspace/client/src:ro
-      - ../client/public/logo.svg:/workspace/client/public/logo.svg:ro
-      - ../client/public/logo-titlebar.svg:/workspace/client/public/logo-titlebar.svg:ro
-      - ../packages/shared-types:/workspace/packages/shared-types:ro
-      - ../packages/api-client:/workspace/packages/api-client:ro
-      - ../packages/clip-export:/workspace/packages/clip-export:ro
-      - ../packages/cloud-sync-schema:/workspace/packages/cloud-sync-schema:ro
+      - ../apps/web/src:/repo/apps/web/src:ro
+      - ../apps/web/server:/repo/apps/web/server:ro
+      - ../apps/web/scripts:/repo/apps/web/scripts:ro
+      - ../apps/web/vite.config.ts:/repo/apps/web/vite.config.ts:ro
+      - ../apps/web/index.html:/repo/apps/web/index.html:ro
+      - ../client/src:/repo/client/src:ro
+      - ../client/public:/repo/client/public:ro
+      - ../packages/shared-types:/repo/packages/shared-types:ro
+      - ../packages/api-client:/repo/packages/api-client:ro
+      - ../packages/clip-export:/repo/packages/clip-export:ro
+      - ../packages/cloud-sync-schema:/repo/packages/cloud-sync-schema:ro
     healthcheck:
       test: ["CMD", "node", "-e", "Promise.all([5175,8090].map(p=>fetch('http://127.0.0.1:'+p+(p===8090?'/api/health':'')))).then(rs=>process.exit(rs.every(r=>r.ok)?0:1)).catch(()=>process.exit(1))"]
       interval: 5s

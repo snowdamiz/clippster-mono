@@ -86,7 +86,7 @@ export const PLATFORMS: Record<IngestPlatformId, PlatformFacts> = {
     mobileVod: true,
     publish: [...PUBLISH_PLATFORMS],
     publishVia: 'postforme',
-    notes: 'Live watch and VOD/broadcast download on desktop; publish/schedule via PostForMe.',
+    notes: 'Live watch and video post / VOD / broadcast downloads on desktop. X Spaces are not supported. Publish/schedule via PostForMe.',
   },
   rumble: {
     id: 'rumble',
@@ -97,7 +97,7 @@ export const PLATFORMS: Record<IngestPlatformId, PlatformFacts> = {
     mobileVod: true,
     publish: [],
     publishVia: 'none',
-    notes: 'Source only — live watch and VOD download on desktop; VOD on mobile; not a publish destination.',
+    notes: 'Source only — live watch, video / VOD and channel downloads on desktop; VOD on mobile; not a publish destination.',
   },
 }
 

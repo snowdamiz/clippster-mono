@@ -8,9 +8,10 @@ import { downloadAsset } from './network'
 import { probe } from './media'
 import { run } from './process'
 import { requireValue } from './errors'
+import { targetBranding } from './targetBranding'
 
 interface Asset { id: number; asset_type: string; url: string }
-interface Profile { id: number; intro_id?: number; outro_id?: number; watermark_id?: number }
+interface Profile { id: number; intro_id?: number; outro_id?: number; watermark_id?: number; intro_ratio_settings?: Record<string, { assetId?: number; enabled?: boolean }>; outro_ratio_settings?: Record<string, { assetId?: number; enabled?: boolean }>; watermark_settings?: Record<string, { watermarkId?: number; enabled?: boolean; position?: { x?: number; y?: number; scale?: number; opacity?: number } }> }
 
 export async function applyBranding(clip: WebClip, clipPath: string, work: string, config: Config, signal: AbortSignal, upstream: ApiClient, user: PlanAccount) {
   let intro: string | undefined, outro: string | undefined, watermark: string | undefined
@@ -25,25 +26,33 @@ export async function applyBranding(clip: WebClip, clipPath: string, work: strin
     const position = result.branding?.watermark_settings?.[clip.aspectRatio]?.position
     const percent = (value: unknown, fallback: number) => typeof value === 'number' && Number.isFinite(value) ? Math.min(100, Math.max(0, value)) / 100 : fallback
     x = percent(position?.x, 0.12); y = percent(position?.y, 0.92); size = Math.max(0.01, percent(position?.scale, 0.2)); opacity = percent(position?.opacity, 0.8); centered = true
+  } else if (clip.branding?.organizationId) {
+    const branding = await targetBranding(clip.branding, clip.aspectRatio, upstream)
+    intro = branding.intro; outro = branding.outro; watermark = branding.watermark
+    if (branding.position) { x = branding.position.x / 100; y = branding.position.y / 100; size = branding.position.scale / 100; opacity = branding.position.opacity / 100; centered = true }
   } else if (clip.branding) {
     const result = await upstream.get<{ success: boolean; assets: Asset[]; profiles: Profile[] }>('/user/branding')
     requireValue(result.success, 502, 'Unable to load creator branding.')
     const profile = clip.branding.creatorId ? result.profiles.find(profile => profile.id === clip.branding!.creatorId) : undefined
     requireValue(!clip.branding.creatorId || profile, 403, 'Creator profile is no longer available.')
-    const resolve = (id: number | undefined, type: string) => {
+    const resolve = (id: number | null | undefined, type: string) => {
       if (!id) return undefined
       const asset = result.assets.find(asset => asset.id === id && asset.asset_type === type)
       requireValue(asset, 403, `The selected ${type} is not available in your account.`)
       return asset.url
     }
-    intro = resolve(clip.branding.introId || profile?.intro_id, 'intro')
-    outro = resolve(clip.branding.outroId || profile?.outro_id, 'outro')
-    watermark = resolve(clip.branding.watermarkId || profile?.watermark_id, 'watermark')
+    const introRatio = profile?.intro_ratio_settings?.[clip.aspectRatio], outroRatio = profile?.outro_ratio_settings?.[clip.aspectRatio], watermarkRatio = profile?.watermark_settings?.[clip.aspectRatio]
+    intro = resolve(clip.branding.introId !== undefined ? clip.branding.introId : introRatio?.enabled === false ? null : introRatio?.assetId || profile?.intro_id, 'intro')
+    outro = resolve(clip.branding.outroId !== undefined ? clip.branding.outroId : outroRatio?.enabled === false ? null : outroRatio?.assetId || profile?.outro_id, 'outro')
+    watermark = resolve(clip.branding.watermarkId !== undefined ? clip.branding.watermarkId : watermarkRatio?.enabled === false ? undefined : watermarkRatio?.watermarkId || profile?.watermark_id, 'watermark')
+    if (clip.branding.watermarkCustom) { opacity = clip.branding.watermarkOpacity ?? .8; centered = true }
+    else if (watermarkRatio?.position) { const percent = (value: number | undefined, fallback: number) => Number.isFinite(value) ? Math.min(1, Math.max(0, Number(value) / 100)) : fallback; x = percent(watermarkRatio.position.x, .12); y = percent(watermarkRatio.position.y, .92); size = Math.max(.01, percent(watermarkRatio.position.scale, .2)); opacity = percent(watermarkRatio.position.opacity, .8); centered = true }
   }
   if (!intro && !outro && !watermark) return
   const { width, height } = TARGET_DIMENSIONS[clip.aspectRatio]
   const local = ['-protocol_whitelist', 'file,pipe']
-  const encode = ['-c:v', 'libx264', '-preset', 'veryfast', '-threads', '2', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', '-fs', String(config.maxSourceBytes)]
+  const fps = clip.exportSettings?.frameRate || 30
+  const encode = ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', String(clip.exportSettings?.quality === 'low' ? 28 : clip.exportSettings?.quality === 'high' ? 18 : 23), '-r', String(fps), '-threads', '2', '-pix_fmt', 'yuv420p', '-c:a', 'aac', '-movflags', '+faststart', '-fs', String(config.maxSourceBytes)]
   const verifyDuration = async (path: string, expected: number) => {
     const output = await probe(path, config, signal)
     requireValue(Math.abs(output.duration - expected) < 1, 400, 'Branded output exceeded the size limit or could not be rendered completely.')
@@ -71,7 +80,7 @@ export async function applyBranding(clip: WebClip, clipPath: string, work: strin
       const output = join(work, `branding-${index}.mp4`)
       await run(config.ffmpeg, ['-hide_banner', '-loglevel', 'error', ...local, '-i', input,
         ...(!metadata.hasAudio ? ['-f', 'lavfi', '-i', 'anullsrc=channel_layout=stereo:sample_rate=48000'] : []),
-        '-vf', `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=30`, '-map', '0:v:0', '-map', metadata.hasAudio ? '0:a:0' : '1:a:0', '-ar', '48000', '-ac', '2', '-t', String(metadata.duration), ...encode, '-y', output], signal)
+        '-vf', `scale=${width}:${height}:force_original_aspect_ratio=decrease,pad=${width}:${height}:(ow-iw)/2:(oh-ih)/2,setsar=1,fps=${fps}`, '-map', '0:v:0', '-map', metadata.hasAudio ? '0:a:0' : '1:a:0', '-ar', '48000', '-ac', '2', '-t', String(metadata.duration), ...encode, '-y', output], signal)
       await verifyDuration(output, metadata.duration)
       normalized.push(output)
     }

@@ -131,7 +131,10 @@
             <IconTile :icon="Loader2" tone="brand" size="lg" class="mb-1 [&_svg]:animate-spin" />
           </template>
         </EmptyState>
-        <div v-else-if="generatedImageUrl" class="flex size-full min-h-0 animate-enter flex-col items-center justify-center gap-4">
+        <div
+          v-else-if="generatedImageUrl"
+          class="flex size-full min-h-0 animate-enter flex-col items-center justify-center gap-4"
+        >
           <div class="flex min-h-0 w-full flex-1 items-center justify-center">
             <!-- Keyed so each new result / picked variant eases in -->
             <img
@@ -145,7 +148,7 @@
           <div v-if="candidates.length > 1" class="flex max-w-full shrink-0 items-center gap-2 overflow-x-auto p-0.5">
             <button
               v-for="(candidate, index) in candidates"
-              :key="candidate.id || index"
+              :key="typeof candidate.id === 'string' || typeof candidate.id === 'number' ? candidate.id : index"
               type="button"
               class="shrink-0 overflow-hidden rounded-lg border transition focus-visible:shadow-[var(--focus-ring)] focus-visible:outline-none"
               :class="
@@ -200,10 +203,7 @@
   import { IconTile } from '@/components/ui/icon-tile';
   import { useAIImageSession } from '@/composables/useAIImageSession';
   import type { AIChatMessage } from '@/types/ai-video';
-  import {
-    IMAGE_CREATION_CREDIT_COST,
-    IMAGE_EDIT_CREDIT_COST,
-  } from '@/utils/imageGenerationPolicy';
+  import { IMAGE_CREATION_CREDIT_COST, IMAGE_EDIT_CREDIT_COST } from '@/utils/imageGenerationPolicy';
   import {
     createWorkableImageProject,
     exportImageToDisk,
@@ -245,9 +245,7 @@
   const imageLoadError = ref(false);
 
   const projectTitle = computed(() => session.value?.name || 'Untitled Image');
-  const hasGeneratedImage = computed(
-    () => Boolean(generatedImageUrl.value) || session.value?.status === 'generated'
-  );
+  const hasGeneratedImage = computed(() => Boolean(generatedImageUrl.value) || session.value?.status === 'generated');
   const statusLabel = computed(() => formatStatus(session.value?.status || ''));
   const statusVariant = computed<BadgeVariants['variant']>(() => {
     const status = session.value?.status;

@@ -1,17 +1,8 @@
 import { getClipsByProjectId } from './clips';
 import { createManualClip } from './manual-clips';
 
-/** Videos shorter than this are auto-imported as a single full-length clip. */
-export const SHORT_VIDEO_CLIP_THRESHOLD_SECONDS = 90;
-
-export function isShortVideoAutoClipEligible(
-  duration: number | null | undefined
-): boolean {
-  if (duration == null || !Number.isFinite(duration)) {
-    return false;
-  }
-  return duration > 0 && duration < SHORT_VIDEO_CLIP_THRESHOLD_SECONDS;
-}
+import { isShortVideoAutoClipEligible } from '@clippster/shared-types';
+export { SHORT_VIDEO_CLIP_THRESHOLD_SECONDS, isShortVideoAutoClipEligible } from '@clippster/shared-types';
 
 /**
  * For project videos under 90s, create one manual clip spanning the full timeline.

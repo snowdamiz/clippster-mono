@@ -37,8 +37,7 @@ export function useAudioPlayer() {
 
       audioElement.value.addEventListener('ended', () => {
         if (repeatMode.value === 'one') {
-          audioElement.value!.currentTime = 0;
-          audioElement.value!.play();
+          restart();
           return;
         }
 
@@ -69,6 +68,8 @@ export function useAudioPlayer() {
     }
 
     currentTrack.value = track;
+    currentTime.value = 0;
+    duration.value = 0;
     const audioUrl = convertFileSrc(track.filePath);
     audioElement.value.src = audioUrl;
 
@@ -158,21 +159,18 @@ export function useAudioPlayer() {
     }
 
     const currentId = currentTrack.value.id;
-    const currentOriginalIndex = playlist.value.findIndex(t => t.id === currentId);
+    const currentOriginalIndex = playlist.value.findIndex((t) => t.id === currentId);
     if (currentOriginalIndex === -1) return;
 
-    const playedIds = new Set([
-      ...playHistory.value.map(t => t.id),
-      currentId,
-    ]);
-
-    playbackQueue.value = playlist.value
-      .slice(currentOriginalIndex + 1)
-      .filter(t => !playedIds.has(t.id));
+    playbackQueue.value = playlist.value.slice(currentOriginalIndex + 1);
   }
 
-  async function playPlaylist(tracks: AudioTrack[], startIndex = 0, options?: { shuffle?: boolean }) {
-    if (tracks.length === 0) return;
+  async function playPlaylist(
+    tracks: AudioTrack[],
+    startIndex = 0,
+    options?: { shuffle?: boolean }
+  ) {
+    if (tracks.length === 0 || !tracks[startIndex]) return;
 
     const shouldShuffle = options?.shuffle ?? isShuffle.value;
     playlist.value = tracks;
@@ -192,10 +190,10 @@ export function useAudioPlayer() {
   function refillQueueForRepeatAll(): boolean {
     if (!currentTrack.value || playlist.value.length === 0) return false;
 
-    const others = playlist.value.filter(t => t.id !== currentTrack.value!.id);
-    if (others.length === 0) return false;
-
-    playbackQueue.value = isShuffle.value ? shuffleArray(others) : [...others];
+    playbackQueue.value = isShuffle.value
+      ? shuffleArray(playlist.value.filter((t) => t.id !== currentTrack.value!.id))
+      : [...playlist.value];
+    if (playbackQueue.value.length === 0) playbackQueue.value = [...playlist.value];
     return playbackQueue.value.length > 0;
   }
 
@@ -223,18 +221,30 @@ export function useAudioPlayer() {
   }
 
   async function playPrevious() {
-    if (!currentTrack.value || playHistory.value.length === 0) return;
+    if (!currentTrack.value || !hasPrevious.value) return;
 
-    playbackQueue.value.unshift(currentTrack.value);
-    const previousTrack = playHistory.value.pop()!;
-    await playTrack(previousTrack, { force: true });
+    if (isShuffle.value) {
+      playbackQueue.value.unshift(currentTrack.value);
+      await playTrack(playHistory.value.pop()!, { force: true });
+    } else {
+      const previousIndex =
+        (currentTrackIndex.value - 1 + playlist.value.length) % playlist.value.length;
+      playHistory.value.push(currentTrack.value);
+      await playTrack(playlist.value[previousIndex], { force: true });
+      rebuildSequentialQueue();
+    }
+  }
+
+  function restart() {
+    seek(0);
+    play();
   }
 
   function toggleShuffle() {
     isShuffle.value = !isShuffle.value;
 
     if (isShuffle.value) {
-      playbackQueue.value = shuffleArray(playbackQueue.value);
+      playbackQueue.value = buildShuffledQueue(playlist.value, currentTrackIndex.value);
     } else {
       rebuildSequentialQueue();
     }
@@ -242,23 +252,29 @@ export function useAudioPlayer() {
 
   function toggleRepeat() {
     if (repeatMode.value === 'off') {
-      repeatMode.value = 'all';
-    } else if (repeatMode.value === 'all') {
       repeatMode.value = 'one';
+    } else if (repeatMode.value === 'one') {
+      repeatMode.value = 'all';
     } else {
       repeatMode.value = 'off';
     }
   }
 
-  const currentTrackIndex = computed(() => playHistory.value.length);
+  const currentTrackIndex = computed(() =>
+    playlist.value.findIndex((t) => t.id === currentTrack.value?.id)
+  );
 
   const hasNext = computed(() => {
     if (playbackQueue.value.length > 0) return true;
-    if (repeatMode.value === 'all' && playlist.value.length > 1) return true;
+    if (repeatMode.value === 'all' && playlist.value.length > 0) return true;
     return false;
   });
 
-  const hasPrevious = computed(() => playHistory.value.length > 0);
+  const hasPrevious = computed(() => {
+    if (!currentTrack.value) return false;
+    if (isShuffle.value) return playHistory.value.length > 0;
+    return currentTrackIndex.value > 0 || (repeatMode.value === 'all' && playlist.value.length > 0);
+  });
 
   const progress = computed(() => {
     if (duration.value === 0) return 0;
@@ -318,6 +334,7 @@ export function useAudioPlayer() {
     pause,
     play,
     seek,
+    restart,
     setVolume,
     toggleMute,
     stop,

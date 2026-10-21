@@ -6,7 +6,7 @@ import { ClipDetectionSheet, type ClipDetectionPlan } from '@/components/editor/
 import { ClipListCard } from '@/components/workspace/ClipListCard'
 import { VodPreview } from '@/components/workspace/VodPreview'
 import { BottomSheet } from '@/components/ui/BottomSheet'
-import { VodTimeRangePicker } from '@/components/download/VodTimeRangePicker'
+import { ManualClipPicker } from '@/components/workspace/ManualClipPicker'
 import { EmptyState } from '@/components/ui/EmptyState'
 import { ScreenHeader } from '@/components/ScreenHeader'
 import { Button } from '@/components/ui/button'
@@ -218,13 +218,15 @@ export default function ProjectDetailScreen() {
   }
 
   const [manualRange, setManualRange] = useState<{ startTime: number; endTime: number } | null>(null)
+  const [creatingClip, setCreatingClip] = useState(false)
   function openManualClip() {
     const startTime = Math.max(0, Math.min(playheadTime, Math.max(0, videoDuration - 1)))
     setManualRange({ startTime, endTime: Math.min(videoDuration, startTime + 30) })
   }
 
   async function createClip() {
-    if (!id || !videoPath) return
+    if (!id || !videoPath || creatingClip) return
+    setCreatingClip(true)
     const duration = videoDuration > 0 ? videoDuration : playheadTime + 30
     const start = manualRange?.startTime ?? Math.max(0, playheadTime)
     const end = manualRange?.endTime ?? Math.min(duration, start + 30)
@@ -237,6 +239,8 @@ export default function ProjectDetailScreen() {
       router.push({ pathname: '/clip/[id]', params: { id: clipId } })
     } catch (error) {
       appAlert('Could not create clip', error instanceof Error ? error.message : String(error))
+    } finally {
+      setCreatingClip(false)
     }
   }
 
@@ -292,13 +296,13 @@ export default function ProjectDetailScreen() {
               showBack
             />
 
-            <VodPreview
+            {manualRange == null ? <VodPreview
               videoPath={videoPath}
               onTimeChange={setPlayheadTime}
               onDurationChange={(seconds) => {
                 if (seconds > 0) setVideoDuration(seconds)
               }}
-            />
+            /> : null}
             <View className="gap-2 px-5 py-3">
               <Text className="text-xs text-muted">
                 Source video · {Math.floor(videoDuration / 60)}:
@@ -405,16 +409,16 @@ export default function ProjectDetailScreen() {
               variant="page"
               title="Add a clip"
               primaryAction={{
-                title: 'Create clip',
-                disabled: !manualRange || manualRange.endTime <= manualRange.startTime,
+                title: creatingClip ? 'Creating clip…' : 'Create clip',
+                disabled: creatingClip || !manualRange || manualRange.endTime <= manualRange.startTime,
                 onPress: () => void createClip()
               }}
             >
-              <Text className="text-sm text-muted">Choose the moment you want to keep. Fine-tune its range next.</Text>
               {manualRange ? (
-                <VodTimeRangePicker
-                  totalDuration={videoDuration}
-                  minSelectionSeconds={1}
+                <ManualClipPicker
+                  videoPath={videoPath}
+                  duration={videoDuration}
+                  fallbackUri={projectThumbnail ?? undefined}
                   value={manualRange}
                   onChange={setManualRange}
                 />

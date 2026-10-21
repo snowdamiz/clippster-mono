@@ -46,13 +46,18 @@
               <Info />
               <AlertTitle>Google account</AlertTitle>
               <AlertDescription>
-                Switch Gmail accounts, or convert to email/password login. Your projects, credits, and settings stay
-                on this account.
+                Switch Gmail accounts, or convert to email/password login. Your projects, credits, and settings stay on
+                this account.
               </AlertDescription>
             </Alert>
 
             <SettingsSection title="Connected Gmail">
-              <SettingRow inset :label="currentEmail || 'Google account'" description="Signed in with Google" :icon="Mail">
+              <SettingRow
+                inset
+                :label="currentEmail || 'Google account'"
+                description="Signed in with Google"
+                :icon="Mail"
+              >
                 <Button
                   variant="secondary"
                   size="sm"
@@ -76,7 +81,8 @@
               <div class="flex flex-col gap-3 p-4">
                 <template v-if="emailChangeStep === 'otp'">
                   <p class="text-sm text-fg-muted">
-                    Enter the 6-digit code sent to <span class="font-medium text-fg">{{ pendingEmail }}</span>
+                    Enter the 6-digit code sent to
+                    <span class="font-medium text-fg">{{ pendingEmail }}</span>
                   </p>
                   <Field label="Verification code">
                     <Input
@@ -97,7 +103,12 @@
                   </Field>
                   <div class="grid grid-cols-2 gap-3">
                     <Field label="Create password">
-                      <Input v-model="oauthNewPassword" type="password" placeholder="Min 8 characters" :disabled="saving" />
+                      <Input
+                        v-model="oauthNewPassword"
+                        type="password"
+                        placeholder="Min 8 characters"
+                        :disabled="saving"
+                      />
                     </Field>
                     <Field label="Confirm password">
                       <Input
@@ -161,7 +172,8 @@
 
                 <template v-if="emailChangeStep === 'otp'">
                   <p class="text-sm text-fg-muted">
-                    Enter the 6-digit code sent to <span class="font-medium text-fg">{{ pendingEmail }}</span>
+                    Enter the 6-digit code sent to
+                    <span class="font-medium text-fg">{{ pendingEmail }}</span>
                   </p>
                   <Field label="Verification code">
                     <Input
@@ -284,10 +296,17 @@
           </SettingsSection>
 
           <SettingsSection
+            v-if="desktopToolsAvailable"
             title="App tours"
             description="Restart a guided tour anytime. Skip or finish marks it complete."
           >
-            <SettingRow v-for="tour in tourRestartOptions" :key="tour.id" inset :label="tour.label" :description="tour.desc">
+            <SettingRow
+              v-for="tour in tourRestartOptions"
+              :key="tour.id"
+              inset
+              :label="tour.label"
+              :description="tour.desc"
+            >
               <Button
                 variant="secondary"
                 size="sm"
@@ -342,6 +361,7 @@
               />
             </SettingRow>
             <SettingRow
+              v-if="desktopToolsAvailable"
               inset
               label="Background notifications"
               description="Show notifications when the app is minimized"
@@ -376,374 +396,375 @@
         </div>
 
         <!-- ==================== DELETE DATA TAB ==================== -->
-        <DeleteDataTab v-else-if="activeTab === 'delete'" />
+        <DeleteDataTab
+          v-else-if="desktopToolsAvailable && activeTab === 'delete'"
+          :deletion-enabled="desktopToolsAvailable"
+        />
       </div>
     </div>
   </Modal>
 </template>
 
 <script setup>
-import { ref, computed, markRaw } from 'vue';
-import { Settings, Mail, Lock, Info, Clock, Bell, User, Trash2, RefreshCw } from 'lucide-vue-next';
-import { useAuthStore } from '@/stores/auth';
-import { useUserPreferencesStore } from '@/stores/userPreferences';
-import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Button } from '@/components/ui/button';
-import { Field } from '@/components/ui/field';
-import { Input } from '@/components/ui/input';
-import { Modal } from '@/components/ui/modal';
-import { SegmentedControl } from '@/components/ui/segmented-control';
-import { Switch } from '@/components/ui/switch';
-import DeleteDataTab from '@/components/settings/DeleteDataTab.vue';
-import { SettingRow } from '@/components/ui/setting-row';
-import SettingsSection from '@/components/settings/SettingsSection.vue';
-import SettingsStatus from '@/components/settings/SettingsStatus.vue';
-import { useAppTour } from '@/composables/useAppTour';
+  import { ref, computed, markRaw } from 'vue';
+  import { Settings, Mail, Lock, Info, Clock, Bell, User, Trash2, RefreshCw } from 'lucide-vue-next';
+  import { useAuthStore } from '@/stores/auth';
+  import { useUserPreferencesStore } from '@/stores/userPreferences';
+  import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
+  import { Button } from '@/components/ui/button';
+  import { Field } from '@/components/ui/field';
+  import { Input } from '@/components/ui/input';
+  import { Modal } from '@/components/ui/modal';
+  import { SegmentedControl } from '@/components/ui/segmented-control';
+  import { Switch } from '@/components/ui/switch';
+  import DeleteDataTab from '@/components/settings/DeleteDataTab.vue';
+  import SettingsSection from '@/components/settings/SettingsSection.vue';
+  import SettingsStatus from '@/components/settings/SettingsStatus.vue';
+  import { SettingRow } from '@/components/ui/setting-row';
+  import { useAppTour } from '@/services/settingsRuntime';
 
-const props = defineProps({
-  show: {
-    type: Boolean,
-    required: true,
-  },
-});
+  const props = defineProps({
+    desktopToolsAvailable: { type: Boolean, default: true },
+    show: {
+      type: Boolean,
+      required: true,
+    },
+  });
 
-const emit = defineEmits(['close']);
+  const emit = defineEmits(['close']);
 
-const authStore = useAuthStore();
-const prefsStore = useUserPreferencesStore();
-const { restartTour } = useAppTour();
-const restartingTour = ref(null);
+  const authStore = useAuthStore();
+  const prefsStore = useUserPreferencesStore();
+  const { restartTour } = useAppTour();
+  const restartingTour = ref(null);
 
-const tourRestartOptions = [
-  { id: 'desktop_sidebar', label: 'Sidebar overview', desc: 'Browse, Library, Create, Manage' },
-  { id: 'page_creators', label: 'My Creators', desc: 'Add creator and profile tabs' },
-  { id: 'page_live_clip', label: 'Live Streams', desc: 'Track, Watch, Rec, Auto' },
-  { id: 'page_vods', label: 'Download Video', desc: 'Platforms and VOD search' },
-  { id: 'page_projects', label: 'Video library', desc: 'Detect, Transcribe, Pre-Edit' },
-  { id: 'page_video_editor', label: 'Video Editor', desc: 'Timeline editor overview' },
-  { id: 'page_image_editor', label: 'Image Editor', desc: 'Canvas editor overview' },
-];
+  const tourRestartOptions = [
+    { id: 'desktop_sidebar', label: 'Sidebar overview', desc: 'Browse, Library, Create, Manage' },
+    { id: 'page_creators', label: 'My Creators', desc: 'Add creator and profile tabs' },
+    { id: 'page_live_clip', label: 'Live Streams', desc: 'Track, Watch, Rec, Auto' },
+    { id: 'page_vods', label: 'Download Video', desc: 'Platforms and VOD search' },
+    { id: 'page_projects', label: 'Video library', desc: 'Detect, Transcribe, Pre-Edit' },
+    { id: 'page_video_editor', label: 'Video Editor', desc: 'Timeline editor overview' },
+    { id: 'page_image_editor', label: 'Image Editor', desc: 'Canvas editor overview' },
+  ];
 
-async function onRestartTour(tourId) {
-  restartingTour.value = tourId;
-  try {
-    emit('close');
-    await restartTour(tourId);
-  } finally {
-    restartingTour.value = null;
-  }
-}
-
-// Tab navigation
-const tabs = [
-  { id: 'account', label: 'Account', icon: markRaw(User) },
-  { id: 'preferences', label: 'Preferences', icon: markRaw(Clock) },
-  { id: 'notifications', label: 'Notifications', icon: markRaw(Bell) },
-  { id: 'delete', label: 'Delete data', icon: markRaw(Trash2) },
-];
-const activeTab = ref('account');
-
-// Duration options
-const durationOptions = [
-  { label: '3s', value: 3000 },
-  { label: '5s', value: 5000 },
-  { label: '7s', value: 7000 },
-  { label: '10s', value: 10000 },
-  { label: 'Manual', value: 0 },
-];
-
-// Position options
-const positionOptions = [
-  { label: 'Top left', value: 'top-left' },
-  { label: 'Top right', value: 'top-right' },
-  { label: 'Bottom left', value: 'bottom-left' },
-  { label: 'Bottom right', value: 'bottom-right' },
-];
-
-// Segmented-control options (disabled while a preference save is in flight)
-const durationSegments = computed(() =>
-  durationOptions.map((opt) => ({ ...opt, disabled: prefsStore.saving }))
-);
-const positionSegments = computed(() =>
-  positionOptions.map((opt) => ({ ...opt, disabled: prefsStore.saving }))
-);
-
-// Category options
-const categoryOptions = [
-  { key: 'notify_livestream', label: 'Livestream', desc: 'Streamer went live, recording started/stopped' },
-  { key: 'notify_clips', label: 'Clips & video', desc: 'Clips detected, export complete, transcription done' },
-  { key: 'notify_downloads', label: 'Downloads & uploads', desc: 'Download complete, upload complete' },
-  { key: 'notify_projects', label: 'Projects & editor', desc: 'Project saved, auto-save, editor warnings' },
-  { key: 'notify_social', label: 'Social & publishing', desc: 'Post published, scheduled post sent' },
-  { key: 'notify_organization', label: 'Organization', desc: 'Invitations, member activity, shared content' },
-  { key: 'notify_system', label: 'System', desc: 'Success confirmations, errors, warnings' },
-];
-
-// Form state
-const newEmail = ref('');
-const emailPassword = ref('');
-const currentPassword = ref('');
-const newPassword = ref('');
-const confirmPassword = ref('');
-const oauthNewPassword = ref('');
-const oauthConfirmPassword = ref('');
-const emailChangeOtp = ref('');
-const pendingEmail = ref('');
-const emailChangeStep = ref('form'); // 'form' | 'otp'
-
-// UI state
-const saving = ref(false);
-const savingType = ref(''); // 'email' | 'email-otp' | 'password' | 'google'
-const emailSuccess = ref('');
-const emailError = ref('');
-const passwordSuccess = ref('');
-const passwordError = ref('');
-const googleSuccess = ref('');
-const googleError = ref('');
-
-// Computed
-const currentEmail = computed(() => authStore.email || authStore.user?.email || '');
-const authProvider = computed(() => authStore.authProvider);
-const isEmailUser = computed(() => authProvider.value === 'email');
-
-const canChangeEmail = computed(() => {
-  return newEmail.value.trim() && emailPassword.value.trim() && newEmail.value !== currentEmail.value;
-});
-
-const canConvertToEmail = computed(() => {
-  return (
-    newEmail.value.trim() &&
-    oauthNewPassword.value.length >= 8 &&
-    oauthNewPassword.value === oauthConfirmPassword.value
-  );
-});
-
-const canChangePassword = computed(() => {
-  return (
-    currentPassword.value.trim() &&
-    newPassword.value.trim() &&
-    confirmPassword.value.trim() &&
-    newPassword.value === confirmPassword.value &&
-    newPassword.value.length >= 8
-  );
-});
-
-// Preference toggle helper
-const togglePref = async (key, value) => {
-  const userId = String(authStore.user?.id || '');
-  const token = authStore.getAuthToken?.() || authStore.token || localStorage.getItem('auth_token') || '';
-  if (!userId || !token) return;
-  await prefsStore.updatePreference(key, value, userId, token);
-};
-
-// Methods
-const handleClose = () => {
-  if (!saving.value) {
-    resetForm();
-    emit('close');
-  }
-};
-
-const resetForm = () => {
-  newEmail.value = '';
-  emailPassword.value = '';
-  currentPassword.value = '';
-  newPassword.value = '';
-  confirmPassword.value = '';
-  oauthNewPassword.value = '';
-  oauthConfirmPassword.value = '';
-  emailChangeOtp.value = '';
-  pendingEmail.value = '';
-  emailChangeStep.value = 'form';
-  emailSuccess.value = '';
-  emailError.value = '';
-  passwordSuccess.value = '';
-  passwordError.value = '';
-  googleSuccess.value = '';
-  googleError.value = '';
-};
-
-const onOtpInput = (event) => {
-  emailChangeOtp.value = String(event.target.value || '').replace(/\D/g, '').slice(0, 6);
-};
-
-const cancelEmailChange = () => {
-  emailChangeStep.value = 'form';
-  emailChangeOtp.value = '';
-  pendingEmail.value = '';
-  emailSuccess.value = '';
-  emailError.value = '';
-};
-
-const handleSwitchGoogle = async () => {
-  googleError.value = '';
-  googleSuccess.value = '';
-  saving.value = true;
-  savingType.value = 'google';
-
-  try {
-    const result = await authStore.switchGoogleAccount();
-
-    if (result.success) {
-      googleSuccess.value = `Switched to ${result.user?.email || 'new Google account'}. Your existing data was kept.`;
-    } else {
-      googleError.value = result.error || 'Failed to switch Google account';
+  async function onRestartTour(tourId) {
+    restartingTour.value = tourId;
+    try {
+      emit('close');
+      await restartTour(tourId);
+    } finally {
+      restartingTour.value = null;
     }
-  } catch (error) {
-    googleError.value = error.message || 'An error occurred';
-  } finally {
-    saving.value = false;
-    savingType.value = '';
   }
-};
 
-const handleChangeEmail = async () => {
-  emailError.value = '';
-  emailSuccess.value = '';
-  saving.value = true;
-  savingType.value = 'email';
+  // Tab navigation
+  const tabs = computed(() => [
+    { id: 'account', label: 'Account', icon: markRaw(User) },
+    { id: 'preferences', label: 'Preferences', icon: markRaw(Clock) },
+    { id: 'notifications', label: 'Notifications', icon: markRaw(Bell) },
+    ...(props.desktopToolsAvailable ? [{ id: 'delete', label: 'Delete data', icon: markRaw(Trash2) }] : []),
+  ]);
+  const activeTab = ref('account');
 
-  try {
-    const result = await authStore.changeEmail(newEmail.value, { password: emailPassword.value });
+  // Duration options
+  const durationOptions = [
+    { label: '3s', value: 3000 },
+    { label: '5s', value: 5000 },
+    { label: '7s', value: 7000 },
+    { label: '10s', value: 10000 },
+    { label: 'Manual', value: 0 },
+  ];
 
-    if (result.success) {
-      pendingEmail.value = result.pendingEmail || newEmail.value;
-      emailChangeStep.value = 'otp';
-      emailSuccess.value = result.message || `Verification code sent to ${pendingEmail.value}`;
-      emailPassword.value = '';
-    } else {
-      emailError.value = result.error || 'Failed to change email';
+  // Position options
+  const positionOptions = [
+    { label: 'Top left', value: 'top-left' },
+    { label: 'Top right', value: 'top-right' },
+    { label: 'Bottom left', value: 'bottom-left' },
+    { label: 'Bottom right', value: 'bottom-right' },
+  ];
+
+  // Segmented-control options (disabled while a preference save is in flight)
+  const durationSegments = computed(() => durationOptions.map((opt) => ({ ...opt, disabled: prefsStore.saving })));
+  const positionSegments = computed(() => positionOptions.map((opt) => ({ ...opt, disabled: prefsStore.saving })));
+
+  // Category options
+  const categoryOptions = computed(() => [
+    ...(props.desktopToolsAvailable ? [{ key: 'notify_livestream', label: 'Livestream', desc: 'Streamer went live, recording started/stopped' }] : []),
+    { key: 'notify_clips', label: 'Clips & video', desc: 'Clips detected, export complete, transcription done' },
+    { key: 'notify_downloads', label: 'Downloads & uploads', desc: 'Download complete, upload complete' },
+    { key: 'notify_projects', label: 'Projects & editor', desc: 'Project saved, auto-save, editor warnings' },
+    { key: 'notify_social', label: 'Social & publishing', desc: 'Post published, scheduled post sent' },
+    { key: 'notify_organization', label: 'Organization', desc: 'Invitations, member activity, shared content' },
+    { key: 'notify_system', label: 'System', desc: 'Success confirmations, errors, warnings' },
+  ]);
+
+  // Form state
+  const newEmail = ref('');
+  const emailPassword = ref('');
+  const currentPassword = ref('');
+  const newPassword = ref('');
+  const confirmPassword = ref('');
+  const oauthNewPassword = ref('');
+  const oauthConfirmPassword = ref('');
+  const emailChangeOtp = ref('');
+  const pendingEmail = ref('');
+  const emailChangeStep = ref('form'); // 'form' | 'otp'
+
+  // UI state
+  const saving = ref(false);
+  const savingType = ref(''); // 'email' | 'email-otp' | 'password' | 'google'
+  const emailSuccess = ref('');
+  const emailError = ref('');
+  const passwordSuccess = ref('');
+  const passwordError = ref('');
+  const googleSuccess = ref('');
+  const googleError = ref('');
+
+  // Computed
+  const currentEmail = computed(() => authStore.email || authStore.user?.email || '');
+  const authProvider = computed(() => authStore.authProvider);
+  const isEmailUser = computed(() => authProvider.value === 'email');
+
+  const canChangeEmail = computed(() => {
+    return newEmail.value.trim() && emailPassword.value.trim() && newEmail.value !== currentEmail.value;
+  });
+
+  const canConvertToEmail = computed(() => {
+    return (
+      newEmail.value.trim() &&
+      oauthNewPassword.value.length >= 8 &&
+      oauthNewPassword.value === oauthConfirmPassword.value
+    );
+  });
+
+  const canChangePassword = computed(() => {
+    return (
+      currentPassword.value.trim() &&
+      newPassword.value.trim() &&
+      confirmPassword.value.trim() &&
+      newPassword.value === confirmPassword.value &&
+      newPassword.value.length >= 8
+    );
+  });
+
+  // Preference toggle helper
+  const togglePref = async (key, value) => {
+    const userId = String(authStore.user?.id || '');
+    const token = authStore.getAuthToken?.() || authStore.token || localStorage.getItem('auth_token') || '';
+    if (!userId || !token) return;
+    await prefsStore.updatePreference(key, value, userId, token);
+  };
+
+  // Methods
+  const handleClose = () => {
+    if (!saving.value) {
+      resetForm();
+      emit('close');
     }
-  } catch (error) {
-    emailError.value = error.message || 'An error occurred';
-  } finally {
-    saving.value = false;
-    savingType.value = '';
-  }
-};
+  };
 
-const handleConvertToEmail = async () => {
-  emailError.value = '';
-  emailSuccess.value = '';
+  const resetForm = () => {
+    newEmail.value = '';
+    emailPassword.value = '';
+    currentPassword.value = '';
+    newPassword.value = '';
+    confirmPassword.value = '';
+    oauthNewPassword.value = '';
+    oauthConfirmPassword.value = '';
+    emailChangeOtp.value = '';
+    pendingEmail.value = '';
+    emailChangeStep.value = 'form';
+    emailSuccess.value = '';
+    emailError.value = '';
+    passwordSuccess.value = '';
+    passwordError.value = '';
+    googleSuccess.value = '';
+    googleError.value = '';
+  };
 
-  if (oauthNewPassword.value !== oauthConfirmPassword.value) {
-    emailError.value = 'Passwords do not match';
-    return;
-  }
+  const onOtpInput = (event) => {
+    emailChangeOtp.value = String(event.target.value || '')
+      .replace(/\D/g, '')
+      .slice(0, 6);
+  };
 
-  if (oauthNewPassword.value.length < 8) {
-    emailError.value = 'Password must be at least 8 characters';
-    return;
-  }
+  const cancelEmailChange = () => {
+    emailChangeStep.value = 'form';
+    emailChangeOtp.value = '';
+    pendingEmail.value = '';
+    emailSuccess.value = '';
+    emailError.value = '';
+  };
 
-  saving.value = true;
-  savingType.value = 'email';
+  const handleSwitchGoogle = async () => {
+    googleError.value = '';
+    googleSuccess.value = '';
+    saving.value = true;
+    savingType.value = 'google';
 
-  try {
-    const result = await authStore.changeEmail(newEmail.value, {
-      newPassword: oauthNewPassword.value,
-    });
+    try {
+      const result = await authStore.switchGoogleAccount();
 
-    if (result.success) {
-      pendingEmail.value = result.pendingEmail || newEmail.value;
-      emailChangeStep.value = 'otp';
-      emailSuccess.value = result.message || `Verification code sent to ${pendingEmail.value}`;
-      oauthNewPassword.value = '';
-      oauthConfirmPassword.value = '';
-    } else {
-      emailError.value = result.error || 'Failed to start email conversion';
+      if (result.success) {
+        googleSuccess.value = `Switched to ${result.user?.email || 'new Google account'}. Your existing data was kept.`;
+      } else {
+        googleError.value = result.error || 'Failed to switch Google account';
+      }
+    } catch (error) {
+      googleError.value = error.message || 'An error occurred';
+    } finally {
+      saving.value = false;
+      savingType.value = '';
     }
-  } catch (error) {
-    emailError.value = error.message || 'An error occurred';
-  } finally {
-    saving.value = false;
-    savingType.value = '';
-  }
-};
+  };
 
-const handleVerifyEmailOtp = async () => {
-  emailError.value = '';
-  emailSuccess.value = '';
-  saving.value = true;
-  savingType.value = 'email-otp';
+  const handleChangeEmail = async () => {
+    emailError.value = '';
+    emailSuccess.value = '';
+    saving.value = true;
+    savingType.value = 'email';
 
-  try {
-    const result = await authStore.verifyEmailChangeOtp(emailChangeOtp.value);
+    try {
+      const result = await authStore.changeEmail(newEmail.value, { password: emailPassword.value });
 
-    if (result.success) {
-      emailSuccess.value =
-        result.message || `Email updated to ${result.user?.email || pendingEmail.value}`;
-      emailChangeStep.value = 'form';
-      emailChangeOtp.value = '';
-      pendingEmail.value = '';
-      newEmail.value = '';
-    } else {
-      emailError.value = result.error || 'Invalid verification code';
+      if (result.success) {
+        pendingEmail.value = result.pendingEmail || newEmail.value;
+        emailChangeStep.value = 'otp';
+        emailSuccess.value = result.message || `Verification code sent to ${pendingEmail.value}`;
+        emailPassword.value = '';
+      } else {
+        emailError.value = result.error || 'Failed to change email';
+      }
+    } catch (error) {
+      emailError.value = error.message || 'An error occurred';
+    } finally {
+      saving.value = false;
+      savingType.value = '';
     }
-  } catch (error) {
-    emailError.value = error.message || 'An error occurred';
-  } finally {
-    saving.value = false;
-    savingType.value = '';
-  }
-};
+  };
 
-const handleResendEmailOtp = async () => {
-  emailError.value = '';
-  emailSuccess.value = '';
-  saving.value = true;
-  savingType.value = 'email';
+  const handleConvertToEmail = async () => {
+    emailError.value = '';
+    emailSuccess.value = '';
 
-  try {
-    const result = await authStore.resendEmailChangeVerification();
-
-    if (result.success) {
-      emailSuccess.value = result.message || 'Verification code resent';
-      emailChangeOtp.value = '';
-    } else {
-      emailError.value = result.error || 'Failed to resend code';
+    if (oauthNewPassword.value !== oauthConfirmPassword.value) {
+      emailError.value = 'Passwords do not match';
+      return;
     }
-  } catch (error) {
-    emailError.value = error.message || 'An error occurred';
-  } finally {
-    saving.value = false;
-    savingType.value = '';
-  }
-};
 
-const handleChangePassword = async () => {
-  passwordError.value = '';
-  passwordSuccess.value = '';
-
-  if (newPassword.value !== confirmPassword.value) {
-    passwordError.value = 'Passwords do not match';
-    return;
-  }
-
-  if (newPassword.value.length < 8) {
-    passwordError.value = 'Password must be at least 8 characters';
-    return;
-  }
-
-  saving.value = true;
-  savingType.value = 'password';
-
-  try {
-    const result = await authStore.changePassword(currentPassword.value, newPassword.value);
-
-    if (result.success) {
-      passwordSuccess.value = result.message || 'Password changed successfully!';
-      currentPassword.value = '';
-      newPassword.value = '';
-      confirmPassword.value = '';
-    } else {
-      passwordError.value = result.error || 'Failed to change password';
+    if (oauthNewPassword.value.length < 8) {
+      emailError.value = 'Password must be at least 8 characters';
+      return;
     }
-  } catch (error) {
-    passwordError.value = error.message || 'An error occurred';
-  } finally {
-    saving.value = false;
-    savingType.value = '';
-  }
-};
+
+    saving.value = true;
+    savingType.value = 'email';
+
+    try {
+      const result = await authStore.changeEmail(newEmail.value, {
+        newPassword: oauthNewPassword.value,
+      });
+
+      if (result.success) {
+        pendingEmail.value = result.pendingEmail || newEmail.value;
+        emailChangeStep.value = 'otp';
+        emailSuccess.value = result.message || `Verification code sent to ${pendingEmail.value}`;
+        oauthNewPassword.value = '';
+        oauthConfirmPassword.value = '';
+      } else {
+        emailError.value = result.error || 'Failed to start email conversion';
+      }
+    } catch (error) {
+      emailError.value = error.message || 'An error occurred';
+    } finally {
+      saving.value = false;
+      savingType.value = '';
+    }
+  };
+
+  const handleVerifyEmailOtp = async () => {
+    emailError.value = '';
+    emailSuccess.value = '';
+    saving.value = true;
+    savingType.value = 'email-otp';
+
+    try {
+      const result = await authStore.verifyEmailChangeOtp(emailChangeOtp.value);
+
+      if (result.success) {
+        emailSuccess.value = result.message || `Email updated to ${result.user?.email || pendingEmail.value}`;
+        emailChangeStep.value = 'form';
+        emailChangeOtp.value = '';
+        pendingEmail.value = '';
+        newEmail.value = '';
+      } else {
+        emailError.value = result.error || 'Invalid verification code';
+      }
+    } catch (error) {
+      emailError.value = error.message || 'An error occurred';
+    } finally {
+      saving.value = false;
+      savingType.value = '';
+    }
+  };
+
+  const handleResendEmailOtp = async () => {
+    emailError.value = '';
+    emailSuccess.value = '';
+    saving.value = true;
+    savingType.value = 'email';
+
+    try {
+      const result = await authStore.resendEmailChangeVerification();
+
+      if (result.success) {
+        emailSuccess.value = result.message || 'Verification code resent';
+        emailChangeOtp.value = '';
+      } else {
+        emailError.value = result.error || 'Failed to resend code';
+      }
+    } catch (error) {
+      emailError.value = error.message || 'An error occurred';
+    } finally {
+      saving.value = false;
+      savingType.value = '';
+    }
+  };
+
+  const handleChangePassword = async () => {
+    passwordError.value = '';
+    passwordSuccess.value = '';
+
+    if (newPassword.value !== confirmPassword.value) {
+      passwordError.value = 'Passwords do not match';
+      return;
+    }
+
+    if (newPassword.value.length < 8) {
+      passwordError.value = 'Password must be at least 8 characters';
+      return;
+    }
+
+    saving.value = true;
+    savingType.value = 'password';
+
+    try {
+      const result = await authStore.changePassword(currentPassword.value, newPassword.value);
+
+      if (result.success) {
+        passwordSuccess.value = result.message || 'Password changed successfully!';
+        currentPassword.value = '';
+        newPassword.value = '';
+        confirmPassword.value = '';
+      } else {
+        passwordError.value = result.error || 'Failed to change password';
+      }
+    } catch (error) {
+      passwordError.value = error.message || 'An error occurred';
+    } finally {
+      saving.value = false;
+      savingType.value = '';
+    }
+  };
 </script>

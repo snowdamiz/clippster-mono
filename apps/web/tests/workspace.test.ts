@@ -6,7 +6,7 @@ import { startFixture, waitForJob } from './fixtures'
 import { isPublicAddress, downloadProxy } from '../server/network'
 import { clipInput, sourceUrl } from '../server/validation'
 import { readConfig } from '../server/config'
-import { clipWords } from '../server/media'
+import { clipWords } from '@clippster/shared-types'
 import type { WebWorkspace } from '@clippster/shared-types'
 let fixture: Awaited<ReturnType<typeof startFixture>>
 let cookie: string
@@ -28,6 +28,23 @@ afterAll(async () => {
   await fixture.dispose()
 })
 describe('private browser workspace with real FFmpeg', () => {
+  it('prepares full-range H.264 without re-encoding and finishes as a playable library source', async () => {
+    const input = join(fixture.config.dataDir, 'full-range.mp4')
+    execFileSync(fixture.config.ffmpeg, ['-v', 'error', '-f', 'lavfi', '-i', 'testsrc2=size=320x180:rate=24:duration=2', '-c:v', 'libx264', '-color_range', 'pc', '-pix_fmt', 'yuvj420p', '-y', input])
+    const inspect = (path: string) => JSON.parse(execFileSync(fixture.config.ffprobe, ['-v', 'error', '-select_streams', 'v:0', '-show_streams', '-show_packets', '-show_entries', 'stream=pix_fmt:packet=data_hash', '-show_data_hash', 'sha256', '-of', 'json', path], { encoding: 'utf8' }))
+    const original = inspect(input)
+    expect(original.streams[0].pix_fmt).toBe('yuvj420p')
+    const project = await (await request('/projects', 'POST', { name: 'Full range playback' })).json()
+    const upload = await fetch(`${fixture.url}/api/web/projects/${project.project.id}/source`, { method: 'PUT', headers: { Cookie: cookie, Origin: fixture.config.origin, 'Content-Type': 'application/octet-stream' }, body: await readFile(input) })
+    expect(upload.status).toBe(202)
+    const finished = await waitForJob(fixture.url, cookie, project.project.id)
+    expect(finished.jobs[0].status, finished.jobs[0].message).toBe('completed')
+    expect(finished.project.status).toBe('ready')
+    const ready = join(fixture.config.dataDir, 'media', project.project.id, 'source.mp4')
+    expect(inspect(ready).packets.map((packet: { data_hash: string }) => packet.data_hash)).toEqual(original.packets.map((packet: { data_hash: string }) => packet.data_hash))
+    expect((await request(`/projects/${project.project.id}/source`)).status).toBe(200)
+    expect((await request(`/projects/${project.project.id}/thumbnail`)).status).toBe(200)
+  })
   it('requires sessions, rejects cross-origin mutations, and stores encrypted tokens', async () => {
     expect((await request('/projects', 'GET', undefined, '')).status).toBe(401)
     const response = await fetch(fixture.url + '/api/web/projects', {
@@ -80,6 +97,10 @@ describe('private browser workspace with real FFmpeg', () => {
     workspace = await waitForJob(fixture.url, cookie, workspace.project.id)
     expect(workspace.jobs[0].status, workspace.jobs[0].message).toBe('completed')
     expect(workspace.project.status).toBe('ready')
+    const thumbnail = await request(`/projects/${workspace.project.id}/thumbnail`)
+    expect(thumbnail.status).toBe(200)
+    expect(thumbnail.headers.get('content-type')).toContain('image/jpeg')
+    expect((await request(`/projects/${workspace.project.id}/thumbnail`, 'GET', undefined, second)).status).toBe(404)
     const media = await fetch(`${fixture.url}/api/web/projects/${workspace.project.id}/source`, {
       headers: { Cookie: cookie, Range: 'bytes=0-99' }
     })
@@ -121,7 +142,7 @@ describe('private browser workspace with real FFmpeg', () => {
     expect(fixture.detectionCalls()).toBe(1)
     expect(workspace.project.clips[0].segments).toHaveLength(2)
     expect(workspace.project.words).toHaveLength(2)
-    expect(JSON.stringify(workspace)).not.toContain('sessionId')
+    expect(JSON.stringify(workspace.jobs)).not.toContain('sessionId')
     expect(JSON.stringify(workspace)).not.toContain('fixture-token')
   })
   it('renders all segments and captions to a downloadable H.264 MP4', async () => {

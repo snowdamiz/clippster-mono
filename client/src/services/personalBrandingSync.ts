@@ -9,13 +9,15 @@ import {
   ensureOrganizationAssetColumns,
   getAllCreatorProfiles,
   getIntroOutroById,
-  getWatermarkImage,
   createOrganizationIntroOutro,
   createOrganizationWatermark,
   getIntroOutroByServerId,
   getWatermarkByServerId,
 } from '@/services/database';
 import { getDatabase, getCurrentUserId } from '@/services/database/core';
+import { getWatermarkImage } from '@/services/database/watermarks';
+import type { ServerUserCreatorProfile } from '@clippster/api-client';
+import { creatorTimestamp, importPersonalCreator } from './personalCreatorImport';
 
 const PERSONAL_ORG_MARKER = 'personal';
 
@@ -29,12 +31,6 @@ interface ServerUserAsset {
   height?: number | null;
   file_size?: number | null;
   duration?: number | null;
-}
-
-interface ServerUserCreatorProfile {
-  id: number;
-  client_id: string | null;
-  name: string;
 }
 
 async function ensurePersonalServerIdColumn(): Promise<void> {
@@ -78,105 +74,167 @@ async function markLocalAssetServerId(
   ]);
 }
 
-export async function syncPersonalBranding(): Promise<{
+let pendingSync:
+  | Promise<{ uploadedAssets: number; upsertedProfiles: number; downloadedAssets: number }>
+  | undefined;
+
+export function syncPersonalBranding() {
+  if (!pendingSync)
+    pendingSync = performSync().finally(() => {
+      pendingSync = undefined;
+    });
+  return pendingSync;
+}
+
+async function performSync(): Promise<{
   uploadedAssets: number;
   upsertedProfiles: number;
   downloadedAssets: number;
 }> {
   await ensurePersonalServerIdColumn();
-  if (!getCurrentUserId()) {
+  const userId = getCurrentUserId();
+  if (!userId) {
     throw new Error('Not signed in');
   }
 
   let uploadedAssets = 0;
   let upsertedProfiles = 0;
   let downloadedAssets = 0;
+  const failures: string[] = [];
 
   const profiles = await getAllCreatorProfiles();
-  const personal = profiles.filter((p) => !String(p.id).startsWith('org-'));
+  const personal = profiles.filter(
+    (p) => !String(p.id).startsWith('org-') && !p.organization_id && !p.campaign_id
+  );
+  // Automatic refresh must not overwrite a more recent edit made on the web.
+  const existing = await api.get('/user/branding');
+  if (!existing.data?.success)
+    throw new Error(existing.data?.error || 'Could not check cloud creator profiles');
+  if (!Array.isArray(existing.data.profiles)) throw new Error('Incomplete cloud creator response');
+  const remoteProfiles = (existing?.data.profiles ?? []) as ServerUserCreatorProfile[];
   const localToServerAsset = new Map<string, number>();
 
   for (const profile of personal) {
-    for (const [field, assetType] of [
-      ['intro_id', 'intro'],
-      ['outro_id', 'outro'],
-    ] as const) {
-      const localId = profile[field];
-      if (!localId || localId.startsWith('org-asset-')) continue;
-      const row = await getIntroOutroById(localId);
-      if (!row?.file_path) continue;
-      if (row.server_id) {
-        localToServerAsset.set(localId, row.server_id);
+    if (getCurrentUserId() !== userId) throw new Error('Account changed during creator sync');
+    try {
+      const remote = remoteProfiles.find(
+        (remote) => remote.id === profile.server_id || remote.client_id === profile.id
+      );
+      if (profile.server_id && !remote) {
+        // A complete account snapshot no longer contains this previously synced row.
+        const db = await getDatabase();
+        await db.execute('DELETE FROM creator_profiles WHERE id = ? AND server_id = ?', [
+          profile.id,
+          profile.server_id,
+        ]);
         continue;
       }
-      const serverId = await uploadLocalFileAsUserAsset(row.file_path, assetType, row.name || assetType);
-      if (serverId) {
-        await markLocalAssetServerId('intro_outros', row.id, serverId);
-        localToServerAsset.set(localId, serverId);
-        uploadedAssets += 1;
+      // SQLite rows use Unix seconds; older toggle handlers wrote milliseconds.
+      const localUpdatedAt = creatorTimestamp(profile.updated_at);
+      if (remote?.updated_at && Date.parse(remote.updated_at) >= localUpdatedAt) continue;
+      for (const [field, assetType] of [
+        ['intro_id', 'intro'],
+        ['outro_id', 'outro'],
+      ] as const) {
+        const localId = profile[field];
+        if (!localId || localId.startsWith('org-asset-')) continue;
+        const row = await getIntroOutroById(localId);
+        if (!row?.file_path) continue;
+        if (row.server_id) {
+          localToServerAsset.set(localId, row.server_id);
+          continue;
+        }
+        const serverId = await uploadLocalFileAsUserAsset(
+          row.file_path,
+          assetType,
+          row.name || assetType
+        );
+        if (serverId) {
+          await markLocalAssetServerId('intro_outros', row.id, serverId);
+          localToServerAsset.set(localId, serverId);
+          uploadedAssets += 1;
+        }
       }
-    }
 
-    if (profile.watermark_id && !profile.watermark_id.startsWith('org-asset-')) {
-      const watermark = await getWatermarkImage(profile.watermark_id);
-      if (watermark?.file_path) {
-        const existingServerId = (watermark as { server_id?: number | null }).server_id;
-        if (existingServerId) {
-          localToServerAsset.set(watermark.id, existingServerId);
-        } else {
-          const serverId = await uploadLocalFileAsUserAsset(
-            watermark.file_path,
-            'watermark',
-            watermark.name || 'watermark'
-          );
-          if (serverId) {
-            await markLocalAssetServerId('watermark_images', watermark.id, serverId);
-            localToServerAsset.set(watermark.id, serverId);
-            uploadedAssets += 1;
+      if (profile.watermark_id && !profile.watermark_id.startsWith('org-asset-')) {
+        const watermark = await getWatermarkImage(profile.watermark_id);
+        if (watermark?.file_path) {
+          const existingServerId = (watermark as { server_id?: number | null }).server_id;
+          if (existingServerId) {
+            localToServerAsset.set(watermark.id, existingServerId);
+          } else {
+            const serverId = await uploadLocalFileAsUserAsset(
+              watermark.file_path,
+              'watermark',
+              watermark.name || 'watermark'
+            );
+            if (serverId) {
+              await markLocalAssetServerId('watermark_images', watermark.id, serverId);
+              localToServerAsset.set(watermark.id, serverId);
+              uploadedAssets += 1;
+            }
           }
         }
       }
-    }
 
-    const body = {
-      client_id: profile.id,
-      platform_links: profile.platform_links.map(link => ({ platform: link.platform, platform_id: link.platform_id, is_primary: Boolean(link.is_primary) })),
-      name: profile.name,
-      description: profile.description,
-      scope:
-        profile.scope === 'global'
-          ? 'global'
-          : profile.scope === 'streamer'
-            ? 'streamer'
-            : 'personal_studio',
-      disabled: Boolean(profile.disabled),
-      intro_id: profile.intro_id ? localToServerAsset.get(profile.intro_id) ?? null : null,
-      outro_id: profile.outro_id ? localToServerAsset.get(profile.outro_id) ?? null : null,
-      watermark_id: profile.watermark_id
-        ? localToServerAsset.get(profile.watermark_id) ?? null
-        : null,
-      watermark_settings: profile.watermark_settings
-        ? JSON.parse(profile.watermark_settings)
-        : null,
-      intro_outro_settings: profile.intro_outro_settings
-        ? JSON.parse(profile.intro_outro_settings)
-        : null,
-      intro_ratio_settings: profile.intro_ratio_settings,
-      outro_ratio_settings: profile.outro_ratio_settings,
-      layout_overlays: profile.layout_overlays ? JSON.parse(profile.layout_overlays) : [],
-    };
+      const body = {
+        client_id: remote?.client_id ?? profile.id,
+        platform_links: profile.platform_links.map((link) => ({
+          platform: link.platform,
+          platform_id: link.platform_id,
+          display_name: link.display_name,
+          profile_image_url: link.profile_image_url,
+          is_primary: Boolean(link.is_primary),
+        })),
+        profile_image_url:
+          profile.platform_links.find((link) => link.is_primary && link.profile_image_url)
+            ?.profile_image_url ||
+          profile.platform_links.find((link) => link.profile_image_url)?.profile_image_url ||
+          null,
+        name: profile.name,
+        description: profile.description,
+        scope: profile.scope || 'streamer',
+        disabled: Boolean(profile.disabled),
+        auto_dvr_enabled: Boolean(profile.auto_dvr_enabled),
+        intro_id: profile.intro_id ? (localToServerAsset.get(profile.intro_id) ?? null) : null,
+        outro_id: profile.outro_id ? (localToServerAsset.get(profile.outro_id) ?? null) : null,
+        watermark_id: profile.watermark_id
+          ? (localToServerAsset.get(profile.watermark_id) ?? null)
+          : null,
+        watermark_settings: profile.watermark_settings
+          ? JSON.parse(profile.watermark_settings)
+          : null,
+        intro_outro_settings: profile.intro_outro_settings
+          ? JSON.parse(profile.intro_outro_settings)
+          : null,
+        intro_ratio_settings: profile.intro_ratio_settings,
+        outro_ratio_settings: profile.outro_ratio_settings,
+        layout_overlays: profile.layout_overlays ? JSON.parse(profile.layout_overlays) : [],
+        clip_build_defaults: profile.clip_build_defaults
+          ? JSON.parse(profile.clip_build_defaults)
+          : null,
+      };
 
-    const response = await api.post('/user/creator-profiles', body);
-    if (response.data?.success && response.data.profile?.id) {
-      const db = await getDatabase();
-      await db.execute('UPDATE creator_profiles SET server_id = ? WHERE id = ?', [
-        response.data.profile.id,
-        profile.id,
-      ]);
-      upsertedProfiles += 1;
+      if (getCurrentUserId() !== userId) throw new Error('Account changed during creator sync');
+      const response = remote
+        ? await api.put(`/user/creator-profiles/${remote.id}`, body)
+        : await api.post('/user/creator-profiles', body);
+      if (response.data?.success && response.data.profile?.id) {
+        const db = await getDatabase();
+        await db.execute('UPDATE creator_profiles SET server_id = ? WHERE id = ?', [
+          response.data.profile.id,
+          profile.id,
+        ]);
+        upsertedProfiles += 1;
+      } else {
+        throw new Error(response.data?.error || `Could not sync creator "${profile.name}"`);
+      }
+    } catch (error) {
+      failures.push(`${profile.name}: ${error instanceof Error ? error.message : String(error)}`);
     }
   }
 
+  if (getCurrentUserId() !== userId) throw new Error('Account changed during creator sync');
   const bundle = await api.get('/user/branding');
   if (bundle.data?.success) {
     const assets = (bundle.data.assets ?? []) as ServerUserAsset[];
@@ -227,12 +285,21 @@ export async function syncPersonalBranding(): Promise<{
       }
     }
 
-    const remoteProfiles = (bundle.data.profiles ?? []) as ServerUserCreatorProfile[];
-    for (const remote of remoteProfiles) {
-      if (remote.client_id && personal.some((p) => p.id === remote.client_id)) continue;
-      console.log('[PersonalBranding] remote-only profile available on mobile sync', remote.id, remote.name);
+    const current = await getAllCreatorProfiles();
+    for (const remote of (bundle.data.profiles ?? []) as ServerUserCreatorProfile[]) {
+      const local = current.find(
+        (profile) => profile.server_id === remote.id || profile.id === remote.client_id
+      );
+      try {
+        await importPersonalCreator(remote, local, userId);
+      } catch (error) {
+        failures.push(`${remote.name}: ${error instanceof Error ? error.message : String(error)}`);
+      }
     }
+  } else {
+    throw new Error(bundle.data?.error || 'Could not download creator profiles');
   }
 
+  if (failures.length) throw new Error(`Creator sync incomplete: ${failures.join('; ')}`);
   return { uploadedAssets, upsertedProfiles, downloadedAssets };
 }

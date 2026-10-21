@@ -16,6 +16,9 @@
         :sliderPosition="sliderPosition"
         :clipCount="displayClips.length"
         :canMergeSegments="canMergeSegments"
+        :canFocusClip="displayClips.length > 0"
+        @focusClip="focusSelectedClip"
+        @fitSource="fitSource"
         @toggleCutTool="toggleCutTool"
         @toggleAddClipMode="toggleAddClipMode"
         @startContinuousSeeking="startContinuousSeeking"
@@ -220,6 +223,7 @@
 
     <!-- Clip Context Menu (for right-click on clip track) -->
     <TimelineClipContextMenu
+      :allow-editor="props.allowEditor"
       :show="showClipContextMenu"
       :info="clipContextMenuInfo"
       @close="closeClipContextMenu"
@@ -255,7 +259,7 @@
     deleteClip,
     createManualClip,
     addSegmentToClip,
-  } from '../services/database';
+  } from '@/services/workspaceRuntime';
   import { debounce, throttle } from '../utils/timelineUtils';
   import { createSeekEvent } from '../utils/videoSeekUtils';
   import { TRACK_DIMENSIONS, SELECTORS } from '../utils/timelineConstants';
@@ -287,18 +291,19 @@
 
   const props = withDefaults(defineProps<TimelineProps>(), {
     clips: () => [],
+    allowEditor: true,
   });
 
   // Simple two-state height: compact when no clip is visible, expanded when a clip is shown
   // pt-2 + 32px toolbar + gap-2 + (border + 28px ruler + 48px video track) + pb-3
   const TIMELINE_HEIGHT_COMPACT = 138; // Just header + ruler + main video track
-  const TIMELINE_HEIGHT_EXPANDED = 178; // Adds space for one 40px clip track
+  const TIMELINE_HEIGHT_EXPANDED = 210; // Selected range, title, timestamps and trim grips.
   // Room for the horizontal scrollbar that appears once the timeline is zoomed in
   const TIMELINE_SCROLLBAR_ALLOWANCE = 10;
 
   const calculatedHeight = computed(() => {
     const base = displayClips.value.length > 0 ? TIMELINE_HEIGHT_EXPANDED : TIMELINE_HEIGHT_COMPACT;
-    return zoomLevel.value > 1 ? base + TIMELINE_SCROLLBAR_ALLOWANCE : base;
+    return Math.max(props.minHeight || 0, zoomLevel.value > 1 ? base + TIMELINE_SCROLLBAR_ALLOWANCE : base);
   });
 
   // With fixed heights sized appropriately, scrollbar is never needed
@@ -336,6 +341,7 @@
     timelineScrollContainer,
     computed(() => props.duration),
     {
+      maxZoom: 1000,
       onZoomChange: (zoomLevel) => emit('zoomChanged', zoomLevel),
       onDragSelection: (startPercent: number, endPercent: number) => {
         // When in add clip mode, open the create clip dialog
@@ -406,12 +412,15 @@
     (newClips) => {
       if (newClips) {
         localClips.value = sortClips(newClips);
-        
-        // Auto-reveal all clips when they load
-        // This ensures manual clips and auto-detected clips from livestreams are visible
-        newClips.forEach((clip) => {
-          visibleClipIds.value.add(clip.id);
-        });
+
+        // A refresh after trimming must retain the selected row, not reveal every clip.
+        const ids = new Set(newClips.map((clip) => clip.id));
+        visibleClipIds.value = new Set([...visibleClipIds.value].filter((id) => ids.has(id)));
+        if (!visibleClipIds.value.size && localClips.value.length) {
+          visibleClipIds.value.add(
+            props.hoveredClipId && ids.has(props.hoveredClipId) ? props.hoveredClipId : localClips.value[0].id
+          );
+        }
       }
     },
     { immediate: true, deep: true }
@@ -690,7 +699,12 @@
       const isAboveVisible = clipRect.top < containerRect.top;
       const isBelowVisible = clipRect.bottom > containerRect.bottom;
 
-      if (isAboveVisible || isBelowVisible) {
+      if (
+        isAboveVisible ||
+        isBelowVisible ||
+        clipRect.left < containerRect.left + 72 ||
+        clipRect.right > containerRect.right
+      ) {
         // Scroll the clip into view with smooth behavior
         clipElement.scrollIntoView({
           behavior: 'smooth',
@@ -699,6 +713,28 @@
         });
       }
     }
+  }
+
+  async function focusSelectedClip() {
+    const clip =
+      displayClips.value.find((c) => c.id === props.currentlyPlayingClipId || c.id === props.hoveredClipId) ??
+      displayClips.value[0];
+    if (!clip?.segments.length || !props.duration) return;
+    const start = Math.min(...clip.segments.map((s) => s.start_time));
+    const end = Math.max(...clip.segments.map((s) => s.end_time));
+    setZoomLevel(props.duration / Math.max(10, end - start + 30));
+    await nextTick();
+    const container = timelineScrollContainer.value;
+    const track = container?.querySelector('[data-video-track]') as HTMLElement | null;
+    if (container && track) {
+      const middle = ((start + end) / 2 / props.duration) * track.clientWidth;
+      container.scrollLeft = Math.max(0, middle + 72 - container.clientWidth / 2);
+    }
+  }
+
+  function fitSource() {
+    setZoomLevel(1);
+    if (timelineScrollContainer.value) timelineScrollContainer.value.scrollLeft = 0;
   }
 
   // Reveal a clip in the timeline (makes it visible, hides all others)
@@ -1515,8 +1551,9 @@
 
     const { clipId, segmentIndex } = draggedSegmentInfo.value;
     const deltaX = event.clientX - draggedSegmentInfo.value.originalMouseX;
-    const timelineWidth = timelineScrollContainer.value?.clientWidth || 1;
-    const timeDelta = ((deltaX / timelineWidth) * props.duration) / zoomLevel.value;
+    const timelineWidth =
+      timelineScrollContainer.value?.querySelector('[data-video-track]')?.getBoundingClientRect().width || 1;
+    const timeDelta = (deltaX / timelineWidth) * props.duration;
 
     let newStartTime = draggedSegmentInfo.value.originalStartTime + timeDelta;
     let newEndTime = draggedSegmentInfo.value.originalEndTime + timeDelta;
@@ -1724,8 +1761,9 @@
 
     const { clipId, segmentIndex, handleType, originalStartTime, originalEndTime } = resizeHandleInfo.value;
     const deltaX = event.clientX - resizeHandleInfo.value.originalMouseX;
-    const timelineWidth = timelineScrollContainer.value?.clientWidth || 1;
-    const timeDelta = ((deltaX / timelineWidth) * props.duration) / zoomLevel.value;
+    const timelineWidth =
+      timelineScrollContainer.value?.querySelector('[data-video-track]')?.getBoundingClientRect().width || 1;
+    const timeDelta = (deltaX / timelineWidth) * props.duration;
 
     let newStartTime = originalStartTime;
     let newEndTime = originalEndTime;

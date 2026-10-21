@@ -24,6 +24,7 @@ function limitationsSection(extra: string[] = []): ContentSection[] {
 }
 
 function comparisonTable(slug: string, competitorLabel: string): ContentSection {
+  if (slug === 'opus-clip') return {type:'product-comparison'}
   const rows = COMPARISON_MATRICES[slug] ?? []
   return {
     type: 'table',
@@ -130,7 +131,7 @@ export const PAGE_BODIES: Record<string, ContentSection[]> = {
   '/clipping-tool': [
     {
       type: 'paragraph',
-      text: `Clippster is an AI clipping tool that turns livestreams and VODs into short-form clips on desktop. It detects highlights in real time while a stream is live, edits on a multi-track timeline, captions in ${CAPTION_LANGUAGES_VERIFIED} languages, and schedules posts to ${PUBLISH_LABEL}. Unlike queue-only web tools, video stays local until you export or publish.`,
+      text: `Clippster is an AI clipping tool that turns livestreams and VODs into short-form clips on desktop. It detects highlights in real time while a stream is live, edits on a multi-track timeline, captions in ${CAPTION_LANGUAGES_VERIFIED} languages, and schedules posts to ${PUBLISH_LABEL}. Editing uses local video; AI processing and publishing use online services.`,
     },
     { type: 'heading', text: 'What an AI clipping tool does' },
     {

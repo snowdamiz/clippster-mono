@@ -1,0 +1,196 @@
+.email-composer {
+  color-scheme: dark;
+  color: #eef0f4;
+  background: #0e1015;
+  border: 1px solid #292d35;
+  border-radius: 8px;
+  overflow: hidden;
+  font:
+    13px/1.5 Arial,
+    Helvetica,
+    sans-serif;
+}
+.email-composer * {
+  box-sizing: border-box;
+}
+.email-composer [hidden] {
+  display: none !important;
+}
+.email-composer-toolbar {
+  display: flex;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 12px;
+  padding: 12px 16px;
+  border-bottom: 1px solid #292d35;
+}
+.email-composer-toolbar > div {
+  display: flex;
+  gap: 4px;
+}
+.email-composer button {
+  font:
+    500 12px/1.5 Arial,
+    sans-serif;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  padding: 8px 12px;
+  color: #959dab;
+  background: transparent;
+  cursor: pointer;
+}
+.email-composer button[aria-pressed='true'] {
+  background: #191c23;
+  color: #eef0f4;
+  border-color: #292d35;
+}
+.email-composer input:focus-visible,
+.email-composer textarea:focus-visible,
+.email-composer button:focus-visible {
+  outline: 2px solid #38bdf8;
+  outline-offset: 2px;
+}
+.email-composer-workspace {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 210px;
+}
+.email-composer-canvas {
+  padding: 20px;
+  background: #0b0d11;
+  min-width: 0;
+}
+.email-composer-hint {
+  text-align: center;
+  color: #959dab;
+  font-size: 12px;
+  margin: 0 0 18px;
+}
+.email-composer-document,
+.email-composer-preview,
+.email-composer-inbox {
+  width: 100%;
+  max-width: 600px;
+  margin: 0 auto;
+  display: block;
+}
+.email-composer-document {
+  overflow-wrap: anywhere;
+}
+.email-composer-document table {
+  table-layout: fixed;
+}
+.email-composer-document textarea {
+  display: block;
+  width: 100%;
+  min-height: 32px;
+  resize: none;
+  overflow: hidden;
+  padding: 6px;
+  background: transparent;
+  border: 1px dashed #34404c;
+  border-radius: 4px;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.email-composer-document input {
+  max-width: 100%;
+  width: 100%;
+  border: 1px dashed #959dab;
+  font-family: Arial, Helvetica, sans-serif;
+}
+.email-composer-preview {
+  border: 0;
+  min-height: 650px;
+  background: #0a0c10;
+}
+.email-composer-inbox {
+  padding-bottom: 20px;
+  overflow-wrap: anywhere;
+}
+.email-composer-inbox span {
+  display: block;
+  color: #959dab;
+  font-size: 12px;
+  margin-top: 5px;
+}
+.email-composer-options {
+  padding: 20px 16px;
+  border-left: 1px solid #292d35;
+  min-width: 0;
+}
+.email-composer-options h3 {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 20px;
+}
+.email-composer-options p {
+  color: #959dab;
+  font-size: 12px;
+  margin: 20px 0;
+  line-height: 1.75;
+}
+.email-composer-options label {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 16px;
+  color: #a1a9b7;
+  font-size: 12px;
+}
+.email-composer-options input[type='url'] {
+  width: 100%;
+  min-width: 0;
+  background: #191c23;
+  border: 1px solid #292d35;
+  border-radius: 6px;
+  padding: 8px;
+  color: #eef0f4;
+  font-size: 12px;
+}
+.email-composer-options .email-composer-check {
+  flex-direction: row;
+  align-items: center;
+}
+.email-composer-check input {
+  accent-color: #38bdf8;
+}
+.email-composer-options .email-composer-error {
+  color: #f87171;
+}
+.email-composer[data-preview='true'] .email-composer-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+.email-composer[data-preview='true'] .email-composer-options {
+  display: none;
+}
+.email-composer[data-mobile='true'] .email-composer-document,
+.email-composer[data-mobile='true'] .email-composer-preview {
+  max-width: 375px;
+}
+.email-composer[data-mobile='true'] .email-padding {
+  padding-left: 24px !important;
+  padding-right: 24px !important;
+}
+@media (max-width: 700px) {
+  .email-composer-workspace {
+    grid-template-columns: minmax(0, 1fr);
+  }
+  .email-composer-options {
+    border-left: 0;
+    border-top: 1px solid #292d35;
+  }
+  .email-composer-canvas {
+    padding: 12px;
+  }
+  .email-composer-document .email-padding {
+    padding-left: 24px !important;
+    padding-right: 24px !important;
+  }
+}
+@media (pointer: coarse) {
+  .email-composer button {
+    min-height: 44px;
+  }
+  .email-composer-options input[type='url'] {
+    font-size: 16px;
+  }
+}

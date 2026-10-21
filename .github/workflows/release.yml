@@ -10,6 +10,9 @@ env:
   RELEASES_REPO: snowdamiz/clippster-releases
 
 jobs:
+  verify-web:
+    uses: ./.github/workflows/web.yml
+
   # First, create a draft release and build frontend (shared across all platforms)
   create-release:
     runs-on: ubuntu-latest
@@ -66,7 +69,7 @@ jobs:
 
   # Deploy server to Fly.io
   deploy-server:
-    needs: create-release
+    needs: [create-release, verify-web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -80,9 +83,26 @@ jobs:
           FLY_API_TOKEN: ${{ secrets.FLY_SERVER_TOKEN }}
         run: flyctl deploy --remote-only
 
-  # Deploy landing site to Fly.io (after API so /api/seo/sitemap exists)
+  deploy-web:
+    needs: [verify-web, deploy-server]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+      - uses: superfly/flyctl-actions/setup-flyctl@master
+      - name: Deploy verified web workspace
+        env:
+          FLY_WEB_TOKEN: ${{ secrets.FLY_WEB_TOKEN }}
+        run: node scripts/deploy-fly.mjs web
+      - name: Verify deployed workspace revision
+        run: |
+          curl --fail --retry 6 --retry-delay 5 https://clippster-web.fly.dev/api/health | jq -e --arg revision "$GITHUB_SHA" '.status == "ok" and .revision == $revision'
+
+  # Keep the website and embedded workspace on the same verified revision.
   deploy-landing:
-    needs: [create-release, deploy-server]
+    needs: [create-release, deploy-server, deploy-web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
@@ -107,9 +127,9 @@ jobs:
 
       - name: Deploy Landing to Fly.io
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_LANDING_TOKEN }}
+          FLY_LANDING_TOKEN: ${{ secrets.FLY_LANDING_TOKEN }}
         # Context = monorepo root (for packages/app-tour); dockerfile stays under landing/
-        run: flyctl deploy . --remote-only --config landing/fly.toml --dockerfile landing/Dockerfile
+        run: node scripts/deploy-fly.mjs landing
 
   # Publish mobile JS/asset OTA (EAS Update production channel)
   deploy-mobile-ota:

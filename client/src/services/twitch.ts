@@ -1,3 +1,5 @@
+import { extractChannelName } from '@/lib/creatorPlatformIds';
+export { extractChannelName } from '@/lib/creatorPlatformIds';
 import { invoke } from '@tauri-apps/api/core';
 
 export interface TwitchLiveStatus {
@@ -25,40 +27,7 @@ export interface TwitchVod {
 /**
  * Extract channel name from a Twitch URL
  */
-export function extractChannelName(input: string): string | null {
-  if (!input || typeof input !== 'string') {
-    return null;
-  }
 
-  const trimmed = input.trim();
-
-  // URL parsing
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    try {
-      const url = new URL(trimmed);
-      if (!url.hostname.includes('twitch.tv')) {
-        return null;
-      }
-
-      const parts = url.pathname.split('/').filter((p) => p.length > 0);
-      if (parts.length > 0) {
-        // Skip paths like /videos/123456
-        if (parts[0] === 'videos') return null;
-        return parts[0];
-      }
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  // Basic channel name validation (alphanumeric + underscore, 4-25 chars)
-  if (/^[a-zA-Z0-9_]{4,25}$/.test(trimmed)) {
-    return trimmed.toLowerCase();
-  }
-
-  return null;
-}
 
 /**
  * Check if a Twitch channel is currently live

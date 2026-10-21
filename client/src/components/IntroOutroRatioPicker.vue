@@ -37,15 +37,20 @@
 </template>
 
 <script setup lang="ts">
+  import RatioTabs from '@/components/branding/RatioTabs.vue';
   import { computed, ref, watch } from 'vue';
-  import { Film, Play, SkipForward } from 'lucide-vue-next';
+  import { Film, Play, SkipForward, X, Check, Upload, Loader2, Trash2 } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import { Modal } from '@/components/ui/modal';
-  import RatioTabs from '@/components/branding/RatioTabs.vue';
   import { Dropzone, FileRow } from '@/components/ui/dropzone';
-  import { invoke } from '@tauri-apps/api/core';
-  import { listen } from '@tauri-apps/api/event';
-  import { createIntroOutro, generateId } from '@/services/database';
+  import {
+    invoke,
+    listen,
+    openFileDialog,
+    getAllIntroOutros,
+    createIntroOutro,
+    generateId,
+  } from '@/services/creatorProfileRuntime';
   import { useToast } from '@/composables/useToast';
   import type { AspectRatioId, RatioAssetMap } from '@/services/database/types';
 
@@ -93,11 +98,12 @@
 
   const ratioTabOptions = aspectRatios.map((ratio) => ({ id: ratio.id, label: ratio.id }));
 
-  const configuredRatios = computed(() =>
-    Object.fromEntries(aspectRatios.map((ratio) => [ratio.id, ratioAssets.value[ratio.id] !== null])) as Record<
-      AspectRatioId,
-      boolean
-    >
+  const configuredRatios = computed(
+    () =>
+      Object.fromEntries(aspectRatios.map((ratio) => [ratio.id, ratioAssets.value[ratio.id] !== null])) as Record<
+        AspectRatioId,
+        boolean
+      >
   );
 
   const isRatioConfigured = (ratio: AspectRatioId): boolean => {
@@ -105,7 +111,7 @@
   };
 
   const getRatioLabel = (ratio: AspectRatioId): string => {
-    return aspectRatios.find(r => r.id === ratio)?.label || ratio;
+    return aspectRatios.find((r) => r.id === ratio)?.label || ratio;
   };
 
   const formatDuration = (seconds: number): string => {
@@ -125,12 +131,10 @@
 
   const uploadForRatio = async (ratio: AspectRatioId) => {
     try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
+      const open = openFileDialog;
       const selected = await open({
         multiple: false,
-        filters: [
-          { name: 'Video Files', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'] },
-        ],
+        filters: [{ name: 'Video Files', extensions: ['mp4', 'mov', 'avi', 'mkv', 'webm', 'flv', 'wmv', 'm4v'] }],
       });
 
       if (!selected || typeof selected !== 'string') return;
@@ -222,13 +226,12 @@
     if (!props.initialSettings) return;
 
     // Load asset names for any pre-configured ratios
-    const { getAllIntroOutros } = await import('@/services/database');
     const allAssets = await getAllIntroOutros(props.mode);
 
     for (const ratio of aspectRatios) {
       const config = props.initialSettings[ratio.id];
       if (config && config.assetId) {
-        const asset = allAssets.find(a => a.id === config.assetId);
+        const asset = allAssets.find((a) => a.id === config.assetId);
         ratioAssets.value[ratio.id] = {
           assetId: config.assetId,
           name: asset?.name || 'Unknown',
@@ -239,11 +242,14 @@
   };
 
   // Watch for show prop
-  watch(() => props.show, (show) => {
-    if (show) {
-      activeRatio.value = '16:9';
-      uploadingRatio.value = null;
-      initializeFromProps();
+  watch(
+    () => props.show,
+    (show) => {
+      if (show) {
+        activeRatio.value = '16:9';
+        uploadingRatio.value = null;
+        initializeFromProps();
+      }
     }
-  });
+  );
 </script>

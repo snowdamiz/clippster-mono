@@ -1,0 +1,8 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "native-main",
+  "description": "Native commands for the local main UI. Production origin access is registered at startup.",
+  "local": true,
+  "windows": ["main"],
+  "permissions": ["allow-native-commands"]
+}

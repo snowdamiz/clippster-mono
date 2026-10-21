@@ -17,6 +17,9 @@
 apps
 client
 server
+!server/priv/
+!server/priv/email/
+!server/priv/email/**
 scripts
 .github
 .claude

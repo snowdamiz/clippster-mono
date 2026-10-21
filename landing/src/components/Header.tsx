@@ -1,3 +1,4 @@
+import {marketingNavigation} from './marketing/navigation'
 import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { useEffect, useRef, useState } from 'react'
 import { Apple, Building2, ChevronDown, Loader2, LogOut, Menu, Monitor, User, X } from 'lucide-react'
@@ -8,16 +9,7 @@ import { useAuth } from '@/hooks/useAuth'
 import { useAuthDialog } from '@/context/AuthDialogContext'
 import { getOrgDashboardPath } from '@/lib/accountRouting'
 
-const navLinks: { href: string; label: string; isPage?: boolean }[] = [
-  { href: '/', label: 'Home', isPage: true },
-  { href: '/clipping-tool', label: 'Clipping Tool', isPage: true },
-  { href: '/live-stream-clipping', label: 'Live Clipping', isPage: true },
-  { href: '/video-editor', label: 'Editor', isPage: true },
-  { href: '/clipping-campaigns', label: 'Campaigns', isPage: true },
-  { href: '/vs/opus-clip', label: 'Compare', isPage: true },
-  { href: '/guides/how-to-clip-twitch-streams', label: 'Guides', isPage: true },
-  { href: '/pricing', label: 'Pricing', isPage: true },
-]
+const navLinks = marketingNavigation.map(link => ({...link,isPage:true}))
 
 export function Header() {
   const [isScrolled, setIsScrolled] = useState(false)
@@ -145,7 +137,7 @@ export function Header() {
 
   return (
     <header
-      className={`fixed top-0 left-0 right-0 z-50 transition-all duration-200 ${
+      className={`marketing-header fixed top-0 left-0 right-0 z-50 transition-all duration-200 ${
         isScrolled ? 'bg-[#0a0a0b]/80 backdrop-blur-lg border-b border-[#1f1f23]' : 'border-b border-transparent'
       }`}
     >

@@ -1,5 +1,5 @@
 <template>
-  <div class="flex h-full min-w-0 flex-col">
+  <div class="flex h-full min-h-0 min-w-0 flex-col">
     <PageLayout
       title="Edit profile"
       description="Build your public portfolio to attract organizations"

@@ -80,7 +80,7 @@ import { Modal } from '@/components/ui/modal';
 import { PlatformLogo } from '@/components/ui/platform-logo';
 import CustomDropdown from '@/components/CustomDropdown.vue';
 import { useToast } from '@/composables/useToast';
-import { submitExternalPost } from '@/services/schedulingApi';
+import { submitExternalPost } from '@/services/creatorProfileRuntime';
 
 interface CreatorProfile {
   id: number;

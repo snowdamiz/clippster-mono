@@ -1,3 +1,7 @@
+import { extractYouTubeVideoId } from '@/lib/creatorPlatformIds';
+export { extractYouTubeVideoId } from '@/lib/creatorPlatformIds';
+import { extractYouTubeChannel } from '@/lib/creatorPlatformIds';
+export { extractYouTubeChannel } from '@/lib/creatorPlatformIds';
 import { invoke } from '@tauri-apps/api/core';
 
 export interface YouTubeLiveStatus {
@@ -26,125 +30,12 @@ export interface YouTubeVod {
  * Extract YouTube video ID from various URL formats
  * Returns video ID if input is a video URL, null otherwise
  */
-export function extractYouTubeVideoId(input: string): string | null {
-  if (!input || typeof input !== 'string') {
-    return null;
-  }
 
-  const trimmed = input.trim();
-
-  // youtube.com/watch?v=VIDEO_ID
-  if (trimmed.includes('watch?v=')) {
-    const match = trimmed.match(/watch\?v=([a-zA-Z0-9_-]{11})/);
-    if (match) return match[1];
-  }
-
-  // youtu.be/VIDEO_ID
-  if (trimmed.includes('youtu.be/')) {
-    const match = trimmed.match(/youtu\.be\/([a-zA-Z0-9_-]{11})/);
-    if (match) return match[1];
-  }
-
-  // youtube.com/shorts/VIDEO_ID
-  if (trimmed.includes('/shorts/')) {
-    const match = trimmed.match(/\/shorts\/([a-zA-Z0-9_-]{11})/);
-    if (match) return match[1];
-  }
-
-  // youtube.com/embed/VIDEO_ID
-  if (trimmed.includes('/embed/')) {
-    const match = trimmed.match(/\/embed\/([a-zA-Z0-9_-]{11})/);
-    if (match) return match[1];
-  }
-
-  // youtube.com/v/VIDEO_ID
-  if (trimmed.includes('/v/')) {
-    const match = trimmed.match(/\/v\/([a-zA-Z0-9_-]{11})/);
-    if (match) return match[1];
-  }
-
-  // Direct 11-character video ID
-  if (/^[a-zA-Z0-9_-]{11}$/.test(trimmed) && !trimmed.includes('/') && !trimmed.startsWith('@')) {
-    return trimmed;
-  }
-
-  return null;
-}
 
 /**
  * Extract YouTube channel ID or handle from URL
  */
-export function extractYouTubeChannel(input: string): string | null {
-  if (!input || typeof input !== 'string') {
-    return null;
-  }
 
-  const trimmed = input.trim();
-
-  // If it's a video URL, return null (not a channel)
-  if (extractYouTubeVideoId(trimmed)) {
-    return null;
-  }
-
-  // URL parsing
-  if (trimmed.startsWith('http://') || trimmed.startsWith('https://')) {
-    try {
-      const url = new URL(trimmed);
-      if (!url.hostname.includes('youtube.com') && !url.hostname.includes('youtu.be')) {
-        return null;
-      }
-
-      // Handle /channel/UC... format
-      if (url.pathname.includes('/channel/')) {
-        const parts = url.pathname.split('/channel/');
-        if (parts.length > 1) {
-          return parts[1].split('/')[0];
-        }
-      }
-
-      // Handle /@username format
-      if (url.pathname.includes('/@')) {
-        const parts = url.pathname.split('/@');
-        if (parts.length > 1) {
-          return '@' + parts[1].split('/')[0];
-        }
-      }
-
-      // Handle /user/username format
-      if (url.pathname.includes('/user/')) {
-        const parts = url.pathname.split('/user/');
-        if (parts.length > 1) {
-          return parts[1].split('/')[0];
-        }
-      }
-
-      // Handle legacy/custom channel paths like youtube.com/DilanJay or youtube.com/DilanJay/videos
-      const [firstPathPart] = url.pathname.split('/').filter(Boolean);
-      if (
-        firstPathPart &&
-        !['watch', 'shorts', 'embed', 'live', 'playlist', 'feed', 'results', 'redirect'].includes(firstPathPart)
-      ) {
-        return firstPathPart;
-      }
-
-      return null;
-    } catch {
-      return null;
-    }
-  }
-
-  // Handle @username format
-  if (trimmed.startsWith('@')) {
-    return trimmed;
-  }
-
-  // Handle UC... channel ID format
-  if (trimmed.startsWith('UC') && trimmed.length === 24) {
-    return trimmed;
-  }
-
-  return trimmed;
-}
 
 /**
  * Check if a YouTube channel is currently live

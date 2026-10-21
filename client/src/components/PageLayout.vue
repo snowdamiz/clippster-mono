@@ -1,5 +1,5 @@
 <template>
-  <div class="page-layout flex h-full w-full min-w-0 flex-col">
+  <div class="page-layout flex h-full min-h-0 w-full min-w-0 flex-col">
     <!-- Page header: title on the left, primary actions on the right -->
     <header
       v-if="showHeader"
@@ -81,6 +81,7 @@
     <div class="page-layout__content flex min-h-0 flex-1 flex-col overflow-y-auto">
       <slot></slot>
     </div>
+    <div v-if="$slots.footer" class="shrink-0"><slot name="footer" /></div>
   </div>
 </template>
 

@@ -516,39 +516,7 @@
 import { computed, nextTick, onBeforeUnmount, ref, watch } from 'vue';
 import { ChevronLeft, AlignLeft, AlignCenter, AlignRight, Trash2, Pipette, Plus, X } from 'lucide-vue-next';
 
-interface SubtitleSettings {
-  enabled: boolean;
-  fontFamily: string;
-  fontSize: number;
-  fontWeight: number;
-  textColor: string;
-  backgroundColor: string;
-  backgroundEnabled: boolean;
-  border1Width: number;
-  border1Color: string;
-  border2Width: number;
-  border2Color: string;
-  shadowOffsetX: number;
-  shadowOffsetY: number;
-  shadowBlur: number;
-  shadowColor: string;
-  position: string;
-  positionPercentage: number;
-  maxWidth: number;
-  animationStyle: string;
-  highlightColor: string;
-  multiColorEnabled: boolean;
-  multiColorMode: 'default' | 'custom';
-  colorPalette: string[];
-  lineHeight: number;
-  letterSpacing: number;
-  textAlign: string;
-  textOffsetX: number;
-  textOffsetY: number;
-  padding: number;
-  borderRadius: number;
-  wordSpacing: number;
-}
+import type { SubtitleSettings } from '@/types';
 
 interface TranscriptSegment {
   start: number;
@@ -599,7 +567,7 @@ const colorItems = [
   { key: 'highlightColor', label: 'Highlight' },
 ];
 
-const animationStyles = [
+const animationStyles: { id: SubtitleSettings['animationStyle']; name: string; desc: string }[] = [
   { id: 'karaoke', name: 'Karaoke', desc: 'Word-by-word color highlight' },
   { id: 'zoom', name: 'Zoom', desc: 'Current word scales up' },
   { id: 'pop', name: 'Pop', desc: 'Bouncy emphasis effect' },

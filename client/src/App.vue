@@ -28,6 +28,7 @@
     ensureOrganizationAssetColumns,
   } from '@/services/database';
   import { healSchema } from '@/services/database/schema-healing';
+  import { syncPersonalBranding } from '@/services/personalBrandingSync';
   import { initClipBuildEventHandler, cleanupClipBuildEventHandler } from '@/services/clipBuildEventHandler';
   import { useWindowClose } from '@/composables/useWindowClose';
   import { useAuthStore } from '@/stores/auth';
@@ -175,6 +176,24 @@
 
   // Check if this is the PIP window (no title bar needed)
   const isPipWindow = computed(() => window.location.pathname === '/pip-controls');
+
+  let creatorSyncTimer: ReturnType<typeof setInterval> | undefined;
+  async function syncAccountCreators() {
+    if (isLoading.value || isPipWindow.value || !authStore.isAuthenticated) return;
+    try {
+      await syncPersonalBranding();
+      window.dispatchEvent(new Event('personal-creators-synced'));
+    } catch (error) {
+      console.error('[App] Creator sync failed; will retry:', error);
+    }
+  }
+  watch([isLoading, () => authStore.user?.id], () => {
+    clearInterval(creatorSyncTimer);
+    if (!isLoading.value && authStore.isAuthenticated && !isPipWindow.value) {
+      void syncAccountCreators();
+      creatorSyncTimer = setInterval(syncAccountCreators, 30_000);
+    }
+  });
 
   // Check if this is the full-screen editor page (no scroll, minimal chrome)
   const currentRoute = useRoute();
@@ -382,6 +401,7 @@
 
   // Ensure dark mode is always applied and initialize database
   onMounted(async () => {
+    window.addEventListener('online', syncAccountCreators);
     document.documentElement.classList.add('dark');
     document.body.classList.add('dark');
 
@@ -398,13 +418,6 @@
 
     // Load platform override from localStorage
     loadPlatformOverride();
-
-    // Show the main window early so users can see the update check
-    try {
-      await invoke('show_main_window');
-    } catch (error) {
-      console.error('[App] Failed to show main window:', error);
-    }
 
     // Set up window resize listener to save size
     const appWindow = getCurrentWindow();
@@ -590,6 +603,8 @@
 
   // Cleanup auth event listener on unmount
   onUnmounted(() => {
+    clearInterval(creatorSyncTimer);
+    window.removeEventListener('online', syncAccountCreators);
     window.removeEventListener('auth-required', handleAuthRequired);
     window.removeEventListener('show-auth-modal', () => {
       showAuthModal.value = true;

@@ -15,6 +15,9 @@ client/src-tauri
 apps/mobile
 landing
 server
+!server/priv/
+!server/priv/email/
+!server/priv/email/**
 package
 .gitnexus
 **/*.apk
@@ -28,6 +31,8 @@ package
 .github
 docs
 scripts
+!scripts/deploy-fly*.mjs
+!scripts/dev-setup*.mjs
 packages/app-tour
 packages/ui
 packages/core

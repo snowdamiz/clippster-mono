@@ -9,6 +9,7 @@ import type { Config } from './config'
 import { run } from './process'
 import { drawClipText } from '../../../packages/clip-export/src/textRaster'
 import type { ClipTextBoxState } from '@clippster/shared-types'
+import { mergeClipTextBoxForRatio } from '../../../client/src/utils/clipTextBox'
 import { maxWordsChunkForAspectRatioString } from '../../../client/src/utils/subtitleVisibleWords'
 
 for (const path of [resolve('dist/public/fonts'), resolve('../../client/public/fonts'), '/usr/local/share/fonts/clippster']) if (existsSync(path)) GlobalFonts.loadFontsFromDir(path)
@@ -19,6 +20,7 @@ export function canvasAdapter(width: number, height: number) {
 }
 
 export async function renderTextRaster(box: ClipTextBoxState, ratio: TargetAspectRatio, work: string) {
+  box = mergeClipTextBoxForRatio(box, ratio)
   const { width, height } = TARGET_DIMENSIONS[ratio], canvas = createCanvas(width, height)
   drawClipText(canvas.getContext('2d') as unknown as CanvasRenderingContext2D, box, width, height)
   const path = join(work, 'text.png'); await writeFile(path, canvas.toBuffer('image/png')); return path
@@ -38,7 +40,7 @@ export async function renderSubtitleRaster(settings: SubtitleSettings, words: Wo
     const start = Math.max(cursor, frame.startTime), end = Math.min(duration, frame.endTime)
     if (end <= start) continue
     append(blank, start - cursor)
-    const result = await renderSubtitleFrame({ settings, frame, canvasWidth: width, canvasHeight: height, aspectRatio: ratio, allWords: words, canvasFactory: () => canvasAdapter(width, height) })
+    const result = await renderSubtitleFrame({ settings: { ...settings, position: settings.perRatioConfigs?.[ratio]?.position || settings.position }, frame, canvasWidth: width, canvasHeight: height, aspectRatio: ratio, allWords: words, canvasFactory: () => canvasAdapter(width, height) })
     if (!result) throw new Error('Subtitle rendering failed')
     const file = join(directory, `${index++}.png`)
     await writeFile(file, new Uint8Array(await result.blob.arrayBuffer())); append(file, end - start); cursor = end

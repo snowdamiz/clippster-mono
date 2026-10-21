@@ -26,6 +26,7 @@ for (const target of ['web', 'server', 'landing']) {
         env: {
           PATH: join(root, 'bin'),
           CAPTURE: capture,
+          GITHUB_SHA: 'fixture-revision',
           [`FLY_${target.toUpperCase()}_TOKEN`]: 'environment-fixture-token'
         }
       })
@@ -39,7 +40,9 @@ for (const target of ['web', 'server', 'landing']) {
         const directory = target === 'web' ? 'apps/web' : 'landing'
         assert.equal(invocation.args[invocation.args.indexOf('--config') + 1], `${directory}/fly.toml`)
         assert.equal(invocation.args[invocation.args.indexOf('--dockerfile') + 1], `${directory}/Dockerfile`)
+        assert.equal(invocation.args[invocation.args.indexOf('--ignorefile') + 1], `${directory}/Dockerfile.dockerignore`)
       }
+      if (target === 'web') assert.equal(invocation.args[invocation.args.indexOf('--build-arg') + 1], 'APP_REVISION=fixture-revision')
     } finally {
       rmSync(root, { recursive: true, force: true })
     }

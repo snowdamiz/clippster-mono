@@ -74,7 +74,9 @@
             <span class="min-w-0 flex-1 truncate">{{ wm.name }}</span>
             <Check v-if="ratioWatermarkIds[currentAspectRatio] === wm.id" class="!text-brand" />
           </DropdownMenuItem>
-          <div v-if="loadingWatermarks" class="skeleton-group px-2 py-2 text-center text-xs text-fg-muted">Loading…</div>
+          <div v-if="loadingWatermarks" class="skeleton-group px-2 py-2 text-center text-xs text-fg-muted">
+            Loading…
+          </div>
           <DropdownMenuSeparator />
           <DropdownMenuItem :disabled="uploadingWatermark" @select="uploadNewWatermark">
             <Loader2 v-if="uploadingWatermark" class="animate-spin" />
@@ -179,7 +181,9 @@
               :class="corner.class"
               @mousedown.stop.prevent="startWatermarkResize($event, corner.id)"
             ></div>
-            <div class="pointer-events-none absolute inset-0 border border-brand opacity-0 group-hover:opacity-40"></div>
+            <div
+              class="pointer-events-none absolute inset-0 border border-brand opacity-0 group-hover:opacity-40"
+            ></div>
           </div>
         </div>
 
@@ -242,7 +246,7 @@
 <script setup lang="ts">
   defineOptions({ inheritAttrs: false });
   import { ref, computed, watch, reactive, onUnmounted } from 'vue';
-  import { invoke } from '@tauri-apps/api/core';
+  import { invoke } from '@/services/creatorProfileRuntime';
   import {
     X,
     Move,
@@ -257,6 +261,8 @@
     Upload,
     Loader2,
   } from 'lucide-vue-next';
+  import RatioTabs from '@/components/branding/RatioTabs.vue';
+  import RangeField from '@/components/branding/RangeField.vue';
   import { Button } from '@/components/ui/button';
   import { Checkbox } from '@/components/ui/checkbox';
   import {
@@ -268,10 +274,8 @@
   } from '@/components/ui/dropdown-menu';
   import { Modal } from '@/components/ui/modal';
   import { Switch } from '@/components/ui/switch';
-  import RatioTabs from '@/components/branding/RatioTabs.vue';
-  import RangeField from '@/components/branding/RangeField.vue';
-  import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
-  import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
+  import { getAllWatermarkImages, useWatermarkOperations } from '@/services/creatorProfileRuntime';
+  import { type WatermarkImage } from '@/services/database/types';
   import MediaPreview from '@/components/MediaPreview.vue';
 
   // Types for watermark settings per aspect ratio
@@ -473,7 +477,7 @@
     if (!ratioSettings) return { display: 'none' };
 
     const isFullFrame = ratioSettings.isFullFrameOverlay;
-    
+
     if (isFullFrame) {
       return {
         left: '0%',
@@ -527,8 +531,8 @@
       if (props.orgAssets && props.orgAssets.length > 0) {
         // Convert org assets to WatermarkImage format
         watermarks.value = props.orgAssets
-          .filter(asset => asset.asset_type === 'watermark')
-          .map(asset => ({
+          .filter((asset) => asset.asset_type === 'watermark')
+          .map((asset) => ({
             id: String(asset.id),
             name: asset.name,
             file_path: asset.url, // Store URL in file_path for org assets
@@ -542,7 +546,7 @@
             server_id: asset.id,
             sync_status: 'synced' as const,
           }));
-        
+
         // Load thumbnails for org watermarks (use file_path which contains URL)
         for (const wm of watermarks.value) {
           if (wm.file_path) {

@@ -32,7 +32,9 @@
             rows="2"
             class="min-h-[60px] resize-none"
             :placeholder="
-              formData.scope === 'global' ? 'e.g. Default branding for all content' : 'Brief description of this creator…'
+              formData.scope === 'global'
+                ? 'e.g. Default branding for all content'
+                : 'Brief description of this creator…'
             "
           />
         </Field>
@@ -67,7 +69,8 @@
         <section v-if="formData.scope === 'streamer'" class="flex flex-col gap-2">
           <SectionHeader title="Platform links" :count="formData.platformLinks.length || undefined">
             <Button v-if="formData.platformLinks.length > 0" variant="ghost" size="xs" @click="addPlatformLink">
-              <Plus /> Add platform
+              <Plus />
+              Add platform
             </Button>
           </SectionHeader>
 
@@ -77,7 +80,10 @@
             class="flex flex-col items-center gap-1 rounded-lg border border-dashed border-line-strong px-4 py-5 text-center transition-colors hover:border-brand-line hover:bg-surface-hover"
             @click="addPlatformLink"
           >
-            <span class="flex items-center gap-1.5 text-sm font-medium text-fg"><Plus class="size-4" /> Add platform</span>
+            <span class="flex items-center gap-1.5 text-sm font-medium text-fg">
+              <Plus class="size-4" />
+              Add platform
+            </span>
             <span class="text-xs text-fg-muted">Link Kick, Twitch, YouTube, Rumble or PumpFun channels</span>
           </button>
 
@@ -315,7 +321,8 @@
           >
             <template #label-end>
               <Button variant="ghost" size="xs" :loading="uploadingOverlay" @click="addLayoutOverlay">
-                <Upload v-if="!uploadingOverlay" /> Upload overlay
+                <Upload v-if="!uploadingOverlay" />
+                Upload overlay
               </Button>
             </template>
             <div
@@ -364,10 +371,14 @@
       </div>
 
       <!-- ── Clip defaults ───────────────────────────────────── -->
-      <div v-if="hasClipDefaultsSection" v-show="activeSection === 'defaults'" class="flex animate-enter flex-col gap-4">
+      <div
+        v-if="hasClipDefaultsSection"
+        v-show="activeSection === 'defaults'"
+        class="flex animate-enter flex-col gap-4"
+      >
         <p class="text-xs text-fg-muted">
-          Framing, layout and subtitle style this creator usually needs. When downloading a VOD for them, tick
-          “Use creator layout” to start every project pre-configured with these defaults.
+          Framing, layout and subtitle style this creator usually needs. When downloading a VOD for them, tick “Use
+          creator layout” to start every project pre-configured with these defaults.
         </p>
 
         <Field
@@ -386,7 +397,11 @@
           <div class="flex flex-wrap items-center gap-1.5">
             <Button variant="secondary" size="sm" @click="pickReferenceImageUpload">
               <Upload />
-              {{ formData.clip_build_defaults.referenceImageSource === 'upload' ? 'Replace screenshot' : 'Upload screenshot' }}
+              {{
+                formData.clip_build_defaults.referenceImageSource === 'upload'
+                  ? 'Replace screenshot'
+                  : 'Upload screenshot'
+              }}
             </Button>
             <Button
               v-if="formData.clip_build_defaults.referenceImageSource !== 'none'"
@@ -412,7 +427,8 @@
             v-else-if="formData.clip_build_defaults.referenceImageSource !== 'none'"
             class="flex items-center gap-1.5 text-xs text-warning"
           >
-            <AlertCircle class="size-3.5" /> No reference image yet. Upload a screenshot above.
+            <AlertCircle class="size-3.5" />
+            No reference image yet. Upload a screenshot above.
           </p>
         </Field>
 
@@ -430,12 +446,7 @@
 
     <template #footer>
       <Button variant="ghost" :disabled="saving" @click="closeDialog">Cancel</Button>
-      <Button
-        variant="primary"
-        :loading="saving || fetchingProfileImage"
-        :disabled="!isValid"
-        @click="handleSubmit"
-      >
+      <Button variant="primary" :loading="saving || fetchingProfileImage" :disabled="!isValid" @click="handleSubmit">
         {{ submitLabel }}
       </Button>
     </template>
@@ -532,43 +543,52 @@
   import { SectionHeader } from '@/components/ui/section-header';
   import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
   import { Switch } from '@/components/ui/switch';
-  import { Textarea } from '@/components/ui/textarea';
   import AssetSelect from './creators/AssetSelect.vue';
   import OverlayRow from './branding/OverlayRow.vue';
-  import {
-    createOrganizationCreatorProfile,
-    updateOrganizationCreatorProfile,
-    addPlatformLink as apiAddPlatformLink,
-    deletePlatformLink as apiDeletePlatformLink,
-    type ServerOrganizationCreatorProfile,
-  } from '@/services/organizationProfilesApi';
-  import {
-    listOrganizationAssets,
-    uploadOrganizationAsset,
-    type ServerOrganizationAsset,
-  } from '@/services/organizationAssetsApi';
+  import { Textarea } from '@/components/ui/textarea';
+  import { type ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi';
+  import { type ServerOrganizationAsset } from '@/services/organizationAssetsApi';
   import {
     createCreatorProfile,
     updateCreatorProfile,
     addPlatformLink as dbAddPlatformLink,
     deletePlatformLink as dbDeletePlatformLink,
     updatePlatformLink as dbUpdatePlatformLink,
-    getAllIntroOutros,
     createMonitoredStreamer,
     getMonitoredStreamerByMint,
-    type CreatorProfileWithLinks,
-    type IntroOutro,
   } from '@/services/database';
-  import { getAllWatermarkImages, type WatermarkImage } from '@/services/database/watermarks';
-  import { extractMintId, searchPumpFunTokens, fetchTokenMetadataFromServer } from '@/services/pumpfun';
-  import { extractChannelSlug, checkKickLivestream } from '@/services/kick';
-  import { extractChannelName, checkTwitchLivestream } from '@/services/twitch';
-  import { extractYouTubeChannel, getYouTubeChannelInfo } from '@/services/youtube';
-  import { extractRumbleChannel, getRumbleChannelInfo } from '@/services/rumble';
-  import { readFile } from '@tauri-apps/plugin-fs';
+  import {
+    createOrganizationCreatorProfile,
+    updateOrganizationCreatorProfile,
+    apiAddPlatformLink,
+    apiDeletePlatformLink,
+    listOrganizationAssets,
+    uploadOrganizationAsset,
+    getAllIntroOutros,
+    getAllWatermarkImages,
+    extractMintId,
+    searchPumpFunTokens,
+    fetchTokenMetadataFromServer,
+    extractChannelSlug,
+    checkKickLivestream,
+    extractChannelName,
+    checkTwitchLivestream,
+    extractYouTubeChannel,
+    getYouTubeChannelInfo,
+    extractRumbleChannel,
+    getRumbleChannelInfo,
+    readFile,
+    invoke,
+    convertFileSrc,
+    openFileDialog,
+    useAssetOperations,
+    useWatermarkOperations,
+    useAuthStore,
+    useSubscription,
+    saveLocalCreator,
+  } from '@/services/creatorProfileRuntime';
+  import { type CreatorProfileWithLinks, type IntroOutro, type WatermarkImage } from '@/services/database/types';
   import { useToast } from '@/composables/useToast';
-  import { useAssetOperations } from '@/composables/useAssetOperations';
-  import { useWatermarkOperations } from '@/composables/useWatermarkOperations';
   import WatermarkPositionPicker, { type CreatorWatermarkSettings } from './WatermarkPositionPicker.vue';
   import OverlayPositionPicker from './OverlayPositionPicker.vue';
   import IntroOutroRatioPicker from './IntroOutroRatioPicker.vue';
@@ -586,29 +606,11 @@
     SUPPORTED_TARGET_ASPECT_RATIOS,
     parseCreatorClipBuildDefaults,
     serializeCreatorClipBuildDefaults,
-  } from '@/composables/useCreatorClipDefaults';
-  import { invoke, convertFileSrc } from '@tauri-apps/api/core';
-  import { open as openFileDialog } from '@tauri-apps/plugin-dialog';
-  import { useAuthStore } from '@/stores/auth';
-  import { useSubscription } from '@/composables/useSubscription';
+  } from '@/lib/creatorClipBuildDefaults';
+
+  import type { CreatorProfileForm, PlatformLinkInput } from '@/services/creatorProfileForm';
 
   type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble';
-
-  interface PlatformLinkInput {
-    platform: PlatformId;
-    platform_id: string;
-    display_name: string;
-    profile_image_url?: string;
-    is_primary: boolean;
-    id?: number | string; // Present if existing link
-    isNew?: boolean;
-    monitored_streamer_id?: string | null;
-  }
-
-  /** Maps UI picker ids (`youtube`) to SQLite creator_platform_links.platform (`YouTube`). */
-  function platformInputToDb(platform: PlatformId): CreatorPlatformLink['platform'] {
-    return platform === 'youtube' ? 'YouTube' : platform;
-  }
 
   // Unified asset type for both modes
   interface AssetItem {
@@ -644,9 +646,12 @@
   // so admin-granted subscriptions are recognized without re-login
   const authStoreForTier = useAuthStore();
   const { fetchSubscriptionStatus } = useSubscription();
-  watch(() => props.show, (isOpen) => {
-    if (isOpen) fetchSubscriptionStatus();
-  });
+  watch(
+    () => props.show,
+    (isOpen) => {
+      if (isOpen) fetchSubscriptionStatus();
+    }
+  );
   const isFreeTierUser = computed(() => {
     if (props.mode === 'organization') return false; // org mode doesn't apply
     const user = authStoreForTier.user;
@@ -706,22 +711,7 @@
     };
   }
 
-  const formData = ref<{
-    name: string;
-    description: string;
-    intro_id: number | string | null;
-    outro_id: number | string | null;
-    watermark_id: number | string | null;
-    watermark_settings: CreatorWatermarkSettings | null;
-    intro_outro_settings: string | null;
-    intro_ratio_settings: string | null;
-    outro_ratio_settings: string | null;
-    layout_overlays: LayoutOverlay[];
-    platformLinks: PlatformLinkInput[];
-    auto_dvr_enabled: boolean;
-    scope: 'streamer' | 'global' | 'personal_studio';
-    clip_build_defaults: CreatorClipBuildDefaults;
-  }>({
+  const formData = ref<CreatorProfileForm>({
     name: '',
     description: '',
     intro_id: null,
@@ -746,7 +736,11 @@
   const resolvedReferenceImageUrl = computed<string | null>(() => {
     const cd = formData.value.clip_build_defaults;
     if (!cd.referenceImageUrl) return null;
-    if (cd.referenceImageUrl.startsWith('http://') || cd.referenceImageUrl.startsWith('https://')) {
+    if (
+      cd.referenceImageUrl.startsWith('http://') ||
+      cd.referenceImageUrl.startsWith('https://') ||
+      cd.referenceImageUrl.startsWith('/')
+    ) {
       return cd.referenceImageUrl;
     }
     try {
@@ -758,7 +752,15 @@
 
   const hasClipDefaultsConfig = computed(() => {
     const cd = formData.value.clip_build_defaults;
-    return Boolean(cd.framingConfig || cd.subtitleDefaults);
+    return Boolean(
+      cd.framingConfig ||
+      cd.subtitleDefaults ||
+      cd.referenceImageSource !== 'none' ||
+      cd.targetAspectRatio !== '9:16' ||
+      cd.sourceAspectRatio !== '16:9' ||
+      cd.layoutOverlays.length ||
+      cd.watermarkMode !== 'creator'
+    );
   });
 
   const clipDefaultsSummary = computed(() => {
@@ -805,7 +807,7 @@
       // Same Rust storage root as watermarks (%LOCALAPPDATA%\Clippster\…), not appLocalDataDir().
       const { destination_path } = await invoke<{ destination_path: string }>(
         'copy_creator_reference_frame_to_storage',
-        { sourcePath: selected },
+        { sourcePath: selected }
       );
 
       formData.value.clip_build_defaults = {
@@ -828,10 +830,7 @@
     showClipDefaultsEditor.value = true;
   }
 
-  function handleClipDefaultsConfirm(payload: {
-    framing: ManualFramingConfig;
-    subtitle: SubtitleSettings;
-  }) {
+  function handleClipDefaultsConfirm(payload: { framing: ManualFramingConfig; subtitle: SubtitleSettings }) {
     formData.value.clip_build_defaults = {
       ...formData.value.clip_build_defaults,
       targetAspectRatio: payload.framing.targetAspectRatio,
@@ -980,7 +979,9 @@
         ? 'Update default branding applied to content without a creator profile.'
         : 'Set the default intro, outro and watermark for content without a specific creator profile.';
     }
-    return isEditing.value ? 'Update profile details and platform links.' : 'Add a new creator with platform connections.';
+    return isEditing.value
+      ? 'Update profile details and platform links.'
+      : 'Add a new creator with platform connections.';
   });
 
   const submitLabel = computed(() => {
@@ -1029,10 +1030,11 @@
             outro_ratio_settings: (props.profile as any).outro_ratio_settings || null,
             layout_overlays: (props.profile.layout_overlays as unknown as LayoutOverlay[]) || [],
             auto_dvr_enabled: Boolean((props.profile as any).auto_dvr_enabled),
-            scope: ((props.profile as any).scope as 'streamer' | 'global' | 'personal_studio') || props.scope || 'streamer',
+            scope:
+              ((props.profile as any).scope as 'streamer' | 'global' | 'personal_studio') || props.scope || 'streamer',
             platformLinks: props.profile.platform_links.map((link) => ({
               id: link.id,
-              platform: link.platform as PlatformId,
+              platform: link.platform.toLowerCase() as PlatformId,
               platform_id: link.platform_id,
               display_name: link.display_name || '',
               profile_image_url: link.profile_image_url || '',
@@ -1060,7 +1062,7 @@
             scope: props.creator.scope || props.scope || 'streamer',
             platformLinks: props.creator.platform_links.map((link) => ({
               id: link.id,
-              platform: link.platform as PlatformId,
+              platform: link.platform.toLowerCase() as PlatformId,
               platform_id: link.platform_id,
               display_name: link.display_name || '',
               profile_image_url: link.profile_image_url || '',
@@ -1110,6 +1112,10 @@
 
   function closeDialog() {
     if (!saving.value) {
+      showClipDefaultsEditor.value = false;
+      showWatermarkPositionPicker.value = false;
+      showOverlayPositionPicker.value = false;
+      showIntroOutroRatioPicker.value = false;
       emit('close');
     }
   }
@@ -1152,7 +1158,14 @@
     openPlatformDropdown.value = null;
 
     // If switching platforms and we have a platform ID, extract metadata
-    if ((platformId === 'pumpfun' || platformId === 'kick' || platformId === 'twitch' || platformId === 'youtube' || platformId === 'rumble') && link.platform_id.trim()) {
+    if (
+      (platformId === 'pumpfun' ||
+        platformId === 'kick' ||
+        platformId === 'twitch' ||
+        platformId === 'youtube' ||
+        platformId === 'rumble') &&
+      link.platform_id.trim()
+    ) {
       await extractPlatformId(link);
     }
   }
@@ -1438,7 +1451,7 @@
   async function loadOverlayPreview(overlay: LayoutOverlay) {
     // For org overlays with assetId, find the server URL from orgAssets
     if (overlay.assetId && props.mode === 'organization') {
-      const asset = orgAssets.value.find(a => a.id === overlay.assetId);
+      const asset = orgAssets.value.find((a) => a.id === overlay.assetId);
       if (asset?.url) {
         // Download all R2 assets through Tauri to bypass CORS
         try {
@@ -1474,7 +1487,7 @@
     if (uploadingOverlay.value) return;
     uploadingOverlay.value = true;
     try {
-      const { open } = await import('@tauri-apps/plugin-dialog');
+      const open = openFileDialog;
       const result = await open({
         multiple: false,
         filters: [{ name: 'Images & Videos', extensions: ['png', 'svg', 'webp', 'jpg', 'jpeg', 'mp4', 'mov', 'webm'] }],
@@ -1488,7 +1501,7 @@
         // Convert video to MP4 if needed (for browser compatibility)
         const videoExtensions = ['mov', 'webm', 'avi', 'mkv'];
         const ext = fileName.split('.').pop()?.toLowerCase() || '';
-        
+
         if (videoExtensions.includes(ext)) {
           console.log('[ProfileDialog] Converting video to MP4:', filePath);
           try {
@@ -1506,9 +1519,15 @@
         // Org mode: upload as org asset, store assetId + server URL
         const finalExt = fileName.split('.').pop()?.toLowerCase() || 'png';
         const mimeMap: Record<string, string> = {
-          png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-          webp: 'image/webp', svg: 'image/svg+xml', gif: 'image/gif',
-          mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
+          png: 'image/png',
+          jpg: 'image/jpeg',
+          jpeg: 'image/jpeg',
+          webp: 'image/webp',
+          svg: 'image/svg+xml',
+          gif: 'image/gif',
+          mp4: 'video/mp4',
+          mov: 'video/quicktime',
+          webm: 'video/webm',
         };
         const bytes = await readFile(filePath);
         const file = new File([bytes], fileName, { type: mimeMap[finalExt] || 'image/png' });
@@ -1581,7 +1600,7 @@
     if (activeOverlayIndex.value < 0 || activeOverlayIndex.value >= formData.value.layout_overlays.length) return;
 
     const overlay = formData.value.layout_overlays[activeOverlayIndex.value];
-    
+
     // For organization mode, upload any per-ratio overlays that have imagePath to R2
     if (props.mode === 'organization' && props.organizationId) {
       const cleanedSettings: Partial<PerRatioOverlaySettings> = {};
@@ -1595,9 +1614,15 @@
               const fileName = filePath.split(/[\\\/]/).pop() || 'overlay.mp4';
               const finalExt = fileName.split('.').pop()?.toLowerCase() || 'png';
               const mimeMap: Record<string, string> = {
-                png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg',
-                webp: 'image/webp', svg: 'image/svg+xml', gif: 'image/gif',
-                mp4: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
+                png: 'image/png',
+                jpg: 'image/jpeg',
+                jpeg: 'image/jpeg',
+                webp: 'image/webp',
+                svg: 'image/svg+xml',
+                gif: 'image/gif',
+                mp4: 'video/mp4',
+                mov: 'video/quicktime',
+                webm: 'video/webm',
               };
               const bytes = await readFile(filePath);
               const file = new File([bytes], fileName, { type: mimeMap[finalExt] || 'image/png' });
@@ -1657,7 +1682,7 @@
   // Clean layout overlays for server submission: strip local-only fields
   function cleanOverlaysForServer(): Record<string, unknown>[] | null {
     if (formData.value.layout_overlays.length === 0) return null;
-    return formData.value.layout_overlays.map(overlay => {
+    return formData.value.layout_overlays.map((overlay) => {
       const { imagePath, ...cleanOverlay } = overlay as any;
       if (cleanOverlay.perRatioSettings) {
         const cleanRatios: Record<string, any> = {};
@@ -1680,8 +1705,10 @@
     if (!formData.value.intro_ratio_settings) return false;
     try {
       const settings = JSON.parse(formData.value.intro_ratio_settings);
-      return Object.values(settings).some(config => config !== null);
-    } catch { return false; }
+      return Object.values(settings).some((config) => config !== null);
+    } catch {
+      return false;
+    }
   });
 
   // Check if outro ratio settings are configured
@@ -1689,8 +1716,10 @@
     if (!formData.value.outro_ratio_settings) return false;
     try {
       const settings = JSON.parse(formData.value.outro_ratio_settings);
-      return Object.values(settings).some(config => config !== null);
-    } catch { return false; }
+      return Object.values(settings).some((config) => config !== null);
+    } catch {
+      return false;
+    }
   });
 
   // Open ratio picker for intro or outro
@@ -1703,7 +1732,11 @@
   function getInitialRatioSettings(mode: 'intro' | 'outro'): RatioAssetMap | null {
     const raw = mode === 'intro' ? formData.value.intro_ratio_settings : formData.value.outro_ratio_settings;
     if (!raw) return null;
-    try { return JSON.parse(raw); } catch { return null; }
+    try {
+      return JSON.parse(raw);
+    } catch {
+      return null;
+    }
   }
 
   // Handle save from ratio picker
@@ -1810,7 +1843,7 @@
   }
 
   async function selectVideoFileNative(): Promise<File | null> {
-    const { open } = await import('@tauri-apps/plugin-dialog');
+    const open = openFileDialog;
     const selected = await open({
       multiple: false,
       filters: [
@@ -1825,9 +1858,14 @@
     const fileName = selected.split(/[\\\/]/).pop() || 'file';
     const ext = fileName.split('.').pop()?.toLowerCase() || 'mp4';
     const mimeMap: Record<string, string> = {
-      mp4: 'video/mp4', mov: 'video/quicktime', avi: 'video/x-msvideo',
-      mkv: 'video/x-matroska', webm: 'video/webm', flv: 'video/x-flv',
-      wmv: 'video/x-ms-wmv', m4v: 'video/x-m4v',
+      mp4: 'video/mp4',
+      mov: 'video/quicktime',
+      avi: 'video/x-msvideo',
+      mkv: 'video/x-matroska',
+      webm: 'video/webm',
+      flv: 'video/x-flv',
+      wmv: 'video/x-ms-wmv',
+      m4v: 'video/x-m4v',
     };
     const bytes = await readFile(selected);
     return new File([bytes], fileName, { type: mimeMap[ext] || 'video/mp4' });
@@ -1838,7 +1876,10 @@
     try {
       if (props.mode === 'organization' && props.organizationId) {
         const file = await selectVideoFileNative();
-        if (!file) { uploadingIntro.value = false; return; }
+        if (!file) {
+          uploadingIntro.value = false;
+          return;
+        }
         const metadata = await extractVideoMetadata(file);
         const response = await uploadOrganizationAsset(props.organizationId, file, 'intro', {
           name: file.name.replace(/\.[^/.]+$/, ''),
@@ -1872,7 +1913,10 @@
     try {
       if (props.mode === 'organization' && props.organizationId) {
         const file = await selectVideoFileNative();
-        if (!file) { uploadingOutro.value = false; return; }
+        if (!file) {
+          uploadingOutro.value = false;
+          return;
+        }
         const metadata = await extractVideoMetadata(file);
         const response = await uploadOrganizationAsset(props.organizationId, file, 'outro', {
           name: file.name.replace(/\.[^/.]+$/, ''),
@@ -2046,7 +2090,9 @@
         outro_id: extractNumericId(formData.value.outro_id),
         watermark_id: extractNumericId(formData.value.watermark_id),
         watermark_settings: formData.value.watermark_settings,
-        intro_outro_settings: formData.value.intro_outro_settings ? JSON.parse(formData.value.intro_outro_settings) : null,
+        intro_outro_settings: formData.value.intro_outro_settings
+          ? JSON.parse(formData.value.intro_outro_settings)
+          : null,
         layout_overlays: cleanOverlaysForServer(),
         scope: formData.value.scope === 'personal_studio' ? 'streamer' : formData.value.scope,
       };
@@ -2125,155 +2171,11 @@
   }
 
   async function handleLocalSubmit() {
-    const validLinks = formData.value.platformLinks.filter((l) => l.platform_id.trim());
-
-    // Find the first existing profile image to reuse for all links
-    const firstProfileImage = validLinks.find((l) => l.profile_image_url)?.profile_image_url;
-
-    // Normalize platform IDs and handle profile images
-    for (const link of validLinks) {
-      if (link.platform === 'pumpfun') {
-        const mintId = extractMintId(link.platform_id.trim());
-        if (mintId) {
-          link.platform_id = mintId;
-        }
-        if (!link.profile_image_url && firstProfileImage) {
-          link.profile_image_url = firstProfileImage;
-        }
-      } else if (link.platform === 'kick') {
-        const slug = extractChannelSlug(link.platform_id.trim());
-        if (slug) {
-          link.platform_id = slug;
-        }
-      }
-    }
-
-    // Helper to process a single link (create or update)
-    const processLink = async (creatorId: string, link: PlatformLinkInput) => {
-      let monitoredStreamerId: string | null = null;
-
-      // Resolve monitored streamer for supported platforms
-      if (link.platform === 'pumpfun' || link.platform === 'kick' || link.platform === 'twitch' || link.platform === 'youtube' || link.platform === 'rumble') {
-        try {
-          const existing = await getMonitoredStreamerByMint(link.platform_id.trim());
-          if (existing) {
-            monitoredStreamerId = existing.id;
-          } else {
-            monitoredStreamerId = await createMonitoredStreamer(
-              link.platform_id.trim(),
-              link.display_name.trim() || formData.value.name.trim(),
-              link.profile_image_url || undefined,
-              5, // segment duration
-              formData.value.auto_dvr_enabled,
-              platformInputToDb(link.platform)
-            );
-          }
-        } catch (err) {
-          console.warn('[ProfileDialog] Failed to resolve monitored_streamer:', err);
-        }
-      }
-
-      if (link.id && !link.isNew) {
-        // Update existing link
-        await dbUpdatePlatformLink(String(link.id), {
-          platform: platformInputToDb(link.platform),
-          platform_id: link.platform_id.trim(),
-          display_name: link.display_name.trim() || null,
-          profile_image_url: link.profile_image_url || null,
-          monitored_streamer_id: monitoredStreamerId,
-          is_primary: link.is_primary,
-        });
-      } else {
-        // Create new link
-        await dbAddPlatformLink(
-          creatorId,
-          platformInputToDb(link.platform),
-          link.platform_id.trim(),
-          link.display_name.trim() || null,
-          link.profile_image_url || null,
-          monitoredStreamerId,
-          link.is_primary
-        );
-      }
-    };
-
-    if (isEditing.value && props.creator) {
-      // Update existing creator
-      await updateCreatorProfile(props.creator.id, {
-        name: formData.value.name.trim(),
-        description: formData.value.description.trim() || null,
-        intro_id: formData.value.intro_id as string | null,
-        outro_id: formData.value.outro_id as string | null,
-        watermark_id: formData.value.watermark_id as string | null,
-        watermark_settings: formData.value.watermark_settings
-          ? JSON.stringify(formData.value.watermark_settings)
-          : null,
-        intro_outro_settings: formData.value.intro_outro_settings,
-        intro_ratio_settings: formData.value.intro_ratio_settings,
-        outro_ratio_settings: formData.value.outro_ratio_settings,
-        auto_dvr_enabled: formData.value.auto_dvr_enabled ? 1 : 0,
-        layout_overlays: formData.value.layout_overlays.length > 0
-          ? JSON.stringify(formData.value.layout_overlays)
-          : null,
-        clip_build_defaults: hasClipDefaultsConfig.value
-          ? serializeCreatorClipBuildDefaults(formData.value.clip_build_defaults)
-          : null,
-      });
-
-      // Delete removed links
-      const formIds = new Set(validLinks.filter((l) => l.id && !l.isNew).map((l) => String(l.id)));
-      for (const link of props.creator.platform_links) {
-        if (!formIds.has(link.id)) {
-          await dbDeletePlatformLink(link.id);
-        }
-      }
-
-      // Process all links (add or update)
-      for (const link of validLinks) {
-        await processLink(props.creator.id, link);
-      }
-
-      showSuccess(
-        formData.value.scope === 'global' ? 'Branding Updated' : 'Creator Updated',
-        `"${formData.value.name}" has been updated`
-      );
-    } else {
-      // Create new creator
-      const creatorId = await createCreatorProfile(
-        formData.value.name.trim(),
-        formData.value.description.trim() || null,
-        null, // profile_image_path
-        formData.value.intro_id as string | null,
-        formData.value.outro_id as string | null,
-        formData.value.watermark_id as string | null,
-        formData.value.watermark_settings ? JSON.stringify(formData.value.watermark_settings) : null,
-        formData.value.intro_outro_settings,
-        formData.value.auto_dvr_enabled,
-        formData.value.intro_ratio_settings,
-        formData.value.outro_ratio_settings,
-        formData.value.scope,
-        formData.value.layout_overlays.length > 0
-          ? JSON.stringify(formData.value.layout_overlays)
-          : null,
-        hasClipDefaultsConfig.value
-          ? serializeCreatorClipBuildDefaults(formData.value.clip_build_defaults)
-          : null
-      );
-
-      // Add platform links
-      for (const link of validLinks) {
-        await processLink(creatorId, link);
-      }
-
-      showSuccess(
-        formData.value.scope === 'global' ? 'Branding Created' : 'Creator Created',
-        `"${formData.value.name}" has been added`
-      );
-    }
-
-    // Notify other components (like LiveClip.vue) about the new/updated monitoring data
-    window.dispatchEvent(new CustomEvent('monitored-streamers-updated'));
-
+    await saveLocalCreator(formData.value, props.creator || null, hasClipDefaultsConfig.value);
+    showSuccess(
+      isEditing.value ? 'Profile Updated' : 'Profile Created',
+      '"' + formData.value.name + '" has been saved'
+    );
     emit('saved');
     emit('close');
   }

@@ -4,54 +4,14 @@ import { addColumnIfMissing } from './schema-healing';
 
 // Ensure clip_builds table has branding-related columns
 async function ensureClipBuildsBrandingSchema(db: any): Promise<void> {
-  await addColumnIfMissing(
-    db,
-    'clip_builds',
-    'organization_id',
-    'INTEGER'
-  );
-  await addColumnIfMissing(
-    db,
-    'clip_builds',
-    'organization_name',
-    'TEXT'
-  );
-  await addColumnIfMissing(
-    db,
-    'clip_builds',
-    'campaign_id',
-    'INTEGER'
-  );
-  await addColumnIfMissing(
-    db,
-    'clip_builds',
-    'campaign_name',
-    'TEXT'
-  );
-  await addColumnIfMissing(
-    db,
-    'clip_builds',
-    'branding_profile_id',
-    'TEXT'
-  );
-  await addColumnIfMissing(
-    db,
-    'clip_builds',
-    'branding_type',
-    "TEXT DEFAULT 'personal'"
-  );
-  await addColumnIfMissing(
-    db,
-    'clip_builds',
-    'is_published',
-    'INTEGER DEFAULT 0'
-  );
-  await addColumnIfMissing(
-    db,
-    'clip_builds',
-    'published_at',
-    'INTEGER'
-  );
+  await addColumnIfMissing(db, 'clip_builds', 'organization_id', 'INTEGER');
+  await addColumnIfMissing(db, 'clip_builds', 'organization_name', 'TEXT');
+  await addColumnIfMissing(db, 'clip_builds', 'campaign_id', 'INTEGER');
+  await addColumnIfMissing(db, 'clip_builds', 'campaign_name', 'TEXT');
+  await addColumnIfMissing(db, 'clip_builds', 'branding_profile_id', 'TEXT');
+  await addColumnIfMissing(db, 'clip_builds', 'branding_type', "TEXT DEFAULT 'personal'");
+  await addColumnIfMissing(db, 'clip_builds', 'is_published', 'INTEGER DEFAULT 0');
+  await addColumnIfMissing(db, 'clip_builds', 'published_at', 'INTEGER');
 }
 
 // Update clip build status
@@ -348,6 +308,9 @@ export async function getClipWithBuildStatus(clipId: string): Promise<Clip | nul
       built_duration: row.built_duration,
       current_version_id: row.current_version_id,
       campaign_id: row.campaign_id,
+      detection_session_id: row.detection_session_id ?? null,
+      cover_image_id: row.cover_image_id ?? null,
+      cover_image_path: row.cover_image_path ?? null,
       created_at: row.created_at,
       updated_at: row.updated_at,
     };
@@ -425,7 +388,7 @@ export async function createClipBuild(
   try {
     const db = await getDatabase();
     await ensureClipBuildsBrandingSchema(db);
-    
+
     const buildId = generateId();
     const now = timestamp();
 
@@ -609,7 +572,7 @@ export async function getCompletedBuildEntries(): Promise<CompletedBuildEntry[]>
        WHERE status = 'completed'
          AND file_path IS NOT NULL
          AND TRIM(file_path) != ''
-       ORDER BY created_at DESC`,
+       ORDER BY created_at DESC`
     );
 
     if (builds.length === 0) {
@@ -621,21 +584,18 @@ export async function getCompletedBuildEntries(): Promise<CompletedBuildEntry[]>
     let clips: Clip[];
 
     if (userId === null) {
-      clips = await db.select<Clip[]>(
-        `SELECT * FROM clips WHERE id IN (${placeholders})`,
-        clipIds,
-      );
+      clips = await db.select<Clip[]>(`SELECT * FROM clips WHERE id IN (${placeholders})`, clipIds);
     } else {
       clips = await db.select<Clip[]>(
         `SELECT * FROM clips
          WHERE id IN (${placeholders})
            AND (CAST(user_id AS INTEGER) = ? OR user_id IS NULL)`,
-        [...clipIds, userId],
+        [...clipIds, userId]
       );
       if (clips.length === 0) {
         clips = await db.select<Clip[]>(
           `SELECT * FROM clips WHERE id IN (${placeholders})`,
-          clipIds,
+          clipIds
         );
       }
     }
@@ -775,7 +735,7 @@ export async function markBuildAsPublished(buildId: string): Promise<void> {
   try {
     const db = await getDatabase();
     await ensureClipBuildsBrandingSchema(db);
-    
+
     const now = timestamp();
     await db.execute(
       'UPDATE clip_builds SET is_published = 1, published_at = ? WHERE id = ? AND is_published = 0',
@@ -793,16 +753,23 @@ export async function getAllClipsWithBuilds(): Promise<(Clip & { builds: ClipBui
     const userId = getCurrentUserId();
 
     // Debug: check total clips in database regardless of user_id
-    const allRows = await db.select<any[]>('SELECT id, name, user_id, build_status FROM clips ORDER BY created_at DESC LIMIT 10');
-    console.log('[getAllClipsWithBuilds] userId:', userId, 'Total clips in DB (any user):', allRows.length, 'Sample:', allRows.slice(0, 3));
+    const allRows = await db.select<any[]>(
+      'SELECT id, name, user_id, build_status FROM clips ORDER BY created_at DESC LIMIT 10'
+    );
+    console.log(
+      '[getAllClipsWithBuilds] userId:',
+      userId,
+      'Total clips in DB (any user):',
+      allRows.length,
+      'Sample:',
+      allRows.slice(0, 3)
+    );
 
     // Get all clips — include all user_id values to be safe
     // Some clips may have been created with a different user_id type or value
     let clips: Clip[];
     if (userId === null) {
-      clips = await db.select<Clip[]>(
-        'SELECT * FROM clips ORDER BY created_at DESC'
-      );
+      clips = await db.select<Clip[]>('SELECT * FROM clips ORDER BY created_at DESC');
     } else {
       // Cast user_id comparison to handle potential type mismatches (string vs number)
       clips = await db.select<Clip[]>(
@@ -811,10 +778,10 @@ export async function getAllClipsWithBuilds(): Promise<(Clip & { builds: ClipBui
       );
       // If no clips found with user filter, fall back to all clips
       if (clips.length === 0 && allRows.length > 0) {
-        console.warn('[getAllClipsWithBuilds] No clips matched user_id filter but DB has clips — loading all clips');
-        clips = await db.select<Clip[]>(
-          'SELECT * FROM clips ORDER BY created_at DESC'
+        console.warn(
+          '[getAllClipsWithBuilds] No clips matched user_id filter but DB has clips — loading all clips'
         );
+        clips = await db.select<Clip[]>('SELECT * FROM clips ORDER BY created_at DESC');
       }
     }
     console.log('[getAllClipsWithBuilds] Filtered clips:', clips.length);

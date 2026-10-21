@@ -1,11 +1,14 @@
-import { ArrowLeft, FileText, Scale, AlertTriangle, CreditCard, Ban, RefreshCw, Gavel } from 'lucide-react'
-import { Link } from 'react-router-dom'
+import {Header} from '@/components/Header';
+import {Footer} from '@/components/Footer';
+import { FileText, Scale, AlertTriangle, CreditCard, Ban, RefreshCw, Gavel } from 'lucide-react'
 
 const sections = [
   {
     icon: FileText,
     title: 'Acceptance of Terms',
-    content: `By accessing or using Clippster ("the Service"), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our Service.
+    content: `Clippster is operated by OpenWorth Technologies Inc. ("we," "us," or "our"). These Terms of Service form an agreement between you and OpenWorth Technologies Inc.
+
+By accessing or using Clippster ("the Service"), you agree to be bound by these Terms of Service. If you do not agree to these terms, please do not use our Service.
 
 These Terms apply to all users, including visitors, registered users, and anyone who accesses or uses the Service.
 
@@ -101,9 +104,9 @@ Dispute Resolution: Any disputes arising from these Terms or your use of the Ser
 
 Class Action Waiver: You agree to resolve disputes individually and waive any right to participate in class action lawsuits.
 
-Contact: For legal inquiries, contact legal@clippster.io
+Contact: For legal inquiries, contact OpenWorth Technologies Inc. at legal@clippster.io
 
-These Terms of Service were last updated on January 12, 2026.`,
+These Terms of Service were last updated on October 17, 2026.`,
   },
 ]
 
@@ -111,23 +114,7 @@ export function TermsPage() {
   return (
     <div className="min-h-screen bg-[#0a0a0b] overflow-x-hidden">
       {/* Header */}
-      <header className="border-b border-zinc-800/50 backdrop-blur-md sticky top-0 z-50 bg-[#0a0a0b]/90">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-4 flex items-center justify-between">
-          <div className="flex items-center gap-3 sm:gap-6">
-            <Link to="/" className="flex items-center gap-2 sm:gap-3">
-              <img src="/logo-icon.svg" alt="Clippster" className="w-7 h-7 sm:w-8 sm:h-8" />
-              <img src="/logo.svg" alt="Clippster" className="h-4 sm:h-5" />
-            </Link>
-            <Link 
-              to="/" 
-              className="hidden sm:flex items-center gap-2 text-zinc-500 hover:text-white transition-colors text-sm group"
-            >
-              <ArrowLeft className="w-4 h-4 group-hover:-translate-x-0.5 transition-transform" />
-              Back to home
-            </Link>
-          </div>
-        </div>
-      </header>
+      <Header />
 
       <main className="max-w-4xl mx-auto px-4 sm:px-6 py-12 sm:py-16">
         {/* Page Header */}
@@ -183,21 +170,7 @@ export function TermsPage() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-zinc-800/50">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 py-8 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <div className="flex items-center gap-3">
-            <img src="/logo-icon.svg" alt="Clippster" className="w-6 h-6 opacity-50" />
-            <p className="text-xs text-zinc-600">
-              © {new Date().getFullYear()} Clippster. All rights reserved.
-            </p>
-          </div>
-          <div className="flex items-center gap-6 text-xs text-zinc-600">
-            <Link to="/" className="hover:text-zinc-400 transition-colors">Home</Link>
-            <Link to="/privacy" className="hover:text-zinc-400 transition-colors">Privacy</Link>
-            <Link to="/terms" className="text-cyan-400">Terms</Link>
-          </div>
-        </div>
-      </footer>
+      <Footer />
     </div>
   )
 }

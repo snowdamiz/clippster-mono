@@ -203,7 +203,13 @@
         </div>
 
         <!-- Reset button -->
-        <Button variant="ghost" size="icon-sm" title="Reset to start" aria-label="Reset to start" @click="resetPlayback">
+        <Button
+          variant="ghost"
+          size="icon-sm"
+          title="Reset to start"
+          aria-label="Reset to start"
+          @click="resetPlayback"
+        >
           <RotateCcwIcon />
         </Button>
       </div>
@@ -216,27 +222,27 @@
     </div>
 
     <!-- Segment Timeline -->
-      <POISegmentTimeline
-        v-if="clipDuration > 0"
-        :segments="segmentConfigs"
-        :broll-regions="brollConfigs"
-        :active-broll-id="activeBrollId"
-        :active-segment-id="activeSegmentId"
-        :duration="clipDuration"
-        :current-time="currentTime"
-        :video-url="videoUrl"
-        :thumbnail-url="thumbnailUrl"
-        :clip-start-time="clipStartTime"
-        :clip-end-time="clipEndTime"
-        @add-segment="addSegment"
-        @delete-segment="deleteSegment"
-        @select-segment="selectSegment"
-        @update-segment="updateSegment"
-        @select-broll="selectBroll"
-        @delete-broll="deleteBroll"
-        @update-broll="updateBroll"
-        @seek-time="handleSeekTime"
-      />
+    <POISegmentTimeline
+      v-if="clipDuration > 0"
+      :segments="segmentConfigs"
+      :broll-regions="brollConfigs"
+      :active-broll-id="activeBrollId"
+      :active-segment-id="activeSegmentId"
+      :duration="clipDuration"
+      :current-time="currentTime"
+      :video-url="videoUrl"
+      :thumbnail-url="thumbnailUrl"
+      :clip-start-time="clipStartTime"
+      :clip-end-time="clipEndTime"
+      @add-segment="addSegment"
+      @delete-segment="deleteSegment"
+      @select-segment="selectSegment"
+      @update-segment="updateSegment"
+      @select-broll="selectBroll"
+      @delete-broll="deleteBroll"
+      @update-broll="updateBroll"
+      @seek-time="handleSeekTime"
+    />
 
     <!-- Feature controls: Subtitles + Clip text box + AI B-roll -->
     <div
@@ -353,7 +359,6 @@
     SegmentRegionConfig,
     SubtitleSettings,
   } from '@/types';
-  import { utf8ToBase64 } from '@/utils/encoding';
   import type { ClipTextBoxState } from '@/utils/clipTextBox';
   import {
     createDefaultClipTextBoxState,
@@ -365,13 +370,10 @@
   } from '@/utils/clipTextBox';
   import type { SocialOverlayPreset } from '@/editor/types/social-overlays';
   import { useAiBroll } from '@/composables/useAiBroll';
-  import { EditorCore } from '@/editor/core';
+  import { getPoiTimelineEditor, resolvePoiVideoSource, savePoiMedia, resolvePoiMedia } from '@/services/poiRuntime';
   import type { ManualBrollMediaType } from '@/composables/useAiBroll';
   import type { AiBrollPlannerOptions } from '@/types/ai-broll';
-  import {
-    ensureGlobalDisplayNumbers,
-    getNextRegionDisplayNumber,
-  } from '@/utils/poiRegionNumbering';
+  import { ensureGlobalDisplayNumbers, getNextRegionDisplayNumber } from '@/utils/poiRegionNumbering';
   import {
     POI_OVERLAY_SCALED_16X9_ID,
     POI_OVERLAY_SUBTITLES_ID,
@@ -515,15 +517,11 @@
   const brollConfigs = ref<BrollRegionConfig[]>([]);
 
   function segmentAtTime(time: number): SegmentRegionConfig | undefined {
-    return segmentConfigs.value.find(
-      (seg) => time >= seg.startTime && time <= seg.endTime,
-    );
+    return segmentConfigs.value.find((seg) => time >= seg.startTime && time <= seg.endTime);
   }
 
   function brollsAtTime(time: number): BrollRegionConfig[] {
-    return brollConfigs.value.filter(
-      (broll) => time >= broll.startTime && time <= broll.endTime,
-    );
+    return brollConfigs.value.filter((broll) => time >= broll.startTime && time <= broll.endTime);
   }
 
   const showAiBrollPanel = ref(false);
@@ -538,14 +536,10 @@
   });
 
   const canGenerateAiBroll = computed(
-    () =>
-      Boolean(props.clipId) &&
-      (props.transcriptWords.length > 0 || props.transcriptSegments.length > 0),
+    () => Boolean(props.clipId) && (props.transcriptWords.length > 0 || props.transcriptSegments.length > 0)
   );
 
-  const hasTranscript = computed(
-    () => props.transcriptWords.length > 0 || props.transcriptSegments.length > 0,
-  );
+  const hasTranscript = computed(() => props.transcriptWords.length > 0 || props.transcriptSegments.length > 0);
 
   const subtitleTranscribeStatusText = computed(() => {
     if (props.subtitleTranscribeMessage) return props.subtitleTranscribeMessage;
@@ -560,7 +554,7 @@
   });
 
   const brollOrientation = computed<'portrait' | 'landscape'>(() =>
-    props.targetAspectRatio === '16:9' ? 'landscape' : 'portrait',
+    props.targetAspectRatio === '16:9' ? 'landscape' : 'portrait'
   );
 
   // Source frame transform (16:9 scaling in 9:16) + mode / blur (synced from POITargetPanel)
@@ -575,7 +569,7 @@
       segmentConfigs.value.some((s) => s.regions.length > 0) ||
       brollConfigs.value.length > 0 ||
       sourceFrameMode.value !== 'none' ||
-      Boolean(clipTextLocal.value?.enabled),
+      Boolean(clipTextLocal.value?.enabled)
   );
 
   const textBoxSettingsMode = ref(false);
@@ -623,15 +617,11 @@
   });
 
   const subtitlePositioningActive = computed(
-    () =>
-      subtitlePositioningEnabled.value &&
-      selectedRegionId.value === POI_OVERLAY_SUBTITLES_ID
+    () => subtitlePositioningEnabled.value && selectedRegionId.value === POI_OVERLAY_SUBTITLES_ID
   );
 
   const clipTextBoxPositioningActive = computed(
-    () =>
-      Boolean(clipTextLocal.value?.enabled) &&
-      selectedRegionId.value === POI_OVERLAY_TEXTBOX_ID
+    () => Boolean(clipTextLocal.value?.enabled) && selectedRegionId.value === POI_OVERLAY_TEXTBOX_ID
   );
 
   watch(
@@ -666,8 +656,8 @@
   const currentTime = ref(0);
   let unsubscribeTimelinePlayback: (() => void) | null = null;
 
-  function timelineEditor(): EditorCore | null {
-    return props.useTimelinePlayback ? EditorCore.getInstance() : null;
+  function timelineEditor() {
+    return props.useTimelinePlayback ? getPoiTimelineEditor() : null;
   }
 
   function syncTimelinePlaybackState() {
@@ -709,10 +699,7 @@
   });
 
   const nextRegionNumber = computed(() =>
-    getNextRegionDisplayNumber([
-      baseRegions.value,
-      ...segmentConfigs.value.map((s) => s.regions),
-    ]),
+    getNextRegionDisplayNumber([baseRegions.value, ...segmentConfigs.value.map((s) => s.regions)])
   );
 
   const totalRegionCount = computed(() => {
@@ -740,19 +727,21 @@
     props.subtitlePositionOverride ? { ...props.subtitlePositionOverride } : { x: 50, y: 85, width: 80 }
   );
   const subtitlePositioningEnabled = ref(false);
-  
+
   // Local copy of subtitle settings that can be modified
   const localSubtitleSettings = ref<SubtitleSettings>(
-    props.subtitleSettings ? { ...props.subtitleSettings } : {
-      enabled: true,
-      selectedPresetId: 'neon-glow',
-      animationStyle: 'glow',
-      textColor: '#FFFFFF',
-      highlightColor: '#22D3EE',
-      multiColorEnabled: false,
-    } as SubtitleSettings
+    props.subtitleSettings
+      ? { ...props.subtitleSettings }
+      : ({
+          enabled: true,
+          selectedPresetId: 'neon-glow',
+          animationStyle: 'glow',
+          textColor: '#FFFFFF',
+          highlightColor: '#22D3EE',
+          multiColorEnabled: false,
+        } as SubtitleSettings)
   );
-  
+
   const showStyleDropdown = ref(false);
   const showColorDropdown = ref(false);
   const isSeeking = ref(false);
@@ -810,32 +799,23 @@
     }
   }
 
-  function constructVideoUrl(filePath: string, port: number): string {
-    const encodedPath = utf8ToBase64(filePath);
-    const isTsFile = filePath.toLowerCase().endsWith('.ts');
-    if (isTsFile) {
-      return `http://localhost:${port}/ts-hls/${encodedPath}/playlist.m3u8`;
-    }
-    return `http://localhost:${port}/video/${encodedPath}`;
-  }
-
   // Keyboard controls for precision scrubbing
   function handleKeyDown(e: KeyboardEvent) {
     // Only handle if dialog is open and not typing in an input
     if (!props.modelValue) return;
     if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) return;
-    
+
     // Close dropdown on Escape
     if (e.key === 'Escape' && showStyleDropdown.value) {
       showStyleDropdown.value = false;
       return;
     }
-    
+
     const microStep = 0.01; // 10ms - ultra precise
     const fineStep = 0.1; // 100ms - fine control
     const jumpTime = 1.0; // 1 second for shift+arrow
-    
-    switch(e.key) {
+
+    switch (e.key) {
       case 'ArrowLeft':
         e.preventDefault();
         if (e.shiftKey) {
@@ -893,7 +873,7 @@
     console.log('[ManualPOIEditor] Mounted with transcript data:', {
       transcriptWordsLength: props.transcriptWords?.length,
       transcriptSegmentsLength: props.transcriptSegments?.length,
-      firstWord: props.transcriptWords?.[0]
+      firstWord: props.transcriptWords?.[0],
     });
   });
 
@@ -926,10 +906,8 @@
     videoError.value = null;
 
     try {
-      const { invoke } = await import('@tauri-apps/api/core');
-      const port = await invoke<number>('get_video_server_port');
       const timestamp = Date.now();
-      const baseUrl = constructVideoUrl(props.videoPath, port);
+      const baseUrl = await resolvePoiVideoSource(props.videoPath);
       videoUrl.value = baseUrl.includes('?') ? `${baseUrl}&t=${timestamp}` : `${baseUrl}?t=${timestamp}`;
       console.log('[POIEditor] Video URL loaded:', videoUrl.value);
     } catch (error) {
@@ -953,10 +931,7 @@
   // Handle time update from video
   function onTimeUpdate(time: number) {
     // Raw VOD previews report absolute source time; extracted clip previews report 0-based time.
-    currentTime.value =
-      props.clipStartTime > 0 && time >= props.clipStartTime
-        ? time - props.clipStartTime
-        : time;
+    currentTime.value = props.clipStartTime > 0 && time >= props.clipStartTime ? time - props.clipStartTime : time;
 
     // Loop back to start if we've reached the end (while still playing)
     if (currentTime.value >= clipDuration.value && isPlaying.value) {
@@ -1003,9 +978,9 @@
     const urlKeys = props.overlayPreviewUrls ? Object.keys(props.overlayPreviewUrls) : [];
     console.log('[ManualPOIEditor] resolvedOverlays evaluating:', {
       overlayCount: props.layoutOverlays.length,
-      overlayIds: props.layoutOverlays.map(o => o.id),
+      overlayIds: props.layoutOverlays.map((o) => o.id),
       previewUrlKeys: urlKeys,
-      previewUrlLengths: urlKeys.map(k => props.overlayPreviewUrls?.[k]?.length || 0),
+      previewUrlLengths: urlKeys.map((k) => props.overlayPreviewUrls?.[k]?.length || 0),
       ratioKey,
     });
 
@@ -1052,16 +1027,16 @@
   function onSeekStart(event: MouseEvent) {
     if (!progressBarRef.value) return;
     event.preventDefault();
-    
+
     // Clean up any existing listeners first
     cleanupSeekListeners();
-    
+
     const wasPlaying = isPlaying.value;
     const editor = timelineEditor();
     if (editor) editor.playback.pause();
     else isPlaying.value = false; // Pause during seek
     isSeeking.value = true;
-    
+
     // Store initial mouse position and time for precision mode
     const startX = event.clientX;
     const startTime = currentTime.value;
@@ -1071,7 +1046,7 @@
       const rect = progressBarRef.value.getBoundingClientRect();
       const x = e.clientX - rect.left;
       const percent = Math.max(0, Math.min(1, x / rect.width));
-      
+
       if (e.shiftKey) {
         // Precision mode: quantize to 0.01 second increments
         const rawTime = percent * clipDuration.value;
@@ -1163,7 +1138,7 @@
           transcriptWordsCount: props.transcriptWords?.length || 0,
           transcriptSegmentsCount: props.transcriptSegments?.length || 0,
           firstWord: props.transcriptWords?.[0],
-          firstSegment: props.transcriptSegments?.[0]
+          firstSegment: props.transcriptSegments?.[0],
         });
 
         // Load video URL
@@ -1292,12 +1267,7 @@
       if (!file) return;
 
       try {
-        const buf = new Uint8Array(await file.arrayBuffer());
-        const { invoke } = await import('@tauri-apps/api/core');
-        const tempPath = await invoke<string>('save_temp_media_file', {
-          fileName: file.name,
-          data: Array.from(buf),
-        });
+        const tempPath = await savePoiMedia(file, props.projectId);
         const mediaType = file.type.startsWith('image/') ? 'image' : 'video';
         updateRegion(regionId, {
           mediaAssetId: tempPath,
@@ -1347,7 +1317,7 @@
         suggestion,
         brollConfigs.value,
         props.projectId,
-        brollConfigs.value.length,
+        brollConfigs.value.length
       );
       brollConfigs.value = result.brollConfigs;
       const appliedBroll = brollConfigs.value.find((broll) => broll.suggestionId === suggestion.id);
@@ -1446,7 +1416,7 @@
   function onSubtitleSettingsChange(settings: SubtitleSettings) {
     console.log('[ManualPOIEditor] onSubtitleSettingsChange called:', {
       newFontSize: settings.fontSize,
-      oldFontSize: localSubtitleSettings.value.fontSize
+      oldFontSize: localSubtitleSettings.value.fontSize,
     });
     localSubtitleSettings.value = { ...settings };
     emit('subtitleSettingsChange', { ...settings });
@@ -1455,14 +1425,14 @@
   async function persistClipTextToDb() {
     if (!props.clipId || !clipTextLocal.value) return;
     clipTextLocal.value = ensureClipTextPerRatioEntry(clipTextLocal.value, props.targetAspectRatio);
-    const { updateClipTextOverlay } = await import('@/services/database/clips');
+    const { updateClipTextOverlay } = await import('@/services/workspaceRuntime');
     await updateClipTextOverlay(props.clipId, clipTextLocal.value);
     emit('clipTextOverlayChange', serializeClipTextBoxState(clipTextLocal.value));
   }
 
   async function persistClipTextClearDb() {
     if (!props.clipId) return;
-    const { updateClipTextOverlay } = await import('@/services/database/clips');
+    const { updateClipTextOverlay } = await import('@/services/workspaceRuntime');
     await updateClipTextOverlay(props.clipId, null);
     emit('clipTextOverlayChange', null);
   }
@@ -1485,24 +1455,14 @@
     void persistClipTextToDb();
   }
 
-  function onClipTextBoxPositionChange(payload: {
-    x: number;
-    y: number;
-    widthPct: number;
-    fontSize?: number;
-  }) {
+  function onClipTextBoxPositionChange(payload: { x: number; y: number; widthPct: number; fontSize?: number }) {
     if (!clipTextLocal.value) return;
-    clipTextLocal.value = upsertClipTextPerRatioGeometry(
-      clipTextLocal.value,
-      props.targetAspectRatio,
-      payload
-    );
+    clipTextLocal.value = upsertClipTextPerRatioGeometry(clipTextLocal.value, props.targetAspectRatio, payload);
     void persistClipTextToDb();
   }
 
   async function openTextBoxSettings() {
-    textBoxRevertJson.value =
-      clipTextLocal.value == null ? null : serializeClipTextBoxState(clipTextLocal.value);
+    textBoxRevertJson.value = clipTextLocal.value == null ? null : serializeClipTextBoxState(clipTextLocal.value);
     if (!clipTextLocal.value) {
       clipTextLocal.value = createDefaultClipTextBoxState(clipDuration.value);
     }
@@ -1513,10 +1473,7 @@
 
   async function doneTextBoxSettings() {
     if (clipTextLocal.value?.enabled) {
-      clipTextLocal.value = ensureClipTextPerRatioEntry(
-        clipTextLocal.value,
-        props.targetAspectRatio
-      );
+      clipTextLocal.value = ensureClipTextPerRatioEntry(clipTextLocal.value, props.targetAspectRatio);
       await persistClipTextToDb();
       selectedRegionId.value = POI_OVERLAY_TEXTBOX_ID;
     }
@@ -1560,7 +1517,7 @@
         multiColorEnabled: false,
         highlightColor: '#FFFFFF',
       },
-      'karaoke': {
+      karaoke: {
         fontFamily: 'Montserrat',
         fontSize: 48,
         fontWeight: 700,
@@ -1574,7 +1531,7 @@
         backgroundEnabled: false,
         backgroundColor: 'transparent',
       },
-      'zoom': {
+      zoom: {
         fontFamily: 'Montserrat',
         fontSize: 48,
         fontWeight: 700,
@@ -1586,7 +1543,7 @@
         highlightColor: '#22D3EE',
         backgroundEnabled: false,
       },
-      'pop': {
+      pop: {
         fontFamily: 'Montserrat',
         fontSize: 48,
         fontWeight: 700,
@@ -1598,7 +1555,7 @@
         highlightColor: '#EC4899',
         backgroundEnabled: false,
       },
-      'glow': {
+      glow: {
         fontFamily: 'Montserrat',
         fontSize: 44,
         fontWeight: 700,
@@ -1611,7 +1568,7 @@
         highlightColor: '#22D3EE',
         backgroundEnabled: false,
       },
-      'wave': {
+      wave: {
         fontFamily: 'Montserrat',
         fontSize: 42,
         fontWeight: 600,
@@ -1623,7 +1580,7 @@
         shadowColor: 'rgba(0,0,0,0.8)',
         backgroundEnabled: false,
       },
-      'none': {
+      none: {
         fontFamily: 'Montserrat',
         fontSize: 42,
         fontWeight: 600,
@@ -1636,7 +1593,7 @@
         backgroundEnabled: false,
       },
     };
-    
+
     return defaults[styleId] || {};
   }
 
@@ -1648,9 +1605,9 @@
       border1Width: localSubtitleSettings.value.border1Width,
       border2Width: localSubtitleSettings.value.border2Width,
       fontSize: localSubtitleSettings.value.fontSize,
-      highlightColor: localSubtitleSettings.value.highlightColor
+      highlightColor: localSubtitleSettings.value.highlightColor,
     });
-    
+
     // Apply style-specific defaults when switching styles
     const styleDefaults = getStyleDefaults(styleId);
     localSubtitleSettings.value = {
@@ -1658,17 +1615,17 @@
       ...styleDefaults,
       animationStyle: styleId as any,
     };
-    
+
     showStyleDropdown.value = false;
     console.log('[ManualPOIEditor] After style change with defaults, full settings:', {
-      ...localSubtitleSettings.value
+      ...localSubtitleSettings.value,
     });
     emit('subtitleSettingsChange', { ...localSubtitleSettings.value });
   }
 
   // Get current style display name
   function getCurrentStyleName(): string {
-    const style = ANIMATION_STYLES.find(s => s.id === localSubtitleSettings.value.animationStyle);
+    const style = ANIMATION_STYLES.find((s) => s.id === localSubtitleSettings.value.animationStyle);
     return style ? style.name : 'None';
   }
 
@@ -1681,7 +1638,7 @@
 
   // Get color name from value
   function getColorName(colorValue: string): string {
-    const color = PRESET_COLORS.find(c => c.value === colorValue);
+    const color = PRESET_COLORS.find((c) => c.value === colorValue);
     return color ? color.name : 'Custom';
   }
 
@@ -1704,7 +1661,7 @@
           border2Width: settings.border2Width,
           border2Color: settings.border2Color,
           highlightColor: settings.highlightColor,
-          fontSize: settings.fontSize
+          fontSize: settings.fontSize,
         });
         localSubtitleSettings.value = { ...settings };
         // Enable positioning when subtitles are turned on while the editor is already open
@@ -1720,7 +1677,9 @@
   // Sync subtitle position when prop changes (dialog reopened for a different ratio)
   watch(
     () => props.subtitlePositionOverride,
-    (pos) => { if (pos) localSubtitlePosition.value = { ...pos }; },
+    (pos) => {
+      if (pos) localSubtitlePosition.value = { ...pos };
+    },
     { deep: true }
   );
 
@@ -1771,7 +1730,7 @@
 
   // Update segment times (from timeline drag/resize)
   function updateSegment(segmentId: string, updates: { startTime?: number; endTime?: number }) {
-    const segment = segmentConfigs.value.find(s => s.segmentId === segmentId);
+    const segment = segmentConfigs.value.find((s) => s.segmentId === segmentId);
     if (segment) {
       if (updates.startTime !== undefined) {
         segment.startTime = updates.startTime;
@@ -1834,10 +1793,7 @@
     if (!canApplyFraming.value) return;
 
     if (clipTextLocal.value?.enabled && props.clipId) {
-      clipTextLocal.value = ensureClipTextPerRatioEntry(
-        clipTextLocal.value,
-        props.targetAspectRatio
-      );
+      clipTextLocal.value = ensureClipTextPerRatioEntry(clipTextLocal.value, props.targetAspectRatio);
       await persistClipTextToDb();
     }
 

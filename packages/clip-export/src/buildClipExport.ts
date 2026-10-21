@@ -22,6 +22,7 @@ export interface ClipExportInput {
   subtitleSettings?: SubtitleSettings | null;
   subtitleWords?: WordInfo[];
   subtitleRasterPath?: string;
+  layoutRasterPath?: string;
   textBox?: ClipTextBoxState | null;
   assPath?: string;
   textOverlayPngPath?: string;
@@ -31,6 +32,8 @@ export interface ClipExportInput {
   hasAudio?: boolean;
   fit?: 'cover' | 'contain';
   mediaAssets?: Array<{ id: string; path: string; type: 'image' | 'video' }>;
+  quality?: 'low' | 'medium' | 'high';
+  frameRate?: 30 | 60;
 }
 
 export interface ClipExportPlan {
@@ -66,9 +69,9 @@ export function buildClipExportPlan(input: ClipExportInput): ClipExportPlan {
     mediaSources: Object.fromEntries((input.mediaAssets || []).map((asset, index) => [asset.id, input.segments.length + (input.textOverlayPngPath ? 1 : 0) + index])),
   });
 
-  const sorted = [...input.segments].sort((a, b) => a.start_time - b.start_time);
+  const ordered = [...input.segments];
   if (
-    sorted.some(
+    ordered.some(
       (segment) =>
         !Number.isFinite(segment.start_time) ||
         !Number.isFinite(segment.end_time) ||
@@ -82,16 +85,16 @@ export function buildClipExportPlan(input: ClipExportInput): ClipExportPlan {
   const filterParts: string[] = [];
   let videoLabel = '0:v';
   let audioLabel = hasAudio ? '0:a?' : null;
-  if (sorted.length > 1) {
-    sorted.forEach((_, index) => {
+  if (ordered.length > 1) {
+    ordered.forEach((_, index) => {
       filterParts.push(`[${index}:v]setpts=PTS-STARTPTS[v${index}]`);
       if (hasAudio) filterParts.push(`[${index}:a]asetpts=PTS-STARTPTS[a${index}]`);
     });
-    const streams = sorted
+    const streams = ordered
       .map((_, index) => `[v${index}]${hasAudio ? `[a${index}]` : ''}`)
       .join('');
     filterParts.push(
-      `${streams}concat=n=${sorted.length}:v=1:a=${hasAudio ? 1 : 0}[joinedv]${hasAudio ? '[joineda]' : ''}`,
+      `${streams}concat=n=${ordered.length}:v=1:a=${hasAudio ? 1 : 0}[joinedv]${hasAudio ? '[joineda]' : ''}`,
     );
     videoLabel = 'joinedv';
     audioLabel = hasAudio ? '[joineda]' : null;
@@ -129,7 +132,7 @@ export function buildClipExportPlan(input: ClipExportInput): ClipExportPlan {
       : null;
 
   if (effectiveTextBox && input.textOverlayPngPath) {
-    const textInputIndex = sorted.length;
+    const textInputIndex = ordered.length;
     filterParts.push(
       buildTextOverlayFilterArgs(
         videoLabel,
@@ -144,7 +147,7 @@ export function buildClipExportPlan(input: ClipExportInput): ClipExportPlan {
   }
 
   const inputs: string[] = [];
-  sorted.forEach((seg) => {
+  ordered.forEach((seg) => {
     inputs.push(
       '-ss',
       String(seg.start_time),
@@ -159,14 +162,20 @@ export function buildClipExportPlan(input: ClipExportInput): ClipExportPlan {
     inputs.push('-i', input.textOverlayPngPath);
   }
   for (const asset of input.mediaAssets || []) inputs.push(...(asset.type === 'image' ? ['-loop', '1'] : ['-stream_loop', '-1']), '-i', asset.path);
+  if (input.layoutRasterPath) {
+    const index = ordered.length + (effectiveTextBox && input.textOverlayPngPath ? 1 : 0) + (input.mediaAssets?.length || 0);
+    inputs.push('-loop', '1', '-i', input.layoutRasterPath);
+    filterParts.push(`[${videoLabel}][${index}:v]overlay=0:0:shortest=1[layout_raster]`);
+    videoLabel = 'layout_raster';
+  }
   if (input.subtitleRasterPath) {
-    const index = sorted.length + (effectiveTextBox && input.textOverlayPngPath ? 1 : 0) + (input.mediaAssets?.length || 0);
+    const index = ordered.length + (effectiveTextBox && input.textOverlayPngPath ? 1 : 0) + (input.mediaAssets?.length || 0) + (input.layoutRasterPath ? 1 : 0);
     inputs.push('-i', input.subtitleRasterPath);
     filterParts.push(`[${videoLabel}][${index}:v]overlay=0:0:eof_action=pass[subtitles_raster]`);
     videoLabel = 'subtitles_raster';
   }
   if (input.textRasterPath && effectiveTextBox) {
-    const index = sorted.length + (input.textOverlayPngPath ? 1 : 0) + (input.mediaAssets?.length || 0) + (input.subtitleRasterPath ? 1 : 0);
+    const index = ordered.length + (input.textOverlayPngPath ? 1 : 0) + (input.mediaAssets?.length || 0) + (input.subtitleRasterPath ? 1 : 0) + (input.layoutRasterPath ? 1 : 0);
     inputs.push('-loop', '1', '-i', input.textRasterPath);
     filterParts.push(`[${videoLabel}][${index}:v]overlay=0:0:shortest=1:enable='gte(t,${effectiveTextBox.startTime})*lt(t,${effectiveTextBox.endTime})'[text_raster]`);
     videoLabel = 'text_raster';
@@ -185,6 +194,8 @@ export function buildClipExportPlan(input: ClipExportInput): ClipExportPlan {
     'libx264',
     '-preset',
     'veryfast',
+    ...(input.quality ? ['-crf', String({ low: 28, medium: 23, high: 18 }[input.quality])] : []),
+    ...(input.frameRate ? ['-r', String(input.frameRate)] : []),
     '-c:a',
     'aac',
     '-movflags',

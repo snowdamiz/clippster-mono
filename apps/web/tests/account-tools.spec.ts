@@ -1,12 +1,59 @@
-import { test, expect, type Page } from '@playwright/test'
+import { test, expect, type Page } from './browser-fixture'
 
 async function signIn(page: Page) {
   await page.goto('/')
   await page.getByLabel('Email', { exact: true }).fill('test@example.com')
   await page.getByLabel('Password', { exact: true }).fill('test-password')
   await page.getByRole('button', { name: 'Sign In', exact: true }).click()
-  await expect(page.locator('.page-header__title')).toBeVisible()
+  await expect(page.getByRole('heading', { name: 'Video library', exact: true })).toBeVisible()
 }
+
+test('creator page shares desktop cards, scopes and organization profiles', async ({ page }, info) => {
+  await signIn(page)
+  const personal = [
+    { id: 1, name: 'Local Twitch Creator', description: 'Imported personal creator', scope: 'streamer', intro_id: 9, platform_links: [{ id: 1, platform: 'twitch', platform_id: 'local-channel', is_primary: true }] },
+    { id: 2, name: 'Global Branding', description: 'Branding for every creator', scope: 'global', platform_links: [] },
+    { id: 3, name: 'Studio Profile', scope: 'personal_studio', platform_links: [] },
+  ]
+  await page.route('**/api/web/account/**', route => {
+    const path = new URL(route.request().url()).pathname.split('/web/account')[1]
+    if (path === '/user/creator-profiles') return route.fulfill({ json: { success: true, profiles: personal } })
+    if (path === '/user/assets') return route.fulfill({ json: { success: true, assets: [] } })
+    if (path === '/user/assigned-creator-profiles') return route.fulfill({ json: { success: true, profiles: [{ id: 1, name: 'Team Kick Creator', scope: 'streamer', organization_id: 1, organization_name: 'Fixture Team', platform_links: [{ id: 2, platform: 'kick', platform_id: 'team-channel', is_primary: true }] }] } })
+    return route.fulfill({ status: 404, json: { error: 'Unexpected creator request' } })
+  })
+  await page.goto('/?view=creators')
+  await expect(page.getByRole('heading', { name: 'Creator profiles', exact: true })).toBeVisible()
+  await expect(page.getByRole('article')).toHaveCount(3)
+  await expect(page.getByRole('heading', { name: /^Organization profiles/ })).toBeVisible()
+  await expect(page.getByRole('heading', { name: /^Your creator profiles/ })).toBeVisible()
+  await expect(page.locator('.page-toolbar')).toContainText('3 streamer profiles')
+  await page.screenshot({ path: info.outputPath('creators-desktop-view.png') })
+  await page.getByPlaceholder('Search creators…').fill('local-channel')
+  await expect(page.getByRole('article')).toHaveCount(1)
+  await page.getByRole('article').getByTitle('More actions').click()
+  await page.getByRole('menuitem', { name: 'Edit profile' }).click()
+  await expect(page.getByPlaceholder('Creator name')).toHaveValue('Local Twitch Creator')
+  await expect(page.getByPlaceholder('Channel slug or URL')).toHaveValue('local-channel')
+  await page.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await page.getByRole('article').getByTitle('More actions').click()
+  await page.getByRole('menuitem', { name: 'Delete creator', exact: true }).click()
+  const confirmation = page.getByRole('dialog', { name: 'Delete Creator', exact: true })
+  await expect(confirmation).toContainText('Local Twitch Creator')
+  await confirmation.getByRole('button', { name: 'Cancel', exact: true }).click()
+  await expect(confirmation).toHaveCount(0)
+  await page.getByPlaceholder('Search creators…').fill('Team Kick Creator')
+  await page.getByRole('article').getByTitle('More actions').click()
+  await page.getByRole('menuitem', { name: 'Submit post link', exact: true }).click()
+  await expect(page.getByRole('heading', { name: 'Submit post link', exact: true })).toBeVisible()
+  await page.getByRole('dialog', { name: 'Submit post link', exact: true }).getByRole('button', { name: 'Close', exact: true }).click()
+  await page.getByPlaceholder('Search creators…').fill('')
+  await page.getByRole('tab', { name: 'Global branding', exact: true }).click()
+  await expect(page.getByRole('article')).toHaveCount(1)
+  await expect(page.locator('.page-toolbar')).toContainText('1 global branding profile')
+  await expect(page.locator('article h3')).toHaveText('Global Branding')
+  await expect(page.getByRole('button', { name: 'Add global profile' })).toBeVisible()
+})
 
 test('custom prompts persist and system prompts remain read-only', async ({ page }, info) => {
   await signIn(page)
@@ -46,10 +93,12 @@ test('creator editing, campaign participation and calendar actions use the accou
       if (method === 'POST') profiles.push({ ...route.request().postDataJSON(), id: 1 })
       data.profiles = profiles
     } else if (path === '/user/assigned-creator-profiles') data.profiles = []
+    else if (path === '/user/assets') data.assets = []
+    else if (path === '/creator-channel') data = { username: 'Fixture channel', displayName: 'Fixture channel', profileImageUrl: null }
     else if (path === '/campaigns') data.campaigns = [campaign]
     else if (path === '/campaigns/1') data = { ...data, campaign, participation }
     else if (path === '/campaigns/1/apply') participation = { status: 'approved' }
-    else if (path === '/app-settings/feature-flags') data.feature_flags = { campaigns_enabled: false }
+    else if (path === '/settings/feature-flags') data.feature_flags = { campaigns_enabled: false }
     else if (path === '/social/scheduled') data.posts = canceled ? [] : [post]
     else if (path === '/social/scheduled/3/cancel') canceled = true
     else if (path === '/user/posts') data.posts = []
@@ -58,13 +107,15 @@ test('creator editing, campaign participation and calendar actions use the accou
     await route.fulfill({ json: data })
   })
   await page.goto('/?view=creators')
-  await page.getByRole('button', { name: 'New Profile', exact: true }).click()
-  await page.getByLabel('Name', { exact: true }).fill('Fixture creator')
-  await page.getByRole('button', { name: 'Add platform', exact: true }).click()
-  await page.getByLabel('Channel identifier').fill('fixture-channel')
-  await page.getByRole('button', { name: 'Save', exact: true }).click()
-  await expect(page.getByRole('heading', { name: 'Fixture creator', exact: true })).toBeVisible()
-  expect(profiles[0].platform_links).toEqual([{ platform: 'twitch', platform_id: 'fixture-channel', is_primary: true }])
+  await page.locator('[data-tour-id=\"tour-add-creator\"]').click()
+  await page.getByPlaceholder('Creator name').fill('Fixture creator')
+  await page.getByRole('button', { name: /^Add platform/ }).click()
+  await page.getByRole('button', { name: /PumpFun/ }).click()
+  await page.getByRole('menuitem', { name: /Twitch/ }).click()
+  await page.getByPlaceholder('Channel slug or URL').fill('fixture-channel')
+  await page.getByRole('button', { name: 'Create profile', exact: true }).click()
+  await expect(page.locator('article h3', { hasText: 'Fixture creator' })).toBeVisible()
+  expect(profiles[0].platform_links).toEqual([expect.objectContaining({ platform: 'twitch', platform_id: 'fixture-channel', is_primary: true })])
   await page.goto('/?view=campaigns')
   await page.getByRole('button', { name: 'View Campaign', exact: true }).click()
   await page.getByRole('button', { name: 'Join campaign', exact: true }).click()

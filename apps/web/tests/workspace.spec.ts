@@ -1,155 +1,95 @@
-import { test, expect } from '@playwright/test'
+import { test, expect } from './browser-fixture'
 import { execFileSync } from 'node:child_process'
-import { mkdirSync } from 'node:fs'
-import { resolve } from 'node:path'
-test('sign in, upload, AI clip, trim, render, download, and reopen a project', async ({
-  page
-}, testInfo) => {
-  const projectName = `Browser smoke test ${testInfo.repeatEachIndex}`
-  const errors: string[] = []
-  page.on('pageerror', (error) => errors.push(error.message))
-  await page.goto('/')
-  await expect(page.getByRole('heading', { name: 'Sign In', exact: true })).toBeVisible()
-  await page.getByLabel('Email', { exact: true }).fill('test@example.com')
-  await page.getByLabel('Password', { exact: true }).fill('test-password')
-  await page.getByRole('button', { name: 'Sign In', exact: true }).click()
-  await expect(page.locator('.page-header__title')).toBeVisible()
-  await page.getByRole('button', { name: 'New Project', exact: true }).click()
-  await page.getByLabel('Project name').fill(projectName)
-  await page.getByRole('button', { name: 'Create Project', exact: true }).click()
-  await expect(page.getByRole('dialog', { name: 'Project workspace' })).toBeVisible()
-  const source = testInfo.outputPath('source.mp4')
-  mkdirSync(resolve(source, '..'), { recursive: true })
-  execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', [
-    '-hide_banner',
-    '-loglevel',
-    'error',
-    '-f',
-    'lavfi',
-    '-i',
-    'testsrc2=size=320x180:rate=24:duration=6',
-    '-f',
-    'lavfi',
-    '-i',
-    'sine=frequency=440:duration=6',
-    '-c:v',
-    'libx264',
-    '-pix_fmt',
-    'yuv420p',
-    '-c:a',
-    'aac',
-    '-shortest',
-    '-y',
-    source
-  ])
-  await page.getByLabel('Upload source video').setInputFiles(source)
-  await expect(page.getByRole('button', { name: 'Find clips', exact: true })).toBeEnabled({
-    timeout: 30_000
-  })
-  await page.getByRole('button', { name: 'Find clips', exact: true }).click()
-  await expect(page.getByRole('button', { name: /AI highlight.*2.0s/ })).toBeVisible({
-    timeout: 30_000
-  })
-  await expect(page.getByLabel('Name', { exact: true })).toHaveValue('AI highlight')
+import { readFileSync, mkdirSync } from 'node:fs'
+import { dirname } from 'node:path'
+test('dedicated workspace uses desktop timeline, framing, export and persisted downloads', async ({ page }, testInfo) => {
+  const errors: string[] = []; page.on('pageerror', error => errors.push(error.message))
+  const origin = 'http://127.0.0.1:8091', request = page.request
+  await request.post('/api/auth/email/login', { headers: { Origin: origin }, data: { email: 'test@example.com', password: 'test-password' } })
+  const source = testInfo.outputPath('source.mp4'); mkdirSync(dirname(source), { recursive: true })
+  execFileSync(process.env.FFMPEG_PATH || 'ffmpeg', ['-v','error','-f','lavfi','-i','testsrc2=size=320x180:rate=24:duration=6','-f','lavfi','-i','sine=frequency=440:duration=6','-c:v','libx264','-pix_fmt','yuv420p','-c:a','aac','-shortest','-y',source])
+  const created = await request.post('/api/web/projects', { headers: { Origin: origin }, data: { name: 'Desktop workspace parity' } }); const { project } = await created.json()
+  expect((await request.put('/api/web/projects/' + project.id + '/source', { headers: { Origin: origin, 'Content-Type':'application/octet-stream' }, data: readFileSync(source) })).ok()).toBeTruthy()
+  await expect.poll(async () => (await (await request.get('/api/web/projects/' + project.id)).json()).project.status).toBe('ready')
+  const saved = await request.post('/api/web/projects/' + project.id + '/clips', { headers: { Origin: origin }, data: { name: 'Manual highlight', aspectRatio:'16:9', captions:false, segments:[{start_time:0.4,end_time:1.4},{start_time:3.4,end_time:4.4}] } }); expect(saved.ok()).toBeTruthy()
+  await page.goto('/?project=' + project.id)
+  await expect(page.getByRole('region', { name:'Project workspace' })).toBeVisible()
   await expect(page.locator('video').first()).toHaveJSProperty('readyState', 4)
-  await page.getByRole('button', { name: 'Manual framing / POI' }).click()
-  await expect(page.getByRole('dialog', { name: 'Manual framing', exact: true })).toBeVisible()
-  await page.getByRole('button', { name: 'Add region', exact: true }).click()
-  await page.getByLabel('Rounded corners', { exact: true }).check()
-  await page.getByLabel('Radius (px)', { exact: true }).fill('80')
-  await page.getByLabel('Blur', { exact: true }).check()
-  await page.getByRole('button', { name: 'Stack regions', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Undo', exact: true })).toBeEnabled()
-  await page.getByRole('button', { name: 'Undo', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Redo', exact: true })).toBeEnabled()
-  await page.getByRole('button', { name: 'Redo', exact: true }).click()
-  await page.getByLabel('Safe zones').selectOption('tiktok')
-  await expect(page.getByText('TikTok safe zone · preview only')).toBeVisible()
-  await page.screenshot({ path: testInfo.outputPath('manual-framing.png') })
-  await page.getByRole('button', { name: 'Apply layout' }).click()
-  await page.getByLabel('Name', { exact: true }).fill('My first web clip')
-  await page.getByLabel('End (seconds)').last().fill('4.9')
-  await page.getByRole('button', { name: 'Save & build clip' }).click()
-  await expect(page.getByRole('link', { name: 'Download MP4' })).toBeVisible({ timeout: 60_000 })
-  await page.screenshot({ path: testInfo.outputPath('web-workspace.png') })
-  const downloaded = page.waitForEvent('download')
-  await page.getByRole('link', { name: 'Download MP4' }).click()
-  const download = await downloaded
-  expect(download.suggestedFilename()).toBe('My first web clip.mp4')
-  const path = testInfo.outputPath('clip.mp4')
-  await download.saveAs(path)
-  const duration = Number(
-    execFileSync(
-      process.env.FFPROBE_PATH || 'ffprobe',
-      ['-v', 'error', '-show_entries', 'format=duration', '-of', 'default=nw=1:nk=1', path],
-      { encoding: 'utf8' }
-    )
-  )
-  expect(duration).toBeCloseTo(2.5, 0)
-  // Unsaved edits must neither expose an outdated export nor silently disappear.
-  await page.getByLabel('Name', { exact: true }).fill('Unsaved edit')
-  await expect(page.getByRole('link', { name: 'Download MP4' })).toBeHidden()
-  page.once('dialog', (dialog) => dialog.dismiss())
-  await page.getByRole('button', { name: 'Close workspace' }).click()
-  await expect(page.getByLabel('Name', { exact: true })).toHaveValue('Unsaved edit')
-  await page.getByRole('button', { name: 'Revert', exact: true }).click()
-  await expect(page.getByLabel('Name', { exact: true })).toHaveValue('My first web clip')
-  await expect(page.getByRole('link', { name: 'Download MP4' })).toBeVisible()
-  await page.getByLabel('Aspect ratio').selectOption('16:9')
-  await page.getByRole('button', { name: 'Save', exact: true }).click()
-  await expect(page.getByRole('button', { name: 'Save', exact: true })).toBeDisabled()
-  await expect(page.getByRole('link', { name: 'Download MP4' })).toBeHidden()
-  await page.getByRole('button', { name: 'Build clip', exact: true }).click()
-  await expect(page.getByRole('link', { name: 'Download MP4' })).toBeVisible({ timeout: 60_000 })
-  const landscapeDownload = page.waitForEvent('download')
-  await page.getByRole('link', { name: 'Download MP4' }).click()
-  const landscapePath = testInfo.outputPath('landscape.mp4')
-  await (await landscapeDownload).saveAs(landscapePath)
-  const metadata = JSON.parse(
-    execFileSync(
-      process.env.FFPROBE_PATH || 'ffprobe',
-      [
-        '-v',
-        'error',
-        '-select_streams',
-        'v:0',
-        '-show_entries',
-        'stream=width,height',
-        '-of',
-        'json',
-        landscapePath
-      ],
-      { encoding: 'utf8' }
-    )
-  )
-  expect(metadata.streams[0]).toMatchObject({ width: 1920, height: 1080 })
-  await page.screenshot({ path: testInfo.outputPath('workspace-desktop.png') })
-  await page.getByRole('button', { name: 'Close workspace' }).click()
-  await page.route('**/api/web/account/user/restrictions', route => route.fulfill({ json: { success: true, restricted: true, restrictions: { require_clip_approval: true, allow_personal_social: false, restricting_org_id: 7 } } }))
-  await page.route('**/api/web/account/organizations', route => route.fulfill({ json: { success: true, organizations: [{ id: 7, role: 'member' }] } }))
-  await page.route('**/api/web/account/organizations/7/my-social-accounts', route => route.fulfill({ json: { success: true, accounts: [{ id: 70, platform: 'youtube', username: 'Assigned channel' }] } }))
+  await expect(page.getByTitle('Zoom in', {exact:true})).toBeVisible()
+  await expect(page.getByTitle('Add new clip (N key)')).toBeVisible()
+  expect((await page.locator('.workspace-dialog__timeline').boundingBox())!.height).toBeGreaterThanOrEqual(210)
+  const trackStyle = await page.locator('[data-video-track]').evaluate(element => ({ height: element.getBoundingClientRect().height, border: getComputedStyle(element.parentElement!.parentElement!).borderBottomColor }))
+  expect(trackStyle.height).toBe(32)
+  expect(trackStyle.border).not.toBe('rgb(255, 255, 255)')
+  await expect(page.locator('[data-media-panel]')).toContainText('Manual highlight')
+  await page.screenshot({ path:testInfo.outputPath('desktop-workspace-page.png') })
+  await page.getByTitle('Clip actions', {exact:true}).click()
+  await expect(page.getByRole('menuitem', {name:'Edit clip',exact:true})).toHaveCount(0)
+  await page.getByRole('menuitem', {name:'Build clip',exact:true}).click()
+  await expect(page.getByRole('heading', {name:'Export configuration',exact:true})).toBeVisible()
+  await page.getByRole('button', {name:'1:1 Instagram Feed',exact:false}).click()
+  await page.getByRole('button', {name:'Next',exact:true}).click()
+  await page.getByRole('button', {name:'1:1 Click to configure',exact:true}).click()
+  await expect(page.getByRole('dialog', {name:'Manual framing editor',exact:true})).toBeVisible()
+  await page.screenshot({path:testInfo.outputPath('desktop-framing-dialog.png')})
+  await page.getByRole('dialog', {name:'Manual framing editor',exact:true}).getByRole('button', {name:/Cancel/}).click()
+  await page.getByRole('button', {name:'Next',exact:true}).click()
+  await page.getByRole('tab', {name:'60 FPS',exact:true}).click()
+  await page.getByRole('button', {name:'Next',exact:true}).click()
+  await page.getByRole('button', {name:'Build 2 videos',exact:true}).click()
+  await expect(page.getByTitle('Download clip', {exact:true})).toBeVisible({timeout:60000})
+  await page.getByTitle('Download clip', {exact:true}).click()
+  await expect(page.getByRole('menu')).toContainText('Downloads (2)')
+  const downloaded = page.waitForEvent('download'); await page.getByRole('menuitem').filter({has: page.getByText('1:1', {exact:true})}).click(); const download = await downloaded
+  expect(download.suggestedFilename()).toContain('1x1.mp4'); const output = testInfo.outputPath('square.mp4'); await download.saveAs(output)
+  const metadata = JSON.parse(execFileSync(process.env.FFPROBE_PATH || 'ffprobe',['-v','error','-show_streams','-of','json',output],{encoding:'utf8'})).streams.find((stream:any)=>stream.codec_type==='video')
+  expect(metadata.width).toBe(1080); expect(metadata.height).toBe(1080); expect(metadata.r_frame_rate).toBe('60/1')
+  expect(Number(metadata.duration)).toBeCloseTo(2, 1)
+  await page.getByTitle('Clip actions', {exact:true}).click()
+  await page.getByRole('menuitem', {name:'Play clip',exact:true}).click()
+  // Workspace preview keeps the source timeline available for trimming and
+  // plays the selected segments; downloaded builds were verified above.
+  await expect(page.locator('video').first()).toHaveAttribute('src', /\/source$/)
+  await expect(page.locator('video').first()).toHaveJSProperty('readyState', 4)
+  await expect.poll(() => page.locator('video').first().evaluate(video => (video as HTMLVideoElement).duration)).toBeCloseTo(6, 1)
+  await expect.poll(() => page.locator('video').first().evaluate(video => (video as HTMLVideoElement).currentTime)).toBeGreaterThanOrEqual(4.38)
+  await expect(page.locator('video').first()).toHaveJSProperty('paused', true)
+  await page.reload(); await expect(page.getByRole('region', {name:'Project workspace'})).toBeVisible(); await expect(page.getByTitle('Download clip')).toBeVisible()
+  await page.getByRole('button', {name:'Close workspace',exact:true}).click(); await expect(page).not.toHaveURL(/project=/)
+  await page.goBack(); await expect(page.getByRole('region', {name:'Project workspace'})).toBeVisible()
+  const publishClip = await request.post('/api/web/projects/' + project.id + '/clips', { headers: { Origin: origin }, data: { name: 'Quick highlight', aspectRatio:'16:9', captions:false, segments:[{start_time:1,end_time:2}] } }); expect(publishClip.ok()).toBeTruthy()
   await page.reload()
-  await page
-    .locator('.project-card')
-    .filter({ has: page.getByRole('heading', { name: projectName, exact: true }) })
-    .getByRole('heading', { name: projectName, exact: true })
-    .click()
-  await expect(page.getByLabel('Name', { exact: true })).toHaveValue('My first web clip')
-  await expect(page.getByRole('button', { name: 'Submit for approval', exact: true })).toBeVisible()
-  await expect(page.getByRole('combobox', { name: /^Account/ })).toHaveValue('7:70')
-  let submission: Record<string, unknown> | undefined
-  await page.route('**/api/web/projects/*/clips/*/publish', async route => {
-    submission = route.request().postDataJSON()
-    await route.fulfill({ json: { success: true, post: { status: 'awaiting_approval' } } })
-  })
-  page.once('dialog', dialog => dialog.accept())
-  await page.getByRole('button', { name: 'Submit for approval', exact: true }).click()
-  await expect(page.getByText('Submitted for organization approval.', { exact: false })).toBeVisible()
-  expect(submission).toMatchObject({ organizationId: 7, accountId: 70 })
-  await page.setViewportSize({ width: 390, height: 844 })
-  await page.screenshot({ path: testInfo.outputPath('workspace-mobile.png') })
-  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(
-    true
-  )
+  await page.getByRole('heading', {name:/Quick highlight/}).locator('..').getByTitle('Clip actions', {exact:true}).click()
+  await page.getByRole('menuitem', {name:'Publish now',exact:true}).click()
+  await expect(page.getByRole('heading', {name:'Quick publish',exact:true})).toBeVisible()
+  await page.getByRole('button', {name:/No, skip subtitles/}).click()
+  await page.getByRole('button', {name:'Next',exact:true}).click()
+  await page.getByRole('button', {name:'Next',exact:true}).click()
+  await page.getByRole('button', {name:'Next',exact:true}).click()
+  await expect(page.getByRole('heading', {name:'Built clips 1',exact:true})).toBeVisible()
+  await page.getByRole('checkbox', {name:/YouTube/}).click()
+  await page.getByRole('combobox').filter({hasText:'Select account'}).click()
+  await page.getByRole('option', {name:'@Fixture channel',exact:true}).click()
+  await page.getByRole('button', {name:'Publish (1)',exact:true}).click()
+  await expect(page.getByRole('heading', {name:'Quick publish',exact:true})).toBeHidden({timeout:60000})
+  await page.getByTitle('Add new clip (N key)').click()
+  const track = await page.locator('.timeline-content-wrapper').boundingBox(); expect(track).not.toBeNull()
+  await page.mouse.move(track!.x + 90 + (track!.width - 90) * .35, track!.y + 12)
+  await page.mouse.down(); await page.mouse.move(track!.x + 90 + (track!.width - 90) * .55, track!.y + 12, {steps:12}); await page.mouse.up()
+  await expect(page.getByRole('heading', {name:'Create new clip',exact:true})).toBeVisible()
+  await page.getByLabel('Clip name', {exact:true}).fill('Timeline selection')
+  await page.getByRole('button', {name:'Create clip',exact:true}).click()
+  await expect(page.getByRole('heading', {name:/Timeline selection/})).toBeVisible()
+  expect((await request.post(`/api/web/projects/${project.id}/creator-layout`, { headers: { Origin: origin }, data: { creatorId: 11 } })).ok()).toBeTruthy()
+  await page.reload()
+  await expect(page.getByText('9:16 Pre-Edit', {exact:true})).toBeVisible()
+  await page.getByRole('button', {name:'9:16',exact:true}).click()
+  await page.getByRole('option', {name:'16:9',exact:true}).click()
+  await expect(page.getByRole('button', {name:'16:9',exact:true})).toBeVisible()
+  await page.getByRole('button', {name:'16:9',exact:true}).click()
+  await page.getByRole('option', {name:'9:16',exact:true}).click()
+  await page.getByRole('button', {name:'Platform',exact:true}).click()
+  await page.getByRole('menuitemradio', {name:/TikTok/}).click()
+  await expect(page.getByRole('button', {name:'TikTok',exact:true})).toBeVisible()
   expect(errors).toEqual([])
 })

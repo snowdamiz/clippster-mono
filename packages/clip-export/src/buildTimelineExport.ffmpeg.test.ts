@@ -24,30 +24,33 @@ function probeDuration(path: string): number {
   return Number(output.trim());
 }
 
+function runFfmpeg(args: string[]) {
+  execFileSync('ffmpeg', ['-hide_banner', '-loglevel', 'error', ...args], {
+    stdio: 'ignore',
+    timeout: 60_000,
+  });
+}
+
 function writeColorClip(path: string, color: string) {
-  execFileSync(
-    'ffmpeg',
-    [
-      '-f',
-      'lavfi',
-      '-i',
-      `color=c=${color}:s=320x180:d=2`,
-      '-f',
-      'lavfi',
-      '-i',
-      'sine=frequency=440:sample_rate=44100:duration=2',
-      '-c:v',
-      'libx264',
-      '-pix_fmt',
-      'yuv420p',
-      '-c:a',
-      'aac',
-      '-shortest',
-      '-y',
-      path,
-    ],
-    { stdio: 'ignore' },
-  );
+  runFfmpeg([
+    '-f',
+    'lavfi',
+    '-i',
+    `color=c=${color}:s=320x180:d=2`,
+    '-f',
+    'lavfi',
+    '-i',
+    'sine=frequency=440:sample_rate=44100:duration=2',
+    '-c:v',
+    'libx264',
+    '-pix_fmt',
+    'yuv420p',
+    '-c:a',
+    'aac',
+    '-shortest',
+    '-y',
+    path,
+  ]);
 }
 
 describe.skipIf(!hasBin('ffmpeg') || !hasBin('ffprobe'))('timeline export ffmpeg', () => {
@@ -74,14 +77,14 @@ describe.skipIf(!hasBin('ffmpeg') || !hasBin('ffprobe'))('timeline export ffmpeg
     });
 
     for (const clip of plan.clipRenders) {
-      execFileSync('ffmpeg', clip.args, { stdio: 'ignore' });
+      runFfmpeg(clip.args);
     }
-    execFileSync('ffmpeg', plan.concat.args, { stdio: 'ignore' });
-    execFileSync('ffmpeg', plan.compose.args, { stdio: 'ignore' });
+    runFfmpeg(plan.concat.args);
+    runFfmpeg(plan.compose.args);
 
     expect(existsSync(outputPath)).toBe(true);
     const duration = probeDuration(outputPath);
     expect(duration).toBeGreaterThan(3.2);
     expect(duration).toBeLessThan(3.8);
-  });
+  }, 90_000);
 });

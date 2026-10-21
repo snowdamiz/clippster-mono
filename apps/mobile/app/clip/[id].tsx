@@ -28,8 +28,7 @@ import {
   type ActiveVodPresetConfig,
   type Clip,
   type Project,
-  type SubtitleSettings,
-  type TargetAspectRatio
+  type SubtitleSettings
 } from '@clippster/shared-types'
 import { AiPipeline, type AiPipelineProgress } from '@/services/aiPipeline'
 import { generateClipThumbnailAtTimestamp } from '@/services/clipThumbnailGeneration'
@@ -232,7 +231,7 @@ function ClipAdjustWorkspace({
   }, [ensureSaved])
 
   const startExport = useCallback(
-    (ratios: TargetAspectRatio[]) => {
+    (ratios: import('@/editor/model/schema').CanvasRatio[]) => {
       setExportProgress({
         state: 'building',
         progress: 0,

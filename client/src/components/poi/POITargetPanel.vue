@@ -61,7 +61,15 @@
             <span class="text-xs font-medium text-fg-muted">Blur</span>
             <span class="tabular font-mono text-2xs text-fg">{{ blurAmount }}</span>
           </div>
-          <input v-model.number="blurAmount" type="range" min="0" max="30" step="1" class="w-full" aria-label="Blur amount" />
+          <input
+            v-model.number="blurAmount"
+            type="range"
+            min="0"
+            max="30"
+            step="1"
+            class="w-full"
+            aria-label="Blur amount"
+          />
           <div class="mt-0.5 flex justify-between text-2xs text-fg-subtle">
             <span>Off</span>
             <span>Max</span>
@@ -109,10 +117,7 @@
         />
 
         <!-- Transparent click-catcher to deselect regions when clicking empty space -->
-        <div
-          class="absolute inset-0 z-[4]"
-          @click="emit('selectRegion', null)"
-        />
+        <div class="absolute inset-0 z-[4]" @click="emit('selectRegion', null)" />
 
         <!-- Grid lines for visual guidance -->
         <div class="absolute inset-0 pointer-events-none">
@@ -127,22 +132,13 @@
         <!-- Center alignment guides (show when element is near center) -->
         <div class="absolute inset-0 pointer-events-none z-[100]">
           <!-- Vertical center line -->
-          <div 
-            v-if="showVerticalCenterGuide"
-            class="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-brand"
-          />
+          <div v-if="showVerticalCenterGuide" class="absolute inset-y-0 left-1/2 w-px -translate-x-1/2 bg-brand" />
           <!-- Horizontal center line -->
-          <div 
-            v-if="showHorizontalCenterGuide"
-            class="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-brand"
-          />
+          <div v-if="showHorizontalCenterGuide" class="absolute inset-x-0 top-1/2 h-px -translate-y-1/2 bg-brand" />
         </div>
 
         <!-- Use 16:9: blurred full-frame background (scale cover) -->
-        <div
-          v-if="use16x9Mode"
-          class="absolute inset-0 overflow-hidden z-[0]"
-        >
+        <div v-if="use16x9Mode" class="absolute inset-0 overflow-hidden z-[0]">
           <canvas
             v-if="hasSourcePreview"
             ref="use16x9BgCanvasRef"
@@ -178,7 +174,9 @@
             alt=""
             draggable="false"
           />
-          <div class="absolute left-0 top-0 -translate-y-full whitespace-nowrap rounded-t px-2 py-0.5 text-[10px] font-medium bg-brand text-brand-fg">
+          <div
+            class="absolute left-0 top-0 -translate-y-full whitespace-nowrap rounded-t px-2 py-0.5 text-[10px] font-medium bg-brand text-brand-fg"
+          >
             16:9 (sharp) — drag / corners to scale
           </div>
           <div
@@ -202,9 +200,7 @@
           v-if="showSourceFrame"
           class="absolute border-2 border-brand"
           :class="[
-            isScaled16x9Selected
-              ? 'z-[15] cursor-move pointer-events-auto'
-              : 'z-[5] pointer-events-none',
+            isScaled16x9Selected ? 'z-[15] cursor-move pointer-events-auto' : 'z-[5] pointer-events-none',
             isScaled16x9Selected && isDraggingSourceFrame ? 'ring-2 ring-brand-line' : '',
           ]"
           :style="sourceFrameStyle"
@@ -225,9 +221,11 @@
             alt="Source frame"
             draggable="false"
           />
-          
+
           <!-- Label -->
-          <div class="absolute left-0 top-0 -translate-y-full whitespace-nowrap rounded-t px-2 py-0.5 text-[10px] font-medium bg-brand text-brand-fg">
+          <div
+            class="absolute left-0 top-0 -translate-y-full whitespace-nowrap rounded-t px-2 py-0.5 text-[10px] font-medium bg-brand text-brand-fg"
+          >
             16:9 Source Frame — drag · corners to scale
           </div>
 
@@ -344,13 +342,9 @@
         />
 
         <!-- Watermark preview overlay -->
-        <div
-          v-if="watermarkPreview"
-          class="absolute pointer-events-none z-10"
-          :style="watermarkPreviewStyle"
-        >
+        <div v-if="watermarkPreview" class="absolute pointer-events-none z-10" :style="watermarkPreviewStyle">
           <!-- Watermark indicator (simple preview representation) -->
-          <div 
+          <div
             class="flex h-full w-full items-center justify-center rounded border border-dashed border-white/40 bg-white/5"
             :style="{ opacity: watermarkPreview.opacity / 100 }"
           >
@@ -381,9 +375,11 @@
             <!-- Actual transcript words (when available) -->
             <div
               v-if="visibleWords.length > 0"
-              :class="subtitleSettings?.animationStyle === 'single-word'
-                ? 'flex items-center justify-center pointer-events-none'
-                : 'flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-2 py-0.5 pointer-events-none'"
+              :class="
+                subtitleSettings?.animationStyle === 'single-word'
+                  ? 'flex items-center justify-center pointer-events-none'
+                  : 'flex flex-wrap items-center justify-center gap-x-2 gap-y-1 px-2 py-0.5 pointer-events-none'
+              "
             >
               <template v-if="subtitleSettings">
                 <span
@@ -396,10 +392,16 @@
                   <!-- For single-word, add horizontal padding so stroke isn't clipped at edges -->
                   <span
                     class="invisible select-none"
-                    :style="subtitleSettings.animationStyle === 'single-word'
-                      ? { ...subtitleTextStyle, paddingLeft: '0.2em', paddingRight: '0.2em' }
-                      : subtitleTextStyle"
-                  >{{ subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}</span>
+                    :style="
+                      subtitleSettings.animationStyle === 'single-word'
+                        ? { ...subtitleTextStyle, paddingLeft: '0.2em', paddingRight: '0.2em' }
+                        : subtitleTextStyle
+                    "
+                  >
+                    {{
+                      subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word
+                    }}
+                  </span>
                   <svg class="absolute inset-0 w-full h-full overflow-visible" style="pointer-events: none">
                     <!-- Border 2 (Outer) -->
                     <text
@@ -419,7 +421,9 @@
                         fill: 'none',
                       }"
                     >
-                      {{ subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
+                      {{
+                        subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word
+                      }}
                     </text>
 
                     <!-- Border 1 (Inner) -->
@@ -440,7 +444,9 @@
                         fill: 'none',
                       }"
                     >
-                      {{ subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
+                      {{
+                        subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word
+                      }}
                     </text>
 
                     <!-- Fill Text -->
@@ -451,7 +457,9 @@
                       text-anchor="middle"
                       :style="subtitleWordSvgFillStyle(wordInfo)"
                     >
-                      {{ subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word }}
+                      {{
+                        subtitleSettings.animationStyle === 'single-word' ? wordInfo.word.toUpperCase() : wordInfo.word
+                      }}
                     </text>
                   </svg>
                 </span>
@@ -459,20 +467,15 @@
             </div>
 
             <!-- Sample text (when no transcript) -->
-            <div
-              v-else
-              class="text-center font-medium pointer-events-none px-2"
-              :style="subtitleTextStyle"
-            >
+            <div v-else class="text-center font-medium pointer-events-none px-2" :style="subtitleTextStyle">
               {{ subtitlePreviewFallbackText }}
             </div>
-
           </div>
 
           <!-- Corner resize handles (hidden for single-word style since width is auto) -->
           <div
             v-if="subtitlePositioningEnabled && subtitleSettings?.animationStyle !== 'single-word'"
-            v-for="corner in ['nw','ne','sw','se']"
+            v-for="corner in ['nw', 'ne', 'sw', 'se']"
             :key="corner"
             class="pointer-events-auto absolute z-30 size-2.5 border border-white bg-brand"
             :class="{
@@ -494,7 +497,9 @@
           <div
             class="inline-flex items-center justify-center select-none overflow-hidden relative"
             :class="[
-              isDraggingClipText || isResizingClipText ? 'ring-2 ring-brand' : 'ring-1 ring-brand-line hover:ring-brand',
+              isDraggingClipText || isResizingClipText
+                ? 'ring-2 ring-brand'
+                : 'ring-1 ring-brand-line hover:ring-brand',
               clipTextBoxPositioningEnabled ? 'cursor-move' : 'cursor-default',
             ]"
             :style="clipTextPillStyle"
@@ -528,11 +533,7 @@
           v-if="socialOverlayPreset && isTarget916"
           class="absolute inset-0 z-[100] pointer-events-none select-none overflow-hidden rounded-lg"
         >
-          <SocialOverlay
-            :preset="socialOverlayPreset"
-            :canvas-width="9"
-            :canvas-height="16"
-          />
+          <SocialOverlay :preset="socialOverlayPreset" :canvas-width="9" :canvas-height="16" />
         </div>
 
         <!-- Empty state -->
@@ -549,9 +550,9 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, nextTick } from 'vue';
-  import { convertFileSrc } from '@tauri-apps/api/core';
   import { CheckIcon, ChevronDownIcon, LayoutGridIcon, LayoutIcon } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
+  import { convertFileSrc } from '@/services/creatorProfileRuntime';
   import POIRegion from './POIRegion.vue';
   import MediaPreview from '@/components/MediaPreview.vue';
   import SocialOverlay from '@/editor/components/preview/SocialOverlay.vue';
@@ -598,6 +599,7 @@
   }
 
   interface Props {
+    resolveMediaSrc?: (id: string) => string;
     regions: ManualRegion[];
     selectedRegionId: string | null;
     thumbnailUrl?: string | null;
@@ -651,9 +653,7 @@
     socialOverlayPreset: null,
   });
 
-  const hasSourcePreview = computed(
-    () => Boolean(props.timelinePreviewCanvas || props.videoUrl),
-  );
+  const hasSourcePreview = computed(() => Boolean(props.timelinePreviewCanvas || props.videoUrl));
 
   const emit = defineEmits<{
     updateRegion: [id: string, region: Partial<ManualRegion>];
@@ -670,9 +670,7 @@
 
   const isTarget916 = computed(() => props.targetAspectRatio === '9:16');
 
-  const isScaled16x9Selected = computed(
-    () => props.selectedRegionId === POI_OVERLAY_SCALED_16X9_ID
-  );
+  const isScaled16x9Selected = computed(() => props.selectedRegionId === POI_OVERLAY_SCALED_16X9_ID);
 
   // Source frame scaling state
   const showSourceFrame = ref(false);
@@ -759,9 +757,7 @@
   const clipRelativePreviewTime = computed(() => {
     const absoluteTime = props.videoTime || 0;
     const clipStart = props.clipStartTime || 0;
-    return clipStart > 0 && absoluteTime >= clipStart
-      ? absoluteTime - clipStart
-      : absoluteTime;
+    return clipStart > 0 && absoluteTime >= clipStart ? absoluteTime - clipStart : absoluteTime;
   });
 
   const showClipTextBoxOverlay = computed(() => {
@@ -851,10 +847,8 @@
   function onClipTextDragMove(event: MouseEvent) {
     if (!isDraggingClipText.value || !containerRef.value) return;
     const rect = containerRef.value.getBoundingClientRect();
-    let newX =
-      ((event.clientX - clipTextDragOffset.value.x - rect.left) / rect.width) * 100;
-    let newY =
-      ((event.clientY - clipTextDragOffset.value.y - rect.top) / rect.height) * 100;
+    let newX = ((event.clientX - clipTextDragOffset.value.x - rect.left) / rect.width) * 100;
+    let newY = ((event.clientY - clipTextDragOffset.value.y - rect.top) / rect.height) * 100;
     const halfW = localClipTextPosition.value.widthPct / 2;
     newX = Math.max(halfW + 1, Math.min(100 - halfW - 1, newX));
     newY = Math.max(4, Math.min(96, newY));
@@ -962,7 +956,7 @@
       return assetId;
     }
     try {
-      return convertFileSrc(assetId);
+      return props.resolveMediaSrc ? props.resolveMediaSrc(assetId) : convertFileSrc(assetId);
     } catch {
       return assetId;
     }
@@ -1010,11 +1004,9 @@
     { deep: true }
   );
 
-  watch(
-    [showSourceFrame, use16x9Mode, blurEnabled, blurAmount, sourceFrameTransform],
-    () => emitSourceFraming(),
-    { deep: true }
-  );
+  watch([showSourceFrame, use16x9Mode, blurEnabled, blurAmount, sourceFrameTransform], () => emitSourceFraming(), {
+    deep: true,
+  });
 
   watch([containerWidth, containerHeight], () => {
     emitSourceFraming();
@@ -1068,7 +1060,7 @@
     sourceWidth: number,
     sourceHeight: number,
     cw: number,
-    ch: number,
+    ch: number
   ) {
     const vw = sourceWidth;
     const vh = sourceHeight;
@@ -1087,7 +1079,7 @@
     sourceWidth: number,
     sourceHeight: number,
     cw: number,
-    ch: number,
+    ch: number
   ) {
     const vw = sourceWidth;
     const vh = sourceHeight;
@@ -1107,7 +1099,7 @@
     sourceHeight: number,
     region: ManualRegion,
     cw: number,
-    ch: number,
+    ch: number
   ) {
     const vw = sourceWidth;
     const vh = sourceHeight;
@@ -1245,7 +1237,7 @@
           video.pause();
         }
       });
-    },
+    }
   );
 
   watch(
@@ -1254,7 +1246,7 @@
       syncAllVideoTimes(time);
       redrawSourcePreviews();
     },
-    { immediate: true },
+    { immediate: true }
   );
 
   watch(
@@ -1262,7 +1254,7 @@
     () => {
       redrawSourcePreviews();
     },
-    { deep: true },
+    { deep: true }
   );
 
   /** Canvases for Use/Scale 16:9 are v-if mounted — wait for DOM + layout before paint. */
@@ -1286,34 +1278,34 @@
       } else if (!props.isPlaying) {
         stopPreviewLoop();
       }
-    },
+    }
   );
 
   // Compute source frame style (16:9 frame positioned in 9:16 container)
   const sourceFrameStyle = computed(() => {
     const transform = sourceFrameTransform.value;
-    
+
     // For 16:9 source in 9:16 container:
     // - 16:9 is wider (aspect ~1.78)
     // - 9:16 is taller (aspect ~0.56)
     // - Base size: fit 16:9 to container WIDTH (so entire frame is visible, letterboxed)
     // - Then apply scale to zoom in/out
-    
+
     const sourceAspect = 16 / 9;
-    
+
     // Fit to WIDTH for 16:9 in portrait container (letterbox effect)
     // Base dimensions at scale 1.0
     const baseWidth = containerWidth.value;
     const baseHeight = baseWidth / sourceAspect;
-    
+
     // Apply scale
     const width = baseWidth * transform.scale;
     const height = baseHeight * transform.scale;
-    
+
     // Center by default, then apply transform offset
     const left = (containerWidth.value - width) / 2 + transform.x;
     const top = (containerHeight.value - height) / 2 + transform.y;
-    
+
     return {
       left: `${left}px`,
       top: `${top}px`,
@@ -1328,7 +1320,7 @@
     isDraggingSourceFrame.value = true;
     dragStartPos.value = { x: e.clientX, y: e.clientY };
     dragStartTransform.value = { x: sourceFrameTransform.value.x, y: sourceFrameTransform.value.y };
-    
+
     document.addEventListener('mousemove', onDragSourceFrame);
     document.addEventListener('mouseup', stopDragSourceFrame);
   }
@@ -1336,25 +1328,25 @@
   // Handle source frame drag with snap-to-center
   function onDragSourceFrame(e: MouseEvent) {
     if (!isDraggingSourceFrame.value) return;
-    
+
     const deltaX = e.clientX - dragStartPos.value.x;
     const deltaY = e.clientY - dragStartPos.value.y;
-    
+
     let newX = dragStartTransform.value.x + deltaX;
     let newY = dragStartTransform.value.y + deltaY;
-    
+
     // Check for center snap (x=0 means horizontally centered, y=0 means vertically centered)
     const nearVerticalCenter = Math.abs(newX) < SNAP_THRESHOLD;
     const nearHorizontalCenter = Math.abs(newY) < SNAP_THRESHOLD;
-    
+
     // Snap to center if close
     if (nearVerticalCenter) newX = 0;
     if (nearHorizontalCenter) newY = 0;
-    
+
     // Show/hide center guides
     showVerticalCenterGuide.value = nearVerticalCenter;
     showHorizontalCenterGuide.value = nearHorizontalCenter;
-    
+
     sourceFrameTransform.value.x = newX;
     sourceFrameTransform.value.y = newY;
   }
@@ -1372,15 +1364,15 @@
   function startResizeSourceFrame(e: MouseEvent, corner: string) {
     e.preventDefault();
     e.stopPropagation();
-    
+
     const startScale = sourceFrameTransform.value.scale;
     const startX = e.clientX;
     const startY = e.clientY;
-    
+
     const onResize = (e: MouseEvent) => {
       const deltaX = e.clientX - startX;
       const deltaY = e.clientY - startY;
-      
+
       // Calculate direction based on corner
       // For all corners, dragging outward (positive delta) should increase scale
       let scaleDelta = 0;
@@ -1391,15 +1383,15 @@
         // Left corners: negative X = scale up
         scaleDelta = -deltaX / 200;
       }
-      
+
       sourceFrameTransform.value.scale = Math.max(0.5, Math.min(5, startScale + scaleDelta));
     };
-    
+
     const stopResize = () => {
       document.removeEventListener('mousemove', onResize);
       document.removeEventListener('mouseup', stopResize);
     };
-    
+
     document.addEventListener('mousemove', onResize);
     document.addEventListener('mouseup', stopResize);
   }
@@ -1413,12 +1405,12 @@
   // Calculate watermark preview style (positioned at percentage-based coordinates)
   const watermarkPreviewStyle = computed(() => {
     if (!props.watermarkPreview) return {};
-    
+
     const { x, y, scale } = props.watermarkPreview;
-    
+
     // Watermark size as percentage of container width
     const sizePercent = scale;
-    
+
     // Position is center-point based (like CSS transform: translate(-50%, -50%))
     return {
       width: `${sizePercent}%`,
@@ -1433,18 +1425,18 @@
   // Calculate appropriate box width based on animation style
   const computedSubtitleBoxWidth = computed(() => {
     const baseWidth = localSubtitlePosition.value.width ?? 80;
-    
+
     if (!props.subtitleSettings) return baseWidth;
-    
+
     // For single-word style, use a smaller width to fit just one word
     if (props.subtitleSettings.animationStyle === 'single-word') {
       // Single word boxes should be narrower - around 35-45% depending on font size
       // Larger fonts need slightly wider boxes
       const fontSize = props.subtitleSettings.fontSize || 65;
-      const singleWordWidth = Math.min(50, Math.max(30, 25 + (fontSize / 10)));
+      const singleWordWidth = Math.min(50, Math.max(30, 25 + fontSize / 10));
       return singleWordWidth;
     }
-    
+
     return baseWidth;
   });
 
@@ -1482,14 +1474,13 @@
     // For portrait (9:16): container ~214px wide, output 1080px → scale ~0.20
     // For landscape (16:9): container ~240px wide, output 1920px → scale ~0.125
     // For square (1:1): container ~240px wide, output 1080px → scale ~0.22
-    const scale = ar < 0.9 ? 0.20 : ar < 1.2 ? 0.22 : 0.125;
+    const scale = ar < 0.9 ? 0.2 : ar < 1.2 ? 0.22 : 0.125;
     // Do not floor too high: preview canvas is small (fontSize*scale is often 6–20px);
     // a high min hid real font size changes when resizing the subtitle box in POI.
     const fs = Math.max(1, Math.round(settings.fontSize * scale));
-    const stroke = settings.border1Width > 0
-      ? `${settings.border1Color} 0 0 0 ${settings.border1Width * scale}px`
-      : undefined;
-    
+    const stroke =
+      settings.border1Width > 0 ? `${settings.border1Color} 0 0 0 ${settings.border1Width * scale}px` : undefined;
+
     const styles: any = {
       fontSize: `${fs}px`,
       fontFamily: settings.fontFamily,
@@ -1499,27 +1490,27 @@
       lineHeight: String(settings.lineHeight || 1.2),
       letterSpacing: `${settings.letterSpacing}px`,
     };
-    
+
     // Add uppercase for single-word style (CapCut-style)
     if (settings.animationStyle === 'single-word') {
       styles.textTransform = 'uppercase';
     }
-    
+
     // Add background if enabled
     if (settings.backgroundEnabled && settings.backgroundColor !== 'transparent') {
       styles.backgroundColor = settings.backgroundColor;
       styles.padding = '2px 6px';
       styles.borderRadius = '2px';
     }
-    
+
     // Add shadow if configured
     if (settings.shadowBlur > 0) {
       styles.textShadow = `${settings.shadowOffsetX}px ${settings.shadowOffsetY}px ${settings.shadowBlur}px ${settings.shadowColor}`;
     }
-    
+
     return styles;
   });
-  
+
   // Compute visible words — same rules as VideoPlayer (no ±20s window, no full-segment dump on gaps)
   const visibleWords = computed((): WordInfo[] => {
     if (!props.subtitleSettings) return [];
@@ -1550,9 +1541,7 @@
   function isCurrentWord(word: WordInfo): boolean {
     const animationStyle = props.subtitleSettings?.animationStyle;
     if (animationStyle === 'single-word') {
-      return visibleWords.value.some(
-        (w) => w.start === word.start && w.end === word.end && w.word === word.word
-      );
+      return visibleWords.value.some((w) => w.start === word.start && w.end === word.end && w.word === word.word);
     }
 
     const clipRelativeTime = clipRelativePreviewTime.value;
@@ -1579,16 +1568,17 @@
       return props.subtitleSettings?.textColor || '#FFFFFF';
     }
 
-    const palette = props.subtitleSettings.colorPalette && props.subtitleSettings.colorPalette.length > 0
-      ? props.subtitleSettings.colorPalette
-      : ['#04F827', '#0ea5e9', '#FFFD03', '#FFFFFF']; // Default: Green, Cyan, Yellow, White
-    
+    const palette =
+      props.subtitleSettings.colorPalette && props.subtitleSettings.colorPalette.length > 0
+        ? props.subtitleSettings.colorPalette
+        : ['#04F827', '#0ea5e9', '#FFFD03', '#FFFFFF']; // Default: Green, Cyan, Yellow, White
+
     return palette[wordIndex % palette.length];
   }
 
   // Get word index in full transcript (for color rotation)
   function getWordIndexInTranscript(word: WordInfo): number {
-    return props.transcriptWords?.findIndex(w => w.start === word.start && w.end === word.end) || 0;
+    return props.transcriptWords?.findIndex((w) => w.start === word.start && w.end === word.end) || 0;
   }
 
   function subtitleWordPreviewMotionStyle(wordInfo: WordInfo): Record<string, string> {
@@ -1797,11 +1787,11 @@
 
     isDraggingSubtitles.value = true;
     const rect = containerRef.value.getBoundingClientRect();
-    
+
     // Calculate the drag offset from the subtitle center
-    const centerX = rect.left + (rect.width * localSubtitlePosition.value.x / 100);
-    const centerY = rect.top + (rect.height * localSubtitlePosition.value.y / 100);
-    
+    const centerX = rect.left + (rect.width * localSubtitlePosition.value.x) / 100;
+    const centerY = rect.top + (rect.height * localSubtitlePosition.value.y) / 100;
+
     subtitleDragOffset.value = {
       x: event.clientX - centerX,
       y: event.clientY - centerY,
@@ -1810,7 +1800,7 @@
     // Add global mouse listeners
     document.addEventListener('mousemove', onSubtitleDragMove);
     document.addEventListener('mouseup', onSubtitleDragEnd);
-    
+
     event.preventDefault();
   }
 
@@ -1818,45 +1808,45 @@
     if (!isDraggingSubtitles.value || !containerRef.value) return;
 
     const rect = containerRef.value.getBoundingClientRect();
-    
+
     // Calculate new position as percentage
     let newX = ((event.clientX - subtitleDragOffset.value.x - rect.left) / rect.width) * 100;
     let newY = ((event.clientY - subtitleDragOffset.value.y - rect.top) / rect.height) * 100;
-    
+
     // Use computed box width (accounts for animation style)
     const boxWidth = computedSubtitleBoxWidth.value;
     const halfBoxWidth = boxWidth / 2;
-    
+
     // Constrain X so the text box doesn't extend past canvas edges
     // The box is centered at x, so ensure x - halfWidth >= 0 and x + halfWidth <= 100
     const minX = halfBoxWidth + 1; // 1% padding from edge
     const maxX = 100 - halfBoxWidth - 1;
-    
+
     // Constrain Y with reasonable bounds
     const minY = 6;
     const maxY = 94;
-    
+
     let constrainedX = Math.max(minX, Math.min(maxX, newX));
     let constrainedY = Math.max(minY, Math.min(maxY, newY));
-    
+
     // Snap to center (50% for subtitles)
     const snapThresholdPercent = (SNAP_THRESHOLD / rect.width) * 100;
     const nearVerticalCenter = Math.abs(constrainedX - 50) < snapThresholdPercent;
     const nearHorizontalCenter = Math.abs(constrainedY - 50) < snapThresholdPercent;
-    
+
     if (nearVerticalCenter) constrainedX = 50;
     if (nearHorizontalCenter) constrainedY = 50;
-    
+
     // Show/hide center guides
     showVerticalCenterGuide.value = nearVerticalCenter;
     showHorizontalCenterGuide.value = nearHorizontalCenter;
-    
+
     localSubtitlePosition.value = {
       ...localSubtitlePosition.value,
       x: constrainedX,
       y: constrainedY,
     };
-    
+
     // Emit position change
     emit('subtitlePositionChange', { ...localSubtitlePosition.value });
   }
@@ -1887,7 +1877,7 @@
       corner,
       startWidth,
       startFontSize,
-      startCenterX
+      startCenterX,
     });
 
     const onMove = (e: MouseEvent) => {
@@ -1913,16 +1903,16 @@
       // Clamp width to leave margin at edges (max 96% to leave 2% on each side)
       const clampedWidth = Math.min(newWidth, 96);
       const halfWidth = clampedWidth / 2;
-      
+
       localSubtitlePosition.value = {
         ...localSubtitlePosition.value,
         x: Math.max(halfWidth + 2, Math.min(100 - halfWidth - 2, newCenterX)),
         width: clampedWidth,
       };
-      
+
       // Emit both position and settings changes
       emit('subtitlePositionChange', { ...localSubtitlePosition.value });
-      
+
       const base = props.subtitleSettings ?? subtitleSettingsSnapshot;
       emit('subtitleSettingsChange', { ...base, fontSize: newFontSize });
     };

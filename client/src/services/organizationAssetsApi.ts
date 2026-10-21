@@ -3,7 +3,7 @@
  * Handles communication with the server for organization asset management.
  */
 
-import api from './api';
+import api from '@/services/api';
 
 // ============================================
 // Types

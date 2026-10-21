@@ -20,3 +20,4 @@ export { WEB_PUBLISH_PLATFORMS } from './web';
 export { manualSourceRect } from './framingGeometry';
 
 export * from './detectionPrompts';
+export { clipWords } from './clipTimeline';

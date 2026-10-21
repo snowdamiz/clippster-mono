@@ -1,158 +1,6 @@
 <template>
-  <div class="h-full w-full">
-    <PageLayout
-      title="Creator profiles"
-      description="Manage your content creators and their streaming configurations"
-      :icon="Users"
-    >
-      <template #actions>
-        <Button
-          variant="ghost"
-          size="sm"
-          :loading="syncingPersonal"
-          title="Sync personal profiles and branding to the cloud"
-          @click="syncPersonalToCloud"
-        >
-          <Cloud v-if="!syncingPersonal" />
-          {{ syncingPersonal ? 'Syncing…' : 'Sync to cloud' }}
-        </Button>
-        <Button variant="primary" size="sm" data-tour-id="tour-add-creator" @click="openCreateDialog">
-          <Plus />
-          {{ activeTab === 'global' ? 'Add global profile' : 'Add creator' }}
-        </Button>
-      </template>
-
-      <template #toolbar>
-        <div class="@container flex min-w-0 flex-1 items-center gap-3">
-          <span data-tour-id="tour-streamer-tab" class="inline-flex shrink-0">
-            <SegmentedControl v-model="activeTab" :options="tabOptions" />
-          </span>
-          <div
-            v-if="creators.length > 0"
-            class="hidden min-w-0 items-center gap-3 overflow-hidden text-xs text-fg-muted @min-[50rem]:flex"
-          >
-            <span class="whitespace-nowrap">
-              <span class="tabular font-medium text-fg">{{ creators.length }}</span>
-              {{ creators.length === 1 ? 'creator' : 'creators' }}
-            </span>
-            <span class="flex items-center gap-1.5 whitespace-nowrap">
-              <span class="size-1.5 rounded-full" :class="liveCreatorsCount > 0 ? 'bg-live' : 'bg-fg-disabled'" />
-              <span class="tabular font-medium text-fg">{{ liveCreatorsCount }}</span> live
-            </span>
-            <span class="flex items-center gap-1.5 whitespace-nowrap">
-              <Activity class="size-3.5 text-fg-subtle" />
-              <span class="tabular font-medium text-fg">{{ monitoringCreatorsCount }}</span> monitoring
-            </span>
-          </div>
-          <SearchField v-model="searchQuery" placeholder="Search creators…" class="ml-auto w-52 min-w-0 shrink" />
-        </div>
-      </template>
-
-      <div class="flex flex-1 flex-col px-5 py-4" data-tour-id="tour-creators-list">
-        <!-- Not authenticated -->
-        <EmptyState
-          v-if="!authStore.isAuthenticated && creators.length === 0"
-          :icon="Users"
-          title="Sign in to manage creators"
-          description="Access your creator profiles and streaming configurations."
-        />
-
-        <!-- First load only: reloads after save/delete keep the current cards -->
-        <div
-          v-else-if="loading && creators.length === 0 && campaigns.length === 0"
-          class="skeleton-group card-grid"
-        >
-          <div v-for="i in 6" :key="i" class="flex flex-col gap-3 rounded-xl border border-line-subtle bg-surface p-3.5">
-            <div class="flex items-center gap-3">
-              <div class="skeleton size-9 shrink-0 rounded-full" />
-              <div class="flex flex-1 flex-col gap-1.5">
-                <div class="skeleton h-3.5 w-2/3" />
-                <div class="skeleton h-3 w-1/2" />
-              </div>
-            </div>
-            <div class="flex gap-1">
-              <div class="skeleton size-5" />
-              <div class="skeleton size-5" />
-            </div>
-          </div>
-        </div>
-
-        <!-- Lists -->
-        <div v-else-if="creators.length > 0 || campaigns.length > 0" class="flex flex-col gap-6">
-          <section v-if="campaigns.length > 0" class="flex animate-enter flex-col gap-2.5">
-            <SectionHeader title="Campaigns" :icon="Trophy" :count="campaigns.length" />
-            <div class="card-grid items-start">
-              <AssignedCampaignCard
-                v-for="campaign in campaigns"
-                :key="campaign.id"
-                :campaign="campaign"
-                :expanded="isCampaignExpanded(campaign.id)"
-                :image-for="getCreatorProfileImage"
-                @toggle="toggleCampaignExpansion(campaign.id)"
-              />
-            </div>
-          </section>
-
-          <!-- Tab panel: keyed so switching tabs eases in -->
-          <div :key="activeTab" class="flex animate-enter flex-col gap-6 empty:hidden">
-            <section v-for="group in profileSections" :key="group.key" class="flex flex-col gap-2.5">
-              <SectionHeader :title="group.title" :icon="group.icon" :count="group.items.length" />
-              <div class="card-grid">
-                <CreatorCard
-                  v-for="creator in group.items"
-                  :key="creator.id"
-                  :creator="creator"
-                  :image-url="getCreatorProfileImage(creator)"
-                  :live="getCardLiveState(creator)"
-                  @view-vods="viewCreatorVods(creator)"
-                  @download="openDownloadDialog(creator)"
-                  @edit="openEditDialog(creator)"
-                  @submit-post="openPostSubmitDialog(creator)"
-                  @toggle-auto-dvr="toggleCreatorAutoDvr(creator)"
-                  @toggle-disabled="toggleProfileDisabled(creator)"
-                  @delete="confirmDeleteCreator(creator)"
-                  @record="onCreatorRecordClick(creator)"
-                  @auto-detect="onCreatorAutoDetectClick(creator)"
-                  @stop="stopCreatorMonitoring(creator)"
-                  @watch="watchCreator(creator)"
-                />
-              </div>
-            </section>
-
-            <!-- No search results -->
-            <EmptyState
-              v-if="filteredCreators.length === 0 && searchQuery"
-              :icon="Search"
-              size="sm"
-              title="No creators found"
-              :description="`No results for “${searchQuery}”.`"
-            />
-            <!-- Nothing in this tab -->
-            <EmptyState
-              v-else-if="filteredCreators.length === 0 && !searchQuery && creators.length > 0"
-              :icon="activeTab === 'global' ? Paintbrush : Users"
-              size="sm"
-              :title="activeTab === 'global' ? 'No global branding profiles' : 'No streamer profiles'"
-              :description="
-                activeTab === 'global'
-                  ? 'Create a global branding profile to apply universal branding across all your content.'
-                  : 'Add a streamer profile to start managing their VODs and live monitoring.'
-              "
-            />
-          </div>
-        </div>
-
-        <!-- Empty -->
-        <EmptyState
-          v-else
-          :icon="Users"
-          title="No creators yet"
-          description="Add your first content creator to start managing their VODs, assets, and live monitoring."
-        >
-          <Button variant="secondary" @click="openCreateDialog"><Plus /> Add creator</Button>
-        </EmptyState>
-      </div>
-    </PageLayout>
+  <div class="creators">
+    <CreatorProfilesView :model="viewModel" />
 
     <!-- Creator Profile Dialog -->
     <ProfileDialog
@@ -188,16 +36,15 @@
     <AuthModal v-model="showAuthModal" />
 
     <!-- Personal Post Dialog (for non-org creators) -->
-    <AddPostDialog
-      v-model="showPersonalPostDialog"
-      @submitted="handlePersonalPostSubmitted"
-    />
+    <AddPostDialog v-model="showPersonalPostDialog" @submitted="handlePersonalPostSubmitted" />
 
     <!-- External Post Submit Dialog -->
     <ExternalPostSubmitDialog
       :open="showPostSubmitDialog"
       :organization-id="creatorForPostSubmit?.organization_id || 0"
-      :creator-profiles="creatorForPostSubmit ? [{ id: creatorForPostSubmit.server_id!, name: creatorForPostSubmit.name }] : []"
+      :creator-profiles="
+        creatorForPostSubmit ? [{ id: creatorForPostSubmit.server_id!, name: creatorForPostSubmit.name }] : []
+      "
       :campaigns="[]"
       :preselected-creator-profile-id="creatorForPostSubmit?.server_id"
       @close="showPostSubmitDialog = false"
@@ -210,7 +57,12 @@
       :creator-layout-eligible="creatorLayoutEligible"
       :creator-layout-creator-name="creatorLayoutCreatorName"
       :show-sixty-minute-cap="true"
-      @update:model-value="(open) => { showRealtimeDialog = open; if (!open) closeRealtimeDialog(); }"
+      @update:model-value="
+        (open) => {
+          showRealtimeDialog = open;
+          if (!open) closeRealtimeDialog();
+        }
+      "
       @confirm="handleRealtimeDetectionConfirm"
     />
 
@@ -252,9 +104,11 @@
 </template>
 
 <script setup lang="ts">
-  import { ref, onMounted, onUnmounted, computed } from 'vue';
+  import { ref, onMounted, onUnmounted, computed, reactive } from 'vue';
   import { useRouter } from 'vue-router';
   import PageLayout from '@/components/PageLayout.vue';
+  import AssignedCampaignCard from '@/components/creators/AssignedCampaignCard.vue';
+  import CreatorProfilesView from '@/components/CreatorProfilesView.vue';
   import { Button } from '@/components/ui/button';
   import { EmptyState } from '@/components/ui/empty-state';
   import { Field } from '@/components/ui/field';
@@ -263,8 +117,7 @@
   import { SectionHeader } from '@/components/ui/section-header';
   import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
   import { Switch } from '@/components/ui/switch';
-  import CreatorCard, { type CreatorCardLiveState } from '@/components/creators/CreatorCard.vue';
-  import AssignedCampaignCard from '@/components/creators/AssignedCampaignCard.vue';
+  import { getPlatformIcon, getPlatformFilter } from '@/lib/creatorProfilePresentation';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import ProfileDialog from '@/components/ProfileDialog.vue';
   import RealtimeDetectionDialog from '@/components/RealtimeDetectionDialog.vue';
@@ -286,7 +139,8 @@
     getAllStreamerProfiles,
     type CreatorProfileWithLinks,
   } from '@/services/database';
-  import { getUserAssignedCreatorProfiles,
+  import {
+    getUserAssignedCreatorProfiles,
     updatePlatformLink as updateOrgPlatformLink,
     toggleCreatorProfileDisabled,
     type ServerOrganizationCreatorProfile,
@@ -309,31 +163,11 @@
   import { useFeatureFlags } from '@/composables/useFeatureFlags';
   import { useLivestreamStore } from '@/stores/livestream';
 
-  // Extended type that can represent both local and org profiles
-  interface DisplayCreatorProfile extends CreatorProfileWithLinks {
-    isOrgProfile?: boolean;
-    server_id?: number;
-    disabled?: boolean;
-    isGlobalBranding?: boolean;
-  }
-
-  // Grouped campaign display with all creators
-  interface DisplayCampaign {
-    id: number;
-    title: string;
-    organization_id: number;
-    organization_name: string;
-    cover_image_url?: string;
-    isGlobalBranding: boolean;
-    branding_profile_id: number | null;
-    creators: DisplayCreatorProfile[];
-    uniquePlatforms: PlatformId[];
-    hasIntro: boolean;
-    hasOutro: boolean;
-    hasWatermark: boolean;
-    created_at: number;
-    updated_at: number;
-  }
+  import {
+    convertCampaignsToGroupedDisplay,
+    type DisplayCreatorProfile,
+    type DisplayCampaign,
+  } from '@/lib/creatorCampaignPresentation';
 
   function getMonitoredStreamerId(creator: DisplayCreatorProfile): string | null {
     for (const link of creator.platform_links) {
@@ -490,8 +324,7 @@
   const { maybeStartPageTour } = useAppTour();
   const { success, error: showError } = useToast();
   const { showGate, requireSubscription } = useSubscriptionGate();
-  const { activeSessions, monitoredStreamers, stopMonitoring, hasDvrRecording } =
-    useLivestreamMonitoring();
+  const { activeSessions, monitoredStreamers, stopMonitoring, hasDvrRecording } = useLivestreamMonitoring();
   const {
     showRealtimeDialog,
     showSegmentDialog,
@@ -587,24 +420,19 @@
 
   // Profile type filters
   const organizationProfiles = computed(() => {
-    return sortedCreators.value.filter(c => c.isOrgProfile && !c.campaign_id);
+    return sortedCreators.value.filter((c) => c.isOrgProfile && !c.campaign_id);
   });
-
-  // No longer needed - campaigns are stored separately
-  // const campaignProfiles = computed(() => {
-  //   return sortedCreators.value.filter(c => c.campaign_id != null);
-  // });
 
   const userProfiles = computed(() => {
-    return sortedCreators.value.filter(c => !c.isOrgProfile && !c.campaign_id);
+    return sortedCreators.value.filter((c) => !c.isOrgProfile && !c.campaign_id);
   });
 
-  async function syncPersonalToCloud() {
+  async function syncPersonalToCloud(notify = true) {
     if (syncingPersonal.value) return;
     syncingPersonal.value = true;
     try {
       const result = await syncPersonalBranding();
-      success(
+      if (notify) success(
         `Personal branding synced — ${result.upsertedProfiles} profiles, ${result.uploadedAssets} uploaded, ${result.downloadedAssets} downloaded`
       );
       await loadCreators();
@@ -617,7 +445,9 @@
 
   // Load creators on mount
   onMounted(async () => {
+    window.addEventListener('personal-creators-synced', refreshSyncedCreators);
     await loadCreators();
+    void syncPersonalToCloud(false);
     checkAllLiveStatuses(true); // Include Kick on initial load
     liveStatusInterval.value = window.setInterval(() => {
       checkAllLiveStatuses(false); // Skip Kick on interval to save API requests
@@ -626,11 +456,16 @@
   });
 
   onUnmounted(() => {
+    window.removeEventListener('personal-creators-synced', refreshSyncedCreators);
     if (liveStatusInterval.value) {
       clearInterval(liveStatusInterval.value);
       liveStatusInterval.value = null;
     }
   });
+
+  function refreshSyncedCreators() {
+    void loadCreators();
+  }
 
   async function checkAllLiveStatuses(includeKick: boolean = true) {
     const pumpfunLinksToCheck: { platformId: string; mintId: string }[] = [];
@@ -738,14 +573,14 @@
       try {
         const previousStatus = liveStatusMap.value.get(platformId);
         const wasLive = previousStatus?.isLive ?? false;
-        
+
         const status = await fetchLiveStatus(mintId);
         liveStatusMap.value.set(platformId, {
           isLive: status.isLive,
           viewerCount: status.numParticipants,
           isChecking: false,
         });
-        
+
         // Note: Toast notifications are handled by global polling system to avoid duplicates
       } catch (error) {
         console.error('[CreatorProfiles] Failed to check PumpFun live status for', mintId, error);
@@ -768,7 +603,7 @@
         try {
           const previousStatus = liveStatusMap.value.get(platformId);
           const wasLive = previousStatus?.isLive ?? false;
-          
+
           const status = await checkKickLivestream(channelSlug);
           liveStatusMap.value.set(platformId, {
             isLive: status.isLive,
@@ -776,7 +611,7 @@
             profileImageUrl: status.profileImageUrl,
             isChecking: false,
           });
-          
+
           // Note: Toast notifications are handled by global polling system to avoid duplicates
 
           // Persist profile image if we got one and don't have one stored
@@ -826,7 +661,7 @@
         try {
           const previousStatus = liveStatusMap.value.get(platformId);
           const wasLive = previousStatus?.isLive ?? false;
-          
+
           const status = await checkTwitchLivestream(channelName);
           liveStatusMap.value.set(platformId, {
             isLive: status.isLive,
@@ -834,7 +669,7 @@
             profileImageUrl: status.profileImageUrl,
             isChecking: false,
           });
-          
+
           // Note: Toast notifications are handled by global polling system to avoid duplicates
 
           // Persist profile image if we got one and don't have one stored
@@ -964,6 +799,7 @@
 
       const displayProfiles: DisplayCreatorProfile[] = localProfiles.map((p) => ({
         ...p,
+        server_id: p.server_id ?? undefined,
         disabled: p.disabled ? true : false,
         isOrgProfile: false,
       }));
@@ -1052,9 +888,15 @@
       watermark_id: profile.watermark_id ? `org-asset-${profile.watermark_id}` : null,
       watermark_settings: profile.watermark_settings ? JSON.stringify(profile.watermark_settings) : null,
       layout_overlays: profile.layout_overlays ? JSON.stringify(profile.layout_overlays) : null,
-      intro_outro_settings: (profile as any).intro_outro_settings ? JSON.stringify((profile as any).intro_outro_settings) : null,
-      intro_ratio_settings: (profile as any).intro_ratio_settings ? JSON.stringify((profile as any).intro_ratio_settings) : null,
-      outro_ratio_settings: (profile as any).outro_ratio_settings ? JSON.stringify((profile as any).outro_ratio_settings) : null,
+      intro_outro_settings: (profile as any).intro_outro_settings
+        ? JSON.stringify((profile as any).intro_outro_settings)
+        : null,
+      intro_ratio_settings: (profile as any).intro_ratio_settings
+        ? JSON.stringify((profile as any).intro_ratio_settings)
+        : null,
+      outro_ratio_settings: (profile as any).outro_ratio_settings
+        ? JSON.stringify((profile as any).outro_ratio_settings)
+        : null,
       created_at: new Date(profile.inserted_at).getTime(),
       updated_at: new Date(profile.updated_at).getTime(),
       user_id: null,
@@ -1076,102 +918,6 @@
       server_id: profile.id,
       context_type: 'organization',
     }));
-  }
-
-  function convertCampaignsToGroupedDisplay(campaignsList: Campaign[]): DisplayCampaign[] {
-    const displayCampaigns: DisplayCampaign[] = [];
-    
-    for (const campaign of campaignsList) {
-      const isGlobalBrandingCampaign = campaign.creator_profile_id === null && campaign.branding_profile_id !== null;
-      
-      const campaignProfiles = campaign.creator_profiles || [];
-      if (campaignProfiles.length === 0 && campaign.creator_profile) {
-        campaignProfiles.push(campaign.creator_profile);
-      }
-
-      // Convert creator profiles to DisplayCreatorProfile format
-      const creators: DisplayCreatorProfile[] = campaignProfiles.map((cp) => ({
-        id: `campaign-${campaign.id}-${cp.id}`,
-        name: cp.name,
-        description: cp.description ?? null,
-        profile_image_path: cp.profile_image_url ?? null,
-        intro_id: cp.intro?.id ? `org-asset-${cp.intro.id}` : null,
-        outro_id: cp.outro?.id ? `org-asset-${cp.outro.id}` : null,
-        watermark_id: cp.watermark?.id ? `org-asset-${cp.watermark.id}` : null,
-        watermark_settings: cp.watermark_settings ? JSON.stringify(cp.watermark_settings) : null,
-        layout_overlays: null,
-        intro_outro_settings: null,
-        intro_ratio_settings: null,
-        outro_ratio_settings: null,
-        created_at: new Date(campaign.inserted_at).getTime(),
-        updated_at: new Date(campaign.updated_at).getTime(),
-        user_id: null,
-        platform_links: (cp.platform_links || []).map((link) => ({
-          id: `campaign-link-${campaign.id}-${link.id}`,
-          creator_profile_id: `campaign-${campaign.id}-${cp.id}`,
-          platform: link.platform as PlatformId,
-          platform_id: link.platform_id,
-          display_name: link.display_name ?? null,
-          profile_image_url: link.profile_image_url ?? null,
-          is_primary: link.is_primary,
-          created_at: Date.now(),
-          monitored_streamer_id: null,
-        })),
-        scope: 'streamer',
-        isOrgProfile: true,
-        organization_id: campaign.organization_id,
-        organization_name: campaign.organization?.name ?? `Campaign ${campaign.id}`,
-        campaign_id: campaign.id,
-        campaign_title: campaign.title,
-        server_id: cp.id,
-        context_type: 'campaign',
-        disabled: false,
-      }));
-
-      // Get unique platforms across all creators
-      const platformSet = new Set<PlatformId>();
-      creators.forEach(creator => {
-        creator.platform_links.forEach(link => platformSet.add(link.platform));
-      });
-
-      // Check if campaign has branding
-      // For global branding campaigns, assume branding exists if branding_profile_id is set
-      // For regular campaigns, check if any creator has branding
-      let hasIntro = false;
-      let hasOutro = false;
-      let hasWatermark = false;
-
-      if (isGlobalBrandingCampaign && campaign.branding_profile_id) {
-        // Global branding - assume all branding is configured if branding_profile_id exists
-        hasIntro = true;
-        hasOutro = true;
-        hasWatermark = true;
-      } else {
-        // Regular campaign - check individual creators
-        hasIntro = creators.some(c => c.intro_id !== null);
-        hasOutro = creators.some(c => c.outro_id !== null);
-        hasWatermark = creators.some(c => c.watermark_id !== null);
-      }
-
-      displayCampaigns.push({
-        id: campaign.id,
-        title: campaign.title,
-        organization_id: campaign.organization_id,
-        organization_name: campaign.organization?.name ?? `Campaign ${campaign.id}`,
-        cover_image_url: campaign.cover_image_url ?? undefined,
-        isGlobalBranding: isGlobalBrandingCampaign,
-        branding_profile_id: campaign.branding_profile_id,
-        creators,
-        uniquePlatforms: Array.from(platformSet),
-        hasIntro,
-        hasOutro,
-        hasWatermark,
-        created_at: new Date(campaign.inserted_at).getTime(),
-        updated_at: new Date(campaign.updated_at).getTime(),
-      });
-    }
-
-    return displayCampaigns;
   }
 
   function toggleCampaignExpansion(campaignId: number) {
@@ -1210,6 +956,11 @@
     }
 
     return undefined;
+  }
+
+  function handleImageError(event: Event, _creator: DisplayCreatorProfile) {
+    const img = event.target as HTMLImageElement;
+    img.style.display = 'none';
   }
 
   function truncateId(id: string): string {
@@ -1314,11 +1065,6 @@
 
   const activeTab = ref<'streamer' | 'global'>('streamer');
 
-  const tabOptions: SegmentedOption<'streamer' | 'global'>[] = [
-    { value: 'streamer', label: 'Streamer profiles', icon: Users },
-    { value: 'global', label: 'Global branding', icon: Paintbrush },
-  ];
-
   const durationOptions = computed<SegmentedOption<number>[]>(() =>
     availableDurationsRecord.map((duration) => ({
       value: duration,
@@ -1327,45 +1073,7 @@
   );
 
   /** Organization-managed profiles first, then the user's own profiles. */
-  const profileSections = computed(() => {
-    const sections: { key: string; title: string; icon: typeof Users; items: DisplayCreatorProfile[] }[] = [];
-    if (organizationProfiles.value.length > 0) {
-      sections.push({
-        key: 'org',
-        title: 'Organization profiles',
-        icon: Building2,
-        items: organizationProfiles.value,
-      });
-    }
-    if (
-      userProfiles.value.length > 0 ||
-      (creators.value.length > 0 && organizationProfiles.value.length === creators.value.length)
-    ) {
-      sections.push({
-        key: 'user',
-        title: activeTab.value === 'global' ? 'Your global branding' : 'Your creator profiles',
-        icon: activeTab.value === 'global' ? Paintbrush : Users,
-        items: userProfiles.value,
-      });
-    }
-    return sections;
-  });
 
-  function getCardLiveState(creator: DisplayCreatorProfile): CreatorCardLiveState {
-    const enabled = isLiveClipEnabled.value && hasMonitorableLink(creator);
-    const monitored = enabled && isCreatorMonitored(creator);
-    return {
-      enabled,
-      monitored,
-      statusLabel: monitored ? getCreatorStatusLabel(creator) : '',
-      checking: enabled && isCreatorCheckingLive(creator),
-      isLive: isCreatorLive(creator),
-      persistentRecord: isCreatorPersistentRecord(creator),
-      persistentAutoDetect: isCreatorPersistentAutoDetect(creator),
-      canWatch: canWatchCreator(creator),
-      autoDvr: isCreatorAutoDvrEnabled(creator),
-    };
-  }
   const profileDialogScope = ref<'streamer' | 'global'>('streamer');
 
   async function openCreateDialog() {
@@ -1373,11 +1081,11 @@
       showAuthModal.value = true;
       return;
     }
-    
+
     const context = activeTab.value === 'global' ? 'Add Global Profile' : 'Add Creator';
     const hasAccess = await requireSubscription({ context, type: 'general' });
     if (!hasAccess) return;
-    
+
     creatorToEdit.value = null;
     profileDialogScope.value = activeTab.value;
     showProfileDialog.value = true;
@@ -1403,9 +1111,10 @@
     creatorToEdit.value = null;
   }
 
-  function handleCreatorSaved() {
+  async function handleCreatorSaved() {
     closeProfileDialog();
-    loadCreators();
+    await loadCreators();
+    await syncPersonalToCloud(false);
   }
 
   function confirmDeleteCreator(creator: DisplayCreatorProfile) {
@@ -1437,6 +1146,7 @@
         const action = nowDisabled ? 'disabled' : 'enabled';
         success('Profile Updated', `"${creator.name}" has been ${action}`);
         await loadCreators();
+        await syncPersonalToCloud(false);
       } else if (creator.organization_id && creator.server_id) {
         // Org-assigned profile — toggle via server API
         const response = await toggleCreatorProfileDisabled(creator.organization_id, creator.server_id);
@@ -1526,4 +1236,51 @@
       showError('Stop Failed', 'Failed to stop monitoring');
     }
   }
+  const viewModel = reactive({
+    Paintbrush,
+    Users,
+    activeTab,
+    authStore,
+    campaigns,
+    canWatchCreator,
+    confirmDeleteCreator,
+    creators,
+    filteredCreators,
+    getCreatorProfileImage,
+    getCreatorStatusLabel,
+    getPlatformFilter,
+    getPlatformIcon,
+    handleImageError,
+    hasMonitorableLink,
+    isCampaignExpanded,
+    isCreatorAutoDvrEnabled,
+    isCreatorCheckingLive,
+    isCreatorLive,
+    isCreatorMonitored,
+    isCreatorPersistentAutoDetect,
+    isCreatorPersistentRecord,
+    isLiveClipEnabled,
+    liveCreatorsCount,
+    loading,
+    monitoringCreatorsCount,
+    onCreatorAutoDetectClick,
+    onCreatorRecordClick,
+    openCreateDialog,
+    openDownloadDialog,
+    openEditDialog,
+    openPersonalPostDialog,
+    openPostSubmitDialog,
+    organizationProfiles,
+    searchQuery,
+    stopCreatorMonitoring,
+    syncPersonalToCloud,
+    syncingPersonal,
+    toggleCampaignExpansion,
+    toggleCreatorAutoDvr,
+    toggleProfileDisabled,
+    userProfiles,
+    viewCreatorVods,
+    watchCreator,
+    syncPersonalLabel: 'Sync personal to cloud',
+  });
 </script>

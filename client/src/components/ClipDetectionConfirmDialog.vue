@@ -136,7 +136,7 @@
   import { InfoList } from '@/components/ui/info-list';
   import { useCreditSource } from '@/composables/useCreditSource';
   import { useAuthStore } from '@/stores/auth';
-  import { getAllPrompts } from '@/services/database';
+  import { getAllPrompts } from '@/services/workspaceRuntime';
   import TimeRangePicker from '@/components/TimeRangePicker.vue';
 
   interface Prompt {

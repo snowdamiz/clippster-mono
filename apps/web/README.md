@@ -60,6 +60,14 @@ Limits: 20 projects/account; 2 GB and 2 hours/source; 100 clips/project; 20 non-
 
 ## Verification
 
+Run the web build and test checks in an isolated Linux container with Docker running:
+
+```bash
+npm run verify:ci --prefix apps/web --workspaces=false
+```
+
+This installs only the web app's dependencies and runs typechecking, unit tests, deployment helper tests, the production build, and browser tests with Chromium and FFmpeg. It excludes root and client `node_modules` so workspace links cannot hide missing package resolution.
+
 ```sh
 npm run typecheck --prefix apps/web --workspaces=false
 npm test --prefix apps/web --workspaces=false

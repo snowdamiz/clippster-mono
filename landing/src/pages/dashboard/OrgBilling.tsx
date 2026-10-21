@@ -1,3 +1,4 @@
+import { businessPlanName } from '../../../../packages/shared-types/src/pricingPresentation'
 import { useEffect, useState } from 'react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { useOrganization } from '@/hooks/useOrganization'
@@ -124,7 +125,7 @@ export function OrgBilling() {
         .get<any>(`/organizations/${organizationId}/subscription/tiers`)
         .then((res) => {
           if (res.success) {
-            setBaseTiers(res.base_tiers || [])
+            setBaseTiers((res.base_tiers || []).map((tier: SubscriptionTier) => ({ ...tier, name: businessPlanName(tier.id) })))
             setAddonTiers(res.addon_tiers || [])
           }
         })
@@ -736,7 +737,7 @@ export function OrgBilling() {
                     <div className="flex-1 min-w-0">
                       <h3 className="text-[0.9375rem] font-semibold text-white m-0 tracking-tight">Current Plan</h3>
                       <p className="text-xs text-zinc-500 m-0 mt-0.5">
-                        {hasActiveSubscription ? subscription?.tier_name || 'Active' : 'No subscription'}
+                        {hasActiveSubscription ? businessPlanName(subscription?.tier_name || 'Active') : 'No subscription'}
                       </p>
                     </div>
                   </div>
@@ -826,7 +827,7 @@ export function OrgBilling() {
                       )}
                     </div>
                     <div className="flex-1">
-                      <h3 className="text-lg font-bold text-white m-0">{subscription.tier_name || 'Subscription'}</h3>
+                      <h3 className="text-lg font-bold text-white m-0">{businessPlanName(subscription.tier_name || 'Subscription')}</h3>
                       <p className="text-[0.8125rem] text-zinc-500 m-0 mt-1">
                         {subscription.status === 'active' ? 'Active' : 'Cancelled'}
                       </p>
@@ -874,7 +875,7 @@ export function OrgBilling() {
                     {subscription.pending_subscription_tier && (
                       <div className="flex items-center gap-2 text-[0.8125rem] text-amber-400 mb-2">
                         <AlertTriangle className="w-3.5 h-3.5" />
-                        <span>Downgrading to {subscription.pending_subscription_tier} at end of billing period</span>
+                        <span>Downgrading to {businessPlanName(subscription.pending_subscription_tier)} at end of billing period</span>
                       </div>
                     )}
                     {subscription.end_date && (
@@ -1080,7 +1081,7 @@ export function OrgBilling() {
                   <Crown className="w-[26px] h-[26px]" />
                 </div>
                 <h2 className="text-[1.1875rem] font-bold text-white m-0">Change Plan</h2>
-                <p className="text-[0.8125rem] text-zinc-500 m-0 mt-1">Current: {subscription?.tier_name}</p>
+                <p className="text-[0.8125rem] text-zinc-500 m-0 mt-1">Current: {businessPlanName(subscription?.tier_name || '—')}</p>
               </div>
 
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 mb-6">

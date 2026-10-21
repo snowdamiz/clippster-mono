@@ -3,7 +3,7 @@
  * Handles communication with the server for organization hiring posts and applications.
  */
 
-import api from './api';
+import api from '@/services/api';
 
 // ============================================
 // Types

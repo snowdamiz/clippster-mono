@@ -104,8 +104,8 @@
 
 <script setup lang="ts">
   import { ref, watch, reactive, onMounted, computed } from 'vue';
-  import { open } from '@tauri-apps/plugin-dialog';
-  import { type Project, getAllCreatorProfiles, type CreatorProfileWithLinks } from '@/services/database';
+  import CustomDropdown from '@/components/CustomDropdown.vue';
+  import { type Project } from '@/services/database';
   import { FolderPlus, Pencil, Upload, Video, X } from 'lucide-vue-next';
   import { Button } from '@/components/ui/button';
   import { Field } from '@/components/ui/field';
@@ -113,6 +113,8 @@
   import { Modal } from '@/components/ui/modal';
   import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
   import { Textarea } from '@/components/ui/textarea';
+  import { openFileDialog as open, getAllCreatorProfiles } from '@/services/creatorProfileRuntime';
+  import { type CreatorProfileWithLinks } from '@/services/database/types';
 
   export interface ProjectFormData {
     name: string;
@@ -123,7 +125,8 @@
 
   const props = defineProps<{
     modelValue: boolean;
-    project?: Project | null;
+    saving?: boolean;
+    project?: { id: string; name: string; description?: string | null; creator_profile_id?: string | null } | null;
   }>();
 
   const emit = defineEmits<{
@@ -294,7 +297,7 @@
   }
 
   function close() {
-    if (!loading.value) {
+    if (!loading.value && !props.saving) {
       emit('update:modelValue', false);
     }
   }

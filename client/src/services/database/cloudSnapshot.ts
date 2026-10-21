@@ -7,7 +7,9 @@ import { getProject } from './projects';
 import { getClipsByProjectId } from './clips';
 import { getRawVideosByProjectId } from './raw-videos';
 
-export async function buildProjectSnapshot(projectId: string): Promise<CloudProjectSnapshot | null> {
+export async function buildProjectSnapshot(
+  projectId: string
+): Promise<CloudProjectSnapshot | null> {
   const project = await getProject(projectId);
   if (!project) return null;
 
@@ -21,7 +23,7 @@ export async function buildProjectSnapshot(projectId: string): Promise<CloudProj
   for (const clip of clips) {
     const versions = await db.select<any[]>(
       'SELECT * FROM clip_versions WHERE clip_id = ? ORDER BY version_number ASC',
-      [clip.id],
+      [clip.id]
     );
 
     const versionSnapshots = [];
@@ -29,7 +31,7 @@ export async function buildProjectSnapshot(projectId: string): Promise<CloudProj
     for (const version of versions) {
       const segments = await db.select<any[]>(
         'SELECT * FROM clip_segments WHERE clip_version_id = ? ORDER BY segment_index ASC',
-        [version.id],
+        [version.id]
       );
       versionSnapshots.push({ ...version, segments });
     }
@@ -58,7 +60,7 @@ export async function buildProjectSnapshot(projectId: string): Promise<CloudProj
   if (raw) {
     const rows = await db.select<any[]>(
       'SELECT * FROM transcripts WHERE raw_video_id = ? LIMIT 1',
-      [raw.id],
+      [raw.id]
     );
     transcripts = rows.map((t) => ({
       id: t.id,
@@ -114,7 +116,7 @@ export async function buildProjectSnapshot(projectId: string): Promise<CloudProj
       ? [
           {
             id: raw.id,
-            title: raw.original_filename ?? raw.filename ?? 'raw-video',
+            title: raw.original_filename ?? 'raw-video',
             duration: raw.duration ?? null,
             platform: raw.platform ?? null,
             source_url: raw.source_url ?? null,
@@ -170,7 +172,7 @@ export async function mergeSnapshotIntoDatabase(snapshot: CloudProjectSnapshot):
       snapshot.project.platform,
       now,
       snapshot.project.updated_at,
-    ],
+    ]
   );
 
   const rawSnapshot = snapshot.raw_videos[0];
@@ -195,7 +197,7 @@ export async function mergeSnapshotIntoDatabase(snapshot: CloudProjectSnapshot):
         rawSnapshot.source_url,
         now,
         now,
-      ],
+      ]
     );
   }
 
@@ -227,7 +229,7 @@ export async function mergeSnapshotIntoDatabase(snapshot: CloudProjectSnapshot):
         clip.clip_text_overlay,
         clip.created_at,
         clip.updated_at,
-      ],
+      ]
     );
 
     for (const version of clip.versions) {
@@ -255,7 +257,7 @@ export async function mergeSnapshotIntoDatabase(snapshot: CloudProjectSnapshot):
           version.change_type,
           version.change_description,
           version.created_at,
-        ],
+        ]
       );
 
       for (const segment of version.segments) {
@@ -272,7 +274,7 @@ export async function mergeSnapshotIntoDatabase(snapshot: CloudProjectSnapshot):
             segment.duration,
             segment.transcript,
             segment.created_at,
-          ],
+          ]
         );
       }
     }
@@ -297,12 +299,14 @@ export async function mergeSnapshotIntoDatabase(snapshot: CloudProjectSnapshot):
         transcript.duration,
         transcript.created_at,
         transcript.updated_at,
-      ],
+      ]
     );
   }
 }
 
-export async function duplicateProjectFromSnapshot(snapshot: CloudProjectSnapshot): Promise<string> {
+export async function duplicateProjectFromSnapshot(
+  snapshot: CloudProjectSnapshot
+): Promise<string> {
   const newId = generateId();
   const now = timestamp();
   const idMap = new Map<string, string>();
@@ -313,7 +317,12 @@ export async function duplicateProjectFromSnapshot(snapshot: CloudProjectSnapsho
 
   const cloned: CloudProjectSnapshot = {
     ...snapshot,
-    project: { ...snapshot.project, id: newId, name: `${snapshot.project.name} (copy)`, updated_at: now },
+    project: {
+      ...snapshot.project,
+      id: newId,
+      name: `${snapshot.project.name} (copy)`,
+      updated_at: now,
+    },
     raw_videos: snapshot.raw_videos.map((rv) => ({ ...rv, id: mapId(rv.id) })),
     clips: snapshot.clips.map((clip) => {
       const newClipId = mapId(clip.id);
