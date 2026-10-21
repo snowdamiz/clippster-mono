@@ -8,6 +8,8 @@
     "packages/*"
   ],
   "scripts": {
+    "streamer-outreach": "node scripts/streamer-outreach/cli.mjs",
+    "streamer-outreach:test": "node --test scripts/streamer-outreach/*.test.mjs",
     "client": "cd client && yarn dev",
     "server": "cd server && mix phx.server",
     "landing": "cd landing && yarn dev",
