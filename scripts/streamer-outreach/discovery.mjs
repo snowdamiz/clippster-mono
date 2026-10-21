@@ -1,8 +1,5 @@
-import { required, iso } from './core.mjs'
-
-const TWITCH = 'https://api.twitch.tv/helix'
-const KICK = 'https://api.kick.com/public'
-const X = 'https://api.x.com/2'
+import { iso } from './core.mjs'
+import { STREAM_PROVIDERS } from './providers.mjs'
 const RESERVED = new Set([
   'directory',
   'videos',
@@ -101,46 +98,6 @@ export function upsertLead(state, channel, extra = {}) {
   return lead
 }
 
-export class Providers {
-  constructor(env, http) {
-    this.env = env
-    this.http = http
-    this.tokens = {}
-  }
-  async token(platform) {
-    const prefix = platform.toUpperCase()
-    const supplied = this.env[`${prefix}_ACCESS_TOKEN`]
-    if (supplied) return supplied
-    if (this.tokens[platform]?.expires > Date.now()) return this.tokens[platform].value
-    const params = new URLSearchParams({
-      grant_type: 'client_credentials',
-      client_id: required(this.env, `${prefix}_CLIENT_ID`),
-      client_secret: required(this.env, `${prefix}_CLIENT_SECRET`)
-    })
-    const response = await this.http.request(
-      platform === 'twitch' ? 'https://id.twitch.tv/oauth2/token' : 'https://id.kick.com/oauth/token',
-      { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: params.toString() }
-    )
-    const token = await response.json()
-    if (!token.access_token) throw new Error(`${platform}: OAuth returned no access token.`)
-    this.tokens[platform] = {
-      value: token.access_token,
-      expires: Date.now() + Math.max(0, (Number(token.expires_in) - 60) * 1000)
-    }
-    return token.access_token
-  }
-  async get(platform, path, params = []) {
-    const base = platform === 'twitch' ? TWITCH : platform === 'kick' ? KICK : X
-    const token = platform === 'x' ? required(this.env, 'X_BEARER_TOKEN') : await this.token(platform)
-    const headers = { Authorization: `Bearer ${token}` }
-    if (platform === 'twitch') headers['Client-Id'] = required(this.env, 'TWITCH_CLIENT_ID')
-    const data = await this.http.json(`${base}${path}?${new URLSearchParams(params)}`, { headers })
-    if (data.errors?.length) throw new Error(`${platform}: API returned partial errors; resume after checking access.`)
-    if (data.data !== undefined && !Array.isArray(data.data)) throw new Error(`${platform}: unexpected API response.`)
-    return data
-  }
-}
-
 export function addXPage(state, data) {
   const users = new Map((data.includes?.users || []).map((user) => [user.id, user]))
   for (const post of data.data || []) {
@@ -211,7 +168,7 @@ export async function discoverX(context) {
       ['user.fields', 'name,username,description,url,entities']
     ]
     if (checkpoint.cursor) params.push(['next_token', checkpoint.cursor])
-    const data = await providers.get('x', `/tweets/search/${config.xDays > 7 ? 'all' : 'recent'}`, params)
+    const data = await providers.searchX(`/tweets/search/${config.xDays > 7 ? 'all' : 'recent'}`, params)
     addXPage(state, data)
     const next = data.meta?.next_token || null
     if (next && next === checkpoint.cursor) throw new Error('X returned a repeated pagination token.')
@@ -226,44 +183,46 @@ export async function discoverX(context) {
 
 export async function discoverStreams(context, platform) {
   const { state, config, providers, save, log } = context
-  const checkpoint = (state.discovery[platform] ||= { pages: 0, cursor: null, done: false, found: 0 })
+  const provider = STREAM_PROVIDERS[platform]
+  // Official-API cursors cannot be used by the public website APIs. Preserve leads and
+  // completed clipping work, but restart only the affected discovery scan after this upgrade.
+  if (state.discovery[platform]?.provider !== provider) {
+    state.discovery[platform] = { provider, pages: 0, cursor: null, done: false, found: 0 }
+    await save()
+  }
+  const checkpoint = state.discovery[platform]
   if (checkpoint.done) return
+  const languages = config.languages.map((value) => value.toLowerCase())
+  const categoryIds = platform === 'twitch' ? config.twitchGameIds : config.kickCategoryIds
   for (; checkpoint.pages < config.streamPageLimit; ) {
-    const params =
-      platform === 'twitch'
-        ? [
-            ['first', '100'],
-            ...config.languages.map((v) => ['language', v]),
-            ...config.twitchGameIds.map((v) => ['game_id', v])
-          ]
-        : [
-            ['limit', '1000'],
-            ...config.languages.map((v) => ['language_code', v]),
-            ...config.kickCategoryIds.map((v) => ['category_id', v])
-          ]
-    if (checkpoint.cursor) params.push([platform === 'twitch' ? 'after' : 'cursor', checkpoint.cursor])
-    const data = await providers.get(platform, platform === 'twitch' ? '/streams' : '/v2/livestreams', params)
-    for (const stream of data.data || []) {
+    const page = await providers.listStreams(platform, checkpoint)
+    for (const stream of page.streams) {
       if (
-        !Number.isFinite(stream.viewer_count) ||
-        stream.viewer_count < config.minViewers ||
-        stream.viewer_count > config.maxViewers
+        !Number.isFinite(stream.viewerCount) ||
+        stream.viewerCount < config.minViewers ||
+        stream.viewerCount > config.maxViewers
       )
         continue
-      const login = platform === 'twitch' ? stream.user_login : stream.channel?.slug
-      const channel = channelFromUrl(`https://${platform === 'twitch' ? 'twitch.tv' : 'kick.com'}/${login}`)
+      if (languages.length && !languages.includes(stream.language)) continue
+      if (categoryIds.length && !categoryIds.includes(String(stream.categoryId))) continue
+      if (!stream.login) continue
+      const channel = channelFromUrl(`https://${platform === 'twitch' ? 'twitch.tv' : 'kick.com'}/${stream.login}`)
       if (!channel) continue
+      const description = stream.description
       upsertLead(state, channel, {
-        broadcasterId: String(platform === 'twitch' ? stream.user_id : stream.broadcaster_user?.id),
-        name: platform === 'twitch' ? stream.user_name : stream.broadcaster_user?.username,
-        viewerCount: stream.viewer_count,
+        broadcasterId: stream.broadcasterId,
+        name: stream.name,
+        viewerCount: stream.viewerCount,
         observedAt: iso(Date.now()),
-        language: platform === 'twitch' ? stream.language : stream.language_code,
-        liveStartedAt: stream.started_at,
-        evidence: [channel.channelUrl]
+        language: stream.language,
+        liveStartedAt: stream.startedAt,
+        evidence: [channel.channelUrl],
+        ...(typeof description === 'string'
+          ? { description, contacts: contacts(description, channel.channelUrl), enrichedAt: iso(Date.now()) }
+          : {})
       })
     }
-    const next = (platform === 'twitch' ? data.pagination?.cursor : data.pagination?.next_cursor) || null
+    const next = page.cursor || null
     if (next && next === checkpoint.cursor) throw new Error(`${platform} returned a repeated pagination cursor.`)
     checkpoint.found = Object.values(state.leads).filter(
       (l) => l.platform === platform && l.viewerCount !== undefined
@@ -271,12 +230,15 @@ export async function discoverStreams(context, platform) {
     Object.assign(checkpoint, {
       pages: checkpoint.pages + 1,
       cursor: next,
+      version: page.version,
       done: !next || checkpoint.found >= config.targetStreamers,
       stopReason: !next ? 'end_of_results' : checkpoint.found >= config.targetStreamers ? 'candidate_target' : null,
       error: null
     })
     await save()
-    log(`${platform}: ${checkpoint.found} low-viewer channels found (${checkpoint.pages} pages scanned).`)
+    log(
+      `${platform}: ${checkpoint.found} low-viewer channels found (${checkpoint.pages} public directory pages scanned).`
+    )
     if (checkpoint.done) return
   }
   checkpoint.truncated = true
@@ -285,13 +247,9 @@ export async function discoverStreams(context, platform) {
 
 export async function enrichLead(lead, providers) {
   if (lead.enrichedAt) return
-  const result = await providers.get(lead.platform, lead.platform === 'twitch' ? '/users' : '/v1/channels', [
-    [lead.platform === 'twitch' ? 'login' : 'slug', lead.login]
-  ])
-  const profile = result.data?.[0]
-  if (!profile) throw new Error(`${lead.platform}: channel ${lead.login} no longer exists.`)
-  lead.broadcasterId = String(profile.id || profile.broadcaster_user_id)
-  lead.description = profile.description || profile.channel_description || ''
+  const profile = await providers.profile(lead.platform, lead.login)
+  lead.broadcasterId = profile.broadcasterId
+  lead.description = profile.description
   lead.contacts = mergeUnique(
     lead.contacts,
     contacts(lead.description, lead.channelUrl),

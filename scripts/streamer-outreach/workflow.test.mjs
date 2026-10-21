@@ -43,15 +43,20 @@ async function fixture(t, overrides = {}) {
         res.setHeader('Set-Cookie', 'clippster_web=fixture-cookie; Path=/; HttpOnly; SameSite=Lax')
         return send({ success: true, user: { id: 42 } })
       }
-      if (url.pathname === '/api/media/vods') {
-        assert.equal(req.headers.authorization, 'Bearer fixture-token')
-        assert.equal(url.searchParams.get('platform'), 'kick')
+      if (url.pathname === '/api/web/account/media/vods') {
+        assert.equal(req.headers.cookie, 'clippster_web=fixture-cookie')
+        assert.equal(req.headers.origin, 'http://localhost:5173')
+        const platform = url.searchParams.get('platform')
+        assert.ok(['twitch', 'kick'].includes(platform))
         return send({
           success: true,
           vods: [
             {
               id: 'kickvod',
-              url: `https://kick.com/${url.searchParams.get('channel')}/videos/abcdef`,
+              url:
+                platform === 'kick'
+                  ? `https://kick.com/${url.searchParams.get('channel')}/videos/abcdef`
+                  : 'https://www.twitch.tv/videos/12345',
               duration_seconds: 300,
               upload_date: '2026-10-18T12:00:00Z'
             }
@@ -176,27 +181,11 @@ async function fixture(t, overrides = {}) {
   const http = createHttp({ wait: async () => {}, log: () => {} })
   const client = new Clippster(env, http)
   const providers = {
-    get: async (platform, path, pairs) => {
-      const params = new URLSearchParams(pairs)
-      if (path === '/users')
-        return { data: [{ id: '123', description: 'Business: hello@example.com https://x.com/creator' }] }
-      if (path === '/v1/channels')
-        return { data: [{ broadcaster_user_id: 123, channel_description: 'Business: kick@example.com' }] }
-      assert.equal(platform, 'twitch')
-      assert.equal(path, '/videos')
-      assert.equal(params.get('user_id'), '123')
-      return {
-        data: [
-          {
-            id: '12345',
-            url: 'https://www.twitch.tv/videos/12345',
-            title: 'Completed recording',
-            duration: '5m',
-            created_at: '2026-10-18T12:00:00Z'
-          }
-        ]
-      }
-    }
+    profile: async (platform) => ({
+      broadcasterId: '123',
+      description:
+        platform === 'twitch' ? 'Business: hello@example.com https://x.com/creator' : 'Business: kick@example.com'
+    })
   }
   state.selected = []
   for (let i = 0; i < config.targetStreamers; i++) {
@@ -236,6 +225,7 @@ test('HTTP workflow: both platforms -> recordings -> AI clips -> downloads -> re
   const { state } = f.context
   assert.equal(Object.values(state.leads).filter((l) => l.status === 'ready_for_review').length, 2)
   assert.equal(f.counts.detect, 2)
+  assert.equal(f.requests.filter((r) => r === 'GET /api/web/account/media/vods').length, 2)
   assert.equal(f.counts.build, 4)
   assert.equal(f.counts.delete, 2)
   assert.equal(f.projects.size, 1)

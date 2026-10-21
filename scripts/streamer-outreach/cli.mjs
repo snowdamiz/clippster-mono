@@ -4,7 +4,8 @@ import { dirname, resolve } from 'node:path'
 import { copyFile, constants, chmod } from 'node:fs/promises'
 import { parseArgs } from 'node:util'
 import { loadSettings, createHttp, loadState, writeJson, withLock } from './core.mjs'
-import { Providers, discover } from './discovery.mjs'
+import { discover } from './discovery.mjs'
+import { Providers } from './providers.mjs'
 import { Clippster, processCampaign, resetFailedLead, bindCampaign } from './clippster.mjs'
 import { writeReport } from './report.mjs'
 
@@ -28,7 +29,7 @@ report     Rebuild the local review page and drafts without API access.
 retry      After checking the workspace, reset failed/uncertain work for one lead.
 
 Options: --config PATH  --env PATH  --lead PLATFORM:CHANNEL  --help
-Secrets: scripts/streamer-outreach/.env (X_BEARER_TOKEN is the X search credential).
+Secrets: scripts/streamer-outreach/.env (X_BEARER_TOKEN for X; no Twitch/Kick keys).
 Defaults: 150 streamers, 5–100 current viewers, English, 3 clips, last 60 days on X.
 Email, X messages and posts are always local drafts; this tool never sends them.
 `
@@ -78,16 +79,17 @@ export async function main(argv = process.argv.slice(2)) {
       try {
         if (source === 'x') {
           const end = Date.now() - 30000
-          await providers.get('x', `/tweets/search/${config.xDays > 7 ? 'all' : 'recent'}`, [
+          await providers.searchX(`/tweets/search/${config.xDays > 7 ? 'all' : 'recent'}`, [
             ['query', config.xQuery],
             ['start_time', new Date(end - Math.min(config.xDays, 60) * 86400000 + 60000).toISOString()],
             ['end_time', new Date(end).toISOString()],
             ['max_results', '10']
           ])
-        } else
-          await providers.get(source, source === 'twitch' ? '/streams' : '/v2/livestreams', [
-            [source === 'twitch' ? 'first' : 'limit', '1']
-          ])
+        } else {
+          const first = await providers.listStreams(source)
+          // Initial anonymous lookup can work even when directory pagination is restricted.
+          if (first.cursor) await providers.listStreams(source, first)
+        }
         console.log(`${source}: access OK`)
       } catch (error) {
         errors++

@@ -23,12 +23,6 @@ Edit **`scripts/streamer-outreach/.env`**:
 ```dotenv
 X_BEARER_TOKEN=your_x_bearer_token
 
-TWITCH_CLIENT_ID=your_twitch_client_id
-TWITCH_CLIENT_SECRET=your_twitch_client_secret
-
-KICK_CLIENT_ID=your_kick_client_id
-KICK_CLIENT_SECRET=your_kick_client_secret
-
 CLIPPSTER_API_URL=http://127.0.0.1:4000/api
 CLIPPSTER_WORKSPACE_URL=http://127.0.0.1:8090/api
 CLIPPSTER_ACCOUNT_ORIGIN=http://localhost:5173
@@ -38,7 +32,7 @@ CLIPPSTER_PASSWORD="your_clippster_password"
 
 For X, use **Developer Console → your app → Keys and tokens → Bearer Token**. The API Key/API Key Secret are different credentials; paste the Bearer Token into `X_BEARER_TOKEN`. A 60-day search uses `/2/tweets/search/all` and requires full-archive access. The tool reports missing access instead of quietly substituting a seven-day search. X reads can incur charges according to your developer account; `doctor` performs a small search of up to ten results. [X bearer token setup](https://docs.x.com/fundamentals/authentication/oauth-2-0/bearer-tokens), [X search access](https://docs.x.com/x-api/posts/search/introduction).
 
-Create the Twitch app at [Twitch Developer Console](https://dev.twitch.tv/console/apps), and the Kick app through [Kick's app setup](https://docs.kick.com/getting-started/kick-apps-setup). The script obtains and renews app tokens using client credentials. Alternatively set `TWITCH_ACCESS_TOKEN` (with `TWITCH_CLIENT_ID`) and/or `KICK_ACCESS_TOKEN`; replace these supplied tokens yourself when they expire. [Twitch authentication](https://dev.twitch.tv/docs/authentication/getting-tokens-oauth/), [Kick authentication](https://docs.kick.com/getting-started/generating-tokens-oauth2-flow).
+**No Twitch or Kick keys, secrets, developer apps, or login are required.** Twitch uses the same public website GraphQL endpoint and public client identifier as Clippster's desktop app. Kick uses its anonymous website directory and channel endpoints. X is the only discovery source requiring a token. Rendering uses your existing Clippster account.
 
 The `.env` and generated campaign directory are ignored by Git. `init` preserves existing files and sets new configuration files to owner-only permissions. Shell environment variables override the `.env` file. Quote values containing spaces or `#`. The script does not read any other project's secret files.
 
@@ -50,7 +44,7 @@ The defaults above target local development. For a hosted account, point `CLIPPS
 
 Sign in with an existing verified account. An account using Google sign-in can instead supply `CLIPPSTER_API_TOKEN`, an existing account JWT, and leave email/password blank. For the website account dashboard, this is the `auth_token` entry in browser developer tools → Application/Storage → Local Storage for the account origin. Treat it like a password. The script exchanges the JWT for a normal workspace cookie; it does not bypass authentication. Secrets and session cookies are not written into campaign state.
 
-Bulk processing needs sufficient account credits and download/build allowances. Clippster's existing limits still apply: public completed recordings up to two hours and 2 GB, a 10 GB workspace allowance, and 20 stored projects. The script looks through the latest 20 recordings for one within the configured duration limit. It skips channels without an eligible recording and reports source/provider failures. It does not record live streams or bypass private/deleted/blocked sources. Kick recording lookup uses Clippster's existing `/media/vods` resolver; that server needs its normal yt-dlp configuration and, if its fallback is used, its configured `RAPID_API_KEY`.
+Bulk processing needs sufficient account credits and download/build allowances. Clippster's existing limits still apply: public completed recordings up to two hours and 2 GB, a 10 GB workspace allowance, and 20 stored projects. The script looks through the latest 20 recordings for one within the configured duration limit. It skips channels without an eligible recording and reports source/provider failures. It does not record live streams or bypass private/deleted/blocked sources. Both platforms use the workspace's existing `/web/account/media/vods` recording-browser route. This reuses Clippster's yt-dlp resolver for Twitch and its Kick video resolver, including the public archive-page fallback. No separate Twitch/Kick credentials are passed or required.
 
 ## 3. Configure the campaign
 
@@ -76,7 +70,9 @@ Edit **`scripts/streamer-outreach/config.json`**, created by `init`. A few usefu
 
 **Archiving is how the batch stays below the 20-project cap.** The local MP4s, source URL, and `project.json` remain available. Full source recordings and temporary workspace entries are removed; these are not desktop-library imports. Existing unrelated projects are never selected for cleanup. Set `archiveCompletedProjects` to `false` to retain projects in the web library, and run a small enough batch for your available slots/storage. Failed projects are kept for inspection and may need manual cleanup before a large batch can finish.
 
-Twitch lists streams by viewer count descending, so finding small streamers can require many pages. Kick uses the current paginated **`/public/v2/livestreams`** endpoint. Both APIs expose a changing view, so deduplication is necessary. Viewer counts do not prove historical audience size. [Twitch pagination](https://dev.twitch.tv/docs/api/guide#pagination), [Kick livestream API](https://docs.kick.com/apis/livestreams).
+Discovery reads Twitch's public website GraphQL stream directory (30 channels per page) and Kick's anonymous website directory at `api.kick.com/private/v1/livestreams` (20 per page). Despite Kick's path name, this endpoint does not require authentication. Both directories start with popular channels, so finding small streamers can require many pages. Language and category filters are applied locally; category IDs must match the public directory's IDs (Kick's website IDs differ from the official OAuth API's IDs). Kick's pagination cursor and directory version are saved together for resume. These website endpoints can change; response errors are reported as incomplete coverage. Viewer counts are a current snapshot, not historical audience size.
+
+Twitch can reject anonymous directory pagination with `failed integrity check` even when a single channel lookup works. The tool stops that source, saves its progress, and continues other configured sources; it does not request Twitch secrets or bypass the check. Twitch channels found through X can still use Clippster's independent recording browser. `doctor` checks a second directory page when available to expose this limitation before a batch.
 
 X searches save every returned matching post, even if no channel can be resolved. Only channel links published on the author's profile are automatically associated with that author; links mentioned solely in a post remain review candidates. X-only prospects have unknown audience size unless found in the livestream scan. The script never guesses that an X username matches a Twitch/Kick username, never invents emails, and does not crawl arbitrary linked websites. Keyword matches can include recruiters, jokes, or offers rather than requests; inspect the saved post before outreach. This is a query-based search of accessible public posts, not a guarantee of every clipper request on X.
 
@@ -101,7 +97,7 @@ open scripts/streamer-outreach/output/review.html
 
 You can also use `yarn streamer-outreach <command>`. Start with a new campaign configured for `targetStreamers: 2` and `clipsPerStreamer: 1` to verify live-provider behavior and clip quality with your credentials.
 
-For X research alone, set `sources` to `["x"]`, fill in only `X_BEARER_TOKEN`, and run `discover`. Twitch/Kick credentials are only needed later if you choose to render clips from those channels. `doctor` checks Clippster too, so missing Clippster credentials can be ignored for discovery-only use.
+For X research alone, set `sources` to `["x"]`, fill in only `X_BEARER_TOKEN`, and run `discover`. For discovery with no keys at all, use `["twitch", "kick"]`. Rendering clips from either platform needs only your Clippster account. `doctor` checks Clippster too, so missing Clippster credentials can be ignored for discovery-only use.
 
 Output:
 
@@ -124,7 +120,7 @@ Draft attachment paths are relative to `outputDir`. Email and X drafts need you 
 
 ## Resume and troubleshoot
 
-Re-run the same command with the same config/output directory. HTTP reads have bounded retries and honor short rate-limit waits. Long cooldowns are reported so you can resume later. X pagination and its date window are checkpointed after every page. Once clipping starts, the selected batch stays fixed.
+Re-run the same command with the same config/output directory. HTTP GET reads have bounded retries and honor short rate-limit waits. Long cooldowns and failed Twitch GraphQL lookups are reported so you can resume later. Discovery pagination and the X date window are checkpointed after every page. Once clipping starts, the selected batch stays fixed. Upgrading from the old OAuth implementation restarts only Twitch/Kick discovery cursors; saved leads, X progress, and completed clips are preserved.
 
 AI/import/build submissions are recorded before sending. If a response is lost, the script looks for the corresponding server job instead of submitting it again. Definitively failed jobs and ambiguous requests require an explicit retry after checking the workspace:
 
@@ -145,4 +141,4 @@ Use `report` to rebuild the review page without API calls. Exit codes are `0` fo
 node --test scripts/streamer-outreach/*.test.mjs
 ```
 
-Tests cover discovery pagination and caps, current Kick v2 shapes, X profile/post identity separation, secret redaction, rate limits, account binding, interrupted job recovery, checksum checks, HTML escaping, and a 150-streamer HTTP-fixture batch that stays under the 20-project cap. Provider results, AI responses, and media payloads are fixtures. These tests do not establish live API access, rendering quality, account credits, or source availability; use `doctor` and a small pilot after adding credentials.
+Tests cover anonymous Twitch/Kick discovery and profiles, pagination and caps, provider migration, X profile/post identity separation, the shared Clippster recording-browser route, secret redaction, rate limits, account binding, interrupted job recovery, checksum checks, HTML escaping, and a 150-streamer HTTP-fixture batch that stays under the 20-project cap. Provider results, AI responses, and media payloads are fixtures. These tests do not establish live API access, rendering quality, account credits, or source availability; use `doctor` and a small pilot.

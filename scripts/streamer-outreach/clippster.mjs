@@ -41,11 +41,6 @@ export class Clippster {
     if (!result.user?.id) throw new Error('Workspace did not identify the signed-in user.')
     this.ownerId = String(result.user.id)
   }
-  api(path) {
-    return this.http.json(`${this.apiBase}${path}`, {
-      headers: { Authorization: `Bearer ${this.token}`, 'X-Client-Platform': 'web' }
-    })
-  }
   web(path, method = 'GET', body) {
     return this.http.json(`${this.webBase}/web${path}`, {
       method,
@@ -96,39 +91,38 @@ export class Clippster {
   }
 }
 
-export function twitchDuration(value) {
-  if (typeof value !== 'string' || !/^(?:\d+h)?(?:\d+m)?(?:\d+s)?$/.test(value)) return 0
-  return [...value.matchAll(/(\d+)([hms])/g)].reduce((sum, m) => sum + Number(m[1]) * { h: 3600, m: 60, s: 1 }[m[2]], 0)
+function recordingDate(value) {
+  // yt-dlp supplies YYYYMMDD or Unix seconds; Kick supplies an ISO timestamp.
+  if (/^\d{8}$/.test(String(value))) {
+    const day = String(value)
+    return `${day.slice(0, 4)}-${day.slice(4, 6)}-${day.slice(6, 8)}`
+  }
+  if (typeof value === 'number') return Number.isFinite(value) ? iso(value * 1000) : null
+  return typeof value === 'string' && Number.isFinite(Date.parse(value)) ? value : null
 }
 
-export async function findVod(lead, config, providers, client) {
-  let vods
-  if (lead.platform === 'twitch') {
-    const result = await providers.get('twitch', '/videos', [
-      ['user_id', lead.broadcasterId],
-      ['type', 'archive'],
-      ['sort', 'time'],
-      ['first', String(config.vodsToCheck)]
-    ])
-    vods = (result.data || []).map((v) => ({
-      id: v.id,
-      url: v.url,
-      title: v.title,
-      duration: twitchDuration(v.duration),
-      createdAt: v.created_at
-    }))
-  } else {
-    const result = await client.api(
-      `/media/vods?${new URLSearchParams({ platform: 'kick', channel: lead.login, limit: String(config.vodsToCheck) })}`
-    )
-    vods = (result.vods || []).map((v) => ({
+export async function findVod(lead, config, client) {
+  // Reuse the web workspace's actual recording-browser route for both platforms.
+  // It delegates to Clippster's yt-dlp / Kick archive resolver, without provider credentials.
+  const result = await client.web(
+    `/account/media/vods?${new URLSearchParams({
+      platform: lead.platform,
+      channel: lead.login,
+      limit: String(config.vodsToCheck),
+      offset: '0',
+      tab: 'streams'
+    })}`
+  )
+  if (!Array.isArray(result.vods)) throw new Error('Clippster returned an invalid recording list.')
+  const vods = result.vods
+    .filter((v) => !v.isLive && !v.is_live)
+    .map((v) => ({
       id: v.id,
       url: v.url,
       title: v.title,
       duration: Number(v.duration_seconds),
-      createdAt: v.upload_date
+      createdAt: recordingDate(v.upload_date)
     }))
-  }
   return (
     vods
       .filter((v) => {
@@ -147,7 +141,13 @@ export async function findVod(lead, config, providers, client) {
             ? host === 'twitch.tv' && /^\/videos\/\d+/.test(url.pathname)
             : host === 'kick.com' && /^\/[^/]+\/videos\//.test(url.pathname))
         // A currently live broadcast may already appear in its archive listing. The import service checks again.
-        const current = lead.liveStartedAt && Date.parse(v.createdAt) >= Date.parse(lead.liveStartedAt) - 60000
+        const liveStart = Date.parse(lead.liveStartedAt)
+        // Day-only timestamps cannot distinguish completed and active broadcasts on that day.
+        const cutoff =
+          Number.isFinite(liveStart) && v.createdAt?.length === 10
+            ? Date.parse(iso(liveStart).slice(0, 10))
+            : liveStart - 60000
+        const current = Date.parse(v.createdAt) >= cutoff
         return validUrl && !current && v.duration >= config.minClipSeconds && v.duration <= config.maxSourceSeconds
       })
       .sort((a, b) => (Date.parse(b.createdAt) || 0) - (Date.parse(a.createdAt) || 0))[0] || null
@@ -289,9 +289,9 @@ export async function processLead(context, lead) {
   }
   if (lead.status === 'skipped_no_vod') return
   if (!lead.vod) {
-    // Discovery-only X campaigns need platform credentials only once they start clipping.
+    // X prospects use the same anonymous profile lookup as the desktop app.
     await enrichLead(lead, providers)
-    lead.vod = await findVod(lead, config, providers, client)
+    lead.vod = await findVod(lead, config, client)
     if (!lead.vod) {
       lead.status = 'skipped_no_vod'
       lead.error = 'No eligible completed public recording found within the configured duration limit.'

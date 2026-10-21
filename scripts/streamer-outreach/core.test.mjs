@@ -4,8 +4,9 @@ import { mkdtemp, rm, readFile, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { resolve } from 'node:path'
 import { validateConfig, createHttp, loadState, writeJson, withLock, safeBase } from './core.mjs'
-import { channelFromUrl, addXPage, discoverX, discoverStreams, selectLeads, Providers } from './discovery.mjs'
-import { twitchDuration, findVod, ensureJob, verifyArtifacts } from './clippster.mjs'
+import { channelFromUrl, addXPage, discoverX, discoverStreams, discover, selectLeads } from './discovery.mjs'
+import { Providers, STREAM_PROVIDERS } from './providers.mjs'
+import { findVod, ensureJob, verifyArtifacts } from './clippster.mjs'
 import { writeReport } from './report.mjs'
 
 const quiet = () => {}
@@ -121,10 +122,9 @@ test('X full-archive search preserves its date window and resumes its cursor aft
   let fail = true
   const calls = []
   const providers = {
-    get: async (platform, path, pairs) => {
+    searchX: async (path, pairs) => {
       const p = new URLSearchParams(pairs)
       calls.push(p)
-      assert.equal(platform, 'x')
       assert.equal(path, '/tweets/search/all')
       assert.equal(p.get('start_time'), state.xWindow.start)
       if (!p.has('next_token')) return { data: [{ id: '1', text: 'Need clippers' }], meta: { next_token: 'page2' } }
@@ -150,7 +150,7 @@ test('X page budget reports truncation and never silently falls back to seven da
     save: async () => {},
     log: quiet,
     providers: {
-      get: async (_platform, path) => {
+      searchX: async (path) => {
         assert.equal(path, '/tweets/search/all')
         return { meta: { next_token: 'more' } }
       }
@@ -160,23 +160,40 @@ test('X page budget reports truncation and never silently falls back to seven da
   assert.equal(state.discovery.x.done, false)
 })
 
-test('Twitch pagination reaches small channels and deduplicates fluctuating listings', async () => {
+test('directory pagination filters viewer counts, languages and categories locally; deduplicates channels', async () => {
   const state = { leads: {}, discovery: {} }
   let page = 0
-  const stream = (name, viewers) => ({ user_login: name, user_id: name, user_name: name, viewer_count: viewers })
+  const stream = (login, viewerCount, language = 'en', categoryId = 'game') => ({
+    login,
+    broadcasterId: login,
+    name: login,
+    viewerCount,
+    language,
+    categoryId,
+    description: 'Business: hello@example.com'
+  })
   await discoverStreams(
     {
       state,
-      config: validateConfig({ targetStreamers: 3 }),
+      config: validateConfig({ targetStreamers: 3, twitchGameIds: ['game'] }),
       save: async () => {},
       log: quiet,
       providers: {
-        get: async (_p, path, pairs) => {
-          assert.equal(path, '/streams')
-          assert.equal(new URLSearchParams(pairs).get('first'), '100')
-          return ++page === 1
-            ? { data: [stream('large', 5000), stream('small', 25)], pagination: { cursor: 'next' } }
-            : { data: [stream('small', 24), stream('tiny', 5), stream('zero', 0)], pagination: {} }
+        listStreams: async (platform, checkpoint) => {
+          assert.equal(platform, 'twitch')
+          if (++page === 2) assert.equal(checkpoint.cursor, 'next')
+          return page === 1
+            ? { streams: [stream('large', 5000), stream('small', 25)], cursor: 'next' }
+            : {
+                streams: [
+                  stream('small', 24),
+                  stream('tiny', 5),
+                  stream('zero', 0),
+                  stream('spanish', 10, 'es'),
+                  stream('other', 10, 'en', 'other')
+                ],
+                cursor: null
+              }
         }
       }
     },
@@ -184,12 +201,59 @@ test('Twitch pagination reaches small channels and deduplicates fluctuating list
   )
   assert.equal(Object.keys(state.leads).length, 2)
   assert.equal(state.leads['twitch:small'].viewerCount, 24)
+  assert.equal(state.leads['twitch:small'].contacts[0].value, 'hello@example.com')
+  assert.ok(state.leads['twitch:small'].enrichedAt)
   assert.equal(page, 2)
 })
 
-test('Kick uses the current paginated v2 endpoint and channel.slug', async () => {
+test('Kick directory cursor and snapshot version resume together after a failed page', async () => {
   const state = { leads: {}, discovery: {} }
-  let page = 0
+  let fail = true
+  const context = {
+    state,
+    config: validateConfig(),
+    save: async () => {},
+    log: quiet,
+    providers: {
+      listStreams: async (platform, checkpoint) => {
+        assert.equal(platform, 'kick')
+        if (checkpoint.cursor) {
+          assert.equal(checkpoint.cursor, 'next')
+          assert.equal(checkpoint.version, 'snapshot')
+          if (fail) throw new Error('temporary failure')
+        }
+        return {
+          streams: [
+            { login: 'kick_creator', broadcasterId: '123', name: 'KickCreator', viewerCount: 15, language: 'en' }
+          ],
+          cursor: checkpoint.cursor ? null : 'next',
+          version: 'snapshot'
+        }
+      }
+    }
+  }
+  await assert.rejects(discoverStreams(context, 'kick'), /temporary failure/)
+  assert.equal(state.discovery.kick.done, false)
+  fail = false
+  await discoverStreams(context, 'kick')
+  assert.equal(Object.keys(state.leads).length, 1)
+  assert.equal(state.leads['kick:kick_creator'].broadcasterId, '123')
+  assert.equal(state.discovery.kick.done, true)
+})
+
+test('upgrading old OAuth checkpoints preserves selected leads and completed clip work', async () => {
+  const lead = {
+    id: 'twitch:creator',
+    platform: 'twitch',
+    status: 'ready_for_review',
+    artifacts: [{ file: 'clip.mp4' }]
+  }
+  const state = {
+    leads: { [lead.id]: lead },
+    selected: [lead.id],
+    selectionLocked: true,
+    discovery: { twitch: { cursor: 'oauth-cursor', pages: 999, done: true }, x: { pages: 2, cursor: 'keep' } }
+  }
   await discoverStreams(
     {
       state,
@@ -197,29 +261,35 @@ test('Kick uses the current paginated v2 endpoint and channel.slug', async () =>
       save: async () => {},
       log: quiet,
       providers: {
-        get: async (_p, path, pairs) => {
-          assert.equal(path, '/v2/livestreams')
-          const params = new URLSearchParams(pairs)
-          assert.equal(params.get('language_code'), 'en')
-          assert.equal(params.get('limit'), '1000')
-          if (++page === 2) assert.equal(params.get('cursor'), 'next')
-          return {
-            data: [
-              {
-                channel: { slug: 'kick_creator' },
-                broadcaster_user: { id: 123, username: 'KickCreator' },
-                viewer_count: 15
-              }
-            ],
-            pagination: { next_cursor: page === 1 ? 'next' : '' }
-          }
+        listStreams: async (_platform, checkpoint) => {
+          assert.equal(checkpoint.cursor, null)
+          assert.equal(checkpoint.pages, 0)
+          return { streams: [], cursor: null }
         }
       }
     },
+    'twitch'
+  )
+  assert.equal(state.discovery.twitch.provider, STREAM_PROVIDERS.twitch)
+  assert.equal(state.leads[lead.id], lead)
+  assert.deepEqual(state.selected, [lead.id])
+  assert.deepEqual(state.discovery.x, { pages: 2, cursor: 'keep' })
+})
+
+test('stream discovery cap is reported as incomplete coverage', async () => {
+  const state = { leads: {}, discovery: {} }
+  await discoverStreams(
+    {
+      state,
+      config: validateConfig({ streamPageLimit: 1 }),
+      save: async () => {},
+      log: quiet,
+      providers: { listStreams: async () => ({ streams: [], cursor: 'more' }) }
+    },
     'kick'
   )
-  assert.equal(Object.keys(state.leads).length, 1)
-  assert.equal(state.leads['kick:kick_creator'].broadcasterId, '123')
+  assert.equal(state.discovery.kick.done, false)
+  assert.equal(state.discovery.kick.truncated, true)
 })
 
 test('selection is deterministic, capped, and prioritizes explicit clipper requests', () => {
@@ -236,39 +306,195 @@ test('selection is deterministic, capped, and prioritizes explicit clipper reque
   assert.equal(ids[0], 'twitch:c219')
 })
 
-test('provider credentials are kept out of URLs and Kick tokens use form encoding', async () => {
+test('Twitch public directory and profile work with an empty environment and no authorization', async () => {
+  const calls = []
+  const p = new Providers(
+    {},
+    createHttp({
+      fetchImpl: async (url, init) => {
+        calls.push(JSON.parse(init.body).query)
+        assert.equal(url, 'https://gql.twitch.tv/gql')
+        assert.equal(init.headers.Authorization, undefined)
+        assert.equal(init.headers['Client-Id'], 'kimne78kx3ncx6brgo4mv6wki5h1ko')
+        if (calls.at(-1).includes('user(login:'))
+          return json({ data: { user: { id: '1', description: 'Public bio' } } })
+        assert.match(calls.at(-1), /first: 30/)
+        return json({
+          data: {
+            streams: {
+              edges: [
+                {
+                  cursor: 'next',
+                  node: {
+                    id: 'stream',
+                    viewersCount: 15,
+                    language: 'EN',
+                    createdAt: '2026-10-20T12:00:00Z',
+                    broadcaster: { id: '1', login: 'creator', displayName: 'Creator', description: 'Public bio' },
+                    game: { id: 'game', name: 'Game' }
+                  }
+                }
+              ],
+              pageInfo: { hasNextPage: calls.length === 1 }
+            }
+          }
+        })
+      }
+    })
+  )
+  const first = await p.listStreams('twitch')
+  assert.equal(first.streams[0].viewerCount, 15)
+  assert.equal(first.streams[0].language, 'en')
+  const next = await p.listStreams('twitch', first)
+  assert.match(calls[1], /after: "next"/)
+  assert.equal(next.cursor, null)
+  assert.deepEqual(await p.profile('twitch', 'creator'), { broadcasterId: '1', description: 'Public bio' })
+})
+
+test('Kick anonymous directory and profiles use the desktop app API, with versioned cursors', async () => {
+  const urls = []
+  const p = new Providers(
+    {},
+    createHttp({
+      fetchImpl: async (url, init) => {
+        const parsed = new URL(url)
+        urls.push(parsed)
+        assert.equal(parsed.origin, 'https://api.kick.com')
+        assert.equal(init.headers.Authorization, undefined)
+        if (parsed.pathname.endsWith('/channels/creator'))
+          return json({
+            status: { error: false },
+            data: {
+              account: { user: { id: '1' }, channel: { slug: 'creator', description: 'Public bio' } }
+            }
+          })
+        assert.equal(parsed.pathname, '/private/v1/livestreams')
+        return json({
+          status: { error: false },
+          data: {
+            livestreams: [
+              {
+                streamer: {
+                  user: { id: '1', username: 'Creator' },
+                  channel: { slug: 'creator', description: 'Public bio' }
+                },
+                metadata: { language: 'en', category: { id: 'category' } },
+                viewers_count: 15
+              }
+            ],
+            next_cursor: urls.length === 1 ? 'next' : null,
+            version: 'snapshot'
+          }
+        })
+      }
+    })
+  )
+  const first = await p.listStreams('kick')
+  assert.equal(first.streams[0].login, 'creator')
+  assert.equal(first.streams[0].viewerCount, 15)
+  assert.equal(first.streams[0].categoryId, 'category')
+  await p.listStreams('kick', first)
+  assert.equal(urls[1].searchParams.get('cursor'), 'next')
+  assert.equal(urls[1].searchParams.get('version'), 'snapshot')
+  assert.deepEqual(await p.profile('kick', 'creator'), { broadcasterId: '1', description: 'Public bio' })
+})
+
+test('public provider errors and changed response shapes fail visibly', async () => {
+  for (const [platform, payload] of [
+    ['twitch', { errors: [{ message: 'failed integrity check' }] }],
+    ['twitch', { data: { streams: { edges: [], pageInfo: { hasNextPage: true } } } }],
+    ['kick', { status: { error: true, message: 'Unavailable' } }],
+    ['kick', { data: { livestreams: [] } }]
+  ]) {
+    const p = new Providers({}, createHttp({ fetchImpl: async () => json(payload) }))
+    await assert.rejects(p.listStreams(platform))
+  }
+})
+
+test('a restricted Twitch directory preserves its checkpoint and continues Kick discovery', async () => {
+  const state = { leads: {}, discovery: {} }
+  let twitchPages = 0
+  await discover({
+    state,
+    config: validateConfig({ sources: ['twitch', 'kick'], targetStreamers: 1 }),
+    save: async () => {},
+    log: quiet,
+    http: createHttp(),
+    providers: {
+      listStreams: async (platform) => {
+        if (platform === 'twitch') {
+          if (++twitchPages === 1) return { streams: [], cursor: 'resume-here' }
+          throw new Error('Twitch public lookup: failed integrity check')
+        }
+        return { streams: [{ login: 'small', viewerCount: 25, language: 'en' }], cursor: null }
+      }
+    }
+  })
+  assert.match(state.discovery.twitch.error, /integrity check/)
+  assert.equal(state.discovery.twitch.cursor, 'resume-here')
+  assert.equal(state.discovery.twitch.done, false)
+  assert.equal(state.discovery.kick.done, true)
+  assert.deepEqual(state.selected, ['kick:small'])
+})
+
+test('X alone requires a token and keeps it out of the URL', async () => {
   const calls = []
   const http = createHttp({
     fetchImpl: async (url, init) => {
       calls.push({ url, init })
-      return url.includes('/oauth/token')
-        ? json({ access_token: 'generated-token', expires_in: 3600 })
-        : json({ data: [] })
+      return json({ data: [] })
     }
   })
-  const p = new Providers({ KICK_CLIENT_ID: 'client', KICK_CLIENT_SECRET: 'secret' }, http)
-  await p.get('kick', '/v2/livestreams')
-  await p.get('kick', '/v2/livestreams')
-  assert.equal(calls.length, 3)
-  assert.equal(calls[0].init.body, 'grant_type=client_credentials&client_id=client&client_secret=secret')
-  assert.equal(calls[1].init.headers.Authorization, 'Bearer generated-token')
-  assert.ok(!calls[0].url.includes('secret'))
+  await assert.rejects(new Providers({}, http).searchX('/tweets/search/all'), /X_BEARER_TOKEN/)
+  await new Providers({ X_BEARER_TOKEN: 'token' }, http).searchX('/tweets/search/all', [['query', 'clippers']])
+  assert.equal(calls.length, 1)
+  assert.equal(new URL(calls[0].url).searchParams.get('query'), 'clippers')
+  assert.ok(!calls[0].url.includes('token'))
+  assert.equal(calls[0].init.headers.Authorization, 'Bearer token')
 })
 
-test('VOD selection excludes a live archive, oversized recordings, and malicious URLs', async () => {
-  assert.equal(twitchDuration('2h3m4s'), 7384)
-  const lead = { platform: 'twitch', broadcasterId: '123', liveStartedAt: '2026-10-20T20:00:00Z' }
-  const vod = await findVod(lead, validateConfig(), {
-    get: async () => ({
-      data: [
-        { id: '1', url: 'https://www.twitch.tv/videos/1', duration: '1h', created_at: '2026-10-20T20:00:00Z' },
-        { id: '2', url: 'https://www.twitch.tv/videos/2', duration: '5h', created_at: '2026-10-19T20:00:00Z' },
-        { id: '3', url: 'https://evil.test/secret', duration: '30m', created_at: '2026-10-18T20:00:00Z' },
-        { id: '4', url: 'https://www.twitch.tv/videos/4', duration: '45m', created_at: '2026-10-17T20:00:00Z' }
-      ]
+test('both platforms reuse Clippster recording browser; exclude live, oversized and unsafe sources', async () => {
+  for (const platform of ['twitch', 'kick']) {
+    const source = (id) =>
+      platform === 'twitch' ? `https://www.twitch.tv/videos/${id}` : `https://kick.com/creator/videos/${id}`
+    const lead = { platform, login: 'creator', liveStartedAt: '2026-10-20T20:00:00Z' }
+    const vod = await findVod(lead, validateConfig(), {
+      web: async (path) => {
+        const url = new URL(path, 'http://localhost')
+        assert.equal(url.pathname, '/account/media/vods')
+        assert.equal(url.searchParams.get('platform'), platform)
+        assert.equal(url.searchParams.get('channel'), 'creator')
+        assert.equal(url.searchParams.get('limit'), '20')
+        assert.equal(url.searchParams.get('tab'), 'streams')
+        return {
+          vods: [
+            { id: '1', url: source('1'), duration_seconds: 3600, upload_date: '2026-10-20T20:00:00Z' },
+            { id: '2', url: source('2'), duration_seconds: 18000, upload_date: '2026-10-19T20:00:00Z' },
+            { id: '3', url: 'https://evil.test/secret', duration_seconds: 1800, upload_date: '2026-10-18T20:00:00Z' },
+            { id: '4', url: source('4'), duration_seconds: 2700, upload_date: '2026-10-17T20:00:00Z' },
+            { id: '5', url: source('5'), duration_seconds: 2700, isLive: true, upload_date: '2026-10-18T20:00:00Z' }
+          ]
+        }
+      }
     })
-  })
-  assert.equal(vod.id, '4')
+    assert.equal(vod.id, '4')
+  }
+})
+
+test('yt-dlp day stamps and Unix timestamps select the latest completed recording', async () => {
+  const rows = [
+    { id: '1', upload_date: '20261020' },
+    { id: '2', upload_date: '20261018' },
+    { id: '3', upload_date: Date.parse('2026-10-19T12:00:00Z') / 1000 },
+    { id: '4', upload_date: null }
+  ].map((v) => ({ ...v, url: `https://www.twitch.tv/videos/${v.id}`, duration_seconds: 300 }))
+  const vod = await findVod(
+    { platform: 'twitch', login: 'creator', liveStartedAt: '2026-10-20T20:00:00Z' },
+    validateConfig(),
+    { web: async () => ({ vods: rows }) }
+  )
+  assert.equal(vod.id, '3')
+  assert.equal(vod.createdAt, '2026-10-19T12:00:00.000Z')
 })
 
 test('lost mutation responses reconcile by server job ID and never repeat detection', async () => {

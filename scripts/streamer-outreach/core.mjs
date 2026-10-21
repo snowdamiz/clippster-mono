@@ -61,7 +61,7 @@ export function validateConfig(input = {}) {
       throw new Error(`${key} must be an array of nonempty strings.`)
   }
   if (c.languages.length > 25 || c.kickCategoryIds.length > 25 || c.twitchGameIds.length > 100)
-    throw new Error('Too many language/category filters for the provider API.')
+    throw new Error('Too many language/category filters for one campaign.')
   if (typeof c.xQuery !== 'string' || !c.xQuery.trim() || c.xQuery.length > (c.xDays > 7 ? 1024 : 512))
     throw new Error('xQuery is empty or exceeds the X endpoint query limit.')
   for (const key of ['captions', 'archiveCompletedProjects'])
