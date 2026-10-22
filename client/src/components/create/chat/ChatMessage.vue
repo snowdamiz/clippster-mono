@@ -23,7 +23,7 @@
 </template>
 
 <script setup lang="ts">
-  import type { AIChatMessage } from '@/types/ai-video';
+  import type { AIChatMessage } from '@/types/ai-chat';
   import { formatTime as fmtTime } from '@/utils/dateTimeUtils';
   import { Sparkles } from 'lucide-vue-next';
   import { Avatar } from '@/components/ui/avatar';

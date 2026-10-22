@@ -1,5 +1,5 @@
 <template>
-  <!-- Refinement budget line shown above the chat composer (AI Video + AI Thumbnail) — plain text, no box. -->
+  <!-- Refinement budget line shown above the chat composer — plain text, no box. -->
   <div class="flex items-center gap-2.5 px-1 text-xs text-fg-subtle">
     <span class="flex items-center gap-1">
       Round <span class="tabular font-medium text-fg">{{ round }}/{{ maxRounds }}</span>
