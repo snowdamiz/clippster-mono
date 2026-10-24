@@ -177,16 +177,6 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `client/src-tauri/pumpfun-service/record-livestream.mjs`
 - `client/src-tauri/pumpfun-service/STREAM_DEBUGGING_NOTES.md`
 
-### client/src-tauri/sidecars/remotion-renderer/
-- `client/src-tauri/sidecars/remotion-renderer/build.js`
-- `client/src-tauri/sidecars/remotion-renderer/package.json`
-- `client/src-tauri/sidecars/remotion-renderer/tsconfig.json`
-
-### client/src-tauri/sidecars/remotion-renderer/src/
-- `client/src-tauri/sidecars/remotion-renderer/src/index.ts`
-- `client/src-tauri/sidecars/remotion-renderer/src/render.ts`
-- `client/src-tauri/sidecars/remotion-renderer/src/types.ts`
-
 ### client/src-tauri/src/
 - *(32 files: 31 .rs, 1 .txt)*
 
@@ -217,7 +207,6 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `client/src-tauri/src/commands/file_utils.rs`
 - `client/src-tauri/src/commands/focal_detection_commands.rs`
 - `client/src-tauri/src/commands/mod.rs`
-- `client/src-tauri/src/commands/remotion_export.rs`
 - `client/src-tauri/src/commands/system.rs`
 
 ### client/src-tauri/src/downloads/
@@ -248,32 +237,12 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `client/src/components/admin/CreatePlatformCampaignDialog.vue`
 - `client/src/components/admin/EditPlatformCampaignDialog.vue`
 
-### client/src/components/ai-video/
-- `client/src/components/ai-video/AIChatPanel.vue`
-- `client/src/components/ai-video/AITimeline.vue`
-- `client/src/components/ai-video/CaptionStylePicker.vue`
-- `client/src/components/ai-video/ChatMessage.vue`
-- `client/src/components/ai-video/ChatSummaryCard.vue`
-- `client/src/components/ai-video/ExportDialog.vue`
-- `client/src/components/ai-video/MotionGraphicsPanel.vue`
-- `client/src/components/ai-video/QuickActions.vue`
-- `client/src/components/ai-video/ReferenceAnalysisCard.vue`
-- `client/src/components/ai-video/RefinementBadge.vue`
-- `client/src/components/ai-video/RemotionPlayerMount.vue`
-- `client/src/components/ai-video/StylePresetSelector.vue`
-- `client/src/components/ai-video/TrackEditor.vue`
-
-### client/src/components/ai-video/pickers/
-- `client/src/components/ai-video/pickers/AssetPickerDialog.vue`
-- `client/src/components/ai-video/pickers/ClipPickerDialog.vue`
-
 ### client/src/components/calendar/
 - `client/src/components/calendar/ClipsSidebar.vue`
 - `client/src/components/calendar/ScheduleClipDialog.vue`
 
 ### client/src/components/campaigns/
 - `client/src/components/campaigns/CampaignDetailDialog.vue`
-- `client/src/components/campaigns/CampaignSelectionDialog.vue`
 
 ### client/src/components/chat/
 - `client/src/components/chat/ChatFab.vue`
@@ -285,7 +254,6 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `client/src/components/clip-editor/ExistingProjectDialog.vue`
 
 ### client/src/components/clipper-profile/
-- `client/src/components/clipper-profile/TagSelector.vue`
 - `client/src/components/clipper-profile/TimezoneSelector.vue`
 
 ### client/src/components/icons/
@@ -293,28 +261,17 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 - `client/src/components/icons/XLogo.vue`
 
 ### client/src/components/messaging/
-- `client/src/components/messaging/ChatHeader.vue`
-- `client/src/components/messaging/ChatView.vue`
-- `client/src/components/messaging/ConversationList.vue`
 - `client/src/components/messaging/MessageBubble.vue`
-- `client/src/components/messaging/MessagingPanel.vue`
-- `client/src/components/messaging/NewConversationDialog.vue`
 - `client/src/components/messaging/TypingIndicator.vue`
 
 ### client/src/components/organization/
-- `client/src/components/organization/BuyCreditsModal.vue`
 - `client/src/components/organization/ExternalPostSubmitDialog.vue`
-- `client/src/components/organization/MemberSharedClips.vue`
 - `client/src/components/organization/OrganizationCampaigns.vue`
 - `client/src/components/organization/OrganizationClippers.vue`
 - `client/src/components/organization/OrgScheduledPostsList.vue`
 - `client/src/components/organization/PostSubmissionsList.vue`
-- `client/src/components/organization/PublishDialog.vue`
-- `client/src/components/organization/ScheduledPostsList.vue`
 - `client/src/components/organization/ShareClipDialog.vue`
-- `client/src/components/organization/SharedClipsList.vue`
 - `client/src/components/organization/SocialAccountAssignments.vue`
-- `client/src/components/organization/SocialAccountsManager.vue`
 
 ### client/src/components/poi/
 - `client/src/components/poi/ManualPOIEditor.vue`
@@ -335,8 +292,6 @@ Note: Truncated to first 500 files. Run with higher --max-files to include all.
 
 ### client/src/components/ui/avatar/
 - `client/src/components/ui/avatar/Avatar.vue`
-- `client/src/components/ui/avatar/AvatarFallback.vue`
-- `client/src/components/ui/avatar/AvatarImage.vue`
 - `client/src/components/ui/avatar/index.ts`
 
 ### client/src/components/ui/badge/

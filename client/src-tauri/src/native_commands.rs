@@ -26,8 +26,11 @@ macro_rules! with_native_commands {
             commands::file_utils::get_file_info,
             commands::file_utils::get_media_metadata,
             commands::file_utils::generate_video_thumbnail,
-            commands::reference_video::prepare_reference_video,
             commands::reference_video::cancel_reference_analysis,
+            commands::video_measure::import_reference_video,
+            commands::video_measure::measure_video,
+            commands::ai_media::inspect_ai_media,
+            commands::ai_media::encode_image_for_ai,
 
             // Auth commands
             auth::open_wallet_auth_window,
@@ -243,8 +246,7 @@ macro_rules! with_native_commands {
             // UI Utils commands
             ui_utils::setup_macos_titlebar,
             ui_utils::get_platform,
-            ui_utils::save_window_size,
-            ui_utils::load_window_size,
+            ui_utils::save_window_state,
 
             // File operations
             copy_file,
@@ -319,10 +321,10 @@ macro_rules! with_native_commands {
             // Avatar proxy command
             avatar_proxy::fetch_avatar_image,
 
-            // Remotion export commands
-            commands::remotion_export::start_remotion_export,
-            commands::remotion_export::cancel_remotion_export,
-            commands::remotion_export::stop_remotion_sidecar,
+            // Hyperframes (AI video) sidecar commands
+            commands::hyperframes::hyperframes_request,
+            commands::hyperframes::hyperframes_workspace_dir,
+            commands::hyperframes::hyperframes_stop,
 
             // Studio recording commands
             studio::studio_list_devices,

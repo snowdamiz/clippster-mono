@@ -114,19 +114,7 @@ async function main() {
   runRequired('yarn install', { cwd: path.join(ROOT, 'client/src-tauri/pumpfun-service') });
   removePackageLock(path.join(ROOT, 'server'));
   runRequired('yarn install', { cwd: path.join(ROOT, 'server') });
-
-  // 3. Install & build remotion-renderer sidecar
-  console.log('\n--- Building remotion-renderer sidecar ---');
-  const sidecarDir = path.join(ROOT, 'client/src-tauri/sidecars/remotion-renderer');
-  const bundlePath = path.join(sidecarDir, 'dist/bundle.js');
-
-  if (!fs.existsSync(bundlePath)) {
-    removePackageLock(sidecarDir);
-    runRequired('yarn install', { cwd: sidecarDir });
-    runRequired('yarn build', { cwd: sidecarDir });
-  } else {
-    console.log('remotion-renderer bundle already exists, skipping build.');
-  }
+  runRequired('yarn install', { cwd: path.join(ROOT, 'client/src-tauri/sidecars/hyperframes-renderer') });
 
   // 3. Docker Postgres
   console.log('\n--- Checking PostgreSQL ---');

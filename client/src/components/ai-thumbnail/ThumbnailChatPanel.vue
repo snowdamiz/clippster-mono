@@ -76,11 +76,11 @@
   import ChatNotice from '@/components/create/chat/ChatNotice.vue';
   import ChatStatusCard from '@/components/create/chat/ChatStatusCard.vue';
   import ChatTypingIndicator from '@/components/create/chat/ChatTypingIndicator.vue';
-  import ChatMessage from '@/components/ai-video/ChatMessage.vue';
-  import RefinementBadge from '@/components/ai-video/RefinementBadge.vue';
+  import ChatMessage from '@/components/create/chat/ChatMessage.vue';
+  import RefinementBadge from '@/components/create/chat/RefinementBadge.vue';
   import ThumbnailSummaryCard, { type ThumbnailBriefSummary } from './ThumbnailSummaryCard.vue';
   import type { ThumbnailGenerationMode, ThumbnailMessage } from '@/services/aiThumbnailApi';
-  import type { AIChatMessage } from '@/types/ai-video';
+  import type { AIChatMessage } from '@/types/ai-chat';
 
   const props = defineProps<{
     messages: ThumbnailMessage[];

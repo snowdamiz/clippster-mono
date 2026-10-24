@@ -31,7 +31,7 @@ export interface ClipperProfile {
   total_clips_delivered: number
   total_endorsements: number
   total_campaigns_completed: number
-  portfolio_clips?: { id: number; thumbnail_url: string | null; title?: string; video_url?: string }[]
+  portfolio_clips?: { id: number; thumbnail_url: string | null; title?: string; video_url?: string; display_order?: number }[]
   timezone?: string | null
   is_affiliate?: boolean
   total_views?: number

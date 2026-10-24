@@ -7,20 +7,7 @@
       :icon="UserCircle"
       :breadcrumbs="breadcrumbs"
     >
-      <template #actions>
-        <template v-if="profile">
-          <Button v-if="authStore.isAuthenticated" variant="secondary" size="sm" @click="openEndorsementDialog">
-            <Star />
-            Endorse
-          </Button>
-          <Button v-if="profile.slug" variant="ghost" size="sm" @click="copyProfileLink">
-            <Share2 />
-            Share
-          </Button>
-        </template>
-      </template>
-
-      <div class="@container flex flex-1 flex-col px-5 py-4">
+      <div class="cp-profile flex-1">
         <!-- Loading (first load only; refetches keep the profile on screen) -->
         <div v-if="loading && !profile" class="flex flex-col gap-4" aria-busy="true">
           <div class="flex items-start gap-4 pb-4">
@@ -46,187 +33,213 @@
           description="This clipper profile doesn't exist or is private."
         />
 
-        <!-- Profile -->
-        <div v-else class="flex animate-enter flex-col gap-5">
-          <ProfileHeader
-            :name="profile.display_name || 'Unnamed clipper'"
-            :avatar="profile.avatar_url"
-            :subtitle="profile.bio?.trim() || null"
-            :verified="profile.is_verified"
-            class="border-b border-line-subtle pb-4"
-          >
-            <template #badges>
-              <Badge v-if="profile.looking_for_work" variant="success">
-                <span class="size-1.5 rounded-full bg-current" />
-                Looking for work
-              </Badge>
-              <Badge v-if="profile.is_affiliate"><Handshake />Affiliate</Badge>
-              <Badge v-for="badge in profile.badges" :key="badge.id" variant="brand">
-                {{ getBadgeLabel(badge.badge_type) }}
-              </Badge>
+        <!-- The first portfolio clip is featured; the two remaining clips support it. -->
+        <div v-else class="cp-frame">
+          <div class="cp-cover" aria-hidden="true">
+            <template v-for="clip in portfolioClips" :key="clip.id">
+              <img
+                v-if="thumbnailUrls.get(clip.id) || clip.thumbnail_url"
+                :src="thumbnailUrls.get(clip.id) || clip.thumbnail_url || undefined"
+                alt=""
+              />
             </template>
-            <template #meta>
-              <span v-if="profile.experience_level" class="flex items-center gap-1.5">
-                <Briefcase class="size-3.5 text-fg-subtle" />
-                {{ getExperienceLevelLabel(profile.experience_level) }}
-              </span>
-              <span v-if="isOnline(profile.user?.last_active_at)" class="flex items-center gap-1.5 text-success">
-                <span class="size-1.5 rounded-full bg-success" />
-                Online
-              </span>
-              <span v-else-if="profile.user?.last_active_at" class="flex items-center gap-1.5">
-                <Clock class="size-3.5 text-fg-subtle" />
-                {{ formatLastActive(profile.user.last_active_at) }}
-              </span>
-            </template>
-            <template v-if="profile.specialty_tags?.length">
-              <Badge v-for="tag in profile.specialty_tags.slice(0, 6)" :key="tag">{{ getSpecialtyTagLabel(tag) }}</Badge>
-            </template>
-            <template #aside>
-              <StatGrid size="sm" :items="profileStats" class="w-full max-w-[440px] shrink-0 self-center" />
-            </template>
-          </ProfileHeader>
-
-          <div class="grid grid-cols-1 items-start gap-5 @3xl:grid-cols-[minmax(0,1fr)_17rem]">
-            <!-- Main column -->
-            <div class="flex min-w-0 flex-col gap-5">
-              <section v-if="profile.portfolio_clips?.length" class="flex flex-col gap-2.5">
-                <SectionHeader title="Portfolio" :count="profile.portfolio_clips.length" />
-                <div class="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
+          </div>
+          <header class="cp-identity">
+            <div class="cp-avatar">
+              <img v-if="profile.avatar_url" :src="profile.avatar_url" alt="" />
+              <UserCircle v-else />
+            </div>
+            <div class="cp-summary">
+              <div class="cp-name">
+                <h1>{{ profile.display_name || 'Unnamed clipper' }}</h1>
+                <BadgeCheck v-if="profile.is_verified" class="size-5 text-brand" aria-label="Verified" />
+                <span v-if="profile.looking_for_work" class="cp-tag cp-available">Available for work</span>
+                <span v-if="profile.is_affiliate" class="cp-tag">
+                  <Handshake />
+                  Affiliate
+                </span>
+                <span v-for="badge in profile.badges" :key="badge.id" class="cp-tag">
+                  {{ getBadgeLabel(badge.badge_type) }}
+                </span>
+              </div>
+              <p v-if="profile.slug" class="cp-handle">@{{ profile.slug }}</p>
+              <p v-if="profile.bio?.trim()" class="cp-bio">{{ profile.bio }}</p>
+              <div class="cp-tags">
+                <span v-for="tag in profile.specialty_tags" :key="tag" class="cp-tag">
+                  {{ getSpecialtyTagLabel(tag) }}
+                </span>
+                <span v-if="isOnline(profile.user?.last_active_at)" class="cp-tag cp-available">Online</span>
+                <span v-else-if="profile.user?.last_active_at" class="cp-tag">
+                  {{ formatLastActive(profile.user.last_active_at) }}
+                </span>
+              </div>
+            </div>
+            <div class="cp-actions">
+              <button
+                v-if="authStore.isAuthenticated && Number(authStore.user?.id) !== profile.user_id"
+                type="button"
+                class="cp-button cp-primary"
+                @click="router.push('/messages?to=' + profile.user_id)"
+              >
+                <Send />
+                Contact
+              </button>
+              <button
+                v-if="authStore.user?.owned_organization_id"
+                type="button"
+                class="cp-button"
+                @click="openEndorsementDialog"
+              >
+                <Star />
+                Endorse
+              </button>
+              <button v-if="profile.slug" type="button" class="cp-button" @click="copyProfileLink">
+                <Share2 />
+                Share
+              </button>
+            </div>
+          </header>
+          <div class="cp-columns">
+            <div class="cp-main">
+              <dl class="cp-stats">
+                <div v-for="stat in profileStats" :key="stat.label" class="cp-stat">
+                  <dd>{{ stat.value }}</dd>
+                  <dt>{{ stat.label }}</dt>
+                </div>
+              </dl>
+              <nav class="cp-tabs" aria-label="Profile sections">
+                <button
+                  v-for="tab in profileTabs"
+                  :key="tab"
+                  type="button"
+                  class="cp-tab"
+                  :aria-pressed="activeTab === tab"
+                  @click="activeTab = tab"
+                >
+                  {{ tab }}
+                </button>
+              </nav>
+              <section v-if="activeTab === 'Work'" aria-label="Portfolio">
+                <div v-if="portfolioClips.length" class="cp-work">
                   <button
-                    v-for="clip in profile.portfolio_clips"
+                    v-for="(clip, index) in portfolioClips"
                     :key="clip.id"
                     type="button"
-                    class="group flex min-w-0 flex-col gap-1.5 text-left"
+                    class="cp-clip"
+                    :aria-label="'Play ' + (clip.title || 'Untitled clip')"
                     @click="openVideoPlayer(clip)"
                   >
-                    <div
-                      class="relative aspect-video w-full overflow-hidden rounded-lg border border-line-subtle bg-surface-sunken transition-colors group-hover:border-line-strong"
-                    >
-                      <img
-                        v-if="thumbnailUrls.get(clip.id) || clip.thumbnail_url"
-                        :src="thumbnailUrls.get(clip.id) || clip.thumbnail_url || undefined"
-                        alt=""
-                        class="size-full object-cover"
-                      />
-                      <div v-else class="grid size-full place-items-center">
-                        <Video class="size-5 text-fg-disabled" />
-                      </div>
-                      <div class="absolute inset-0 grid place-items-center bg-black/0 transition-colors group-hover:bg-black/35">
-                        <span
-                          class="grid size-8 place-items-center rounded-full bg-[var(--overlay)] text-fg opacity-0 backdrop-blur-sm transition-opacity group-hover:opacity-100"
-                        >
-                          <Play class="ml-0.5 size-3.5 fill-current" />
-                        </span>
-                      </div>
-                    </div>
-                    <p class="truncate text-xs font-medium text-fg">{{ clip.title || 'Untitled' }}</p>
+                    <img
+                      v-if="thumbnailUrls.get(clip.id) || clip.thumbnail_url"
+                      :src="thumbnailUrls.get(clip.id) || clip.thumbnail_url || undefined"
+                      alt=""
+                    />
+                    <Video v-else class="cp-placeholder" />
+                    <span v-if="index === 0" class="cp-featured">Featured</span>
+                    <span class="cp-play"><Play /></span>
+                    <span class="cp-caption">{{ clip.title || 'Untitled clip' }}</span>
                   </button>
                 </div>
+                <div v-else class="cp-empty">
+                  <strong>No portfolio clips yet</strong>
+                  This clipper hasn't added work to their portfolio.
+                </div>
               </section>
-
-              <section v-if="profile.endorsements?.length" class="flex flex-col gap-2.5">
-                <SectionHeader title="Endorsements" :count="profile.endorsements.length" />
-                <ul class="divide-y divide-line-subtle overflow-hidden rounded-xl border border-line-subtle bg-surface">
-                  <li v-for="endorsement in profile.endorsements" :key="endorsement.id" class="flex flex-col gap-1.5 px-4 py-2.5">
-                    <div class="flex items-center gap-3">
-                      <Avatar :name="endorsement.organization?.name" :icon="Building2" size="sm" shape="square" />
-                      <p class="min-w-0 flex-1 truncate text-sm font-medium text-fg">
-                        {{ endorsement.organization?.name || 'Organization' }}
-                        <span v-if="endorsement.endorsed_by?.name" class="text-xs font-normal text-fg-muted">
-                          · by {{ endorsement.endorsed_by.name }}
-                        </span>
-                      </p>
-                      <div v-if="endorsement.rating" class="flex shrink-0 items-center gap-0.5" :title="`${endorsement.rating} / 5`">
-                        <Star
-                          v-for="i in 5"
-                          :key="i"
-                          class="size-3.5"
-                          :class="i <= endorsement.rating ? 'fill-warning text-warning' : 'text-fg-disabled'"
-                        />
-                      </div>
-                    </div>
-                    <p v-if="endorsement.content" class="pl-10 text-sm text-fg-muted">“{{ endorsement.content }}”</p>
-                  </li>
-                </ul>
+              <section v-else aria-label="Endorsements">
+                <article v-for="endorsement in profile.endorsements" :key="endorsement.id" class="cp-review">
+                  <header>
+                    <strong>{{ endorsement.organization?.name || 'Organization' }}</strong>
+                    <span
+                      v-if="endorsement.rating"
+                      class="cp-rating"
+                      :aria-label="endorsement.rating + ' out of 5 stars'"
+                    >
+                      <Star v-for="i in endorsement.rating" :key="i" />
+                    </span>
+                  </header>
+                  <p v-if="endorsement.endorsed_by?.name">By {{ endorsement.endorsed_by.name }}</p>
+                  <p v-if="endorsement.content">“{{ endorsement.content }}”</p>
+                </article>
+                <div v-if="!profile.endorsements?.length" class="cp-empty">
+                  <strong>No endorsements yet</strong>
+                  Endorsements from organizations will appear here.
+                </div>
               </section>
-
-              <EmptyState
-                v-if="!profile.portfolio_clips?.length && !profile.endorsements?.length"
-                size="sm"
-                :icon="UserCircle"
-                title="Nothing here yet"
-                description="This clipper hasn't added portfolio clips or received endorsements yet."
-              />
             </div>
-
-            <!-- Side column: one frame, sections divided by hairlines -->
-            <aside
-              v-if="hasAside"
-              class="min-w-0 divide-y divide-line-subtle overflow-hidden rounded-xl border border-line-subtle bg-surface"
-            >
-              <ProfileAsideSection v-if="professionalRows.length" title="Professional" :icon="Briefcase">
-                <InfoList compact :rows="professionalRows" />
-              </ProfileAsideSection>
-
-              <ProfileAsideSection v-if="profile.content_style_tags?.length" title="Content style" :icon="Sparkles">
-                <div class="flex flex-wrap gap-1">
-                  <Badge v-for="tag in profile.content_style_tags" :key="tag">{{ getContentStyleTagLabel(tag) }}</Badge>
+            <aside class="cp-aside" aria-label="Profile details">
+              <div class="cp-section">
+                <h2>About {{ profile.display_name || 'this clipper' }}</h2>
+                <p>{{ profile.bio?.trim() || 'This clipper has not added a bio yet.' }}</p>
+              </div>
+              <div v-if="professionalRows.length" class="cp-section">
+                <dl class="cp-details">
+                  <div v-for="row in professionalRows" :key="row.label" class="cp-detail">
+                    <Globe v-if="row.label === 'Timezone'" />
+                    <Briefcase v-else />
+                    <div>
+                      <dt>{{ row.label }}</dt>
+                      <dd>{{ row.value }}</dd>
+                    </div>
+                  </div>
+                </dl>
+              </div>
+              <div v-if="profile.content_style_tags?.length" class="cp-section">
+                <h3>Content styles</h3>
+                <div class="cp-tags">
+                  <span v-for="tag in profile.content_style_tags" :key="tag" class="cp-tag">
+                    {{ getContentStyleTagLabel(tag) }}
+                  </span>
                 </div>
-              </ProfileAsideSection>
-
-              <!-- Connected accounts -->
-              <ProfileAsideSection v-if="profile.social_accounts?.length" title="Connected accounts" :icon="Users">
-                <div class="flex flex-col">
-                  <LinkRow
-                    v-for="(account, idx) in profile.social_accounts"
-                    :key="idx"
-                    :title="account.username ? `@${account.username}` : getPlatformLabel(account.platform)"
-                    :subtitle="getPlatformLabel(account.platform)"
-                    :href="getAccountUrl(account)"
+              </div>
+              <div v-if="profile.social_accounts?.length" class="cp-section">
+                <h3>Connected accounts</h3>
+                <div class="cp-links">
+                  <a
+                    v-for="(account, index) in profile.social_accounts"
+                    :key="index"
+                    class="cp-link"
+                    :href="getAccountUrl(account) || undefined"
+                    target="_blank"
+                    rel="noopener noreferrer"
                   >
-                    <template #leading>
-                      <Avatar
-                        v-if="account.profile_image_url"
-                        :src="account.profile_image_url"
-                        :name="account.username"
-                        size="sm"
-                      />
-                      <PlatformLogo v-else :platform="account.platform" size="md" />
-                    </template>
-                    <template #title-end>
-                      <BadgeCheck v-if="account.is_verified" class="size-3.5 shrink-0 text-brand" aria-label="Verified" />
-                    </template>
-                  </LinkRow>
+                    <img v-if="account.profile_image_url" :src="account.profile_image_url" alt="" />
+                    <PlatformLogo v-else :platform="account.platform" size="md" />
+                    <span>
+                      {{
+                        account.username ? '@' + account.username.replace(/^@/, '') : getPlatformLabel(account.platform)
+                      }}
+                      <BadgeCheck v-if="account.is_verified" class="size-3" aria-label="Verified" />
+                    </span>
+                    <ExternalLink v-if="getAccountUrl(account)" />
+                  </a>
                 </div>
-              </ProfileAsideSection>
-
-              <!-- Platforms (fallback when no connected accounts) -->
-              <ProfileAsideSection v-else-if="profile.preferred_platforms?.length" title="Platforms" :icon="Monitor">
-                <div class="flex flex-wrap gap-1">
-                  <Badge v-for="platform in profile.preferred_platforms" :key="platform" size="md">
+              </div>
+              <div v-else-if="profile.preferred_platforms?.length" class="cp-section">
+                <h3>Platforms</h3>
+                <div class="cp-tags">
+                  <span v-for="platform in profile.preferred_platforms" :key="platform" class="cp-tag">
                     <PlatformLogo :platform="platform" size="xs" />
                     {{ getPlatformLabel(platform) }}
-                  </Badge>
+                  </span>
                 </div>
-              </ProfileAsideSection>
-
-              <!-- Channel links -->
-              <ProfileAsideSection v-if="profile.channel_links?.length" title="Social channels" :icon="Link">
-                <div class="flex flex-col">
-                  <LinkRow
+              </div>
+              <div v-if="profile.channel_links?.length" class="cp-section">
+                <h3>Social channels</h3>
+                <div class="cp-links">
+                  <a
                     v-for="link in profile.channel_links"
                     :key="link.id"
-                    :title="link.username || getPlatformLabel(link.platform)"
-                    :subtitle="getPlatformLabel(link.platform)"
+                    class="cp-link"
                     :href="link.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
                   >
-                    <template #leading>
-                      <PlatformLogo :platform="link.platform" size="md" />
-                    </template>
-                  </LinkRow>
+                    <PlatformLogo :platform="link.platform" size="md" />
+                    <span>{{ link.username || getPlatformLabel(link.platform) }}</span>
+                    <ExternalLink />
+                  </a>
                 </div>
-              </ProfileAsideSection>
+              </div>
             </aside>
           </div>
         </div>
@@ -335,44 +348,36 @@
 <script setup lang="ts">
   import { ref, computed, onMounted } from 'vue';
   import { useAuthStore } from '@/stores/auth';
-  import { useRoute } from 'vue-router';
+  import { useRoute, useRouter } from 'vue-router';
+  import '../../../packages/profile-design/profile.css';
+  import { publicPortfolio } from '../../../packages/profile-design/portfolio';
   import {
     AlertCircle,
     Award,
     BadgeCheck,
     Briefcase,
     Building2,
-    Clock,
-    Eye,
     Handshake,
-    Link,
     Loader2,
-    Megaphone,
-    Monitor,
     Play,
+    Send,
+    ExternalLink,
+    Globe,
     Share2,
-    Sparkles,
     Star,
     UserCircle,
-    Users,
     Video,
   } from 'lucide-vue-next';
   import PageLayout from '@/components/PageLayout.vue';
   import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-  import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
   import { EmptyState } from '@/components/ui/empty-state';
   import { Field } from '@/components/ui/field';
   import { Modal } from '@/components/ui/modal';
-  import { SectionHeader } from '@/components/ui/section-header';
-  import { StatGrid, type StatItem } from '@/components/ui/stat-card';
   import { Textarea } from '@/components/ui/textarea';
-  import { InfoList, type InfoListItem } from '@/components/ui/info-list';
-  import LinkRow from '@/components/directory/LinkRow.vue';
-  import { Avatar } from '@/components/ui/avatar';
+  import type { StatItem } from '@/components/ui/stat-card';
+  import type { InfoListItem } from '@/components/ui/info-list';
   import { PlatformLogo } from '@/components/ui/platform-logo';
-  import ProfileHeader from '@/components/directory/ProfileHeader.vue';
-  import ProfileAsideSection from '@/components/directory/ProfileAsideSection.vue';
   import { formatCompact } from '@/components/campaigns/campaignDisplay';
   import {
     getClipperBySlug,
@@ -393,11 +398,15 @@
   import { formatTimezoneForDisplay } from '@/utils/timezones';
 
   const route = useRoute();
+  const router = useRouter();
+  const profileTabs = ['Work', 'Endorsements'] as const;
+  const activeTab = ref<(typeof profileTabs)[number]>('Work');
   const { toast } = useToast();
   const authStore = useAuthStore();
 
   const loading = ref(true);
   const profile = ref<ClipperProfile | null>(null);
+  const portfolioClips = computed(() => publicPortfolio(profile.value?.portfolio_clips));
   const thumbnailUrls = ref<Map<number, string>>(new Map());
 
   const breadcrumbs = computed(() => {
@@ -445,17 +454,6 @@
     ];
     if (p.total_views) stats.push({ label: 'Total views', value: formatViews(p.total_views) });
     return stats;
-  });
-
-  const hasAside = computed(() => {
-    const p = profile.value;
-    return !!(
-      professionalRows.value.length ||
-      p?.content_style_tags?.length ||
-      p?.social_accounts?.length ||
-      p?.preferred_platforms?.length ||
-      p?.channel_links?.length
-    );
   });
 
   // Check if current user is an organization owner (can download clips)
@@ -548,14 +546,10 @@
     submittingEndorsement.value = true;
     endorsementError.value = '';
     try {
-      const response = await createEndorsement(
-        profile.value.slug!,
-        Number(authStore.user.owned_organization_id),
-        {
-          content: endorsementContent.value || undefined,
-          rating: endorsementRating.value,
-        }
-      );
+      const response = await createEndorsement(profile.value.slug!, Number(authStore.user.owned_organization_id), {
+        content: endorsementContent.value || undefined,
+        rating: endorsementRating.value,
+      });
 
       if (response.success) {
         toast({

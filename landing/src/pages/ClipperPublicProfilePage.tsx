@@ -1,46 +1,43 @@
 import { useCallback, useContext, useEffect, useState } from 'react'
-import { useParams } from 'react-router-dom'
+import { useParams, Link as RouterLink } from 'react-router-dom'
 import {
   Award,
-  Building2,
   CheckCircle,
   ExternalLink,
   Briefcase,
   Handshake,
   Instagram,
-  Link,
   Link2,
   Loader2,
-  Megaphone,
-  Monitor,
   Music2,
   Play,
-  Sparkles,
+  Send,
+  Share2,
+  Globe,
   Star,
   Twitch,
   Twitter,
   UserCircle,
   Video,
   X,
-  Youtube,
-  Eye,
-  Users,
+  Youtube
 } from 'lucide-react'
 import {
   createEndorsement,
   getClipperBySlug,
   getBadgeLabel,
-  getBadgeModifier,
   getContentStyleTagLabel,
   getExperienceLevelLabel,
   getLanguageName,
   getPlatformLabel,
   getSpecialtyTagLabel,
   formatViews,
-  type ClipperProfile,
+  type ClipperProfile
 } from '../services/clipperApi'
 import { AuthContext } from '../context/AuthContext'
 import { ToastContext } from '../context/ToastContext'
+import '../../../packages/profile-design/profile.css'
+import { publicPortfolio } from '../../../packages/profile-design/portfolio'
 import { API_BASE } from '../lib/apiBase'
 import { formatTimezoneForDisplay } from '../utils/formatTimezone'
 import { SeoHead } from '../seo/SeoHead'
@@ -66,7 +63,11 @@ export function ClipperPublicProfilePage() {
   const [loading, setLoading] = useState(true)
   const [profile, setProfile] = useState<ClipperProfile | null>(null)
   const [showVideoPlayer, setShowVideoPlayer] = useState(false)
-  const [selectedClip, setSelectedClip] = useState<{ id: number; title?: string; thumbnail_url?: string | null } | null>(null)
+  const [selectedClip, setSelectedClip] = useState<{
+    id: number
+    title?: string
+    thumbnail_url?: string | null
+  } | null>(null)
   const [videoPlaybackUrl, setVideoPlaybackUrl] = useState<string | null>(null)
   const [loadingVideo, setLoadingVideo] = useState(false)
   const [thumbnailUrls, setThumbnailUrls] = useState<Record<number, string>>({})
@@ -76,6 +77,8 @@ export function ClipperPublicProfilePage() {
   const [endorsementRating, setEndorsementRating] = useState(0)
   const [submittingEndorsement, setSubmittingEndorsement] = useState(false)
   const [endorsementError, setEndorsementError] = useState('')
+
+  const [activeTab, setActiveTab] = useState<'Work' | 'Endorsements'>('Work')
 
   const canDownloadClips = !!user?.owned_organization_id
 
@@ -89,7 +92,7 @@ export function ClipperPublicProfilePage() {
         if (data.profile.portfolio_clips?.length) {
           const thumbnails: Record<number, string> = {}
           await Promise.all(
-            data.profile.portfolio_clips.map(async clip => {
+            data.profile.portfolio_clips.map(async (clip) => {
               try {
                 const response = await fetch(
                   `${API_BASE}/clippers/${slug}/portfolio-clips/${clip.id}/thumbnail-presigned-url`
@@ -135,7 +138,7 @@ export function ClipperPublicProfilePage() {
     try {
       const res = await createEndorsement(profile.slug, user.owned_organization_id, {
         content: endorsementContent || undefined,
-        rating: endorsementRating,
+        rating: endorsementRating
       })
       if (res.success) {
         toastContext?.success('Endorsement submitted', "Your endorsement has been added to this clipper's profile.")
@@ -242,18 +245,37 @@ export function ClipperPublicProfilePage() {
     )
   }
 
-  const showBio = !!profile.bio?.trim()
-  const showProfileLocaleCard = !!(
-    profile.experience_level ||
-    profile.timezone ||
-    profile.response_time_hours != null ||
-    (profile.languages?.length ?? 0) > 0
-  )
-  const statsFour = !!profile.total_views
+  const portfolioClips = publicPortfolio(profile.portfolio_clips)
+  const professionalRows = [
+    profile.experience_level && { label: 'Experience', value: getExperienceLevelLabel(profile.experience_level) },
+    profile.timezone && { label: 'Timezone', value: formatTimezoneForDisplay(profile.timezone) },
+    profile.response_time_hours != null && {
+      label: 'Response time',
+      value: '~' + profile.response_time_hours + ' hours'
+    },
+    !!profile.languages?.length && { label: 'Languages', value: profile.languages.map(getLanguageName).join(', ') }
+  ].filter((row): row is { label: string; value: string } => !!row)
+  const stats = [
+    { label: 'Campaigns', value: profile.total_campaigns_completed },
+    { label: 'Clips delivered', value: profile.total_clips_delivered },
+    { label: 'Endorsements', value: profile.total_endorsements },
+    ...(profile.total_views ? [{ label: 'Total views', value: formatViews(profile.total_views) }] : [])
+  ]
+  const socialContact = profile.social_accounts?.map(getAccountUrl).find(Boolean) || profile.channel_links?.[0]?.url
+  const contactUrl = user?.owned_organization_id
+    ? '/dashboard/org/' + user.owned_organization_id + '/messages?to=' + profile.user_id
+    : socialContact
+  const shareProfile = async () => {
+    try {
+      await navigator.clipboard.writeText(window.location.origin + '/clippers/' + profile.slug)
+      toastContext?.success('Link copied', 'Profile link copied to clipboard.')
+    } catch {
+      toastContext?.error('Could not copy link', 'Copy the profile URL from your address bar.')
+    }
+  }
   const displayName = profile.display_name || 'Unnamed Clipper'
   const profileDescription =
-    profile.bio?.trim() ||
-    `${displayName} is a clipper on Clippster. View campaigns, clips delivered, and specialties.`
+    profile.bio?.trim() || `${displayName} is a clipper on Clippster. View campaigns, clips delivered, and specialties.`
   return (
     <div className="clipper-public-profile-page">
       <SeoHead
@@ -265,366 +287,263 @@ export function ClipperPublicProfilePage() {
           name: displayName,
           description: profileDescription,
           slug: profile.slug || slug || '',
-          image: profile.avatar_url,
+          image: profile.avatar_url
         })}
       />
-      <div className="org-profile">
-        {user?.owned_organization_id && (
-          <div className="clipper-toolbar">
-            <div className="profile-header-actions">
-              <button type="button" className="profile-action-btn profile-action-btn--outline" onClick={openEndorsementDialog}>
-                <Star className="profile-action-btn__icon" />
-                Endorse
-              </button>
-            </div>
-          </div>
-        )}
-
-        <div className="org-hero">
-          <div className="org-hero__banner" />
-          <div className="org-hero__content">
-            <div className="org-hero__avatar">
-              {profile.avatar_url ? (
-                <img src={profile.avatar_url} alt="" className="org-hero__avatar-img" />
-              ) : (
-                <UserCircle className="org-hero__avatar-fallback" />
-              )}
-              {profile.is_verified && (
-                <div className="profile-avatar__verified">
-                  <CheckCircle />
-                </div>
-              )}
-            </div>
-            <div className="org-hero__info">
-              <div className="profile-name-row">
-                <h1 className="org-hero__name">{profile.display_name || 'Unnamed Clipper'}</h1>
-                <div className="profile-badges">
-                  {profile.looking_for_work && (
-                    <span className="status-badge status-badge--available">
-                      <span className="status-badge__dot" />
-                      Looking for Work
-                    </span>
-                  )}
-                  {profile.is_affiliate && (
-                    <span className="status-badge status-badge--affiliate">
-                      <Handshake size={12} />
-                      Affiliate
-                    </span>
-                  )}
-                  {profile.badges?.map(badge => (
-                    <span key={badge.id} className={`profile-badge-pill ${getBadgeModifier(badge.badge_type)}`}>
-                      {getBadgeLabel(badge.badge_type)}
-                    </span>
-                  ))}
-                </div>
-              </div>
-              {!!profile.specialty_tags?.length && (
-                <div className="org-hero__tags">
-                  {profile.specialty_tags.slice(0, 6).map(tag => (
-                    <span key={tag} className="org-hero__tag">
-                      {getSpecialtyTagLabel(tag)}
-                    </span>
-                  ))}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        <div className={`org-stats-grid${statsFour ? ' org-stats-grid--four' : ''}`}>
-          <div className="org-stat-card">
-            <div className="org-stat-card__icon org-stat-card__icon--violet">
-              <Megaphone size={18} />
-            </div>
-            <div className="org-stat-card__content">
-              <span className="org-stat-card__value">{profile.total_campaigns_completed}</span>
-              <span className="org-stat-card__label">Campaigns</span>
-            </div>
-          </div>
-          <div className="org-stat-card">
-            <div className="org-stat-card__icon org-stat-card__icon--cyan">
-              <Video size={18} />
-            </div>
-            <div className="org-stat-card__content">
-              <span className="org-stat-card__value">{profile.total_clips_delivered}</span>
-              <span className="org-stat-card__label">Clips Delivered</span>
-            </div>
-          </div>
-          <div className="org-stat-card">
-            <div className="org-stat-card__icon org-stat-card__icon--amber">
-              <Award size={18} />
-            </div>
-            <div className="org-stat-card__content">
-              <span className="org-stat-card__value">{profile.total_endorsements}</span>
-              <span className="org-stat-card__label">Endorsements</span>
-            </div>
-          </div>
-          {statsFour && (
-            <div className="org-stat-card">
-              <div className="org-stat-card__icon org-stat-card__icon--green">
-                <Eye size={18} />
-              </div>
-              <div className="org-stat-card__content">
-                <span className="org-stat-card__value">{formatViews(profile.total_views!)}</span>
-                <span className="org-stat-card__label">Total Views</span>
-              </div>
-            </div>
-          )}
-        </div>
-
-        <div className="org-grid">
-          <div className="org-main">
-            {showBio && (
-              <div className="org-card org-card--about">
-                <div className="org-card__header">
-                  <h2 className="org-card__title">About</h2>
-                </div>
-                <div className="org-card__body">
-                  <p className="org-card__text">{profile.bio}</p>
-                </div>
-              </div>
+      <header className="cp-site-header">
+        <RouterLink to="/" className="cp-brand">
+          <img src="/logo-icon.svg" alt="" />
+          Clippster
+        </RouterLink>
+        <RouterLink to="/clippers">Discover clippers</RouterLink>
+        <RouterLink to="/account" className="cp-button">
+          Open app <ExternalLink size={15} />
+        </RouterLink>
+      </header>
+      <main className="cp-profile">
+        <div className="cp-frame">
+          <div className="cp-cover" aria-hidden="true">
+            {portfolioClips.map((clip) =>
+              thumbnailUrls[clip.id] || clip.thumbnail_url ? (
+                <img key={clip.id} src={thumbnailUrls[clip.id] || clip.thumbnail_url || ''} alt="" />
+              ) : null
             )}
-
-            {!!profile.portfolio_clips?.length && (
-              <div className="org-card">
-                <div className="org-card__header">
-                  <Video className="org-card__header-icon" />
-                  <h2 className="org-card__title">Portfolio</h2>
-                  <span className="org-card__count">{profile.portfolio_clips.length}</span>
-                </div>
-                <div className="org-card__body org-card__body--flush">
-                  <div className="portfolio-grid">
-                  {profile.portfolio_clips.map(clip => (
-                    <div key={clip.id} className="portfolio-item">
-                      <div className="portfolio-item__thumbnail">
-                        {thumbnailUrls[clip.id] || clip.thumbnail_url ? (
-                          <img
-                            src={thumbnailUrls[clip.id] || clip.thumbnail_url || ''}
-                            alt=""
-                            className="portfolio-item__thumbnail-img"
-                          />
-                        ) : (
-                          <div className="portfolio-item__thumbnail-placeholder">
-                            <Video className="portfolio-item__thumbnail-icon" />
-                          </div>
-                        )}
-                        <button type="button" className="portfolio-item__overlay" onClick={() => playClip(clip)}>
-                          <div className="portfolio-item__play">
-                            <Play className="portfolio-item__play-icon" />
-                          </div>
+          </div>
+          <header className="cp-identity">
+            <div className="cp-avatar">
+              {profile.avatar_url ? <img src={profile.avatar_url} alt="" /> : <UserCircle />}
+            </div>
+            <div className="cp-summary">
+              <div className="cp-name">
+                <h1>{displayName}</h1>
+                {profile.is_verified && <CheckCircle size={20} aria-label="Verified" />}
+                {profile.looking_for_work && <span className="cp-tag cp-available">Available for work</span>}
+                {profile.is_affiliate && (
+                  <span className="cp-tag">
+                    <Handshake />
+                    Affiliate
+                  </span>
+                )}
+                {profile.badges?.map((badge) => (
+                  <span className="cp-tag" key={badge.id}>
+                    {getBadgeLabel(badge.badge_type)}
+                  </span>
+                ))}
+              </div>
+              {profile.slug && <p className="cp-handle">@{profile.slug}</p>}
+              {profile.bio?.trim() && <p className="cp-bio">{profile.bio}</p>}
+              <div className="cp-tags">
+                {profile.specialty_tags?.map((tag) => (
+                  <span className="cp-tag" key={tag}>
+                    {getSpecialtyTagLabel(tag)}
+                  </span>
+                ))}
+              </div>
+            </div>
+            <div className="cp-actions">
+              {contactUrl && user?.id !== profile.user_id && (
+                <a
+                  className="cp-button cp-primary"
+                  href={contactUrl}
+                  target={user?.owned_organization_id ? undefined : '_blank'}
+                  rel={user?.owned_organization_id ? undefined : 'noopener noreferrer'}
+                >
+                  <Send />
+                  Contact
+                </a>
+              )}
+              {user?.owned_organization_id && (
+                <button className="cp-button" type="button" onClick={openEndorsementDialog}>
+                  <Star />
+                  Endorse
+                </button>
+              )}
+              {profile.slug && (
+                <button className="cp-button" type="button" onClick={shareProfile}>
+                  <Share2 />
+                  Share
+                </button>
+              )}
+            </div>
+          </header>
+          <div className="cp-columns">
+            <div className="cp-main">
+              <dl className="cp-stats">
+                {stats.map((stat) => (
+                  <div className="cp-stat" key={stat.label}>
+                    <dd>{stat.value}</dd>
+                    <dt>{stat.label}</dt>
+                  </div>
+                ))}
+              </dl>
+              <nav className="cp-tabs" aria-label="Profile sections">
+                {(['Work', 'Endorsements'] as const).map((tab) => (
+                  <button
+                    key={tab}
+                    type="button"
+                    className="cp-tab"
+                    aria-pressed={activeTab === tab}
+                    onClick={() => setActiveTab(tab)}
+                  >
+                    {tab}
+                  </button>
+                ))}
+              </nav>
+              {activeTab === 'Work' && (
+                <section aria-label="Portfolio">
+                  {portfolioClips.length ? (
+                    <div className="cp-work">
+                      {portfolioClips.map((clip, index) => (
+                        <button
+                          key={clip.id}
+                          className="cp-clip"
+                          type="button"
+                          aria-label={'Play ' + (clip.title || 'Untitled clip')}
+                          onClick={() => playClip(clip)}
+                        >
+                          {thumbnailUrls[clip.id] || clip.thumbnail_url ? (
+                            <img src={thumbnailUrls[clip.id] || clip.thumbnail_url || ''} alt="" />
+                          ) : (
+                            <Video className="cp-placeholder" />
+                          )}
+                          {index === 0 && <span className="cp-featured">Featured</span>}
+                          <span className="cp-play">
+                            <Play />
+                          </span>
+                          <span className="cp-caption">{clip.title || 'Untitled clip'}</span>
                         </button>
-                      </div>
-                      <div className="portfolio-item__info">
-                        <div className="portfolio-item__title">{clip.title || 'Untitled'}</div>
-                      </div>
+                      ))}
                     </div>
-                  ))}
-                  </div>
-                </div>
+                  ) : (
+                    <div className="cp-empty">
+                      <strong>No portfolio clips yet</strong>This clipper hasn't added work to their portfolio.
+                    </div>
+                  )}
+                </section>
+              )}
+              {activeTab === 'Endorsements' && (
+                <section aria-label="Endorsements">
+                  {profile.endorsements?.length ? (
+                    profile.endorsements.map((endorsement) => (
+                      <article key={endorsement.id} className="cp-review">
+                        <header>
+                          <strong>{endorsement.organization?.name || 'Organization'}</strong>
+                          {!!endorsement.rating && (
+                            <span className="cp-rating" aria-label={endorsement.rating + ' out of 5 stars'}>
+                              {Array.from({ length: endorsement.rating }, (_, i) => (
+                                <Star key={i} />
+                              ))}
+                            </span>
+                          )}
+                        </header>
+                        {endorsement.endorsed_by?.name && <p>By {endorsement.endorsed_by.name}</p>}
+                        {endorsement.content && <p>“{endorsement.content}”</p>}
+                      </article>
+                    ))
+                  ) : (
+                    <div className="cp-empty">
+                      <strong>No endorsements yet</strong>Endorsements from organizations will appear here.
+                    </div>
+                  )}
+                </section>
+              )}
+            </div>
+            <aside className="cp-aside" aria-label="Profile details">
+              <div className="cp-section">
+                <h2>About {displayName}</h2>
+                <p>{profile.bio?.trim() || 'This clipper has not added a bio yet.'}</p>
               </div>
-            )}
-
-            {!!profile.endorsements?.length && (
-              <div className="org-card">
-                <div className="org-card__header">
-                  <Award className="org-card__header-icon" />
-                  <h2 className="org-card__title">Endorsements</h2>
-                  <span className="org-card__count">{profile.endorsements.length}</span>
-                </div>
-                <div className="org-card__body org-card__body--flush">
-                  <div className="endorsements-list">
-                  {profile.endorsements.map(endorsement => (
-                    <div key={endorsement.id} className="endorsement-card">
-                      <div className="endorsement-card__header">
-                        <div className="endorsement-card__org">
-                          <div className="endorsement-card__org-logo">
-                            <Building2 />
-                          </div>
-                          <div className="endorsement-card__org-info">
-                            <div className="endorsement-card__org-name">
-                              {endorsement.organization?.name || 'Organization'}
-                            </div>
-                            {endorsement.endorsed_by?.name && (
-                              <div className="endorsement-card__org-by">by {endorsement.endorsed_by.name}</div>
-                            )}
-                          </div>
+              {!!professionalRows.length && (
+                <div className="cp-section">
+                  <dl className="cp-details">
+                    {professionalRows.map((row) => (
+                      <div className="cp-detail" key={row.label}>
+                        {row.label === 'Timezone' ? <Globe /> : <Briefcase />}
+                        <div>
+                          <dt>{row.label}</dt>
+                          <dd>{row.value}</dd>
                         </div>
-                        {endorsement.rating ? (
-                          <div className="endorsement-card__rating">
-                            {Array.from({ length: endorsement.rating }).map((_, i) => (
-                              <Star key={i} className="endorsement-card__rating-star" />
-                            ))}
-                          </div>
-                        ) : null}
                       </div>
-                      {endorsement.content && (
-                        <p className="endorsement-card__content">&ldquo;{endorsement.content}&rdquo;</p>
-                      )}
-                    </div>
-                  ))}
-                  </div>
+                    ))}
+                  </dl>
                 </div>
-              </div>
-            )}
-          </div>
-
-          <aside className="org-sidebar">
-            {!!profile.content_style_tags?.length && (
-              <div className="org-card org-card--compact">
-                <div className="org-card__header">
-                  <Sparkles className="org-card__header-icon" />
-                  <h3 className="org-card__title">Content Style</h3>
-                </div>
-                <div className="org-card__body">
-                  <div className="tag-list">
-                    {profile.content_style_tags.map(tag => (
-                      <span key={tag} className="tag tag--style">
+              )}
+              {!!profile.content_style_tags?.length && (
+                <div className="cp-section">
+                  <h3>Content styles</h3>
+                  <div className="cp-tags">
+                    {profile.content_style_tags.map((tag) => (
+                      <span className="cp-tag" key={tag}>
                         {getContentStyleTagLabel(tag)}
                       </span>
                     ))}
                   </div>
                 </div>
-              </div>
-            )}
-
-            {!!profile.social_accounts?.length && (
-              <div className="org-card org-card--compact">
-                <div className="org-card__header">
-                  <Users className="org-card__header-icon" />
-                  <h3 className="org-card__title">Connected Accounts</h3>
-                </div>
-                <div className="org-card__body">
-                  <div className="connected-accounts-list">
-                    {profile.social_accounts.map((account, idx) => {
-                      const href = getAccountUrl(account)
-                      return (
-                        <a
-                          key={idx}
-                          href={href || undefined}
-                          target={href ? '_blank' : undefined}
-                          rel={href ? 'noopener noreferrer' : undefined}
-                          className={`connected-account${href ? '' : ' connected-account--no-link'}`}
-                          onClick={e => {
-                            if (!href) e.preventDefault()
-                          }}
-                        >
-                          <div className="connected-account__left">
-                            {account.profile_image_url ? (
-                              <img src={account.profile_image_url} alt="" className="connected-account__avatar" />
-                            ) : (
-                              <div className="connected-account__avatar-fallback">
-                                <PlatformGlyph platform={account.platform} className="connected-account__avatar-icon" />
-                              </div>
-                            )}
-                            <div className="connected-account__info">
-                              <div className="connected-account__username">
-                                {account.username ? `@${account.username.replace('@', '')}` : getPlatformLabel(account.platform)}
-                                {account.is_verified && <CheckCircle className="connected-account__verified" />}
-                              </div>
-                              <div className="connected-account__platform">{getPlatformLabel(account.platform)}</div>
-                            </div>
-                          </div>
-                          <div className="connected-account__right">
-                            {href ? <ExternalLink className="connected-account__link-icon" /> : null}
-                          </div>
-                        </a>
-                      )
-                    })}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!profile.social_accounts?.length && !!profile.preferred_platforms?.length && (
-              <div className="org-card org-card--compact">
-                <div className="org-card__header">
-                  <Monitor className="org-card__header-icon" />
-                  <h3 className="org-card__title">Platforms</h3>
-                </div>
-                <div className="org-card__body">
-                  <div className="platform-list">
-                    {profile.preferred_platforms.map(platform => (
-                      <div key={platform} className="platform-item">
-                        <PlatformGlyph platform={platform} className="platform-item__icon" />
-                        <span className="platform-item__name">{getPlatformLabel(platform)}</span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {!!profile.channel_links?.length && (
-              <div className="org-card org-card--compact">
-                <div className="org-card__header">
-                  <Link className="org-card__header-icon" />
-                  <h3 className="org-card__title">Social Channels</h3>
-                </div>
-                <div className="org-card__body">
-                  <div className="channel-list">
-                    {profile.channel_links.map(link => (
-                      <a key={link.id} href={link.url} target="_blank" rel="noopener noreferrer" className="channel-item">
-                        <PlatformGlyph platform={link.platform} className="channel-item__icon" />
-                        <span className="channel-item__username">
-                          {link.username || getPlatformLabel(link.platform)}
+              )}
+              {!!profile.social_accounts?.length && (
+                <div className="cp-section">
+                  <h3>Connected accounts</h3>
+                  <div className="cp-links">
+                    {profile.social_accounts.map((account, index) => (
+                      <a
+                        className="cp-link"
+                        key={index}
+                        href={getAccountUrl(account) || undefined}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {account.profile_image_url ? (
+                          <img src={account.profile_image_url} alt="" />
+                        ) : (
+                          <PlatformGlyph platform={account.platform} />
+                        )}
+                        <span>
+                          {account.username
+                            ? '@' + account.username.replace(/^@/, '')
+                            : getPlatformLabel(account.platform)}
+                          {account.is_verified && <CheckCircle size={12} aria-label="Verified" />}
                         </span>
-                        <ExternalLink className="channel-item__external" />
+                        {getAccountUrl(account) && <ExternalLink />}
                       </a>
                     ))}
                   </div>
                 </div>
-              </div>
-            )}
-
-            {showProfileLocaleCard && (
-              <div className="org-card org-card--compact">
-                <div className="org-card__header">
-                  <Briefcase className="org-card__header-icon" />
-                  <h3 className="org-card__title">Professional</h3>
-                </div>
-                <div className="org-card__body">
-                  <div className="clipper-profile-locale">
-                    {profile.experience_level && (
-                      <div className="clipper-profile-locale__row">
-                        <span className="clipper-profile-locale__label">Experience</span>
-                        <span className="clipper-profile-locale__value">{getExperienceLevelLabel(profile.experience_level)}</span>
-                      </div>
-                    )}
-                    {profile.timezone && (
-                      <div className="clipper-profile-locale__row">
-                        <span className="clipper-profile-locale__label">Timezone</span>
-                        <span className="clipper-profile-locale__value">{formatTimezoneForDisplay(profile.timezone)}</span>
-                      </div>
-                    )}
-                    {profile.response_time_hours != null && (
-                      <div className="clipper-profile-locale__row">
-                        <span className="clipper-profile-locale__label">Response time</span>
-                        <span className="clipper-profile-locale__value">~{profile.response_time_hours} hours</span>
-                      </div>
-                    )}
-                    {profile.languages?.map((lang, i) => (
-                      <div key={lang} className="clipper-profile-locale__row">
-                        <span
-                          className={
-                            i === 0 ? 'clipper-profile-locale__label' : 'clipper-profile-locale__label clipper-profile-locale__label--continued'
-                          }
-                        >
-                          {i === 0 ? 'Languages' : '\u00a0'}
-                        </span>
-                        <span className="clipper-profile-locale__value">{getLanguageName(lang)}</span>
-                      </div>
+              )}
+              {!profile.social_accounts?.length && !!profile.preferred_platforms?.length && (
+                <div className="cp-section">
+                  <h3>Platforms</h3>
+                  <div className="cp-tags">
+                    {profile.preferred_platforms.map((platform) => (
+                      <span className="cp-tag" key={platform}>
+                        <PlatformGlyph platform={platform} />
+                        {getPlatformLabel(platform)}
+                      </span>
                     ))}
                   </div>
                 </div>
-              </div>
-            )}
-          </aside>
+              )}
+              {!!profile.channel_links?.length && (
+                <div className="cp-section">
+                  <h3>Social channels</h3>
+                  <div className="cp-links">
+                    {profile.channel_links.map((link) => (
+                      <a key={link.id} className="cp-link" href={link.url} target="_blank" rel="noopener noreferrer">
+                        <PlatformGlyph platform={link.platform} />
+                        <span>{link.username || getPlatformLabel(link.platform)}</span>
+                        <ExternalLink />
+                      </a>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </aside>
+          </div>
         </div>
-      </div>
+      </main>
 
       {showVideoPlayer && selectedClip && (
         <div className="video-modal__overlay" onClick={closeVideoPlayer} role="presentation">
-          <div className="video-modal" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+          <div className="video-modal" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <div className="video-modal__header">
               <span className="video-modal__title">{selectedClip.title || 'Untitled'}</span>
               <button type="button" className="video-modal__close" onClick={closeVideoPlayer} aria-label="Close">
@@ -644,7 +563,7 @@ export function ClipperPublicProfilePage() {
                   className="video-modal__video"
                   controlsList={canDownloadClips ? undefined : 'nodownload'}
                   disablePictureInPicture={!canDownloadClips}
-                  onContextMenu={canDownloadClips ? undefined : e => e.preventDefault()}
+                  onContextMenu={canDownloadClips ? undefined : (e) => e.preventDefault()}
                 />
               ) : null}
             </div>
@@ -653,8 +572,12 @@ export function ClipperPublicProfilePage() {
       )}
 
       {showEndorsementDialog && (
-        <div className="endorse-dialog__overlay" onClick={() => !submittingEndorsement && setShowEndorsementDialog(false)} role="presentation">
-          <div className="endorse-dialog" onClick={e => e.stopPropagation()} role="dialog" aria-modal="true">
+        <div
+          className="endorse-dialog__overlay"
+          onClick={() => !submittingEndorsement && setShowEndorsementDialog(false)}
+          role="presentation"
+        >
+          <div className="endorse-dialog" onClick={(e) => e.stopPropagation()} role="dialog" aria-modal="true">
             <div className="endorse-dialog__accent" />
             <div className="endorse-dialog__header">
               <button
@@ -676,7 +599,7 @@ export function ClipperPublicProfilePage() {
               <div className="endorse-dialog__field">
                 <label className="endorse-dialog__label">Rating</label>
                 <div className="endorse-dialog__stars">
-                  {[1, 2, 3, 4, 5].map(i => (
+                  {[1, 2, 3, 4, 5].map((i) => (
                     <button
                       key={i}
                       type="button"
@@ -687,7 +610,9 @@ export function ClipperPublicProfilePage() {
                       <Star
                         size={28}
                         fill={i <= endorsementRating ? 'currentColor' : 'none'}
-                        className={i <= endorsementRating ? 'endorse-dialog__star--filled' : 'endorse-dialog__star--empty'}
+                        className={
+                          i <= endorsementRating ? 'endorse-dialog__star--filled' : 'endorse-dialog__star--empty'
+                        }
                       />
                     </button>
                   ))}
@@ -703,7 +628,7 @@ export function ClipperPublicProfilePage() {
                   rows={3}
                   maxLength={300}
                   value={endorsementContent}
-                  onChange={e => setEndorsementContent(e.target.value)}
+                  onChange={(e) => setEndorsementContent(e.target.value)}
                 />
                 <p className="endorse-dialog__char-count">{endorsementContent.length}/300</p>
               </div>

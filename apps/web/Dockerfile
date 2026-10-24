@@ -8,6 +8,7 @@ RUN npm ci --workspaces=false --no-audit --no-fund
 
 FROM dependencies AS source
 COPY apps/web/ ./
+COPY packages/profile-design/ /repo/packages/profile-design/
 COPY packages/shared-types/ /repo/packages/shared-types/
 COPY packages/email-composer/ /repo/packages/email-composer/
 COPY server/priv/email/ /repo/server/priv/email/
@@ -53,6 +54,7 @@ ENV NODE_ENV=development PORT=8090 HOST=0.0.0.0 WEB_DATA_DIR=/data
 WORKDIR /repo/apps/web
 COPY --from=dependencies --chown=node:node /repo/apps/web/node_modules ./node_modules
 COPY apps/web/ ./
+COPY packages/profile-design/ /repo/packages/profile-design/
 COPY packages/shared-types/ /repo/packages/shared-types/
 COPY packages/email-composer/ /repo/packages/email-composer/
 COPY server/priv/email/ /repo/server/priv/email/

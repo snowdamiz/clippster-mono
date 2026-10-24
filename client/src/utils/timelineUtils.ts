@@ -139,6 +139,16 @@ export function getSegmentDisplayTime(segment: ClipSegment, type: 'start' | 'end
   return type === 'start' ? segment.start_time : segment.end_time;
 }
 
+/** Never let stale metadata draw or receive pointer events outside the loaded media. */
+export function getSegmentPositionStyle(segment: Pick<ClipSegment, 'start_time' | 'end_time'>, duration: number) {
+  if (!Number.isFinite(duration) || duration <= 0 || !Number.isFinite(segment.start_time) || !Number.isFinite(segment.end_time)) {
+    return { left: '0%', width: '0%', display: 'none' };
+  }
+  const start = Math.max(0, Math.min(duration, segment.start_time));
+  const end = Math.max(start, Math.min(duration, segment.end_time));
+  return { left: `${start / duration * 100}%`, width: `${(end - start) / duration * 100}%`, display: end > start ? undefined : 'none' };
+}
+
 // Helper to extract word text from different possible property names
 function getWordText(wordObj: any): string | null {
   // Check various property names that might contain the word text

@@ -517,6 +517,7 @@
 
   // Timeline clips state
   const timelineClips = ref<any[]>([]);
+  const sourceTimelineClips = ref<ClipWithVersion[]>([]);
   const allProjectClips = ref<any[]>([]);
 
   /**
@@ -2933,7 +2934,9 @@
           return null;
         }
 
-        const segments = workspaceClipSegments(clip, currentVideo.value).map((segment) => ({
+        const loadedDuration = sameMediaPath(currentFilePath.value, currentVideo.value?.file_path) || sameMediaPath(currentFilePath.value, clip.file_path)
+          ? duration.value : undefined;
+        const segments = workspaceClipSegments(clip, currentVideo.value, loadedDuration).map((segment) => ({
           ...segment,
           transcript: segment.transcript || version.description || 'No transcript available',
           has_transcript: Boolean(segment.transcript?.trim()),
@@ -2950,6 +2953,9 @@
           filename: clip.file_path || 'clip.mp4',
           file_path: clip.file_path || null,
           built_file_path: clip.built_file_path || null,
+          current_version_id: clip.current_version_id,
+          current_version_start_time: version.start_time,
+          current_version_end_time: version.end_time,
           type: clipType,
           segments: segments,
           total_duration: timelineTotalDuration,
@@ -3057,6 +3063,7 @@
       await repairClipsMissingVersion(clipsWithVersion);
 
       const transformed = transformClipsForTimeline(clipsWithVersion);
+      sourceTimelineClips.value = clipsWithVersion;
       timelineClips.value = transformed;
       allProjectClips.value = transformed;
     } catch (error) {
@@ -3068,6 +3075,16 @@
   function onVideoElementReady(element: HTMLVideoElement) {
     videoElement.value = element;
   }
+
+  // Metadata arrives after clip rows. Re-project from the saved source ranges so
+  // an extracted file never keeps a provisional segment longer than its duration.
+  watch([duration, currentFilePath], () => {
+    const clips = sourceTimelineClips.value.filter(clip => clip.project_id === props.project?.id);
+    if (!clips.length || workspacePlaybackIsBuiltExport.value) return;
+    const transformed = transformClipsForTimeline(clips);
+    timelineClips.value = transformed;
+    allProjectClips.value = transformed;
+  });
 
   // Helper to measure watermark dimensions from file path
   async function measureWatermarkDimensions(
@@ -4274,105 +4291,31 @@
         await nextTick();
         let durationAttempts = 0;
         while (
-          (!videoElement.value?.duration || !Number.isFinite(videoElement.value.duration)) &&
+          (!duration.value || !Number.isFinite(duration.value)) &&
           durationAttempts < 50
         ) {
           await new Promise((resolve) => setTimeout(resolve, 50));
           durationAttempts++;
         }
 
-        // For manual/auto clips, the clip file starts at 0. Historically segments were
-        // stored with livestream-absolute timestamps and we subtracted the version's
-        // start_time to project them onto the clip-local 0-based timeline. New clips
-        // (and clips written by the build-complete handler) now persist segments in
-        // 0-based local time directly. Detect which space the row is in: if a segment
-        // already fits inside [0, clipDuration] it's already 0-based — leave it; only
-        // shift rows that look livestream-absolute.
-        const clipStartOffset = clip.current_version_start_time ?? clip.start_time ?? 0;
-        const loadedFileDuration =
-          videoElement.value?.duration && Number.isFinite(videoElement.value.duration)
-            ? videoElement.value.duration
-            : 0;
-        const clipDuration =
-          loadedFileDuration ||
-          (typeof clip.duration === 'number' && clip.duration > 0 ? clip.duration : 0) ||
-          (typeof clip.total_duration === 'number' && clip.total_duration > 0 ? clip.total_duration : 0) ||
-          (clip.current_version_end_time ?? 0) - (clip.current_version_start_time ?? 0) ||
-          (clip.end_time ?? 0) - (clip.start_time ?? 0) ||
-          0;
-
-        const fullClipSegment = () => [
-          {
-            id: `trim-${clip.id}`,
-            clip_version_id: clip.current_version_id || clip.id,
-            segment_index: 0,
-            source_start_time: clip.current_version_start_time ?? clip.start_time ?? 0,
-            source_end_time: clip.current_version_end_time ?? clip.end_time ?? clipDuration,
-            start_time: 0,
-            end_time: clipDuration,
-            duration: clipDuration,
-            transcript: clip.combined_transcript || clip.current_version_description || '',
-            transcript_raw_json: null,
-            audio_peaks: null,
-            created_at: Date.now(),
-          },
-        ];
-
-        // Get the clip's segments and adjust timestamps to be 0-based
-        let adjustedSegments = [];
-        const sourceSegments = getClipTimelineSegments(clip);
-        if (sourceSegments.length > 0) {
-          adjustedSegments = sourceSegments
-            .map((seg: any, index: number) => {
-              const segEnd = typeof seg.end_time === 'number' ? seg.end_time : 0;
-              const segStart = typeof seg.start_time === 'number' ? seg.start_time : 0;
-              const looksZeroBased = clipDuration > 0 && segEnd <= clipDuration + 0.5 && segStart >= 0;
-              const start_time = looksZeroBased ? Math.max(0, segStart) : Math.max(0, segStart - clipStartOffset);
-              const end_time = looksZeroBased
-                ? Math.min(clipDuration || segEnd, segEnd)
-                : Math.min(clipDuration, segEnd - clipStartOffset);
-              return {
-                id: seg.id || `seg-${clip.id}-${index}`,
-                clip_version_id: clip.current_version_id || clip.id,
-                segment_index: index,
-                source_start_time: seg.source_start_time ?? seg.start_time,
-                source_end_time: seg.source_end_time ?? seg.end_time,
-                start_time,
-                end_time,
-                duration: end_time - start_time,
-                transcript: seg.transcript || '',
-                transcript_raw_json: null,
-                audio_peaks: null,
-                created_at: Date.now(),
-              };
-            })
-            .filter((seg: any) => {
-              const isValid =
-                clipDuration > 0 &&
-                seg.start_time >= 0 &&
-                seg.end_time > seg.start_time &&
-                seg.end_time <= clipDuration + 0.5;
-              if (!isValid) {
-                console.warn(
-                  '[ProjectWorkspaceDialog] Ignoring stale self-contained clip segment; falling back if none remain:',
-                  {
-                    clipId: clip.id,
-                    start: seg.start_time,
-                    end: seg.end_time,
-                    clipDuration,
-                  }
-                );
-              }
-              return isValid;
-            });
-
-          if (adjustedSegments.length === 0) {
-            adjustedSegments = fullClipSegment();
-          }
-        } else {
-          // No segments, create one spanning the full clip
-          adjustedSegments = fullClipSegment();
+        const clipDuration = duration.value;
+        if (!(clipDuration > 0) || !Number.isFinite(clipDuration)) {
+          skipPlaybackEndedClear = false;
+          return;
         }
+        const adjustedSegments = workspaceClipSegments({
+          ...clip,
+          ...fullClip,
+          current_version_segments: getClipTimelineSegments(clip),
+        }, null, clipDuration).map((segment, index) => ({
+          ...segment,
+          id: 'id' in segment ? segment.id : `trim-${clip.id}-${index}`,
+          clip_version_id: clip.current_version_id || clip.id,
+          segment_index: index,
+          transcript_raw_json: 'transcript_raw_json' in segment ? segment.transcript_raw_json : null,
+          audio_peaks: null,
+          created_at: Date.now(),
+        }));
 
         console.log('[ProjectWorkspaceDialog] Playing manual/auto clip with adjusted segments:', adjustedSegments);
         playClipSegments(adjustedSegments as any);
@@ -4386,8 +4329,7 @@
             filename: clipOwnFile,
             type: 'continuous',
             segments: adjustedSegments.map((seg: any) => ({
-              source_start_time: seg.source_start_time,
-              source_end_time: seg.source_end_time,
+              ...seg,
               start_time: seg.start_time,
               end_time: seg.end_time,
               duration: seg.duration,

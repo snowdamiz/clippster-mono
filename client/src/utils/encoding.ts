@@ -6,11 +6,15 @@
  * by first encoding to UTF-8 bytes.
  */
 export function utf8ToBase64(str: string): string {
-  const encoder = new TextEncoder();
-  const bytes = encoder.encode(str);
+  return bytesToBase64(new TextEncoder().encode(str));
+}
+
+/** Base64 for binary data (media files read from disk). */
+export function bytesToBase64(bytes: Uint8Array): string {
+  const chunk = 0x8000;
   let binary = '';
-  for (let i = 0; i < bytes.length; i++) {
-    binary += String.fromCharCode(bytes[i]);
+  for (let i = 0; i < bytes.length; i += chunk) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunk));
   }
   return btoa(binary);
 }

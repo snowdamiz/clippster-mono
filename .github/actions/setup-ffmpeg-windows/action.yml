@@ -1,0 +1,36 @@
+name: Setup FFmpeg dev libraries (Windows)
+description: Downloads pinned FFmpeg 8.0 shared libraries for ffmpeg-the-third and bundles the DLLs for runtime.
+runs:
+  using: composite
+  steps:
+    - shell: pwsh
+      run: |
+        $ffmpegDevDir = "client/src-tauri/ffmpeg-dev"
+        New-Item -ItemType Directory -Force -Path $ffmpegDevDir | Out-Null
+        Write-Host "Downloading FFmpeg 8.0 shared build for dev libraries..."
+        $zipPath = "$env:RUNNER_TEMP/ffmpeg-shared.zip"
+        # Pinned to a specific immutable autobuild tag (autobuild-2025-09-30-13-19).
+        # Do NOT change to "latest" — the rolling latest tag now ships FFmpeg 8.1+ headers
+        # which break the ffmpeg-the-third 4.x crate (FFmpeg 8.0 only).
+        Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2025-09-30-13-19/ffmpeg-n8.0-16-gd8605a6b55-win64-gpl-shared-8.0.zip" -OutFile $zipPath
+        Expand-Archive -Path $zipPath -DestinationPath $ffmpegDevDir -Force
+        Remove-Item $zipPath
+        $extractedDir = (Get-ChildItem $ffmpegDevDir -Directory | Select-Object -First 1).FullName
+        Write-Host "FFmpeg dev libs installed at: $extractedDir"
+
+        "FFMPEG_DIR=$extractedDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "FFMPEG_INCLUDE_DIR=$extractedDir/include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "FFMPEG_LIB_DIR=$extractedDir/lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        # Test binaries load the FFmpeg DLLs at runtime.
+        "$extractedDir/bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+
+        Write-Host "=== Bundling FFmpeg DLLs for runtime ==="
+        $ffmpegLibsDir = "client/src-tauri/ffmpeg-libs"
+        New-Item -ItemType Directory -Force -Path $ffmpegLibsDir | Out-Null
+        $binDir = "$extractedDir/bin"
+        if (-not (Test-Path $binDir)) {
+          Write-Error "FFmpeg bin directory not found at $binDir"
+          exit 1
+        }
+        Copy-Item "$binDir/*.dll" $ffmpegLibsDir -Force
+        Get-ChildItem $ffmpegLibsDir
