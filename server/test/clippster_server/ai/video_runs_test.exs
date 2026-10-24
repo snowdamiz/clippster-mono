@@ -3,7 +3,7 @@ defmodule ClippsterServer.AI.VideoRunsTest do
 
   import ClippsterServer.AccountsFixtures
 
-  alias ClippsterServer.AI.{VideoRun, VideoRuns, VideoSessions}
+  alias ClippsterServer.AI.{VideoGenerationPolicy, VideoRun, VideoRuns, VideoSessions}
   alias ClippsterServer.{Credits, Repo}
 
   setup do
@@ -61,6 +61,32 @@ defmodule ClippsterServer.AI.VideoRunsTest do
     assert {:error, :insufficient_credits, 11.0} = VideoRuns.start_reference_run(user.id, session)
     {:ok, _} = Credits.add_credits(user.id, 1)
     assert {:ok, %VideoRun{kind: "reference"}} = VideoRuns.start_reference_run(user.id, session)
+  end
+
+  test "planning runs are free, shared per session, never expire and are capped per day", %{user: user, session: session} do
+    assert {:ok, %VideoRun{kind: "plan", credits_charged: 0} = run} = VideoRuns.open_plan_run(user.id, session)
+    assert {:ok, ^run} = VideoRuns.open_plan_run(user.id, session)
+    assert balance(user) == 30.0
+
+    old = DateTime.add(DateTime.utc_now(:second), -3_600, :second)
+    Repo.update_all(from(r in VideoRun, where: r.id == ^run.id), set: [updated_at: old])
+    VideoRuns.expire_stale_runs(session.id)
+    assert %VideoRun{status: "running"} = Repo.get!(VideoRun, run.id)
+
+    :ok = VideoRuns.close_plan_run(session.id)
+    assert %VideoRun{status: "completed"} = Repo.get!(VideoRun, run.id)
+
+    for _ <- 2..VideoGenerationPolicy.max_plan_runs_per_day() do
+      {:ok, _} = VideoRuns.open_plan_run(user.id, session)
+      :ok = VideoRuns.close_plan_run(session.id)
+    end
+
+    assert {:error, :plan_limit} = VideoRuns.open_plan_run(user.id, session)
+  end
+
+  test "only users who can pay for the build may plan", %{user: user, session: session} do
+    {:ok, _} = Credits.deduct_credits(user.id, 21)
+    assert {:error, :insufficient_credits, 9.0} = VideoRuns.open_plan_run(user.id, session)
   end
 
   test "caps labelling calls per run", %{user: user, session: session} do

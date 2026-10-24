@@ -1,5 +1,6 @@
 import api from '@/services/api';
 import type {
+  AspectRatio,
   Blueprint,
   EditDocument,
   GenerateBrief,
@@ -17,9 +18,9 @@ import type {
 
 export type SessionPatch = Partial<{
   name: string | null;
-  request: string | null;
   media_items: MediaItem[];
   reference: ReferenceInfo | null;
+  aspect_ratio: AspectRatio | null;
   document: EditDocument | null;
   composition_files: Record<string, string>;
 }>;
@@ -61,32 +62,67 @@ export async function labelReferenceChunk(
   video: string,
   shots: Array<{ index: number; start: number; end: number }>
 ): Promise<void> {
-  await api.post(`/ai/video/sessions/${sessionId}/reference/chunk`, { run_id: runId, chunk_index: chunkIndex, video, shots });
+  await api.post(`/ai/video/sessions/${sessionId}/reference/chunk`, {
+    run_id: runId,
+    chunk_index: chunkIndex,
+    video,
+    shots,
+  });
 }
 
 export async function finishReference(
   sessionId: number,
   runId: number,
-  measurement: Omit<VideoMeasurement, 'shots'> & { shots: Array<Omit<VideoMeasurement['shots'][number], 'keyframePath'>> },
+  measurement: Omit<VideoMeasurement, 'shots'> & {
+    shots: Array<Omit<VideoMeasurement['shots'][number], 'keyframePath'>>;
+  },
   beats: unknown
 ): Promise<Blueprint> {
-  return (await api.post(`/ai/video/sessions/${sessionId}/reference/finish`, { run_id: runId, measurement, beats })).data.blueprint;
+  return (
+    await api.post(`/ai/video/sessions/${sessionId}/reference/finish`, {
+      run_id: runId,
+      measurement,
+      beats,
+    })
+  ).data.blueprint;
+}
+
+// -- Clips and planning ------------------------------------------------------------------
+
+/** Label one chunk of footage. Free before a build (the planning run pays), part of the build during one. */
+export async function labelSource(
+  sessionId: number,
+  body: {
+    content_hash: string;
+    chunk_key: string;
+    chunk_start: number;
+    kind: 'video' | 'photo';
+    media: string;
+    segments: SourceSegment[];
+  }
+): Promise<SourceSegment[]> {
+  return (await api.post(`/ai/video/sessions/${sessionId}/label-source`, body)).data.segments;
+}
+
+/** Send a message in the free planning chat; the session comes back with the reply (and plan). */
+export async function sendPlanMessage(sessionId: number, message: string): Promise<VideoSession> {
+  return (await api.post(`/ai/video/sessions/${sessionId}/plan`, { message })).data;
 }
 
 // -- Agent runs ----------------------------------------------------------------------------
 
-export async function startRun(sessionId: number, kind: 'generate' | 'revise', request: string): Promise<VideoRun> {
+export async function startRun(
+  sessionId: number,
+  kind: 'generate' | 'revise',
+  request: string
+): Promise<VideoRun> {
   return (await api.post(`/ai/video/sessions/${sessionId}/runs`, { kind, request })).data.run;
 }
 
-export async function labelSource(
+export async function turn(
   runId: number,
-  body: { content_hash: string; chunk_key: string; chunk_start: number; kind: 'video' | 'photo'; media: string; segments: SourceSegment[] }
-): Promise<SourceSegment[]> {
-  return (await api.post(`/ai/video/runs/${runId}/label-source`, body)).data.segments;
-}
-
-export async function turn(runId: number, input: { brief?: GenerateBrief | Record<string, never>; results?: ToolResult[] }): Promise<TurnResponse> {
+  input: { brief?: GenerateBrief | Record<string, never>; results?: ToolResult[] }
+): Promise<TurnResponse> {
   return (await api.post(`/ai/video/runs/${runId}/turn`, input)).data;
 }
 
@@ -95,7 +131,12 @@ export async function completeRun(
   document: EditDocument,
   compositionFiles: Record<string, string>
 ): Promise<{ run: VideoRun; session: VideoSession }> {
-  return (await api.post(`/ai/video/runs/${runId}/complete`, { document, composition_files: compositionFiles })).data;
+  return (
+    await api.post(`/ai/video/runs/${runId}/complete`, {
+      document,
+      composition_files: compositionFiles,
+    })
+  ).data;
 }
 
 export async function failRun(runId: number, reason: string): Promise<void> {

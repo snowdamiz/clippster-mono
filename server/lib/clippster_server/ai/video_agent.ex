@@ -6,7 +6,7 @@ defmodule ClippsterServer.AI.VideoAgent do
   Prompt caching uses all four Anthropic breakpoints:
 
     1. system prompt (tools are cached with it) - 1 hour
-    2. session context: example blueprint, media, source index - 1 hour
+    2. session context: example blueprint (if any), media, source index - 1 hour
     3. the previous turn's final user message - 5 minutes
     4. the current final user message - 5 minutes
 
@@ -14,7 +14,15 @@ defmodule ClippsterServer.AI.VideoAgent do
   conversation, so each request's prefix is byte-identical to the previous request.
   """
 
-  alias ClippsterServer.AI.{OpenRouterChat, VideoAgentPrompts, VideoGenerationPolicy, VideoRun, VideoRuns, VideoSession}
+  alias ClippsterServer.AI.{
+    OpenRouterChat,
+    VideoAgentPrompts,
+    VideoGenerationPolicy,
+    VideoPlanner,
+    VideoRun,
+    VideoRuns,
+    VideoSession
+  }
 
   @long_cache %{"type" => "ephemeral", "ttl" => "1h"}
   @short_cache %{"type" => "ephemeral"}
@@ -23,7 +31,8 @@ defmodule ClippsterServer.AI.VideoAgent do
   @max_images_per_turn 24
   @max_image_base64_bytes 600_000
   @max_brief_bytes 400_000
-  @recent_chat_messages 8
+  @plan_chat_messages 30
+  @chat_messages 40
 
   @client_tools ~w(set_edit write_file read_file list_files delete_file check snapshot)
 
@@ -33,10 +42,12 @@ defmodule ClippsterServer.AI.VideoAgent do
       "function" => %{
         "name" => "set_edit",
         "description" =>
-          "Submit the whole edit document (shots, music, overlays). It is validated and compiled into the root index.html. Returns validation errors or a summary of the compiled timeline.",
+          "Submit the whole edit document (shots of footage or designed scenes, music, overlays). It is validated and compiled into the root index.html. Returns validation errors or a summary of the compiled timeline.",
         "parameters" => %{
           "type" => "object",
-          "properties" => %{"document" => %{"type" => "object", "description" => "The full edit document."}},
+          "properties" => %{
+            "document" => %{"type" => "object", "description" => "The full edit document."}
+          },
           "required" => ["document"]
         }
       }
@@ -49,7 +60,10 @@ defmodule ClippsterServer.AI.VideoAgent do
         "parameters" => %{
           "type" => "object",
           "properties" => %{
-            "path" => %{"type" => "string", "description" => "For example compositions/title.html"},
+            "path" => %{
+              "type" => "string",
+              "description" => "For example compositions/title.html"
+            },
             "content" => %{"type" => "string"}
           },
           "required" => ["path", "content"]
@@ -80,7 +94,7 @@ defmodule ClippsterServer.AI.VideoAgent do
       "type" => "function",
       "function" => %{
         "name" => "delete_file",
-        "description" => "Delete a composition file that no overlay uses any more.",
+        "description" => "Delete a composition file that no scene or overlay uses any more.",
         "parameters" => %{
           "type" => "object",
           "properties" => %{"path" => %{"type" => "string"}},
@@ -102,7 +116,7 @@ defmodule ClippsterServer.AI.VideoAgent do
       "function" => %{
         "name" => "snapshot",
         "description" =>
-          "Render stills at the given output times. Each still comes back beside the example's frame from the shot matched at that time.",
+          "Render stills at the given output times. With an example, each still comes back beside the example's frame from the shot matched at that time.",
         "parameters" => %{
           "type" => "object",
           "properties" => %{
@@ -185,7 +199,11 @@ defmodule ClippsterServer.AI.VideoAgent do
       %{
         "role" => "system",
         "content" => [
-          %{"type" => "text", "text" => VideoAgentPrompts.system_prompt(), "cache_control" => @long_cache},
+          %{
+            "type" => "text",
+            "text" => VideoAgentPrompts.system_prompt(),
+            "cache_control" => @long_cache
+          },
           %{"type" => "text", "text" => session_context(session), "cache_control" => @long_cache}
         ]
       },
@@ -205,11 +223,13 @@ defmodule ClippsterServer.AI.VideoAgent do
       })
   end
 
-  defp brief_data(_session, %VideoRun{kind: "generate"} = run, brief) do
+  defp brief_data(session, %VideoRun{kind: "generate"} = run, brief) do
     Map.merge(brief, %{
       "kind" => "generate",
       "request" => run.request || "",
-      "maxSeconds" => VideoGenerationPolicy.max_output_seconds()
+      "maxSeconds" => VideoGenerationPolicy.max_output_seconds(),
+      "plan" => VideoPlanner.latest_plan(session),
+      "planChat" => VideoPlanner.chat(session, @plan_chat_messages)
     })
   end
 
@@ -218,14 +238,16 @@ defmodule ClippsterServer.AI.VideoAgent do
       "kind" => "revise",
       "request" => run.request || "",
       "maxSeconds" => VideoGenerationPolicy.max_output_seconds(),
-      "recentChat" => recent_chat(session, run.request),
+      "plan" => VideoPlanner.latest_plan(session),
+      "chat" => chat_so_far(session, run.request),
       "document" => session.document,
       "files" => (session.composition_files || %{}) |> Map.keys() |> Enum.sort()
     }
   end
 
-  # The run's own request is the newest chat message; the brief carries it separately.
-  defp recent_chat(%VideoSession{messages: messages}, request) when is_list(messages) do
+  # The whole conversation, planning included. The run's own request is the newest message; the
+  # brief carries it separately.
+  defp chat_so_far(%VideoSession{messages: messages}, request) when is_list(messages) do
     messages =
       case List.last(messages) do
         %{role: "user", content: ^request} -> Enum.drop(messages, -1)
@@ -233,11 +255,11 @@ defmodule ClippsterServer.AI.VideoAgent do
       end
 
     messages
-    |> Enum.take(-@recent_chat_messages)
+    |> Enum.take(-@chat_messages)
     |> Enum.map(&%{"role" => &1.role, "content" => &1.content})
   end
 
-  defp recent_chat(_session, _request), do: []
+  defp chat_so_far(_session, _request), do: []
 
   defp model_media(item) do
     Map.take(item, ~w(id name kind duration width height hasAudio))
@@ -283,7 +305,9 @@ defmodule ClippsterServer.AI.VideoAgent do
 
         with {:ok, image_parts} <- image_parts(results) do
           tool_messages = Enum.map(results, &tool_message(&1["id"], &1["content"]))
-          {:ok, messages ++ tool_messages ++ [user_message(["Tool results are above." | image_parts])]}
+
+          {:ok,
+           messages ++ tool_messages ++ [user_message(["Tool results are above." | image_parts])]}
         end
     end
   end
@@ -298,7 +322,11 @@ defmodule ClippsterServer.AI.VideoAgent do
       reverse_index ->
         index = length(messages) - 1 - reverse_index
         {before_and_assistant, after_assistant} = Enum.split(messages, index + 1)
-        answered = for %{"role" => "tool", "tool_call_id" => id} <- after_assistant, into: MapSet.new(), do: id
+
+        answered =
+          for %{"role" => "tool", "tool_call_id" => id} <- after_assistant,
+              into: MapSet.new(),
+              do: id
 
         (List.last(before_and_assistant)["tool_calls"] || [])
         |> Enum.filter(&(&1["function"]["name"] in @client_tools))
@@ -321,14 +349,18 @@ defmodule ClippsterServer.AI.VideoAgent do
          Enum.flat_map(images, fn %{"label" => label, "data" => data} ->
            [
              %{"type" => "text", "text" => to_string(label)},
-             %{"type" => "image_url", "image_url" => %{"url" => "data:image/jpeg;base64," <> data}}
+             %{
+               "type" => "image_url",
+               "image_url" => %{"url" => "data:image/jpeg;base64," <> data}
+             }
            ]
          end)}
     end
   end
 
   defp valid_image?(%{"label" => label, "data" => data}) when is_binary(data) do
-    is_binary(label) and byte_size(data) <= @max_image_base64_bytes and Base.decode64(data) != :error
+    is_binary(label) and byte_size(data) <= @max_image_base64_bytes and
+      Base.decode64(data) != :error
   end
 
   defp valid_image?(_), do: false
@@ -374,7 +406,9 @@ defmodule ClippsterServer.AI.VideoAgent do
         finish_run(run, messages, text)
 
       nil ->
-        {client_calls, server_calls} = Enum.split_with(calls, &(&1["function"]["name"] in @client_tools))
+        {client_calls, server_calls} =
+          Enum.split_with(calls, &(&1["function"]["name"] in @client_tools))
+
         messages = messages ++ Enum.map(server_calls, &resolve_server_call/1)
         {:ok, run} = VideoRuns.save_turn(run, messages)
 
@@ -419,12 +453,19 @@ defmodule ClippsterServer.AI.VideoAgent do
     end
   end
 
-  defp call_arguments(%{"function" => %{"arguments" => arguments}}) when is_map(arguments), do: arguments
+  defp call_arguments(%{"function" => %{"arguments" => arguments}}) when is_map(arguments),
+    do: arguments
+
   defp call_arguments(_), do: %{}
 
   defp add_final_turn_nudge(messages) do
     {head, [last]} = Enum.split(messages, -1)
-    note = %{"type" => "text", "text" => "This is your last turn. Call finish now with your message to the user."}
+
+    note = %{
+      "type" => "text",
+      "text" => "This is your last turn. Call finish now with your message to the user."
+    }
+
     head ++ [Map.update!(last, "content", &(&1 ++ [note]))]
   end
 
@@ -465,10 +506,11 @@ defmodule ClippsterServer.AI.VideoAgent do
   defp user_message(parts) do
     %{
       "role" => "user",
-      "content" => Enum.map(parts, fn
-        text when is_binary(text) -> %{"type" => "text", "text" => text}
-        part -> part
-      end)
+      "content" =>
+        Enum.map(parts, fn
+          text when is_binary(text) -> %{"type" => "text", "text" => text}
+          part -> part
+        end)
     }
   end
 

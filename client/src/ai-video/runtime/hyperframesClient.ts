@@ -47,12 +47,21 @@ export interface RequestOptions {
 }
 
 /** Send one operation to the Hyperframes sidecar and await its result. Aborting cancels it in the sidecar. */
-export async function hyperframesRequest<T>(op: string, params: Record<string, unknown> = {}, options: RequestOptions = {}): Promise<T> {
+export async function hyperframesRequest<T>(
+  op: string,
+  params: Record<string, unknown> = {},
+  options: RequestOptions = {}
+): Promise<T> {
   await ensureListener();
   if (options.signal?.aborted) throw new HyperframesCancelledError();
   const id = crypto.randomUUID();
-  const result = new Promise<T>((resolve, reject) => pending.set(id, { resolve, reject, onProgress: options.onProgress }));
-  const onAbort = () => void invoke('hyperframes_request', { request: { id: crypto.randomUUID(), op: 'cancel', target: id } });
+  const result = new Promise<T>((resolve, reject) =>
+    pending.set(id, { resolve, reject, onProgress: options.onProgress })
+  );
+  const onAbort = () =>
+    void invoke('hyperframes_request', {
+      request: { id: crypto.randomUUID(), op: 'cancel', target: id },
+    });
   options.signal?.addEventListener('abort', onAbort, { once: true });
   try {
     await invoke('hyperframes_request', { request: { id, op, ...params } });

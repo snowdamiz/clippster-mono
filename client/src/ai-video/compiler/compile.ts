@@ -1,4 +1,5 @@
-import type { EditDocument, EditOverlay, EditShot, MediaKind } from '../types';
+import { MEDIA_REF } from '../director/validate';
+import type { EditDocument, EditShot, MediaKind, VariableValue } from '../types';
 
 /** Linked media as the compiled project sees it. */
 export interface CompileMedia {
@@ -51,13 +52,25 @@ const FONT_WEIGHTS: Record<string, number> = {
 const num = (value: number) => String(Math.round(value * 1000) / 1000);
 
 export function escapeHtml(value: string): string {
-  return value.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+  return value
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
 }
 
-function attributes(values: Record<string, string | number | boolean | null | undefined>): string {
+function attributes(values: Attributes): string {
   return Object.entries(values)
-    .filter((entry): entry is [string, string | number | true] => entry[1] !== null && entry[1] !== undefined && entry[1] !== false)
-    .map(([key, value]) => (value === true ? key : `${key}="${escapeHtml(typeof value === 'number' ? num(value) : value)}"`))
+    .filter(
+      (entry): entry is [string, string | number | true] =>
+        entry[1] !== null && entry[1] !== undefined && entry[1] !== false
+    )
+    .map(([key, value]) =>
+      value === true
+        ? key
+        : `${key}="${escapeHtml(typeof value === 'number' ? num(value) : value)}"`
+    )
     .join(' ');
 }
 
@@ -89,33 +102,55 @@ export function compositionId(path: string): string {
 }
 
 /** Seconds the incoming shot can fade in over the previous one, limited by both shots and its source pre-roll. */
-function dissolveOverlap(previous: EditShot, shot: EditShot, media: CompileMedia | undefined, fps: number): number {
-  const preRoll = media?.kind === 'photo' ? Number.POSITIVE_INFINITY : shot.sourceIn / shot.speed;
+function dissolveOverlap(
+  previous: EditShot,
+  shot: EditShot,
+  media: CompileMedia | undefined,
+  fps: number
+): number {
+  const preRoll =
+    shot.scene || media?.kind === 'photo' ? Number.POSITIVE_INFINITY : shot.sourceIn / shot.speed;
   const overlap = Math.min(DISSOLVE_SECONDS, previous.duration / 2, shot.duration / 2, preRoll);
   const frames = Math.floor(overlap * fps);
   return frames >= 1 ? frames / fps : 0;
 }
 
-function moveTweens(target: string, move: EditShot['move'], start: number, duration: number): string[] {
+function moveTweens(
+  target: string,
+  move: EditShot['move'],
+  start: number,
+  duration: number
+): string[] {
   const at = num(start);
   const span = num(Math.max(duration - 0.001, 0.001));
   switch (move) {
     case 'push-in':
-      return [`tl.fromTo("${target}", { scale: 1 }, { scale: 1.12, duration: ${span}, ease: "none" }, ${at});`];
+      return [
+        `tl.fromTo("${target}", { scale: 1 }, { scale: 1.12, duration: ${span}, ease: "none" }, ${at});`,
+      ];
     case 'pull-out':
-      return [`tl.fromTo("${target}", { scale: 1.12 }, { scale: 1, duration: ${span}, ease: "none" }, ${at});`];
+      return [
+        `tl.fromTo("${target}", { scale: 1.12 }, { scale: 1, duration: ${span}, ease: "none" }, ${at});`,
+      ];
     case 'pan-left':
-      return [`tl.fromTo("${target}", { scale: 1.15, xPercent: 5 }, { scale: 1.15, xPercent: -5, duration: ${span}, ease: "none" }, ${at});`];
+      return [
+        `tl.fromTo("${target}", { scale: 1.15, xPercent: 5 }, { scale: 1.15, xPercent: -5, duration: ${span}, ease: "none" }, ${at});`,
+      ];
     case 'pan-right':
-      return [`tl.fromTo("${target}", { scale: 1.15, xPercent: -5 }, { scale: 1.15, xPercent: 5, duration: ${span}, ease: "none" }, ${at});`];
+      return [
+        `tl.fromTo("${target}", { scale: 1.15, xPercent: -5 }, { scale: 1.15, xPercent: 5, duration: ${span}, ease: "none" }, ${at});`,
+      ];
     case 'punch':
-      return [`tl.fromTo("${target}", { scale: 1.25 }, { scale: 1, duration: ${num(Math.min(0.3, duration))}, ease: "power3.out" }, ${at});`];
+      return [
+        `tl.fromTo("${target}", { scale: 1.25 }, { scale: 1, duration: ${num(Math.min(0.3, duration))}, ease: "power3.out" }, ${at});`,
+      ];
     case 'shake': {
       const step = Math.min(0.06, duration / SHAKE_OFFSETS.length);
       return [
         `tl.set("${target}", { scale: 1.06 }, ${at});`,
         ...SHAKE_OFFSETS.map(
-          ([x, y], i) => `tl.to("${target}", { x: ${x}, y: ${y}, duration: ${num(step)}, ease: "none" }, ${num(start + i * step)});`
+          ([x, y], i) =>
+            `tl.to("${target}", { x: ${x}, y: ${y}, duration: ${num(step)}, ease: "none" }, ${num(start + i * step)});`
         ),
       ];
     }
@@ -124,19 +159,30 @@ function moveTweens(target: string, move: EditShot['move'], start: number, durat
   }
 }
 
-function overlayElement(overlay: EditOverlay, format: EditDocument['format']): string {
-  return `<div ${attributes({
-    id: `ov-${overlay.id}`,
-    class: `overlay overlay-${overlay.lane}`,
-    'data-composition-id': compositionId(overlay.composition),
-    'data-composition-src': overlay.composition,
-    'data-start': overlay.start,
-    'data-duration': overlay.duration,
-    'data-track-index': overlay.lane === 'graphics' ? 2 : 3,
+type Attributes = Record<string, string | number | boolean | null | undefined>;
+
+/** Attributes that mount a composition, with `media:<id>` variables resolved to the linked file. */
+function placementAttributes(
+  composition: string,
+  variables: Record<string, VariableValue>,
+  timing: Attributes,
+  format: EditDocument['format'],
+  context: CompileContext
+): Attributes {
+  const resolved = Object.fromEntries(
+    Object.entries(variables).map(([key, value]) => {
+      const ref = typeof value === 'string' ? MEDIA_REF.exec(value) : null;
+      return [key, ref ? (context.media[ref[1]]?.src ?? '') : value];
+    })
+  );
+  return {
+    'data-composition-id': compositionId(composition),
+    'data-composition-src': composition,
+    ...timing,
     'data-width': format.width,
     'data-height': format.height,
-    'data-variable-values': Object.keys(overlay.variables).length ? JSON.stringify(overlay.variables) : null,
-  })}></div>`;
+    'data-variable-values': Object.keys(resolved).length ? JSON.stringify(resolved) : null,
+  };
 }
 
 /** Compile an edit document into the project's root `index.html`. */
@@ -145,31 +191,40 @@ export function compileDocument(document: EditDocument, context: CompileContext)
   const placed = placeShots(document);
   const total = placed.length ? placed[placed.length - 1].end : 0;
   const elements: string[] = [];
-  const tweens: string[] = ['tl.set("#fx-flash", { opacity: 0 }, 0);', 'tl.set("#fx-dip", { opacity: 0 }, 0);'];
+  const tweens: string[] = [
+    'tl.set("#fx-flash", { opacity: 0 }, 0);',
+    'tl.set("#fx-dip", { opacity: 0 }, 0);',
+  ];
 
   document.shots.forEach((shot, index) => {
-    const media = context.media[shot.mediaId];
+    const media = shot.mediaId ? context.media[shot.mediaId] : undefined;
     const { start } = placed[index];
     const frame = `#shot-${shot.id}-frame`;
     const previous = index > 0 ? document.shots[index - 1] : null;
-    const overlap = previous && shot.transitionIn === 'dissolve' ? dissolveOverlap(previous, shot, media, fps) : 0;
+    const overlap =
+      previous && shot.transitionIn === 'dissolve'
+        ? dissolveOverlap(previous, shot, media, fps)
+        : 0;
     const clipStart = start - overlap;
     const clipDuration = shot.duration + overlap;
-    const common = {
+    const identity = {
       id: `shot-${shot.id}`,
       class: 'clip',
       'data-slot-id': shot.id,
       'data-ref-shot-id': shot.refShot,
+    };
+    const timing = {
       'data-start': clipStart,
       'data-duration': clipDuration,
       'data-track-index': 0,
-      src: media?.src ?? '',
     };
-    const clip =
-      media?.kind === 'photo'
-        ? `<img ${attributes({ ...common, alt: '' })} />`
+    const source = { ...identity, ...timing, src: media?.src ?? '' };
+    const clip = shot.scene
+      ? `<div ${attributes({ ...identity, ...placementAttributes(shot.scene.composition, { ...shot.scene.variables, __editorOwner: shot.id, __editorDuration: shot.duration }, timing, document.format, context) })}></div>`
+      : media?.kind === 'photo'
+        ? `<img ${attributes({ ...source, alt: '' })} />`
         : `<video ${attributes({
-            ...common,
+            ...source,
             'data-media-start': Math.max(0, shot.sourceIn - overlap * shot.speed),
             'data-playback-rate': shot.speed !== 1 ? shot.speed : null,
             ...(document.clipAudio > 0 && media?.hasAudio
@@ -180,23 +235,50 @@ export function compileDocument(document: EditDocument, context: CompileContext)
     elements.push(`<div id="shot-${shot.id}-frame" class="frame">${clip}</div>`);
 
     if (overlap > 0) {
-      tweens.push(`tl.fromTo("${frame}", { opacity: 0 }, { opacity: 1, duration: ${num(overlap)}, ease: "none" }, ${num(clipStart)});`);
+      tweens.push(
+        `tl.fromTo("${frame}", { opacity: 0 }, { opacity: 1, duration: ${num(overlap)}, ease: "none" }, ${num(clipStart)});`
+      );
     }
     if (previous && shot.transitionIn === 'flash') {
       const span = Math.min(FLASH_SECONDS, shot.duration * 0.8);
       tweens.push(`tl.set("#fx-flash", { opacity: 1 }, ${num(start)});`);
-      tweens.push(`tl.to("#fx-flash", { opacity: 0, duration: ${num(span)}, ease: "power2.out" }, ${num(start)});`);
+      tweens.push(
+        `tl.to("#fx-flash", { opacity: 0, duration: ${num(span)}, ease: "power2.out" }, ${num(start)});`
+      );
     }
     if (previous && shot.transitionIn === 'dip') {
       const half = Math.min(DIP_HALF_SECONDS, previous.duration / 2, shot.duration / 2);
-      tweens.push(`tl.to("#fx-dip", { opacity: 1, duration: ${num(half)}, ease: "power1.in" }, ${num(start - half)});`);
-      tweens.push(`tl.to("#fx-dip", { opacity: 0, duration: ${num(half)}, ease: "power1.out" }, ${num(start)});`);
+      tweens.push(
+        `tl.to("#fx-dip", { opacity: 1, duration: ${num(half)}, ease: "power1.in" }, ${num(start - half)});`
+      );
+      tweens.push(
+        `tl.to("#fx-dip", { opacity: 0, duration: ${num(half)}, ease: "power1.out" }, ${num(start)});`
+      );
     }
     tweens.push(...moveTweens(frame, shot.move, start, shot.duration));
   });
 
-  const sortedOverlays = [...document.overlays].sort((a, b) => a.start - b.start || a.id.localeCompare(b.id));
-  const overlays = sortedOverlays.map((overlay) => overlayElement(overlay, document.format));
+  const sortedOverlays = [...document.overlays].sort(
+    (a, b) => a.start - b.start || a.id.localeCompare(b.id)
+  );
+  const overlays = sortedOverlays.map(
+    (overlay) =>
+      `<div ${attributes({
+        id: `ov-${overlay.id}`,
+        class: `overlay overlay-${overlay.lane}`,
+        ...placementAttributes(
+          overlay.composition,
+          { ...overlay.variables, __editorOwner: overlay.id, __editorDuration: overlay.duration },
+          {
+            'data-start': overlay.start,
+            'data-duration': overlay.duration,
+            'data-track-index': overlay.lane === 'graphics' ? 2 : 3,
+          },
+          document.format,
+          context
+        ),
+      })}></div>`
+  );
 
   let music = '';
   const song = document.music ? context.media[document.music.mediaId] : undefined;
@@ -231,7 +313,8 @@ export function compileDocument(document: EditDocument, context: CompileContext)
   }
 
   const fontFaces = context.fonts.map(fontFace).filter((rule): rule is string => !!rule);
-  const indent = (lines: string[], spaces: number) => lines.map((line) => ' '.repeat(spaces) + line).join('\n');
+  const indent = (lines: string[], spaces: number) =>
+    lines.map((line) => ' '.repeat(spaces) + line).join('\n');
 
   return `<!doctype html>
 <html lang="en">
@@ -255,13 +338,14 @@ ${indent(fontFaces, 6)}
     </style>
   </head>
   <body>
-    <div ${attributes({ id: 'root', 'data-composition-id': 'main', 'data-start': 0, 'data-duration': total, 'data-width': width, 'data-height': height })}>
+    <div ${attributes({ id: 'root', 'data-composition-id': 'main', 'data-start': 0, 'data-duration': total, 'data-width': width, 'data-height': height, 'data-fps': fps })}>
 ${indent(elements, 6)}
       <div id="fx-dip" class="fx"></div>
       <div id="fx-flash" class="fx"></div>
 ${indent(overlays, 6)}${music ? `\n      ${music}` : ''}
     </div>
     <script>
+      window.__timelines ??= {};
       const tl = gsap.timeline({ paused: true });
 ${indent(tweens, 6)}
       window.__timelines["main"] = tl;

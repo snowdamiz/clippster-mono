@@ -34,7 +34,7 @@
         width: 100%;
         height: 100vh;
         overflow: hidden;
-        background: #09090b;
+        background: #0a0c10;
         color: #fafafa;
       }
       /* macOS rounded corners - applied early before Vue loads */
@@ -42,11 +42,89 @@
         border-radius: 10px;
         overflow: hidden;
       }
+      /* Matches LoadingScreen.vue so the splash is centered before Vue mounts. */
+      .boot-screen {
+        position: fixed;
+        inset: 0;
+        display: grid;
+        place-items: center;
+        background: #0a0c10;
+      }
+      .boot-screen__content {
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: 24px;
+      }
+      .boot-screen__brand {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+      }
+      .boot-screen__mark {
+        width: 36px;
+        height: 36px;
+        border-radius: 10px;
+      }
+      .boot-screen__wordmark {
+        height: 28px;
+        width: auto;
+        filter: brightness(0) invert(1);
+      }
+      .boot-screen__track {
+        width: 160px;
+        height: 3px;
+        overflow: hidden;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.075);
+      }
+      .boot-screen__fill {
+        width: 33%;
+        height: 100%;
+        border-radius: 999px;
+        background: #38bdf8;
+        animation: boot-slide 1.2s cubic-bezier(0.65, 0, 0.35, 1) infinite;
+      }
+      .boot-screen__status {
+        position: absolute;
+        width: 1px;
+        height: 1px;
+        padding: 0;
+        margin: -1px;
+        overflow: hidden;
+        clip: rect(0, 0, 0, 0);
+        white-space: nowrap;
+        border: 0;
+      }
+      @keyframes boot-slide {
+        0% { transform: translateX(-110%); }
+        100% { transform: translateX(310%); }
+      }
+      @media (prefers-reduced-motion: reduce) {
+        .boot-screen__fill {
+          animation: none;
+          width: 100%;
+          opacity: 0.6;
+        }
+      }
     </style>
   </head>
 
   <body class="dark">
-    <div id="app"><p style="padding: 32px; font-family: system-ui, sans-serif" role="status">Starting Clippster…</p></div>
+    <div id="app">
+      <div class="boot-screen" role="status" aria-live="polite" data-tauri-drag-region>
+        <div class="boot-screen__content" style="pointer-events: none">
+          <div class="boot-screen__brand">
+            <img class="boot-screen__mark" src="/logo-titlebar.svg" alt="" />
+            <img class="boot-screen__wordmark" src="/logo.svg" alt="Clippster" />
+          </div>
+          <div class="boot-screen__track">
+            <div class="boot-screen__fill"></div>
+          </div>
+          <span class="boot-screen__status">Starting Clippster</span>
+        </div>
+      </div>
+    </div>
     <script type="module" src="/src/main.ts"></script>
   </body>
 </html>

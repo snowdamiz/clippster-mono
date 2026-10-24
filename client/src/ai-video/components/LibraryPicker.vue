@@ -38,7 +38,12 @@
   const selected = ref(new Map<string, LibraryItem>());
 
   const tabs = computed(() =>
-    props.sources.map((source) => ({ value: source, label: LIBRARY_SOURCES[source].label, icon: ICONS[source], count: items.value[source]?.length }))
+    props.sources.map((source) => ({
+      value: source,
+      label: LIBRARY_SOURCES[source].label,
+      icon: ICONS[source],
+      count: items.value[source]?.length,
+    }))
   );
   const loading = computed(() => !items.value[active.value] && !errors.value[active.value]);
   const visible = computed(() => {
@@ -145,7 +150,8 @@
 
     <template #footer>
       <span class="mr-auto text-xs text-fg-muted">
-        <span class="tabular">{{ selected.size }}</span> selected
+        <span class="tabular">{{ selected.size }}</span>
+        selected
       </span>
       <Button variant="ghost" @click="emit('close')">Cancel</Button>
       <Button variant="primary" :disabled="!selected.size" @click="confirm">

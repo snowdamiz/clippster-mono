@@ -1,23 +1,20 @@
 <script setup lang="ts">
-  /** The finished video: chat for changes, the player (optionally beside the example), export, and the timeline editor. */
-  import { computed, nextTick, ref, watch } from 'vue';
+  /** The finished video: the player (optionally beside the example), export status, and the timeline editor. */
+  import { computed, ref, watch } from 'vue';
+  import { useElementSize } from '@vueuse/core';
   import { convertFileSrc, invoke } from '@tauri-apps/api/core';
   import { revealItemInDir } from '@tauri-apps/plugin-opener';
-  import { Pause, Play } from 'lucide-vue-next';
-  import ChatChip from '@/components/create/chat/ChatChip.vue';
-  import ChatMessage from '@/components/create/chat/ChatMessage.vue';
-  import ChatTypingIndicator from '@/components/create/chat/ChatTypingIndicator.vue';
   import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
   import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
-  import { Input } from '@/components/ui/input';
-  import { SectionCard } from '@/components/ui/section-card';
   import { Switch } from '@/components/ui/switch';
-  import type { AIChatMessage } from '@/types/ai-chat';
   import { songBeats } from '../analysis/sources';
   import { placeShots } from '../compiler/compile';
+  import { findSceneText } from '../director/sceneText';
+  import { layerId, type SceneInventory } from '../director/sceneLayers';
+  import { ASPECT_RATIOS } from '../director/aspect';
   import { exampleCutTimes, exampleTimeAt } from '../director/edits';
-  import { formatClock, plural } from '../format';
+  import { plural } from '../format';
   import { useProject } from '../projectContext';
   import EditTimeline from './EditTimeline.vue';
   import HyperframesPlayer from './HyperframesPlayer.vue';
@@ -32,31 +29,41 @@
     blueprint,
     media,
     song,
-    policy,
     running,
-    pendingMessage,
     previewUrl,
     previewError,
     revision,
     history,
+    policy,
     exportState,
     ...project
   } = useProject();
 
   const player = ref<InstanceType<typeof HyperframesPlayer> | null>(null);
   const exampleVideo = ref<HTMLVideoElement | null>(null);
-  const chatList = ref<HTMLElement | null>(null);
   const time = ref(0);
   const playing = ref(false);
   const selected = ref<string | null>(null);
-  const timelineOpen = ref(false);
+  const inventories = ref<SceneInventory[]>([]);
+  const selectedLayer = computed(() => {
+    for (const inventory of inventories.value) {
+      const layer = inventory.layers.find((layer) => layerId(inventory.owner, layer.key) === selected.value);
+      if (layer) return { owner: inventory.owner, key: layer.key };
+    }
+    return null;
+  });
+  function onLayers(inventory: SceneInventory) {
+    inventories.value = [...inventories.value.filter((item) => item.owner !== inventory.owner), inventory];
+  }
+  const previewArea = ref<HTMLDivElement | null>(null);
+  const { width: previewWidth, height: previewHeight } = useElementSize(previewArea);
   const compare = ref(false);
   const showCuts = ref(true);
-  const draft = ref('');
   const beats = ref<number[]>([]);
   const peaks = ref<number[]>([]);
 
   const document = computed(() => edit.value!);
+  const compositionFiles = computed(() => session.value?.composition_files ?? {});
   const total = computed(() => {
     const placed = placeShots(document.value);
     return placed[placed.length - 1]?.end ?? 0;
@@ -65,28 +72,18 @@
   const exampleSrc = computed(() => (reference.value ? convertFileSrc(reference.value.path) : null));
   const cutTimes = computed(() => exampleCutTimes(document.value, blueprint.value));
   const busy = computed(() => !!running.value);
-  const exporting = computed(() => !!exportState.value && !exportState.value.path && !exportState.value.error);
+  const previewStyle = computed(() => {
+    const ratio = document.value.format.width / document.value.format.height;
+    const availableWidth = compare.value && exampleSrc.value ? (previewWidth.value - 12) / 2 : previewWidth.value;
+    const width = Math.max(0, Math.min(availableWidth, previewHeight.value * ratio));
+    return { width: `${width}px`, height: `${width / ratio}px` };
+  });
 
   const formatLabel = computed(() => {
     const { width, height } = document.value.format;
     const divisor = gcd(width, height);
     const ratio = `${width / divisor}:${height / divisor}`;
-    return `${plural(Math.round(total.value), 'second')}, ${['16:9', '9:16', '1:1', '4:5'].includes(ratio) ? ratio : `${width}×${height}`}`;
-  });
-
-  const messages = computed((): AIChatMessage[] => {
-    const list: AIChatMessage[] = [...(session.value?.messages ?? [])];
-    if (pendingMessage.value) list.push({ id: -1, role: 'user', content: pendingMessage.value, metadata: null, inserted_at: new Date().toISOString() });
-    return list;
-  });
-
-  const suggestions = computed(() => {
-    const title = document.value.overlays.find((overlay) => overlay.lane === 'text');
-    return [
-      'Make the intro faster',
-      title ? `Change "${title.label}" to something punchier` : 'Add a bold title at the start',
-      song.value ? 'Make the cuts hit the beat harder' : 'Use a different shot before the ending',
-    ];
+    return `${plural(Math.round(total.value), 'second')}, ${(ASPECT_RATIOS as readonly string[]).includes(ratio) ? ratio : `${width}×${height}`}`;
   });
 
   const savedLabel = computed(() => {
@@ -98,21 +95,6 @@
     return b ? gcd(b, a % b) : a;
   }
 
-  // -- Chat -----------------------------------------------------------------------------
-
-  function send(text: string) {
-    const message = text.trim();
-    if (!message || busy.value) return;
-    draft.value = '';
-    void project.revise(message);
-  }
-
-  watch(
-    () => messages.value.length + (busy.value ? 1 : 0),
-    () => nextTick(() => chatList.value?.scrollTo({ top: chatList.value.scrollHeight, behavior: 'smooth' })),
-    { immediate: true }
-  );
-
   // -- Playback -------------------------------------------------------------------------
 
   function togglePlay() {
@@ -123,11 +105,6 @@
   function seek(target: number) {
     time.value = Math.min(Math.max(0, target), Math.max(0, total.value - 0.01));
     player.value?.seek(time.value);
-  }
-
-  function scrub(event: MouseEvent) {
-    const rect = (event.currentTarget as HTMLElement).getBoundingClientRect();
-    seek(((event.clientX - rect.left) / rect.width) * total.value);
   }
 
   function onReady() {
@@ -150,11 +127,11 @@
   // -- Timeline -------------------------------------------------------------------------
 
   watch(
-    () => [timelineOpen.value, document.value.music?.mediaId, document.value.music?.start, total.value] as const,
-    async ([open]) => {
+    () => [document.value.music?.mediaId, document.value.music?.start, total.value] as const,
+    async () => {
       const track = document.value.music;
       const item = track ? media.value.find((entry) => entry.id === track.mediaId) : undefined;
-      if (!open || !track || !item) {
+      if (!track || !item) {
         beats.value = [];
         peaks.value = [];
         return;
@@ -181,7 +158,17 @@
   watch(
     () => document.value,
     (next) => {
-      if (selected.value && !next.shots.some((shot) => shot.id === selected.value) && !next.overlays.some((overlay) => overlay.id === selected.value)) {
+      if (
+        selected.value &&
+        !next.shots.some((shot) => shot.id === selected.value) &&
+        !next.overlays.some((overlay) => overlay.id === selected.value) &&
+        !findSceneText(next, selected.value, compositionFiles.value) &&
+        !inventories.value.some((item) =>
+          item.layers.some((layer) => layerId(item.owner, layer.key) === selected.value)
+        ) &&
+        !next.shots.some((shot) => `transition:${shot.id}` === selected.value) &&
+        selected.value !== `music:${next.music?.mediaId}`
+      ) {
         selected.value = null;
       }
     }
@@ -189,134 +176,116 @@
 </script>
 
 <template>
-  <div class="grid w-full grid-cols-[300px_minmax(0,1fr)] items-start gap-4 p-4">
-    <div class="flex min-h-[560px] flex-col rounded-lg border border-line-subtle">
-      <div class="border-b border-line-subtle px-3 py-2">
-        <span class="text-xs font-semibold text-fg">Chat</span>
-      </div>
-      <div ref="chatList" class="flex max-h-[520px] flex-1 flex-col gap-2 overflow-y-auto p-3">
-        <ChatMessage v-for="message in messages" :key="message.id" :message="message" />
-        <div v-if="running === 'revise'" class="flex items-center gap-2">
-          <ChatTypingIndicator label="Working on it..." />
-          <Button variant="link" size="xs" @click="project.cancel()">Cancel</Button>
-        </div>
-      </div>
-      <div class="flex flex-col gap-2 border-t border-line-subtle p-3">
-        <div class="flex flex-wrap gap-1.5">
-          <ChatChip v-for="suggestion in suggestions" :key="suggestion" :label="suggestion" interactive :disabled="busy" @click="send(suggestion)" />
-        </div>
-        <form class="flex gap-1.5" @submit.prevent="send(draft)">
-          <Input v-model="draft" placeholder="Tell it what to change" class="flex-1" :disabled="busy" />
-          <Button type="submit" variant="primary" :disabled="busy || !draft.trim()">Send</Button>
-        </form>
-        <span v-if="policy" class="text-2xs text-fg-subtle">Each change uses {{ policy.credits.revise }} credits.</span>
+  <div class="flex h-full min-h-0 flex-1 flex-col overflow-hidden">
+    <div class="flex h-10 shrink-0 items-center gap-2 border-b border-line-subtle px-3">
+      <span class="truncate text-xs font-semibold text-fg">{{ document.title }}</span>
+      <span class="shrink-0 text-xs text-fg-subtle">{{ formatLabel }}</span>
+      <div v-if="exampleSrc" class="ml-auto flex items-center gap-2">
+        <span class="text-xs text-fg-muted">Compare</span>
+        <Switch v-model="compare" aria-label="Compare with example" />
       </div>
     </div>
-
-    <div class="flex min-w-0 flex-col gap-3">
-      <div class="flex items-center gap-2.5">
-        <span class="truncate text-sm font-semibold text-fg">{{ document.title }}</span>
-        <span class="shrink-0 text-xs text-fg-subtle">{{ formatLabel }}</span>
-        <div class="ml-auto flex items-center gap-1.5">
-          <template v-if="exampleSrc">
-            <span class="text-xs text-fg-muted">Compare with example</span>
-            <Switch v-model="compare" aria-label="Compare with example" />
-          </template>
-        </div>
-        <Button variant="ghost" :disabled="!history.length || busy" @click="project.undo()">Undo</Button>
-        <Button variant="primary" :disabled="busy || exporting" @click="project.exportVideo()">Export</Button>
-      </div>
-
-      <Alert v-if="exportState" :variant="exportState.error ? 'destructive' : exportState.path ? 'success' : 'info'">
-        <AlertTitle>
-          {{ exportState.error ? 'The export failed' : exportState.path ? `Saved to ${savedLabel}` : `Exporting... ${exportState.progress}%` }}
-        </AlertTitle>
-        <AlertDescription class="flex items-center gap-2">
-          <template v-if="exportState.error">{{ exportState.error }}</template>
-          <template v-else-if="exportState.path">
-            Your video is ready to post.
-            <Button variant="link" size="xs" @click="revealItemInDir(exportState.path)">Show in folder</Button>
-          </template>
-          <template v-else>You can keep editing while it exports.</template>
-        </AlertDescription>
-      </Alert>
-
-      <div :class="compare && exampleSrc ? 'grid grid-cols-2 gap-2.5' : ''">
-        <div v-if="compare && exampleSrc" class="relative aspect-video overflow-hidden rounded-lg border border-line bg-black">
+    <Alert
+      v-if="exportState"
+      class="shrink-0 rounded-none border-x-0 border-t-0"
+      :variant="exportState.error ? 'destructive' : exportState.path ? 'success' : 'info'"
+    >
+      <AlertTitle>
+        {{
+          exportState.error
+            ? 'The export failed'
+            : exportState.path
+              ? `Saved to ${savedLabel}`
+              : `Exporting... ${exportState.progress}%`
+        }}
+      </AlertTitle>
+      <AlertDescription>
+        <template v-if="exportState.error">{{ exportState.error }}</template>
+        <Button v-else-if="exportState.path" variant="link" size="xs" @click="revealItemInDir(exportState.path)">
+          Show in folder
+        </Button>
+        <template v-else>You can keep editing while it exports.</template>
+      </AlertDescription>
+    </Alert>
+    <div class="flex min-h-0 flex-1 overflow-hidden">
+      <div
+        ref="previewArea"
+        class="flex min-h-0 min-w-0 flex-1 items-center justify-center gap-3 overflow-hidden bg-canvas"
+      >
+        <div v-if="compare && exampleSrc" class="relative shrink-0 overflow-hidden bg-black" :style="previewStyle">
           <video ref="exampleVideo" :src="exampleSrc" muted preload="auto" class="size-full object-contain" />
-          <Badge variant="brand" size="md" class="absolute left-2.5 top-2">Example</Badge>
+          <Badge variant="brand" class="absolute left-2 top-2">Example</Badge>
         </div>
-        <div
-          class="relative overflow-hidden rounded-lg border border-line bg-black"
-          :style="{ aspectRatio: `${document.format.width} / ${document.format.height}` }"
-          :class="!compare && document.format.height > document.format.width && 'mx-auto max-h-[60vh]'"
-        >
+        <div class="relative shrink-0 overflow-hidden bg-black" :style="previewStyle">
           <HyperframesPlayer
             v-if="previewUrl"
             ref="player"
             :src="previewUrl"
             :revision="revision"
+            :selected-layer="selectedLayer"
+            @select-layer="({ owner, key }) => (selected = layerId(owner, key))"
             @ready="onReady"
+            @layers="onLayers"
             @timeupdate="(t) => (time = t)"
             @playing="(value) => (playing = value)"
             @error="(message) => (previewError = message)"
           />
-          <div v-if="previewError" class="absolute inset-0 grid place-items-center p-6 text-center">
-            <div class="flex flex-col items-center gap-2">
-              <span class="text-sm text-fg-muted">{{ previewError }}</span>
+          <div v-if="previewError" class="absolute inset-0 grid place-items-center p-4 text-center">
+            <div>
+              <p class="text-sm text-fg-muted">{{ previewError }}</p>
               <Button variant="secondary" size="sm" @click="project.retryPreview()">Try again</Button>
             </div>
           </div>
-          <Badge v-if="compare && exampleSrc" variant="brand" size="md" class="absolute left-2.5 top-2">Yours</Badge>
+          <Badge v-if="compare && exampleSrc" variant="brand" class="absolute left-2 top-2">Yours</Badge>
         </div>
       </div>
-
-      <div class="flex items-center gap-2.5">
-        <Button variant="secondary" size="icon" class="rounded-full" :title="playing ? 'Pause' : 'Play'" :aria-label="playing ? 'Pause' : 'Play'" @click="togglePlay">
-          <component :is="playing ? Pause : Play" />
-        </Button>
-        <span class="tabular w-[86px] shrink-0 text-xs text-fg-muted">{{ formatClock(time) }} / {{ formatClock(total) }}</span>
-        <div class="relative h-1.5 flex-1 cursor-pointer rounded-full bg-surface-active" @click="scrub">
-          <div class="absolute inset-y-0 left-0 rounded-full bg-brand" :style="{ width: `${total ? (time / total) * 100 : 0}%` }" />
+      <aside class="w-[240px] shrink-0 overflow-y-auto border-l border-line-subtle bg-panel">
+        <div class="flex h-10 items-center border-b border-line-subtle px-3 text-xs font-semibold text-fg">
+          Properties
         </div>
-        <Button :variant="timelineOpen ? 'secondary' : 'ghost'" @click="timelineOpen = !timelineOpen">
-          {{ timelineOpen ? 'Hide timeline' : 'Edit timeline' }}
-        </Button>
-      </div>
-
-      <div v-if="timelineOpen" class="grid grid-cols-[minmax(0,1fr)_250px] items-start gap-3">
-        <div class="flex min-w-0 flex-col gap-2">
-          <div class="flex items-center gap-2">
-            <span class="text-xs text-fg-subtle">
-              <template v-if="song && document.music">Ticks on the ruler are your song's beats. </template>Dashed lines are the example's cuts.
-            </span>
-            <span class="ml-auto shrink-0 text-xs text-fg-muted">Show example cuts</span>
-            <Switch v-model="showCuts" aria-label="Show example cuts" />
-          </div>
-          <EditTimeline
-            :document="document"
-            :media="media"
-            :time="time"
-            :selected="selected"
-            :show-cuts="showCuts"
-            :cut-times="cutTimes"
-            :beats="beats"
-            :peaks="peaks"
-            @select="(id) => (selected = id)"
-            @seek="seek"
-          />
-        </div>
-        <SectionCard title="Selected">
+        <fieldset class="min-w-0 p-3" :disabled="busy">
           <ShotInspector
             :document="document"
             :media="media"
+            :files="compositionFiles"
             :selected="selected"
+            :inventories="inventories"
+            :max-seconds="policy?.max_output_seconds ?? 60"
             @apply="(next) => project.applyEdit(next)"
-            @text="(overlayId, next) => project.editText(overlayId, next)"
+            @text="(blockId, next) => project.editText(blockId, next)"
             @deselect="selected = null"
+            @composition="(path, source) => project.applyComposition(path, source)"
           />
-        </SectionCard>
-      </div>
+        </fieldset>
+      </aside>
     </div>
+    <Teleport to="#ai-video-timeline" defer>
+      <EditTimeline
+        :document="document"
+        :media="media"
+        :files="compositionFiles"
+        :inventories="inventories"
+        :time="time"
+        :playing="playing"
+        :can-undo="!!history.length"
+        :busy="busy"
+        :max-seconds="policy?.max_output_seconds ?? 60"
+        :selected="selected"
+        :show-cuts="showCuts"
+        :cut-times="cutTimes"
+        :beats="beats"
+        :peaks="peaks"
+        @select="(id) => (selected = id)"
+        @seek="seek"
+        @play="togglePlay"
+        @undo="project.undo()"
+        @apply="(next) => project.applyEdit(next)"
+      >
+        <template v-if="cutTimes.length" #controls>
+          <span class="text-xs text-fg-subtle">Example cuts</span>
+          <Switch v-model="showCuts" aria-label="Show example cuts" />
+        </template>
+      </EditTimeline>
+    </Teleport>
   </div>
 </template>

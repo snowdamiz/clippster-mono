@@ -45,20 +45,35 @@ export class HyperframesWorkspace {
 
   static async open(sessionId: number): Promise<HyperframesWorkspace> {
     const projectDir = await invoke<string>('hyperframes_workspace_dir', { sessionId });
-    const { gsapSrc, fonts } = await hyperframesRequest<{ gsapSrc: string; fonts: string[] }>('initWorkspace', { projectDir });
+    const { gsapSrc, fonts } = await hyperframesRequest<{ gsapSrc: string; fonts: string[] }>(
+      'initWorkspace',
+      { projectDir }
+    );
     return new HyperframesWorkspace(projectDir, gsapSrc, fonts);
   }
 
   linkMedia(items: Array<{ id: string; path: string }>) {
-    return hyperframesRequest<{ linked: Array<{ id: string; src: string }> }>('linkMedia', { projectDir: this.projectDir, items });
+    return hyperframesRequest<{ linked: Array<{ id: string; src: string }> }>('linkMedia', {
+      projectDir: this.projectDir,
+      items,
+    });
   }
 
   writeFile(path: string, content: string) {
-    return hyperframesRequest<{ path: string; bytes: number }>('writeFile', { projectDir: this.projectDir, path, content });
+    return hyperframesRequest<{ path: string; bytes: number }>('writeFile', {
+      projectDir: this.projectDir,
+      path,
+      content,
+    });
   }
 
   async readFile(path: string): Promise<string> {
-    return (await hyperframesRequest<{ content: string }>('readFile', { projectDir: this.projectDir, path })).content;
+    return (
+      await hyperframesRequest<{ content: string }>('readFile', {
+        projectDir: this.projectDir,
+        path,
+      })
+    ).content;
   }
 
   deleteFile(path: string) {
@@ -66,11 +81,14 @@ export class HyperframesWorkspace {
   }
 
   async listFiles(): Promise<string[]> {
-    return (await hyperframesRequest<{ files: string[] }>('listFiles', { projectDir: this.projectDir })).files;
+    return (
+      await hyperframesRequest<{ files: string[] }>('listFiles', { projectDir: this.projectDir })
+    ).files;
   }
 
   async serve(): Promise<string> {
-    return (await hyperframesRequest<{ url: string }>('serve', { projectDir: this.projectDir })).url;
+    return (await hyperframesRequest<{ url: string }>('serve', { projectDir: this.projectDir }))
+      .url;
   }
 
   lint(options?: RequestOptions) {
@@ -78,26 +96,41 @@ export class HyperframesWorkspace {
   }
 
   check(options?: RequestOptions) {
-    return hyperframesRequest<CheckReport>('check', { projectDir: this.projectDir, samples: 9 }, options);
+    return hyperframesRequest<CheckReport>(
+      'check',
+      { projectDir: this.projectDir, samples: 9 },
+      options
+    );
   }
 
   /** Stills at exact times; with `against`, also the reference frame at each time and a pair sheet. */
   snapshot(times: number[], outDir: string, against?: string, options?: RequestOptions) {
-    return hyperframesRequest<{ outDir: string; files: string[] }>('snapshot', { projectDir: this.projectDir, times, outDir, against }, options);
+    return hyperframesRequest<{ outDir: string; files: string[] }>(
+      'snapshot',
+      { projectDir: this.projectDir, times, outDir, against },
+      options
+    );
   }
 
-  render(outputPath: string, options: RequestOptions & { fps?: number; crf?: number } = {}) {
-    const { fps, crf, ...request } = options;
-    return hyperframesRequest<{ outputPath: string; bytes: number; duration: number | null; warnings: string[] }>(
-      'render',
-      { projectDir: this.projectDir, outputPath, fps, crf },
-      request
-    );
+  render(
+    outputPath: string,
+    options: RequestOptions & { fps?: number; crf?: number; files?: Record<string, string> } = {}
+  ) {
+    const { fps, crf, files, ...request } = options;
+    return hyperframesRequest<{
+      outputPath: string;
+      bytes: number;
+      duration: number | null;
+      warnings: string[];
+    }>('render', { projectDir: this.projectDir, outputPath, fps, crf, files }, request);
   }
 }
 
 /** Beat grid for any audio or video file. */
-export function detectBeats(audioPath: string, options: RequestOptions & { start?: number; duration?: number } = {}) {
+export function detectBeats(
+  audioPath: string,
+  options: RequestOptions & { start?: number; duration?: number } = {}
+) {
   const { start, duration, ...request } = options;
   return hyperframesRequest<BeatGrid>('beats', { audioPath, start, duration }, request);
 }

@@ -15,13 +15,13 @@ fn native_command_manifest() -> tauri_build::AppManifest {
         .iter()
         .map(|path| path.rsplit("::").next().unwrap().trim())
         .collect();
-    let pip_commands = ["get_platform", "save_window_size"];
+    let pip_commands = ["get_platform"];
     for command in pip_commands {
         assert!(commands.contains(&command), "Unregistered PIP command: {command}");
     }
     let permission_file = PathBuf::from(env::var("OUT_DIR").unwrap()).join("native-commands.toml");
     let permission = format!(
-        "[[permission]]\nidentifier = \"allow-native-commands\"\ndescription = \"Commands registered for the main Clippster UI.\"\ncommands.allow = {:?}\n\n[[permission]]\nidentifier = \"allow-pip-native-commands\"\ndescription = \"Platform and window-size commands used by PIP.\"\ncommands.allow = {:?}\n",
+        "[[permission]]\nidentifier = \"allow-native-commands\"\ndescription = \"Commands registered for the main Clippster UI.\"\ncommands.allow = {:?}\n\n[[permission]]\nidentifier = \"allow-pip-native-commands\"\ndescription = \"Platform command used by PIP.\"\ncommands.allow = {:?}\n",
         commands, pip_commands
     );
     fs::write(&permission_file, permission).expect("Failed to generate native command permissions");

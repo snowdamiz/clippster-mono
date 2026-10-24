@@ -1,12 +1,29 @@
 <template>
-  <PageLayout title="AI Video Editor" description="Make a video like any example, from your own clips" :show-header="true" :icon="Wand2">
+  <PageLayout
+    title="AI Video Editor"
+    description="Motion graphics videos from a description, an example, your clips, or all three"
+    :show-header="true"
+    :icon="Wand2"
+  >
     <template #actions>
-      <Button variant="primary" @click="createProject"><Plus /> New project</Button>
+      <Button variant="primary" :loading="creating" @click="showCreateDialog = true">
+        <Plus v-if="!creating" />
+        New project
+      </Button>
     </template>
 
     <template v-if="sessions.length > 0" #toolbar>
-      <SelectionBar v-if="selected.size > 0" :count="selected.size" :total="filteredSessions.length" @clear="clearSelection" @select-all="selectAll">
-        <Button variant="destructive-soft" size="sm" @click="confirmDelete([...selected])"><Trash2 /> Delete</Button>
+      <SelectionBar
+        v-if="selected.size > 0"
+        :count="selected.size"
+        :total="filteredSessions.length"
+        @clear="clearSelection"
+        @select-all="selectAll"
+      >
+        <Button variant="destructive-soft" size="sm" @click="confirmDelete([...selected])">
+          <Trash2 />
+          Delete
+        </Button>
       </SelectionBar>
       <template v-else>
         <SearchField v-model="searchQuery" placeholder="Search projects…" class="min-w-[120px] max-w-64 flex-1" />
@@ -35,7 +52,10 @@
           @toggle-select="toggleSelected(s.id)"
         >
           <template v-if="s.status === 'working'" #badges>
-            <MediaChip><Loader2 class="animate-spin" /> Working</MediaChip>
+            <MediaChip>
+              <Loader2 class="animate-spin" />
+              Working
+            </MediaChip>
           </template>
           <template #actions>
             <Button
@@ -53,7 +73,12 @@
       </template>
     </ProjectGrid>
 
-    <EmptyState v-else-if="sessions.length > 0" :icon="SearchX" title="No matching projects" description="Try a different search.">
+    <EmptyState
+      v-else-if="sessions.length > 0"
+      :icon="SearchX"
+      title="No matching projects"
+      description="Try a different search."
+    >
       <Button variant="secondary" @click="searchQuery = ''">Clear search</Button>
     </EmptyState>
 
@@ -61,40 +86,15 @@
       v-else
       :icon="Wand2"
       title="No AI video projects yet"
-      description="Drop in your clips, show an example video, and the AI edits them the same way."
+      description="Describe a video or show one to copy. Add your clips, images and music, and the AI designs and edits it."
     >
-      <Button variant="secondary" @click="createProject"><Plus /> New project</Button>
+      <Button variant="secondary" @click="showCreateDialog = true">
+        <Plus />
+        New project
+      </Button>
     </EmptyState>
 
-    <Teleport to="body">
-      <div
-        v-if="editorOpen"
-        class="fixed inset-x-0 bottom-0 top-[var(--titlebar-height)] z-[10000] flex animate-fade-in flex-col overflow-hidden bg-panel text-fg"
-      >
-        <SessionHeader :title="project.session.value?.name || 'Untitled project'" :icon="Wand2" back-label="Back to projects" @back="requestClose">
-          <template #badge>
-            <Badge variant="brand">Beta</Badge>
-          </template>
-          <template #actions>
-            <Button v-if="project.stage.value === 'result'" variant="ghost" size="sm" :disabled="!!project.running.value" @click="project.editingSetup.value = true">
-              Change clips or example
-            </Button>
-            <Button variant="ghost" size="icon-sm" title="Close" aria-label="Close" @click="requestClose">
-              <X />
-            </Button>
-          </template>
-        </SessionHeader>
-
-        <div class="min-h-0 flex-1 overflow-y-auto">
-          <div v-if="project.loading.value || !project.session.value" class="grid h-full place-items-center">
-            <Loader2 class="size-6 animate-spin text-fg-subtle" />
-          </div>
-          <StartStage v-else-if="project.stage.value === 'start'" />
-          <WorkingStage v-else-if="project.stage.value === 'working'" />
-          <ResultStage v-else />
-        </div>
-      </div>
-    </Teleport>
+    <CreateAIVideoProjectDialog v-model="showCreateDialog" :is-creating="creating" @confirm="createProject" />
 
     <ConfirmationModal
       :show="!!deleteTarget"
@@ -106,29 +106,17 @@
       @close="deleteTarget = null"
       @confirm="performDelete"
     />
-
-    <ConfirmationModal
-      :show="confirmLeave"
-      title="Stop the AI?"
-      message="The AI is still working on this video. If you leave now it stops, and you aren't charged for the unfinished edit."
-      suffix=""
-      confirm-text="Stop and leave"
-      variant="destructive"
-      @close="confirmLeave = false"
-      @confirm="closeProject"
-    />
   </PageLayout>
 </template>
 
 <script setup lang="ts">
-  import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
-  import { Loader2, Plus, SearchX, Trash2, Wand2, X } from 'lucide-vue-next';
+  import { computed, onMounted, ref } from 'vue';
+  import { useRouter } from 'vue-router';
+  import { Loader2, Plus, SearchX, Trash2, Wand2 } from 'lucide-vue-next';
   import ConfirmationModal from '@/components/ConfirmationModal.vue';
   import CustomDropdown from '@/components/CustomDropdown.vue';
   import PageLayout from '@/components/PageLayout.vue';
   import ProjectGrid from '@/components/create/ProjectGrid.vue';
-  import SessionHeader from '@/components/create/SessionHeader.vue';
-  import { Badge } from '@/components/ui/badge';
   import { Button } from '@/components/ui/button';
   import { EmptyState } from '@/components/ui/empty-state';
   import { MediaChip, MediaTile } from '@/components/ui/media-tile';
@@ -137,23 +125,19 @@
   import { useToast } from '@/composables/useToast';
   import { toDate } from '@/utils/dateTimeUtils';
   import * as videoApi from '@/ai-video/api';
-  import ResultStage from '@/ai-video/components/ResultStage.vue';
-  import StartStage from '@/ai-video/components/StartStage.vue';
-  import WorkingStage from '@/ai-video/components/WorkingStage.vue';
-  import { provideProject } from '@/ai-video/projectContext';
+  import CreateAIVideoProjectDialog from '@/ai-video/components/CreateAIVideoProjectDialog.vue';
+  import { stashStartingSources, type StartingSources } from '@/ai-video/startingSources';
   import type { SessionStatus, SessionSummary } from '@/ai-video/types';
-  import { useAIVideoProject } from '@/ai-video/useAIVideoProject';
 
   const STATUS_LABELS: Record<SessionStatus, string> = { draft: 'Draft', working: 'Working', ready: 'Ready' };
 
   const toast = useToast();
-  const project = useAIVideoProject();
-  provideProject(project);
+  const router = useRouter();
 
   const sessions = ref<SessionSummary[]>([]);
   const loadingSessions = ref(true);
-  const editorOpen = ref(false);
-  const confirmLeave = ref(false);
+  const showCreateDialog = ref(false);
+  const creating = ref(false);
   const selected = ref(new Set<number>());
   const deleteTarget = ref<{ ids: number[]; message: string } | null>(null);
 
@@ -242,30 +226,25 @@
     if (deleted.size < target.ids.length) toast.error("Couldn't delete every project", 'Please try again.');
   }
 
-  // -- Editor ----------------------------------------------------------------------------
+  // -- Opening -----------------------------------------------------------------------------
 
-  async function openProject(id: number) {
-    editorOpen.value = true;
-    await project.open(id);
-    if (!project.session.value) editorOpen.value = false;
+  function openProject(id: number) {
+    void router.push({ path: '/ai-video/session', query: { session: String(id) } });
   }
 
-  async function createProject() {
-    if (await project.create()) editorOpen.value = true;
-  }
-
-  function requestClose() {
-    if (project.running.value) confirmLeave.value = true;
-    else closeProject();
-  }
-
-  function closeProject() {
-    confirmLeave.value = false;
-    project.close();
-    editorOpen.value = false;
-    void loadSessions();
+  async function createProject({ name, ...sources }: { name: string } & StartingSources) {
+    creating.value = true;
+    try {
+      const created = await videoApi.createSession(name ? { name } : {});
+      if (sources.files.length || sources.example) stashStartingSources(created.id, sources);
+      showCreateDialog.value = false;
+      openProject(created.id);
+    } catch (error) {
+      toast.error("Couldn't create the project", videoApi.apiErrorMessage(error));
+    } finally {
+      creating.value = false;
+    }
   }
 
   onMounted(loadSessions);
-  onBeforeUnmount(() => project.close());
 </script>

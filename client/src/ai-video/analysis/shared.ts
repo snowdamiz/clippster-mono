@@ -36,7 +36,10 @@ export async function writeJson(path: string, data: unknown): Promise<void> {
 }
 
 /** Group consecutive ranges into chunks of at least `targetSeconds`, split only at range boundaries. */
-export function groupIntoChunks<T extends { start: number; end: number }>(ranges: T[], targetSeconds: number): T[][] {
+export function groupIntoChunks<T extends { start: number; end: number }>(
+  ranges: T[],
+  targetSeconds: number
+): T[][] {
   const chunks: T[][] = [];
   let current: T[] = [];
   for (const range of ranges) {
@@ -51,8 +54,16 @@ export function groupIntoChunks<T extends { start: number; end: number }>(ranges
 }
 
 /** Extract `[start, end)` of a video as a small 480p MP4 and return it as base64. */
-export async function extractChunkBase64(videoPath: string, start: number, end: number): Promise<string> {
-  const tempPath = await invoke<string>('extract_video_chunk_for_analysis', { videoPath, startTimeSecs: start, endTimeSecs: end });
+export async function extractChunkBase64(
+  videoPath: string,
+  start: number,
+  end: number
+): Promise<string> {
+  const tempPath = await invoke<string>('extract_video_chunk_for_analysis', {
+    videoPath,
+    startTimeSecs: start,
+    endTimeSecs: end,
+  });
   try {
     return bytesToBase64(await readFile(tempPath));
   } finally {
@@ -63,7 +74,12 @@ export async function extractChunkBase64(videoPath: string, start: number, end: 
 /** Run `measure_video` with progress; aborting the signal cancels the ffmpeg pass. */
 export async function measureVideo(
   path: string,
-  options: { maxShotSeconds: number | null; keyframes: boolean; onProgress?: (event: ProgressEvent) => void; signal?: AbortSignal }
+  options: {
+    maxShotSeconds: number | null;
+    keyframes: boolean;
+    onProgress?: (event: ProgressEvent) => void;
+    signal?: AbortSignal;
+  }
 ): Promise<VideoMeasurement> {
   throwIfAborted(options.signal);
   const jobId = crypto.randomUUID();
@@ -85,7 +101,11 @@ export async function measureVideo(
 }
 
 /** Run `tasks` with at most `limit` in flight, preserving result order. */
-export async function mapLimit<T, R>(items: T[], limit: number, task: (item: T, index: number) => Promise<R>): Promise<R[]> {
+export async function mapLimit<T, R>(
+  items: T[],
+  limit: number,
+  task: (item: T, index: number) => Promise<R>
+): Promise<R[]> {
   const results = new Array<R>(items.length);
   let next = 0;
   const workers = Array.from({ length: Math.min(limit, items.length) }, async () => {

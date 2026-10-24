@@ -2,15 +2,18 @@ defmodule ClippsterServer.AI.OpenRouterChat do
   @moduledoc """
   Minimal OpenRouter Chat Completions client shared by the AI video modules.
 
-  Retries network errors, 429 and 5xx responses with backoff, and normalises OpenRouter's usage
-  block (prompt cache reads/writes and USD cost) into `AiUsageLog` attributes.
+  Retries network errors, 429 and 5xx responses with exponential backoff, and normalises
+  OpenRouter's usage block (prompt cache reads/writes and USD cost) into `AiUsageLog` attributes.
   """
 
   require Logger
 
   @url "https://openrouter.ai/api/v1/chat/completions"
-  @max_attempts 3
+  # Large uploads occasionally have their TLS connection killed mid-body (`bad_record_mac`, closed
+  # socket) in short bursts, so retries span ~20 s and each one opens a new connection.
+  @max_attempts 5
   @default_timeout_ms 300_000
+  @network_error "The connection to the AI service dropped. Please try again."
 
   @type result :: %{message: map(), finish_reason: String.t() | nil, usage: map()}
 
@@ -29,7 +32,8 @@ defmodule ClippsterServer.AI.OpenRouterChat do
     response =
       http.(@url, Jason.encode!(payload), headers(api_key, Keyword.get(opts, :title)),
         recv_timeout: timeout,
-        timeout: timeout
+        timeout: timeout,
+        hackney: if(Keyword.get(opts, :fresh_connection), do: [pool: false], else: [])
       )
 
     case response do
@@ -43,13 +47,14 @@ defmodule ClippsterServer.AI.OpenRouterChat do
         {:error, "OpenRouter #{status}: #{snippet(body)}"}
 
       {:error, %{reason: reason}} ->
-        retry(payload, api_key, opts, attempt, "Network error: #{inspect(reason)}")
+        Logger.warning("[OpenRouterChat] attempt #{attempt} network error: #{inspect(reason)}")
+        retry(payload, api_key, Keyword.put(opts, :fresh_connection, true), attempt, @network_error)
     end
   end
 
   defp retry(payload, api_key, opts, attempt, reason) when attempt < @max_attempts do
     Logger.warning("[OpenRouterChat] attempt #{attempt} failed (#{reason}), retrying")
-    Process.sleep(Keyword.get(opts, :backoff_ms, 1_500) * attempt)
+    Process.sleep(Keyword.get(opts, :backoff_ms, 1_500) * 2 ** (attempt - 1))
     request(payload, api_key, opts, attempt + 1)
   end
 

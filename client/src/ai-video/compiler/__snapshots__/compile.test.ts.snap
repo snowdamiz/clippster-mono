@@ -24,18 +24,19 @@ exports[`compileDocument > is deterministic 1`] = `
     </style>
   </head>
   <body>
-    <div id="root" data-composition-id="main" data-start="0" data-duration="8" data-width="1920" data-height="1080">
+    <div id="root" data-composition-id="main" data-start="0" data-duration="8" data-width="1920" data-height="1080" data-fps="30">
       <div id="shot-s1-frame" class="frame"><video id="shot-s1" class="clip" data-slot-id="s1" data-ref-shot-id="0" data-start="0" data-duration="2" data-track-index="0" src="assets/media/m1.mp4" data-media-start="5" muted playsinline></video></div>
       <div id="shot-s2-frame" class="frame"><video id="shot-s2" class="clip" data-slot-id="s2" data-ref-shot-id="0" data-start="2" data-duration="2" data-track-index="0" src="assets/media/m1.mp4" data-media-start="10" data-playback-rate="2" muted playsinline></video></div>
       <div id="shot-s3-frame" class="frame"><img id="shot-s3" class="clip" data-slot-id="s3" data-start="3.6" data-duration="2.4" data-track-index="0" src="assets/media/p1.jpg" alt="" /></div>
       <div id="shot-s4-frame" class="frame"><video id="shot-s4" class="clip" data-slot-id="s4" data-ref-shot-id="0" data-start="6" data-duration="2" data-track-index="0" src="assets/media/m1.mp4" data-media-start="0.1" muted playsinline></video></div>
       <div id="fx-dip" class="fx"></div>
       <div id="fx-flash" class="fx"></div>
-      <div id="ov-t1" class="overlay overlay-text" data-composition-id="title" data-composition-src="compositions/title.html" data-start="0.5" data-duration="2" data-track-index="3" data-width="1920" data-height="1080" data-variable-values="{&quot;text&quot;:&quot;IT&#39;S ON&quot;}"></div>
-      <div id="ov-g1" class="overlay overlay-graphics" data-composition-id="flash" data-composition-src="compositions/flash.html" data-start="1.9" data-duration="0.3" data-track-index="2" data-width="1920" data-height="1080"></div>
+      <div id="ov-t1" class="overlay overlay-text" data-composition-id="title" data-composition-src="compositions/title.html" data-start="0.5" data-duration="2" data-track-index="3" data-width="1920" data-height="1080" data-variable-values="{&quot;text&quot;:&quot;IT&#39;S ON&quot;,&quot;__editorOwner&quot;:&quot;t1&quot;,&quot;__editorDuration&quot;:2}"></div>
+      <div id="ov-g1" class="overlay overlay-graphics" data-composition-id="flash" data-composition-src="compositions/flash.html" data-start="1.9" data-duration="0.3" data-track-index="2" data-width="1920" data-height="1080" data-variable-values="{&quot;__editorOwner&quot;:&quot;g1&quot;,&quot;__editorDuration&quot;:0.3}"></div>
       <audio id="music" data-timeline-role="music" data-start="0" data-duration="3" data-media-start="1" data-track-index="10" data-volume="1" data-automation="{&quot;version&quot;:1,&quot;lanes&quot;:[{&quot;target&quot;:&quot;volume&quot;,&quot;points&quot;:[{&quot;t&quot;:0,&quot;v&quot;:0.8},{&quot;t&quot;:1.5,&quot;v&quot;:0.8},{&quot;t&quot;:3,&quot;v&quot;:0}]}]}" src="assets/media/a1.mp3"></audio>
     </div>
     <script>
+      window.__timelines ??= {};
       const tl = gsap.timeline({ paused: true });
       tl.set("#fx-flash", { opacity: 0 }, 0);
       tl.set("#fx-dip", { opacity: 0 }, 0);

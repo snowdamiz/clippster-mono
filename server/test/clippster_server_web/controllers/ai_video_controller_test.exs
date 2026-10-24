@@ -47,19 +47,56 @@ defmodule ClippsterServerWeb.AIVideoControllerTest do
   end
 
   test "creates a project and validates its fields", %{conn: conn} do
-    session = conn |> post(~p"/api/ai/video/sessions", %{media_items: @media, request: "Match it"}) |> json_response(200)
+    session = conn |> post(~p"/api/ai/video/sessions", %{media_items: @media, name: "Launch"}) |> json_response(200)
     assert session["status"] == "draft"
+    assert session["name"] == "Launch"
     assert session["media_items"] == @media
 
     bad = conn |> patch(~p"/api/ai/video/sessions/#{session["id"]}", %{composition_files: %{"../index.html" => "x"}})
     assert json_response(bad, 422)["error"] =~ "compositions/"
+
+    square = conn |> patch(~p"/api/ai/video/sessions/#{session["id"]}", %{aspect_ratio: "1:1"}) |> json_response(200)
+    assert square["aspect_ratio"] == "1:1"
+    assert conn |> patch(~p"/api/ai/video/sessions/#{session["id"]}", %{aspect_ratio: "3:2"}) |> json_response(422)
   end
 
-  test "generate needs an example; a finished run saves the edit", %{conn: conn, user: user} do
-    %{"id" => id} = conn |> post(~p"/api/ai/video/sessions", %{media_items: @media}) |> json_response(200)
+  test "replacing or removing the example forgets what was learned from it", %{conn: conn} do
+    %{"id" => id} =
+      conn |> post(~p"/api/ai/video/sessions", %{reference: %{"path" => "a.mp4", "duration" => 12.5}}) |> json_response(200)
 
-    no_example = conn |> post(~p"/api/ai/video/sessions/#{id}/runs", %{kind: "generate", request: "Go"})
-    assert json_response(no_example, 422)["error"] =~ "example"
+    {:ok, _} =
+      ClippsterServer.AI.VideoSessions.get_session!(id)
+      |> ClippsterServer.AI.VideoSessions.update_session(%{reference_blueprint: %{"shots" => []}, reference_labels: %{"0" => []}})
+
+    same = conn |> patch(~p"/api/ai/video/sessions/#{id}", %{reference: %{"path" => "a.mp4", "duration" => 12.5}, name: "Kept"})
+    assert json_response(same, 200)["reference_blueprint"] == %{"shots" => []}
+
+    removed = conn |> patch(~p"/api/ai/video/sessions/#{id}", %{reference: nil}) |> json_response(200)
+    assert removed["reference"] == nil
+    assert removed["reference_blueprint"] == nil
+    assert ClippsterServer.AI.VideoSessions.get_session!(id).reference_labels == %{}
+  end
+
+  test "generate from a description alone; an example still has to be analyzed", %{conn: conn} do
+    %{"id" => id} = conn |> post(~p"/api/ai/video/sessions", %{}) |> json_response(200)
+
+    blank = conn |> post(~p"/api/ai/video/sessions/#{id}/runs", %{kind: "generate", request: "  "})
+    assert json_response(blank, 422)["error"] =~ "Describe"
+
+    conn |> patch(~p"/api/ai/video/sessions/#{id}", %{reference: %{"path" => "a.mp4"}}) |> json_response(200)
+    unanalyzed = conn |> post(~p"/api/ai/video/sessions/#{id}/runs", %{kind: "generate", request: "A launch video"})
+    assert json_response(unanalyzed, 422)["error"] =~ "analyzed"
+
+    conn |> patch(~p"/api/ai/video/sessions/#{id}", %{reference: nil}) |> json_response(200)
+
+    %{"run" => run} =
+      conn |> post(~p"/api/ai/video/sessions/#{id}/runs", %{kind: "generate", request: "A launch video"}) |> json_response(200)
+
+    assert run["kind"] == "generate"
+  end
+
+  test "a finished run saves the edit and revisions refund when nothing changed", %{conn: conn, user: user} do
+    %{"id" => id} = conn |> post(~p"/api/ai/video/sessions", %{media_items: @media}) |> json_response(200)
 
     {:ok, _} =
       ClippsterServer.AI.VideoSessions.get_session!(id)
@@ -114,5 +151,9 @@ defmodule ClippsterServerWeb.AIVideoControllerTest do
     session = conn |> get(~p"/api/ai/video/sessions/#{id}") |> json_response(200)
     assert session["status"] == "draft"
     assert session["running_run"] == nil
+    assert [%{"role" => "user", "content" => "Go"}, %{"role" => "assistant", "content" => "Stopped. You weren't charged."}] = session["messages"]
+
+    conn |> post(~p"/api/ai/video/runs/#{run["id"]}/fail", %{reason: "Cancelled"}) |> json_response(200)
+    assert length((conn |> get(~p"/api/ai/video/sessions/#{id}") |> json_response(200))["messages"]) == 2
   end
 end

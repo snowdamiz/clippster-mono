@@ -1,8 +1,9 @@
 defmodule ClippsterServer.AI.VideoRun do
   @moduledoc """
-  One paid AI video operation: generating an edit, revising it, or analysing an example.
+  One AI video operation: generating an edit, revising it, analysing an example, or the free
+  planning chat before a build (`plan`, which also pays for labelling the user's clips).
 
-  The run owns the agent conversation so the cached prompt prefix stays byte-identical between
+  An agent run owns its conversation so the cached prompt prefix stays byte-identical between
   turns and the client cannot rewrite history. `cost_usd` accumulates the provider cost of every
   model call made for the run, which the admin economics report compares with `credits_charged`.
   """
@@ -10,7 +11,7 @@ defmodule ClippsterServer.AI.VideoRun do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @kinds ~w(generate revise reference)
+  @kinds ~w(generate revise reference plan)
   @statuses ~w(running completed failed)
 
   schema "ai_video_runs" do
@@ -58,5 +59,6 @@ defmodule ClippsterServer.AI.VideoRun do
     |> foreign_key_constraint(:session_id)
     |> foreign_key_constraint(:user_id)
     |> unique_constraint(:session_id, name: :ai_video_runs_one_running_agent_run)
+    |> unique_constraint(:session_id, name: :ai_video_runs_one_open_plan_run)
   end
 end

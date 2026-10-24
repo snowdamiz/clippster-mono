@@ -11,7 +11,9 @@
     <div class="relative aspect-video bg-surface-hover">
       <img v-if="thumbnail" :src="thumbnail" alt="" class="absolute inset-0 size-full object-cover" />
       <slot name="preview" />
-      <span class="tabular absolute bottom-1 right-1 rounded-[3px] bg-panel px-1 py-px text-2xs text-fg-muted">{{ sub }}</span>
+      <span class="tabular absolute bottom-1 right-1 rounded-[3px] bg-panel px-1 py-px text-2xs text-fg-muted">
+        {{ sub }}
+      </span>
     </div>
     <div class="flex items-center gap-1 px-1.5 py-1">
       <span class="min-w-0 flex-1 truncate text-xs text-fg" :title="label">{{ label }}</span>

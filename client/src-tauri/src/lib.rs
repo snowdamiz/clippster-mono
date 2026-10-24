@@ -915,6 +915,30 @@ pub fn run() {
         .manage(video::VideoFrameState::new()) // Re-enabled VideoFrameState manage initialization
         .manage(std::sync::Mutex::new(studio::recorder::StudioRecorderState::default()))
         .setup(|app| {
+            // Release builds have no console, so a panic would otherwise close the app silently.
+            if let Ok(dir) = app.path().app_data_dir() {
+                let crash_log = dir.join("crash.log");
+                let app_version = app.package_info().version.to_string();
+                let default_hook = std::panic::take_hook();
+                std::panic::set_hook(Box::new(move |info| {
+                    use std::io::Write;
+                    let ts = std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map(|d| d.as_secs())
+                        .unwrap_or(0);
+                    let thread = std::thread::current();
+                    let backtrace = std::backtrace::Backtrace::force_capture();
+                    if let Ok(mut f) = std::fs::OpenOptions::new().create(true).append(true).open(&crash_log) {
+                        let _ = writeln!(
+                            f,
+                            "[{ts}] v{app_version} panic on thread '{}': {info}\n{backtrace}\n",
+                            thread.name().unwrap_or("<unnamed>"),
+                        );
+                    }
+                    default_hook(info);
+                }));
+            }
+
             println!("[Rust] Application setup complete");
             println!("[Rust] SQL plugin should be registered");
 
@@ -993,39 +1017,48 @@ pub fn run() {
             const DEFAULT_MAIN_WINDOW_WIDTH: f64 = 1120.0;
             const DEFAULT_MAIN_WINDOW_HEIGHT: f64 = 680.0;
 
-            // Load saved window size or use defaults
-            let (width, height) = match ui_utils::load_window_size(app.handle().clone()) {
-                Ok(Some(size)) if size.width >= 800.0 && size.height >= 600.0 => {
-                    println!("[Rust] Restoring window size: {}x{}", size.width, size.height);
-                    (size.width, size.height)
+            let saved_state = ui_utils::load_window_state(app.handle())
+                .map_err(|e| println!("[Rust] Failed to load window state: {}", e))
+                .ok()
+                .flatten();
+
+            let (width, height) = match &saved_state {
+                Some(s) if s.width >= 800.0 && s.height >= 600.0 => {
+                    println!("[Rust] Restoring window size: {}x{}", s.width, s.height);
+                    (s.width, s.height)
                 }
-                Ok(Some(size)) => {
-                    println!(
-                        "[Rust] Ignoring invalid saved window size: {}x{}, using defaults",
-                        size.width, size.height
-                    );
-                    (DEFAULT_MAIN_WINDOW_WIDTH, DEFAULT_MAIN_WINDOW_HEIGHT)
-                }
-                _ => {
-                    println!(
-                        "[Rust] Using default window size: {}x{}",
-                        DEFAULT_MAIN_WINDOW_WIDTH, DEFAULT_MAIN_WINDOW_HEIGHT
-                    );
-                    (DEFAULT_MAIN_WINDOW_WIDTH, DEFAULT_MAIN_WINDOW_HEIGHT)
-                }
+                _ => (DEFAULT_MAIN_WINDOW_WIDTH, DEFAULT_MAIN_WINDOW_HEIGHT),
             };
 
-            let window = WebviewWindowBuilder::new(app, "main", url)
+            let saved_position = saved_state.as_ref().and_then(|s| match (s.x, s.y) {
+                (Some(x), Some(y)) if ui_utils::is_position_on_screen(app.handle(), x, y) => {
+                    Some(tauri::PhysicalPosition { x, y })
+                }
+                _ => None,
+            });
+
+            // Built hidden so a restored position/maximize is applied before the first frame;
+            // shown unconditionally below, independent of frontend initialization.
+            let mut builder = WebviewWindowBuilder::new(app, "main", url)
                 .title("Clippster")
                 .inner_size(width, height)
                 .min_inner_size(800.0, 600.0)
-                .prevent_overflow()
                 .decorations(false)
                 .transparent(true)
-                // Window visibility must not depend on successful frontend initialization.
-                .visible(true)
-                .build()
-                .expect("failed to create main window");
+                .visible(false);
+            if saved_position.is_none() {
+                builder = builder.center().prevent_overflow();
+            }
+            let window = builder.build().expect("failed to create main window");
+
+            if let Some(position) = saved_position {
+                println!("[Rust] Restoring window position: {},{}", position.x, position.y);
+                let _ = window.set_position(tauri::Position::Physical(position));
+            }
+            if saved_state.as_ref().is_some_and(|s| s.maximized) {
+                let _ = window.maximize();
+            }
+            window.show().expect("failed to show main window");
 
             // Enable devtools in production for debugging
             #[cfg(feature = "devtools")]

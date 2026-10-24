@@ -8,7 +8,8 @@
 
   const total = computed(() => props.blueprint.duration || 1);
   const sections = computed(() => props.blueprint.sections ?? []);
-  const isHero = (start: number) => !!props.blueprint.hero && start >= props.blueprint.hero.start && start < props.blueprint.hero.end;
+  const isHero = (start: number) =>
+    !!props.blueprint.hero && start >= props.blueprint.hero.start && start < props.blueprint.hero.end;
 </script>
 
 <template>
@@ -18,7 +19,10 @@
         v-for="section in sections"
         :key="`${section.name}-${section.start}`"
         class="absolute border-l border-line pl-1"
-        :style="{ left: `${(section.start / total) * 100}%`, width: `${((section.end - section.start) / total) * 100}%` }"
+        :style="{
+          left: `${(section.start / total) * 100}%`,
+          width: `${((section.end - section.start) / total) * 100}%`,
+        }"
       >
         <span class="block truncate whitespace-nowrap text-2xs text-fg-subtle">{{ section.name }}</span>
       </div>

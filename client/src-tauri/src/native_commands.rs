@@ -246,8 +246,7 @@ macro_rules! with_native_commands {
             // UI Utils commands
             ui_utils::setup_macos_titlebar,
             ui_utils::get_platform,
-            ui_utils::save_window_size,
-            ui_utils::load_window_size,
+            ui_utils::save_window_state,
 
             // File operations
             copy_file,

@@ -65,7 +65,7 @@ defmodule ClippsterServer.AI.VideoSessions do
         set: [
           source_index:
             fragment(
-              "jsonb_set(COALESCE(?, '{}'::jsonb), ARRAY[?::text], COALESCE(?, '{}'::jsonb)->? || jsonb_build_object(?::text, ?::jsonb), true)",
+              "jsonb_set(COALESCE(?, '{}'::jsonb), ARRAY[?::text], COALESCE(COALESCE(?, '{}'::jsonb)->?, '{}'::jsonb) || jsonb_build_object(?::text, ?::jsonb), true)",
               s.source_index,
               ^content_hash,
               s.source_index,

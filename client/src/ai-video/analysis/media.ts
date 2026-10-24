@@ -1,4 +1,5 @@
 import { convertFileSrc, invoke } from '@tauri-apps/api/core';
+import { open as openDialog } from '@tauri-apps/plugin-dialog';
 import type { MediaItem, MediaKind } from '../types';
 
 const THUMBNAIL_SIZE = 320;
@@ -26,6 +27,17 @@ export function fileName(path: string) {
   return path.split(/[\\/]/).pop() || path;
 }
 
+/** Native file dialog filtered to `extensions`; resolves to the chosen paths (empty when cancelled). */
+export async function pickFiles(
+  extensions: string[],
+  multiple: boolean,
+  name: string
+): Promise<string[]> {
+  const selected = await openDialog({ multiple, filters: [{ name, extensions }] });
+  if (!selected) return [];
+  return Array.isArray(selected) ? selected : [selected];
+}
+
 /** A file to add; library picks carry their display name. */
 export interface MediaFile {
   path: string;
@@ -33,7 +45,10 @@ export interface MediaFile {
 }
 
 function nextId(existing: MediaItem[]): () => string {
-  let counter = existing.reduce((max, item) => Math.max(max, Number(/^m(\d+)$/.exec(item.id)?.[1] ?? 0)), 0);
+  let counter = existing.reduce(
+    (max, item) => Math.max(max, Number(/^m(\d+)$/.exec(item.id)?.[1] ?? 0)),
+    0
+  );
   return () => `m${++counter}`;
 }
 
@@ -66,7 +81,9 @@ export async function importMediaFiles(
 
 /** Small inline JPEG of any local image (the asset protocol can't read arbitrary paths). */
 export function imageThumbnail(path: string): Promise<string> {
-  return invoke<string>('encode_image_for_ai', { path, maxDimension: THUMBNAIL_SIZE }).then((data) => `data:image/jpeg;base64,${data}`);
+  return invoke<string>('encode_image_for_ai', { path, maxDimension: THUMBNAIL_SIZE }).then(
+    (data) => `data:image/jpeg;base64,${data}`
+  );
 }
 
 /**
@@ -74,7 +91,9 @@ export function imageThumbnail(path: string): Promise<string> {
  * (outside the asset protocol scope), so videos get a frame written to app storage and photos a
  * small inline JPEG.
  */
-export function mediaThumbnail(item: Pick<MediaItem, 'kind' | 'path' | 'duration' | 'contentHash'>): Promise<string | null> {
+export function mediaThumbnail(
+  item: Pick<MediaItem, 'kind' | 'path' | 'duration' | 'contentHash'>
+): Promise<string | null> {
   if (item.kind === 'audio') return Promise.resolve(null);
   let thumbnail = thumbnails.get(item.contentHash);
   if (!thumbnail) {

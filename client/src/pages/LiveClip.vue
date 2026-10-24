@@ -470,7 +470,7 @@
   import { canAccessTokend } from '@/utils/tokendAccess';
   import { useAuthStore } from '@/stores/auth';
   import XBroadcastExplainerDialog from '@/components/XBroadcastExplainerDialog.vue';
-  import type { MonitoredStreamer } from '@/types/livestream';
+  import { parseLivestreamPlatform, type MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
 
@@ -1118,16 +1118,7 @@
         const monitored = monitoredStreamers.value.get(record.id);
         const session = activeSessions.value.get(record.id);
 
-        const platformMap: Record<string, Platform> = {
-          pumpfun: 'PumpFun',
-          kick: 'Kick',
-          twitch: 'Twitch',
-          youtube: 'YouTube',
-          rumble: 'Rumble',
-          twitter: 'Twitter',
-          tokend: 'Tokend',
-        };
-        const platform = platformMap[record.platform?.toLowerCase() || 'pumpfun'] || 'PumpFun';
+        const platform = parseLivestreamPlatform(record.platform) ?? 'PumpFun';
 
         // Clean display name for Rumble channels (remove c/ or user/ prefix)
         let displayName = record.display_name;
@@ -1513,14 +1504,7 @@
     profileImageUrl?: string,
     platform: string = 'pumpfun'
   ) {
-    const platformDisplay = 
-      platform === 'youtube' ? 'YouTube' : 
-      platform === 'rumble' ? 'Rumble' :
-      platform === 'twitter' ? 'Twitter' :
-      platform === 'tokend' ? 'Tokend' :
-      platform === 'kick' ? 'Kick' : 
-      platform === 'twitch' ? 'Twitch' : 
-      'PumpFun';
+    const platformDisplay = parseLivestreamPlatform(platform) ?? 'PumpFun';
     try {
       // Check if streamer already exists
       const existingStreamer = streamers.value.find(s => s.mintId === platformId && s.platform === platformDisplay);

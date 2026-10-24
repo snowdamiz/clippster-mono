@@ -1,17 +1,18 @@
 defmodule ClippsterServer.AI.VideoRuns do
   @moduledoc """
-  Paid AI video runs: credit charging and refunds, the stored agent conversation, and
-  per-run cost tracking for every model call.
+  AI video runs: credit charging and refunds, the stored agent conversation, the free planning
+  run, and per-run cost tracking for every model call.
   """
 
   import Ecto.Query, warn: false
   require Logger
 
   alias ClippsterServer.{AI, Credits, Repo}
-  alias ClippsterServer.AI.{OpenRouterChat, VideoGenerationPolicy, VideoRun, VideoSession}
+  alias ClippsterServer.AI.{OpenRouterChat, VideoGenerationPolicy, VideoRun, VideoSession, VideoSessions}
 
   # A run whose client vanished (app closed, crash) is failed and refunded after this long.
   @stale_after_seconds 20 * 60
+  @stale_reason "The app stopped responding before the edit finished."
 
   @doc "Charge for and open a generate/revise run. Only one may run per session at a time."
   def start_agent_run(user_id, %VideoSession{} = session, kind, request) when kind in ~w(generate revise) do
@@ -84,6 +85,68 @@ defmodule ClippsterServer.AI.VideoRuns do
     |> normalize_start(run.user_id)
   end
 
+  @doc """
+  The session's open planning run, opened on first use. Planning (and labelling clips for it) is
+  free, so only users who can pay for the build may plan, and only so many planning runs a day.
+  """
+  def open_plan_run(user_id, %VideoSession{} = session) do
+    case open_plan_run_for(session.id) do
+      %VideoRun{} = run -> {:ok, run}
+      nil -> create_plan_run(user_id, session)
+    end
+  end
+
+  defp create_plan_run(user_id, session) do
+    since = DateTime.add(DateTime.utc_now(), -86_400, :second)
+
+    plans_today =
+      VideoRun
+      |> where([r], r.user_id == ^user_id and r.kind == "plan" and r.inserted_at >= ^since)
+      |> Repo.aggregate(:count)
+
+    cond do
+      balance(user_id) < VideoGenerationPolicy.credit_cost("generate") ->
+        {:error, :insufficient_credits, balance(user_id)}
+
+      plans_today >= VideoGenerationPolicy.max_plan_runs_per_day() ->
+        {:error, :plan_limit}
+
+      true ->
+        %VideoRun{}
+        |> VideoRun.changeset(%{kind: "plan", status: "running", session_id: session.id, user_id: user_id})
+        |> Repo.insert()
+        |> case do
+          {:ok, run} -> {:ok, run}
+          # A parallel request opened it first.
+          {:error, _} = error -> if run = open_plan_run_for(session.id), do: {:ok, run}, else: error
+        end
+    end
+  end
+
+  defp open_plan_run_for(session_id) do
+    VideoRun
+    |> where([r], r.session_id == ^session_id and r.kind == "plan" and r.status == "running")
+    |> Repo.one()
+  end
+
+  @doc "Close the session's planning run once its video is being built."
+  def close_plan_run(session_id) do
+    VideoRun
+    |> where([r], r.session_id == ^session_id and r.kind == "plan" and r.status == "running")
+    |> Repo.update_all(set: [status: "completed", updated_at: now()])
+
+    :ok
+  end
+
+  @doc "Count one model reply against the run's turn cap."
+  def count_turn(%VideoRun{id: id}) do
+    VideoRun
+    |> where([r], r.id == ^id)
+    |> Repo.update_all(inc: [turns: 1], set: [updated_at: now()])
+
+    :ok
+  end
+
   def get_user_run(run_id, user_id) do
     VideoRun
     |> where([r], r.id == ^run_id and r.user_id == ^user_id)
@@ -137,31 +200,56 @@ defmodule ClippsterServer.AI.VideoRuns do
     |> Repo.update()
   end
 
-  @doc "Fail a run. Credits come back unless the model already delivered a finished edit."
+  @doc """
+  Fail a run. Credits come back unless the model already delivered a finished edit. A failed
+  generate or revise run answers the user's message in the chat, so a reopened project reads the
+  way it happened.
+  """
   def fail(%VideoRun{status: "running"} = run, reason) do
     refund? = is_nil(run.finish) and run.credits_charged > 0 and not run.refunded
     if refund?, do: refund(run)
 
-    run
-    |> VideoRun.changeset(%{
-      status: "failed",
-      error: String.slice(to_string(reason), 0, 2_000),
-      refunded: refund? or run.refunded
-    })
-    |> Repo.update()
+    with {:ok, failed} <-
+           run
+           |> VideoRun.changeset(%{
+             status: "failed",
+             error: String.slice(to_string(reason), 0, 2_000),
+             refunded: refund? or run.refunded
+           })
+           |> Repo.update() do
+      if failed.session_id && failed.kind in ~w(generate revise) do
+        {:ok, _} =
+          VideoSessions.create_message(failed.session_id, "assistant", failed_message(reason, failed.refunded), %{
+            "run_id" => failed.id,
+            "refunded" => failed.refunded
+          })
+      end
+
+      {:ok, failed}
+    end
   end
 
   def fail(%VideoRun{} = run, _reason), do: {:ok, run}
 
-  @doc "Fail and refund agent runs whose client stopped reporting back."
+  defp failed_message(reason, refunded?) do
+    charge = if refunded?, do: " You weren't charged.", else: ""
+
+    case reason do
+      "Cancelled" -> "Stopped." <> charge
+      reason when reason in ["Interrupted", @stale_reason] -> "That was interrupted before it finished." <> charge <> " Ask again whenever you're ready."
+      _ -> "Something went wrong, so I stopped." <> charge <> " Try again."
+    end
+  end
+
+  @doc "Fail and refund runs whose client stopped reporting back. Planning runs stay open while the user thinks."
   def expire_stale_runs(session_id) do
     cutoff = DateTime.add(DateTime.utc_now(), -@stale_after_seconds, :second)
 
     VideoRun
-    |> where([r], r.session_id == ^session_id and r.status == "running")
+    |> where([r], r.session_id == ^session_id and r.status == "running" and r.kind != "plan")
     |> where([r], r.updated_at < ^cutoff)
     |> Repo.all()
-    |> Enum.each(&fail(&1, "The app stopped responding before the edit finished."))
+    |> Enum.each(&fail(&1, @stale_reason))
   end
 
   @doc "Log one model call against the run and add its cost to the run total."

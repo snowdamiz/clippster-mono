@@ -1,7 +1,7 @@
 defmodule ClippsterServerWeb.AIVideoController do
   @moduledoc """
-  AI video editor API: projects, example analysis, and the paid agent runs that the desktop
-  client drives turn by turn.
+  AI video editor API: projects, optional example analysis, clip labelling, the free planning
+  chat, and the paid agent runs that the desktop client drives turn by turn.
   """
 
   use ClippsterServerWeb, :controller
@@ -14,6 +14,7 @@ defmodule ClippsterServerWeb.AIVideoController do
     VideoBlueprint,
     VideoGenerationPolicy,
     VideoLabeler,
+    VideoPlanner,
     VideoRun,
     VideoRuns,
     VideoSessions
@@ -28,6 +29,7 @@ defmodule ClippsterServerWeb.AIVideoController do
   @max_composition_bytes 2_000_000
   @composition_path ~r/\Acompositions\/[A-Za-z0-9_-]{1,64}\.html\z/
   @reference_keys ~w(path displayName sourceUrl sourceType duration width height fps)
+  @max_plan_message_chars 2_000
 
   # -- Projects ----------------------------------------------------------------
 
@@ -77,7 +79,7 @@ defmodule ClippsterServerWeb.AIVideoController do
     with {:ok, session} <- fetch_video_session(conn, id),
          {:ok, attrs} <- session_attrs(params),
          :ok <- ensure_no_run_for_edit(session, attrs),
-         {:ok, session} <- VideoSessions.update_session(session, attrs) do
+         {:ok, session} <- VideoSessions.update_session(session, forget_replaced_example(session, attrs)) do
       json(conn, serialize_session(VideoSessions.with_messages(session)))
     end
     |> respond(conn)
@@ -137,31 +139,16 @@ defmodule ClippsterServerWeb.AIVideoController do
 
   def finish_reference(conn, _params), do: render_error(conn, {:error, "The example measurement has no shots."})
 
-  # -- Agent runs ------------------------------------------------------------------
+  # -- Clips and planning ------------------------------------------------------------
 
-  def start_run(conn, %{"id" => id, "kind" => kind, "request" => request})
-      when kind in ~w(generate revise) and is_binary(request) do
-    request = String.trim(request)
-
-    with {:ok, session} <- fetch_video_session(conn, id),
-         :ok <- ensure_can_run(session, kind),
-         {:ok, run} <- VideoRuns.start_agent_run(user_id(conn), session, kind, request) do
-      {:ok, _} = VideoSessions.create_message(session.id, "user", request, %{"run_id" => run.id})
-      {:ok, _} = VideoSessions.update_session(session, %{status: "working"})
-      json(conn, %{run: serialize_run(run)})
-    end
-    |> respond(conn)
-  end
-
-  def start_run(conn, _params), do: render_error(conn, {:error, "Choose generate or revise and include a request."})
-
+  # Label one chunk of the user's footage, paid by the running build or, before one, the free planning run.
   def label_source(
         conn,
-        %{"run_id" => run_id, "content_hash" => hash, "chunk_key" => chunk_key, "chunk_start" => chunk_start, "kind" => kind, "media" => media, "segments" => segments}
+        %{"id" => id, "content_hash" => hash, "chunk_key" => chunk_key, "chunk_start" => chunk_start, "kind" => kind, "media" => media, "segments" => segments}
       )
       when is_binary(hash) and is_binary(chunk_key) and is_number(chunk_start) and is_list(segments) do
-    with {:ok, run} <- fetch_agent_run(conn, run_id),
-         {:ok, session} <- fetch_video_session(conn, run.session_id),
+    with {:ok, session} <- fetch_video_session(conn, id),
+         {:ok, run} <- label_run(conn, session),
          :ok <- VideoRuns.reserve_label_call(run, VideoGenerationPolicy.max_label_calls()),
          {:ok, labelled} <- VideoLabeler.label_source(run, kind, media, segments, chunk_start) do
       :ok = VideoSessions.put_source_labels(session, hash, chunk_key, %{"segments" => labelled})
@@ -171,6 +158,45 @@ defmodule ClippsterServerWeb.AIVideoController do
   end
 
   def label_source(conn, _params), do: render_error(conn, {:error, "Missing source label fields."})
+
+  # One message in the free planning chat: the AI's reply, with the updated plan when it changed.
+  def plan(conn, %{"id" => id, "message" => message}) when is_binary(message) do
+    message = String.trim(message)
+
+    with {:ok, session} <- fetch_video_session(conn, id),
+         :ok <- ensure_can_plan(session, message),
+         {:ok, run} <- VideoRuns.open_plan_run(user_id(conn), session),
+         session = VideoSessions.with_messages(session),
+         {:ok, reply} <- planner_reply(run, session, message) do
+      phase = %{"phase" => VideoPlanner.phase()}
+      {:ok, _} = VideoSessions.create_message(session.id, "user", message, phase)
+      {:ok, _} = VideoSessions.create_message(session.id, "assistant", reply.message, if(reply.plan, do: Map.put(phase, "plan", reply.plan), else: phase))
+      {:ok, session} = apply_plan_shape(session, reply.plan)
+      json(conn, serialize_session(VideoSessions.with_messages(session)))
+    end
+    |> respond(conn)
+  end
+
+  def plan(conn, _params), do: render_error(conn, {:error, "Write a message."})
+
+  # -- Agent runs ------------------------------------------------------------------
+
+  def start_run(conn, %{"id" => id, "kind" => kind, "request" => request})
+      when kind in ~w(generate revise) and is_binary(request) do
+    request = String.trim(request)
+
+    with {:ok, session} <- fetch_video_session(conn, id),
+         :ok <- ensure_can_run(session, kind, request),
+         {:ok, run} <- VideoRuns.start_agent_run(user_id(conn), session, kind, request) do
+      if kind == "generate", do: :ok = VideoRuns.close_plan_run(session.id)
+      {:ok, _} = VideoSessions.create_message(session.id, "user", request, %{"run_id" => run.id})
+      {:ok, _} = VideoSessions.update_session(session, %{status: "working"})
+      json(conn, %{run: serialize_run(run)})
+    end
+    |> respond(conn)
+  end
+
+  def start_run(conn, _params), do: render_error(conn, {:error, "Choose generate or revise and include a request."})
 
   def turn(conn, %{"run_id" => run_id} = params) do
     with {:ok, run} <- fetch_agent_run(conn, run_id),
@@ -269,15 +295,48 @@ defmodule ClippsterServerWeb.AIVideoController do
     end
   end
 
-  defp ensure_can_run(session, "generate") do
+  defp label_run(conn, session) do
+    case VideoRuns.running_agent_run(session.id) do
+      %VideoRun{kind: "generate"} = run -> {:ok, run}
+      %VideoRun{} -> {:error, :run_in_progress}
+      nil -> VideoRuns.open_plan_run(user_id(conn), session)
+    end
+  end
+
+  defp ensure_can_plan(session, message) do
     cond do
-      is_nil(session.reference_blueprint) -> {:error, "Add an example video first."}
-      not Enum.any?(session.media_items || [], &(&1["kind"] in ~w(video photo))) -> {:error, "Add at least one clip or photo first."}
+      message == "" -> {:error, "Write a message."}
+      String.length(message) > @max_plan_message_chars -> {:error, "Keep messages under #{@max_plan_message_chars} characters."}
+      VideoRuns.running_agent_run(session.id) -> {:error, :run_in_progress}
+      session.reference && is_nil(session.reference_blueprint) -> {:error, "The example video hasn't been analyzed yet."}
       true -> :ok
     end
   end
 
-  defp ensure_can_run(session, "revise") do
+  defp planner_reply(run, session, message) do
+    case VideoPlanner.reply(run, session, message) do
+      {:ok, reply} -> {:ok, reply}
+      {:error, :invalid, reason} -> {:error, reason}
+      {:error, reason} -> {:error, :bad_gateway, reason}
+    end
+  end
+
+  # Without an example, the plan decides the shape (for example 9:16 once the user says TikTok).
+  defp apply_plan_shape(%{reference: nil, aspect_ratio: current} = session, %{"aspect" => aspect}) when aspect != current,
+    do: VideoSessions.update_session(session, %{aspect_ratio: aspect})
+
+  defp apply_plan_shape(session, _plan), do: {:ok, session}
+
+  defp ensure_can_run(_session, _kind, ""), do: {:error, "Describe what you want."}
+
+  # The example and media are optional; a description alone makes a motion graphics video.
+  defp ensure_can_run(session, "generate", _request) do
+    if session.reference && is_nil(session.reference_blueprint),
+      do: {:error, "The example video hasn't been analyzed yet."},
+      else: :ok
+  end
+
+  defp ensure_can_run(session, "revise", _request) do
     if is_map(session.document), do: :ok, else: {:error, "There's no video to change yet. Press Go first."}
   end
 
@@ -300,8 +359,14 @@ defmodule ClippsterServerWeb.AIVideoController do
 
   defp reset_status_if_idle(session), do: session
 
+  # What the AI learned from an example belongs to that example; a removed or replaced one takes it along.
+  defp forget_replaced_example(session, %{reference: reference} = attrs) when reference != session.reference,
+    do: Map.merge(attrs, %{reference_blueprint: nil, reference_labels: %{}})
+
+  defp forget_replaced_example(_session, attrs), do: attrs
+
   defp session_attrs(params) do
-    Enum.reduce_while(~w(name request media_items reference document composition_files), {:ok, %{}}, fn key, {:ok, acc} ->
+    Enum.reduce_while(~w(name aspect_ratio media_items reference document composition_files), {:ok, %{}}, fn key, {:ok, acc} ->
       if Map.has_key?(params, key) do
         case cast_attr(key, params[key]) do
           {:ok, value} -> {:cont, {:ok, Map.put(acc, String.to_existing_atom(key), value)}}
@@ -313,7 +378,7 @@ defmodule ClippsterServerWeb.AIVideoController do
     end)
   end
 
-  defp cast_attr(key, value) when key in ~w(name request) and (is_binary(value) or is_nil(value)), do: {:ok, value}
+  defp cast_attr(key, value) when key in ~w(name aspect_ratio) and (is_binary(value) or is_nil(value)), do: {:ok, value}
 
   defp cast_attr("media_items", items) when is_list(items) and length(items) <= @max_media_items do
     if Enum.all?(items, &(is_map(&1) and is_binary(&1["id"]) and &1["kind"] in @media_kinds)),
@@ -343,7 +408,6 @@ defmodule ClippsterServerWeb.AIVideoController do
 
   defp default_finish_message("revise", true), do: "I couldn't make that change, so you weren't charged. Try describing it another way."
   defp default_finish_message(_kind, _refunded), do: "Here's your video. Tell me anything you'd like changed."
-
   defp serialize_session(session) do
     running = VideoRuns.running_agent_run(session.id)
 
@@ -351,7 +415,7 @@ defmodule ClippsterServerWeb.AIVideoController do
       id: session.id,
       name: session.name,
       status: session.status,
-      request: session.request,
+      aspect_ratio: session.aspect_ratio,
       media_items: session.media_items,
       reference: session.reference,
       reference_blueprint: session.reference_blueprint,
@@ -387,7 +451,10 @@ defmodule ClippsterServerWeb.AIVideoController do
     do: conn |> put_status(:conflict) |> json(%{error: "The AI is already working on this video."})
 
   defp render_error(conn, {:error, :label_limit}),
-    do: conn |> put_status(:too_many_requests) |> json(%{error: "This run has used all of its analysis calls."})
+    do: conn |> put_status(:too_many_requests) |> json(%{error: "The AI has looked at as much footage as it can for now."})
+
+  defp render_error(conn, {:error, :plan_limit}),
+    do: conn |> put_status(:too_many_requests) |> json(%{error: "You've reached today's limit for free planning. Press Build to make the video."})
 
   defp render_error(conn, {:error, :conflict, message}), do: conn |> put_status(:conflict) |> json(%{error: message})
 

@@ -1,7 +1,7 @@
 defmodule ClippsterServer.AI.VideoAgentPrompts do
   @moduledoc """
-  The video agent's system prompt and on-demand skills, embedded at compile time so the cached
-  prompt prefix is byte-identical on every request.
+  The video agent's and planner's system prompts and the agent's on-demand skills, embedded at
+  compile time so the cached prompt prefixes are byte-identical on every request.
 
   Skills are addressed by their path under `priv/prompts/video_agent/skills` without `.md`
   (for example `hyperframes-core/references/sub-compositions`). Only embedded files resolve.
@@ -12,6 +12,8 @@ defmodule ClippsterServer.AI.VideoAgentPrompts do
 
   @external_resource Path.join(@root, "system.md")
   @system_prompt File.read!(Path.join(@root, "system.md"))
+  @external_resource Path.join(@root, "plan.md")
+  @plan_prompt File.read!(Path.join(@root, "plan.md"))
 
   @skill_paths Path.wildcard(Path.join(@skills_root, "**/*.md"))
   for path <- @skill_paths, do: @external_resource(path)
@@ -30,6 +32,9 @@ defmodule ClippsterServer.AI.VideoAgentPrompts do
 
   @spec system_prompt() :: String.t()
   def system_prompt, do: @system_prompt
+
+  @spec plan_prompt() :: String.t()
+  def plan_prompt, do: @plan_prompt
 
   @spec skill_names() :: [String.t()]
   def skill_names, do: @skill_names

@@ -1,6 +1,7 @@
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import { createRenderJob, executeRenderJob } from '@hyperframes/producer';
+import { withRenderSnapshot } from './render-snapshot.mjs';
 
 const quiet = { info() {}, debug() {}, warn: (m) => console.error(m), error: (m) => console.error(m) };
 
@@ -18,14 +19,14 @@ async function uniquePath(requested) {
 }
 
 /** Render the workspace's index.html to an MP4, reporting progress as 0..1. */
-export async function render({ projectDir, outputPath: requested, fps = 30, crf = 20 }, { signal, onProgress }) {
+export async function render({ projectDir, outputPath: requested, fps = 30, crf = 20, files }, { signal, onProgress }) {
   await fs.mkdir(path.dirname(requested), { recursive: true });
   const outputPath = await uniquePath(requested);
   const job = createRenderJob({ fps, quality: 'high', format: 'mp4', crf, logger: quiet });
   let last = -1;
-  await executeRenderJob(
+  await withRenderSnapshot(projectDir, files, snapshot => executeRenderJob(
     job,
-    projectDir,
+    snapshot,
     outputPath,
     (current, message) => {
       const progress = Math.max(0, Math.min(1, current.progress / 100));
@@ -35,7 +36,7 @@ export async function render({ projectDir, outputPath: requested, fps = 30, crf 
       }
     },
     signal
-  );
+  ));
   if (job.status !== 'complete') throw new Error(job.error || `Render ${job.status}`);
   const { size } = await fs.stat(outputPath);
   return { outputPath, bytes: size, duration: job.duration ?? null, warnings: job.warnings.map((w) => w.message ?? String(w)) };

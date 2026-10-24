@@ -8,11 +8,14 @@ import {
   type EditShot,
   type MediaItem,
   type ShotAlternate,
+  type ShotScene,
   type VariableValue,
 } from '../types';
 
 export const ALLOWED_FPS = [24, 25, 30, 50, 60] as const;
 export const COMPOSITION_PATH = /^compositions\/[A-Za-z0-9_-]{1,64}\.html$/;
+/** A composition variable that stands for one of the user's photos; compiled to its file URL. */
+export const MEDIA_REF = /^media:([A-Za-z0-9_-]{1,40})$/;
 const ID_PATTERN = /^[A-Za-z0-9_-]{1,40}$/;
 const MIN_SECONDS = 0.1;
 const SOURCE_TOLERANCE = 0.05;
@@ -37,8 +40,10 @@ export interface ValidationResult {
 
 type Json = Record<string, unknown>;
 
-const isObject = (value: unknown): value is Json => typeof value === 'object' && value !== null && !Array.isArray(value);
-const isNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value);
+const isObject = (value: unknown): value is Json =>
+  typeof value === 'object' && value !== null && !Array.isArray(value);
+const isNumber = (value: unknown): value is number =>
+  typeof value === 'number' && Number.isFinite(value);
 const clamp = (value: number, min: number, max: number) => Math.min(max, Math.max(min, value));
 const round3 = (value: number) => Math.round(value * 1000) / 1000;
 
@@ -47,7 +52,10 @@ export function documentDuration(document: Pick<EditDocument, 'shots'>): number 
 }
 
 /** Source seconds a shot consumes. Photos have no source time. */
-export function sourceSpan(shot: Pick<EditShot, 'duration' | 'speed'>, media: MediaItem | undefined): number {
+export function sourceSpan(
+  shot: Pick<EditShot, 'duration' | 'speed'>,
+  media: MediaItem | undefined
+): number {
   return media?.kind === 'photo' ? 0 : shot.duration * shot.speed;
 }
 
@@ -70,7 +78,15 @@ export function validateDocument(input: unknown, context: ValidationContext): Va
   const format = validateFormat(raw.format, errors);
   const snap = (seconds: number) => Math.round(seconds * format.fps) / format.fps;
   const media = new Map(context.media.map((item) => [item.id, item]));
+  const files = new Set(context.files);
   const ids = new Set<string>();
+  const compositions: CompositionContext = {
+    files,
+    media,
+    requireFiles: context.requireFiles,
+    errors,
+    warnings,
+  };
 
   const claimId = (id: unknown, where: string): string => {
     if (typeof id !== 'string' || !ID_PATTERN.test(id)) {
@@ -90,24 +106,40 @@ export function validateDocument(input: unknown, context: ValidationContext): Va
     const where = `shots[${index}]`;
     const id = claimId(shot.id, where);
     const label = `${where} (${id})`;
-    const item = typeof shot.mediaId === 'string' ? media.get(shot.mediaId) : undefined;
-    if (!item || item.kind === 'audio') errors.push(`${label}: mediaId must be one of the user's videos or photos.`);
-
-    const isPhoto = item?.kind === 'photo';
-    const speed = isPhoto ? 1 : isNumber(shot.speed) ? shot.speed : 1;
-    if (speed < 0.25 || speed > 4) errors.push(`${label}: speed must be between 0.25 and 4.`);
     const duration = isNumber(shot.duration) ? snap(shot.duration) : 0;
-    if (duration < MIN_SECONDS) errors.push(`${label}: duration must be at least ${MIN_SECONDS} s.`);
-    const sourceIn = isPhoto ? 0 : isNumber(shot.sourceIn) ? round3(shot.sourceIn) : -1;
-    if (item && !isPhoto && !fitsSource(item, sourceIn, duration * speed)) {
+    if (duration < MIN_SECONDS)
+      errors.push(`${label}: duration must be at least ${MIN_SECONDS} s.`);
+
+    let scene: ShotScene | null = null;
+    let item: MediaItem | undefined;
+    if (shot.scene !== undefined && shot.scene !== null) {
+      if (shot.mediaId !== undefined && shot.mediaId !== null)
+        errors.push(`${label}: a shot has either a mediaId or a scene, not both.`);
+      scene = validateScene(shot.scene, label, compositions);
+    } else {
+      item = typeof shot.mediaId === 'string' ? media.get(shot.mediaId) : undefined;
+      if (!item || item.kind === 'audio')
+        errors.push(
+          `${label}: mediaId must be one of the user's videos or photos, or use a scene.`
+        );
+    }
+
+    const stillFrame = !!scene || item?.kind === 'photo';
+    const speed = stillFrame ? 1 : isNumber(shot.speed) ? shot.speed : 1;
+    if (speed < 0.25 || speed > 4) errors.push(`${label}: speed must be between 0.25 and 4.`);
+    const sourceIn = stillFrame ? 0 : isNumber(shot.sourceIn) ? round3(shot.sourceIn) : -1;
+    if (item && !stillFrame && !fitsSource(item, sourceIn, duration * speed)) {
       errors.push(
         `${label}: needs ${round3(duration * speed)} s of source from ${sourceIn} s, but ${item.name} is ${round3(item.duration)} s long.`
       );
     }
 
     const move = SHOT_MOVES.includes(shot.move as never) ? (shot.move as EditShot['move']) : 'none';
-    if (shot.move !== undefined && move !== shot.move) errors.push(`${label}: move must be one of ${SHOT_MOVES.join(', ')}.`);
-    let transitionIn = SHOT_TRANSITIONS.includes(shot.transitionIn as never) ? (shot.transitionIn as EditShot['transitionIn']) : 'cut';
+    if (shot.move !== undefined && move !== shot.move)
+      errors.push(`${label}: move must be one of ${SHOT_MOVES.join(', ')}.`);
+    let transitionIn = SHOT_TRANSITIONS.includes(shot.transitionIn as never)
+      ? (shot.transitionIn as EditShot['transitionIn'])
+      : 'cut';
     if (shot.transitionIn !== undefined && transitionIn !== shot.transitionIn) {
       errors.push(`${label}: transitionIn must be one of ${SHOT_TRANSITIONS.join(', ')}.`);
     }
@@ -115,15 +147,28 @@ export function validateDocument(input: unknown, context: ValidationContext): Va
 
     let refShot: number | null = null;
     if (isNumber(shot.refShot)) {
-      if (Number.isInteger(shot.refShot) && shot.refShot >= 0 && shot.refShot < context.exampleShots) refShot = shot.refShot;
-      else errors.push(`${label}: refShot must be an example shot index from 0 to ${context.exampleShots - 1}, or null.`);
+      if (
+        Number.isInteger(shot.refShot) &&
+        shot.refShot >= 0 &&
+        shot.refShot < context.exampleShots
+      )
+        refShot = shot.refShot;
+      else if (context.exampleShots === 0)
+        errors.push(`${label}: refShot must be null; there is no example.`);
+      else
+        errors.push(
+          `${label}: refShot must be an example shot index from 0 to ${context.exampleShots - 1}, or null.`
+        );
     }
 
-    const alternates = validateAlternates(shot.alternates, duration, speed, media, label, warnings);
+    const alternates = scene
+      ? []
+      : validateAlternates(shot.alternates, duration, speed, media, label, warnings);
 
     return {
       id,
-      mediaId: typeof shot.mediaId === 'string' ? shot.mediaId : '',
+      mediaId: scene ? null : typeof shot.mediaId === 'string' ? shot.mediaId : '',
+      scene,
       sourceIn: Math.max(0, sourceIn),
       duration,
       speed,
@@ -142,15 +187,17 @@ export function validateDocument(input: unknown, context: ValidationContext): Va
 
   const music = validateMusic(raw.music, media, total, errors, warnings);
   const clipAudio = isNumber(raw.clipAudio) ? clamp(raw.clipAudio, 0, 1) : music ? 0 : 1;
-  const files = new Set(context.files);
   const overlays = (Array.isArray(raw.overlays) ? raw.overlays : []).map((value, index) =>
-    validateOverlay(value, index, { claimId, snap, epsilon: 0.5 / format.fps, total, files, requireFiles: context.requireFiles, errors, warnings })
+    validateOverlay(value, index, { claimId, snap, epsilon: 0.5 / format.fps, total, compositions })
   );
   checkLaneOverlaps(overlays, format.fps, errors);
 
   return {
     document: {
-      title: typeof raw.title === 'string' && raw.title.trim() ? raw.title.trim().slice(0, 120) : 'Untitled video',
+      title:
+        typeof raw.title === 'string' && raw.title.trim()
+          ? raw.title.trim().slice(0, 120)
+          : 'Untitled video',
       format,
       music,
       clipAudio,
@@ -168,9 +215,15 @@ function validateFormat(value: unknown, errors: string[]): EditFormat {
   const height = isNumber(format.height) ? Math.round(format.height) : 0;
   const fps = isNumber(format.fps) ? Math.round(format.fps) : 0;
   const sizeOk = (size: number) => size >= 240 && size <= 3840 && size % 2 === 0;
-  if (!sizeOk(width) || !sizeOk(height)) errors.push('format.width and format.height must be even numbers from 240 to 3840.');
-  if (!ALLOWED_FPS.includes(fps as never)) errors.push(`format.fps must be one of ${ALLOWED_FPS.join(', ')}.`);
-  return { width: sizeOk(width) ? width : 1920, height: sizeOk(height) ? height : 1080, fps: ALLOWED_FPS.includes(fps as never) ? fps : 30 };
+  if (!sizeOk(width) || !sizeOk(height))
+    errors.push('format.width and format.height must be even numbers from 240 to 3840.');
+  if (!ALLOWED_FPS.includes(fps as never))
+    errors.push(`format.fps must be one of ${ALLOWED_FPS.join(', ')}.`);
+  return {
+    width: sizeOk(width) ? width : 1920,
+    height: sizeOk(height) ? height : 1080,
+    fps: ALLOWED_FPS.includes(fps as never) ? fps : 30,
+  };
 }
 
 function validateAlternates(
@@ -186,13 +239,18 @@ function validateAlternates(
   for (const entry of value) {
     if (!isObject(entry) || typeof entry.mediaId !== 'string') continue;
     const item = media.get(entry.mediaId);
-    const sourceIn = item?.kind === 'photo' ? 0 : isNumber(entry.sourceIn) ? round3(entry.sourceIn) : -1;
+    const sourceIn =
+      item?.kind === 'photo' ? 0 : isNumber(entry.sourceIn) ? round3(entry.sourceIn) : -1;
     if (!fitsSource(item, sourceIn, item?.kind === 'photo' ? 0 : duration * speed)) {
       warnings.push(`${label}: dropped an alternate that doesn't fit the shot's length.`);
       continue;
     }
     if (alternates.length < MAX_ALTERNATES) {
-      alternates.push({ mediaId: entry.mediaId, sourceIn, description: typeof entry.description === 'string' ? entry.description.slice(0, 200) : '' });
+      alternates.push({
+        mediaId: entry.mediaId,
+        sourceIn,
+        description: typeof entry.description === 'string' ? entry.description.slice(0, 200) : '',
+      });
     }
   }
   return alternates;
@@ -216,11 +274,24 @@ function validateMusic(
     return null;
   }
   const start = isNumber(value.start) ? round3(value.start) : 0;
-  if (start < 0 || start >= item.duration) errors.push(`music.start must be within the song (0-${round3(item.duration)} s).`);
+  if (start < 0 || start >= item.duration)
+    errors.push(`music.start must be within the song (0-${round3(item.duration)} s).`);
   if (start + total > item.duration + SOURCE_TOLERANCE) {
     warnings.push(`The song ends at ${round3(item.duration - start)} s, before the video does.`);
   }
-  return { mediaId: item.id, start: Math.max(0, start), volume: isNumber(value.volume) ? clamp(value.volume, 0, 1) : 1 };
+  return {
+    mediaId: item.id,
+    start: Math.max(0, start),
+    volume: isNumber(value.volume) ? clamp(value.volume, 0, 1) : 1,
+  };
+}
+
+interface CompositionContext {
+  files: Set<string>;
+  media: Map<string, MediaItem>;
+  requireFiles: boolean;
+  errors: string[];
+  warnings: string[];
 }
 
 interface OverlayContext {
@@ -229,20 +300,68 @@ interface OverlayContext {
   /** Half a frame. */
   epsilon: number;
   total: number;
-  files: Set<string>;
-  requireFiles: boolean;
-  errors: string[];
-  warnings: string[];
+  compositions: CompositionContext;
+}
+
+/** The composition file a scene or overlay places, and the variables it sets on it. */
+function validatePlacement(
+  composition: unknown,
+  variables: unknown,
+  label: string,
+  context: CompositionContext
+) {
+  const { errors, warnings } = context;
+  const path = typeof composition === 'string' ? composition : '';
+  if (!COMPOSITION_PATH.test(path)) {
+    errors.push(`${label}: composition must be compositions/<name>.html.`);
+  } else if (!context.files.has(path)) {
+    if (context.requireFiles) errors.push(`${label}: ${path} doesn't exist.`);
+    else warnings.push(`${label}: ${path} hasn't been written yet.`);
+  }
+
+  const values: Record<string, VariableValue> = {};
+  if (isObject(variables)) {
+    for (const [key, entry] of Object.entries(variables)) {
+      if (typeof entry !== 'string' && typeof entry !== 'number' && typeof entry !== 'boolean') {
+        errors.push(`${label}: variable "${key}" must be a string, number or boolean.`);
+        continue;
+      }
+      const ref = typeof entry === 'string' ? MEDIA_REF.exec(entry) : null;
+      if (ref && context.media.get(ref[1])?.kind !== 'photo')
+        errors.push(`${label}: variable "${key}" must name one of the user's photos (media:<id>).`);
+      values[key] = entry;
+    }
+  }
+  return { composition: path, variables: values };
+}
+
+function validateScene(value: unknown, label: string, context: CompositionContext): ShotScene {
+  const scene = isObject(value) ? value : {};
+  if (!isObject(value)) context.errors.push(`${label}: scene must be an object.`);
+  const placement = validatePlacement(scene.composition, scene.variables, label, context);
+  const text = placement.variables.text;
+  if (text !== undefined && (typeof text !== 'string' || !text.trim()))
+    context.errors.push(`${label}: a scene's "text" variable must be non-empty words.`);
+  const sceneLabel =
+    typeof scene.label === 'string' && scene.label.trim()
+      ? scene.label.trim().slice(0, 120)
+      : typeof text === 'string'
+        ? text
+        : '';
+  if (!sceneLabel) context.warnings.push(`${label}: add a short scene label for the timeline.`);
+  return { ...placement, label: sceneLabel };
 }
 
 function validateOverlay(value: unknown, index: number, context: OverlayContext): EditOverlay {
-  const { errors, warnings } = context;
+  const { errors, warnings } = context.compositions;
   const overlay = isObject(value) ? value : {};
   const where = `overlays[${index}]`;
   const id = context.claimId(overlay.id, where);
   const label = `${where} (${id})`;
 
-  const lane = OVERLAY_LANES.includes(overlay.lane as never) ? (overlay.lane as EditOverlay['lane']) : 'graphics';
+  const lane = OVERLAY_LANES.includes(overlay.lane as never)
+    ? (overlay.lane as EditOverlay['lane'])
+    : 'graphics';
   if (lane !== overlay.lane) errors.push(`${label}: lane must be graphics or text.`);
 
   const start = isNumber(overlay.start) ? context.snap(overlay.start) : -1;
@@ -250,39 +369,44 @@ function validateOverlay(value: unknown, index: number, context: OverlayContext)
   if (start < 0) errors.push(`${label}: start must be 0 or later.`);
   if (duration < MIN_SECONDS) errors.push(`${label}: duration must be at least ${MIN_SECONDS} s.`);
   const overrun = start + duration - context.total;
-  if (overrun > context.epsilon) errors.push(`${label}: ends at ${round3(start + duration)} s, after the video ends at ${context.total} s.`);
+  if (overrun > context.epsilon)
+    errors.push(
+      `${label}: ends at ${round3(start + duration)} s, after the video ends at ${context.total} s.`
+    );
   else if (overrun > 0) duration = round3(context.total - start);
 
-  const composition = typeof overlay.composition === 'string' ? overlay.composition : '';
-  if (!COMPOSITION_PATH.test(composition)) {
-    errors.push(`${label}: composition must be compositions/<name>.html.`);
-  } else if (!context.files.has(composition)) {
-    if (context.requireFiles) errors.push(`${label}: ${composition} doesn't exist.`);
-    else warnings.push(`${label}: ${composition} hasn't been written yet.`);
-  }
-
-  const variables: Record<string, VariableValue> = {};
-  if (isObject(overlay.variables)) {
-    for (const [key, entry] of Object.entries(overlay.variables)) {
-      if (typeof entry === 'string' || typeof entry === 'number' || typeof entry === 'boolean') variables[key] = entry;
-      else errors.push(`${label}: variable "${key}" must be a string, number or boolean.`);
-    }
-  }
+  const { composition, variables } = validatePlacement(
+    overlay.composition,
+    overlay.variables,
+    label,
+    context.compositions
+  );
 
   let overlayLabel = typeof overlay.label === 'string' ? overlay.label.trim().slice(0, 120) : '';
   if (lane === 'text') {
-    if (typeof variables.text !== 'string' || !variables.text.trim()) errors.push(`${label}: text overlays need a non-empty "text" variable.`);
+    if (typeof variables.text !== 'string' || !variables.text.trim())
+      errors.push(`${label}: text overlays need a non-empty "text" variable.`);
     else overlayLabel = variables.text;
   }
   if (!overlayLabel) warnings.push(`${label}: add a short label for the timeline.`);
 
-  return { id, lane, start: Math.max(0, start), duration, label: overlayLabel, composition, variables };
+  return {
+    id,
+    lane,
+    start: Math.max(0, start),
+    duration,
+    label: overlayLabel,
+    composition,
+    variables,
+  };
 }
 
 function checkLaneOverlaps(overlays: EditOverlay[], fps: number, errors: string[]) {
   const epsilon = 0.5 / fps;
   for (const lane of OVERLAY_LANES) {
-    const sorted = overlays.filter((overlay) => overlay.lane === lane).sort((a, b) => a.start - b.start);
+    const sorted = overlays
+      .filter((overlay) => overlay.lane === lane)
+      .sort((a, b) => a.start - b.start);
     for (let i = 1; i < sorted.length; i++) {
       const previous = sorted[i - 1];
       if (sorted[i].start < previous.start + previous.duration - epsilon) {

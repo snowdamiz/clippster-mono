@@ -3,7 +3,16 @@ import { join } from '@tauri-apps/api/path';
 import * as videoApi from '../api';
 import { detectBeats, type BeatGrid } from '../runtime/workspace';
 import type { MediaItem, SourceIndex, SourceSegment, VideoMeasurement } from '../types';
-import { extractChunkBase64, groupIntoChunks, mapLimit, measureVideo, readJson, sourcesCacheDir, throwIfAborted, writeJson } from './shared';
+import {
+  extractChunkBase64,
+  groupIntoChunks,
+  mapLimit,
+  measureVideo,
+  readJson,
+  sourcesCacheDir,
+  throwIfAborted,
+  writeJson,
+} from './shared';
 
 const SEGMENT_SECONDS = 4;
 const CHUNK_SECONDS = 60;
@@ -21,7 +30,11 @@ async function cachedMeasurement(item: MediaItem, signal?: AbortSignal): Promise
   const path = await join(await sourcesCacheDir(), `${item.contentHash}.json`);
   const cached = await readJson<VideoMeasurement>(path);
   if (cached) return cached;
-  const measurement = await measureVideo(item.path, { maxShotSeconds: SEGMENT_SECONDS, keyframes: false, signal });
+  const measurement = await measureVideo(item.path, {
+    maxShotSeconds: SEGMENT_SECONDS,
+    keyframes: false,
+    signal,
+  });
   await writeJson(path, measurement);
   return measurement;
 }
@@ -42,11 +55,11 @@ function isLabelLimit(error: unknown) {
 
 /**
  * Segment every clip and photo and label what isn't in the session's index yet. Labels are cached
- * on the server by content hash and chunk, so re-runs only pay for new footage. When the run's
- * label budget runs out, the remaining segments keep their measurements without labels.
+ * on the server by content hash and chunk, so re-runs only pay for new footage. When the label
+ * budget runs out, the remaining segments keep their measurements without labels.
  */
 export async function indexSources(
-  runId: number,
+  sessionId: number,
   media: MediaItem[],
   index: SourceIndex,
   onProgress: (progress: SourceProgress) => void,
@@ -65,8 +78,11 @@ export async function indexSources(
       let segments = cached[PHOTO_KEY]?.segments;
       if (!segments && labelBudgetLeft) {
         try {
-          const media = await invoke<string>('encode_image_for_ai', { path: item.path, maxDimension: PHOTO_LABEL_SIZE });
-          segments = await videoApi.labelSource(runId, {
+          const media = await invoke<string>('encode_image_for_ai', {
+            path: item.path,
+            maxDimension: PHOTO_LABEL_SIZE,
+          });
+          segments = await videoApi.labelSource(sessionId, {
             content_hash: item.contentHash,
             chunk_key: PHOTO_KEY,
             chunk_start: 0,
@@ -79,7 +95,9 @@ export async function indexSources(
           labelBudgetLeft = false;
         }
       }
-      sources[item.id] = segments ?? [{ index: 0, start: 0, end: 0, motion: 0, brightness: 0.5, saturation: 0.5 }];
+      sources[item.id] = segments ?? [
+        { index: 0, start: 0, end: 0, motion: 0, brightness: 0.5, saturation: 0.5 },
+      ];
       continue;
     }
 
@@ -102,7 +120,14 @@ export async function indexSources(
       const start = segments[0].start;
       try {
         const media = await extractChunkBase64(item.path, start, segments[segments.length - 1].end);
-        return await videoApi.labelSource(runId, { content_hash: item.contentHash, chunk_key: key, chunk_start: start, kind: 'video', media, segments });
+        return await videoApi.labelSource(sessionId, {
+          content_hash: item.contentHash,
+          chunk_key: key,
+          chunk_start: start,
+          kind: 'video',
+          media,
+          segments,
+        });
       } catch (error) {
         if (!isLabelLimit(error)) throw error;
         labelBudgetLeft = false;

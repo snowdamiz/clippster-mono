@@ -150,6 +150,25 @@ defmodule ClippsterServer.AI.VideoAgentTest do
     refute_received {:openrouter_request, _}
   end
 
+  test "a revision continues the whole conversation and sees the plan", %{user: user, session: session, run: run} do
+    {:ok, _} = VideoRuns.fail(run, "Cancelled")
+    plan = %{"title" => "Acme Launch", "seconds" => 20, "beats" => []}
+    {:ok, _} = VideoSessions.create_message(session.id, "user", "A launch video for acme", %{"phase" => "plan"})
+    {:ok, _} = VideoSessions.create_message(session.id, "assistant", "Here is the plan.", %{"phase" => "plan", "plan" => plan})
+    {:ok, revise} = VideoRuns.start_agent_run(user.id, session, "revise", "Make it shorter")
+    {:ok, _} = VideoSessions.create_message(session.id, "user", "Make it shorter", %{"run_id" => revise.id})
+
+    queue([completion(%{"content" => nil, "tool_calls" => [tool_call("call_1", "check", %{})]}, 0.1)])
+    assert {:tools, _, _, _} = VideoAgent.turn(revise, VideoSessions.with_messages(session), %{brief: %{}})
+
+    assert_received {:openrouter_request, payload}
+    sent = Jason.encode!(payload["messages"])
+    assert sent =~ "A launch video for acme"
+    assert sent =~ "Stopped. You weren't charged."
+    assert sent =~ "Acme Launch"
+    assert length(String.split(sent, "Make it shorter")) == 2, "the request is sent once, not repeated in the chat"
+  end
+
   test "session context is canonical regardless of key order", %{session: session} do
     reordered = %{
       session

@@ -9,7 +9,10 @@ const MAX_FINDINGS = 40;
 const MAX_FILE_CHARS = 200_000;
 
 export interface AgentToolDeps {
-  workspace: Pick<HyperframesWorkspace, 'writeFile' | 'readFile' | 'deleteFile' | 'listFiles' | 'check' | 'snapshot'>;
+  workspace: Pick<
+    HyperframesWorkspace,
+    'writeFile' | 'readFile' | 'deleteFile' | 'listFiles' | 'check' | 'snapshot'
+  >;
   compileContext: CompileContext;
   media: MediaItem[];
   maxSeconds: number;
@@ -30,6 +33,8 @@ export interface AgentProgress {
   lastCheckOk: boolean | null;
   /** Text overlays in the latest saved edit. */
   titles: number;
+  /** Designed scenes in the latest saved edit. */
+  scenes: number;
   /** Labels of the graphics overlays in the latest saved edit. */
   graphics: string[];
 }
@@ -45,6 +50,7 @@ export class AgentTools {
     problemsFound: 0,
     lastCheckOk: null,
     titles: 0,
+    scenes: 0,
     graphics: [],
   };
 
@@ -66,7 +72,10 @@ export class AgentTools {
         results.push({ id: call.id, ...result });
       } catch (error) {
         if (this.deps.signal?.aborted) throw error;
-        results.push({ id: call.id, content: `Error: ${error instanceof Error ? error.message : String(error)}` });
+        results.push({
+          id: call.id,
+          content: `Error: ${error instanceof Error ? error.message : String(error)}`,
+        });
       }
     }
     return results;
@@ -95,7 +104,9 @@ export class AgentTools {
   }
 
   private async authoredFiles(): Promise<string[]> {
-    return (await this.deps.workspace.listFiles()).filter((path) => path === 'index.html' || COMPOSITION_PATH.test(path));
+    return (await this.deps.workspace.listFiles()).filter(
+      (path) => path === 'index.html' || COMPOSITION_PATH.test(path)
+    );
   }
 
   private async compositionFiles(): Promise<string[]> {
@@ -110,20 +121,28 @@ export class AgentTools {
       files: await this.compositionFiles(),
       requireFiles: false,
     });
-    if (errors.length) return `Not saved. Fix these and resubmit the whole document:\n- ${errors.join('\n- ')}`;
+    if (errors.length)
+      return `Not saved. Fix these and resubmit the whole document:\n- ${errors.join('\n- ')}`;
 
-    await this.deps.workspace.writeFile('index.html', compileDocument(document, this.deps.compileContext));
+    await this.deps.workspace.writeFile(
+      'index.html',
+      compileDocument(document, this.deps.compileContext)
+    );
     this.document = document;
     const text = document.overlays.filter((overlay) => overlay.lane === 'text').length;
+    const scenes = document.shots.filter((shot) => shot.scene).length;
     this.progress.edited = true;
     this.progress.titles = text;
-    this.progress.graphics = document.overlays.filter((overlay) => overlay.lane === 'graphics').map((overlay) => overlay.label);
+    this.progress.scenes = scenes;
+    this.progress.graphics = document.overlays
+      .filter((overlay) => overlay.lane === 'graphics')
+      .map((overlay) => overlay.label);
 
     const starts = placeShots(document)
       .map((shot) => `${shot.id}@${shot.start}`)
       .join(' ');
     const lines = [
-      `Saved and compiled: ${document.shots.length} shots, ${documentDuration(document)} s, ${text} text and ${document.overlays.length - text} graphics overlays.`,
+      `Saved and compiled: ${document.shots.length} shots (${scenes} designed scenes), ${documentDuration(document)} s, ${text} text and ${document.overlays.length - text} graphics overlays.`,
       `Shot starts (frame-snapped): ${starts}`,
     ];
     if (warnings.length) lines.push(`Notes:\n- ${warnings.join('\n- ')}`);
@@ -131,9 +150,11 @@ export class AgentTools {
   }
 
   private async writeFile(path: unknown, content: unknown): Promise<string> {
-    if (typeof path !== 'string' || !COMPOSITION_PATH.test(path)) return 'Only compositions/<name>.html can be written.';
+    if (typeof path !== 'string' || !COMPOSITION_PATH.test(path))
+      return 'Only compositions/<name>.html can be written.';
     if (typeof content !== 'string' || !content.trim()) return 'The file content is empty.';
-    if (content.length > MAX_FILE_CHARS) return `The file is too large (limit ${MAX_FILE_CHARS} characters).`;
+    if (content.length > MAX_FILE_CHARS)
+      return `The file is too large (limit ${MAX_FILE_CHARS} characters).`;
     await this.deps.workspace.writeFile(path, content);
     this.progress.built = true;
     return `Saved ${path}.`;
@@ -148,9 +169,13 @@ export class AgentTools {
   }
 
   private async deleteFile(path: unknown): Promise<string> {
-    if (typeof path !== 'string' || !COMPOSITION_PATH.test(path)) return 'Only compositions/<name>.html can be deleted.';
-    const users = this.document?.overlays.filter((overlay) => overlay.composition === path).map((overlay) => overlay.id) ?? [];
-    if (users.length) return `Not deleted: overlays ${users.join(', ')} still use ${path}.`;
+    if (typeof path !== 'string' || !COMPOSITION_PATH.test(path))
+      return 'Only compositions/<name>.html can be deleted.';
+    const users = [
+      ...(this.document?.shots.filter((shot) => shot.scene?.composition === path) ?? []),
+      ...(this.document?.overlays.filter((overlay) => overlay.composition === path) ?? []),
+    ].map((block) => block.id);
+    if (users.length) return `Not deleted: ${path} is still used by ${users.join(', ')}.`;
     await this.deps.workspace.deleteFile(path);
     return `Deleted ${path}.`;
   }
@@ -175,15 +200,31 @@ export class AgentTools {
     const placed = placeShots(this.document);
     const total = documentDuration(this.document);
     const lastFrame = Math.max(0, total - 1 / this.document.format.fps);
-    const requested = Array.isArray(times) ? times.filter((t): t is number => typeof t === 'number' && Number.isFinite(t)) : [];
+    const requested = Array.isArray(times)
+      ? times.filter((t): t is number => typeof t === 'number' && Number.isFinite(t))
+      : [];
     const stillLimit = Math.min(MAX_STILLS, Math.floor(imageBudget / 2));
-    const at = [...new Set(requested.map((t) => Math.round(Math.min(Math.max(t, 0), lastFrame) * 1000) / 1000))]
+    const at = [
+      ...new Set(
+        requested.map((t) => Math.round(Math.min(Math.max(t, 0), lastFrame) * 1000) / 1000)
+      ),
+    ]
       .sort((a, b) => a - b)
       .slice(0, stillLimit);
-    if (!at.length) return { content: imageBudget < 2 ? 'No room for more stills this turn.' : 'Give at least one time inside the video.' };
+    if (!at.length)
+      return {
+        content:
+          imageBudget < 2
+            ? 'No room for more stills this turn.'
+            : 'Give at least one time inside the video.',
+      };
 
-    const { files } = await this.deps.workspace.snapshot(at, this.deps.snapshotDir, undefined, { signal: this.deps.signal });
-    const byIndex = new Map(files.map((file) => [Number(/frame-(\d+)-/.exec(file)?.[1] ?? -1), file]));
+    const { files } = await this.deps.workspace.snapshot(at, this.deps.snapshotDir, undefined, {
+      signal: this.deps.signal,
+    });
+    const byIndex = new Map(
+      files.map((file) => [Number(/frame-(\d+)-/.exec(file)?.[1] ?? -1), file])
+    );
     const images: NonNullable<ToolResult['images']> = [];
     const missing: number[] = [];
 
@@ -194,13 +235,22 @@ export class AgentTools {
         continue;
       }
       images.push({ label: `Yours at ${time} s`, data: await this.deps.encodeImage(file) });
-      const shot = this.document.shots[placed.findIndex((entry) => time >= entry.start && time < entry.end)];
+      const shot =
+        this.document.shots[placed.findIndex((entry) => time >= entry.start && time < entry.end)];
       const keyframe = shot?.refShot != null ? this.deps.exampleKeyframes[shot.refShot] : null;
-      if (keyframe) images.push({ label: `Example shot ${shot.refShot} (matched to ${shot.id})`, data: await this.deps.encodeImage(keyframe) });
+      if (keyframe)
+        images.push({
+          label: `Example shot ${shot.refShot} (matched to ${shot.id})`,
+          data: await this.deps.encodeImage(keyframe),
+        });
     }
     this.progress.stillsViewed += images.filter((image) => image.label.startsWith('Yours')).length;
 
-    const notes = [`${images.length} images below: each of your stills, followed by the example frame of the shot it answers (when it has one).`];
+    const notes = [
+      this.deps.exampleKeyframes.length
+        ? `${images.length} images below: each of your stills, followed by the example frame of the shot it answers (when it has one).`
+        : `${images.length} stills below.`,
+    ];
     if (requested.length > at.length) notes.push(`Only ${at.length} stills fit in this turn.`);
     if (missing.length) notes.push(`No still came back for ${missing.join(', ')} s.`);
     return { content: notes.join(' '), images };
@@ -210,10 +260,18 @@ export class AgentTools {
 function collectFindings(report: CheckReport): CheckFinding[] {
   return [report.lint, report.runtime, report.layout, report.contrast]
     .flatMap((section) => section?.findings ?? [])
-    .sort((a, b) => (a.severity === b.severity ? 0 : a.severity === 'error' ? -1 : b.severity === 'error' ? 1 : 0));
+    .sort((a, b) =>
+      a.severity === b.severity ? 0 : a.severity === 'error' ? -1 : b.severity === 'error' ? 1 : 0
+    );
 }
 
 function formatFinding(finding: CheckFinding): string {
-  const where = [finding.sourceFile, finding.selector, finding.time != null ? `@${finding.time}s` : null].filter(Boolean).join(' ');
+  const where = [
+    finding.sourceFile,
+    finding.selector,
+    finding.time != null ? `@${finding.time}s` : null,
+  ]
+    .filter(Boolean)
+    .join(' ');
   return `[${finding.severity}] ${finding.code}: ${finding.message}${where ? ` (${where})` : ''}${finding.fixHint ? ` Fix: ${finding.fixHint}` : ''}`;
 }

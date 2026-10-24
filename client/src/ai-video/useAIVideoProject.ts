@@ -8,27 +8,56 @@ import * as videoApi from './api';
 import { runAgent, type SourceSummary } from './agent/run';
 import type { AgentProgress } from './agent/tools';
 import { importMediaFiles, type MediaFile } from './analysis/media';
-import { analyzeExample, loadExampleMeasurement, type ExampleInput, type ExampleProgress } from './analysis/reference';
+import {
+  analyzeExample,
+  isExampleLink,
+  loadExampleMeasurement,
+  type ExampleInput,
+  type ExampleProgress,
+} from './analysis/reference';
+import { indexSources, type SourceProgress } from './analysis/sources';
 import type { CompileContext } from './compiler/compile';
-import { linkProjectMedia, syncWorkspace } from './runtime/project';
+import { exportFiles, linkProjectMedia, syncWorkspace } from './runtime/project';
 import { HyperframesWorkspace } from './runtime/workspace';
-import type { EditDocument, MediaItem, VideoMeasurement, VideoPolicy, VideoSession } from './types';
+import { mediaAspect } from './director/aspect';
+import type {
+  AspectRatio,
+  EditDocument,
+  MediaItem,
+  VideoMeasurement,
+  VideoPlan,
+  VideoPolicy,
+  VideoSession,
+} from './types';
 
-export const DEFAULT_REQUEST = 'Make all these clips into one to match this video';
+const BUILD_PLAN_REQUEST = 'Build this video.';
+const BUILD_CHAT_REQUEST = 'Build it from what we talked about.';
+const BUILD_MATCH_REQUEST = 'Make all these clips into one to match this video.';
+const BUILD_EXAMPLE_REQUEST = 'Make a video like this example.';
+const BUILD_CLIPS_REQUEST = 'Make one video from my clips.';
 const TEXT_SAVE_DELAY_MS = 600;
-
-export type Stage = 'start' | 'working' | 'result';
+/** Pause after typing or pasting an example link before it is analyzed. */
+const EXAMPLE_URL_DELAY_MS = 1200;
+/** Before the first build (planning chat), while a build runs, and once there is a video. */
+export type Stage = 'setup' | 'working' | 'result';
 
 /** Live state of a generate run, for the working stage. */
 export interface WorkingState {
   request: string;
-  /** The example is analyzed in this run (it wasn't already). */
+  /** The example was still being analyzed when the build started. */
   analyzingExample: boolean;
   exampleReady: boolean;
-  exampleProgress: ExampleProgress | null;
   sources: SourceSummary | null;
   progress: AgentProgress | null;
   notes: string[];
+}
+
+/** The example and the clips are analyzed in the background as soon as they're added. */
+export interface AnalysisState {
+  example: ExampleProgress | null;
+  exampleError: string | null;
+  clips: SourceProgress | null;
+  clipsError: string | null;
 }
 
 export interface ExportState {
@@ -43,19 +72,34 @@ interface Version {
 }
 
 function slugify(value: string) {
-  return value.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 60) || 'ai-video';
+  return (
+    value
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/^-+|-+$/g, '')
+      .slice(0, 60) || 'ai-video'
+  );
 }
 
-/** One open AI video project: setup, paid AI runs, local timeline edits with undo, and export. */
+/** One open AI video project: sources, the free planning chat, paid AI runs, local timeline edits with undo, and export. */
 export function useAIVideoProject() {
   const toast = useToast();
 
   const session = ref<VideoSession | null>(null);
   const policy = ref<VideoPolicy | null>(null);
   const loading = ref(false);
-  const request = ref(DEFAULT_REQUEST);
   /** A newly chosen example that hasn't been analyzed yet. */
   const exampleDraft = ref<ExampleInput | null>(null);
+  const analysis = reactive<AnalysisState>({
+    example: null,
+    exampleError: null,
+    clips: null,
+    clipsError: null,
+  });
+  /** The user's planning message while the AI replies. */
+  const planPending = ref<string | null>(null);
+  /** The planning composer's text, kept here so a failed message comes back. */
+  const planDraft = ref('');
   const running = ref<'generate' | 'revise' | null>(null);
   const working = ref<WorkingState | null>(null);
   /** The user's message while a revision runs (the server saves it with the run). */
@@ -65,8 +109,6 @@ export function useAIVideoProject() {
   const revision = ref(0);
   const history = ref<Version[]>([]);
   const exportState = ref<ExportState | null>(null);
-  /** Back on the setup screen of a project that already has a video. */
-  const editingSetup = ref(false);
 
   const workspace = shallowRef<HyperframesWorkspace | null>(null);
   let compileContext: CompileContext | null = null;
@@ -74,15 +116,48 @@ export function useAIVideoProject() {
   let controller: AbortController | null = null;
   let generation = 0;
   let saveQueue: Promise<void> = Promise.resolve();
-  let textEdit: { overlayId: string; timer: ReturnType<typeof setTimeout> | null; version: Version | null } | null = null;
+  let textEdit: {
+    blockId: string;
+    timer: ReturnType<typeof setTimeout> | null;
+    version: Version | null;
+  } | null = null;
+  let analysisAbort = new AbortController();
+  let example: { task: Promise<void>; abort: AbortController } | null = null;
+  let exampleUrlTimer: ReturnType<typeof setTimeout> | null = null;
+  let clipsTask: Promise<void> | null = null;
+  let clipsPass = 0;
+  let clipsChanged = false;
 
   const document = computed(() => session.value?.document ?? null);
   const blueprint = computed(() => session.value?.reference_blueprint ?? null);
   const media = computed(() => session.value?.media_items ?? []);
   const clips = computed(() => media.value.filter((item) => item.kind !== 'audio'));
   const song = computed(() => media.value.find((item) => item.kind === 'audio') ?? null);
-  const needsExampleAnalysis = computed(() => !!exampleDraft.value || !blueprint.value);
   const hasExample = computed(() => !!exampleDraft.value || !!session.value?.reference);
+  const needsExampleAnalysis = computed(
+    () => !!exampleDraft.value || (!!session.value?.reference && !blueprint.value)
+  );
+  const planMessages = computed(() =>
+    (session.value?.messages ?? []).filter((message) => message.metadata?.phase === 'plan')
+  );
+  const hasPlanChat = computed(() => planMessages.value.length > 0);
+  /** The newest plan from the planning chat. */
+  const plan = computed<VideoPlan | null>(
+    () =>
+      [...planMessages.value].reverse().find((message) => message.metadata?.plan)?.metadata?.plan ??
+      null
+  );
+  /** The shape a video without an example gets: the user's pick, or most clips' shape. */
+  const aspect = computed<AspectRatio>(
+    () => session.value?.aspect_ratio ?? mediaAspect(clips.value)
+  );
+  /** Building needs something to go on: the planning chat, an example or clips. */
+  const canBuild = computed(
+    () =>
+      !running.value &&
+      !planPending.value &&
+      (hasPlanChat.value || hasExample.value || clips.value.length > 0)
+  );
   const goCost = computed(() => {
     const credits = policy.value?.credits;
     if (!credits) return null;
@@ -90,7 +165,7 @@ export function useAIVideoProject() {
   });
   const stage = computed<Stage>(() => {
     if (running.value === 'generate') return 'working';
-    return document.value && !editingSetup.value ? 'result' : 'start';
+    return document.value ? 'result' : 'setup';
   });
 
   function reportError(error: unknown, title = 'Something went wrong') {
@@ -104,6 +179,13 @@ export function useAIVideoProject() {
   async function ensurePolicy() {
     policy.value ??= await videoApi.getPolicy();
     return policy.value;
+  }
+
+  /** Take fields from a fresh copy of the session without touching local edits. */
+  function mergeSession(fresh: VideoSession, keys: Array<keyof VideoSession>) {
+    const current = session.value;
+    if (!current || current.id !== fresh.id) return;
+    session.value = { ...current, ...Object.fromEntries(keys.map((key) => [key, fresh[key]])) };
   }
 
   // -- Opening and closing ---------------------------------------------------------
@@ -122,9 +204,9 @@ export function useAIVideoProject() {
       }
       if (token !== generation) return;
       session.value = current;
-      request.value = current.request || DEFAULT_REQUEST;
       measurement = current.reference ? await loadExampleMeasurement(current.reference.path) : null;
       if (current.document) await preparePreview(token);
+      else void indexClipsNow().catch(() => {});
     } catch (error) {
       if (token === generation) {
         session.value = null;
@@ -135,26 +217,23 @@ export function useAIVideoProject() {
     }
   }
 
-  async function create(): Promise<boolean> {
-    try {
-      const [created] = await Promise.all([videoApi.createSession({ request: DEFAULT_REQUEST }), ensurePolicy()]);
-      close();
-      generation++;
-      session.value = created;
-      return true;
-    } catch (error) {
-      reportError(error, "Couldn't create the project");
-      return false;
-    }
-  }
-
   function close() {
     generation++;
     controller?.abort();
     controller = null;
+    analysisAbort.abort();
+    analysisAbort = new AbortController();
+    example = null;
+    clipsTask = null;
+    if (exampleUrlTimer) clearTimeout(exampleUrlTimer);
+    exampleUrlTimer = null;
+    Object.assign(analysis, { example: null, exampleError: null, clips: null, clipsError: null });
     if (textEdit) {
       if (textEdit.timer) clearTimeout(textEdit.timer);
-      if (textEdit.version && session.value) void videoApi.updateSession(session.value.id, { document: textEdit.version.document }).catch(() => {});
+      if (textEdit.version && session.value)
+        void videoApi
+          .updateSession(session.value.id, { document: textEdit.version.document })
+          .catch(() => {});
       textEdit = null;
     }
     session.value = null;
@@ -162,6 +241,8 @@ export function useAIVideoProject() {
     compileContext = null;
     measurement = null;
     exampleDraft.value = null;
+    planPending.value = null;
+    planDraft.value = '';
     running.value = null;
     working.value = null;
     pendingMessage.value = null;
@@ -169,13 +250,14 @@ export function useAIVideoProject() {
     previewError.value = null;
     history.value = [];
     exportState.value = null;
-    editingSetup.value = false;
-    request.value = DEFAULT_REQUEST;
   }
 
   // -- Workspace and preview ----------------------------------------------------------
 
-  async function ensureWorkspace(): Promise<{ workspace: HyperframesWorkspace; context: CompileContext }> {
+  async function ensureWorkspace(): Promise<{
+    workspace: HyperframesWorkspace;
+    context: CompileContext;
+  }> {
     const current = session.value;
     if (!current) throw new Error('No project is open.');
     workspace.value ??= await HyperframesWorkspace.open(current.id);
@@ -193,15 +275,135 @@ export function useAIVideoProject() {
       previewUrl.value ??= await ws.serve();
       revision.value++;
     } catch (error) {
-      if (token === generation) previewError.value = videoApi.apiErrorMessage(error, "The preview couldn't load.");
+      if (token === generation)
+        previewError.value = videoApi.apiErrorMessage(error, "The preview couldn't load.");
     }
   }
 
   /** Put the saved document and files back in the workspace after a failed or cancelled run. */
   async function restoreWorkspace() {
     if (!workspace.value || !compileContext || !session.value) return;
-    await syncWorkspace(workspace.value, session.value.composition_files ?? {}, session.value.document, compileContext).catch(() => {});
+    await syncWorkspace(
+      workspace.value,
+      session.value.composition_files ?? {},
+      session.value.document,
+      compileContext
+    ).catch(() => {});
     revision.value++;
+  }
+
+  // -- Background analysis ------------------------------------------------------------
+
+  /**
+   * Analyze a new or unfinished example (charged when it finishes), or join the analysis already
+   * running. Resolves quietly when it is cancelled because the example was removed or replaced.
+   */
+  function analyzeExampleNow(): Promise<void> {
+    if (example) return example.task;
+    const current = session.value;
+    const input =
+      exampleDraft.value ??
+      (current?.reference && !current.reference_blueprint ? referenceInput(current) : null);
+    if (!current || !input) return Promise.resolve();
+    const token = generation;
+    const abort = new AbortController();
+    const stop = () => abort.abort();
+    analysisAbort.signal.addEventListener('abort', stop, { once: true });
+    analysis.exampleError = null;
+    analysis.example = { stage: 'downloading', progress: 0, message: 'Getting the example' };
+
+    const run = async () => {
+      try {
+        const activePolicy = await ensurePolicy();
+        const result = await analyzeExample(
+          current.id,
+          input,
+          activePolicy.max_reference_chunks,
+          (progress) => {
+            if (!abort.signal.aborted) analysis.example = progress;
+          },
+          abort.signal
+        );
+        if (token !== generation || abort.signal.aborted) return;
+        measurement = result.measurement;
+        if (exampleDraft.value === input) exampleDraft.value = null;
+        mergeSession(await videoApi.getSession(current.id), ['reference', 'reference_blueprint']);
+      } catch (error) {
+        if (token !== generation || abort.signal.aborted) return;
+        analysis.exampleError = videoApi.isPaymentRequired(error)
+          ? 'Not enough credits to analyze the example.'
+          : videoApi.apiErrorMessage(error, "Couldn't analyze the example.");
+        throw error;
+      } finally {
+        analysisAbort.signal.removeEventListener('abort', stop);
+        if (example?.abort === abort) {
+          example = null;
+          analysis.example = null;
+        }
+      }
+    };
+    const task = run();
+    example = { task, abort };
+    return task;
+  }
+
+  function cancelExampleAnalysis() {
+    if (exampleUrlTimer) clearTimeout(exampleUrlTimer);
+    exampleUrlTimer = null;
+    example?.abort.abort();
+    example = null;
+    analysis.example = null;
+    analysis.exampleError = null;
+  }
+
+  /** Look through the clips (free before a build) so planning knows what's in them, or join the pass already running. */
+  function indexClipsNow(): Promise<void> {
+    if (clipsTask) {
+      clipsChanged = true;
+      return clipsTask;
+    }
+    if (!session.value?.media_items.some((item) => item.kind !== 'audio')) return Promise.resolve();
+    const token = generation;
+    const signal = analysisAbort.signal;
+    const pass = ++clipsPass;
+    analysis.clipsError = null;
+
+    clipsTask = (async () => {
+      try {
+        do {
+          clipsChanged = false;
+          const latest = session.value!;
+          await indexSources(
+            latest.id,
+            latest.media_items,
+            latest.source_index ?? {},
+            (progress) => {
+              if (token === generation) analysis.clips = progress;
+            },
+            signal
+          );
+          if (token !== generation) return;
+          mergeSession(await videoApi.getSession(latest.id), ['source_index']);
+        } while (clipsChanged && token === generation);
+      } catch (error) {
+        if (token !== generation || signal.aborted) return;
+        analysis.clipsError = videoApi.isPaymentRequired(error)
+          ? 'Add credits so the AI can look through your clips.'
+          : videoApi.apiErrorMessage(error, "Couldn't look through your clips.");
+        throw error;
+      } finally {
+        if (pass === clipsPass) {
+          clipsTask = null;
+          analysis.clips = null;
+        }
+      }
+    })();
+    return clipsTask;
+  }
+
+  /** Everything planning and building need: the analyzed example (errors stop them) and the clips (best effort). */
+  async function ensureAnalyzed() {
+    await Promise.all([analyzeExampleNow(), indexClipsNow().catch(() => {})]);
   }
 
   // -- Setup ---------------------------------------------------------------------------
@@ -222,7 +424,10 @@ export function useAIVideoProject() {
       if (!items.length) return;
       const added = [...current.media_items, ...items];
       const newSong = items.filter((item) => item.kind === 'audio').pop();
-      await saveMedia(newSong ? added.filter((item) => item.kind !== 'audio' || item === newSong) : added);
+      await saveMedia(
+        newSong ? added.filter((item) => item.kind !== 'audio' || item === newSong) : added
+      );
+      void indexClipsNow().catch(() => {});
     } catch (error) {
       reportError(error, "Couldn't add the files");
     }
@@ -238,30 +443,114 @@ export function useAIVideoProject() {
     }
   }
 
+  /** A pasted link is analyzed once the user stops typing. */
   function setExampleUrl(url: string) {
     const value = url.trim();
-    exampleDraft.value = value && value !== session.value?.reference?.sourceUrl ? { kind: 'url', value } : null;
+    if (value === exampleDraft.value?.value || value === session.value?.reference?.sourceUrl)
+      return;
+    cancelExampleAnalysis();
+    exampleDraft.value = isExampleLink(value) ? { kind: 'url', value } : null;
+    if (exampleDraft.value)
+      exampleUrlTimer = setTimeout(
+        () => void analyzeExampleNow().catch(() => {}),
+        EXAMPLE_URL_DELAY_MS
+      );
   }
 
   function setExampleFile(path: string) {
+    cancelExampleAnalysis();
     exampleDraft.value = { kind: 'upload', value: path };
+    void analyzeExampleNow().catch(() => {});
   }
 
-  function clearExampleDraft() {
+  /** Drop the example (a new pick, the analyzed one, or one mid-analysis) so the video is made from the description. */
+  async function removeExample() {
+    const current = session.value;
+    if (!current || running.value) return;
+    const started = !!example || !!current.reference;
+    cancelExampleAnalysis();
     exampleDraft.value = null;
+    if (!started) return;
+    try {
+      session.value = await videoApi.updateSession(current.id, { reference: null });
+      measurement = null;
+    } catch (error) {
+      reportError(error, "Couldn't remove the example");
+    }
+  }
+
+  async function rename(name: string) {
+    const current = session.value;
+    const value = name.trim();
+    if (!current || !value || value === current.name) return;
+    try {
+      mergeSession(await videoApi.updateSession(current.id, { name: value }), ['name']);
+    } catch (error) {
+      reportError(error, "Couldn't rename the project");
+    }
+  }
+
+  async function setAspect(value: AspectRatio) {
+    const current = session.value;
+    if (!current || running.value || current.aspect_ratio === value) return;
+    try {
+      session.value = await videoApi.updateSession(current.id, { aspect_ratio: value });
+    } catch (error) {
+      reportError(error, "Couldn't change the shape");
+    }
+  }
+
+  // -- Planning (free) -----------------------------------------------------------------
+
+  async function sendPlan(text: string) {
+    const current = session.value;
+    const message = text.trim();
+    if (!current || !message || running.value || planPending.value) return;
+    const token = generation;
+    planPending.value = message;
+    planDraft.value = '';
+    try {
+      await ensureAnalyzed();
+      if (token !== generation) return;
+      const updated = await videoApi.sendPlanMessage(current.id, message);
+      if (token !== generation) return;
+      mergeSession(updated, [
+        'messages',
+        'aspect_ratio',
+        'source_index',
+        'reference',
+        'reference_blueprint',
+      ]);
+    } catch (error) {
+      if (token !== generation) return;
+      planDraft.value = message;
+      reportError(error, "The AI couldn't reply");
+    } finally {
+      if (token === generation) planPending.value = null;
+    }
   }
 
   // -- AI runs -------------------------------------------------------------------------
 
   function currentVersion(): Version | null {
     const current = session.value;
-    return current?.document ? { document: current.document, files: current.composition_files ?? {} } : null;
+    return current?.document
+      ? { document: current.document, files: current.composition_files ?? {} }
+      : null;
   }
 
-  async function go() {
+  function buildRequest() {
+    if (plan.value) return BUILD_PLAN_REQUEST;
+    if (hasPlanChat.value) return BUILD_CHAT_REQUEST;
+    if (hasExample.value) return clips.value.length ? BUILD_MATCH_REQUEST : BUILD_EXAMPLE_REQUEST;
+    return BUILD_CLIPS_REQUEST;
+  }
+
+  /** Build the video (paid), following the planning chat and its plan when there is one. */
+  async function build() {
     const current = session.value;
-    if (!current || running.value) return;
-    const text = request.value.trim() || DEFAULT_REQUEST;
+    if (!current || !canBuild.value) return;
+    const text = buildRequest();
     const token = generation;
     const abort = (controller = new AbortController());
     const before = currentVersion();
@@ -269,7 +558,6 @@ export function useAIVideoProject() {
       request: text,
       analyzingExample: needsExampleAnalysis.value,
       exampleReady: !needsExampleAnalysis.value,
-      exampleProgress: null,
       sources: null,
       progress: null,
       notes: [],
@@ -280,26 +568,11 @@ export function useAIVideoProject() {
     try {
       await flushTextEdit();
       const activePolicy = await ensurePolicy();
-      let latest = await videoApi.updateSession(current.id, { request: text });
+      await ensureAnalyzed();
+      if (token !== generation || abort.signal.aborted) return;
+      const latest = await videoApi.getSession(current.id);
       session.value = latest;
-
-      if (state.analyzingExample) {
-        const input = exampleDraft.value ?? (latest.reference ? referenceInput(latest) : null);
-        if (!input) throw new Error('Add an example video first.');
-        const result = await analyzeExample(
-          latest.id,
-          input,
-          activePolicy.max_reference_chunks,
-          (progress) => (state.exampleProgress = progress),
-          abort.signal
-        );
-        measurement = result.measurement;
-        exampleDraft.value = null;
-        latest = await videoApi.getSession(latest.id);
-        if (token !== generation) return;
-        session.value = latest;
-        state.exampleReady = true;
-      }
+      state.exampleReady = true;
 
       const { workspace: ws } = await ensureWorkspace();
       const { session: done } = await runAgent({
@@ -317,9 +590,11 @@ export function useAIVideoProject() {
         },
       });
       if (token !== generation) return;
-      session.value = done.name || !done.document?.title ? done : await videoApi.updateSession(done.id, { name: done.document.title });
+      session.value =
+        done.name || !done.document?.title
+          ? done
+          : await videoApi.updateSession(done.id, { name: done.document.title });
       if (before) history.value.push(before);
-      editingSetup.value = false;
       await preparePreview(token);
     } catch (error) {
       if (token !== generation) return;
@@ -360,7 +635,8 @@ export function useAIVideoProject() {
       });
       if (token !== generation) return;
       session.value = done;
-      if (before && JSON.stringify(before) !== JSON.stringify(currentVersion())) history.value.push(before);
+      if (before && JSON.stringify(before) !== JSON.stringify(currentVersion()))
+        history.value.push(before);
       revision.value++;
     } catch (error) {
       if (token !== generation) return;
@@ -395,7 +671,12 @@ export function useAIVideoProject() {
         const { workspace: ws, context } = await ensureWorkspace();
         await syncWorkspace(ws, version.files, version.document, context);
         revision.value++;
-        await videoApi.updateSession(sessionId, saveFiles ? { document: version.document, composition_files: version.files } : { document: version.document });
+        await videoApi.updateSession(
+          sessionId,
+          saveFiles
+            ? { document: version.document, composition_files: version.files }
+            : { document: version.document }
+        );
       } catch (error) {
         if (token === generation) reportError(error, errorTitle);
       }
@@ -414,15 +695,34 @@ export function useAIVideoProject() {
     await persist({ document: next, files: before.files }, false, "Couldn't save the change");
   }
 
-  /** Edit overlay text as the user types: one undo step per overlay, saved after a pause. */
-  function editText(overlayId: string, next: EditDocument) {
+  /** Commit a user's scene styling, SVG or animation edit with the same file-aware undo history as AI revisions. */
+  async function applyComposition(path: string, source: string) {
+    const current = session.value;
+    if (
+      !current?.composition_files ||
+      !(path in current.composition_files) ||
+      !source.trim() ||
+      running.value
+    )
+      return;
+    await flushTextEdit();
+    const before = currentVersion();
+    if (!before || before.files[path] === source) return;
+    history.value.push(before);
+    const files = { ...before.files, [path]: source };
+    session.value = { ...current, composition_files: files };
+    await persist({ document: before.document, files }, true, "Couldn't save the scene");
+  }
+
+  /** Edit the words of an overlay or scene as the user types: one undo step per block, saved after a pause. */
+  function editText(blockId: string, next: EditDocument) {
     const current = session.value;
     const before = currentVersion();
     if (!current || !before || running.value) return;
-    if (textEdit?.overlayId !== overlayId) {
+    if (textEdit?.blockId !== blockId) {
       void flushTextEdit();
       history.value.push(before);
-      textEdit = { overlayId, timer: null, version: null };
+      textEdit = { blockId, timer: null, version: null };
     }
     session.value = { ...current, document: next };
     const edit = textEdit!;
@@ -456,28 +756,46 @@ export function useAIVideoProject() {
 
   async function exportVideo() {
     const current = session.value;
-    if (!current?.document || running.value || (exportState.value && !exportState.value.path && !exportState.value.error)) return;
+    if (
+      !current?.document ||
+      running.value ||
+      (exportState.value && !exportState.value.path && !exportState.value.error)
+    )
+      return;
     const name = current.name || current.document.title || 'AI video';
     exportState.value = { progress: 0, path: null, error: null };
     try {
       await flushTextEdit();
-      const { workspace: ws } = await ensureWorkspace();
+      await saveQueue;
+      const version = currentVersion();
+      if (!version?.document) throw new Error('No video is ready to export.');
+      const { workspace: ws, context } = await ensureWorkspace();
       const requested = await join(await videoDir(), `${slugify(name)}.mp4`);
       const result = await ws.render(requested, {
-        fps: current.document.format.fps,
-        onProgress: (progress) => exportState.value && (exportState.value.progress = Math.round(progress * 100)),
+        fps: version.document.format.fps,
+        files: exportFiles(version.files, version.document, context),
+        onProgress: (progress) =>
+          exportState.value && (exportState.value.progress = Math.round(progress * 100)),
       });
       exportState.value = { progress: 100, path: result.outputPath, error: null };
       void saveToLibrary(result.outputPath, name, result.duration, result.bytes);
     } catch (error) {
-      exportState.value = { progress: 0, path: null, error: videoApi.apiErrorMessage(error, 'The export failed.') };
+      exportState.value = {
+        progress: 0,
+        path: null,
+        error: videoApi.apiErrorMessage(error, 'The export failed.'),
+      };
     }
   }
 
   /** Register the export as a finished clip so it shows up in the clip library. */
   async function saveToLibrary(path: string, name: string, duration: number | null, bytes: number) {
     try {
-      const fileName = path.split(/[\\/]/).pop()?.replace(/\.[^.]+$/, '') || 'ai-video';
+      const fileName =
+        path
+          .split(/[\\/]/)
+          .pop()
+          ?.replace(/\.[^.]+$/, '') || 'ai-video';
       const thumbnailPath = await invoke<string>('generate_thumbnail_at_timestamp', {
         videoPath: path,
         timestampSeconds: 1,
@@ -501,8 +819,12 @@ export function useAIVideoProject() {
     session,
     policy,
     loading,
-    request,
     exampleDraft,
+    analysis,
+    planPending,
+    planDraft,
+    plan,
+    hasPlanChat,
     running,
     working,
     pendingMessage,
@@ -511,7 +833,6 @@ export function useAIVideoProject() {
     revision,
     history,
     exportState,
-    editingSetup,
     document,
     blueprint,
     media,
@@ -519,20 +840,27 @@ export function useAIVideoProject() {
     song,
     hasExample,
     needsExampleAnalysis,
+    aspect,
+    canBuild,
     goCost,
     stage,
     open,
-    create,
     close,
     addMedia,
     removeMedia,
     setExampleUrl,
     setExampleFile,
-    clearExampleDraft,
-    go,
+    removeExample,
+    retryExample: () => void analyzeExampleNow().catch(() => {}),
+    retryClips: () => void indexClipsNow().catch(() => {}),
+    rename,
+    setAspect,
+    sendPlan,
+    build,
     revise,
     cancel,
     applyEdit,
+    applyComposition,
     editText,
     undo,
     exportVideo,
@@ -543,7 +871,9 @@ export function useAIVideoProject() {
 function referenceInput(session: VideoSession): ExampleInput | null {
   const reference = session.reference;
   if (!reference) return null;
-  return reference.sourceUrl ? { kind: 'url', value: reference.sourceUrl } : { kind: 'upload', value: reference.path };
+  return reference.sourceUrl
+    ? { kind: 'url', value: reference.sourceUrl }
+    : { kind: 'upload', value: reference.path };
 }
 
 export type AIVideoProject = ReturnType<typeof useAIVideoProject>;

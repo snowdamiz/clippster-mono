@@ -4,7 +4,17 @@ import type { MediaItem, ToolCall } from '../types';
 import { AgentTools, type AgentToolDeps } from './tools';
 
 const media: MediaItem[] = [
-  { id: 'm1', name: 'a.mp4', kind: 'video', path: 'C:/a.mp4', duration: 30, width: 1920, height: 1080, hasAudio: false, contentHash: 'h1' },
+  {
+    id: 'm1',
+    name: 'a.mp4',
+    kind: 'video',
+    path: 'C:/a.mp4',
+    duration: 30,
+    width: 1920,
+    height: 1080,
+    hasAudio: false,
+    contentHash: 'h1',
+  },
 ];
 
 const section = (findings: CheckReport['lint']['findings'] = []) => ({
@@ -24,18 +34,37 @@ function setup() {
     readFile: vi.fn(async (path: string) => files.get(path) ?? ''),
     deleteFile: vi.fn(async (path: string) => files.delete(path)),
     listFiles: vi.fn(async () => [...files.keys(), 'hyperframes.json'].sort()),
-    check: vi.fn(async (): Promise<CheckReport> => ({
-      ok: false,
-      lint: section([{ code: 'missing_timeline', severity: 'error', message: 'No timeline', sourceFile: 'compositions/title.html', fixHint: 'Register it' }]),
-      runtime: section(),
-      layout: section([{ code: 'overflow', severity: 'warning', message: 'Text overflows', time: 1.5 }]),
-      contrast: section(),
+    check: vi.fn(
+      async (): Promise<CheckReport> => ({
+        ok: false,
+        lint: section([
+          {
+            code: 'missing_timeline',
+            severity: 'error',
+            message: 'No timeline',
+            sourceFile: 'compositions/title.html',
+            fixHint: 'Register it',
+          },
+        ]),
+        runtime: section(),
+        layout: section([
+          { code: 'overflow', severity: 'warning', message: 'Text overflows', time: 1.5 },
+        ]),
+        contrast: section(),
+      })
+    ),
+    snapshot: vi.fn(async (times: number[], outDir: string) => ({
+      outDir,
+      files: times.map((t, i) => `${outDir}/frame-0${i}-at-${t}s.png`),
     })),
-    snapshot: vi.fn(async (times: number[], outDir: string) => ({ outDir, files: times.map((t, i) => `${outDir}/frame-0${i}-at-${t}s.png`) })),
   };
   const deps: AgentToolDeps = {
     workspace,
-    compileContext: { gsapSrc: 'assets/vendor/gsap.min.js', fonts: [], media: { m1: { src: 'assets/media/m1.mp4', kind: 'video', duration: 30, hasAudio: false } } },
+    compileContext: {
+      gsapSrc: 'assets/vendor/gsap.min.js',
+      fonts: [],
+      media: { m1: { src: 'assets/media/m1.mp4', kind: 'video', duration: 30, hasAudio: false } },
+    },
     media,
     maxSeconds: 60,
     exampleKeyframes: ['C:/ref/keyframes/shot-0000.jpg', null],
@@ -45,7 +74,11 @@ function setup() {
   return { tools: new AgentTools(deps, null), workspace, files };
 }
 
-const call = (name: ToolCall['name'], args: Record<string, unknown> = {}, id: string = name): ToolCall => ({ id, name, arguments: args });
+const call = (
+  name: ToolCall['name'],
+  args: Record<string, unknown> = {},
+  id: string = name
+): ToolCall => ({ id, name, arguments: args });
 
 const document = {
   title: 'Test',
@@ -55,7 +88,17 @@ const document = {
     { id: 's1', mediaId: 'm1', sourceIn: 0, duration: 2, refShot: 0 },
     { id: 's2', mediaId: 'm1', sourceIn: 4, duration: 3, refShot: 1 },
   ],
-  overlays: [{ id: 't1', lane: 'text', start: 0, duration: 2, label: 'Hi', composition: 'compositions/title.html', variables: { text: 'HI' } }],
+  overlays: [
+    {
+      id: 't1',
+      lane: 'text',
+      start: 0,
+      duration: 2,
+      label: 'Hi',
+      composition: 'compositions/title.html',
+      variables: { text: 'HI' },
+    },
+  ],
 };
 
 describe('AgentTools', () => {
@@ -66,7 +109,9 @@ describe('AgentTools', () => {
     expect(tools.document).toBeNull();
 
     const [ok] = await tools.run([call('set_edit', { document })]);
-    expect(ok.content).toContain('Saved and compiled: 2 shots, 5 s, 1 text and 0 graphics overlays.');
+    expect(ok.content).toContain(
+      'Saved and compiled: 2 shots (0 designed scenes), 5 s, 1 text and 0 graphics overlays.'
+    );
     expect(ok.content).toContain('Shot starts (frame-snapped): s1@0 s2@2');
     expect(ok.content).toContain("compositions/title.html hasn't been written yet.");
     expect(files.get('index.html')).toContain('data-composition-src="compositions/title.html"');
@@ -88,13 +133,15 @@ describe('AgentTools', () => {
       'Saved compositions/title.html.',
       '<html></html>',
       'compositions/title.html\nindex.html',
-      'Not deleted: overlays t1 still use compositions/title.html.',
+      'Not deleted: compositions/title.html is still used by t1.',
     ]);
   });
 
   it('formats check findings with errors first', async () => {
     const { tools } = setup();
-    expect((await tools.run([call('check')]))[0].content).toBe('Submit the edit with set_edit first.');
+    expect((await tools.run([call('check')]))[0].content).toBe(
+      'Submit the edit with set_edit first.'
+    );
     await tools.run([call('set_edit', { document })]);
     const [result] = await tools.run([call('check')]);
     expect(result.content).toBe(
@@ -107,8 +154,18 @@ describe('AgentTools', () => {
     const { tools, workspace } = setup();
     await tools.run([call('set_edit', { document })]);
     const [result] = await tools.run([call('snapshot', { times: [3, 1, 1, 99, 'x'] })]);
-    expect(workspace.snapshot).toHaveBeenCalledWith([1, 3, 4.967], 'C:/session/snapshots', undefined, { signal: undefined });
-    expect(result.images?.map((image) => image.label)).toEqual(['Yours at 1 s', 'Example shot 0 (matched to s1)', 'Yours at 3 s', 'Yours at 4.967 s']);
+    expect(workspace.snapshot).toHaveBeenCalledWith(
+      [1, 3, 4.967],
+      'C:/session/snapshots',
+      undefined,
+      { signal: undefined }
+    );
+    expect(result.images?.map((image) => image.label)).toEqual([
+      'Yours at 1 s',
+      'Example shot 0 (matched to s1)',
+      'Yours at 3 s',
+      'Yours at 4.967 s',
+    ]);
     expect(result.images?.[1].data).toBe('b64:C:/ref/keyframes/shot-0000.jpg');
     expect(tools.progress.stillsViewed).toBe(3);
   });

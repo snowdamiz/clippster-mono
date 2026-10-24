@@ -1,18 +1,21 @@
 defmodule ClippsterServer.AI.VideoSession do
   @moduledoc """
-  One AI video project: the user's clips, the example video, what the AI learned from both,
-  and the current edit (document + generated composition files).
+  One AI video project: the user's clips, the optional example video, what the AI learned from
+  them, and the current edit (document + generated composition files). What the user wants lives
+  in the planning chat and each run's request.
   """
 
   use Ecto.Schema
   import Ecto.Changeset
 
   @statuses ~w(draft working ready)
+  @aspect_ratios ~w(16:9 9:16 1:1 4:5)
 
   schema "ai_chat_sessions" do
     field :name, :string
     field :status, :string, default: "draft"
-    field :request, :string
+    # Output shape when there is no example; with one, the example's shape is used.
+    field :aspect_ratio, :string
     field :media_items, {:array, :map}, default: []
     field :reference, :map
     field :reference_blueprint, :map
@@ -37,7 +40,7 @@ defmodule ClippsterServer.AI.VideoSession do
     |> cast(attrs, [
       :name,
       :status,
-      :request,
+      :aspect_ratio,
       :media_items,
       :reference,
       :reference_blueprint,
@@ -50,8 +53,8 @@ defmodule ClippsterServer.AI.VideoSession do
     ])
     |> validate_required([:user_id, :status])
     |> validate_inclusion(:status, @statuses)
+    |> validate_inclusion(:aspect_ratio, @aspect_ratios)
     |> validate_length(:name, max: 120)
-    |> validate_length(:request, max: 2_000)
     |> foreign_key_constraint(:user_id)
   end
 end

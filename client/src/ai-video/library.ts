@@ -4,7 +4,10 @@ import { getEditorExportClips } from '@/services/database/clips';
 import { getAllDownloadedAudio } from '@/services/database/downloaded-audio';
 import { getAllImageAssets } from '@/services/database/image-assets';
 import { getAllProjects } from '@/services/database/projects';
-import { pickPrimaryRawVideo, resolveRawVideosForProject } from '@/services/project-raw-video-resolve';
+import {
+  pickPrimaryRawVideo,
+  resolveRawVideosForProject,
+} from '@/services/project-raw-video-resolve';
 import { imageThumbnail } from './analysis/media';
 
 export type LibrarySource = 'built-clips' | 'projects' | 'image-library' | 'audio-library';
@@ -20,10 +23,19 @@ export interface LibraryItem {
 }
 
 export const LIBRARY_SOURCES: Record<LibrarySource, { label: string; empty: string }> = {
-  'built-clips': { label: 'Built clips', empty: 'Build clips from your projects to see them here.' },
-  projects: { label: 'Projects', empty: 'Projects with a downloaded or uploaded video show up here.' },
+  'built-clips': {
+    label: 'Built clips',
+    empty: 'Build clips from your projects to see them here.',
+  },
+  projects: {
+    label: 'Projects',
+    empty: 'Projects with a downloaded or uploaded video show up here.',
+  },
   'image-library': { label: 'Image library', empty: 'Images you create or upload show up here.' },
-  'audio-library': { label: 'Audio library', empty: 'Songs and sounds you download or upload show up here.' },
+  'audio-library': {
+    label: 'Audio library',
+    empty: 'Songs and sounds you download or upload show up here.',
+  },
 };
 
 function aspectRatios(json: string | null): string | null {
@@ -38,7 +50,10 @@ function aspectRatios(json: string | null): string | null {
 
 /** Clip builds plus Video Editor exports, matching what the Clips page shows. */
 async function builtClips(): Promise<LibraryItem[]> {
-  const [builds, editorExports] = await Promise.all([getCompletedBuildEntries(), getEditorExportClips()]);
+  const [builds, editorExports] = await Promise.all([
+    getCompletedBuildEntries(),
+    getEditorExportClips(),
+  ]);
   const entries = [
     ...builds.map(({ clip, build }) => ({
       createdAt: build.created_at,
@@ -69,7 +84,9 @@ async function builtClips(): Promise<LibraryItem[]> {
 async function projects(): Promise<LibraryItem[]> {
   const resolved = await Promise.all(
     (await getAllProjects()).map(async (project) => {
-      const video = pickPrimaryRawVideo(await resolveRawVideosForProject(project.id, project.parent_id));
+      const video = pickPrimaryRawVideo(
+        await resolveRawVideosForProject(project.id, project.parent_id)
+      );
       return video ? { project, video } : null;
     })
   );

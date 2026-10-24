@@ -1,4 +1,5 @@
 /** Shared types for the AI video editor. Field names match the server JSON and the agent prompt. */
+import type { SupportedTargetAspectRatio } from '@/lib/creatorClipBuildDefaults';
 
 export type MediaKind = 'video' | 'photo' | 'audio';
 
@@ -81,7 +82,11 @@ export interface Blueprint {
   height: number;
   fps: number;
   shots: BlueprintShot[];
-  beats: { bpm: number | null; confidence: string; beats: Array<{ time: number; strength: number }> } | null;
+  beats: {
+    bpm: number | null;
+    confidence: string;
+    beats: Array<{ time: number; strength: number }>;
+  } | null;
   stats: {
     shots: number;
     medianShot: number;
@@ -132,13 +137,22 @@ export type SourceIndex = Record<string, Record<string, { segments: SourceSegmen
 
 // -- Edit document ------------------------------------------------------------------
 
-export const SHOT_MOVES = ['none', 'push-in', 'pull-out', 'pan-left', 'pan-right', 'punch', 'shake'] as const;
+export const SHOT_MOVES = [
+  'none',
+  'push-in',
+  'pull-out',
+  'pan-left',
+  'pan-right',
+  'punch',
+  'shake',
+] as const;
 export const SHOT_TRANSITIONS = ['cut', 'flash', 'dip', 'dissolve'] as const;
 export const OVERLAY_LANES = ['graphics', 'text'] as const;
 
 export type ShotMove = (typeof SHOT_MOVES)[number];
 export type ShotTransition = (typeof SHOT_TRANSITIONS)[number];
 export type OverlayLane = (typeof OVERLAY_LANES)[number];
+export type AspectRatio = SupportedTargetAspectRatio;
 
 export interface ShotAlternate {
   mediaId: string;
@@ -146,9 +160,20 @@ export interface ShotAlternate {
   description: string;
 }
 
+export type VariableValue = string | number | boolean;
+
+/** A full-frame composition the AI designed, played as a shot instead of footage. */
+export interface ShotScene {
+  composition: string;
+  label: string;
+  variables: Record<string, VariableValue>;
+}
+
+/** One block on the video lane: the user's footage or photo (`mediaId`), or a designed `scene`. */
 export interface EditShot {
   id: string;
-  mediaId: string;
+  mediaId: string | null;
+  scene: ShotScene | null;
   sourceIn: number;
   duration: number;
   speed: number;
@@ -158,8 +183,6 @@ export interface EditShot {
   description: string;
   alternates: ShotAlternate[];
 }
-
-export type VariableValue = string | number | boolean;
 
 export interface EditOverlay {
   id: string;
@@ -189,7 +212,29 @@ export interface EditDocument {
 // -- Server records -------------------------------------------------------------------
 
 export type SessionStatus = 'draft' | 'working' | 'ready';
-export type RunKind = 'generate' | 'revise' | 'reference';
+export type RunKind = 'generate' | 'revise' | 'reference' | 'plan';
+
+/** One step of the plan agreed in the planning chat: footage filling the frame, or a designed scene. */
+export interface PlanBeat {
+  seconds: number;
+  kind: 'scene' | 'footage';
+  what: string;
+  words?: string;
+  /** Media ids shown in this beat. */
+  media?: string[];
+}
+
+export interface VideoPlan {
+  title: string;
+  /** Total length in seconds. */
+  seconds: number;
+  /** Only without an example. */
+  aspect?: AspectRatio;
+  tone?: string;
+  /** Facts and must-haves the user gave. */
+  notes?: string;
+  beats: PlanBeat[];
+}
 
 export interface VideoRun {
   id: number;
@@ -206,7 +251,8 @@ export interface SessionMessage {
   id: number;
   role: 'user' | 'assistant';
   content: string;
-  metadata: { run_id?: number; refunded?: boolean } | null;
+  /** `phase: 'plan'` marks the planning chat; its replies carry the plan when it changed. */
+  metadata: { run_id?: number; refunded?: boolean; phase?: 'plan'; plan?: VideoPlan } | null;
   inserted_at: string;
 }
 
@@ -214,10 +260,11 @@ export interface VideoSession {
   id: number;
   name: string | null;
   status: SessionStatus;
-  request: string | null;
   media_items: MediaItem[];
   reference: ReferenceInfo | null;
   reference_blueprint: Blueprint | null;
+  /** Chosen shape for a video without an example; null uses the clips' shape. */
+  aspect_ratio: AspectRatio | null;
   source_index: SourceIndex | null;
   document: EditDocument | null;
   composition_files: Record<string, string> | null;
@@ -248,7 +295,14 @@ export interface VideoPolicy {
 
 export interface ToolCall {
   id: string;
-  name: 'set_edit' | 'write_file' | 'read_file' | 'list_files' | 'delete_file' | 'check' | 'snapshot';
+  name:
+    | 'set_edit'
+    | 'write_file'
+    | 'read_file'
+    | 'list_files'
+    | 'delete_file'
+    | 'check'
+    | 'snapshot';
   arguments: Record<string, unknown>;
 }
 
@@ -273,6 +327,7 @@ export interface Candidate {
 
 export interface GenerateBrief {
   format: EditFormat;
-  candidates: Array<{ refShot: number; duration: number; options: Candidate[] }>;
+  /** Only with an example: the best footage for each of its shots. */
+  candidates?: Array<{ refShot: number; duration: number; options: Candidate[] }>;
   music: { mediaId: string; duration: number; bpm: number | null; beats: number[] } | null;
 }

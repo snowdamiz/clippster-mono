@@ -1,21 +1,10 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 import { getAllMonitoredStreamers, updateMonitoredStreamer, getAllCreatorProfiles } from '@/services/database';
-import { invoke } from '@tauri-apps/api/core';
-import { checkKickLivestream } from '@/services/kick';
-import { checkTwitchLivestream } from '@/services/twitch';
 import { getUserAssignedCreatorProfiles } from '@/services/organizationProfilesApi';
+import { fetchLiveStatus } from '@/composables/useLivestreamMonitoring';
 import { useAuthStore } from './auth';
-import type { SupportedLivestreamPlatform } from '@/types/livestream';
-
-interface LiveStatus {
-  isLive: boolean;
-  streamId?: string;
-  streamStartTimestamp?: number;
-  numParticipants?: number;
-  profileImageUrl?: string;
-  raw?: any;
-}
+import { parseLivestreamPlatform } from '@/types/livestream';
 
 interface CreatorProfile {
   id: string;
@@ -40,59 +29,12 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
   
   let pollingInterval: ReturnType<typeof setInterval> | null = null;
 
-  // Helper function to check live status for different platforms
-  async function fetchPlatformLiveStatus(
-    platformId: string,
-    platform: SupportedLivestreamPlatform
-  ): Promise<LiveStatus> {
-    try {
-      switch (platform) {
-        case 'Kick': {
-          const kickStatus = await checkKickLivestream(platformId);
-          return {
-            isLive: kickStatus.isLive,
-            streamId: kickStatus.channelId?.toString(),
-            streamStartTimestamp: kickStatus.startedAt
-              ? new Date(kickStatus.startedAt).getTime()
-              : undefined,
-            numParticipants: kickStatus.viewerCount,
-            profileImageUrl: kickStatus.profileImageUrl,
-            raw: kickStatus,
-          };
-        }
-        case 'Twitch': {
-          const twitchStatus = await checkTwitchLivestream(platformId);
-          return {
-            isLive: twitchStatus.isLive,
-            streamId: twitchStatus.channelId,
-            streamStartTimestamp: twitchStatus.startedAt
-              ? new Date(twitchStatus.startedAt).getTime()
-              : undefined,
-            numParticipants: twitchStatus.viewerCount,
-            profileImageUrl: twitchStatus.profileImageUrl,
-            raw: twitchStatus,
-          };
-        }
-        case 'PumpFun':
-        default: {
-          const response = await invoke<string>('check_pumpfun_livestream', { mintId: platformId });
-          if (!response) {
-            return { isLive: false };
-          }
-          const data = JSON.parse(response);
-          return {
-            isLive: Boolean(data?.isLive),
-            streamId: data?.id,
-            streamStartTimestamp: data?.streamStartTimestamp,
-            numParticipants: data?.numParticipants,
-            raw: data,
-          };
-        }
-      }
-    } catch (error) {
-      console.warn(`[LiveStatusStore] Failed to check live status for ${platform}:`, error);
-      return { isLive: false };
-    }
+  /** Live check for one stored platform link. Kick is skipped on interval polls to save API requests. */
+  async function isLinkLive(platformId: string, rawPlatform: string, includeKick: boolean): Promise<boolean | null> {
+    const platform = parseLivestreamPlatform(rawPlatform);
+    if (!platform) return false;
+    if (!includeKick && platform === 'Kick') return null;
+    return (await fetchLiveStatus(platformId, platform)).isLive;
   }
 
   // Fetch live count for all monitored streamers
@@ -115,29 +57,17 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
 
       // Check live status for each streamer
       const statusChecks = streamers.map(async (streamer) => {
-        const platform = streamer.platform.toLowerCase() as 'pumpfun' | 'kick' | 'twitch';
-        
-        // Skip Kick streamers on interval polling to save API requests
-        // Kick status is only checked on app open and manual refresh
-        if (!includeKick && platform === 'kick') {
-          // Return cached live status from database
+        const isLive = await isLinkLive(streamer.mint_id, streamer.platform, includeKick);
+        if (isLive === null) {
           return streamer.is_currently_live === 1;
         }
-        
-        const platformType: SupportedLivestreamPlatform = 
-          platform === 'kick' ? 'Kick' : 
-          platform === 'twitch' ? 'Twitch' : 
-          'PumpFun';
 
-        const status = await fetchPlatformLiveStatus(streamer.mint_id, platformType);
-
-        // Update database with current live status
         await updateMonitoredStreamer(streamer.id, {
-          is_currently_live: status.isLive ? 1 : 0,
+          is_currently_live: isLive ? 1 : 0,
           last_check_timestamp: Math.floor(now / 1000),
         });
 
-        return status.isLive;
+        return isLive;
       });
 
       const results = await Promise.all(statusChecks);
@@ -232,27 +162,9 @@ export const useLiveStatusStore = defineStore('liveStatus', () => {
         allProfiles.map(async (creator) => {
           // Check if any of the creator's platform links are live
           const linkChecks = await Promise.all(
-            creator.platform_links.map(async (link) => {
-              const platform = link.platform.toLowerCase() as 'pumpfun' | 'kick' | 'twitch';
-              
-              // Skip Kick platform links on interval polling to save API requests
-              // Kick status is only checked on app open and manual refresh
-              if (!includeKick && platform === 'kick') {
-                return false;
-              }
-              
-              const platformType: SupportedLivestreamPlatform = 
-                platform === 'kick' ? 'Kick' : 
-                platform === 'twitch' ? 'Twitch' : 
-                'PumpFun';
-
-              try {
-                const status = await fetchPlatformLiveStatus(link.platform_id, platformType);
-                return status.isLive;
-              } catch (error) {
-                return false;
-              }
-            })
+            creator.platform_links.map(
+              async (link) => (await isLinkLive(link.platform_id, link.platform, includeKick)) === true
+            )
           );
 
           // Creator is considered live if any of their links are live

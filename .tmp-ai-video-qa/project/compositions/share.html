@@ -1,0 +1,43 @@
+<!doctype html>
+<html data-composition-variables='[{"id":"text","type":"string","label":"Headline","default":"Share your best"},{"id":"wordmark","type":"string","label":"Wordmark","default":"Clippster"}]'>
+<head><meta charset="UTF-8" /></head>
+<body><template>
+<style>
+#root{position:absolute;inset:0;overflow:hidden}
+#share-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 50%,#15215c 0%,#0a1233 55%,#050a1f 100%)}
+#share-burst{position:absolute;left:960px;top:540px;width:0;height:0}
+.share-p{position:absolute;left:0;top:0}
+#share-title{position:absolute;left:160px;right:160px;top:0;bottom:0;display:flex;align-items:center;justify-content:center;color:#fff;font:800 130px/1 "Montserrat",sans-serif;white-space:nowrap}
+#share-mark{position:absolute;left:160px;right:160px;top:0;bottom:60px;display:flex;flex-direction:column;align-items:center;justify-content:center}
+#share-word{color:#fff;font:900 200px/1 "Montserrat",sans-serif;letter-spacing:-0.03em;white-space:nowrap}
+#share-line{width:640px;height:14px;margin-top:34px;border-radius:7px;background:linear-gradient(90deg,#22d3ee,#a855f7);transform-origin:left center}
+</style>
+<div id="root" data-composition-id="share" data-width="1920" data-height="1080">
+<div id="share-bg"></div>
+<div id="share-burst"></div>
+<div id="share-title"></div>
+<div id="share-mark"><div id="share-word"></div><div id="share-line"></div></div>
+</div>
+<script>
+(function(){
+const v=window.__hyperframes.getVariables();
+const title=document.getElementById("share-title");title.textContent=v.text;
+document.getElementById("share-word").textContent=v.wordmark;
+const burst=document.getElementById("share-burst");
+const tl=gsap.timeline({paused:true});
+const N=18;
+for(let i=0;i<N;i++){const a=(i/N)*Math.PI*2+0.17;const c=i%2?"#a855f7":"#22d3ee";const d=document.createElement("div");d.className="share-p";
+if(i%3===0){d.innerHTML='<svg width="70" height="70" viewBox="0 0 70 70" style="position:absolute;left:-35px;top:-35px"><path d="M10 35 H52 M36 18 L54 35 L36 52" stroke="'+c+'" stroke-width="9" fill="none" stroke-linecap="round" stroke-linejoin="round"/></svg>';}
+else{const s=18+(i*7)%26;d.innerHTML='<div style="position:absolute;left:'+(-s/2)+'px;top:'+(-s/2)+'px;width:0;height:0;border-left:'+(s/2)+'px solid transparent;border-right:'+(s/2)+'px solid transparent;border-bottom:'+s+'px solid '+c+'"></div>';}
+burst.appendChild(d);const r=520+(i*53)%380;
+tl.fromTo(d,{x:0,y:0,rotation:a*57.3,opacity:1,scale:0.3},{x:Math.cos(a)*r,y:Math.sin(a)*r*0.75,rotation:a*57.3+(i%2?90:-90),scale:1,duration:1.4,ease:"power3.out"},0.4+(i%4)*0.03);
+tl.to(d,{x:Math.cos(a)*(r+140),y:Math.sin(a)*(r+140)*0.75,opacity:0.35,duration:2.6,ease:"none"},1.85);}
+tl.fromTo(title,{scale:0.7,opacity:0},{scale:1,opacity:1,duration:0.45,ease:"back.out(2)"},0.45);
+tl.to(title,{scale:1.15,opacity:0,duration:0.3,ease:"power2.in"},1.9);
+tl.fromTo("#share-word",{y:60,opacity:0,scale:0.92},{y:0,opacity:1,scale:1,duration:0.55,ease:"power4.out"},2.1);
+tl.fromTo("#share-line",{scaleX:0},{scaleX:1,duration:0.6,ease:"power3.inOut"},2.35);
+tl.to("#share-mark",{scale:1.04,duration:1.8,ease:"sine.out"},2.6);
+window.__timelines["share"]=tl;
+})();
+</script>
+<script data-ai-editor-timing>(function(){const scale=Number(window.__hyperframes.getVariables().__editorTimeScale || 1);const tl=window.__timelines["share"];if(!tl || !Number.isFinite(scale) || scale<=0 || scale===1)return;const children=tl.getChildren(false,true,true).map(child=>({child,start:child.startTime(),duration:child.duration()}));for(const item of children){item.child.duration(item.duration*scale);item.child.startTime(item.start*scale);}tl.invalidate();})();</script></template></body></html>

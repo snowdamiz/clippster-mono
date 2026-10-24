@@ -1,17 +1,10 @@
 defmodule ClippsterServer.Repo.Migrations.RebuildAiVideoSessions do
   use Ecto.Migration
 
-  @old_editor_notice "This project was made with the previous AI editor, which has been replaced. Its old edit can't be opened anymore. Press Go to rebuild it with the new editor."
-
   def up do
-    execute("DELETE FROM ai_chat_messages WHERE role = 'system'")
-
-    execute("""
-    INSERT INTO ai_chat_messages (role, content, metadata, session_id, inserted_at, updated_at)
-    SELECT 'assistant', '#{String.replace(@old_editor_notice, "'", "''")}', '{"type":"notice"}'::jsonb, id, NOW(), NOW()
-    FROM ai_chat_sessions
-    WHERE composition IS NOT NULL
-    """)
+    # Projects from the previous editor can't be opened by the new one (different edit and media
+    # formats), so they are removed. Their messages go with them (on_delete: :delete_all).
+    execute("DELETE FROM ai_chat_sessions")
 
     alter table(:ai_chat_sessions) do
       remove :composition
@@ -24,7 +17,7 @@ defmodule ClippsterServer.Repo.Migrations.RebuildAiVideoSessions do
       remove :media_analysis
       remove :reference_url
 
-      add :request, :text
+      add :aspect_ratio, :string
       add :reference, :jsonb
       add :reference_blueprint, :jsonb
       add :reference_labels, :jsonb
@@ -34,7 +27,6 @@ defmodule ClippsterServer.Repo.Migrations.RebuildAiVideoSessions do
     end
 
     execute("ALTER TABLE ai_chat_sessions ALTER COLUMN status SET DEFAULT 'draft'")
-    execute("UPDATE ai_chat_sessions SET status = 'draft'")
 
     create table(:ai_video_runs) do
       add :kind, :string, null: false
@@ -62,6 +54,11 @@ defmodule ClippsterServer.Repo.Migrations.RebuildAiVideoSessions do
     create unique_index(:ai_video_runs, [:session_id],
              name: :ai_video_runs_one_running_agent_run,
              where: "status = 'running' AND kind IN ('generate', 'revise')"
+           )
+
+    create unique_index(:ai_video_runs, [:session_id],
+             name: :ai_video_runs_one_open_plan_run,
+             where: "status = 'running' AND kind = 'plan'"
            )
 
     alter table(:ai_usage_logs) do
@@ -94,7 +91,7 @@ defmodule ClippsterServer.Repo.Migrations.RebuildAiVideoSessions do
       remove :reference_labels
       remove :reference_blueprint
       remove :reference
-      remove :request
+      remove :aspect_ratio
 
       add :composition, :jsonb
       add :refinement_round, :integer, default: 0, null: false
