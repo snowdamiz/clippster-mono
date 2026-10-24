@@ -10,6 +10,7 @@ use serde_json::Value;
 use tauri::Emitter;
 use tokio::sync::oneshot;
 use crate::storage;
+use crate::sidecar::resolve_sidecar_binary;
 use crate::thumbnail_utils::generate_thumbnail_hybrid;
 use tokio::io::AsyncBufReadExt;
 use base64::Engine;
@@ -2386,101 +2387,6 @@ fn extract_twitter_source_id(url: &str) -> Result<String, String> {
     }
 
     Err("Could not extract broadcast, space, or status ID from URL".to_string())
-}
-
-/// Resolve a sidecar binary path using Tauri's naming convention.
-/// Tauri places sidecars next to the executable with -{target_triple} suffix.
-/// In dev mode, they're in src-tauri/binaries/ with the same naming.
-fn resolve_sidecar_binary(base_name: &str) -> Result<String, String> {
-    let exe_path =
-        std::env::current_exe().map_err(|e| format!("Failed to get executable path: {}", e))?;
-
-    let exe_dir = exe_path.parent().ok_or("Failed to get parent directory")?;
-
-    let target_triple = get_target_triple();
-
-    #[cfg(target_os = "windows")]
-    let binary_name = format!("{}-{}.exe", base_name, target_triple);
-
-    #[cfg(not(target_os = "windows"))]
-    let binary_name = format!("{}-{}", base_name, target_triple);
-
-    // Production: sidecar is next to the executable
-    let prod_path = exe_dir.join(&binary_name);
-    if prod_path.exists() {
-        println!(
-            "[Twitter] Found {} at (prod): {}",
-            base_name,
-            prod_path.display()
-        );
-        return Ok(prod_path.to_string_lossy().to_string());
-    }
-
-    // macOS production bundle: Tauri strips the target triple from sidecar names
-    #[cfg(target_os = "windows")]
-    let bare_name = format!("{}.exe", base_name);
-    #[cfg(not(target_os = "windows"))]
-    let bare_name = base_name.to_string();
-
-    let bare_path = exe_dir.join(&bare_name);
-    if bare_path.exists() {
-        println!(
-            "[Twitter] Found {} at (bundle): {}",
-            base_name,
-            bare_path.display()
-        );
-        return Ok(bare_path.to_string_lossy().to_string());
-    }
-
-    // Development mode: check src-tauri/binaries/
-    if let Some(target_dir) = exe_dir.parent() {
-        if let Some(target_parent) = target_dir.parent() {
-            let dev_path = target_parent.join("binaries").join(&binary_name);
-            if dev_path.exists() {
-                println!(
-                    "[Twitter] Found {} at (dev): {}",
-                    base_name,
-                    dev_path.display()
-                );
-                return Ok(dev_path.to_string_lossy().to_string());
-            }
-        }
-    }
-
-    // Fallback to system PATH
-    #[cfg(target_os = "windows")]
-    let fallback = format!("{}.exe", base_name);
-
-    #[cfg(not(target_os = "windows"))]
-    let fallback = base_name.to_string();
-
-    println!(
-        "[Twitter] {} not found in bundle, falling back to PATH: {}",
-        base_name, fallback
-    );
-    Ok(fallback)
-}
-
-fn get_target_triple() -> &'static str {
-    #[cfg(all(target_os = "windows", target_arch = "x86_64"))]
-    return "x86_64-pc-windows-msvc";
-
-    #[cfg(all(target_os = "macos", target_arch = "x86_64"))]
-    return "x86_64-apple-darwin";
-
-    #[cfg(all(target_os = "macos", target_arch = "aarch64"))]
-    return "aarch64-apple-darwin";
-
-    #[cfg(all(target_os = "linux", target_arch = "x86_64"))]
-    return "x86_64-unknown-linux-gnu";
-
-    #[cfg(not(any(
-        all(target_os = "windows", target_arch = "x86_64"),
-        all(target_os = "macos", target_arch = "x86_64"),
-        all(target_os = "macos", target_arch = "aarch64"),
-        all(target_os = "linux", target_arch = "x86_64")
-    )))]
-    compile_error!("Unsupported platform - only x86_64 Windows/Linux and x86_64/aarch64 macOS are supported");
 }
 
 fn resolve_ytdlp_binary() -> Result<String, String> {

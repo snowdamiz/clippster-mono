@@ -1,6 +1,4 @@
-use base64::{engine::general_purpose::STANDARD, Engine as _};
 use parking_lot::Mutex;
-use regex::Regex;
 use reqwest::{header::LOCATION, Url};
 use serde::{Deserialize, Serialize};
 use std::{
@@ -14,14 +12,13 @@ use std::{
     },
     time::{Duration, SystemTime},
 };
-use tauri::{ipc::Channel, AppHandle, State};
+use tauri::{ipc::Channel, State};
 use tokio::{fs::File, io::AsyncWriteExt, net::lookup_host, process::Command, time::timeout};
 
 const DEFAULT_MAX_BYTES: u64 = 500 * 1024 * 1024;
 const DEFAULT_MAX_DURATION_SECONDS: f64 = 30.0 * 60.0;
 const DEFAULT_JOB_TIMEOUT_SECONDS: u64 = 5 * 60;
 const DEFAULT_RETENTION_SECONDS: u64 = 60 * 60;
-const MAX_FRAMES: usize = 16;
 
 #[derive(Default)]
 pub struct ReferenceAnalysisState {
@@ -29,7 +26,7 @@ pub struct ReferenceAnalysisState {
 }
 
 impl ReferenceAnalysisState {
-    fn start(&self, job_id: &str) -> Result<Arc<AtomicBool>, String> {
+    pub(crate) fn start(&self, job_id: &str) -> Result<Arc<AtomicBool>, String> {
         let mut jobs = self.jobs.lock();
         if jobs.contains_key(job_id) {
             return Err("A reference analysis with this ID is already running.".into());
@@ -39,7 +36,7 @@ impl ReferenceAnalysisState {
         Ok(cancelled)
     }
 
-    fn finish(&self, job_id: &str) {
+    pub(crate) fn finish(&self, job_id: &str) {
         self.jobs.lock().remove(job_id);
     }
 }
@@ -81,31 +78,13 @@ pub struct ReferenceVideoMetadata {
     source_url: Option<String>,
 }
 
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReferenceFrame {
-    timestamp: f64,
-    kind: &'static str,
-    mime_type: &'static str,
-    base64_data: String,
-}
-
-#[derive(Debug, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ReferenceAnalysisPayload {
-    metadata: ReferenceVideoMetadata,
-    frames: Vec<ReferenceFrame>,
-    cut_timestamps: Vec<f64>,
-    audio_peaks: Vec<crate::audio_peaks::AudioPeak>,
-}
-
 #[derive(Clone, Copy, Debug, PartialEq)]
 enum RemoteKind {
     Platform,
     Direct,
 }
 
-struct TempJobDir(PathBuf);
+pub(crate) struct TempJobDir(pub PathBuf);
 
 impl Drop for TempJobDir {
     fn drop(&mut self) {
@@ -127,37 +106,33 @@ pub async fn cancel_reference_analysis(
     }
 }
 
-#[tauri::command]
-pub async fn prepare_reference_video(
-    app: AppHandle,
-    state: State<'_, ReferenceAnalysisState>,
-    input: ReferenceVideoInput,
-    on_event: Channel<ReferenceProgress>,
-) -> Result<ReferenceAnalysisPayload, String> {
-    validate_job_id(&input.job_id)?;
-    let cancelled = state.start(&input.job_id)?;
-    let result = match timeout(
-        Duration::from_secs(Limits::configured().job_timeout),
-        prepare_reference_video_inner(&app, &input, &on_event, &cancelled),
-    )
-    .await
-    {
-        Ok(result) => result,
-        Err(_) => Err("Reference analysis timed out before completion.".into()),
-    };
-    state.finish(&input.job_id);
-    result
+/// A reference video that has been downloaded (or validated, for uploads) and probed.
+pub(crate) struct AcquiredReference {
+    pub path: PathBuf,
+    pub probed: ProbedVideo,
+    display_name: String,
+    source_url: Option<String>,
+    source_type: &'static str,
 }
 
-async fn prepare_reference_video_inner(
-    app: &AppHandle,
-    input: &ReferenceVideoInput,
-    progress: &Channel<ReferenceProgress>,
-    cancelled: &Arc<AtomicBool>,
-) -> Result<ReferenceAnalysisPayload, String> {
-    emit(progress, "validating", 3, "Validating reference video");
-    ensure_not_cancelled(cancelled)?;
+impl AcquiredReference {
+    pub fn metadata(&self) -> ReferenceVideoMetadata {
+        ReferenceVideoMetadata {
+            duration: round(self.probed.duration, 3),
+            width: self.probed.width,
+            height: self.probed.height,
+            fps: round(self.probed.fps, 3),
+            aspect_ratio: aspect_ratio(self.probed.width, self.probed.height),
+            file_size_bytes: self.probed.file_size,
+            source_type: self.source_type,
+            display_name: self.display_name.clone(),
+            source_url: self.source_url.clone(),
+        }
+    }
+}
 
+/// Temp workspace for one job, with stale jobs from earlier runs cleaned up.
+pub(crate) fn create_job_dir(job_id: &str) -> Result<PathBuf, String> {
     let root = std::env::temp_dir().join("clippster-reference-analysis");
     std::fs::create_dir_all(&root)
         .map_err(|error| format!("Could not create reference workspace: {error}"))?;
@@ -168,10 +143,21 @@ async fn prepare_reference_video_inner(
             DEFAULT_RETENTION_SECONDS,
         ),
     );
-    let job_path = root.join(&input.job_id);
+    let job_path = root.join(job_id);
     std::fs::create_dir_all(&job_path)
         .map_err(|error| format!("Could not create reference workspace: {error}"))?;
-    let _cleanup = TempJobDir(job_path.clone());
+    Ok(job_path)
+}
+
+/// Download (URL) or validate (upload) a reference into `job_path`, then probe and enforce limits.
+pub(crate) async fn acquire_reference(
+    input: &ReferenceVideoInput,
+    job_path: &Path,
+    progress: &Channel<ReferenceProgress>,
+    cancelled: &Arc<AtomicBool>,
+) -> Result<AcquiredReference, String> {
+    emit(progress, "validating", 3, "Validating reference video");
+    ensure_not_cancelled(cancelled)?;
 
     let limits = Limits::configured();
     let (video_path, display_name, source_url, source_type) = match input.kind {
@@ -186,10 +172,10 @@ async fn prepare_reference_video_inner(
             let kind = classify_remote_url(&url)?;
             let path = match kind {
                 RemoteKind::Platform => {
-                    download_platform_video(&url, &job_path, &limits, cancelled).await?
+                    download_platform_video(&url, job_path, &limits, cancelled).await?
                 }
                 RemoteKind::Direct => {
-                    download_direct_video(&url, &job_path, &limits, progress, cancelled).await?
+                    download_direct_video(&url, job_path, &limits, progress, cancelled).await?
                 }
             };
             let name = path
@@ -236,86 +222,24 @@ async fn prepare_reference_video_inner(
         ));
     }
 
-    let cut_timestamps =
-        detect_cuts(&video_path, probed.duration, limits.job_timeout, cancelled).await?;
-    emit(
-        progress,
-        "sampling",
-        58,
-        "Sampling the full timeline and shot boundaries",
-    );
-    let frame_specs = frame_sample_plan(probed.duration, &cut_timestamps);
-    let mut frames = Vec::with_capacity(frame_specs.len());
-    for (index, (timestamp, kind)) in frame_specs.into_iter().enumerate() {
-        ensure_not_cancelled(cancelled)?;
-        frames.push(
-            extract_frame(
-                &video_path,
-                &job_path,
-                index,
-                timestamp,
-                kind,
-                limits.job_timeout,
-                cancelled,
-            )
-            .await?,
-        );
-        let percent = 58 + (((index + 1) as f64 / MAX_FRAMES as f64) * 20.0) as u8;
-        emit(
-            progress,
-            "sampling",
-            percent.min(78),
-            format!("Sampled frame {}", index + 1),
-        );
-    }
-
-    let audio_peaks = match timeout(
-        Duration::from_secs(limits.job_timeout),
-        crate::audio_peaks::detect_audio_peaks(
-            app.clone(),
-            video_path.to_string_lossy().to_string(),
-            0.35,
-            0.75,
-        ),
-    )
-    .await
-    {
-        Ok(Ok(peaks)) => peaks.into_iter().take(120).collect(),
-        _ => Vec::new(),
-    };
-
-    ensure_not_cancelled(cancelled)?;
-    emit(progress, "analyzing", 80, "Reference evidence prepared");
-    Ok(ReferenceAnalysisPayload {
-        metadata: ReferenceVideoMetadata {
-            duration: round(probed.duration, 3),
-            width: probed.width,
-            height: probed.height,
-            fps: round(probed.fps, 3),
-            aspect_ratio: aspect_ratio(probed.width, probed.height),
-            file_size_bytes: probed.file_size,
-            source_type,
-            display_name,
-            source_url,
-        },
-        frames,
-        cut_timestamps: cut_timestamps
-            .into_iter()
-            .map(|value| round(value, 3))
-            .collect(),
-        audio_peaks,
+    Ok(AcquiredReference {
+        path: video_path,
+        probed,
+        display_name,
+        source_url,
+        source_type,
     })
 }
 
 #[derive(Clone, Copy)]
-struct Limits {
+pub(crate) struct Limits {
     max_bytes: u64,
     max_duration: f64,
-    job_timeout: u64,
+    pub job_timeout: u64,
 }
 
 impl Limits {
-    fn configured() -> Self {
+    pub(crate) fn configured() -> Self {
         Self {
             max_bytes: configured_u64("CLIPPSTER_REFERENCE_MAX_BYTES", DEFAULT_MAX_BYTES),
             max_duration: configured_f64(
@@ -331,22 +255,22 @@ impl Limits {
 }
 
 #[derive(Debug)]
-struct ProbedVideo {
-    duration: f64,
-    width: u32,
-    height: u32,
-    fps: f64,
+pub(crate) struct ProbedVideo {
+    pub duration: f64,
+    pub width: u32,
+    pub height: u32,
+    pub fps: f64,
     file_size: u64,
 }
 
-async fn probe_video(
+pub(crate) async fn probe_video(
     path: &Path,
     timeout_seconds: u64,
     cancelled: &Arc<AtomicBool>,
 ) -> Result<ProbedVideo, String> {
     let path_string = path.to_string_lossy().to_string();
     let output = run_command(
-        &crate::youtube::resolve_sidecar_binary("ffprobe")?,
+        &crate::sidecar::resolve_sidecar_binary("ffprobe")?,
         &[
             "-v",
             "error",
@@ -398,116 +322,13 @@ async fn probe_video(
     })
 }
 
-async fn detect_cuts(
-    path: &Path,
-    duration: f64,
-    timeout_seconds: u64,
-    cancelled: &Arc<AtomicBool>,
-) -> Result<Vec<f64>, String> {
-    let output = run_command(
-        &crate::youtube::resolve_sidecar_binary("ffmpeg")?,
-        &[
-            "-hide_banner",
-            "-nostdin",
-            "-i",
-            &path.to_string_lossy(),
-            "-filter:v",
-            "select='gt(scene,0.32)',showinfo",
-            "-an",
-            "-f",
-            "null",
-            "-",
-        ],
-        timeout_seconds,
-        cancelled,
-    )
-    .await?;
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let regex = Regex::new(r"pts_time:([0-9]+(?:\.[0-9]+)?)").expect("valid cut timestamp regex");
-    let mut cuts: Vec<f64> = regex
-        .captures_iter(&stderr)
-        .filter_map(|capture| capture[1].parse::<f64>().ok())
-        .filter(|value| *value > 0.15 && *value < duration - 0.15)
-        .take(120)
-        .collect();
-    cuts.sort_by(f64::total_cmp);
-    cuts.dedup_by(|a, b| (*a - *b).abs() < 0.12);
-    Ok(cuts)
-}
-
-fn frame_sample_plan(duration: f64, cuts: &[f64]) -> Vec<(f64, &'static str)> {
-    let selected_cuts = evenly_spaced_values(cuts, 4);
-    let mut samples = Vec::with_capacity(MAX_FRAMES);
-    for cut in selected_cuts {
-        samples.push(((cut - 0.12).max(0.02), "cut-before"));
-        samples.push(((cut + 0.12).min(duration - 0.02), "cut-after"));
-    }
-    for index in 0..8 {
-        samples.push((((index as f64 + 0.5) / 8.0) * duration, "uniform"));
-    }
-    samples.sort_by(|a, b| a.0.total_cmp(&b.0));
-    samples.dedup_by(|a, b| (a.0 - b.0).abs() < 0.08);
-    samples.truncate(MAX_FRAMES);
-    samples
-}
-
-async fn extract_frame(
-    video_path: &Path,
-    job_path: &Path,
-    index: usize,
-    timestamp: f64,
-    kind: &'static str,
-    timeout_seconds: u64,
-    cancelled: &Arc<AtomicBool>,
-) -> Result<ReferenceFrame, String> {
-    let frame_path = job_path.join(format!("frame-{index:02}.jpg"));
-    let output = run_command(
-        &crate::youtube::resolve_sidecar_binary("ffmpeg")?,
-        &[
-            "-hide_banner",
-            "-loglevel",
-            "error",
-            "-nostdin",
-            "-ss",
-            &format!("{timestamp:.3}"),
-            "-i",
-            &video_path.to_string_lossy(),
-            "-frames:v",
-            "1",
-            "-vf",
-            "scale=640:-2:force_original_aspect_ratio=decrease",
-            "-q:v",
-            "5",
-            "-y",
-            &frame_path.to_string_lossy(),
-        ],
-        timeout_seconds,
-        cancelled,
-    )
-    .await?;
-    if !output.status.success() || !frame_path.exists() {
-        return Err(format!(
-            "Could not sample the reference at {timestamp:.1}s: {}",
-            concise_stderr(&output)
-        ));
-    }
-    let bytes = std::fs::read(&frame_path)
-        .map_err(|error| format!("Could not read sampled frame: {error}"))?;
-    Ok(ReferenceFrame {
-        timestamp: round(timestamp, 3),
-        kind,
-        mime_type: "image/jpeg",
-        base64_data: STANDARD.encode(bytes),
-    })
-}
-
 async fn download_platform_video(
     url: &Url,
     job_path: &Path,
     limits: &Limits,
     cancelled: &Arc<AtomicBool>,
 ) -> Result<PathBuf, String> {
-    let ytdlp = crate::youtube::resolve_sidecar_binary("yt-dlp")?;
+    let ytdlp = crate::sidecar::resolve_sidecar_binary("yt-dlp")?;
     let url_string = url.as_str().to_string();
     let metadata = run_command(
         &ytdlp,
@@ -553,7 +374,7 @@ async fn download_platform_video(
         .unwrap_or_default() as u64;
     if estimated_size > limits.max_bytes {
         return Err(format!(
-            "The reference exceeds the {:.0} MB size limit.",
+            "The video exceeds the {:.0} MB size limit.",
             limits.max_bytes as f64 / 1_048_576.0
         ));
     }
@@ -562,7 +383,7 @@ async fn download_platform_video(
         .join("reference.%(ext)s")
         .to_string_lossy()
         .to_string();
-    let ffmpeg_dir = Path::new(&crate::youtube::resolve_sidecar_binary("ffmpeg")?)
+    let ffmpeg_dir = Path::new(&crate::sidecar::resolve_sidecar_binary("ffmpeg")?)
         .parent()
         .unwrap_or(Path::new("."))
         .to_string_lossy()
@@ -654,7 +475,7 @@ async fn download_direct_video(
             .is_some_and(|size| size > limits.max_bytes)
         {
             return Err(format!(
-                "The reference exceeds the {:.0} MB size limit.",
+                "The video exceeds the {:.0} MB size limit.",
                 limits.max_bytes as f64 / 1_048_576.0
             ));
         }
@@ -673,7 +494,7 @@ async fn download_direct_video(
             downloaded += chunk.len() as u64;
             if downloaded > limits.max_bytes {
                 return Err(format!(
-                    "The reference exceeds the {:.0} MB size limit.",
+                    "The video exceeds the {:.0} MB size limit.",
                     limits.max_bytes as f64 / 1_048_576.0
                 ));
             }
@@ -698,7 +519,7 @@ async fn download_direct_video(
     Err("The reference redirected too many times.".into())
 }
 
-async fn run_command(
+pub(crate) async fn run_command(
     binary: &str,
     args: &[&str],
     timeout_seconds: u64,
@@ -720,13 +541,13 @@ async fn run_command(
     }
 }
 
-async fn wait_for_cancellation(cancelled: Arc<AtomicBool>) {
+pub(crate) async fn wait_for_cancellation(cancelled: Arc<AtomicBool>) {
     while !cancelled.load(Ordering::Relaxed) {
         tokio::time::sleep(Duration::from_millis(75)).await;
     }
 }
 
-fn hide_console(_command: &mut Command) {
+pub(crate) fn hide_console(_command: &mut Command) {
     #[cfg(target_os = "windows")]
     {
         _command.creation_flags(0x08000000);
@@ -771,7 +592,7 @@ fn classify_remote_url(url: &Url) -> Result<RemoteKind, String> {
         Ok(RemoteKind::Direct)
     } else {
         Err(
-            "Supported references are YouTube, TikTok, Vimeo, Rumble, or a direct video file URL."
+            "Supported references are X, YouTube, TikTok, Vimeo, Rumble, or a direct video file URL."
                 .into(),
         )
     }
@@ -779,6 +600,8 @@ fn classify_remote_url(url: &Url) -> Result<RemoteKind, String> {
 
 fn is_platform_host(host: &str) -> bool {
     [
+        "x.com",
+        "twitter.com",
         "youtube.com",
         "youtu.be",
         "tiktok.com",
@@ -858,10 +681,10 @@ fn is_public_ipv6(ip: Ipv6Addr) -> bool {
         || (first == 0x2001 && ip.segments()[1] == 0x0db8))
 }
 
-fn validate_local_video(value: &str, max_bytes: u64) -> Result<PathBuf, String> {
+pub(crate) fn validate_local_video(value: &str, max_bytes: u64) -> Result<PathBuf, String> {
     let path = PathBuf::from(value);
     if !path.is_file() {
-        return Err("The uploaded reference video could not be found.".into());
+        return Err("The video file could not be found.".into());
     }
     let extension = path
         .extension()
@@ -872,11 +695,11 @@ fn validate_local_video(value: &str, max_bytes: u64) -> Result<PathBuf, String> 
         return Err("Choose an MP4, MOV, WebM, MKV, AVI, or M4V video.".into());
     }
     let size = std::fs::metadata(&path)
-        .map_err(|error| format!("Could not read the uploaded reference: {error}"))?
+        .map_err(|error| format!("Could not read the video file: {error}"))?
         .len();
     if size > max_bytes {
         return Err(format!(
-            "The reference exceeds the {:.0} MB size limit.",
+            "The video exceeds the {:.0} MB size limit.",
             max_bytes as f64 / 1_048_576.0
         ));
     }
@@ -920,7 +743,7 @@ fn actionable_download_error(output: &Output) -> String {
     }
 }
 
-fn concise_stderr(output: &Output) -> String {
+pub(crate) fn concise_stderr(output: &Output) -> String {
     String::from_utf8_lossy(&output.stderr)
         .lines()
         .rev()
@@ -928,15 +751,6 @@ fn concise_stderr(output: &Output) -> String {
         .unwrap_or("unknown video error")
         .chars()
         .take(300)
-        .collect()
-}
-
-fn evenly_spaced_values(values: &[f64], count: usize) -> Vec<f64> {
-    if values.len() <= count {
-        return values.to_vec();
-    }
-    (0..count)
-        .map(|index| values[index * (values.len() - 1) / (count - 1)])
         .collect()
 }
 
@@ -963,7 +777,7 @@ fn gcd(mut a: u32, mut b: u32) -> u32 {
     a
 }
 
-fn round(value: f64, places: i32) -> f64 {
+pub(crate) fn round(value: f64, places: i32) -> f64 {
     let factor = 10f64.powi(places);
     (value * factor).round() / factor
 }
@@ -977,7 +791,7 @@ fn redact_url(url: &Url) -> String {
     redacted.to_string()
 }
 
-fn ensure_not_cancelled(cancelled: &AtomicBool) -> Result<(), String> {
+pub(crate) fn ensure_not_cancelled(cancelled: &AtomicBool) -> Result<(), String> {
     if cancelled.load(Ordering::Relaxed) {
         Err("Reference analysis cancelled.".into())
     } else {
@@ -985,7 +799,7 @@ fn ensure_not_cancelled(cancelled: &AtomicBool) -> Result<(), String> {
     }
 }
 
-fn emit(
+pub(crate) fn emit(
     progress: &Channel<ReferenceProgress>,
     stage: &'static str,
     percent: u8,
@@ -998,7 +812,7 @@ fn emit(
     });
 }
 
-fn validate_job_id(job_id: &str) -> Result<(), String> {
+pub(crate) fn validate_job_id(job_id: &str) -> Result<(), String> {
     if !job_id.is_empty()
         && job_id.len() <= 80
         && job_id
@@ -1063,6 +877,15 @@ mod tests {
             Ok(RemoteKind::Platform)
         );
         assert_eq!(
+            classify_remote_url(&Url::parse("https://x.com/user/status/123").unwrap()),
+            Ok(RemoteKind::Platform)
+        );
+        assert_eq!(
+            classify_remote_url(&Url::parse("https://twitter.com/user/status/123").unwrap()),
+            Ok(RemoteKind::Platform)
+        );
+        assert!(classify_remote_url(&Url::parse("https://box.com/video").unwrap()).is_err());
+        assert_eq!(
             classify_remote_url(
                 &Url::parse("https://cdn.example.com/video.mp4?token=public").unwrap()
             ),
@@ -1102,17 +925,6 @@ mod tests {
         }
         assert!(is_public_ip("8.8.8.8".parse().unwrap()));
         assert!(is_public_ip("2606:4700:4700::1111".parse().unwrap()));
-    }
-
-    #[test]
-    fn samples_uniform_timeline_and_both_sides_of_cuts() {
-        let samples = frame_sample_plan(80.0, &[10.0, 20.0, 30.0, 40.0, 50.0, 60.0]);
-        assert!(samples.len() <= MAX_FRAMES);
-        assert!(samples.iter().any(|(_, kind)| *kind == "uniform"));
-        assert!(samples.iter().any(|(_, kind)| *kind == "cut-before"));
-        assert!(samples.iter().any(|(_, kind)| *kind == "cut-after"));
-        assert!(samples.first().unwrap().0 < 10.0);
-        assert!(samples.last().unwrap().0 > 60.0);
     }
 
     #[test]

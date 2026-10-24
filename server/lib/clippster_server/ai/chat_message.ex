@@ -2,14 +2,14 @@ defmodule ClippsterServer.AI.ChatMessage do
   use Ecto.Schema
   import Ecto.Changeset
 
-  @valid_roles ~w(user assistant system)
+  @valid_roles ~w(user assistant)
 
   schema "ai_chat_messages" do
     field :role, :string
     field :content, :string
     field :metadata, :map
 
-    belongs_to :session, ClippsterServer.AI.ChatSession
+    belongs_to :session, ClippsterServer.AI.VideoSession
 
     timestamps(type: :utc_datetime)
   end

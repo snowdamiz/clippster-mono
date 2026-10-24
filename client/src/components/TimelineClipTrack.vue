@@ -50,8 +50,7 @@
             isMovingSegment && selectedSegmentKeys?.has(`${clip.id}_${segIndex}`) ? 'keyboard-moving-segment' : '',
           ]"
           :style="{
-            left: `${duration ? (getSegmentDisplayTime(segment, 'start') / duration) * 100 : 0}%`,
-            width: `${duration ? ((getSegmentDisplayTime(segment, 'end') - getSegmentDisplayTime(segment, 'start')) / duration) * 100 : 0}%`,
+            ...getSegmentPositionStyle(segment, duration),
             ...segmentColorStyle(clip.run_color),
           }"
           :data-run-color="clip.run_color"
@@ -142,7 +141,7 @@
 
 <script setup lang="ts">
   import TimelineSegmentLabel from './TimelineSegmentLabel.vue';
-  import { formatDuration, getSegmentDisplayTime, hexToRgba } from '../utils/timelineUtils';
+  import { formatDuration, getSegmentDisplayTime, getSegmentPositionStyle, hexToRgba } from '../utils/timelineUtils';
   import type { TimelineClipTrackProps, ClipSegment, Clip } from '../types';
 
   defineProps<TimelineClipTrackProps>();

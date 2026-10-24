@@ -29,7 +29,8 @@ fn native_command_manifest() -> tauri_build::AppManifest {
     tauri_build::AppManifest::new().permissions_path_pattern(Box::leak(pattern.into_boxed_str()))
 }
 
-const NODE_VERSION: &str = "v20.11.0";
+// The hyperframes-renderer sidecar (producer + puppeteer) requires Node >= 22.12.
+const NODE_VERSION: &str = "v22.23.3";
 const FFMPEG_STATIC_VERSION: &str = "b6.0";
 const YTDLP_VERSION: &str = "2026.02.20.235452";
 const YTDLP_NIGHTLY_REPO: &str = "yt-dlp/yt-dlp-nightly-builds";
@@ -477,9 +478,10 @@ fn download_node(binaries_dir: &Path, target_os: &str, target_arch: &str) {
     };
 
     let node_path = binaries_dir.join(node_name);
+    let version_path = binaries_dir.join(format!("{node_name}.version"));
+    let installed_version = fs::read_to_string(&version_path).unwrap_or_default();
 
-    // Skip download if already exists
-    if node_path.exists() {
+    if node_path.exists() && installed_version.trim() == NODE_VERSION {
         println!(
             "cargo:warning=node binary already exists at {:?}",
             node_path
@@ -494,10 +496,13 @@ fn download_node(binaries_dir: &Path, target_os: &str, target_arch: &str) {
 
     // Download node
     match download_and_extract_node(&download_url, &node_path, archive_type, &extract_path) {
-        Ok(_) => println!(
-            "cargo:warning=Successfully downloaded node to {:?}",
-            node_path
-        ),
+        Ok(_) => {
+            fs::write(&version_path, NODE_VERSION).ok();
+            println!(
+                "cargo:warning=Successfully downloaded node to {:?}",
+                node_path
+            );
+        }
         Err(e) => {
             println!("cargo:warning=Failed to download node: {}", e);
             println!(

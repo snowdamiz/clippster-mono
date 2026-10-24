@@ -13,8 +13,12 @@ jobs:
   verify-web:
     uses: ./.github/workflows/web.yml
 
+  verify-desktop:
+    uses: ./.github/workflows/desktop.yml
+
   # First, create a draft release and build frontend (shared across all platforms)
   create-release:
+    needs: [verify-web, verify-desktop]
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}
@@ -57,7 +61,7 @@ jobs:
         env:
           VITE_API_URL: https://clippster-server.fly.dev/api
         run: |
-          yarn install
+          yarn install --frozen-lockfile
           yarn build:ci
 
       - name: Upload frontend dist
@@ -229,11 +233,9 @@ jobs:
         run: yarn install
         working-directory: client/src-tauri/pumpfun-service
 
-      - name: Build remotion-renderer sidecar
-        working-directory: client/src-tauri/sidecars/remotion-renderer
-        run: |
-          yarn install
-          yarn build
+      - name: Install hyperframes-renderer sidecar dependencies
+        run: yarn install --production --frozen-lockfile
+        working-directory: client/src-tauri/sidecars/hyperframes-renderer
 
       # Download sidecar binaries (ffmpeg, node, yt-dlp) before Tauri build
       # build.rs will skip downloading since files already exist
@@ -242,6 +244,8 @@ jobs:
         run: |
           BINARIES_DIR="client/src-tauri/binaries"
           mkdir -p "$BINARIES_DIR"
+          NODE_VERSION=$(sed -n 's/^const NODE_VERSION: &str = "\(.*\)";/\1/p' client/src-tauri/build.rs)
+          [ -n "$NODE_VERSION" ] || { echo "NODE_VERSION not found in build.rs"; exit 1; }
 
           # Determine target arch from matrix args
           if echo "${{ matrix.args }}" | grep -q "aarch64"; then
@@ -276,12 +280,12 @@ jobs:
           # --- Node (target arch) ---
           NODE_TARGET="$BINARIES_DIR/node-${TRIPLE}"
           if [ ! -f "$NODE_TARGET" ]; then
-            echo "Downloading node v20.11.0 for darwin-${NODE_ARCH}..."
-            curl -fSL "https://nodejs.org/dist/v20.11.0/node-v20.11.0-darwin-${NODE_ARCH}.tar.gz" -o /tmp/node.tar.gz
+            echo "Downloading node ${NODE_VERSION} for darwin-${NODE_ARCH}..."
+            curl -fSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-darwin-${NODE_ARCH}.tar.gz" -o /tmp/node.tar.gz
             tar -xzf /tmp/node.tar.gz -C /tmp
-            cp "/tmp/node-v20.11.0-darwin-${NODE_ARCH}/bin/node" "$NODE_TARGET"
+            cp "/tmp/node-${NODE_VERSION}-darwin-${NODE_ARCH}/bin/node" "$NODE_TARGET"
             chmod +x "$NODE_TARGET"
-            rm -rf /tmp/node.tar.gz /tmp/node-v20.11.0-darwin-${NODE_ARCH}
+            rm -rf /tmp/node.tar.gz /tmp/node-${NODE_VERSION}-darwin-${NODE_ARCH}
           fi
 
           # --- Node (other platforms - build.rs downloads all variants) ---
@@ -289,10 +293,10 @@ jobs:
           WIN_NODE="$BINARIES_DIR/node-x86_64-pc-windows-msvc.exe"
           if [ ! -f "$WIN_NODE" ]; then
             echo "Downloading node for windows-x64..."
-            curl -fSL "https://nodejs.org/dist/v20.11.0/node-v20.11.0-win-x64.zip" -o /tmp/node-win.zip
-            unzip -o /tmp/node-win.zip "node-v20.11.0-win-x64/node.exe" -d /tmp
-            cp "/tmp/node-v20.11.0-win-x64/node.exe" "$WIN_NODE"
-            rm -rf /tmp/node-win.zip /tmp/node-v20.11.0-win-x64
+            curl -fSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-win-x64.zip" -o /tmp/node-win.zip
+            unzip -o /tmp/node-win.zip "node-${NODE_VERSION}-win-x64/node.exe" -d /tmp
+            cp "/tmp/node-${NODE_VERSION}-win-x64/node.exe" "$WIN_NODE"
+            rm -rf /tmp/node-win.zip /tmp/node-${NODE_VERSION}-win-x64
           fi
           # macOS other arch node
           if [ "$ARCH" = "aarch64" ]; then
@@ -304,22 +308,27 @@ jobs:
           fi
           if [ ! -f "$OTHER_NODE" ]; then
             echo "Downloading node for darwin-${OTHER_NODE_ARCH}..."
-            curl -fSL "https://nodejs.org/dist/v20.11.0/node-v20.11.0-darwin-${OTHER_NODE_ARCH}.tar.gz" -o /tmp/node-other.tar.gz
+            curl -fSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-darwin-${OTHER_NODE_ARCH}.tar.gz" -o /tmp/node-other.tar.gz
             tar -xzf /tmp/node-other.tar.gz -C /tmp
-            cp "/tmp/node-v20.11.0-darwin-${OTHER_NODE_ARCH}/bin/node" "$OTHER_NODE"
+            cp "/tmp/node-${NODE_VERSION}-darwin-${OTHER_NODE_ARCH}/bin/node" "$OTHER_NODE"
             chmod +x "$OTHER_NODE"
-            rm -rf /tmp/node-other.tar.gz /tmp/node-v20.11.0-darwin-${OTHER_NODE_ARCH}
+            rm -rf /tmp/node-other.tar.gz /tmp/node-${NODE_VERSION}-darwin-${OTHER_NODE_ARCH}
           fi
           # Linux node
           LINUX_NODE="$BINARIES_DIR/node-x86_64-unknown-linux-gnu"
           if [ ! -f "$LINUX_NODE" ]; then
             echo "Downloading node for linux-x64..."
-            curl -fSL "https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-x64.tar.gz" -o /tmp/node-linux.tar.gz
+            curl -fSL "https://nodejs.org/dist/${NODE_VERSION}/node-${NODE_VERSION}-linux-x64.tar.gz" -o /tmp/node-linux.tar.gz
             tar -xzf /tmp/node-linux.tar.gz -C /tmp
-            cp "/tmp/node-v20.11.0-linux-x64/bin/node" "$LINUX_NODE"
+            cp "/tmp/node-${NODE_VERSION}-linux-x64/bin/node" "$LINUX_NODE"
             chmod +x "$LINUX_NODE"
-            rm -rf /tmp/node-linux.tar.gz /tmp/node-v20.11.0-linux-x64
+            rm -rf /tmp/node-linux.tar.gz /tmp/node-${NODE_VERSION}-linux-x64
           fi
+
+          # build.rs re-downloads node unless its version marker matches.
+          for NODE_BIN in "$BINARIES_DIR"/node-*; do
+            case "$NODE_BIN" in *.version) ;; *) printf '%s' "$NODE_VERSION" > "$NODE_BIN.version" ;; esac
+          done
 
           echo "=== Sidecar binaries downloaded ==="
           ls -la "$BINARIES_DIR/"
@@ -330,6 +339,8 @@ jobs:
         run: |
           $binDir = "client/src-tauri/binaries"
           New-Item -ItemType Directory -Force -Path $binDir | Out-Null
+          $nodeVersion = [regex]::Match((Get-Content client/src-tauri/build.rs -Raw), 'const NODE_VERSION: &str = "([^"]+)"').Groups[1].Value
+          if (-not $nodeVersion) { Write-Error "NODE_VERSION not found in build.rs"; exit 1 }
 
           # --- FFmpeg ---
           $ffmpegTarget = "$binDir/ffmpeg-x86_64-pc-windows-msvc.exe"
@@ -353,11 +364,11 @@ jobs:
           # --- Node (windows) ---
           $nodeTarget = "$binDir/node-x86_64-pc-windows-msvc.exe"
           if (-not (Test-Path $nodeTarget)) {
-            Write-Host "Downloading node v20.11.0 for windows-x64..."
+            Write-Host "Downloading node ${nodeVersion} for windows-x64..."
             $zipPath = "$env:RUNNER_TEMP/node.zip"
-            Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.11.0/node-v20.11.0-win-x64.zip" -OutFile $zipPath
+            Invoke-WebRequest -Uri "https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-win-x64.zip" -OutFile $zipPath
             Expand-Archive -Path $zipPath -DestinationPath "$env:RUNNER_TEMP/node-extract" -Force
-            Copy-Item "$env:RUNNER_TEMP/node-extract/node-v20.11.0-win-x64/node.exe" $nodeTarget
+            Copy-Item "$env:RUNNER_TEMP/node-extract/node-${nodeVersion}-win-x64/node.exe" $nodeTarget
             Remove-Item -Recurse -Force "$env:RUNNER_TEMP/node-extract", $zipPath
           }
 
@@ -367,30 +378,35 @@ jobs:
           if (-not (Test-Path $macArmNode)) {
             Write-Host "Downloading node for darwin-arm64..."
             $tarPath = "$env:RUNNER_TEMP/node-mac-arm.tar.gz"
-            Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.11.0/node-v20.11.0-darwin-arm64.tar.gz" -OutFile $tarPath
+            Invoke-WebRequest -Uri "https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-darwin-arm64.tar.gz" -OutFile $tarPath
             tar -xzf $tarPath -C "$env:RUNNER_TEMP"
-            Copy-Item "$env:RUNNER_TEMP/node-v20.11.0-darwin-arm64/bin/node" $macArmNode
-            Remove-Item -Recurse -Force $tarPath, "$env:RUNNER_TEMP/node-v20.11.0-darwin-arm64"
+            Copy-Item "$env:RUNNER_TEMP/node-${nodeVersion}-darwin-arm64/bin/node" $macArmNode
+            Remove-Item -Recurse -Force $tarPath, "$env:RUNNER_TEMP/node-${nodeVersion}-darwin-arm64"
           }
           # macOS x86_64
           $macX64Node = "$binDir/node-x86_64-apple-darwin"
           if (-not (Test-Path $macX64Node)) {
             Write-Host "Downloading node for darwin-x64..."
             $tarPath = "$env:RUNNER_TEMP/node-mac-x64.tar.gz"
-            Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.11.0/node-v20.11.0-darwin-x64.tar.gz" -OutFile $tarPath
+            Invoke-WebRequest -Uri "https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-darwin-x64.tar.gz" -OutFile $tarPath
             tar -xzf $tarPath -C "$env:RUNNER_TEMP"
-            Copy-Item "$env:RUNNER_TEMP/node-v20.11.0-darwin-x64/bin/node" $macX64Node
-            Remove-Item -Recurse -Force $tarPath, "$env:RUNNER_TEMP/node-v20.11.0-darwin-x64"
+            Copy-Item "$env:RUNNER_TEMP/node-${nodeVersion}-darwin-x64/bin/node" $macX64Node
+            Remove-Item -Recurse -Force $tarPath, "$env:RUNNER_TEMP/node-${nodeVersion}-darwin-x64"
           }
           # Linux x86_64
           $linuxNode = "$binDir/node-x86_64-unknown-linux-gnu"
           if (-not (Test-Path $linuxNode)) {
             Write-Host "Downloading node for linux-x64..."
             $tarPath = "$env:RUNNER_TEMP/node-linux.tar.gz"
-            Invoke-WebRequest -Uri "https://nodejs.org/dist/v20.11.0/node-v20.11.0-linux-x64.tar.gz" -OutFile $tarPath
+            Invoke-WebRequest -Uri "https://nodejs.org/dist/${nodeVersion}/node-${nodeVersion}-linux-x64.tar.gz" -OutFile $tarPath
             tar -xzf $tarPath -C "$env:RUNNER_TEMP"
-            Copy-Item "$env:RUNNER_TEMP/node-v20.11.0-linux-x64/bin/node" $linuxNode
-            Remove-Item -Recurse -Force $tarPath, "$env:RUNNER_TEMP/node-v20.11.0-linux-x64"
+            Copy-Item "$env:RUNNER_TEMP/node-${nodeVersion}-linux-x64/bin/node" $linuxNode
+            Remove-Item -Recurse -Force $tarPath, "$env:RUNNER_TEMP/node-${nodeVersion}-linux-x64"
+          }
+
+          # build.rs re-downloads node unless its version marker matches.
+          Get-ChildItem $binDir -Filter "node-*" | Where-Object { $_.Extension -ne ".version" } | ForEach-Object {
+            Set-Content -Path "$($_.FullName).version" -Value $nodeVersion -NoNewline
           }
 
           Write-Host "=== Sidecar binaries downloaded ==="
@@ -432,6 +448,14 @@ jobs:
           find client/src-tauri/pumpfun-service/node_modules -name "*.node" -type f | while read file; do
             echo "Signing with entitlements: $file"
             codesign --force --options runtime --timestamp --entitlements "$NODE_ENTITLEMENTS" --sign "$IDENTITY" "$file"
+          done
+
+          # hyperframes-renderer ships sharp/libvips and esbuild binaries; notarization needs every Mach-O signed.
+          find client/src-tauri/sidecars/hyperframes-renderer/node_modules -type f \( -name "*.node" -o -name "*.dylib" -o -perm -u+x \) | while read file; do
+            if file "$file" | grep -q "Mach-O"; then
+              echo "Signing with entitlements: $file"
+              codesign --force --options runtime --timestamp --entitlements "$NODE_ENTITLEMENTS" --sign "$IDENTITY" "$file"
+            fi
           done
           
           echo "Native modules signed successfully"
@@ -533,39 +557,7 @@ jobs:
       # Install FFmpeg development libraries for Rust compilation (Windows)
       - name: Install FFmpeg dev libraries (Windows)
         if: contains(matrix.platform, 'windows')
-        shell: pwsh
-        run: |
-          $ffmpegDevDir = "client/src-tauri/ffmpeg-dev"
-          New-Item -ItemType Directory -Force -Path $ffmpegDevDir | Out-Null
-          Write-Host "Downloading FFmpeg 8.0 shared build for dev libraries..."
-          $zipPath = "$env:RUNNER_TEMP/ffmpeg-shared.zip"
-          # Pinned to a specific immutable autobuild tag (autobuild-2025-09-30-13-19).
-          # Do NOT change to "latest" — the rolling latest tag now ships FFmpeg 8.1+ headers
-          # which break the ffmpeg-the-third 4.x crate (FFmpeg 8.0 only).
-          Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2025-09-30-13-19/ffmpeg-n8.0-16-gd8605a6b55-win64-gpl-shared-8.0.zip" -OutFile $zipPath
-          Expand-Archive -Path $zipPath -DestinationPath $ffmpegDevDir -Force
-          Remove-Item $zipPath
-          $extractedDir = (Get-ChildItem $ffmpegDevDir -Directory | Select-Object -First 1).FullName
-          Write-Host "FFmpeg dev libs installed at: $extractedDir"
-
-          # Export paths dynamically so the build step doesn't need a hardcoded folder name
-          "FFMPEG_DIR=$extractedDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "FFMPEG_INCLUDE_DIR=$extractedDir/include" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-          "FFMPEG_LIB_DIR=$extractedDir/lib" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-
-          # Bundle FFmpeg shared libraries (DLLs) for runtime
-          Write-Host "=== Bundling FFmpeg DLLs for runtime ==="
-          $ffmpegLibsDir = "client/src-tauri/ffmpeg-libs"
-          New-Item -ItemType Directory -Force -Path $ffmpegLibsDir | Out-Null
-
-          $binDir = "$extractedDir/bin"
-          if (Test-Path $binDir) {
-            Copy-Item "$binDir/*.dll" $ffmpegLibsDir -Force
-            Write-Host "Bundled FFmpeg DLLs:"
-            Get-ChildItem $ffmpegLibsDir
-          } else {
-            Write-Host "ERROR: FFmpeg bin directory not found at $binDir"
-          }
+        uses: ./.github/actions/setup-ffmpeg-windows
 
       - name: Skip frontend rebuild (Windows)
         if: contains(matrix.platform, 'windows')

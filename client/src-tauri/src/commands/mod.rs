@@ -6,10 +6,13 @@
 //! - file_operations: File validation and media processing commands
 //! - focal_detection_commands: Focal point detection for videos
 //! - file_utils: File utility commands
-//! - remotion_export: Remotion export commands
+//! - hyperframes: Hyperframes sidecar bridge (AI video lint, check, snapshot, beats, render)
+//! - video_measure: Frame-accurate shot measurement and example import for the AI video editor
+//! - ai_media: Media fingerprints and downscaled JPEGs for AI video model input
 //! - download_audio: Download audio commands
 //! - convert_video: Video conversion commands
 
+pub mod ai_media;
 pub mod convert_video;
 pub mod delete_local_storage;
 pub mod download_audio;
@@ -18,9 +21,10 @@ pub mod download_management;
 pub mod file_operations;
 pub mod file_utils;
 pub mod focal_detection_commands;
+pub mod hyperframes;
 pub mod reference_video;
-pub mod remotion_export;
 pub mod system;
+pub mod video_measure;
 
 // Re-export all commands for convenient importing
 pub use convert_video::*;
@@ -31,4 +35,4 @@ pub use download_management::*;
 pub use file_operations::*;
 pub use focal_detection_commands::*;
 pub use system::*;
-// file_utils and remotion_export are used directly via module path in lib.rs
+// file_utils and hyperframes are used directly via module path in lib.rs

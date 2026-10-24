@@ -24,12 +24,11 @@ for (const dockerReady of [false, true]) {
           'bin',
           'server',
           'client/src-tauri/pumpfun-service',
-          'client/src-tauri/sidecars/remotion-renderer/dist'
+          'client/src-tauri/sidecars/hyperframes-renderer'
         ]) {
           mkdirSync(join(root, directory), { recursive: true })
         }
         copyFileSync(new URL('./dev-setup.mjs', import.meta.url), join(root, 'scripts/dev-setup.mjs'))
-        writeFileSync(join(root, 'client/src-tauri/sidecars/remotion-renderer/dist/bundle.js'), '')
         if (dockerReady) writeFileSync(join(root, 'docker-ready'), '')
         for (const executable of ['yarn', 'mix', 'docker', 'open', 'sudo', 'lsof']) {
           writeFileSync(

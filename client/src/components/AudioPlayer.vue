@@ -1,37 +1,40 @@
 <template>
-  <Transition
-    enter-active-class="transition duration-200 ease-out"
-    enter-from-class="translate-y-3 opacity-0"
-    leave-active-class="transition duration-150 ease-in"
-    leave-to-class="translate-y-3 opacity-0"
-  >
-    <AudioPlayerBar
-      v-if="currentTrack"
-      :title="currentTrack.title"
-      :is-playing="isPlaying"
-      :progress="progress"
-      :current-time-label="formattedCurrentTime"
-      :duration-label="formattedDuration"
-      :volume="volume"
-      :muted="isMuted"
-      :shuffle="isShuffle"
-      :repeat-mode="repeatMode"
-      :has-previous="hasPrevious"
-      :has-next="hasNext"
-      :queue-controls="playlist.length > 0"
-      close-label="Stop"
-      @toggle-play="togglePlayPause"
-      @previous="playPrevious"
-      @next="playNext"
-      @toggle-shuffle="toggleShuffle"
-      @toggle-repeat="toggleRepeat"
-      @toggle-mute="toggleMute"
-      @volume="setVolume"
-      @seek="handleSeek"
-      @restart="restart"
-      @close="stop"
-    />
-  </Transition>
+  <!-- Keep playback controls outside page stacking contexts and teleported workspaces. -->
+  <Teleport to="body">
+    <Transition
+      enter-active-class="transition duration-200 ease-out"
+      enter-from-class="translate-y-3 opacity-0"
+      leave-active-class="transition duration-150 ease-in"
+      leave-to-class="translate-y-3 opacity-0"
+    >
+      <AudioPlayerBar
+        v-if="currentTrack"
+        :title="currentTrack.title"
+        :is-playing="isPlaying"
+        :progress="progress"
+        :current-time-label="formattedCurrentTime"
+        :duration-label="formattedDuration"
+        :volume="volume"
+        :muted="isMuted"
+        :shuffle="isShuffle"
+        :repeat-mode="repeatMode"
+        :has-previous="hasPrevious"
+        :has-next="hasNext"
+        :queue-controls="playlist.length > 0"
+        close-label="Stop"
+        @toggle-play="togglePlayPause"
+        @previous="playPrevious"
+        @next="playNext"
+        @toggle-shuffle="toggleShuffle"
+        @toggle-repeat="toggleRepeat"
+        @toggle-mute="toggleMute"
+        @volume="setVolume"
+        @seek="handleSeek"
+        @restart="restart"
+        @close="stop"
+      />
+    </Transition>
+  </Teleport>
 </template>
 
 <script setup lang="ts">

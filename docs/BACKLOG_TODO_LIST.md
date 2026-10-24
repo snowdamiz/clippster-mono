@@ -123,7 +123,7 @@ Working notes for follow-up work. No implementation in this change—context gat
 2. ✅ Verified Tauri v2 configuration and Windows subsystem settings
 3. ✅ Audited all Rust process spawning code
 4. ✅ Fixed 3 missing `CREATE_NO_WINDOW` flags in:
-   - `sidecar/mod.rs` - Remotion renderer Node.js process
+   - `sidecar/mod.rs` - Hyperframes renderer Node.js process
    - `audio.rs` - taskkill command for FFmpeg cleanup
    - `commands/convert_video.rs` - FFmpeg video conversion
 5. ✅ Created comprehensive audit document: `docs/POWERSHELL_DIALOG_AUDIT.md`

@@ -51,6 +51,27 @@ defmodule ClippsterServerWeb.AdminController do
     })
   end
 
+  @doc "AI video runs: provider cost versus credits kept, per run kind, with revenue at pack prices."
+  def get_ai_video_economics(conn, params) do
+    days = params |> Map.get("days", "30") |> to_string() |> Integer.parse() |> then(fn
+      {days, _} when days > 0 -> days
+      _ -> 30
+    end)
+
+    since = DateTime.add(DateTime.utc_now(), -days * 86_400, :second)
+
+    usd_per_credit =
+      (Map.values(Credits.get_credit_packs()) ++ Map.values(Credits.get_org_credit_packs()))
+      |> Enum.map(&(&1.usd / &1.hours))
+
+    json(conn, %{
+      success: true,
+      days: days,
+      usd_per_credit: %{min: Enum.min(usd_per_credit), max: Enum.max(usd_per_credit)},
+      kinds: AI.VideoRuns.economics(since)
+    })
+  end
+
   def list_users(conn, _params) do
     users = Accounts.list_users()
 

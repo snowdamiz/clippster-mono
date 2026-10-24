@@ -386,9 +386,6 @@ defmodule ClippsterServerWeb.Router do
     # Real-time detection credit deduction
     post("/credits/deduct", ClipsController, :deduct_realtime_credits)
 
-    # AI reference analysis
-    post("/ai/reference/analyze", AIChatController, :analyze_reference)
-
     # AI B-roll planning and stock search
     post("/ai/broll/suggest", BrollController, :suggest)
     get("/ai/broll/search", BrollController, :search)
@@ -400,19 +397,21 @@ defmodule ClippsterServerWeb.Router do
     post("/news/search", NewsController, :search)
     post("/news/fetch", NewsController, :fetch)
 
-    # AI chat sessions (conversational video generation)
-    get("/ai/chat/sessions", AIChatController, :list_sessions)
-    post("/ai/chat/sessions", AIChatController, :create_session)
-    get("/ai/chat/sessions/:id", AIChatController, :get_session)
-    delete("/ai/chat/sessions/:id", AIChatController, :delete_session)
-    put("/ai/chat/sessions/:id/name", AIChatController, :rename_session)
-    post("/ai/chat/sessions/:id/message", AIChatController, :send_message)
-    post("/ai/chat/sessions/:id/generate", AIChatController, :trigger_generation)
-    post("/ai/chat/sessions/:id/refine", AIChatController, :send_refinement)
-    post("/ai/chat/sessions/:id/reference", AIChatController, :upload_reference)
-    put("/ai/chat/sessions/:id/style", AIChatController, :update_style_pack)
-    post("/ai/chat/sessions/:id/media-analysis", AIChatController, :upload_media_analysis)
-    put("/ai/chat/sessions/:id/media", AIChatController, :update_media)
+    # AI video editor (reference-matched editing on Hyperframes)
+    get("/ai/video/policy", AIVideoController, :policy)
+    get("/ai/video/sessions", AIVideoController, :index)
+    post("/ai/video/sessions", AIVideoController, :create)
+    get("/ai/video/sessions/:id", AIVideoController, :show)
+    patch("/ai/video/sessions/:id", AIVideoController, :update)
+    delete("/ai/video/sessions/:id", AIVideoController, :delete)
+    post("/ai/video/sessions/:id/reference/start", AIVideoController, :start_reference)
+    post("/ai/video/sessions/:id/reference/chunk", AIVideoController, :reference_chunk)
+    post("/ai/video/sessions/:id/reference/finish", AIVideoController, :finish_reference)
+    post("/ai/video/sessions/:id/runs", AIVideoController, :start_run)
+    post("/ai/video/runs/:run_id/label-source", AIVideoController, :label_source)
+    post("/ai/video/runs/:run_id/turn", AIVideoController, :turn)
+    post("/ai/video/runs/:run_id/complete", AIVideoController, :complete_run)
+    post("/ai/video/runs/:run_id/fail", AIVideoController, :fail_run)
 
     # General AI image creation sessions
     get("/ai/image/sessions", AIImageController, :list_sessions)
@@ -1436,6 +1435,7 @@ defmodule ClippsterServerWeb.Router do
   scope "/api", ClippsterServerWeb do
     pipe_through(:api_admin)
 
+    get("/admin/ai-video/economics", AdminController, :get_ai_video_economics)
     get("/admin/users", AdminController, :list_users)
     get("/admin/users/:user_id/profile", AdminController, :get_user_profile)
     post("/admin/users/:user_id/promote", AdminController, :promote_user)

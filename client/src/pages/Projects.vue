@@ -613,8 +613,9 @@
 </template>
 
 <script setup lang="ts">
-  import type { ProjectFormData } from '@/components/ProjectDialog.vue';
+  import ProjectDialog, { type ProjectFormData } from '@/components/ProjectDialog.vue';
   import ProjectLibraryView from '@/components/ProjectLibraryView.vue';
+  import LibraryProjectCard from '@/components/LibraryProjectCard.vue';
   import { statusOptions, getDateLabel } from '@/lib/projectLibraryPresentation';
   import { ref, reactive, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import { invoke } from '@tauri-apps/api/core';

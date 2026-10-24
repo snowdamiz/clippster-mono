@@ -12,8 +12,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "react",
 
     /* Path Aliases */
     "baseUrl": ".",
@@ -30,6 +28,6 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

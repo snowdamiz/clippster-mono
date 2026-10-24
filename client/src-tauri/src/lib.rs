@@ -1079,7 +1079,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(with_native_commands!(register_native_commands))
-.manage(commands::remotion_export::SidecarState::new())
+.manage(commands::hyperframes::HyperframesState::default())
 .manage(commands::reference_video::ReferenceAnalysisState::default())
 .run(tauri::generate_context!())
 .expect("error while running tauri application");
