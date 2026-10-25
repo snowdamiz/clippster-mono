@@ -23,7 +23,7 @@ After a thorough audit, we identified that:
 
 ## Fixes Implemented
 
-### 1. Fixed Node.js Sidecar Process (Remotion Renderer)
+### 1. Fixed Node.js Sidecar Process (Hyperframes Renderer)
 **File:** `client/src-tauri/src/sidecar/mod.rs`  
 **Line:** 185
 
@@ -53,7 +53,7 @@ cmd.arg(&bundle_path)
 let mut process = cmd.spawn()
 ```
 
-**Impact:** Used when exporting videos via Remotion renderer
+**Impact:** Used when exporting videos via the Hyperframes renderer
 
 ---
 
@@ -203,7 +203,7 @@ yarn build
 - Send a message with attachments
 
 **2. Test Fixed Process Spawns**
-- Export a video using the video editor (tests Remotion sidecar fix)
+- Export a video using the video editor (tests Hyperframes sidecar fix)
 - Convert a video overlay in editor (tests convert_video fix)
 - Start and cancel an audio download (tests taskkill fix)
 

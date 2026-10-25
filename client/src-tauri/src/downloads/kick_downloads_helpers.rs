@@ -12,10 +12,10 @@ pub fn no_window(cmd: &mut tokio::process::Command) -> &mut tokio::process::Comm
 
 /// Resolve the yt-dlp binary path for Kick downloads
 pub fn resolve_kick_ytdlp_binary() -> Result<String, String> {
-    crate::kick::resolve_sidecar_binary("yt-dlp")
+    crate::sidecar::resolve_sidecar_binary("yt-dlp")
 }
 
 /// Resolve the ffmpeg binary path for Kick downloads
 pub fn resolve_kick_ffmpeg_binary() -> Result<String, String> {
-    crate::kick::resolve_sidecar_binary("ffmpeg")
+    crate::sidecar::resolve_sidecar_binary("ffmpeg")
 }

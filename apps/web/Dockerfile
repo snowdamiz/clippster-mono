@@ -8,12 +8,14 @@ RUN npm ci --workspaces=false --no-audit --no-fund
 
 FROM dependencies AS source
 COPY apps/web/ ./
+COPY packages/profile-design/ /repo/packages/profile-design/
 COPY packages/shared-types/ /repo/packages/shared-types/
 COPY packages/email-composer/ /repo/packages/email-composer/
 COPY server/priv/email/ /repo/server/priv/email/
 COPY packages/clip-export/ /repo/packages/clip-export/
 COPY packages/api-client/ /repo/packages/api-client/
 COPY packages/cloud-sync-schema/ /repo/packages/cloud-sync-schema/
+COPY packages/app-tour/ /repo/packages/app-tour/
 COPY client/src/ /repo/client/src/
 COPY client/public/ /repo/client/public/
 
@@ -53,6 +55,7 @@ ENV NODE_ENV=development PORT=8090 HOST=0.0.0.0 WEB_DATA_DIR=/data
 WORKDIR /repo/apps/web
 COPY --from=dependencies --chown=node:node /repo/apps/web/node_modules ./node_modules
 COPY apps/web/ ./
+COPY packages/profile-design/ /repo/packages/profile-design/
 COPY packages/shared-types/ /repo/packages/shared-types/
 COPY packages/email-composer/ /repo/packages/email-composer/
 COPY server/priv/email/ /repo/server/priv/email/

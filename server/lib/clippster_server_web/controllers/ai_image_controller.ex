@@ -10,7 +10,7 @@ defmodule ClippsterServerWeb.AIImageController do
 
   alias ClippsterServer.Credits
   alias ClippsterServer.Storage
-  alias ClippsterServerWeb.AIChatController
+  alias ClippsterServer.AI.EditorAccess
 
   plug :require_ai_editor_access
 
@@ -644,7 +644,7 @@ defmodule ClippsterServerWeb.AIImageController do
   end
 
   defp require_ai_editor_access(conn, _opts) do
-    if AIChatController.can_access_image_editor?(conn.assigns.current_user) do
+    if EditorAccess.can_access_image_editor?(conn.assigns.current_user) do
       conn
     else
       conn

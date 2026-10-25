@@ -33,6 +33,5 @@ docs
 scripts
 !scripts/deploy-fly*.mjs
 !scripts/dev-setup*.mjs
-packages/app-tour
 packages/ui
 packages/core

@@ -1,0 +1,137 @@
+/* Capture-only demo mock for the brag video. Serves fictional data so the real
+ * Clippster account shell + web workspace render without a backend.
+ * Active only in a browser that opened /brag-capture.html. Delete after capture. */
+const A = '/__brag'
+const now = Date.now()
+const day = 86400000
+const unknown = []
+let WORDS = []
+const wordsReady = fetch(A + '/words.json').then(r => r.json()).then(w => { WORDS = w }).catch(() => {})
+
+const user = {
+  id: 4242, name: 'Sam Rivera', email: 'sam@example.com', avatar_url: null,
+  has_selected_plan: true, is_admin: false, campaigns_enabled: true,
+  subscription: { status: 'active', tier: 'pro', plan: 'pro' },
+  inserted_at: new Date(now - 90 * day).toISOString()
+}
+
+function clip(id, name, start, end, score, reason, opts = {}) {
+  return {
+    id, name, segments: [{ start_time: start, end_time: end }], aspectRatio: opts.ratio || '9:16', captions: true,
+    subtitleWords: null, framingConfig: null, subtitleSettings: null, textBox: null, branding: null,
+    revision: 1, builtRevision: opts.built ? 1 : null,
+    detection: { viralityScore: score, confidenceScore: score, reason, promptName: 'Gaming highlights' },
+    builds: opts.built ? [{ id: id + '-b1', revision: 1, aspectRatio: '9:16', format: 'mp4', completedAt: now - opts.built, duration: end - start, publishedAt: opts.published ? now - opts.built + 3600e3 : undefined }] : []
+  }
+}
+
+const P1 = '6f1c2a10-1111-4a2b-9c3d-000000000001'
+const projects = {
+  [P1]: {
+    id: P1, name: 'Neon Rush Finals — Lap 3 Comeback', sourceUrl: 'https://www.twitch.tv/videos/2290001', sourcePlatform: 'twitch', sourceChannel: 'samplays',
+    status: 'ready', duration: 48, width: 1280, height: 720, hasAudio: true, error: null, createdAt: now - 2 * 3600e3, updatedAt: now - 600e3,
+    clips: [
+      clip('c0000001-0000-4000-8000-000000000001', 'Perfect drift x4 at 200 km/h', 14, 20, 94, 'Peak hype: combo callout, chat spike and a clean visual payoff.', { built: 3600e3, published: true }),
+      clip('c0000001-0000-4000-8000-000000000002', 'Photo finish steals P1', 29.5, 35.5, 91, 'Clear win moment with a strong reaction line.', { built: 1800e3 }),
+      clip('c0000001-0000-4000-8000-000000000003', 'Chat goes wild on lap 2', 20.2, 26.6, 83, 'Streamer reacts to chat; good for a community moment.'),
+      clip('c0000001-0000-4000-8000-000000000004', '“Clip that, someone clip that”', 37.4, 44, 76, 'Self-aware closer with a natural CTA.')
+    ],
+    words: []
+  },
+  '6f1c2a10-1111-4a2b-9c3d-000000000002': { id: '6f1c2a10-1111-4a2b-9c3d-000000000002', name: 'Midnight Circuit — Ranked Grind', sourceUrl: 'https://www.youtube.com/watch?v=demo002', sourcePlatform: 'youtube', status: 'ready', duration: 48, width: 1280, height: 720, hasAudio: true, error: null, createdAt: now - 1.2 * day, updatedAt: now - 1.1 * day, clips: [clip('c0000002-0000-4000-8000-000000000001', 'Overtake on the final hairpin', 4, 10, 88, 'Clean overtake.', { built: 1.1 * day })], words: [] },
+  '6f1c2a10-1111-4a2b-9c3d-000000000003': { id: '6f1c2a10-1111-4a2b-9c3d-000000000003', name: 'Tuning the Vapor GT (Q&A)', sourceUrl: 'https://kick.com/samplays/videos/demo003', sourcePlatform: 'kick', status: 'ready', duration: 48, width: 1280, height: 720, hasAudio: true, error: null, createdAt: now - 3 * day, updatedAt: now - 3 * day, clips: [clip('c0000003-0000-4000-8000-000000000001', 'Best setup for night tracks', 6, 12, 79, 'Useful tip.'), clip('c0000003-0000-4000-8000-000000000002', 'Chat roasts my paint job', 22, 28, 74, 'Funny.')], words: [] },
+  '6f1c2a10-1111-4a2b-9c3d-000000000004': { id: '6f1c2a10-1111-4a2b-9c3d-000000000004', name: 'Sunday Sprint Cup — Full VOD', sourceUrl: 'https://rumble.com/v-demo004.html', sourcePlatform: 'rumble', status: 'ready', duration: 48, width: 1280, height: 720, hasAudio: true, error: null, createdAt: now - 6 * day, updatedAt: now - 6 * day, clips: [], words: [] }
+}
+const thumbFor = id => A + '/thumb' + (Object.keys(projects).indexOf(id) % 4) + '.jpg'
+let jobs = []
+
+function json(body, status = 200) { return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } }) }
+function ws(id) { const p = projects[id]; if (p && id === P1) p.words = WORDS; return { project: p, jobs: jobs.filter(j => j.projectId === id) } }
+const generic = { success: true, data: [], items: [], posts: [], profiles: [], accounts: [], social_accounts: [], campaigns: [], assets: [], organizations: [], searches: [], vods: [], prompts: [], submissions: [], payments: [], notifications: [], conversations: [], messages: [], creators: [], clips: [] }
+
+const vods = [
+  { id: '2290001', title: 'Neon Rush Finals — Lap 3 Comeback', duration_seconds: 10842, upload_date: new Date(now - 2 * 3600e3).toISOString(), thumbnail_url: A + '/thumb1.jpg', url: 'https://www.twitch.tv/videos/2290001' },
+  { id: '2289410', title: 'Ranked grind until Diamond (day 4)', duration_seconds: 15611, upload_date: new Date(now - 1.2 * day).toISOString(), thumbnail_url: A + '/thumb0.jpg', url: 'https://www.twitch.tv/videos/2289410' },
+  { id: '2288120', title: 'Viewer car builds + tuning Q&A', duration_seconds: 9320, upload_date: new Date(now - 3 * day).toISOString(), thumbnail_url: A + '/thumb2.jpg', url: 'https://www.twitch.tv/videos/2288120' },
+  { id: '2287003', title: 'Sunday Sprint Cup with chat', duration_seconds: 12450, upload_date: new Date(now - 5 * day).toISOString(), thumbnail_url: A + '/thumb3.jpg', url: 'https://www.twitch.tv/videos/2287003' },
+  { id: '2285911', title: 'Night track speedruns (new PB?)', duration_seconds: 7730, upload_date: new Date(now - 7 * day).toISOString(), thumbnail_url: A + '/thumb1.jpg', url: 'https://www.twitch.tv/videos/2285911' },
+  { id: '2284007', title: 'First look: Vapor GT DLC', duration_seconds: 8105, upload_date: new Date(now - 9 * day).toISOString(), thumbnail_url: A + '/thumb0.jpg', url: 'https://www.twitch.tv/videos/2284007' }
+]
+
+function at(d, h, m = 0) { const x = new Date(); x.setDate(x.getDate() + d); x.setHours(h, m, 0, 0); return x.toISOString() }
+const scheduled = [
+  { id: 901, caption: 'Perfect drift x4 at 200 km/h', platform: 'tiktok', status: 'scheduled', scheduled_at: at(1, 17) },
+  { id: 902, caption: 'Photo finish steals P1', platform: 'youtube', status: 'scheduled', scheduled_at: at(2, 12) },
+  { id: 903, caption: 'Chat goes wild on lap 2', platform: 'instagram', status: 'scheduled', scheduled_at: at(4, 18) },
+  { id: 904, caption: 'Overtake on the final hairpin', platform: 'x', status: 'scheduled', scheduled_at: at(6, 15) }
+]
+const published = [
+  { id: 801, caption: 'Perfect drift x4 at 200 km/h', platform: 'youtube', status: 'published', published_at: at(0, 9) },
+  { id: 802, caption: 'Best setup for night tracks', platform: 'tiktok', status: 'published', published_at: at(-2, 19) },
+  { id: 803, caption: 'Chat roasts my paint job', platform: 'instagram', status: 'published', published_at: at(-4, 13) }
+]
+
+async function account(path, method, req) {
+  if (path === '/auth/me') return json({ success: true, user })
+  if (path === '/settings/feature-flags') return json({ success: true, feature_flags: { campaigns_enabled: true } })
+  if (path === '/user/restrictions') return json({ success: true, restricted: false, restrictions: {} })
+  if (path.startsWith('/credits/balance')) return json({ success: true, balance: { hours_remaining: 128.5, hours_used: 21.5, minutes_remaining: 7710 }, organization_allocations: [] })
+  if (path.startsWith('/social/scheduled')) return json({ success: true, posts: scheduled })
+  if (path.startsWith('/user/posts')) return json({ success: true, posts: published })
+  if (path.startsWith('/user/social-accounts')) return json({ success: true, social_accounts: [
+    { id: 11, platform: 'youtube', username: 'Sam Plays Racing', is_active: true },
+    { id: 12, platform: 'tiktok', username: '@samplays', is_active: true },
+    { id: 13, platform: 'instagram', username: '@samplays.clips', is_active: true },
+    { id: 14, platform: 'twitter', username: '@samplays', is_active: true }] })
+  if (path.startsWith('/media/vods')) return json({ success: true, vods, has_more: true, total: 48 })
+  if (path.startsWith('/user/creator-profiles') || path.startsWith('/user/branding')) return json({ success: true, profiles: [{ id: 31, name: 'Sam Plays', platform_links: [{ platform: 'twitch', platform_id: 'samplays' }, { platform: 'youtube', platform_id: '@samplays' }], avatar_url: null }], assets: [] })
+  unknown.push(method + ' ' + path)
+  return json(generic)
+}
+
+async function workspace(path, method, req, url) {
+  if (path === '/auth/session' || path === '/auth/logout') return json({ success: true })
+  if (path === '/auth/me') return json({ success: true, user })
+  if (path === '/auth/config') return json({ accountOrigin: location.origin })
+  if (path === '/web/vod-searches') return json({ searches: [{ id: 'samplays', platform: 'twitch', displayText: 'https://www.twitch.tv/samplays', timestamp: now - 600e3 }] })
+  if (path === '/web/projects' && method === 'GET') { await wordsReady; return json({ projects: Object.values(projects), jobs: [] }) }
+  let m = path.match(/^\/web\/projects\/([^/]+)(\/.*)?$/)
+  if (m) {
+    await wordsReady
+    const id = m[1], rest = m[2] || ''
+    if (!rest) return json(ws(id))
+    if (rest === '/source') return fetch(A + '/source.mp4', { headers: req.headers })
+    if (rest.startsWith('/waveform')) {
+      const width = Math.min(4000, +url.searchParams.get('width') || 1200), s = +url.searchParams.get('start') || 0, e = +url.searchParams.get('end') || 48
+      const peaks = Array.from({ length: width }, (_, i) => { const t = s + (e - s) * i / width; const v = 0.25 + 0.35 * Math.abs(Math.sin(t * 2.1)) * (0.6 + 0.4 * Math.sin(t * 13.7)) + ((t > 14 && t < 20) || (t > 29.5 && t < 35) ? 0.3 : 0); return { min: -Math.min(1, v), max: Math.min(1, v) } })
+      return json({ duration: 48, peaks })
+    }
+    if (rest.startsWith('/thumbnail')) { const t = +url.searchParams.get('time'); return fetch(isFinite(t) && t > 0 ? (t > 28 ? A + '/thumb2.jpg' : A + '/thumb1.jpg') : thumbFor(id)) }
+    if (/\/builds\/[^/]+\/thumbnail/.test(rest)) return fetch(rest.includes('0002') ? A + '/clip-finish.jpg' : A + '/clip-drift.jpg')
+    if (/\/clips\/[^/]+\/(playback|download|preview)/.test(rest)) return fetch(rest.includes('0002') ? A + '/clip-finish.mp4' : A + '/clip-drift.mp4', { headers: req.headers })
+    if (rest === '/detect' && method === 'POST') { const job = { id: 'job-detect', projectId: id, kind: 'detect', status: 'running', progress: 64, message: 'Finding the best moments…', createdAt: Date.now() }; return json(job) }
+    if (/\/clips\/[^/]+\/build$/.test(rest)) return json({ id: 'job-build', projectId: id, kind: 'build', status: 'running', progress: 40, message: 'Building 9:16 clip…', createdAt: Date.now() })
+    if (/\/clips\/[^/]+$/.test(rest) && method === 'PUT') return json(ws(id))
+    unknown.push(method + ' ' + path)
+    return json(ws(id))
+  }
+  if (path.startsWith('/web/account')) return account(path.slice('/web/account'.length), method, req)
+  if (path.startsWith('/web/prompts')) return json({ success: true, prompts: [] })
+  if (path.startsWith('/web/storage')) return json({ success: true, usedBytes: 3.2e9, limitBytes: 10e9 })
+  unknown.push(method + ' ' + path)
+  return json(generic)
+}
+
+self.addEventListener('install', () => self.skipWaiting())
+self.addEventListener('activate', e => e.waitUntil(self.clients.claim()))
+self.addEventListener('message', e => { if (e.data === 'unknown') e.source.postMessage({ unknown }) })
+self.addEventListener('fetch', event => {
+  const url = new URL(event.request.url)
+  const method = event.request.method
+  let handler = null
+  if (url.port === '4000' && url.pathname.startsWith('/api/')) handler = () => account(url.pathname.slice(4), method, event.request)
+  else if (url.origin === location.origin && url.pathname.startsWith('/workspace/api/')) handler = () => workspace(url.pathname.slice('/workspace/api'.length), method, event.request, url)
+  else if (url.origin === location.origin && url.pathname.startsWith('/api/')) handler = () => account(url.pathname.slice(4), method, event.request)
+  else if (url.hostname === 'api.clippster.app') handler = () => account(url.pathname.replace(/^\/api/, ''), method, event.request)
+  if (handler) event.respondWith(handler().catch(err => json({ success: false, error: String(err) }, 500)))
+})

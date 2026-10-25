@@ -34,6 +34,7 @@
       "@clippster/shared-types": ["../../packages/shared-types/src/index.ts"],
       "@clippster/api-client": ["../../packages/api-client/src/index.ts"],
       "@clippster/clip-export": ["../../packages/clip-export/src/index.ts"],
+      "@clippster/app-tour": ["../../packages/app-tour/src/index.ts"],
       "vue": ["node_modules/vue"],
       "lucide-vue-next": ["node_modules/lucide-vue-next"],
       "hls.js": ["node_modules/hls.js"],

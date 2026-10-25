@@ -5,6 +5,7 @@
    */
   import { computed, ref, watch, onBeforeUnmount, nextTick } from 'vue';
   import { useRoute } from 'vue-router';
+  import { useResizeObserver } from '@vueuse/core';
   import {
     Music,
     Pause,
@@ -51,6 +52,22 @@
       closeLabel: 'Close player',
     }
   );
+
+  const titleViewport = ref<HTMLElement | null>(null);
+  const titleText = ref<HTMLElement | null>(null);
+  const titleWidth = ref(0);
+  const titleOverflows = ref(false);
+  function measureTitle() {
+    const viewportWidth = titleViewport.value?.clientWidth ?? 0;
+    titleWidth.value = titleText.value?.scrollWidth ?? 0;
+    titleOverflows.value = viewportWidth > 0 && titleWidth.value > viewportWidth + 1;
+  }
+  useResizeObserver([titleViewport, titleText], measureTitle);
+  watch(() => props.title, measureTitle, { flush: 'post' });
+  const titleScrollStyle = computed(() => ({
+    '--audio-title-distance': `${titleWidth.value + 32}px`,
+    '--audio-title-duration': `${Math.max(8, (titleWidth.value + 32) / 28 + 1.5)}s`,
+  }));
 
   const emit = defineEmits<{
     'toggle-play': [];
@@ -158,7 +175,7 @@
 
 <template>
   <div
-    class="audio-player-bar pointer-events-none fixed bottom-[calc(var(--panel-inset)+0.25rem)] right-[var(--panel-inset)] z-[1000] flex justify-center px-4"
+    class="audio-player-bar pointer-events-none fixed bottom-[calc(var(--panel-inset)+0.25rem)] right-[var(--panel-inset)] z-[10050] flex justify-center px-4"
     :style="{ left: leftOffset }"
   >
     <button
@@ -195,8 +212,16 @@
         <span class="grid size-8 shrink-0 place-items-center rounded-md border border-line bg-surface-hover text-brand">
           <Music class="size-3.5" />
         </span>
-        <div class="min-w-0 leading-tight">
-          <p class="truncate text-xs font-medium text-fg" :title="title">{{ title }}</p>
+        <div ref="titleViewport" class="min-w-0 overflow-hidden leading-tight" :title="title">
+          <p
+            :key="title"
+            class="audio-title-track flex w-max whitespace-nowrap text-xs font-medium text-fg"
+            :class="{ 'audio-title-track--scrolling': titleOverflows }"
+            :style="titleScrollStyle"
+          >
+            <span ref="titleText" class="audio-title-text shrink-0">{{ title }}</span>
+            <span v-if="titleOverflows" aria-hidden="true" class="audio-title-copy shrink-0 pl-8">{{ title }}</span>
+          </p>
         </div>
       </div>
 
@@ -320,6 +345,36 @@
 </template>
 
 <style scoped>
+  @keyframes audio-title-scroll {
+    0%,
+    12% {
+      transform: translateX(0);
+    }
+    100% {
+      transform: translateX(calc(-1 * var(--audio-title-distance)));
+    }
+  }
+
+  .audio-title-track--scrolling {
+    animation: audio-title-scroll var(--audio-title-duration) linear infinite;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .audio-title-track {
+      display: block;
+      width: auto;
+      animation: none;
+    }
+    .audio-title-text {
+      display: block;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+    .audio-title-copy {
+      display: none;
+    }
+  }
+
   @media (prefers-reduced-motion: no-preference) {
     .audio-player-expanded {
       animation: audio-player-reveal 150ms ease-out;

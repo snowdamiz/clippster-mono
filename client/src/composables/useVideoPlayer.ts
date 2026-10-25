@@ -2,6 +2,7 @@ import { ref, watch, nextTick, onMounted, computed, type Ref } from 'vue';
 import {
   type Project,
   getAllRawVideos,
+  getClipsWithVersionsByProjectId,
   getRawVideosByOriginalProjectId,
   type RawVideo,
   type ClipSegment,
@@ -9,6 +10,7 @@ import {
 import { invoke } from '@tauri-apps/api/core';
 import { utf8ToBase64Url } from '@/utils/encoding';
 import { isPlausibleVodSourcePath } from '@/services/clip-vod-extract';
+import { referencedWorkspaceSource } from '@/utils/workspaceClipTiming';
 
 /**
  * When a project has multiple raw_videos rows (e.g. full VOD + editor/built extract),
@@ -386,6 +388,7 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
 
     try {
       let videoPath: string | null = null;
+      currentVideo.value = null;
 
       const projectData = project.value;
 
@@ -408,6 +411,15 @@ export function useVideoPlayer(project: Ref<Project | null | undefined>) {
           const firstSegment = childVideos[0];
           videoPath = firstSegment.file_path;
           currentVideo.value = firstSegment;
+        }
+      }
+
+      if (!videoPath && projectData?.id) {
+        const clips = await getClipsWithVersionsByProjectId(projectData.id);
+        const referenced = referencedWorkspaceSource(clips, availableVideos.value);
+        if (referenced) {
+          currentVideo.value = referenced;
+          videoPath = referenced.file_path;
         }
       }
 

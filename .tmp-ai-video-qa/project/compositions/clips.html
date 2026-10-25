@@ -1,0 +1,49 @@
+<!doctype html>
+<html data-composition-variables='[{"id":"text","type":"string","label":"Headline","default":"Make it a clip"}]'>
+<head><meta charset="UTF-8" /></head>
+<body><template>
+<style>
+#root{position:absolute;inset:0;overflow:hidden}
+#clips-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 60%,#14205a 0%,#0a1233 55%,#050a1f 100%)}
+#clips-grid{position:absolute;inset:-100px;background-image:linear-gradient(rgba(34,211,238,0.06) 2px,transparent 2px),linear-gradient(90deg,rgba(168,85,247,0.06) 2px,transparent 2px);background-size:120px 120px}
+#clips-title{position:absolute;left:160px;right:160px;top:120px;text-align:center;color:#fff;font:800 120px/1.05 "Montserrat",sans-serif;white-space:nowrap}
+#clips-row{position:absolute;left:0;right:0;top:400px;height:420px}
+.clips-card{position:absolute;left:50%;top:0;width:440px;height:400px;margin-left:-220px;border-radius:28px;background:linear-gradient(160deg,#16255f,#0c1540);border:5px solid #22d3ee;box-shadow:0 30px 60px rgba(0,0,0,0.45);overflow:hidden}
+.clips-card.p{border-color:#a855f7}
+.clips-thumb{position:absolute;left:28px;right:28px;top:28px;height:230px;border-radius:16px;background:linear-gradient(135deg,rgba(34,211,238,0.35),rgba(168,85,247,0.35));display:flex;align-items:center;justify-content:center}
+.clips-play{width:0;height:0;border-top:36px solid transparent;border-bottom:36px solid transparent;border-left:60px solid #fff;margin-left:12px}
+.clips-track{position:absolute;left:28px;right:28px;top:300px;height:12px;border-radius:6px;background:rgba(255,255,255,0.15)}
+.clips-fill{position:absolute;left:0;top:0;bottom:0;width:100%;border-radius:6px;background:linear-gradient(90deg,#22d3ee,#a855f7);transform-origin:left center}
+.clips-marks{position:absolute;left:28px;right:28px;top:340px;display:flex;gap:12px}
+.clips-marks i{display:block;height:24px;border-radius:6px;background:rgba(255,255,255,0.18)}
+</style>
+<div id="root" data-composition-id="clips" data-width="1920" data-height="1080">
+<div id="clips-bg"></div><div id="clips-grid"></div>
+<div id="clips-title"></div>
+<div id="clips-row"></div>
+</div>
+<script>
+(function(){
+const { text } = window.__hyperframes.getVariables();
+const title=document.getElementById("clips-title");title.textContent=text;
+const row=document.getElementById("clips-row");
+const tl=gsap.timeline({paused:true});
+tl.fromTo("#clips-grid",{x:0,y:0},{x:-120,y:-60,duration:4.4,ease:"none"},0);
+const fan=[[-520,-8],[0,0],[520,8]];
+const cards=[];
+for(let i=0;i<3;i++){const c=document.createElement("div");c.className="clips-card"+(i===1?" p":"");
+c.innerHTML='<div class="clips-thumb"><div class="clips-play"></div></div><div class="clips-track"><div class="clips-fill"></div></div><div class="clips-marks"><i style="width:120px"></i><i style="width:70px"></i><i style="width:150px"></i></div>';
+row.appendChild(c);cards.push(c);}
+cards.forEach((c,i)=>{
+tl.fromTo(c,{x:1400,y:200,rotation:25,opacity:0,scale:0.8},{x:0,y:0,rotation:(i-1)*4,opacity:1,scale:0.9,duration:0.55,ease:"power3.out"},0.5+i*0.18);
+tl.to(c,{x:fan[i][0],rotation:fan[i][1]*0.5,scale:1,duration:0.6,ease:"back.out(1.4)"},1.45);
+tl.fromTo(c.querySelector(".clips-fill"),{scaleX:0},{scaleX:1,duration:1.6,ease:"none"},1.6+i*0.15);
+tl.to(c,{y:"-=14",duration:1.2,ease:"sine.inOut"},2.1);
+tl.to(c,{x:"+=1800",rotation:15,duration:0.55,ease:"power3.in"},3.7+i*0.06);
+});
+tl.fromTo(title,{y:-60,opacity:0},{y:0,opacity:1,duration:0.45,ease:"power4.out"},0.45);
+tl.to(title,{y:-40,opacity:0,duration:0.35,ease:"power2.in"},3.9);
+window.__timelines["clips"]=tl;
+})();
+</script>
+<script data-ai-editor-timing>(function(){const scale=Number(window.__hyperframes.getVariables().__editorTimeScale || 1);const tl=window.__timelines["clips"];if(!tl || !Number.isFinite(scale) || scale<=0 || scale===1)return;const children=tl.getChildren(false,true,true).map(child=>({child,start:child.startTime(),duration:child.duration()}));for(const item of children){item.child.duration(item.duration*scale);item.child.startTime(item.start*scale);}tl.invalidate();})();</script></template></body></html>

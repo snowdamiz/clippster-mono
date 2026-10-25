@@ -12,7 +12,7 @@ defmodule ClippsterServerWeb.AIThumbnailController do
 
   alias ClippsterServer.Credits
   alias ClippsterServer.Storage
-  alias ClippsterServerWeb.AIChatController
+  alias ClippsterServer.AI.EditorAccess
 
   require Logger
 
@@ -985,7 +985,7 @@ defmodule ClippsterServerWeb.AIThumbnailController do
   defp require_ai_editor_access(conn, _opts) do
     user = conn.assigns.current_user
 
-    if AIChatController.can_access_image_editor?(user) do
+    if EditorAccess.can_access_image_editor?(user) do
       conn
     else
       conn

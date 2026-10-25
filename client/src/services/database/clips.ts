@@ -3,7 +3,7 @@ import type { Clip } from './types';
 
 // Basic clip CRUD operations
 export async function createClip(
-  projectId: string,
+  projectId: string | null,
   filePath: string,
   options?: {
     name?: string;
@@ -115,6 +115,22 @@ export async function getGeneratedClips(): Promise<Clip[]> {
     }
   }
   return clips;
+}
+
+type EditorExport = Clip & { built_file_path: string };
+
+/** Finished Video Editor exports saved as their own clip (no `clip_builds` row). */
+export async function getEditorExportClips(): Promise<EditorExport[]> {
+  const db = await getDatabase();
+  const userId = getCurrentUserId();
+  const where = "source = 'video_editor' AND build_status = 'completed' AND built_file_path IS NOT NULL AND TRIM(built_file_path) != ''";
+  if (userId === null) {
+    return await db.select<EditorExport[]>(`SELECT * FROM clips WHERE ${where} ORDER BY created_at DESC`);
+  }
+  return await db.select<EditorExport[]>(
+    `SELECT * FROM clips WHERE ${where} AND (CAST(user_id AS INTEGER) = ? OR user_id IS NULL) ORDER BY created_at DESC`,
+    [userId]
+  );
 }
 
 export async function getDetectedClips(): Promise<Clip[]> {

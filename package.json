@@ -8,6 +8,8 @@
     "packages/*"
   ],
   "scripts": {
+    "streamer-outreach": "node scripts/streamer-outreach/cli.mjs",
+    "streamer-outreach:test": "node --test scripts/streamer-outreach/*.test.mjs",
     "client": "cd client && yarn dev",
     "server": "cd server && mix phx.server",
     "landing": "cd landing && yarn dev",
@@ -21,7 +23,7 @@
     "format:check": "cd client && prettier --check \"src/**/*.{vue,js,ts,json,css,scss,md}\"",
     "format:all": "prettier --write \"client/**/*.{vue,js,ts,json,css,scss,md}\"",
     "format:staged": "cd client && prettier --write",
-    "type-check": "cd client && vue-tsc --noEmit",
+    "type-check": "cd client && yarn typecheck",
     "api-demo": "node server.js",
     "api-test": "node kick_api_demo_node.js",
     "css-to-tailwind": "node scripts/css-to-tailwind.mjs",

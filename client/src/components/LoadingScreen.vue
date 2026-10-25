@@ -1,6 +1,11 @@
 <template>
-  <div class="loading-screen fixed inset-0 z-[9999] grid place-items-center bg-canvas" role="status" aria-live="polite">
-    <div class="flex flex-col items-center gap-6">
+  <div
+    class="loading-screen fixed inset-0 z-[9999] grid place-items-center bg-canvas"
+    role="status"
+    aria-live="polite"
+    data-tauri-drag-region
+  >
+    <div class="pointer-events-none flex flex-col items-center gap-6">
       <div class="flex items-center gap-3">
         <img src="/logo-titlebar.svg" alt="" class="size-9 rounded-[10px]" />
         <img src="/logo.svg" alt="Clippster" class="h-7 w-auto brightness-0 invert" />

@@ -6,6 +6,22 @@ export type SupportedLivestreamPlatform =
   | 'Rumble'
   | 'Twitter'
   | 'Tokend';
+
+const LIVESTREAM_PLATFORMS: Record<string, SupportedLivestreamPlatform> = {
+  pumpfun: 'PumpFun',
+  kick: 'Kick',
+  twitch: 'Twitch',
+  youtube: 'YouTube',
+  rumble: 'Rumble',
+  twitter: 'Twitter',
+  tokend: 'Tokend',
+};
+
+/** Map a stored platform value (stored lowercase, e.g. 'kick', 'youtube') to its canonical name. */
+export function parseLivestreamPlatform(raw?: string | null): SupportedLivestreamPlatform | null {
+  return LIVESTREAM_PLATFORMS[(raw || '').toLowerCase()] ?? null;
+}
+
 export type LivestreamMonitoringMode = 'record' | 'realtime-detect';
 
 export interface MonitoredStreamer {

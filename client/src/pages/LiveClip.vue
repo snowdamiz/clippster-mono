@@ -39,14 +39,16 @@
                 Live
               </Badge>
             </template>
+            <template #header-actions>
+              <Button variant="outline" size="xs" data-tour-id="tour-mock-watch" @click.prevent>
+                <Eye />
+                Watch
+              </Button>
+            </template>
             <template #footer-start>
               <span class="text-xs text-fg-subtle">Sample channel</span>
             </template>
             <template #footer-end>
-              <Button variant="ghost" size="sm" data-tour-id="tour-mock-watch" @click.prevent>
-                <Eye />
-                Watch
-              </Button>
               <div class="flex items-center">
                 <Button variant="secondary" size="sm" class="rounded-r-none" data-tour-id="tour-mock-rec" @click.prevent>
                   <Video />
@@ -123,7 +125,14 @@
                   </Badge>
                 </template>
 
-                <template v-if="!streamer.isDetecting" #menu>
+                <template v-if="streamer.isLive && streamer.platform !== 'Tokend'" #header-actions>
+                  <Button variant="outline" size="xs" @click="openWatchDialog(streamer)">
+                    <Eye />
+                    Watch
+                  </Button>
+                </template>
+
+                <template #menu>
                   <DropdownMenu>
                     <DropdownMenuTrigger as-child>
                       <Button variant="ghost" size="icon-sm" class="-mr-1.5" title="More actions" aria-label="More actions">
@@ -131,18 +140,24 @@
                       </Button>
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end" class="min-w-44">
-                      <DropdownMenuItem :disabled="streamer.isCheckingLive" @select="refreshLiveStatus(streamer)">
-                        <RefreshCw />
-                        Refresh status
+                      <DropdownMenuItem @select="viewStreamerVods(streamer)">
+                        <Video />
+                        View VODs
                       </DropdownMenuItem>
-                      <DropdownMenuSeparator />
-                      <DropdownMenuItem
-                        class="text-danger focus:bg-danger-soft [&>svg]:text-danger"
-                        @select="removeStreamer(streamer.id)"
-                      >
-                        <Trash2 />
-                        Remove channel
-                      </DropdownMenuItem>
+                      <template v-if="!streamer.isDetecting">
+                        <DropdownMenuItem :disabled="streamer.isCheckingLive" @select="refreshLiveStatus(streamer)">
+                          <RefreshCw />
+                          Refresh status
+                        </DropdownMenuItem>
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                          class="text-danger focus:bg-danger-soft [&>svg]:text-danger"
+                          @select="removeStreamer(streamer.id)"
+                        >
+                          <Trash2 />
+                          Remove channel
+                        </DropdownMenuItem>
+                      </template>
                     </DropdownMenuContent>
                   </DropdownMenu>
                 </template>
@@ -153,7 +168,7 @@
                   </span>
                   <label
                     v-else
-                    class="flex cursor-pointer items-center gap-2 text-xs text-fg-muted"
+                    class="flex shrink-0 cursor-pointer items-center gap-2 whitespace-nowrap text-xs text-fg-muted"
                     title="Keep a rolling DVR buffer whenever this channel is live"
                   >
                     <Switch
@@ -175,10 +190,6 @@
                       Stopping…
                     </span>
                     <template v-else>
-                      <Button v-if="streamer.isLive" variant="ghost" size="sm" @click="openWatchDialog(streamer)">
-                        <Eye />
-                        Watch
-                      </Button>
                       <div class="flex items-center">
                         <Button
                           variant="secondary"
@@ -204,10 +215,6 @@
                     </template>
                   </template>
                   <template v-else>
-                    <Button v-if="streamer.isLive" variant="ghost" size="sm" @click="openWatchDialog(streamer)">
-                      <Eye />
-                      Watch
-                    </Button>
                     <Button variant="destructive-soft" size="sm" @click="stopStreamer(streamer)">
                       <Square class="fill-current" />
                       Stop
@@ -388,6 +395,7 @@
 
 <script setup lang="ts">
   import { ref, computed, onMounted, onUnmounted, watch, h, defineComponent, type Component } from 'vue';
+  import { useRouter } from 'vue-router';
   import { invoke } from '@tauri-apps/api/core';
   import { useAppTour, useTourFlags } from '@/composables/useAppTour';
   import {
@@ -462,7 +470,7 @@
   import { canAccessTokend } from '@/utils/tokendAccess';
   import { useAuthStore } from '@/stores/auth';
   import XBroadcastExplainerDialog from '@/components/XBroadcastExplainerDialog.vue';
-  import type { MonitoredStreamer } from '@/types/livestream';
+  import { parseLivestreamPlatform, type MonitoredStreamer } from '@/types/livestream';
   import { useCreditBalance } from '@/composables/useCreditBalance';
   import { useSubscriptionGate } from '@/composables/useSubscriptionGate';
 
@@ -477,6 +485,7 @@
   const { gates, requireSubscription } = useSubscriptionGate();
   const { success, error: showError } = useToast();
   const authStore = useAuthStore();
+  const router = useRouter();
 
   type ExtendedStreamer = Omit<MonitoredStreamer, 'platform'> & {
     platform: Platform;
@@ -490,6 +499,16 @@
     hasTempRecording?: boolean;
     autoDvr?: boolean;
   };
+
+  function viewStreamerVods(streamer: ExtendedStreamer) {
+    router.push({
+      path: '/vods',
+      query: {
+        platform: streamer.platform.toLowerCase(),
+        id: streamer.mintId,
+      },
+    });
+  }
 
   const streamers = ref<ExtendedStreamer[]>([]);
   /** False until the first database read finishes, so the empty state never flashes on open. */
@@ -1099,16 +1118,7 @@
         const monitored = monitoredStreamers.value.get(record.id);
         const session = activeSessions.value.get(record.id);
 
-        const platformMap: Record<string, Platform> = {
-          pumpfun: 'PumpFun',
-          kick: 'Kick',
-          twitch: 'Twitch',
-          youtube: 'YouTube',
-          rumble: 'Rumble',
-          twitter: 'Twitter',
-          tokend: 'Tokend',
-        };
-        const platform = platformMap[record.platform?.toLowerCase() || 'pumpfun'] || 'PumpFun';
+        const platform = parseLivestreamPlatform(record.platform) ?? 'PumpFun';
 
         // Clean display name for Rumble channels (remove c/ or user/ prefix)
         let displayName = record.display_name;
@@ -1494,14 +1504,7 @@
     profileImageUrl?: string,
     platform: string = 'pumpfun'
   ) {
-    const platformDisplay = 
-      platform === 'youtube' ? 'YouTube' : 
-      platform === 'rumble' ? 'Rumble' :
-      platform === 'twitter' ? 'Twitter' :
-      platform === 'tokend' ? 'Tokend' :
-      platform === 'kick' ? 'Kick' : 
-      platform === 'twitch' ? 'Twitch' : 
-      'PumpFun';
+    const platformDisplay = parseLivestreamPlatform(platform) ?? 'PumpFun';
     try {
       // Check if streamer already exists
       const existingStreamer = streamers.value.find(s => s.mintId === platformId && s.platform === platformDisplay);

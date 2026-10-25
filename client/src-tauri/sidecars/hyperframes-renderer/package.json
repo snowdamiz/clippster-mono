@@ -1,0 +1,17 @@
+{
+  "name": "hyperframes-renderer-sidecar",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node sidecar that runs Hyperframes lint, check, snapshot, beats and render for the AI video editor",
+  "type": "module",
+  "main": "index.mjs",
+  "scripts": {
+    "test": "node --test \"test/*.test.mjs\""
+  },
+  "dependencies": {
+    "@hyperframes/core": "0.8.174",
+    "@hyperframes/producer": "0.8.174",
+    "gsap": "3.14.2",
+    "hyperframes": "0.8.174"
+  }
+}

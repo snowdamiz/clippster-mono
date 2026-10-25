@@ -165,6 +165,8 @@ yarn type-check       # Type check Vue application
 
 ### Environment Configuration
 
+For Twitch/Kick discovery, 60-day X clipper-request research, automatic clip generation, and outreach drafts, see the [streamer outreach tool](scripts/streamer-outreach/README.md). Run `yarn streamer-outreach init` to create its local credential/config files, then `yarn streamer-outreach run` after setup.
+
 #### Development URLs
 - **Frontend**: http://localhost:1420
 - **Backend API**: http://localhost:4000

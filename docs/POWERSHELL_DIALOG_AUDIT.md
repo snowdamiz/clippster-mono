@@ -442,7 +442,7 @@ For each HIGH PRIORITY location:
 #### Fixed Files:
 
 1. **`client/src-tauri/src/sidecar/mod.rs`** (Line 185)
-   - **Issue:** Node.js sidecar process for Remotion renderer
+   - **Issue:** Node.js sidecar process for Hyperframes renderer
    - **Fix:** Added `creation_flags(0x08000000)` before spawn
    - **Impact:** 🔴 HIGH - Used for video export rendering
 
@@ -523,7 +523,7 @@ For each HIGH PRIORITY location:
    - Note: If flash occurs, check Task Manager to identify which process is spawning
 
 3. **Test the fixed process spawns:**
-   - Export video using Remotion renderer (tests sidecar fix)
+   - Export video using Hyperframes renderer (tests sidecar fix)
    - Convert a video overlay (tests convert_video fix)
    - Cancel an active download (tests audio.rs fix)
 

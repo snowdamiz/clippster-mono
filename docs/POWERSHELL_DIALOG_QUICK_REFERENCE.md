@@ -39,7 +39,7 @@ yarn build
 - [ ] Messages - Attach files
 
 **Priority 2 - Fixed Process Spawns:**
-- [ ] Video Editor - Export video (Remotion sidecar)
+- [ ] Video Editor - Export video (Hyperframes sidecar)
 - [ ] Editor - Convert video overlay (FFmpeg)
 - [ ] Audio Library - Cancel download (taskkill)
 

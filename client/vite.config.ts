@@ -1,6 +1,5 @@
 import { defineConfig } from "vite";
 import vue from "@vitejs/plugin-vue";
-import react from "@vitejs/plugin-react";
 import path from "path";
 
 // @ts-expect-error process is a nodejs global
@@ -28,15 +27,12 @@ export default defineConfig(async () => ({
   plugins: [
     vue(),
     stripeReturnHtml(),
-    // React plugin for Remotion - only processes .tsx files in /remotion folder
-    react({
-      include: /src\/remotion\/.*\.tsx$/,
-    }),
   ],
   resolve: {
     alias: {
       "@clippster/shared-types": path.resolve(__dirname, "../packages/shared-types/src/index.ts"),
       "@": path.resolve(__dirname, "./src"),
+      "@clippster/api-client": path.resolve(__dirname, "../packages/api-client/src/index.ts"),
       "@clippster/cloud-sync-schema": path.resolve(
         __dirname,
         "../packages/cloud-sync-schema/src/index.ts",
@@ -44,12 +40,6 @@ export default defineConfig(async () => ({
       "@clippster/app-tour": path.resolve(__dirname, "../packages/app-tour/src/index.ts"),
     },
   },
-
-  // Optimize React and Remotion dependencies
-  optimizeDeps: {
-    include: ['react', 'react-dom', 'remotion', '@remotion/player'],
-  },
-
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors

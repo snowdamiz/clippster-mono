@@ -1,8 +1,8 @@
 <script setup lang="ts">
   /**
    * Card for a monitored channel on the Live streams page (also used for the
-   * tour's demo streamer): avatar + name + platform, a status slot, an
-   * overflow menu slot and a footer row for settings/actions.
+   * tour's demo streamer): identity, status and watch action in the header,
+   * an overflow menu and a footer row for settings/recording actions.
    */
   import { PlatformLogo, platformLabel } from '@/components/ui/platform-logo'
 
@@ -23,8 +23,8 @@
     class="flex min-w-0 flex-col rounded-xl border bg-surface transition-colors"
     :class="active ? 'border-brand-line' : 'border-line-subtle hover:border-line'"
   >
-    <div class="flex min-w-0 items-center gap-3 px-3.5 py-2.5">
-      <span class="relative shrink-0">
+    <div class="flex min-w-0 items-start gap-3 px-3.5 py-2.5">
+      <span class="relative mt-0.5 shrink-0">
         <img
           v-if="avatarUrl"
           :src="avatarUrl"
@@ -47,10 +47,13 @@
           <span class="truncate">{{ platformLabel(platform) }}</span>
           <slot name="meta" />
         </div>
+        <div class="mt-1.5 flex flex-wrap items-center gap-2">
+          <slot name="status" />
+          <slot name="header-actions" />
+        </div>
       </div>
 
-      <div class="flex shrink-0 items-center gap-1">
-        <slot name="status" />
+      <div class="flex shrink-0 items-center">
         <slot name="menu" />
       </div>
     </div>

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { parseTranscriptToWords } from './timelineUtils';
+import { getSegmentPositionStyle, parseTranscriptToWords } from './timelineUtils';
 
 describe('parseTranscriptToWords', () => {
   it('dedupes overlapping top-level and segment words with slightly different timings', () => {
@@ -40,5 +40,17 @@ describe('parseTranscriptToWords', () => {
     );
 
     expect(words.map((w) => w.word)).toEqual(['no', 'no', 'way']);
+  });
+});
+
+describe('source segment geometry', () => {
+  it('places the detected VOD clip at its actual 35:32 source position', () => {
+    const style = getSegmentPositionStyle({ start_time: 2132.82, end_time: 2156.64 }, 7910.25);
+    expect(parseFloat(style.left)).toBeCloseTo(26.96, 2);
+    expect(parseFloat(style.width)).toBeCloseTo(0.3011, 3);
+  });
+  it('cannot draw a stale 22-second range past an 8.41-second file', () => {
+    expect(getSegmentPositionStyle({ start_time: 0, end_time: 22.12 }, 8.41)).toMatchObject({ left: '0%', width: '100%' });
+    expect(getSegmentPositionStyle({ start_time: 1852.1, end_time: 1874.22 }, 8.41).display).toBe('none');
   });
 });
