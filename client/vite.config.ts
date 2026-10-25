@@ -32,6 +32,7 @@ export default defineConfig(async () => ({
     alias: {
       "@clippster/shared-types": path.resolve(__dirname, "../packages/shared-types/src/index.ts"),
       "@": path.resolve(__dirname, "./src"),
+      "@clippster/api-client": path.resolve(__dirname, "../packages/api-client/src/index.ts"),
       "@clippster/cloud-sync-schema": path.resolve(
         __dirname,
         "../packages/cloud-sync-schema/src/index.ts",

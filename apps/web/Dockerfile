@@ -15,6 +15,7 @@ COPY server/priv/email/ /repo/server/priv/email/
 COPY packages/clip-export/ /repo/packages/clip-export/
 COPY packages/api-client/ /repo/packages/api-client/
 COPY packages/cloud-sync-schema/ /repo/packages/cloud-sync-schema/
+COPY packages/app-tour/ /repo/packages/app-tour/
 COPY client/src/ /repo/client/src/
 COPY client/public/ /repo/client/public/
 
