@@ -89,7 +89,7 @@
   - Connection: `DATABASE_URL` environment variable (Ecto connection string)
   - ORM: Ecto 3.13
   - Client: `postgrex` adapter
-  - Deployment: Fly.io PostgreSQL cluster
+  - Deployment: Neon (Postgres 16; set `DATABASE_SSL=true` for TLS)
   - Configuration: `server/config/runtime.exs` (production config at lines 163-189)
   - Migration location: `server/priv/repo/migrations/`
 
@@ -145,11 +145,11 @@
 ## CI/CD & Deployment
 
 **Hosting:**
-- Fly.io - Primary deployment platform
-  - Deployment tokens: `FLY_SERVER_TOKEN`, `FLY_LANDING_TOKEN`
-  - Environment: Production (DNS cluster, load balancing)
-  - Database: Fly PostgreSQL
-  - Configuration: `server/config/runtime.exs` production config
+- Cloudflare Workers - Primary deployment platform (account `a1bd7481785784bf4a67d6fd5371397c`)
+  - API (`server/cloudflare`) and web workspace (`apps/web/cloudflare`) run their Docker images as Cloudflare Containers; the landing site (`landing/`) is a Worker with static assets
+  - Deployment token: `CLOUDFLARE_API_TOKEN` (GitHub secret, used by `.github/workflows/release.yml`)
+  - Database: Neon PostgreSQL
+  - Configuration: each `wrangler.jsonc`, plus `server/config/runtime.exs` production config
 
 **Build & Development:**
 - GitHub Actions - CI/CD pipeline (configured but details in `.github/`)
@@ -193,7 +193,7 @@
 - `R2_PUBLIC_URL` - R2 public URL base
 
 *Client:*
-- `VITE_API_URL` - API server URL (development: `http://localhost:4000`, production: `https://clippster-server.fly.dev`)
+- `VITE_API_URL` - API server URL (development: `http://localhost:4000`, production: `https://api.clippster.app/api`)
 
 **Secrets Location:**
 - Local development: `.env` file (not committed, use `.env.example` as template)
@@ -201,7 +201,7 @@
 - Server `.env.example`: `server/.env.example` (committed, documents required vars)
 - Client `.env`: `client/.env` (Git-ignored)
 - Client `.env.example`: `client/.env.example` (committed template)
-- Production: Fly.io secrets management (`fly secrets set KEY=VALUE`)
+- Production: Worker secrets (`npx wrangler secret put KEY` in the Worker's directory)
 
 ## Webhooks & Callbacks
 

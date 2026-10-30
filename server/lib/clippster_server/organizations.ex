@@ -2145,14 +2145,41 @@ defmodule ClippsterServer.Organizations do
   """
   def create_shared_clip(organization_id, user_id, attrs, file_binary, filename, opts \\ []) do
     content_type = Keyword.get(opts, :content_type, "video/mp4")
-    thumbnail_binary = Keyword.get(opts, :thumbnail_binary)
-    recipient_user_ids = Keyword.get(opts, :recipient_user_ids, [])
 
     # Generate storage key and upload to R2
     key = Storage.generate_key(organization_id, "shared-clips", filename)
 
-    with {:ok, url} <- Storage.upload_file(file_binary, key, content_type: content_type),
-         {:ok, thumbnail_url} <-
+    with {:ok, url} <- Storage.upload_file(file_binary, key, content_type: content_type) do
+      insert_shared_clip(organization_id, user_id, attrs, url, byte_size(file_binary), filename, opts)
+    end
+  end
+
+  @doc """
+  Shares a clip the client already uploaded to `key` through a presigned URL.
+
+  `opts[:max_bytes]` caps the uploaded object's size.
+  """
+  def create_shared_clip_from_upload(organization_id, user_id, attrs, key, filename, opts \\ []) do
+    prefix = Storage.key_prefix(organization_id, "shared-clips")
+
+    with {:ok, size} <- Storage.uploaded_size(key, prefix),
+         :ok <- within_limit(key, size, Keyword.get(opts, :max_bytes, size)) do
+      insert_shared_clip(organization_id, user_id, attrs, Storage.build_public_url(key), size, filename, opts)
+    end
+  end
+
+  defp within_limit(_key, size, max_bytes) when size <= max_bytes, do: :ok
+
+  defp within_limit(key, _size, _max_bytes) do
+    Storage.delete_file(key)
+    {:error, :too_large}
+  end
+
+  defp insert_shared_clip(organization_id, user_id, attrs, url, file_size, filename, opts) do
+    thumbnail_binary = Keyword.get(opts, :thumbnail_binary)
+    recipient_user_ids = Keyword.get(opts, :recipient_user_ids, [])
+
+    with {:ok, thumbnail_url} <-
            maybe_upload_shared_clip_thumbnail(organization_id, filename, thumbnail_binary) do
       Repo.transaction(fn ->
         # Create the shared clip record
@@ -2162,7 +2189,7 @@ defmodule ClippsterServer.Organizations do
           |> Map.put(:uploaded_by_user_id, user_id)
           |> Map.put(:url, url)
           |> Map.put(:thumbnail_url, thumbnail_url)
-          |> Map.put(:file_size, byte_size(file_binary))
+          |> Map.put(:file_size, file_size)
 
         {:ok, clip} =
           %OrganizationSharedClip{}
@@ -2180,7 +2207,8 @@ defmodule ClippsterServer.Organizations do
           create_recipients_for_users(clip.id, recipient_user_ids)
         end
 
-        clip
+        # The controller serializes the uploader, as the other shared clip queries preload it.
+        Repo.preload(clip, :uploaded_by)
       end)
     end
   end

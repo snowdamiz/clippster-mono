@@ -20,7 +20,8 @@ on:
       - 'package.json'
       - '.node-version'
       - 'scripts/dev-setup*'
-      - 'scripts/deploy-fly*'
+      - 'apps/web/cloudflare/**'
+      - 'cloudflare/**'
       - '.github/workflows/web.yml'
       - '.github/workflows/release.yml'
   workflow_dispatch:
@@ -49,7 +50,7 @@ jobs:
       - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
       - run: npm run typecheck --workspaces=false
       - run: npm test --workspaces=false
-      - run: node --test ../../scripts/deploy-fly.test.mjs ../../scripts/dev-setup.test.mjs
+      - run: node --test ../../scripts/dev-setup.test.mjs
       - run: npm run build --workspaces=false
       - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e --workspaces=false

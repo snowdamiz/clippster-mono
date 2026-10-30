@@ -10,6 +10,9 @@ defmodule ClippsterServerWeb.SharedClipController do
 
   plug ClippsterServerWeb.AuthPlug
 
+  # Matches the desktop share dialog's limit.
+  @max_shared_clip_bytes 500 * 1024 * 1024
+
   # ============================================================================
   # Admin Endpoints
   # ============================================================================
@@ -32,6 +35,20 @@ defmodule ClippsterServerWeb.SharedClipController do
         |> put_status(503)
         |> json(%{success: false, error: "Storage service not configured"})
 
+      is_binary(params["uploaded_key"]) ->
+        filename = params["filename"] || Path.basename(params["uploaded_key"])
+        opts = shared_clip_opts(params, params["content_type"] || "video/mp4")
+
+        org_id
+        |> Organizations.create_shared_clip_from_upload(
+          user.id,
+          shared_clip_attrs(params, filename),
+          params["uploaded_key"],
+          filename,
+          [max_bytes: @max_shared_clip_bytes] ++ opts
+        )
+        |> respond_to_create(conn)
+
       is_nil(params["file"]) ->
         conn
         |> put_status(400)
@@ -43,63 +60,15 @@ defmodule ClippsterServerWeb.SharedClipController do
 
         case File.read(temp_path) do
           {:ok, file_binary} ->
-            name = params["name"] || filename
-
-            # Build attributes
-            attrs = %{
-              name: name,
-              description: params["description"],
-              duration: parse_decimal(params["duration"]),
-              share_with_all: parse_boolean(params["share_with_all"], true),
-              branding_config: parse_json(params["branding_config"], %{}),
-              branding_required: parse_boolean(params["branding_required"], true)
-            }
-
-            # Build options
-            opts = [
-              content_type: content_type,
-              recipient_user_ids: parse_json(params["recipient_user_ids"], [])
-            ]
-
-            # Handle thumbnail if provided
-            opts =
-              case params["thumbnail"] do
-                %Plug.Upload{path: thumb_path} ->
-                  case File.read(thumb_path) do
-                    {:ok, thumb_binary} -> Keyword.put(opts, :thumbnail_binary, thumb_binary)
-                    _ -> opts
-                  end
-
-                _ ->
-                  opts
-              end
-
-            case Organizations.create_shared_clip(
-                   org_id,
-                   user.id,
-                   attrs,
-                   file_binary,
-                   filename,
-                   opts
-                 ) do
-              {:ok, clip} ->
-                conn
-                |> put_status(201)
-                |> json(%{
-                  success: true,
-                  clip: serialize_clip(clip)
-                })
-
-              {:error, changeset} when is_struct(changeset, Ecto.Changeset) ->
-                conn
-                |> put_status(422)
-                |> json(%{success: false, error: format_changeset_errors(changeset)})
-
-              {:error, reason} ->
-                conn
-                |> put_status(500)
-                |> json(%{success: false, error: "Upload failed: #{inspect(reason)}"})
-            end
+            org_id
+            |> Organizations.create_shared_clip(
+              user.id,
+              shared_clip_attrs(params, filename),
+              file_binary,
+              filename,
+              shared_clip_opts(params, content_type)
+            )
+            |> respond_to_create(conn)
 
           {:error, reason} ->
             conn
@@ -107,6 +76,114 @@ defmodule ClippsterServerWeb.SharedClipController do
             |> json(%{success: false, error: "Failed to read uploaded file: #{inspect(reason)}"})
         end
     end
+  end
+
+  @doc """
+  Presigned URL for uploading a shared clip straight to R2, so large clips skip the
+  request size cap in front of the API. The client then calls `create/2` with `uploaded_key`.
+  POST /organizations/:organization_id/shared-clips/presigned-upload
+  """
+  def presigned_upload(conn, %{"organization_id" => org_id} = params) do
+    user = conn.assigns.current_user
+    file_size = params["file_size"]
+
+    cond do
+      not Organizations.is_admin?(org_id, user.id) ->
+        conn
+        |> put_status(403)
+        |> json(%{success: false, error: "Only admins can share clips"})
+
+      not Storage.configured?() ->
+        conn
+        |> put_status(503)
+        |> json(%{success: false, error: "Storage service not configured"})
+
+      not (is_integer(file_size) and file_size > 0 and file_size <= @max_shared_clip_bytes) ->
+        conn
+        |> put_status(413)
+        |> json(%{success: false, error: "Clips must be 500MB or smaller"})
+
+      true ->
+        key = Storage.generate_key(org_id, "shared-clips", params["filename"] || "clip.mp4")
+
+        case Storage.generate_presigned_upload_url(key,
+               content_type: params["content_type"] || "video/mp4",
+               expires_in: 3600
+             ) do
+          {:ok, %{upload_url: upload_url}} ->
+            json(conn, %{success: true, upload_url: upload_url, key: key})
+
+          {:error, reason} ->
+            conn
+            |> put_status(500)
+            |> json(%{success: false, error: "Failed to start upload: #{inspect(reason)}"})
+        end
+    end
+  end
+
+  defp shared_clip_attrs(params, filename) do
+    %{
+      name: params["name"] || filename,
+      description: params["description"],
+      duration: parse_decimal(params["duration"]),
+      share_with_all: parse_boolean(params["share_with_all"], true),
+      branding_config: parse_json(params["branding_config"], %{}),
+      branding_required: parse_boolean(params["branding_required"], true)
+    }
+  end
+
+  defp shared_clip_opts(params, content_type) do
+    opts = [
+      content_type: content_type,
+      recipient_user_ids: parse_json(params["recipient_user_ids"], [])
+    ]
+
+    # Handle thumbnail if provided
+    case params["thumbnail"] do
+      %Plug.Upload{path: thumb_path} ->
+        case File.read(thumb_path) do
+          {:ok, thumb_binary} -> Keyword.put(opts, :thumbnail_binary, thumb_binary)
+          _ -> opts
+        end
+
+      _ ->
+        opts
+    end
+  end
+
+  defp respond_to_create({:ok, clip}, conn) do
+    conn
+    |> put_status(201)
+    |> json(%{
+      success: true,
+      clip: serialize_clip(clip)
+    })
+  end
+
+  defp respond_to_create({:error, changeset}, conn) when is_struct(changeset, Ecto.Changeset) do
+    conn
+    |> put_status(422)
+    |> json(%{success: false, error: format_changeset_errors(changeset)})
+  end
+
+  defp respond_to_create({:error, reason}, conn)
+       when reason in [:not_found, :forbidden_key, :too_large] do
+    {status, error} =
+      case reason do
+        :not_found -> {400, "Uploaded clip not found. Please upload it again."}
+        :forbidden_key -> {403, "That upload belongs to another organization"}
+        :too_large -> {413, "Clips must be 500MB or smaller"}
+      end
+
+    conn
+    |> put_status(status)
+    |> json(%{success: false, error: error})
+  end
+
+  defp respond_to_create({:error, reason}, conn) do
+    conn
+    |> put_status(500)
+    |> json(%{success: false, error: "Upload failed: #{inspect(reason)}"})
   end
 
   @doc """

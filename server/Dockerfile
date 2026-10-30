@@ -25,6 +25,8 @@ RUN apt-get update -y && apt-get install -y \
 
 # Set build environment
 ENV MIX_ENV="prod"
+# The BEAM JIT miscompiles under amd64 emulation on Apple Silicon, where Cloudflare's amd64 images are built.
+ENV ERL_FLAGS="+JMsingle true"
 
 # Install hex + rebar
 RUN mix local.hex --force && \

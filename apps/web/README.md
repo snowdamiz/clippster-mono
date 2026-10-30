@@ -21,7 +21,7 @@ yarn web
 yarn web:stop
 ```
 
-Open http://localhost:5175. Vite proxies `/api` to the media service on port 8090. Both ports bind to host loopback. `yarn web` builds the development target from the same Dockerfile used for Fly, then attaches logs; Ctrl+C stops the web container. UI, server, shared Vue components, and shared packages are mounted for live reload. Run `yarn web` again after dependency or configuration changes to rebuild. Named volume `server_web_data` preserves browser projects and media across restarts (its prefix follows the Compose project name). Host-mode data under `apps/web/data` is separate.
+Open http://localhost:5175. Vite proxies `/api` to the media service on port 8090. Both ports bind to host loopback. `yarn web` builds the development target from the same Dockerfile deployed to Cloudflare, then attaches logs; Ctrl+C stops the web container. UI, server, shared Vue components, and shared packages are mounted for live reload. Run `yarn web` again after dependency or configuration changes to rebuild. Named volume `server_web_data` preserves browser projects and media across restarts (its prefix follows the Compose project name). Host-mode data under `apps/web/data` is separate.
 
 The container reaches the host Phoenix API at `http://host.docker.internal:4000/api`. Docker-specific paths override host paths in `.env`. To use another API, set `WEB_DOCKER_API_URL` in the shell before `yarn dev`/`yarn web`. On native Linux Docker Engine, start Phoenix with `PHX_DEV_BIND_IP=0.0.0.0 yarn server` (or prefix `yarn dev`) so the container can reach it; use a trusted development network. Docker Desktop on macOS/Windows works with Phoenix's default loopback binding. `DATABASE_PORT` can select an alternate local PostgreSQL port for root setup and Phoenix.
 
@@ -66,7 +66,7 @@ Run the web build and test checks in an isolated Linux container with Docker run
 npm run verify:ci --prefix apps/web --workspaces=false
 ```
 
-This installs only the web app's dependencies and runs typechecking, unit tests, deployment helper tests, the production build, and browser tests with Chromium and FFmpeg. It excludes root and client `node_modules` so workspace links cannot hide missing package resolution.
+This installs only the web app's dependencies and runs typechecking, unit tests, the development setup tests, the production build, and browser tests with Chromium and FFmpeg. It excludes root and client `node_modules` so workspace links cannot hide missing package resolution.
 
 ```sh
 npm run typecheck --prefix apps/web --workspaces=false
@@ -88,6 +88,6 @@ For an opt-in external source smoke test, from `apps/web`:
 YTDLP_PATH=.venv/bin/yt-dlp npm exec --workspaces=false -- tsx --env-file-if-exists=.env scripts/source-smoke.ts 'https://www.youtube.com/watch?v=VIDEO_ID'
 ```
 
-Deployment instructions: [Fly rollout](../../docs/web/DEPLOYMENT.md). Architecture and operational boundaries: [Architecture](../../docs/web/ARCHITECTURE.md).
+Deployment instructions: [Cloudflare rollout](../../docs/web/DEPLOYMENT.md). Architecture and operational boundaries: [Architecture](../../docs/web/ARCHITECTURE.md).
 
 Completed local checks and known limits: [Verification report](../../docs/web/VERIFICATION.md).

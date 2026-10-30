@@ -7,6 +7,9 @@ _build/
 deps/
 node_modules/
 
+# Cloudflare Worker that wraps this image
+cloudflare/
+
 # Environment files (secrets should be in fly secrets)
 .env
 .env.*

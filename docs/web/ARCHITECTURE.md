@@ -47,6 +47,6 @@ An interrupted job becomes failed on restart; it is never silently replayed. In 
 
 ## Initial operating model
 
-The initial deployment is one Fly Machine with one persistent volume and a serial CPU media worker. It accepts downtime during deployment and a single-host failure domain. It must not be horizontally scaled with independent volumes: metadata and media would diverge. The Fly config disables automatic stopping so background jobs continue when no browser is connected.
+The deployment is one Cloudflare Container with a serial CPU media worker. Media lives in R2 through a FUSE mount, and the SQLite metadata is replicated to R2 by Litestream (see [DEPLOYMENT.md](DEPLOYMENT.md)). It accepts downtime during deployment and a single-instance failure domain. It must not be scaled to more than one instance: two writers would corrupt the replicated database. The Worker keeps the container awake so background jobs continue when no browser is connected.
 
 For multiple workers/regions, move metadata and durable job leases to the existing Postgres service, move original/built media to private R2 objects, and run isolated worker Machines against the queue. Keep the browser workspace contract and shared UI/export package unchanged. Desktop-to-web project sync would be a separate integration with the existing cloud snapshot protocol; this implementation does not claim that imported browser projects appear on desktop.

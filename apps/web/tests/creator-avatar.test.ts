@@ -11,7 +11,7 @@ it('loads campaign avatars from joined campaigns and rejects unrelated creators'
   download.mockImplementation(async (_url: string, path: string) => writeFile(path, Buffer.from([0x89, 0x50, 0x4e, 0x47])))
   const app = express()
   app.use((_req, res, next) => { res.locals.session = {}; next() })
-  app.use(creatorMediaRoutes({ upstream: () => ({ get }), token: () => 'fixture' } as any, {} as any))
+  app.use(creatorMediaRoutes({ upstream: () => ({ get }), token: () => 'fixture' } as any, {} as any, {} as any))
   const server = app.listen(0, '127.0.0.1')
   await new Promise(resolve => server.once('listening', resolve))
   const origin = `http://127.0.0.1:${(server.address() as any).port}`

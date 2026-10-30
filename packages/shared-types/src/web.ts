@@ -91,3 +91,5 @@ export interface WebClipInput {
   exportSettings?: WebClip['exportSettings'];
 }
 export const WEB_PUBLISH_PLATFORMS: readonly string[] = ['instagram', 'twitter', 'x', 'tiktok', 'youtube', 'tokend']
+/** Cloudflare rejects request bodies over 100 MB, so the browser workspace sends larger files in chunks of this size. */
+export const WEB_UPLOAD_CHUNK_BYTES = 64 * 1024 ** 2

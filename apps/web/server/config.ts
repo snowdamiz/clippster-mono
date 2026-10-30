@@ -6,6 +6,7 @@ export interface Config {
   accountOrigin: string
   apiUrl: string
   dataDir: string
+  databaseDir: string
   sessionSecret: string
   secureCookies: boolean
   ffmpeg: string
@@ -31,6 +32,8 @@ export function readConfig(env = process.env): Config {
     accountOrigin: env.ACCOUNT_ORIGIN || (production ? 'https://clippster.app' : 'http://localhost:5173'),
     apiUrl: (env.CLIPPSTER_API_URL || 'http://127.0.0.1:4000/api').replace(/\/$/, ''),
     dataDir: resolve(env.WEB_DATA_DIR || 'data'),
+    // SQLite stays on a local disk when the data folder is a network mount (Cloudflare's R2 mount).
+    databaseDir: resolve(env.WEB_DATABASE_DIR || env.WEB_DATA_DIR || 'data'),
     sessionSecret: env.SESSION_SECRET || 'local-development-only-clippster-web-secret',
     secureCookies: production,
     ffmpeg: env.FFMPEG_PATH || 'ffmpeg',

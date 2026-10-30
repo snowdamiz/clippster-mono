@@ -1,0 +1,19 @@
+// Cloudflare deployment of the landing site. Build first: VITE_API_URL=https://api.clippster.app/api yarn build
+{
+  "name": "clippster-landing",
+  "main": "worker.mjs",
+  "account_id": "a1bd7481785784bf4a67d6fd5371397c",
+  "compatibility_date": "2026-10-01",
+  "compatibility_flags": ["nodejs_compat"],
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // The Worker serves every path so SEO tags, redirects and security headers match server.mjs.
+    "run_worker_first": true,
+    "html_handling": "none",
+    "not_found_handling": "none"
+  },
+  // clippster.app/workspace is served by the clippster-web Worker, reached directly rather than over its public URL.
+  "services": [{ "binding": "WORKSPACE", "service": "clippster-web" }],
+  "observability": { "enabled": true }
+}

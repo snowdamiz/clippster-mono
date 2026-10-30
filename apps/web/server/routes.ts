@@ -33,9 +33,11 @@ import { access } from 'node:fs/promises'
 import { builtClipRoutes } from './builtClipRoutes'
 import { profileMediaRoutes } from './profileMediaRoutes'
 import { settingsStorageRoutes } from './settingsStorageRoutes'
+import { stagedUploads } from './stagedUploads'
 export function workspaceRoutes(store: Store, config: Config, auth: Auth, jobs: Jobs) {
   const router = Router()
   const uploads = new Map<string, string>()
+  const staged = stagedUploads(config)
   router.use(auth.requireSession)
   router.use((_req, res, next) => {
     requireValue(!needsPlanSelection(res.locals.user), 403, 'Choose Free or a paid plan in Billing to continue.')
@@ -69,12 +71,13 @@ export function workspaceRoutes(store: Store, config: Config, auth: Auth, jobs: 
     store.save(project, owner)
     res.json(workspace(project.id, owner))
   })
+  router.use(staged.router)
   router.use('/prompts', promptRoutes(store, auth))
   router.use(waveformRoutes(store, config))
   router.use(builtClipRoutes(store, config, jobs))
   router.use(profileMediaRoutes(auth))
   router.use(settingsStorageRoutes(store, config))
-  router.use('/account', creatorMediaRoutes(auth, config))
+  router.use('/account', creatorMediaRoutes(auth, config, staged))
   router.use('/account', creatorVodsRoutes(auth))
   router.use('/account', accountRoutes(auth))
   router.use(publishRoutes(store, auth, config, jobs))
@@ -86,7 +89,7 @@ export function workspaceRoutes(store: Store, config: Config, auth: Auth, jobs: 
       'Wait for the current upload to finish.'
     )
   }
-  router.use(framingAssetRoutes(store, config, uploads, idle))
+  router.use(framingAssetRoutes(store, config, uploads, idle, staged))
   router.use(brollRoutes(store))
   router.use(brollPreviewRoutes(config))
   router.use(clipPreviewRoutes(store, config))
@@ -168,7 +171,7 @@ export function workspaceRoutes(store: Store, config: Config, auth: Auth, jobs: 
     idle(project.id, session.owner)
     requireValue(project.status !== 'ready', 409, 'Create a new project to upload another source.')
     requireValue(
-      req.is('application/octet-stream') || req.is('video/*'),
+      req.query.upload || req.is('application/octet-stream') || req.is('video/*'),
       415,
       'Upload a video file.'
     )
@@ -203,7 +206,7 @@ export function workspaceRoutes(store: Store, config: Config, auth: Auth, jobs: 
           )
         }
       })
-      await pipeline(req, limiter, createWriteStream(path, { flags: 'wx', mode: 0o600 }))
+      await pipeline(staged.body(req, session.owner), limiter, createWriteStream(path, { flags: 'wx', mode: 0o600 }))
       requireValue(bytes > 0, 400, 'The uploaded file was empty.')
       res.status(202).json(publicJob(jobs.enqueue(project.id, session, 'import', {})))
     } catch (error) {

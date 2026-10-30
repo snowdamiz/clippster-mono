@@ -427,59 +427,7 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
              key <- generate_portfolio_clip_key(user.id, upload.filename),
              content_type <- upload.content_type || "video/mp4",
              {:ok, video_url} <- Storage.upload_file(file_binary, key, content_type: content_type) do
-          # Upload thumbnail if provided
-          thumbnail_url =
-            case params["thumbnail"] do
-              %Plug.Upload{} = thumb ->
-                thumb_key =
-                  "portfolio-clips/#{user.id}/thumbnails/#{System.unique_integer([:positive])}_thumbnail.jpg"
-
-                case File.read(thumb.path) do
-                  {:ok, thumb_binary} ->
-                    case Storage.upload_file(thumb_binary, thumb_key, content_type: "image/jpeg") do
-                      {:ok, url} -> url
-                      _ -> nil
-                    end
-
-                  _ ->
-                    nil
-                end
-
-              _ ->
-                nil
-            end
-
-          # Create the portfolio clip record
-          clip_params = %{
-            "title" =>
-              params["title"] || Path.basename(upload.filename, Path.extname(upload.filename)),
-            "video_url" => video_url,
-            "thumbnail_url" => thumbnail_url,
-            "file_size" => file_size
-          }
-
-          case ClipperProfiles.add_portfolio_clip(profile.id, clip_params) do
-            {:ok, clip} ->
-              conn
-              |> put_status(:created)
-              |> json(%{success: true, portfolio_clip: serialize_portfolio_clip(clip)})
-
-            {:error, :max_clips_reached} ->
-              # Clean up uploaded file
-              Storage.delete_file(key)
-
-              conn
-              |> put_status(:unprocessable_entity)
-              |> json(%{success: false, error: "Maximum of 3 portfolio clips allowed"})
-
-            {:error, changeset} ->
-              # Clean up uploaded file
-              Storage.delete_file(key)
-
-              conn
-              |> put_status(:unprocessable_entity)
-              |> json(%{success: false, error: format_changeset_errors(changeset)})
-          end
+          save_portfolio_clip(conn, user, profile, key, video_url, file_size, upload.filename, params)
         else
           {:error, reason} ->
             conn
@@ -491,6 +439,40 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
         conn
         |> put_status(:unprocessable_entity)
         |> json(%{success: false, error: "Could not read file: #{inspect(reason)}"})
+    end
+  end
+
+  # The clip was uploaded straight to R2 through presigned_portfolio_upload/2.
+  def upload_portfolio_clip(conn, %{"uploaded_key" => key} = params) when is_binary(key) do
+    user = conn.assigns.current_user
+
+    with {:ok, file_size} <- Storage.uploaded_size(key, "portfolio-clips/#{user.id}/"),
+         :ok <- if(file_size <= @max_file_size, do: :ok, else: {:error, :too_large}),
+         {:ok, profile} <- ClipperProfiles.get_or_create_profile(user.id) do
+      filename = params["filename"] || Path.basename(key)
+      save_portfolio_clip(conn, user, profile, key, Storage.build_public_url(key), file_size, filename, params)
+    else
+      {:error, :too_large} ->
+        Storage.delete_file(key)
+
+        conn
+        |> put_status(:request_entity_too_large)
+        |> json(%{success: false, error: "File size exceeds 200MB limit"})
+
+      {:error, :forbidden_key} ->
+        conn
+        |> put_status(:forbidden)
+        |> json(%{success: false, error: "That upload belongs to another account"})
+
+      {:error, :not_found} ->
+        conn
+        |> put_status(:bad_request)
+        |> json(%{success: false, error: "Uploaded clip not found. Please upload it again."})
+
+      {:error, reason} ->
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{success: false, error: "Upload failed: #{inspect(reason)}"})
     end
   end
 
@@ -507,6 +489,92 @@ defmodule ClippsterServerWeb.ClipperProfilesController do
       success: false,
       error: "No file provided. Expected multipart/form-data with 'file' field."
     })
+  end
+
+  @doc """
+  POST /api/user/clipper-profile/portfolio-clips/presigned-upload
+  Presigned URL for uploading a portfolio clip straight to R2, so large clips skip the
+  request size cap in front of the API. The client then calls upload with `uploaded_key`.
+  """
+  def presigned_portfolio_upload(conn, params) do
+    user = conn.assigns.current_user
+    file_size = params["file_size"]
+
+    if is_integer(file_size) and file_size > 0 and file_size <= @max_file_size do
+      key = generate_portfolio_clip_key(user.id, params["filename"] || "clip.mp4")
+
+      case Storage.generate_presigned_upload_url(key,
+             content_type: params["content_type"] || "video/mp4",
+             expires_in: 3600
+           ) do
+        {:ok, %{upload_url: upload_url}} ->
+          json(conn, %{success: true, upload_url: upload_url, key: key})
+
+        {:error, reason} ->
+          conn
+          |> put_status(:internal_server_error)
+          |> json(%{success: false, error: "Failed to start upload: #{inspect(reason)}"})
+      end
+    else
+      conn
+      |> put_status(:request_entity_too_large)
+      |> json(%{success: false, error: "File size exceeds 200MB limit"})
+    end
+  end
+
+  defp save_portfolio_clip(conn, user, profile, key, video_url, file_size, filename, params) do
+    # Upload thumbnail if provided
+    thumbnail_url =
+      case params["thumbnail"] do
+        %Plug.Upload{} = thumb ->
+          thumb_key =
+            "portfolio-clips/#{user.id}/thumbnails/#{System.unique_integer([:positive])}_thumbnail.jpg"
+
+          case File.read(thumb.path) do
+            {:ok, thumb_binary} ->
+              case Storage.upload_file(thumb_binary, thumb_key, content_type: "image/jpeg") do
+                {:ok, url} -> url
+                _ -> nil
+              end
+
+            _ ->
+              nil
+          end
+
+        _ ->
+          nil
+      end
+
+    # Create the portfolio clip record
+    clip_params = %{
+      "title" => params["title"] || Path.basename(filename, Path.extname(filename)),
+      "video_url" => video_url,
+      "thumbnail_url" => thumbnail_url,
+      "file_size" => file_size
+    }
+
+    case ClipperProfiles.add_portfolio_clip(profile.id, clip_params) do
+      {:ok, clip} ->
+        conn
+        |> put_status(:created)
+        |> json(%{success: true, portfolio_clip: serialize_portfolio_clip(clip)})
+
+      {:error, :max_clips_reached} ->
+        # Clean up uploaded file
+        Storage.delete_file(key)
+
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{success: false, error: "Maximum of 3 portfolio clips allowed"})
+
+      {:error, changeset} ->
+        # Clean up uploaded file
+        Storage.delete_file(key)
+
+        conn
+        |> put_status(:unprocessable_entity)
+        |> json(%{success: false, error: format_changeset_errors(changeset)})
+    end
   end
 
   defp generate_portfolio_clip_key(user_id, filename) do

@@ -1,0 +1,33 @@
+// Cloudflare deployment of clippster-web: `npx wrangler@4.151.0 deploy` here builds ../Dockerfile from the repo root.
+// Secrets: SESSION_SECRET, and AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY (the R2 key for the clippster bucket),
+// used by tigrisfs (media under web/data) and Litestream (database under web/db).
+{
+  "name": "clippster-web",
+  "main": "worker.mjs",
+  "account_id": "a1bd7481785784bf4a67d6fd5371397c",
+  "compatibility_date": "2026-10-01",
+  "containers": [
+    {
+      "class_name": "ClippsterWeb",
+      // The account only allows Durable Object scheduling; worker.mjs picks the instance size when it starts the container.
+      "scheduling_policy": "durable_object",
+      "images": { "base": { "dockerfile": "../Dockerfile", "build_context": "../../.." } }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "CLIPPSTER_WEB", "class_name": "ClippsterWeb" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ClippsterWeb"] }],
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "vars": {
+    "NODE_ENV": "production",
+    "WEB_ORIGIN": "https://app.clippster.app",
+    "ACCOUNT_ORIGIN": "https://clippster.app",
+    "CLIPPSTER_API_URL": "https://api.clippster.app/api",
+    "WEB_DATA_DIR": "/data",
+    "WEB_DATABASE_DIR": "/var/lib/clippster",
+    "WEB_R2_BUCKET": "clippster",
+    "WEB_R2_ENDPOINT": "https://a1bd7481785784bf4a67d6fd5371397c.r2.cloudflarestorage.com"
+  },
+  "observability": { "enabled": true }
+}

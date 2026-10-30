@@ -1,6 +1,6 @@
 # Local verification — 2026-10-06
 
-The browser workspace is implemented and locally verified, including regression checks in the native macOS app. Real browser Google sign-in and session persistence have also been verified against a local Phoenix API. Production deployment, live paid AI acceptance, and provider availability from Fly remain rollout steps in [DEPLOYMENT.md](DEPLOYMENT.md).
+The browser workspace is implemented and locally verified, including regression checks in the native macOS app. Real browser Google sign-in and session persistence have also been verified against a local Phoenix API. Production deployment, live paid AI acceptance, and provider availability from Cloudflare remain rollout steps in [DEPLOYMENT.md](DEPLOYMENT.md).
 
 | Check | Result |
 |---|---|
@@ -21,6 +21,8 @@ The browser workspace is implemented and locally verified, including regression 
 | Desktop frontend build | `yarn --cwd client vite build` passed |
 | Desktop TypeScript regression comparison | 14 errors in both the untouched HEAD and modified tree; no new diagnostics |
 | Repository hygiene | `git diff --check` passed; local credentials, media, caches, and test outputs ignored |
+
+The Fly configuration and deployment helper rows describe the Fly setup that Cloudflare Workers replaced later in October 2026; see [DEPLOYMENT.md](DEPLOYMENT.md).
 
 Authentication and AI responses in the automated tests come from an isolated HTTP fixture. The application performs real media processing and HTTP requests against that fixture. These results do not establish live AI model quality, real-account billing correctness, or availability of every source provider. No test authentication is present in the production entry point.
 
@@ -43,11 +45,11 @@ npm run typecheck --prefix apps/web --workspaces=false
 npm test --prefix apps/web --workspaces=false
 npm run build --prefix apps/web --workspaces=false
 npm run test:e2e --prefix apps/web --workspaces=false
-node --test scripts/deploy-fly.test.mjs scripts/dev-setup.test.mjs
+node --test scripts/dev-setup.test.mjs
 yarn --cwd client test
 yarn --cwd client vite build
 docker build -f apps/web/Dockerfile -t clippster-web:local .
-flyctl config validate -c apps/web/fly.toml
+(cd apps/web/cloudflare && npm ci && npx wrangler deploy --dry-run)
 docker compose -f server/docker-compose.yml up --build --wait web
 docker compose -f server/docker-compose.yml exec -T web npm test --workspaces=false
 cd server

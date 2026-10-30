@@ -1,5 +1,5 @@
 import { reactive } from 'vue'
-import { auth, workspaceClient } from './api'
+import { auth, prepareUpload, workspaceClient } from './api'
 import type { CreatorProfileForm } from '@/services/creatorProfileForm'
 import type { CreatorProfileWithLinks, IntroOutro, WatermarkImage } from '@/services/database/types'
 import type { ServerOrganizationAsset } from '@/services/organizationAssetsApi'
@@ -91,7 +91,8 @@ async function uploadAsset(file: File, type: string, organizationId?: string | n
   const measured = await dimensions(file).catch(error => { if (file.type.startsWith('video/')) return {}; throw error })
   const query = new URLSearchParams({ asset_type: type, name: String(metadata.name || file.name.replace(/\.[^/.]+$/, '')), filename: file.name, mime: file.type })
   for (const [key, value] of Object.entries({ ...measured, ...metadata })) if (typeof value === 'number' && Number.isFinite(value)) query.set(key, String(value))
-  const response = await fetch(prefix + account + '/' + (organizationId ? 'organizations/' + organizationId : 'user') + '/assets?' + query, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file, signal: AbortSignal.timeout(5 * 60_000) })
+  const target = await prepareUpload(prefix + account + '/' + (organizationId ? 'organizations/' + organizationId : 'user') + '/assets?' + query, file)
+  const response = await fetch(target.url, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: target.body, signal: AbortSignal.timeout(5 * 60_000) })
   const result = await response.json() as { success: boolean; asset: Asset; error?: string }
   if (!response.ok || !result.success) throw new Error(result.error || 'Branding upload failed.')
   result.asset.url = assetUrl(result.asset, organizationId)
@@ -216,7 +217,8 @@ export async function invoke<T>(command: string, args: Record<string, any>): Pro
     case 'convert_video_to_mp4': {
       const file = files.get(args.inputPath)
       if (!file) throw new Error('Select a video to convert.')
-      const response = await fetch(prefix + account + '/creator-media/convert', { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: file, signal: AbortSignal.timeout(5 * 60_000) })
+      const target = await prepareUpload(prefix + account + '/creator-media/convert', file)
+      const response = await fetch(target.url, { method: 'POST', headers: { 'Content-Type': 'application/octet-stream' }, body: target.body, signal: AbortSignal.timeout(5 * 60_000) })
       if (!response.ok) { const result = await response.json(); throw new Error(result.error || 'Video conversion failed.') }
       const key = 'browser-file/' + crypto.randomUUID() + '/overlay.mp4'
       files.set(key, new File([await response.blob()], 'overlay.mp4', { type: 'video/mp4' }))
