@@ -1,43 +1,10 @@
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || 'http://127.0.0.1:4000';
+import api from './api';
 
-function getAuthToken(): string {
-  return localStorage.getItem('auth_token') || '';
-}
-
-export interface PresignedUploadResponse {
+interface PresignResponse {
   success: boolean;
   upload_url?: string;
-  media_url?: string;
-  thumbnail_url?: string | null;
+  key?: string;
   error?: string;
-}
-
-/**
- * Get a presigned URL for direct R2 upload (organization context)
- */
-export async function getPresignedUploadUrl(
-  organizationId: number,
-  filename: string,
-  contentType: string = 'video/mp4'
-): Promise<PresignedUploadResponse> {
-  const token = await getAuthToken();
-  
-  const response = await fetch(
-    `${API_BASE_URL}/api/organizations/${organizationId}/posts/presigned-upload`,
-    {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${token}`,
-      },
-      body: JSON.stringify({
-        filename,
-        content_type: contentType,
-      }),
-    }
-  );
-
-  return response.json();
 }
 
 /**
@@ -46,7 +13,8 @@ export async function getPresignedUploadUrl(
 export async function uploadToPresignedUrl(
   presignedUrl: string,
   file: File,
-  onProgress?: (progress: number) => void
+  onProgress?: (progress: number) => void,
+  contentType: string = file.type
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest();
@@ -78,7 +46,43 @@ export async function uploadToPresignedUrl(
     });
 
     xhr.open('PUT', presignedUrl);
-    xhr.setRequestHeader('Content-Type', file.type);
+    xhr.setRequestHeader('Content-Type', contentType);
     xhr.send(file);
   });
+}
+
+/**
+ * Adds `file` to an upload form. When the API offers a presigned upload at `presignPath`, the
+ * file goes straight to R2 and the form carries its key, so large files skip the 100 MB request
+ * cap in front of the API. An API without that endpoint (404) gets the file itself, as before.
+ */
+export async function attachUpload(
+  formData: FormData,
+  file: File,
+  presignPath: string,
+  onProgress?: (progress: number) => void
+): Promise<void> {
+  const contentType = file.type || 'video/mp4';
+  let presign: PresignResponse;
+  try {
+    presign = (
+      await api.post<PresignResponse>(presignPath, {
+        filename: file.name,
+        content_type: contentType,
+        file_size: file.size,
+      })
+    ).data;
+  } catch (error: any) {
+    if (error.response?.status !== 404) throw error;
+    formData.append('file', file);
+    return;
+  }
+
+  if (!presign.success || !presign.upload_url || !presign.key) {
+    throw new Error(presign.error || 'Could not start the upload');
+  }
+  await uploadToPresignedUrl(presign.upload_url, file, onProgress, contentType);
+  formData.append('uploaded_key', presign.key);
+  formData.append('filename', file.name);
+  formData.append('content_type', contentType);
 }

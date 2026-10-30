@@ -1,0 +1,30 @@
+// Cloudflare deployment of clippster-server. `npm run deploy` builds ../Dockerfile with the local Docker daemon.
+// Secrets (the former `fly secrets`) are set with `wrangler secret bulk`; DATABASE_URL points at Neon with DATABASE_SSL=true.
+{
+  "name": "clippster-server",
+  "main": "worker.mjs",
+  "account_id": "a1bd7481785784bf4a67d6fd5371397c",
+  "compatibility_date": "2026-10-01",
+  "containers": [
+    {
+      "class_name": "ClippsterServer",
+      // The account only allows Durable Object scheduling; worker.mjs picks the instance size when it starts the container.
+      "scheduling_policy": "durable_object",
+      "images": { "base": { "dockerfile": "../Dockerfile", "build_context": ".." } }
+    }
+  ],
+  "durable_objects": {
+    "bindings": [{ "name": "CLIPPSTER_SERVER", "class_name": "ClippsterServer" }]
+  },
+  "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ClippsterServer"] }],
+  "triggers": { "crons": ["*/5 * * * *"] },
+  "vars": {
+    // Stays false while Fly still serves api.clippster.app; set to true at cutover, after the Fly machine is stopped.
+    "BACKGROUND_WORKERS": "false",
+    "DATABASE_SSL": "true",
+    "PHX_BIND_IPV4": "true",
+    // A single instance needs no Erlang clustering; Fly configured distribution through its own env.
+    "RELEASE_DISTRIBUTION": "none"
+  },
+  "observability": { "enabled": true }
+}

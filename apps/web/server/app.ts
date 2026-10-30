@@ -8,7 +8,7 @@ import { Jobs } from './jobs'
 import { workspaceRoutes } from './routes'
 import { HttpError } from './errors'
 export async function createWebApp(config: Config) {
-  const store = new Store(config.dataDir)
+  const store = new Store(config.databaseDir)
   const auth = createAuth(store, config)
   const jobs = new Jobs(store, config, auth)
   await jobs.start()

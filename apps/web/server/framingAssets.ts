@@ -12,8 +12,9 @@ import { requireValue, HttpError } from './errors'
 import { normalizeSource, probe } from './media'
 import { run } from './process'
 import { downloadAsset } from './network'
+import type { StagedUploads } from './stagedUploads'
 
-export function framingAssetRoutes(store: Store, config: Config, uploads: Map<string, string>, idle: (id: string, owner: string) => void) {
+export function framingAssetRoutes(store: Store, config: Config, uploads: Map<string, string>, idle: (id: string, owner: string) => void, staged: StagedUploads) {
   const router = Router()
   router.get('/projects/:id/framing-assets', (req, res) => {
     const project = store.get(String(req.params.id), res.locals.session.owner)
@@ -41,7 +42,7 @@ export function framingAssetRoutes(store: Store, config: Config, uploads: Map<st
         await downloadAsset(url.href, input, signal, max)
       } else {
         let bytes = 0
-        await pipeline(req, new Transform({ transform(chunk, _encoding, callback) { bytes += chunk.length; callback(bytes > max ? new HttpError(413, 'Framing media must be 128 MB or smaller.') : null, chunk) } }), createWriteStream(input, { flags: 'wx', mode: 0o600 }))
+        await pipeline(staged.body(req, owner), new Transform({ transform(chunk, _encoding, callback) { bytes += chunk.length; callback(bytes > max ? new HttpError(413, 'Framing media must be 128 MB or smaller.') : null, chunk) } }), createWriteStream(input, { flags: 'wx', mode: 0o600 }))
         requireValue(bytes > 0, 400, 'The uploaded file was empty.')
       }
       if (type === 'image') {

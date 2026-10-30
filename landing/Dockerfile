@@ -30,6 +30,7 @@ WORKDIR /app
 
 COPY --from=builder /app/dist ./dist
 COPY landing/server.mjs ./server.mjs
+COPY landing/site.mjs ./site.mjs
 COPY landing/workspace-proxy.mjs ./workspace-proxy.mjs
 COPY landing/src/seo ./src/seo
 

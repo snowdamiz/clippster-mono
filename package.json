@@ -28,8 +28,8 @@
     "api-test": "node kick_api_demo_node.js",
     "css-to-tailwind": "node scripts/css-to-tailwind.mjs",
     "wipe-db": "node scripts/wipe-db.mjs",
-    "deploy:server": "node scripts/deploy-fly.mjs server",
-    "deploy:landing": "node scripts/deploy-fly.mjs landing",
+    "deploy:server": "cd server/cloudflare && npm ci && npx wrangler deploy",
+    "deploy:landing": "cd landing && yarn deploy:cloudflare",
     "mobile": "yarn workspace mobile dev",
     "mobile:ios": "yarn workspace mobile ios",
     "mobile:android": "yarn workspace mobile android",
@@ -44,7 +44,7 @@
     "web:build": "npm --prefix apps/web run build --workspaces=false",
     "web:test": "npm --prefix apps/web test --workspaces=false",
     "web:typecheck": "npm --prefix apps/web run typecheck --workspaces=false",
-    "deploy:web": "node scripts/deploy-fly.mjs web"
+    "deploy:web": "cd apps/web/cloudflare && npm ci && npx wrangler deploy"
   },
   "devDependencies": {
     "@vue/compiler-sfc": "^3.5.13",

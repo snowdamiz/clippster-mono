@@ -289,12 +289,13 @@ yarn dev
 cd client && yarn tauri build    # Desktop app
 cd server && MIX_ENV=prod mix release    # Server
 
-# Production setup
-# - Use environment variables for secrets
-# - Configure production database
-# - Set JWT_SECRET and Stripe keys
-# - Use reverse proxy for SSL
+# Deploy to Cloudflare (needs CLOUDFLARE_API_TOKEN and Docker; the release workflow runs these)
+yarn deploy:server     # API: server/cloudflare
+yarn deploy:web        # Web workspace: apps/web/cloudflare
+yarn deploy:landing    # clippster.app: landing/
 ```
+
+Production secrets are Worker secrets (`npx wrangler secret put KEY` in each Worker's directory).
 
 ## OTA Updates
 
@@ -416,4 +417,4 @@ For detailed documentation, see [docs/completed/OTA-UPDATES.md](docs/completed/O
 
 The simplified browser app shares the desktop player, controls, workspace header, design tokens, and API/export packages. It supports source downloads or uploads, AI clip detection, trimming, portrait/landscape builds, captions, and MP4 downloads.
 
-See [apps/web/README.md](apps/web/README.md) for local setup and tests, and [docs/web/DEPLOYMENT.md](docs/web/DEPLOYMENT.md) for the separate Fly deployment at `app.clippster.app`.
+See [apps/web/README.md](apps/web/README.md) for local setup and tests, and [docs/web/DEPLOYMENT.md](docs/web/DEPLOYMENT.md) for its Cloudflare deployment.

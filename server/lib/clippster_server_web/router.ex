@@ -739,6 +739,12 @@ defmodule ClippsterServerWeb.Router do
     get("/organizations/:organization_id/shared-clips/:id", SharedClipController, :show)
     post("/organizations/:organization_id/shared-clips", SharedClipController, :create)
 
+    post(
+      "/organizations/:organization_id/shared-clips/presigned-upload",
+      SharedClipController,
+      :presigned_upload
+    )
+
     put(
       "/organizations/:organization_id/shared-clips/:id/branding",
       SharedClipController,
@@ -1156,6 +1162,12 @@ defmodule ClippsterServerWeb.Router do
       "/user/clipper-profile/portfolio-clips/upload",
       ClipperProfilesController,
       :upload_portfolio_clip
+    )
+
+    post(
+      "/user/clipper-profile/portfolio-clips/presigned-upload",
+      ClipperProfilesController,
+      :presigned_portfolio_upload
     )
 
     put(

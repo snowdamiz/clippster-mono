@@ -60,36 +60,50 @@ defmodule ClippsterServer.Application do
       ClippsterServer.Auth.ChallengeStore,
       # Price service for SOL/USD rates
       ClippsterServer.PriceService,
-      # Social media analytics sync worker
-      ClippsterServer.Social.AnalyticsSyncWorker,
-      # Post For Me connection session cleanup worker
-      ClippsterServer.Social.PostForMeConnectionSessionCleanupWorker,
-      # Scheduled post publishing worker
-      ClippsterServer.Social.ScheduledPostWorker,
-      # Shared clips cleanup worker (deletes expired clips daily)
-      ClippsterServer.Organizations.SharedClipCleanupWorker,
-      # Free tier monthly credit grant worker
-      ClippsterServer.Workers.FreeTierCreditWorker,
       # Release info cache for landing page downloads
-      ClippsterServer.ReleaseService,
-      # Clipper profile workers
-      ClippsterServer.ClipperProfiles.LeaderboardWorker,
-      ClippsterServer.ClipperProfiles.BadgeWorker,
-      ClippsterServer.ClipperProfiles.ResponseTimeWorker,
-      # Campaign submission view sync worker
-      ClippsterServer.Campaigns.SubmissionViewSyncWorker,
-      # Campaign completion worker (marks expired campaigns as completed)
-      ClippsterServer.Campaigns.CampaignCompletionWorker,
-      # News poller for breaking news feed
-      ClippsterServer.News.NewsPoller,
-      # Start to serve requests, typically the last entry
-      ClippsterServerWeb.Endpoint
-    ]
+      ClippsterServer.ReleaseService
+    ] ++
+      background_workers() ++
+      [
+        # Start to serve requests, typically the last entry
+        ClippsterServerWeb.Endpoint
+      ]
 
     # See https://hexdocs.pm/elixir/Supervisor.html
     # for other strategies and supported options
     opts = [strategy: :one_for_one, name: ClippsterServer.Supervisor]
     Supervisor.start_link(children, opts)
+  end
+
+  # Scheduled jobs with outside effects (posting, credit grants, deletions).
+  # Test copies turn them off so they never run alongside production.
+  defp background_workers do
+    if Application.get_env(:clippster_server, :background_workers, true) do
+      [
+        # Social media analytics sync worker
+        ClippsterServer.Social.AnalyticsSyncWorker,
+        # Post For Me connection session cleanup worker
+        ClippsterServer.Social.PostForMeConnectionSessionCleanupWorker,
+        # Scheduled post publishing worker
+        ClippsterServer.Social.ScheduledPostWorker,
+        # Shared clips cleanup worker (deletes expired clips daily)
+        ClippsterServer.Organizations.SharedClipCleanupWorker,
+        # Free tier monthly credit grant worker
+        ClippsterServer.Workers.FreeTierCreditWorker,
+        # Clipper profile workers
+        ClippsterServer.ClipperProfiles.LeaderboardWorker,
+        ClippsterServer.ClipperProfiles.BadgeWorker,
+        ClippsterServer.ClipperProfiles.ResponseTimeWorker,
+        # Campaign submission view sync worker
+        ClippsterServer.Campaigns.SubmissionViewSyncWorker,
+        # Campaign completion worker (marks expired campaigns as completed)
+        ClippsterServer.Campaigns.CampaignCompletionWorker,
+        # News poller for breaking news feed
+        ClippsterServer.News.NewsPoller
+      ]
+    else
+      []
+    end
   end
 
   # Tell Phoenix to update the endpoint configuration

@@ -55,7 +55,7 @@ jobs:
       - name: Install and build frontend
         working-directory: client
         env:
-          VITE_API_URL: https://clippster-server.fly.dev/api
+          VITE_API_URL: https://api.clippster.app/api
         run: |
           yarn install
           yarn build:ci
@@ -67,21 +67,22 @@ jobs:
           path: client/dist
           retention-days: 1
 
-  # Deploy server to Fly.io
+  # Deploy the API to Cloudflare: a Worker in front of the Phoenix container (server/cloudflare).
   deploy-server:
     needs: [create-release, verify-web]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
-
-      - name: Setup Fly CLI
-        uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Deploy Server to Fly.io
-        working-directory: server
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: '.node-version'
+      - name: Deploy server to Cloudflare
+        working-directory: server/cloudflare
         env:
-          FLY_API_TOKEN: ${{ secrets.FLY_SERVER_TOKEN }}
-        run: flyctl deploy --remote-only
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          npm ci
+          npx wrangler deploy
 
   deploy-web:
     needs: [verify-web, deploy-server]
@@ -91,14 +92,21 @@ jobs:
       - uses: actions/setup-node@v6
         with:
           node-version-file: '.node-version'
-      - uses: superfly/flyctl-actions/setup-flyctl@master
       - name: Deploy verified web workspace
+        working-directory: apps/web/cloudflare
         env:
-          FLY_WEB_TOKEN: ${{ secrets.FLY_WEB_TOKEN }}
-        run: node scripts/deploy-fly.mjs web
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          npm ci
+          npx wrangler deploy --var "APP_REVISION:$GITHUB_SHA"
+      # The container restarts on the new revision once Cloudflare swaps in the deploy, which can take a few minutes.
       - name: Verify deployed workspace revision
         run: |
-          curl --fail --retry 6 --retry-delay 5 https://clippster-web.fly.dev/api/health | jq -e --arg revision "$GITHUB_SHA" '.status == "ok" and .revision == $revision'
+          for attempt in $(seq 1 40); do
+            if curl -fsS https://clippster-web.openworth.workers.dev/api/health | jq -e --arg revision "$GITHUB_SHA" '.status == "ok" and .revision == $revision'; then exit 0; fi
+            sleep 15
+          done
+          exit 1
 
   # Keep the website and embedded workspace on the same verified revision.
   deploy-landing:
@@ -122,14 +130,11 @@ jobs:
         working-directory: landing
         run: yarn test:seo
 
-      - name: Setup Fly CLI
-        uses: superfly/flyctl-actions/setup-flyctl@master
-
-      - name: Deploy Landing to Fly.io
+      - name: Deploy landing to Cloudflare
+        working-directory: landing
         env:
-          FLY_LANDING_TOKEN: ${{ secrets.FLY_LANDING_TOKEN }}
-        # Context = monorepo root (for packages/app-tour); dockerfile stays under landing/
-        run: node scripts/deploy-fly.mjs landing
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: yarn deploy:cloudflare
 
   # Publish mobile JS/asset OTA (EAS Update production channel)
   deploy-mobile-ota:

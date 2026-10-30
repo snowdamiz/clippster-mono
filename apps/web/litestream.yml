@@ -1,0 +1,12 @@
+# Continuous replication of the workspace database to R2 on Cloudflare Containers, whose disk doesn't persist.
+# scripts/container-entrypoint.sh restores it on start and runs the server under `litestream replicate`.
+dbs:
+  - path: ${WEB_DATABASE_DIR}/workspace.sqlite
+    replica:
+      type: s3
+      bucket: ${WEB_R2_BUCKET}
+      path: web/db
+      endpoint: ${WEB_R2_ENDPOINT}
+      region: auto
+      access-key-id: ${AWS_ACCESS_KEY_ID}
+      secret-access-key: ${AWS_SECRET_ACCESS_KEY}

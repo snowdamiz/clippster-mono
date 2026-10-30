@@ -12,18 +12,19 @@ import { isFreePlan } from '@clippster/shared-types'
 import { downloadAsset, downloadProxy } from './network'
 import { run } from './process'
 import { probe } from './media'
+import type { StagedUploads } from './stagedUploads'
 
 const limit = 128 * 1024 ** 2
-async function receive(req: Request, path: string) {
-  requireValue(req.is('application/octet-stream'), 415, 'Upload the original file.')
+async function receive(req: Request, path: string, staged: StagedUploads, owner: string) {
+  requireValue(req.query.upload || req.is('application/octet-stream'), 415, 'Upload the original file.')
   let bytes = 0
-  await pipeline(req, new Transform({ transform(chunk, _encoding, callback) {
+  await pipeline(staged.body(req, owner), new Transform({ transform(chunk, _encoding, callback) {
     bytes += chunk.length
     callback(bytes > limit ? new HttpError(413, 'Branding assets must be under 128 MB.') : null, chunk)
   } }), createWriteStream(path, { flags: 'wx', mode: 0o600 }))
   requireValue(bytes > 0, 400, 'The file was empty.')
 }
-export function creatorMediaRoutes(auth: Auth, config: Config) {
+export function creatorMediaRoutes(auth: Auth, config: Config, staged: StagedUploads) {
   const router = Router()
   const active = new Set<string>()
   router.post(['/user/assets', '/organizations/:organizationId/assets'], async (req, res) => {
@@ -46,7 +47,7 @@ export function creatorMediaRoutes(auth: Auth, config: Config) {
     try {
       directory = await mkdtemp(join(tmpdir(), 'clippster-branding-'))
       const path = join(directory, 'source')
-      await receive(req, path)
+      await receive(req, path, staged, owner)
       const form = new FormData()
       form.append('file', await openAsBlob(path, { type: mime }), filename)
       form.append('asset_type', type); form.append('name', name)
@@ -107,7 +108,7 @@ export function creatorMediaRoutes(auth: Auth, config: Config) {
     try {
       directory = await mkdtemp(join(tmpdir(), 'clippster-branding-convert-'))
       const source = join(directory, 'source'), output = join(directory, 'converted.mp4')
-      await receive(req, source)
+      await receive(req, source, staged, owner)
       await probe(source, config, AbortSignal.timeout(30_000))
       await run(config.ffmpeg, ['-v', 'error', '-protocol_whitelist', 'file,pipe', '-i', source, '-map', '0:v:0', '-map', '0:a?', '-c:v', 'libx264', '-preset', 'veryfast', '-crf', '20', '-c:a', 'aac', '-movflags', '+faststart', output], AbortSignal.timeout(5 * 60_000))
       requireValue((await stat(output)).size <= limit, 400, 'Converted branding video exceeds 128 MB.')
