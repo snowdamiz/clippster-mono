@@ -66,7 +66,7 @@ While we strive to protect your personal information, no method of transmission 
 • Opt-out: Unsubscribe from marketing communications at any time
 • Account Deletion: Delete your account and associated data
 
-To exercise these rights, contact us at privacy@clippster.io`,
+To exercise these rights, contact us at privacy@clippster.app`,
   },
   {
     icon: Globe,
@@ -86,7 +86,7 @@ For users in the European Economic Area (EEA), we comply with GDPR requirements 
     title: 'Contact Us',
     content: `If you have any questions about this Privacy Policy or our data practices, please contact OpenWorth Technologies Inc.:
 
-Email: privacy@clippster.io
+Email: privacy@clippster.app
 
 We will respond to your inquiry within 30 days.
 
