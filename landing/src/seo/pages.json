@@ -848,7 +848,7 @@
     "/privacy": {
       "title": "Privacy Policy | Clippster",
       "description": "Read how Clippster collects, uses, and protects account, payment, and video data.",
-      "noscript": "Clippster privacy policy covering account data, uploaded video, payments, and contact at privacy@clippster.io.",
+      "noscript": "Clippster privacy policy covering account data, uploaded video, payments, and contact at privacy@clippster.app.",
       "type": "legal",
       "primaryKeyword": "clippster privacy policy",
       "parent": null,
