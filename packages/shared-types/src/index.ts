@@ -16,7 +16,7 @@ export * from './editor';
  * API JSON from Phoenix typically uses snake_case as well.
  */
 export type { WebClip, WebClipInput, WebProject, WebJob, WebWorkspace, WebBranding } from './web';
-export { WEB_PUBLISH_PLATFORMS } from './web';
+export { WEB_PUBLISH_PLATFORMS, WEB_UPLOAD_CHUNK_BYTES } from './web';
 export { manualSourceRect } from './framingGeometry';
 
 export * from './detectionPrompts';

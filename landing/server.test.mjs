@@ -1,7 +1,7 @@
 import test from 'node:test'
 import assert from 'node:assert/strict'
 import { readFileSync } from 'node:fs'
-import { applySeo, escapeAttr, normalizePath } from './server.mjs'
+import { applySeo, escapeAttr, normalizePath } from './site.mjs'
 import pagesConfig from './src/seo/pages.json' with { type: 'json' }
 
 const shell = `<!doctype html>
@@ -90,7 +90,7 @@ test('productFacts keep honest caption language count', () => {
 })
 
 test('sitemap includes registry URLs', async () => {
-  const { buildSitemapXml } = await import('./server.mjs')
+  const { buildSitemapXml } = await import('./site.mjs')
   const xml = buildSitemapXml({ clippers: [], organizations: [] })
   assert.match(xml, /https:\/\/clippster\.app\/clipping-tool/)
   assert.match(xml, /https:\/\/clippster\.app\/platforms\/twitch/)

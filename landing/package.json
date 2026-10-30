@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "tsc -b && vite build",
     "start": "node server.mjs",
+    "deploy:cloudflare": "VITE_API_URL=https://api.clippster.app/api yarn build && npx --yes wrangler@4.151.0 deploy",
     "test:seo": "node --test server.test.mjs workspace-proxy.test.mjs comparison.test.mjs",
     "lint": "eslint .",
     "preview": "vite preview"

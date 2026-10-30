@@ -4,6 +4,7 @@
  */
 
 import api from './api';
+import { attachUpload } from './presignedUploadApi';
 
 // ============================================
 // Types
@@ -118,7 +119,7 @@ export async function createSharedClip(
 ): Promise<SharedClipResponse> {
   try {
     const formData = new FormData();
-    formData.append('file', file);
+    await attachUpload(formData, file, `/organizations/${organizationId}/shared-clips/presigned-upload`);
 
     if (options.name) {
       formData.append('name', options.name);

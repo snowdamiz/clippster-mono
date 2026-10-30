@@ -1,7 +1,7 @@
 /** Prefer 127.0.0.1 in DEV — on Windows, localhost → ::1 can hit a different
  *  process on :4000 (e.g. Docker) while Phoenix binds only to 127.0.0.1. */
 const DEFAULT_DEV_API_ORIGIN = 'http://127.0.0.1:4000'
-const DEFAULT_PROD_API_ORIGIN = 'https://clippster-server.fly.dev'
+const DEFAULT_PROD_API_ORIGIN = 'https://api.clippster.app'
 
 function stripTrailingSlash(value: string): string {
   return value.endsWith('/') ? value.slice(0, -1) : value

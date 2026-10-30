@@ -1,0 +1,5 @@
+node_modules
+.wrangler
+.dev.vars*
+# npm ci in CI needs the lockfile, which the root .gitignore excludes
+!package-lock.json

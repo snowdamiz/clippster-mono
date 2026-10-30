@@ -1,4 +1,5 @@
 import api from '@/services/api';
+import { attachUpload } from '@/services/presignedUploadApi';
 
 // ============================================================================
 // Types
@@ -376,7 +377,7 @@ export async function uploadPortfolioClip(
 
   try {
     const formData = new FormData();
-    formData.append('file', file);
+    await attachUpload(formData, file, '/user/clipper-profile/portfolio-clips/presigned-upload');
     if (title) {
       formData.append('title', title);
     }

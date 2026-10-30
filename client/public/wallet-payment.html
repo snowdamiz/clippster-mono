@@ -88,7 +88,7 @@
     // Get payment details from URL params
     const urlParams = new URLSearchParams(window.location.search);
     // Get API base URL from URL params (passed from Tauri app)
-    const API_BASE = urlParams.get('apiBase') || 'https://clippster-server.fly.dev';
+    const API_BASE = urlParams.get('apiBase') || 'https://api.clippster.app';
     const CALLBACK_PORT = 48275; // Different port from auth
     const paymentData = {
       packKey: urlParams.get('packKey'),

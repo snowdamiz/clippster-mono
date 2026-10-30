@@ -294,6 +294,9 @@ if System.get_env("PHX_SERVER") do
   config :clippster_server, ClippsterServerWeb.Endpoint, server: true
 end
 
+# BACKGROUND_WORKERS=false starts the app without its scheduled jobs (see Application.background_workers/0).
+config :clippster_server, :background_workers, System.get_env("BACKGROUND_WORKERS") not in ~w(false 0)
+
 if config_env() == :prod do
   database_url =
     System.get_env("DATABASE_URL") ||
@@ -314,8 +317,21 @@ if config_env() == :prod do
 
   maybe_ipv6 = if System.get_env("ECTO_IPV6") in ~w(true 1), do: [:inet6], else: []
 
+  # Hosted Postgres (Neon) requires TLS with SNI; Fly's private network did not.
+  database_ssl =
+    if System.get_env("DATABASE_SSL") in ~w(true 1) do
+      [
+        verify: :verify_peer,
+        cacerts: :public_key.cacerts_get(),
+        server_name_indication: String.to_charlist(URI.parse(database_url).host),
+        customize_hostname_check: [match_fun: :public_key.pkix_verify_hostname_match_fun(:https)]
+      ]
+    else
+      false
+    end
+
   config :clippster_server, ClippsterServer.Repo,
-    # ssl: true,
+    ssl: database_ssl,
     url: database_url,
     pool_size: String.to_integer(System.get_env("POOL_SIZE") || "10"),
     # For machines with several cores, consider starting multiple pools of `pool_size`
@@ -342,11 +358,15 @@ if config_env() == :prod do
   config :clippster_server, ClippsterServerWeb.Endpoint,
     url: [host: host, port: 443, scheme: "https"],
     http: [
-      # Enable IPv6 and bind on all interfaces.
-      # Set it to  {0, 0, 0, 0, 0, 0, 0, 1} for local network only access.
+      # Bind on all IPv6 interfaces, which Fly's proxy uses; Cloudflare's container proxy
+      # connects over IPv4, so PHX_BIND_IPV4=true binds 0.0.0.0 there.
       # See the documentation on https://hexdocs.pm/bandit/Bandit.html#t:options/0
       # for details about using IPv6 vs IPv4 and loopback vs public addresses.
-      ip: {0, 0, 0, 0, 0, 0, 0, 0},
+      ip:
+        if(System.get_env("PHX_BIND_IPV4") in ~w(true 1),
+          do: {0, 0, 0, 0},
+          else: {0, 0, 0, 0, 0, 0, 0, 0}
+        ),
       port: port
     ],
     secret_key_base: secret_key_base,

@@ -201,8 +201,40 @@ defmodule ClippsterServer.Storage do
   def generate_key(organization_id, asset_type, filename) do
     timestamp = DateTime.utc_now() |> DateTime.to_unix()
     sanitized_filename = sanitize_filename(filename)
-    "org-assets/#{organization_id}/#{asset_type}/#{timestamp}_#{sanitized_filename}"
+    key_prefix(organization_id, asset_type) <> "#{timestamp}_#{sanitized_filename}"
   end
+
+  @doc """
+  The prefix every key from `generate_key/3` starts with for this organization and asset type.
+  """
+  def key_prefix(organization_id, asset_type), do: "org-assets/#{organization_id}/#{asset_type}/"
+
+  @doc """
+  Size in bytes of an object a client uploaded through a presigned URL.
+
+  Only keys under `prefix` are accepted, so a client can't claim another account's object.
+  Returns {:ok, size}, {:error, :forbidden_key} or {:error, :not_found}.
+  """
+  def uploaded_size(key, prefix) when is_binary(key) do
+    if String.starts_with?(key, prefix) and not String.contains?(key, "..") do
+      case ExAws.request(ExAws.S3.head_object(bucket(), key), config()) do
+        {:ok, %{headers: headers}} ->
+          Enum.find_value(headers, {:error, :not_found}, fn {name, value} ->
+            String.downcase(name) == "content-length" && {:ok, String.to_integer(value)}
+          end)
+
+        {:error, {:http_error, 404, _}} ->
+          {:error, :not_found}
+
+        {:error, reason} ->
+          {:error, reason}
+      end
+    else
+      {:error, :forbidden_key}
+    end
+  end
+
+  def uploaded_size(_key, _prefix), do: {:error, :forbidden_key}
 
   @doc """
   Generates a key for asset thumbnails.
@@ -438,9 +470,10 @@ defmodule ClippsterServer.Storage do
     end
   end
 
-  # Private functions
-
-  defp build_public_url(key) do
+  @doc """
+  The URL stored for an object, the same one `upload_file/3` returns.
+  """
+  def build_public_url(key) do
     base = public_url_base()
 
     if base do
@@ -451,6 +484,8 @@ defmodule ClippsterServer.Storage do
       "https://#{bucket()}.#{account_id}.r2.cloudflarestorage.com/#{key}"
     end
   end
+
+  # Private functions
 
   defp sanitize_filename(filename) do
     filename
