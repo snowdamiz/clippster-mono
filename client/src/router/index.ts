@@ -99,6 +99,12 @@ const router = createRouter({
       ],
     },
     {
+      path: '/ai-video/session',
+      name: 'ai-video-session',
+      component: () => import('@/pages/AIVideoSession.vue'),
+      meta: { requiresAuth: true, requiresAIVideoAccess: true, noLayout: true },
+    },
+    {
       path: '/design-studio',
       name: 'design-studio',
       component: () => import('@/layouts/DashboardLayout.vue'),

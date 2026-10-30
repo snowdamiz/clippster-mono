@@ -1,0 +1,18 @@
+<!doctype html><meta charset="utf-8"><title>brag capture</title>
+<body style="background:#0a0a0b;color:#aaa;font:14px system-ui;padding:40px">
+<p id="s">Registering capture mock…</p>
+<script>
+(async () => {
+  const s = document.getElementById('s')
+  if (location.search.includes('off')) {
+    for (const r of await navigator.serviceWorker.getRegistrations()) await r.unregister()
+    localStorage.removeItem('auth_token'); s.textContent = 'Capture mock removed.'; return
+  }
+  const reg = await navigator.serviceWorker.register('/brag-sw.js', { scope: '/' })
+  await navigator.serviceWorker.ready
+  localStorage.setItem('auth_token', 'brag-demo-token')
+  s.textContent = 'Ready.'
+  const to = new URLSearchParams(location.search).get('to') || '/account'
+  setTimeout(() => location.replace(to), 300)
+})()
+</script>

@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <title>Clippster: Catch, Clip, Share</title>
+    <script src="assets/vendor/gsap.min.js"></script>
+    <style>
+      @font-face { font-family: "Montserrat"; src: url("assets/fonts/Montserrat-Bold.ttf") format("truetype"); font-weight: 700; font-style: normal; }
+      @font-face { font-family: "Montserrat"; src: url("assets/fonts/Montserrat-Black.ttf") format("truetype"); font-weight: 900; font-style: normal; }
+      * { margin: 0; padding: 0; box-sizing: border-box; }
+      html, body { width: 1920px; height: 1080px; overflow: hidden; background: #000; }
+      .frame { position: absolute; inset: 0; z-index: 1; }
+      .frame > .clip { position: absolute; left: 0; top: 0; width: 100%; height: 100%; object-fit: cover; }
+      .fx { position: absolute; inset: 0; z-index: 10; pointer-events: none; opacity: 0; }
+      #fx-flash { background: #fff; }
+      #fx-dip { background: #000; }
+      .overlay { position: absolute; inset: 0; }
+      .overlay-graphics { z-index: 20; }
+      .overlay-text { z-index: 30; }
+    </style>
+  </head>
+  <body>
+    <div id="root" data-composition-id="main" data-start="0" data-duration="12" data-width="1920" data-height="1080">
+      <div id="shot-catch-frame" class="frame"><div id="shot-catch" class="clip" data-slot-id="catch" data-composition-id="catch" data-composition-src="compositions/catch.html" data-start="0" data-duration="4" data-track-index="0" data-width="1920" data-height="1080" data-variable-values="{&quot;text&quot;:&quot;Catch the moment&quot;}"></div></div>
+      <div id="shot-clips-frame" class="frame"><div id="shot-clips" class="clip" data-slot-id="clips" data-composition-id="clips" data-composition-src="compositions/clips.html" data-start="3.6" data-duration="4.4" data-track-index="0" data-width="1920" data-height="1080" data-variable-values="{&quot;text&quot;:&quot;Make it a clip&quot;}"></div></div>
+      <div id="shot-share-frame" class="frame"><div id="shot-share" class="clip" data-slot-id="share" data-composition-id="share" data-composition-src="compositions/share.html" data-start="7.6" data-duration="4.4" data-track-index="0" data-width="1920" data-height="1080" data-variable-values="{&quot;text&quot;:&quot;Share your best&quot;,&quot;wordmark&quot;:&quot;Clippster&quot;}"></div></div>
+      <div id="fx-dip" class="fx"></div>
+      <div id="fx-flash" class="fx"></div>
+
+    </div>
+    <script>
+      window.__timelines ??= {};
+      const tl = gsap.timeline({ paused: true });
+      tl.set("#fx-flash", { opacity: 0 }, 0);
+      tl.set("#fx-dip", { opacity: 0 }, 0);
+      tl.fromTo("#shot-clips-frame", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "none" }, 3.6);
+      tl.fromTo("#shot-share-frame", { opacity: 0 }, { opacity: 1, duration: 0.4, ease: "none" }, 7.6);
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

@@ -25,6 +25,7 @@ import type {
   SegmentEventPayload,
   SupportedLivestreamPlatform,
 } from '@/types/livestream';
+import { parseLivestreamPlatform } from '@/types/livestream';
 import {
   cleanupOrphanedWatchLivestreamRecordings,
   deleteWatchLivestreamRecording,
@@ -409,17 +410,7 @@ function schedulePersistentDetectionAutoStop(streamerId: string, maxMinutes: num
 function recordToMonitoredStreamer(
   record: import('@/services/database').MonitoredStreamerRecord
 ): MonitoredStreamer {
-  const platformMap: Record<string, SupportedLivestreamPlatform> = {
-    pumpfun: 'PumpFun',
-    kick: 'Kick',
-    twitch: 'Twitch',
-    youtube: 'YouTube',
-    rumble: 'Rumble',
-    twitter: 'Twitter',
-    tokend: 'Tokend',
-  };
-  const platform =
-    platformMap[record.platform?.toLowerCase() || 'pumpfun'] || 'PumpFun';
+  const platform = parseLivestreamPlatform(record.platform) ?? 'PumpFun';
 
   return {
     id: record.id,
@@ -1297,20 +1288,11 @@ async function tryRemoveEndedTwitterBroadcastById(streamerId: string, reason: st
   try {
     const fromDb = await getMonitoredStreamer(streamerId);
     if (fromDb) {
-      const platformMap: Record<string, MonitoredStreamer['platform']> = {
-        pumpfun: 'PumpFun',
-        kick: 'Kick',
-        twitch: 'Twitch',
-        youtube: 'YouTube',
-        rumble: 'Rumble',
-        twitter: 'Twitter',
-        tokend: 'Tokend',
-      };
       const streamer: MonitoredStreamer = {
         id: fromDb.id,
         mintId: fromDb.mint_id,
         displayName: fromDb.display_name,
-        platform: platformMap[fromDb.platform.toLowerCase()] || 'Twitter',
+        platform: parseLivestreamPlatform(fromDb.platform) ?? 'Twitter',
         lastCheckTimestamp: fromDb.last_check_timestamp,
         isCurrentlyLive: Boolean(fromDb.is_currently_live),
         currentSessionId: fromDb.current_session_id,

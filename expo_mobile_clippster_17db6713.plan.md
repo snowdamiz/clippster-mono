@@ -51,7 +51,7 @@ Imagine Clippster is a **toy workshop** with three rooms:
 2. **The cloud clubhouse** (`api.clippster.app`) — where your **name badge** lives, your **team** hangs out, and robots **post videos** to social media for you.
 3. **A paid locker** (cloud storage) — if you pay, your projects get copied into a locker so you can open the **same project** on phone *or* computer. Big raw video files stay in your pocket unless you choose to put them in the locker too.
 
-**Phone app = small workshop.** You can download a streamer's long video, pick the funny parts, add subtitles and text stickers, let the **server robots** find highlights (AI), then **schedule a post**. You cannot do the giant pro editor (OpenCut timeline, livestream studio, Remotion) — that's the **big workshop** on desktop.
+**Phone app = small workshop.** You can download a streamer's long video, pick the funny parts, add subtitles and text stickers, let the **server robots** find highlights (AI), then **schedule a post**. You cannot do the giant pro editor (OpenCut timeline, livestream studio, AI video editor) — that's the **big workshop** on desktop.
 
 **What runs on the phone vs in the cloud:**
 - **On phone (native, fast):** FFmpeg cutting/export, video playback, drawing subtitles on preview.
@@ -163,7 +163,7 @@ Mobile must implement the **Manual Framing Editor** pattern from [`ManualPOIEdit
 ### Explicitly out of scope for v1
 - OpenCut full NLE ([`client/src/editor/`](client/src/editor/))
 - Livestream DVR, streaming studio, PumpFun Node sidecar
-- Remotion export sidecar
+- Hyperframes export sidecar
 - Desktop admin panel
 - Full feature parity with 90+ SQLite migrations (carry only what minimal editor + download need)
 - **Export ratios beyond 16:9 and 9:16** (desktop supports 1:1, 4:5, etc. via [`ClipBuildSettingsDialog.vue`](client/src/components/ClipBuildSettingsDialog.vue))

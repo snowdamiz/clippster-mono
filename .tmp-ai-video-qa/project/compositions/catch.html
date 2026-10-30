@@ -1,0 +1,61 @@
+<!doctype html>
+<html data-composition-variables='[{"id":"text","type":"string","label":"Headline","default":"Catch the moment"}]'>
+<head><meta charset="UTF-8" /></head>
+<body><template>
+<style>
+#root{position:absolute;inset:0;overflow:hidden}
+#catch-bg{position:absolute;inset:0;background:radial-gradient(ellipse at 50% 42%,#13235a 0%,#0a1233 55%,#050a1f 100%)}
+.catch-shape{position:absolute}
+#catch-stage{position:absolute;left:0;right:0;top:170px;height:420px;display:flex;align-items:center;justify-content:center}
+.catch-ring{position:absolute;width:300px;height:300px;border-radius:50%;border:4px solid #22d3ee;opacity:0}
+#catch-icon{position:relative;width:300px;height:300px}
+#catch-title{position:absolute;left:160px;right:160px;top:660px;text-align:center;color:#fff;font:800 132px/1.05 "Montserrat",sans-serif;letter-spacing:-0.01em;white-space:nowrap}
+#catch-bar{position:absolute;left:50%;top:830px;width:220px;height:8px;margin-left:-110px;border-radius:4px;background:linear-gradient(90deg,#22d3ee,#a855f7)}
+#catch-sweep{position:absolute;inset:0}
+</style>
+<div id="root" data-composition-id="catch" data-width="1920" data-height="1080">
+<div id="catch-bg"></div>
+<div id="catch-shapes"></div>
+<div id="catch-stage">
+<div class="catch-ring"></div><div class="catch-ring"></div><div class="catch-ring"></div>
+<svg id="catch-icon" viewBox="0 0 300 300"><defs><linearGradient id="catch-g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#22d3ee"/><stop offset="1" stop-color="#a855f7"/></linearGradient></defs><circle cx="150" cy="150" r="140" fill="url(#catch-g)"/><path d="M120 95 L210 150 L120 205 Z" fill="#fff" stroke="#fff" stroke-width="14" stroke-linejoin="round"/></svg>
+</div>
+<div id="catch-title"></div>
+<div id="catch-bar"></div>
+<div id="catch-sweep"></div>
+</div>
+<script>
+(function(){
+const { text } = window.__hyperframes.getVariables();
+document.getElementById("catch-title").textContent = text;
+const box = document.getElementById("catch-shapes");
+const sweep = document.getElementById("catch-sweep");
+const tl = gsap.timeline({ paused: true });
+const specs=[[180,160,"tri","#22d3ee",90],[1560,140,"ring","#a855f7",120],[1700,620,"tri","#a855f7",70],[120,700,"ring","#22d3ee",80],[420,90,"line","#a855f7",200],[1350,880,"line","#22d3ee",240],[300,420,"ring","#a855f7",40],[1500,400,"tri","#22d3ee",50],[900,60,"ring","#22d3ee",30],[820,960,"tri","#a855f7",60]];
+function make(s,parent){const d=document.createElement("div");d.className="catch-shape";d.style.left=s[0]+"px";d.style.top=s[1]+"px";const c=s[3],z=s[4];
+if(s[2]==="ring"){d.style.width=z+"px";d.style.height=z+"px";d.style.borderRadius="50%";d.style.border="5px solid "+c;}
+else if(s[2]==="line"){d.style.width=z+"px";d.style.height="6px";d.style.borderRadius="3px";d.style.background=c;}
+else{d.style.width="0";d.style.height="0";d.style.borderLeft=(z/2)+"px solid transparent";d.style.borderRight=(z/2)+"px solid transparent";d.style.borderBottom=z+"px solid "+c;}
+parent.appendChild(d);return d;}
+specs.forEach((s,i)=>{const d=make(s,box);d.style.opacity="0.55";
+tl.fromTo(d,{opacity:0,scale:0.4,rotation:0},{opacity:0.55,scale:1,duration:0.6,ease:"power2.out"},0.05*i);
+tl.fromTo(d,{x:0,y:0},{x:(i%2?-1:1)*(40+i*6),y:(i%3-1)*30,rotation:(i%2?-90:120),duration:3.4,ease:"none"},0);
+tl.to(d,{x:"-=900",opacity:0,duration:0.5,ease:"power2.in"},3.45+0.01*i);});
+// sweep shards
+for(let i=0;i<8;i++){const d=make([2000,80+i*125,i%2?"line":"tri",i%2?"#a855f7":"#22d3ee",i%2?320:70],sweep);
+tl.fromTo(d,{x:0},{x:-2500,duration:0.6,ease:"power2.inOut"},3.4+i*0.03);}
+const icon=document.getElementById("catch-icon");
+tl.fromTo(icon,{scale:0,rotation:-30},{scale:1,rotation:0,duration:0.6,ease:"back.out(1.8)"},0.1);
+for(let b=0;b<4;b++){const t=0.8+b*0.75;
+tl.to(icon,{scale:1.12,duration:0.1,ease:"power2.out"},t).to(icon,{scale:1,duration:0.12,ease:"power2.in"},t+0.1)
+.to(icon,{scale:1.07,duration:0.08},t+0.24).to(icon,{scale:1,duration:0.2},t+0.32);}
+document.querySelectorAll(".catch-ring").forEach((r,i)=>{for(let b=0;b<3;b++){const t=0.8+b*0.9+i*0.25;
+tl.fromTo(r,{scale:1,opacity:0.8},{scale:2.4,opacity:0,duration:0.9,ease:"power1.out"},t);}});
+const title=document.getElementById("catch-title");
+tl.fromTo(title,{y:80,opacity:0},{y:0,opacity:1,duration:0.45,ease:"power4.out"},0.6);
+tl.fromTo(document.getElementById("catch-bar"),{scaleX:0},{scaleX:1,duration:0.5,ease:"power3.out"},0.85);
+tl.to([title,"#catch-bar","#catch-stage"],{x:-200,opacity:0,duration:0.4,ease:"power2.in"},3.55);
+window.__timelines["catch"]=tl;
+})();
+</script>
+<script data-ai-editor-timing>(function(){const scale=Number(window.__hyperframes.getVariables().__editorTimeScale || 1);const tl=window.__timelines["catch"];if(!tl || !Number.isFinite(scale) || scale<=0 || scale===1)return;const children=tl.getChildren(false,true,true).map(child=>({child,start:child.startTime(),duration:child.duration()}));for(const item of children){item.child.duration(item.duration*scale);item.child.startTime(item.start*scale);}tl.invalidate();})();</script></template></body></html>

@@ -71,6 +71,12 @@ export interface AuthResult {
   user?: AuthUser
 }
 
+export interface EmailChangeResult extends AuthResult {
+  pendingEmail?: string
+  otpRequired?: boolean
+  convertingFromOauth?: boolean
+}
+
 export interface OrganizationResult {
   success: boolean
   error?: string
@@ -101,7 +107,15 @@ export interface AuthActions {
   getClientId(): Promise<string>
   logout(): Promise<void>
   checkAuth(): Promise<boolean>
-  
+  getAuthToken(): string | null
+
+  // Account methods
+  switchGoogleAccount(): Promise<AuthResult>
+  changeEmail(newEmail: string, credentials: { password?: string; newPassword?: string }): Promise<EmailChangeResult>
+  verifyEmailChangeOtp(otp: string): Promise<AuthResult>
+  resendEmailChangeVerification(): Promise<EmailChangeResult>
+  changePassword(currentPassword: string, newPassword: string): Promise<AuthResult>
+
   // Email auth methods
   registerWithEmail(email: string, password: string, referralCode?: string | null): Promise<AuthResult>
   verifyEmailOtp(email: string, otp: string): Promise<AuthResult>

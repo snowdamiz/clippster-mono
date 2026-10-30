@@ -16,6 +16,7 @@ RUN yarn install --frozen-lockfile
 # Copy landing source and shared package (tsconfig/vite resolve ../packages/app-tour)
 COPY landing/ ./
 COPY packages/app-tour /packages/app-tour
+COPY packages/profile-design /packages/profile-design
 COPY packages/shared-types /packages/shared-types
 COPY packages/email-composer /packages/email-composer
 COPY server/priv/email /server/priv/email

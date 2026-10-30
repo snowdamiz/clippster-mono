@@ -12,8 +12,6 @@
     "resolveJsonModule": true,
     "isolatedModules": true,
     "noEmit": true,
-    "jsx": "react-jsx",
-    "jsxImportSource": "react",
 
     /* Path Aliases */
     "baseUrl": ".",
@@ -21,7 +19,9 @@
       "@/*": ["./src/*"],
       "@clippster/shared-types": ["../packages/shared-types/src/index.ts"],
       "@clippster/app-tour": ["../packages/app-tour/src/index.ts"],
-      "@clippster/cloud-sync-schema": ["../packages/cloud-sync-schema/src/index.ts"]
+      "@clippster/api-client": ["../packages/api-client/src/index.ts"],
+      "@clippster/cloud-sync-schema": ["../packages/cloud-sync-schema/src/index.ts"],
+      "zod": ["./node_modules/zod"]
     },
 
     /* Linting */
@@ -30,6 +30,6 @@
     "noUnusedParameters": false,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.tsx", "src/**/*.vue"],
+  "include": ["src/**/*.ts", "src/**/*.d.ts", "src/**/*.vue"],
   "references": [{ "path": "./tsconfig.node.json" }]
 }

@@ -405,8 +405,9 @@
   </Modal>
 </template>
 
-<script setup>
+<script setup lang="ts">
   import { ref, computed, markRaw } from 'vue';
+  import type { TourId } from '@clippster/app-tour';
   import { Settings, Mail, Lock, Info, Clock, Bell, User, Trash2, RefreshCw } from 'lucide-vue-next';
   import { useAuthStore } from '@/stores/auth';
   import { useUserPreferencesStore } from '@/stores/userPreferences';
@@ -422,23 +423,20 @@
   import SettingsStatus from '@/components/settings/SettingsStatus.vue';
   import { SettingRow } from '@/components/ui/setting-row';
   import { useAppTour } from '@/services/settingsRuntime';
+  import type { UserPreferences } from '@/services/database/user-preferences';
 
-  const props = defineProps({
-    desktopToolsAvailable: { type: Boolean, default: true },
-    show: {
-      type: Boolean,
-      required: true,
-    },
+  const props = withDefaults(defineProps<{ desktopToolsAvailable?: boolean; show: boolean }>(), {
+    desktopToolsAvailable: true,
   });
 
-  const emit = defineEmits(['close']);
+  const emit = defineEmits<{ close: [] }>();
 
   const authStore = useAuthStore();
   const prefsStore = useUserPreferencesStore();
   const { restartTour } = useAppTour();
-  const restartingTour = ref(null);
+  const restartingTour = ref<TourId | null>(null);
 
-  const tourRestartOptions = [
+  const tourRestartOptions: { id: TourId; label: string; desc: string }[] = [
     { id: 'desktop_sidebar', label: 'Sidebar overview', desc: 'Browse, Library, Create, Manage' },
     { id: 'page_creators', label: 'My Creators', desc: 'Add creator and profile tabs' },
     { id: 'page_live_clip', label: 'Live Streams', desc: 'Track, Watch, Rec, Auto' },
@@ -448,7 +446,7 @@
     { id: 'page_image_editor', label: 'Image Editor', desc: 'Canvas editor overview' },
   ];
 
-  async function onRestartTour(tourId) {
+  async function onRestartTour(tourId: TourId) {
     restartingTour.value = tourId;
     try {
       emit('close');
@@ -477,7 +475,7 @@
   ];
 
   // Position options
-  const positionOptions = [
+  const positionOptions: { label: string; value: UserPreferences['toast_position'] }[] = [
     { label: 'Top left', value: 'top-left' },
     { label: 'Top right', value: 'top-right' },
     { label: 'Bottom left', value: 'bottom-left' },
@@ -489,15 +487,19 @@
   const positionSegments = computed(() => positionOptions.map((opt) => ({ ...opt, disabled: prefsStore.saving })));
 
   // Category options
-  const categoryOptions = computed(() => [
-    ...(props.desktopToolsAvailable ? [{ key: 'notify_livestream', label: 'Livestream', desc: 'Streamer went live, recording started/stopped' }] : []),
+  type NotificationCategoryKey = Extract<keyof UserPreferences, `notify_${string}`>;
+  const allCategoryOptions: { key: NotificationCategoryKey; label: string; desc: string }[] = [
+    { key: 'notify_livestream', label: 'Livestream', desc: 'Streamer went live, recording started/stopped' },
     { key: 'notify_clips', label: 'Clips & video', desc: 'Clips detected, export complete, transcription done' },
     { key: 'notify_downloads', label: 'Downloads & uploads', desc: 'Download complete, upload complete' },
     { key: 'notify_projects', label: 'Projects & editor', desc: 'Project saved, auto-save, editor warnings' },
     { key: 'notify_social', label: 'Social & publishing', desc: 'Post published, scheduled post sent' },
     { key: 'notify_organization', label: 'Organization', desc: 'Invitations, member activity, shared content' },
     { key: 'notify_system', label: 'System', desc: 'Success confirmations, errors, warnings' },
-  ]);
+  ];
+  const categoryOptions = computed(() =>
+    allCategoryOptions.filter((category) => props.desktopToolsAvailable || category.key !== 'notify_livestream')
+  );
 
   // Form state
   const newEmail = ref('');
@@ -549,7 +551,7 @@
   });
 
   // Preference toggle helper
-  const togglePref = async (key, value) => {
+  const togglePref = async <K extends keyof UserPreferences>(key: K, value: UserPreferences[K]) => {
     const userId = String(authStore.user?.id || '');
     const token = authStore.getAuthToken?.() || authStore.token || localStorage.getItem('auth_token') || '';
     if (!userId || !token) return;
@@ -583,8 +585,10 @@
     googleError.value = '';
   };
 
-  const onOtpInput = (event) => {
-    emailChangeOtp.value = String(event.target.value || '')
+  const errorMessage = (error: unknown) => (error instanceof Error && error.message) || 'An error occurred';
+
+  const onOtpInput = (event: Event) => {
+    emailChangeOtp.value = String((event.target as HTMLInputElement).value || '')
       .replace(/\D/g, '')
       .slice(0, 6);
   };
@@ -612,7 +616,7 @@
         googleError.value = result.error || 'Failed to switch Google account';
       }
     } catch (error) {
-      googleError.value = error.message || 'An error occurred';
+      googleError.value = errorMessage(error);
     } finally {
       saving.value = false;
       savingType.value = '';
@@ -637,7 +641,7 @@
         emailError.value = result.error || 'Failed to change email';
       }
     } catch (error) {
-      emailError.value = error.message || 'An error occurred';
+      emailError.value = errorMessage(error);
     } finally {
       saving.value = false;
       savingType.value = '';
@@ -676,7 +680,7 @@
         emailError.value = result.error || 'Failed to start email conversion';
       }
     } catch (error) {
-      emailError.value = error.message || 'An error occurred';
+      emailError.value = errorMessage(error);
     } finally {
       saving.value = false;
       savingType.value = '';
@@ -702,7 +706,7 @@
         emailError.value = result.error || 'Invalid verification code';
       }
     } catch (error) {
-      emailError.value = error.message || 'An error occurred';
+      emailError.value = errorMessage(error);
     } finally {
       saving.value = false;
       savingType.value = '';
@@ -725,7 +729,7 @@
         emailError.value = result.error || 'Failed to resend code';
       }
     } catch (error) {
-      emailError.value = error.message || 'An error occurred';
+      emailError.value = errorMessage(error);
     } finally {
       saving.value = false;
       savingType.value = '';
@@ -761,7 +765,7 @@
         passwordError.value = result.error || 'Failed to change password';
       }
     } catch (error) {
-      passwordError.value = error.message || 'An error occurred';
+      passwordError.value = errorMessage(error);
     } finally {
       saving.value = false;
       savingType.value = '';

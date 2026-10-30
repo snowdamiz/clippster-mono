@@ -192,7 +192,7 @@
   import { AlertTriangle, Images, Loader2, Sparkles } from 'lucide-vue-next';
   import AIImageCreatorHeader from '@/components/ai-image/AIImageCreatorHeader.vue';
   import type { AIImageExportAction } from '@/components/ai-image/AIImageCreatorHeader.vue';
-  import ChatMessage from '@/components/ai-video/ChatMessage.vue';
+  import ChatMessage from '@/components/create/chat/ChatMessage.vue';
   import ChatComposer from '@/components/create/chat/ChatComposer.vue';
   import ChatNotice from '@/components/create/chat/ChatNotice.vue';
   import ChatStatusCard from '@/components/create/chat/ChatStatusCard.vue';
@@ -202,7 +202,7 @@
   import { EmptyState } from '@/components/ui/empty-state';
   import { IconTile } from '@/components/ui/icon-tile';
   import { useAIImageSession } from '@/composables/useAIImageSession';
-  import type { AIChatMessage } from '@/types/ai-video';
+  import type { AIChatMessage } from '@/types/ai-chat';
   import { IMAGE_CREATION_CREDIT_COST, IMAGE_EDIT_CREDIT_COST } from '@/utils/imageGenerationPolicy';
   import {
     createWorkableImageProject,

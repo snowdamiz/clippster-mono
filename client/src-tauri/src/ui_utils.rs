@@ -4,10 +4,18 @@ use std::fs;
 use std::path::PathBuf;
 use tauri::Manager;
 
+/// Main window bounds. Size is logical (DPI-independent); position is the physical
+/// outer top-left, matching how monitors report their own bounds.
 #[derive(Debug, Serialize, Deserialize)]
-pub struct WindowSize {
+pub struct WindowState {
     pub width: f64,
     pub height: f64,
+    #[serde(default)]
+    pub x: Option<i32>,
+    #[serde(default)]
+    pub y: Option<i32>,
+    #[serde(default)]
+    pub maximized: bool,
 }
 
 // Get platform information
@@ -81,28 +89,20 @@ fn get_window_state_path(app_handle: &tauri::AppHandle) -> Result<PathBuf, Strin
     Ok(app_data_dir.join("window_state.json"))
 }
 
-// Save window size to app data directory
 #[tauri::command]
-pub fn save_window_size(
-    app_handle: tauri::AppHandle,
-    width: f64,
-    height: f64,
-) -> Result<(), String> {
-    let window_size = WindowSize { width, height };
+pub fn save_window_state(app_handle: tauri::AppHandle, state: WindowState) -> Result<(), String> {
     let state_path = get_window_state_path(&app_handle)?;
 
-    let json = serde_json::to_string(&window_size)
-        .map_err(|e| format!("Failed to serialize window size: {}", e))?;
+    let json = serde_json::to_string(&state)
+        .map_err(|e| format!("Failed to serialize window state: {}", e))?;
 
     fs::write(&state_path, json).map_err(|e| format!("Failed to write window state: {}", e))?;
 
     Ok(())
 }
 
-// Load window size from app data directory
-#[tauri::command]
-pub fn load_window_size(app_handle: tauri::AppHandle) -> Result<Option<WindowSize>, String> {
-    let state_path = get_window_state_path(&app_handle)?;
+pub fn load_window_state(app_handle: &tauri::AppHandle) -> Result<Option<WindowState>, String> {
+    let state_path = get_window_state_path(app_handle)?;
 
     if !state_path.exists() {
         return Ok(None);
@@ -111,8 +111,30 @@ pub fn load_window_size(app_handle: tauri::AppHandle) -> Result<Option<WindowSiz
     let json = fs::read_to_string(&state_path)
         .map_err(|e| format!("Failed to read window state: {}", e))?;
 
-    let window_size: WindowSize = serde_json::from_str(&json)
-        .map_err(|e| format!("Failed to deserialize window size: {}", e))?;
+    let state: WindowState = serde_json::from_str(&json)
+        .map_err(|e| format!("Failed to deserialize window state: {}", e))?;
 
-    Ok(Some(window_size))
+    Ok(Some(state))
+}
+
+/// True when the window's title-bar area at this physical position lands on a connected
+/// monitor, so a window saved on an unplugged display is not restored off-screen.
+pub fn is_position_on_screen(app_handle: &tauri::AppHandle, x: i32, y: i32) -> bool {
+    const TITLEBAR_PROBE_X: i32 = 120;
+    const TITLEBAR_PROBE_Y: i32 = 16;
+    let (px, py) = (x + TITLEBAR_PROBE_X, y + TITLEBAR_PROBE_Y);
+
+    app_handle
+        .available_monitors()
+        .map(|monitors| {
+            monitors.iter().any(|m| {
+                let pos = m.position();
+                let size = m.size();
+                px >= pos.x
+                    && py >= pos.y
+                    && px < pos.x + size.width as i32
+                    && py < pos.y + size.height as i32
+            })
+        })
+        .unwrap_or(false)
 }

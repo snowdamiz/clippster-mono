@@ -27,7 +27,7 @@
     seedBreakingNewsPrompt,
     ensureOrganizationAssetColumns,
   } from '@/services/database';
-  import { healSchema } from '@/services/database/schema-healing';
+  import { healSchema, healStaleProjectBranding } from '@/services/database/schema-healing';
   import { syncPersonalBranding } from '@/services/personalBrandingSync';
   import { initClipBuildEventHandler, cleanupClipBuildEventHandler } from '@/services/clipBuildEventHandler';
   import { useWindowClose } from '@/composables/useWindowClose';
@@ -48,6 +48,7 @@
   } from '@/composables/useLivestreamMonitoring';
   import { invoke } from '@tauri-apps/api/core';
   import { getCurrentWindow } from '@tauri-apps/api/window';
+  import type { UnlistenFn } from '@tauri-apps/api/event';
   import { API_BASE, API_ORIGIN } from '@/lib/apiBase';
 
   // Platform detection for OS-specific styling (e.g., rounded corners on macOS)
@@ -375,28 +376,37 @@
     titleBarPlatformOverride.value = platform;
   };
 
-  // Window resize handler with debouncing
-  let resizeTimeout: number | null = null;
-  const handleWindowResize = async () => {
-    // Debounce resize events to avoid excessive saves
-    if (resizeTimeout !== null) {
-      clearTimeout(resizeTimeout);
+  // Persist main window bounds (debounced) so the next launch reopens where it was left.
+  let windowStateTimeout: number | null = null;
+  let lastNormalBounds: { width: number; height: number; x: number; y: number } | null = null;
+  let unlistenWindowState: UnlistenFn[] = [];
+  const handleWindowStateChange = () => {
+    if (windowStateTimeout !== null) {
+      clearTimeout(windowStateTimeout);
     }
 
-    resizeTimeout = window.setTimeout(async () => {
+    windowStateTimeout = window.setTimeout(async () => {
       try {
         const appWindow = getCurrentWindow();
-        const size = await appWindow.innerSize();
-        // Don't persist minimized/collapsed window sizes
-        if (size.width < 800 || size.height < 600) return;
-        await invoke('save_window_size', {
-          width: size.width,
-          height: size.height,
-        });
+        if (await appWindow.isMinimized()) return;
+        const maximized = await appWindow.isMaximized();
+        // While maximized, keep the last un-maximized bounds so restoring returns to them.
+        if (!maximized) {
+          const [scale, size, position] = await Promise.all([
+            appWindow.scaleFactor(),
+            appWindow.innerSize(),
+            appWindow.outerPosition(),
+          ]);
+          const logical = size.toLogical(scale);
+          if (logical.width < 800 || logical.height < 600) return;
+          lastNormalBounds = { width: logical.width, height: logical.height, x: position.x, y: position.y };
+        }
+        if (!lastNormalBounds) return;
+        await invoke('save_window_state', { state: { ...lastNormalBounds, maximized } });
       } catch (error) {
-        console.error('[App] Failed to save window size:', error);
+        console.error('[App] Failed to save window state:', error);
       }
-    }, 500); // Wait 500ms after resize stops before saving
+    }, 500);
   };
 
   // Ensure dark mode is always applied and initialize database
@@ -419,44 +429,41 @@
     // Load platform override from localStorage
     loadPlatformOverride();
 
-    // Set up window resize listener to save size
     const appWindow = getCurrentWindow();
-    const unlistenResize = await appWindow.onResized(handleWindowResize);
+    unlistenWindowState = await Promise.all([
+      appWindow.onResized(handleWindowStateChange),
+      appWindow.onMoved(handleWindowStateChange),
+    ]);
 
-    // Store unlisten function for cleanup
-    (window as any).__unlistenWindowResize = unlistenResize;
+    // The mandatory update check runs alongside startup work; it only gates revealing the app.
+    await initializeApp(runMandatoryUpdateCheck());
+  });
 
-    // MANDATORY UPDATE CHECK - must complete before app continues
-    // Skip update check in development environment
+  /** Resolves true when a required update blocks the app. Never rejects. */
+  async function runMandatoryUpdateCheck(): Promise<boolean> {
     if (import.meta.env.DEV) {
       console.log('[App] Skipping update check in development mode');
       isCheckingForUpdates.value = false;
-    } else {
-      // Check for updates FIRST before any other initialization
-      try {
-        console.log('[App] Checking for mandatory updates...');
-        const hasUpdate = await checkForUpdates();
-        if (hasUpdate) {
-          console.log('[App] Update required - blocking app until update is installed');
-          updateRequired.value = true;
-          isCheckingForUpdates.value = false;
-          // Stop here - user must update before continuing
-          return;
-        }
-        console.log('[App] No update required, continuing with app initialization');
-      } catch (error) {
-        console.error('[App] Failed to check for updates:', error);
-        // On error, allow app to continue (don't block users if update server is down)
+      return false;
+    }
+    try {
+      console.log('[App] Checking for mandatory updates...');
+      const hasUpdate = await checkForUpdates();
+      if (hasUpdate) {
+        console.log('[App] Update required - blocking app until update is installed');
+        updateRequired.value = true;
       }
+      return hasUpdate;
+    } catch (error) {
+      // Don't block users if the update server is down
+      console.error('[App] Failed to check for updates:', error);
+      return false;
+    } finally {
       isCheckingForUpdates.value = false;
     }
+  }
 
-    // Continue with normal app initialization only if no update required
-    await initializeApp();
-  });
-
-  // Separate function for app initialization (called after update check passes)
-  async function initializeApp() {
+  async function initializeApp(updateCheck: Promise<boolean>) {
     console.log('[App] initializeApp started, current path:', window.location.pathname);
     
     // Check if this is the PIP window - it only needs minimal initialization
@@ -479,22 +486,20 @@
     window.addEventListener('streamer-went-live', handleStreamerWentLive as EventListener);
     window.addEventListener('user-preferences-loaded', handlePreferencesLoaded as EventListener);
 
-    // Fail fast if VITE_API_URL points at the wrong process (common on Windows when
-    // localhost → ::1 hits Docker on :4000 while Phoenix only binds 127.0.0.1).
-    try {
-      const health = await fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) });
-      if (!health.ok) {
-        console.error(
-          `[App] API health check failed (${health.status}) at ${API_ORIGIN}. ` +
-            'If another service (e.g. Docker) owns localhost:4000, set VITE_API_URL=http://127.0.0.1:4000 and restart Vite/Tauri.'
-        );
-      }
-    } catch (err) {
-      console.error(
-        `[App] API unreachable at ${API_ORIGIN}. Is mix phx.server running?`,
-        err
-      );
-    }
+    // Diagnose a misrouted VITE_API_URL (common on Windows when localhost → ::1 hits
+    // Docker on :4000 while Phoenix only binds 127.0.0.1). Logging only; never blocks startup.
+    fetch(`${API_BASE}/health`, { signal: AbortSignal.timeout(3000) })
+      .then((health) => {
+        if (!health.ok) {
+          console.error(
+            `[App] API health check failed (${health.status}) at ${API_ORIGIN}. ` +
+              'If another service (e.g. Docker) owns localhost:4000, set VITE_API_URL=http://127.0.0.1:4000 and restart Vite/Tauri.'
+          );
+        }
+      })
+      .catch((err) => {
+        console.error(`[App] API unreachable at ${API_ORIGIN}. Is mix phx.server running?`, err);
+      });
 
     // Run independent startup tasks in parallel:
     // - Auth check + announcements (announcements depend on auth, but both are independent of DB)
@@ -585,6 +590,9 @@
       matched: router.currentRoute.value.matched.length,
     });
 
+    // A required update keeps the update screen up and skips background monitoring.
+    if (await updateCheck) return;
+
     // Hide loading screen - app is usable now
     console.log('[App] Hiding loading screen, showing main app');
     isLoading.value = false;
@@ -599,6 +607,9 @@
     initPersistentLiveMonitoringPolling().catch((error) => {
       console.error('[App] Failed to initialize persistent live monitoring polling:', error);
     });
+
+    // Per-project branding resolution is several queries per project; keep it off the loading screen.
+    healStaleProjectBranding();
   }
 
   // Cleanup auth event listener on unmount
@@ -614,11 +625,7 @@
     window.removeEventListener('streamer-went-live', handleStreamerWentLive as EventListener);
     window.removeEventListener('user-preferences-loaded', handlePreferencesLoaded as EventListener);
 
-    // Cleanup window resize listener
-    const unlistenResize = (window as any).__unlistenWindowResize;
-    if (unlistenResize) {
-      unlistenResize();
-    }
+    unlistenWindowState.forEach((unlisten) => unlisten());
 
     // Cleanup global clip build event handler
     cleanupClipBuildEventHandler();

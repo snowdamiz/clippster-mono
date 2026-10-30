@@ -1,6 +1,9 @@
 <template>
   <!-- Full-screen blocker shown while a required update is checked, downloaded or installed (mirrors LoadingScreen). -->
-  <div class="update-screen fixed inset-0 z-[9999] grid place-items-center overflow-y-auto bg-canvas px-5 py-8">
+  <div
+    class="update-screen fixed inset-0 z-[9999] grid place-items-center overflow-y-auto bg-canvas px-5 py-8"
+    data-tauri-drag-region
+  >
     <div class="flex w-full max-w-[360px] flex-col items-center gap-6">
       <div class="flex items-center gap-3">
         <img src="/logo-titlebar.svg" alt="" class="size-9 rounded-[10px]" />

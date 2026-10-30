@@ -32,6 +32,5 @@ package
 docs
 scripts
 !scripts/dev-setup*.mjs
-packages/app-tour
 packages/ui
 packages/core

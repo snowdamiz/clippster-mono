@@ -67,9 +67,13 @@ async function healProjectTimestamps(db: any): Promise<void> {
   }
 }
 
-/** Clear watermarks/branding selections left from incorrect auto-apply rules. */
-async function healStaleProjectBranding(db: any): Promise<void> {
+/**
+ * Clear watermarks/branding selections left from incorrect auto-apply rules.
+ * Depends on auth state (org-supplied accounts are skipped), so run it after auth resolves.
+ */
+export async function healStaleProjectBranding(): Promise<void> {
   try {
+    const db = await getDatabase();
     const { resolveAutoBrandingProfile, isOrgSuppliedAccount } =
       await import('@/composables/useBrandingProfileSelection');
 
@@ -319,7 +323,6 @@ export async function healSchema(): Promise<void> {
     await addColumnIfMissing(db, 'raw_videos', 'source_url', 'TEXT');
 
     await healProjectTimestamps(db);
-    await healStaleProjectBranding(db);
 
     healed = true;
     console.log('[schema-healing] Schema healing complete');

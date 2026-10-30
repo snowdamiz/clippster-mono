@@ -6,7 +6,8 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "vue-tsc --noEmit && vite build",
+    "typecheck": "vue-tsc --noEmit",
+    "build": "yarn typecheck && vite build",
     "build:ci": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
@@ -24,9 +25,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
-    "@remotion/bundler": "^4.0.0",
-    "@remotion/cli": "^4.0.0",
-    "@remotion/player": "^4.0.0",
+    "@hyperframes/player": "0.8.174",
     "@solana/web3.js": "^1.98.4",
     "@tailwindcss/typography": "^0.5.19",
     "@tauri-apps/api": "^2.11.1",
@@ -54,10 +53,7 @@
     "phoenix": "^1.8.1",
     "pinia": "^2.3.0",
     "radix-vue": "^1.9.17",
-    "react": "18",
-    "react-dom": "18",
     "reka-ui": "^2.6.0",
-    "remotion": "^4.0.0",
     "tailwindcss-animate": "^1.0.7",
     "vue": "^3.5.13",
     "vue-router": "4",
@@ -65,13 +61,9 @@
   },
   "devDependencies": {
     "@prettier/plugin-pug": "^3.4.2",
-    "@remotion/eslint-plugin": "^4.0.410",
     "@tailwindcss/postcss": "^4.1.16",
     "@tauri-apps/cli": "^2.11.5",
     "@types/node": "^24.9.1",
-    "@types/react": "18",
-    "@types/react-dom": "18",
-    "@vitejs/plugin-react": "^5.1.2",
     "@vitejs/plugin-vue": "^5.2.1",
     "@vueuse/core": "^14.0.0",
     "autoprefixer": "^10.4.21",
@@ -89,6 +81,7 @@
     "typescript": "~5.6.2",
     "vite": "^6.0.3",
     "vitest": "^3.2.4",
-    "vue-tsc": "^2.1.10"
+    "vue-tsc": "^2.1.10",
+    "zod": "3.25.76"
   }
 }
