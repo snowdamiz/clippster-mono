@@ -188,6 +188,10 @@ export default function FramingScreen() {
       <Stack.Screen options={{ headerShown: false }} />
       <View className="flex-1 bg-background">
         <ScreenHeader title="Manual framing" showBack />
+        <View className="mx-4 mb-3 rounded-xl border border-border bg-surface p-3" accessibilityState={{ disabled: true }}>
+          <Text className="text-sm text-muted">Auto framing · Coming soon</Text>
+          <Text className="mt-1 text-xs text-muted">Available in the Clippster desktop app. You can frame manually here.</Text>
+        </View>
         {error ? (
           <View className="flex-1 items-center justify-center px-6">
             <Text className="text-center text-muted">{error}</Text>

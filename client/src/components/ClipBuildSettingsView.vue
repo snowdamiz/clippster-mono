@@ -107,44 +107,13 @@
           <template v-if="hasPortraitRatio">
             <div class="flex flex-col gap-2">
               <SectionHeader title="Portrait cropping" variant="eyebrow" :icon="CropIcon" />
-              <div class="grid grid-cols-2 gap-2">
-                <button
-                  type="button"
-                  disabled
-                  class="flex cursor-not-allowed flex-col gap-1 rounded-lg border border-line-subtle bg-surface px-3 py-2.5 text-left opacity-50"
-                >
-                  <span class="flex items-center gap-2 text-sm font-medium text-fg">
-                    <SparklesIcon class="size-4 text-fg-subtle" />
-                    Auto
-                    <Badge>Soon</Badge>
-                  </span>
-                  <span class="text-xs text-fg-muted">Coming soon - Use manual configuration</span>
-                </button>
-                <button
-                  type="button"
-                  class="flex flex-col gap-1 rounded-lg border px-3 py-2.5 text-left transition-colors"
-                  :class="
-                    framingMode === 'manual'
-                      ? 'border-brand-line bg-brand-soft'
-                      : 'border-line bg-surface hover:border-line-strong hover:bg-surface-hover'
-                  "
-                  :aria-pressed="framingMode === 'manual'"
-                  @click="framingMode = 'manual'"
-                >
-                  <span class="flex items-center gap-2 text-sm font-medium text-fg">
-                    <PencilRulerIcon
-                      class="size-4"
-                      :class="framingMode === 'manual' ? 'text-brand' : 'text-fg-subtle'"
-                    />
-                    Manual
-                  </span>
-                  <span class="text-xs text-fg-muted">Manually configure regions for each aspect ratio</span>
-                </button>
-              </div>
+              <FramingModeSelect v-model="framingMode" :available="autoFramingAvailable" />
             </div>
 
-            <div v-if="framingMode === 'manual'" class="flex flex-col gap-2">
-              <p class="text-xs text-fg-muted">Configure each aspect ratio:</p>
+            <div class="flex flex-col gap-2">
+              <p class="text-xs text-fg-muted">{{ framingMode === 'auto' ? 'Generate, preview, and apply each aspect ratio before continuing:' : 'Configure each aspect ratio:' }}</p>
+              <p v-if="framingPreviewBusy" class="text-xs text-fg-muted" role="status">Preparing the clip preview with your cuts…</p>
+              <p v-if="framingPreviewError" class="text-xs text-warning" role="alert">{{ framingPreviewError }}</p>
               <div
                 class="flex flex-col divide-y divide-line-subtle overflow-hidden rounded-lg border border-line-subtle bg-surface"
               >
@@ -174,7 +143,7 @@
                         getConfigForRatio(ratio)?.regions.length !== 1 ? 's' : ''
                       }}
                     </Badge>
-                    <span v-else class="text-xs text-fg-muted">Click to configure</span>
+                    <span v-else class="text-xs text-fg-muted">{{ framingMode === 'auto' ? 'Generate & preview' : 'Click to configure' }}</span>
                     <ChevronRightIcon class="size-4 text-fg-subtle" />
                   </span>
                 </button>
@@ -415,6 +384,7 @@
   <slot name="SubtitleAdjustmentDialog" />
 </template>
 <script lang="ts">
+  import FramingModeSelect from './poi/FramingModeSelect.vue';
   import { defineComponent, markRaw } from 'vue';
   import { buildViewPresentation } from '@/lib/sharedViewPresentation';
   import {
@@ -444,6 +414,7 @@
   import { SegmentedControl } from '@/components/ui/segmented-control';
   export default defineComponent({
     components: {
+      FramingModeSelect,
       WrenchIcon,
       CheckIcon,
       ChevronRightIcon,

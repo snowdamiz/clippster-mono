@@ -1,0 +1,13 @@
+Clippster on-device Auto framing
+
+MediaPipe Tasks Vision 0.10.21 and BlazeFace short-range float16 model, version 1
+Copyright Google LLC. Licensed under the Apache License, Version 2.0.
+See mediapipe-LICENSE.txt in this distribution.
+
+Runtime source: https://github.com/google-ai-edge/mediapipe
+Model documentation: https://ai.google.dev/edge/mediapipe/solutions/vision/face_detector
+Model source: https://storage.googleapis.com/mediapipe-models/face_detector/blaze_face_short_range/float16/1/blaze_face_short_range.tflite
+Model SHA-256: b4578f35940bf5a1a655214a1cce5cab13eba73c1297cd78e1a04c2380b0152f
+
+Clippster packages these files locally. Auto framing does not send frames to Google
+or use a hosted Google API. No face identity or biometric database is created.

@@ -1,5 +1,5 @@
 import type { ManualFramingConfig, ManualRegion, TargetAspectRatio } from '@clippster/shared-types';
-import { TARGET_DIMENSIONS, manualSourceRect } from '@clippster/shared-types';
+import { TARGET_DIMENSIONS, manualSourceRect, trackingExpression, trackedRegionAtTime } from '@clippster/shared-types';
 
 export interface FramingFilterInput {
   framingConfig: ManualFramingConfig | null;
@@ -27,14 +27,10 @@ export function getActiveRegionsForTime(
   clipRelativeTime: number,
 ): ManualRegion[] {
   const segmentConfigs = config.segmentConfigs ?? [];
-  if (segmentConfigs.length === 0) {
-    return config.regions;
-  }
-
   const active = segmentConfigs.find(
     (seg) => clipRelativeTime >= seg.startTime && clipRelativeTime < seg.endTime,
   );
-  return active?.regions ?? config.regions;
+  return (active?.regions ?? config.regions).map(region => trackedRegionAtTime(region, clipRelativeTime));
 }
 
 export function buildFramingFilterGraph(input: FramingFilterInput): FramingFilterResult | null {
@@ -107,8 +103,8 @@ export function buildFramingFilterGraph(input: FramingFilterInput): FramingFilte
   regions.forEach((region, index) => {
     const cropW = Math.max(0.01, region.source.width);
     const cropH = Math.max(0.01, region.source.height);
-    const cropX = region.source.x;
-    const cropY = region.source.y;
+    const cropX = region.sourceKeyframes?.length ? `(${trackingExpression(region.sourceKeyframes, 'x')})` : region.source.x;
+    const cropY = region.sourceKeyframes?.length ? `(${trackingExpression(region.sourceKeyframes, 'y')})` : region.source.y;
     const outX = Math.round(region.output.x * width);
     const outY = Math.round(region.output.y * height);
     const outW = Math.max(1, Math.round(region.output.width * width));
@@ -127,7 +123,7 @@ export function buildFramingFilterGraph(input: FramingFilterInput): FramingFilte
     const scale = mediaIndex === undefined ? `scale=${outW}:${outH}` : `scale=${outW}:${outH}:force_original_aspect_ratio=increase,crop=${outW}:${outH}`;
     const corners = radius > 0 ? `,format=rgba,geq=r='r(X,Y)':g='g(X,Y)':b='b(X,Y)':a='if(lte(pow(max(abs(X-W/2)-(W/2-${radius}),0),2)+pow(max(abs(Y-H/2)-(H/2-${radius}),0),2),${radius * radius}),255,0)'` : '';
     filters.push(
-      `[${mediaIndex === undefined ? `region_source${index}` : `${mediaIndex}:v`}]${timestamps}crop=iw*${cropW}:ih*${cropH}:iw*${cropX}:ih*${cropY}[${cropLabel}]`,
+      `[${mediaIndex === undefined ? `region_source${index}` : `${mediaIndex}:v`}]${timestamps}crop=iw*${cropW}:ih*${cropH}:'iw*${cropX}':'ih*${cropY}'[${cropLabel}]`,
       `[${cropLabel}]${scale},setsar=1${corners}[${scaleLabel}]`,
       `[${currentLabel}][${scaleLabel}]overlay=${outX}:${outY}:shortest=1${timing ? `:enable='gte(t,${timing.startTime})*lt(t,${timing.endTime})'` : ''}[${overlayLabel}]`,
     );

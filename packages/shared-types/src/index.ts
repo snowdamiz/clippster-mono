@@ -7,6 +7,7 @@ export * from './clip';
 export * from './transcript';
 export * from './media';
 export * from './manualFraming';
+export * from './framingTracking';
 export * from './subtitle';
 export * from './clipTextBox';
 export * from './editor';
