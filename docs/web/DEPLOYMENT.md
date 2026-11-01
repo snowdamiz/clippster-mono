@@ -39,7 +39,7 @@ For local verification, run Phoenix on `http://localhost:4000`, register that AP
 
 ```sh
 yarn deploy:web   # cd apps/web/cloudflare && npm ci && npx wrangler deploy
-curl --fail https://clippster-web.openworth.workers.dev/api/health
+curl --fail https://app.clippster.app/api/health
 ```
 
 The Worker runs one `standard-3` container (2 vCPU, 8 GiB) through the shared Durable Object in `cloudflare/container.mjs`. It keeps the container awake with an alarm, and restarts it when a deploy changes its secrets or vars (Cloudflare can take a few minutes to swap in a new deploy). Never run more than one instance with this storage design.

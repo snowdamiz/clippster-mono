@@ -25,6 +25,7 @@
 </template>
 
 <script setup lang="ts">
+  import { assertReviewedAutoFraming } from '@/services/auto-framing/validation';
   import ClipsTabView from './ClipsTabView.vue';
   import { ref, computed, watch, onMounted, reactive, toRefs, onUnmounted } from 'vue';
   import { formatDateTime } from '@/utils/dateTimeUtils';
@@ -84,8 +85,6 @@
   import type { SubtitleSettings, WatermarkSettings, IntroOutroRef } from '@/types';
   import { CAPTION_PRESETS } from '@/editor/constants/caption-constants';
   import { ensureAssetDownloaded, type ServerOrganizationAsset } from '@/services/orgAssetSync';
-  import type { AnalyzeSpeakersResponse } from '@/services/speaker-detection-api';
-  import type { FramingStrategy as DbFramingStrategy, ParsedStrategyData } from '@/services/database/speaker-detection';
   import { normalizeLocalFilePathForFs } from '@/utils/normalizeLocalFilePath';
   import {
     getSelfContainedClipDuration as getSharedSelfContainedClipDuration,
@@ -93,14 +92,6 @@
     isClipBuildOutputPath as isClipBuildOutputPathUtil,
     normalizePathForCompare,
   } from '@/utils/selfContainedClip';
-
-  // Helper to ensure value is boolean (handles string "true"/"false" and numbers)
-  function toBoolean(value: unknown): boolean {
-    if (typeof value === 'boolean') return value;
-    if (typeof value === 'string') return value.toLowerCase() === 'true';
-    if (typeof value === 'number') return value !== 0;
-    return Boolean(value);
-  }
 
   function cloneSubtitleSettings(settings: SubtitleSettings): SubtitleSettings {
     return JSON.parse(JSON.stringify(settings)) as SubtitleSettings;
@@ -197,142 +188,6 @@
     const computed = maxWordsChunkForAspectRatioString(ratio, animationStyle);
     if (Number.isFinite(computed) && computed > 0) return computed;
     return fallback || 4;
-  }
-
-  // Helper function to convert server API response to Rust-expected format
-  function convertServerResponseToRustFormat(response: AnalyzeSpeakersResponse) {
-    const strategy = response.strategy;
-
-    return {
-      mode: strategy.mode,
-      videoType: strategy.video_type,
-      speakerCount: Number(response.speaker_count) || 0,
-      confidence: Number(response.confidence) || 0,
-      targetAspectRatio: strategy.target_aspect_ratio,
-      isPortrait: toBoolean(strategy.is_portrait),
-      sourceDimensions: {
-        width: Number(strategy.source_dimensions?.width) || 1920,
-        height: Number(strategy.source_dimensions?.height) || 1080,
-      },
-      ffmpegFilter: strategy.ffmpeg_filter || '',
-      layout: strategy.layout
-        ? {
-            layoutType: strategy.layout.type,
-            topRegion: {
-              x: Number(strategy.layout.top_region.x) || 0,
-              y: Number(strategy.layout.top_region.y) || 0,
-              width: Number(strategy.layout.top_region.width) || 0,
-              height: Number(strategy.layout.top_region.height) || 0,
-              outputHeightRatio:
-                strategy.layout.top_region.output_height_ratio != null
-                  ? Number(strategy.layout.top_region.output_height_ratio)
-                  : null,
-            },
-            bottomRegion: {
-              x: Number(strategy.layout.bottom_region.x) || 0,
-              y: Number(strategy.layout.bottom_region.y) || 0,
-              width: Number(strategy.layout.bottom_region.width) || 0,
-              height: Number(strategy.layout.bottom_region.height) || 0,
-              outputHeightRatio:
-                strategy.layout.bottom_region.output_height_ratio != null
-                  ? Number(strategy.layout.bottom_region.output_height_ratio)
-                  : null,
-            },
-            splitRatio: Number(strategy.layout.split_ratio) || 0.5,
-          }
-        : null,
-      keyframes: strategy.keyframes
-        ? strategy.keyframes.map((kf) => ({
-            timestamp: Number(kf.timestamp) || 0,
-            cropX: Number(kf.crop_x) || 0,
-            cropY: Number(kf.crop_y) || 0,
-            faceDetected: toBoolean(kf.face_detected),
-          }))
-        : null,
-      cropRegion: strategy.crop_region
-        ? {
-            x: Number(strategy.crop_region.x) || 0,
-            y: Number(strategy.crop_region.y) || 0,
-            width: Number(strategy.crop_region.width) || 0,
-            height: Number(strategy.crop_region.height) || 0,
-          }
-        : null,
-      cropCenter: strategy.crop_center
-        ? {
-            x: Number(strategy.crop_center.x) || 0,
-            y: Number(strategy.crop_center.y) || 0,
-          }
-        : null,
-      speakers: null, // Optional, not always needed
-      contentRegions: null, // Optional, not always needed
-    };
-  }
-
-  // Helper function to convert cached DB strategy to Rust-expected format
-  function convertToRustFramingStrategy(strategy: DbFramingStrategy, data: ParsedStrategyData) {
-    return {
-      mode: strategy.mode,
-      videoType: strategy.video_type,
-      speakerCount: Number(strategy.speaker_count) || 0,
-      confidence: Number(strategy.confidence) || 0,
-      targetAspectRatio: strategy.target_aspect_ratio,
-      isPortrait: true,
-      sourceDimensions: {
-        width: Number(strategy.source_width) || 1920,
-        height: Number(strategy.source_height) || 1080,
-      },
-      ffmpegFilter: data.ffmpeg_filter || '',
-      layout: data.layout
-        ? {
-            layoutType: data.layout.type,
-            topRegion: {
-              x: Number(data.layout.top_region.x) || 0,
-              y: Number(data.layout.top_region.y) || 0,
-              width: Number(data.layout.top_region.width) || 0,
-              height: Number(data.layout.top_region.height) || 0,
-              outputHeightRatio:
-                data.layout.top_region.output_height_ratio != null
-                  ? Number(data.layout.top_region.output_height_ratio)
-                  : null,
-            },
-            bottomRegion: {
-              x: Number(data.layout.bottom_region.x) || 0,
-              y: Number(data.layout.bottom_region.y) || 0,
-              width: Number(data.layout.bottom_region.width) || 0,
-              height: Number(data.layout.bottom_region.height) || 0,
-              outputHeightRatio:
-                data.layout.bottom_region.output_height_ratio != null
-                  ? Number(data.layout.bottom_region.output_height_ratio)
-                  : null,
-            },
-            splitRatio: Number(data.layout.split_ratio) || 0.5,
-          }
-        : null,
-      keyframes: data.keyframes
-        ? data.keyframes.map((kf) => ({
-            timestamp: Number(kf.timestamp) || 0,
-            cropX: Number(kf.crop_x) || 0,
-            cropY: Number(kf.crop_y) || 0,
-            faceDetected: toBoolean(kf.face_detected),
-          }))
-        : null,
-      cropRegion: data.crop_region
-        ? {
-            x: Number(data.crop_region.x) || 0,
-            y: Number(data.crop_region.y) || 0,
-            width: Number(data.crop_region.width) || 0,
-            height: Number(data.crop_region.height) || 0,
-          }
-        : null,
-      cropCenter: data.crop_center
-        ? {
-            x: Number(data.crop_center.x) || 0,
-            y: Number(data.crop_center.y) || 0,
-          }
-        : null,
-      speakers: null,
-      contentRegions: null,
-    };
   }
 
   function tokenizeTranscriptText(text: string): string[] {
@@ -2378,132 +2233,9 @@
         console.warn('[ClipsTab] Could not load audio settings:', err);
       }
 
-      // Check if we need speaker detection for portrait (9:16) exports
-      let framingStrategy = null;
-      const portraitRatios = ['9:16', '4:5'];
-      const hasPortraitRatio = settings.aspectRatios.some((ratio) => portraitRatios.includes(ratio));
-
-      if (hasPortraitRatio) {
-        // Check if manual framing mode is selected
-        const hasManualConfigs =
-          settings.framingMode === 'manual' &&
-          settings.manualFramingConfigs &&
-          Object.keys(settings.manualFramingConfigs).length > 0;
-
-        if (hasManualConfigs) {
-          // For manual mode with per-ratio configs, DON'T create a single framingStrategy
-          // The backend will use manualFramingConfigs to apply the correct config per ratio
-          console.log(
-            '[ClipsTab] Using manual framing configuration with per-ratio configs:',
-            Object.keys(settings.manualFramingConfigs || {})
-          );
-
-          // Leave framingStrategy as null - the backend will use manualFramingConfigs instead
-          // This ensures each aspect ratio gets its own unique crop regions
-          framingStrategy = null;
-        } else if (settings.framingMode === 'manual' && settings.manualFramingConfig) {
-          // Legacy single config support
-          console.log(
-            '[ClipsTab] Using manual framing configuration with',
-            settings.manualFramingConfig.regions.length,
-            'regions'
-          );
-
-          // Convert manual config to framing strategy format
-          framingStrategy = {
-            mode: 'multi_region',
-            videoType: 'unknown',
-            speakerCount: 0,
-            confidence: 1.0,
-            targetAspectRatio: settings.manualFramingConfig.targetAspectRatio,
-            isPortrait: true,
-            sourceDimensions: {
-              width: 1920, // Will be updated by backend
-              height: 1080,
-            },
-            ffmpegFilter: '',
-            layout: null,
-            keyframes: null,
-            cropRegion: null,
-            cropCenter: null,
-            speakers: null,
-            contentRegions: null,
-            multiRegion: settings.manualFramingConfig,
-          };
-        } else {
-          // Auto mode - run speaker detection
-          try {
-            console.log('[ClipsTab] Portrait ratio detected, analyzing speakers...');
-
-            // Calculate clip duration from segments
-            const clipDuration = segments.reduce((total, seg) => {
-              return total + (seg.end_time - seg.start_time);
-            }, 0);
-
-            // Only analyze if clip is long enough (3+ seconds)
-            if (clipDuration >= 3) {
-              const { analyzeSpeakers, getRecommendedSampleInterval } =
-                await import('@/services/speaker-detection-api');
-              const { getFramingStrategyWithData, saveFramingStrategy } =
-                await import('@/services/database/speaker-detection');
-
-              // Check if we already have a cached strategy for this clip
-              const cachedStrategy = await getFramingStrategyWithData(clip.id);
-
-              if (cachedStrategy) {
-                console.log('[ClipsTab] Using cached framing strategy:', cachedStrategy.strategy.mode);
-                framingStrategy = convertToRustFramingStrategy(cachedStrategy.strategy, cachedStrategy.data);
-              } else {
-                // Get segment timing for analysis
-                const firstSegment = segments[0];
-                const lastSegment = segments[segments.length - 1];
-                const startTime = firstSegment.start_time;
-                const endTime = lastSegment.end_time;
-
-                const sampleInterval = getRecommendedSampleInterval(clipDuration);
-
-                console.log('[ClipsTab] Calling speaker detection API...', {
-                  clipId: clip.id,
-                  startTime,
-                  endTime,
-                  sampleInterval,
-                });
-
-                const response = await analyzeSpeakers(clip.id, {
-                  video_path: projectVideo.file_path,
-                  start_time: startTime,
-                  end_time: endTime,
-                  target_aspect_ratio: '9:16',
-                  sample_interval: sampleInterval,
-                });
-
-                console.log('[ClipsTab] Speaker detection response:', response);
-
-                // Save to local database for caching
-                const { convertServerStrategyToStorageFormat } = await import('@/services/speaker-detection-api');
-                await saveFramingStrategy(clip.id, {
-                  mode: response.mode,
-                  video_type: response.video_type,
-                  target_aspect_ratio: response.target_aspect_ratio,
-                  confidence: response.confidence,
-                  speaker_count: response.speaker_count,
-                  strategy_data: convertServerStrategyToStorageFormat(response.strategy),
-                  source_width: response.strategy.source_dimensions?.width,
-                  source_height: response.strategy.source_dimensions?.height,
-                });
-
-                // Convert to Rust format
-                framingStrategy = convertServerResponseToRustFormat(response);
-              }
-            } else {
-              console.log('[ClipsTab] Clip too short for speaker detection, using default crop');
-            }
-          } catch (err) {
-            console.warn('[ClipsTab] Speaker detection failed, falling back to center crop:', err);
-            // Continue with null framingStrategy (will use default center crop)
-          }
-        }
-      }
+      // Export the reviewed per-ratio plan; never analyze again during export.
+      const framingStrategy = null;
+      assertReviewedAutoFraming(settings, projectVideo.file_path, segments);
 
       // Refresh clip data from database to get latest subtitle settings
       // (user may have changed settings in POI editor during this session)

@@ -4,17 +4,19 @@
       <ManualPOIEditor
         v-model="showManualPOIEditor"
         :initial-config="getConfigForRatio(editingAspectRatio)"
+        :auto-frame-on-open="framingMode === 'auto'"
         :target-aspect-ratio="editingAspectRatio"
         :source-aspect-ratio="'16:9'"
         :thumbnail-url="thumbnailUrl"
-        :video-path="effectiveClipPath"
-        :clip-start-time="clipStartTime"
-        :clip-end-time="clipEndTime"
+        :video-path="framingPreview.preview.value?.path ?? effectiveClipPath"
+        :clip-start-time="framingPreview.preview.value?.start ?? clipStartTime"
+        :clip-end-time="framingPreview.preview.value?.end ?? clipEndTime"
+        :auto-source-identity="framingPreview.preview.value?.identity"
         :watermark-settings="watermarkSettings"
         :subtitle-settings="subtitlesEnabled ? wizardSubtitleSettings : null"
         :subtitle-position-override="wizardSubtitlePosition"
-        :transcript-words="subtitlesEnabled ? wizardTranscriptWords : []"
-        :transcript-segments="subtitlesEnabled ? wizardTranscriptSegments : []"
+        :transcript-words="subtitlesEnabled ? framingPreview.mapTranscript(wizardTranscriptWords, 0) : []"
+        :transcript-segments="subtitlesEnabled ? framingPreview.mapTranscript(wizardTranscriptSegments, 0) : []"
         :clip-id="clip?.id ?? null"
         :project-id="projectId"
         :clip-text-overlay-json="clipTextOverlayRaw"
@@ -28,6 +30,8 @@
 </template>
 
 <script setup lang="ts">
+  import { isDesktopAutoFramingAvailable } from '@/composables/useAutoFraming';
+  import { useFramingPreviewSource } from '@/composables/useFramingPreviewSource';
   import { ref, computed, watch, onMounted, onUnmounted, reactive, toRefs, markRaw } from 'vue';
   import QuickPublishView from './QuickPublishView.vue';
   import {
@@ -213,6 +217,10 @@
   const frameRate = ref<30 | 60>(30);
   const outputFormat = ref<'mp4' | 'mov'>('mp4');
   const manualFramingConfigs = ref<ManualFramingConfigs>({});
+  const framingMode = ref<'auto' | 'manual'>('manual');
+  const autoFramingAvailable = isDesktopAutoFramingAvailable();
+  const framingPreview = useFramingPreviewSource();
+  const autoFramingReady = computed(() => framingMode.value !== 'auto' || selectedPortraitRatios.value.every(ratio => getConfigForRatio(ratio)?.autoFraming?.reviewed));
   const showManualPOIEditor = ref(false);
   const editingAspectRatio = ref<string>('9:16');
   const clipTextOverlayRaw = ref<string | null>(null);
@@ -374,6 +382,7 @@
       case 'platforms':
         return selectedRatios.value.length > 0;
       case 'framing':
+        return autoFramingReady.value;
       case 'export':
       case 'addons':
         return true;
@@ -385,6 +394,7 @@
   });
 
   const canPublish = computed(() => {
+    if (!autoFramingReady.value) return false;
     // Multi-target build flow validation
     if (buildTargets.value.length > 0) {
       // Check if at least one target has platforms with accounts selected
@@ -621,6 +631,7 @@
 
   function canNavigateToStep(stepId: StepId): boolean {
     const stepIndex = visibleSteps.value.findIndex((s) => s.id === stepId);
+    if (!autoFramingReady.value && stepIndex > visibleSteps.value.findIndex(s => s.id === 'framing')) return false;
     if (stepIndex <= currentStepIndex.value) return true;
     if (stepIndex === currentStepIndex.value + 1 && canProceed.value) return true;
     return false;
@@ -971,6 +982,7 @@
 
   // Framing
   function isRatioConfigured(ratio: string): boolean {
+    if (framingMode.value === 'auto') return !!getConfigForRatio(ratio)?.autoFraming?.reviewed;
     const config = manualFramingConfigs.value[ratio as keyof ManualFramingConfigs];
     return config !== undefined && config.regions.length > 0;
   }
@@ -979,8 +991,13 @@
     return manualFramingConfigs.value[ratio as keyof ManualFramingConfigs] || null;
   }
 
-  function openPOIEditorForRatio(ratio: string) {
+  async function openPOIEditorForRatio(ratio: string) {
+    if (framingPreview.busy.value || !props.clip) return;
     editingAspectRatio.value = ratio;
+    if (framingMode.value === 'auto' || getConfigForRatio(ratio)?.autoFraming) {
+      if (!await framingPreview.prepare(props.clip, effectiveClipPath.value, clipStartTime.value, clipEndTime.value)) return;
+    } else { await framingPreview.clear(); }
+    if (!props.show) return;
     showManualPOIEditor.value = true;
   }
 
@@ -1520,6 +1537,7 @@
 
   // Build process - Multi-target implementation
   async function startBuildProcess() {
+    if (!autoFramingReady.value) { currentStep.value = 'framing'; return; }
     if (!props.clip || !props.projectId) return;
 
     console.log('[QuickPublishWizard] Starting multi-target build process...');
@@ -1697,9 +1715,9 @@
         outro,
         watermark,
         framingMode:
-          target.aspectRatio.includes('9:16') || target.aspectRatio.includes('4:5') ? ('manual' as const) : undefined,
+          target.aspectRatio !== '16:9' ? framingMode.value : undefined,
         manualFramingConfigs:
-          target.aspectRatio.includes('9:16') || target.aspectRatio.includes('4:5')
+          target.aspectRatio !== '16:9'
             ? manualFramingConfigs.value
             : undefined,
         campaignId: target.campaignId || null,
@@ -2365,6 +2383,7 @@
         frameRate.value = 30;
         outputFormat.value = 'mp4';
         manualFramingConfigs.value = {};
+        framingMode.value = 'manual';
         selectedIntroId.value = null;
         selectedOutroId.value = null;
         subtitlesEnabled.value = false;
@@ -2414,6 +2433,7 @@
   );
 
   // Handle framing step visibility
+  watch(() => props.show, open => { if (!open) void framingPreview.clear(); });
   watch(
     () => hasPortraitRatio.value,
     (showFramingStep) => {
@@ -2451,6 +2471,10 @@
     document.removeEventListener('click', handleClickOutside);
   });
   const viewModel = reactive({
+    framingPreviewBusy: framingPreview.busy,
+    framingPreviewError: framingPreview.error,
+    autoFramingAvailable,
+    framingMode,
     ...toRefs(props),
     introButtonRef,
     outroButtonRef,

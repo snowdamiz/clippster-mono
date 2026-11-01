@@ -1,7 +1,7 @@
 <template>
   <Modal
     :open="modelValue"
-    title="Manual framing editor"
+    :title="autoFrameOnOpen ? 'Auto framing preview' : 'Manual framing editor'"
     :description="`Define crop regions on the source and arrange them in the ${targetAspectRatio} output`"
     :icon="LayoutDashboardIcon"
     size="2xl"
@@ -10,6 +10,10 @@
     body-class="flex flex-col"
     @close="close"
   >
+    <AutoFramingStatus v-if="autoFrameOnOpen"
+      :busy="autoFraming.busy.value" :progress="autoFraming.progress.value"
+      :error="autoFraming.error.value" :warnings="autoFraming.info.value?.warnings ?? []"
+      @cancel="cancelAutoFraming" @regenerate="regenerateAutoFraming" />
     <!-- Main Content - Side by Side Panels -->
     <div class="mt-3 flex min-h-[280px] flex-1 overflow-hidden border-t border-line-subtle">
       <!-- Source Panel (Left) — swapped for text box settings when editing -->
@@ -77,7 +81,7 @@
           :regions="displayRegions"
           :selected-region-id="selectedRegionId"
           :thumbnail-url="thumbnailUrl"
-          :source-aspect-ratio="sourceAspectRatio"
+          :source-aspect-ratio="previewSourceAspectRatio"
           :target-aspect-ratio="targetAspectRatio"
           :social-overlay-preset="socialOverlayPreset"
           :next-region-number="nextRegionNumber"
@@ -109,7 +113,7 @@
           :selected-region-id="selectedRegionId"
           :thumbnail-url="thumbnailUrl"
           :target-aspect-ratio="targetAspectRatio"
-          :source-aspect-ratio="sourceAspectRatio"
+          :source-aspect-ratio="previewSourceAspectRatio"
           :video-url="videoUrl"
           :timeline-preview-canvas="timelinePreviewCanvas"
           :video-time="absoluteVideoTime"
@@ -311,7 +315,7 @@
       </div>
       <Button variant="ghost" :disabled="!canApplyFraming" @click="resetRegions">Reset</Button>
       <Button variant="ghost" @click="close">Cancel</Button>
-      <Button variant="primary" :disabled="!canApplyFraming" @click="confirmConfig">
+      <Button variant="primary" :disabled="!canApplyFraming || autoFraming.busy.value || (autoFrameOnOpen && !autoFraming.info.value)" @click="confirmConfig">
         <CheckIcon />
         Apply configuration
       </Button>
@@ -321,6 +325,9 @@
 
 <script setup lang="ts">
   import { ref, watch, computed, onMounted, onUnmounted } from 'vue';
+  import AutoFramingStatus from './AutoFramingStatus.vue';
+  import { useAutoFraming } from '@/composables/useAutoFraming';
+  import { trackedRegionAtTime } from '../../../../packages/shared-types/src/framingTracking';
   import {
     LayoutDashboardIcon,
     CheckIcon,
@@ -438,6 +445,8 @@
   }
 
   interface Props {
+    autoFrameOnOpen?: boolean;
+    autoSourceIdentity?: import('../../../../packages/shared-types/src/framingTracking').AutoFramingInfo['sourceIdentity'];
     modelValue: boolean;
     initialConfig?: ManualFramingConfig | null;
     targetAspectRatio: string;
@@ -689,7 +698,7 @@
   const displayRegions = computed(() => {
     const seg = segmentAtTime(currentTime.value);
     const framingRegions = seg ? seg.regions : baseRegions.value;
-    return [...framingRegions, ...brollsAtTime(currentTime.value).map((broll) => broll.region)];
+    return [...framingRegions, ...brollsAtTime(currentTime.value).map((broll) => broll.region)].map(region => trackedRegionAtTime(region, currentTime.value));
   });
 
   const activeSegmentId = computed(() => segmentAtTime(currentTime.value)?.segmentId ?? null);
@@ -721,6 +730,25 @@
   const videoUrl = ref<string | null>(null);
   const videoLoading = ref(false);
   const videoError = ref<string | null>(null);
+  const previewSourceAspectRatio = ref(props.sourceAspectRatio);
+  const autoFraming = useAutoFraming(() => ({
+    path: props.videoPath ?? '', url: videoUrl.value ?? '', start: props.clipStartTime,
+    end: props.clipEndTime, ratio: props.targetAspectRatio,
+    cuts: props.autoSourceIdentity?.ranges.slice(1).map((_, i) => props.autoSourceIdentity!.ranges.slice(0, i + 1).reduce((sum, r) => sum + r.end - r.start, 0)),
+  }), config => {
+    previewSourceAspectRatio.value = config.sourceAspectRatio ?? props.sourceAspectRatio;
+    baseRegions.value = config.regions;
+    segmentConfigs.value = [];
+    sourceFrameMode.value = 'none';
+    sourceTransform.value = null;
+    selectedRegionId.value = config.regions[0]?.id ?? null;
+    resetPlayback();
+  });
+  function cancelAutoFraming() {
+    autoFraming.cancel();
+    autoFraming.error.value = 'Analysis cancelled. Retry or return to Manual framing.';
+  }
+  function regenerateAutoFraming() { resetPlayback(); void autoFraming.run(); }
 
   // Subtitle positioning state
   const localSubtitlePosition = ref<{ x: number; y: number; width?: number }>(
@@ -907,7 +935,9 @@
 
     try {
       const timestamp = Date.now();
-      const baseUrl = await resolvePoiVideoSource(props.videoPath);
+      const requestedPath = props.videoPath;
+      const baseUrl = await resolvePoiVideoSource(requestedPath);
+      if (!props.modelValue || props.videoPath !== requestedPath) return;
       videoUrl.value = baseUrl.includes('?') ? `${baseUrl}&t=${timestamp}` : `${baseUrl}?t=${timestamp}`;
       console.log('[POIEditor] Video URL loaded:', videoUrl.value);
     } catch (error) {
@@ -1082,6 +1112,7 @@
     async (isOpen) => {
       if (isOpen) {
         // Load initial configuration
+        previewSourceAspectRatio.value = props.initialConfig?.sourceAspectRatio ?? props.sourceAspectRatio;
         if (props.initialConfig) {
           baseRegions.value = JSON.parse(JSON.stringify(props.initialConfig.regions ?? []));
           segmentConfigs.value =
@@ -1143,7 +1174,15 @@
 
         // Load video URL
         await loadVideoUrl();
+        if (!props.modelValue) return;
+        autoFraming.error.value = '';
+        autoFraming.info.value = props.initialConfig?.autoFraming;
+        const sameSource = props.autoSourceIdentity && JSON.stringify(props.autoSourceIdentity) === JSON.stringify(autoFraming.info.value?.sourceIdentity);
+        if (props.autoFrameOnOpen && (!autoFraming.info.value || (!sameSource && autoFraming.info.value.sourceKey !== autoFraming.sourceKey.value))) {
+          await autoFraming.run();
+        }
       } else {
+        autoFraming.cancel();
         // Cleanup when closing
         timelineEditor()?.playback.pause();
         isPlaying.value = false;
@@ -1197,7 +1236,7 @@
     const list = editableRegions();
     const index = list.findIndex((r) => r.id === id);
     if (index !== -1) {
-      list[index] = { ...list[index], ...update };
+      list[index] = { ...list[index], ...update, ...(update.source ? { sourceKeyframes: undefined } : {}) };
       return;
     }
 
@@ -1790,7 +1829,7 @@
 
   // Confirm and emit the configuration
   async function confirmConfig() {
-    if (!canApplyFraming.value) return;
+    if (!canApplyFraming.value || autoFraming.busy.value || (props.autoFrameOnOpen && !autoFraming.info.value)) return;
 
     if (clipTextLocal.value?.enabled && props.clipId) {
       clipTextLocal.value = ensureClipTextPerRatioEntry(clipTextLocal.value, props.targetAspectRatio);
@@ -1798,10 +1837,11 @@
     }
 
     const config: ManualFramingConfig = {
+      autoFraming: autoFraming.info.value ? { ...autoFraming.info.value, sourceIdentity: props.autoSourceIdentity ?? autoFraming.info.value.sourceIdentity, reviewed: true } : undefined,
       mode: 'manual',
       regions: JSON.parse(JSON.stringify(baseRegions.value)),
       targetAspectRatio: props.targetAspectRatio,
-      sourceAspectRatio: props.sourceAspectRatio,
+      sourceAspectRatio: previewSourceAspectRatio.value,
       segmentConfigs: segmentConfigs.value.length > 0 ? JSON.parse(JSON.stringify(segmentConfigs.value)) : undefined,
       brollConfigs: brollConfigs.value.length > 0 ? JSON.parse(JSON.stringify(brollConfigs.value)) : undefined,
       sourceTransform: sourceTransform.value ? JSON.parse(JSON.stringify(sourceTransform.value)) : undefined,

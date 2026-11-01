@@ -73,6 +73,7 @@ const published = [
 
 async function account(path, method, req) {
   if (path === '/auth/me') return json({ success: true, user })
+  if (path.startsWith('/releases/latest')) return json({ version: '1.9.0', tag: 'v1.9.0', downloads: [{ platform: 'windows-x64', label: 'Windows', filename: 'Clippster_1.9.0_x64-setup.exe', download_url: '#' }, { platform: 'mac-arm64', label: 'macOS (Apple Silicon)', filename: 'Clippster_1.9.0_aarch64.dmg', download_url: '#' }] })
   if (path === '/settings/feature-flags') return json({ success: true, feature_flags: { campaigns_enabled: true } })
   if (path === '/user/restrictions') return json({ success: true, restricted: false, restrictions: {} })
   if (path.startsWith('/credits/balance')) return json({ success: true, balance: { hours_remaining: 128.5, hours_used: 21.5, minutes_remaining: 7710 }, organization_allocations: [] })

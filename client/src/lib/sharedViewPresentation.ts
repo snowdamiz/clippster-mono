@@ -24,8 +24,19 @@ const aspectRatioOptions = [
   { value: '4:5', platforms: 'Instagram post', width: 32, height: 40 },
 ];
 
+function framingDefaults(model: ViewModel) {
+  // Preserve desktop refs: replacing one with a computed that reads itself creates a cycle.
+  return {
+    ...(!('autoFramingAvailable' in model) ? { autoFramingAvailable: false } : {}),
+    ...(!('framingPreviewBusy' in model) ? { framingPreviewBusy: false } : {}),
+    ...(!('framingPreviewError' in model) ? { framingPreviewError: '' } : {}),
+    ...(!('framingMode' in model) ? { framingMode: 'manual' } : {}),
+  };
+}
+
 export function buildViewPresentation(model: ViewModel) {
   return {
+    ...framingDefaults(model),
     qualityOptions,
     frameRateOptions,
     outputFormatOptions,
@@ -59,6 +70,7 @@ export function quickPublishPresentation(model: ViewModel) {
     }));
   };
   return {
+    ...framingDefaults(model),
     qualityOptions,
     frameRateOptions,
     outputFormatOptions,

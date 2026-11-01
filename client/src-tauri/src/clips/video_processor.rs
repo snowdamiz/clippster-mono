@@ -3452,6 +3452,12 @@ pub async fn build_multi_region_clip(
             // Recalculate position to ensure crop stays within bounds
             let crop_x = crop_x.min(max_w.saturating_sub(crop_w));
             let crop_y = crop_y.min(max_h.saturating_sub(crop_h));
+            let (crop_x_expr, crop_y_expr) = if let Some(points) = &region.source_keyframes {
+                (
+                    super::framing_tracking::crop_expression(points, 'x', max_w as f64, (max_w - crop_w) as f64)?,
+                    super::framing_tracking::crop_expression(points, 'y', max_h as f64, (max_h - crop_h) as f64)?,
+                )
+            } else { (crop_x.to_string(), crop_y.to_string()) };
 
             // Build crop and scale filter (without enable - we'll apply enable to overlay instead)
             let region_crop_label = if crop_from_output_space {
@@ -3462,8 +3468,8 @@ pub async fn build_multi_region_clip(
                     .ok_or_else(|| format!("Missing source video split for region {}", region.id))?
             };
             let filter = format!(
-                "[{}]crop={}:{}:{}:{},scale={}:{}:flags=lanczos[{}]",
-                region_crop_label, crop_w, crop_h, crop_x, crop_y, out_w, out_h, label
+                "[{}]crop={}:{}:'{}':'{}',scale={}:{}:flags=lanczos[{}]",
+                region_crop_label, crop_w, crop_h, crop_x_expr, crop_y_expr, out_w, out_h, label
             );
             
             filter_parts.push(filter);
@@ -3704,9 +3710,12 @@ pub async fn build_multi_region_clip(
         args.push(mask_path.to_string_lossy().to_string());
     }
 
+    let filter_script = super::framing_tracking::FilterScript::write(
+        output_path.parent().ok_or("Output directory missing")?, &filter_complex,
+    )?;
     args.extend(vec![
-        "-filter_complex".to_string(),
-        filter_complex,
+        "-filter_complex_script".to_string(),
+        filter_script.0.to_string_lossy().to_string(),
         "-map".to_string(),
         map_label.to_string(),
         "-map".to_string(),
@@ -4277,7 +4286,13 @@ pub async fn build_multi_segment_clip_with_framing_strategy(
             let app = app.clone();
             let video_path = video_path.to_string();
             let temp_path = temp_files[i].clone();
-            let strategy = strategy.clone();
+            let mut strategy = strategy.clone();
+            if let Some(config) = &mut strategy.multi_region {
+                let offset: f64 = segments[..i].iter().map(|s|
+                    s["end_time"].as_f64().unwrap_or(0.0) - s["start_time"].as_f64().unwrap_or(0.0)
+                ).sum();
+                super::framing_tracking::rebase_config(config, offset);
+            }
             let quality = quality.to_string();
             let audio_settings = audio_settings.cloned();
             let video_filter_segments = video_filter_segments.cloned();
