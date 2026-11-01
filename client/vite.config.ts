@@ -24,12 +24,14 @@ function stripeReturnHtml() {
 }
 
 export default defineConfig(async () => ({
+  optimizeDeps: { exclude: ["@mediapipe-wasm"] },
   plugins: [
     vue(),
     stripeReturnHtml(),
   ],
   resolve: {
     alias: {
+      "@mediapipe-wasm": path.resolve(__dirname, "node_modules/@mediapipe/tasks-vision/wasm"),
       "@clippster/shared-types": path.resolve(__dirname, "../packages/shared-types/src/index.ts"),
       "@": path.resolve(__dirname, "./src"),
       "@clippster/api-client": path.resolve(__dirname, "../packages/api-client/src/index.ts"),

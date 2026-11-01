@@ -9,6 +9,7 @@ mod overlay_renderer;
 mod subtitle;
 pub mod text_renderer;
 mod types;
+mod framing_tracking;
 pub mod video_info;
 pub mod video_processor;
 

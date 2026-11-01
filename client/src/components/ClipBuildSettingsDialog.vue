@@ -4,19 +4,21 @@
       <ManualPOIEditor
         v-model="showManualPOIEditor"
         :initial-config="getConfigForRatio(editingAspectRatio)"
+        :auto-frame-on-open="framingMode === 'auto'"
         :target-aspect-ratio="editingAspectRatio"
         :source-aspect-ratio="'16:9'"
         :thumbnail-url="videoFrameUrl || thumbnailUrl"
-        :video-path="videoPath"
-        :clip-start-time="clipStartTime"
-        :clip-end-time="clipEndTime"
+        :video-path="framingPreview.preview.value?.path ?? videoPath"
+        :clip-start-time="framingPreview.preview.value?.start ?? clipStartTime"
+        :clip-end-time="framingPreview.preview.value?.end ?? clipEndTime"
+        :auto-source-identity="framingPreview.preview.value?.identity"
         :watermark-settings="watermarkSettings"
         :layout-overlays="vodPresetConfig?.layoutOverlays"
         :overlay-preview-urls="overlayPreviewUrls"
         :subtitle-settings="subtitleSettingsForPOIEditor"
         :subtitle-position-override="getSubtitlePositionForRatio(editingAspectRatio)"
-        :transcript-words="transcriptWords"
-        :transcript-segments="transcriptSegments"
+        :transcript-words="framingPreview.mapTranscript(transcriptWords, clipStartTime)"
+        :transcript-segments="framingPreview.mapTranscript(transcriptSegments, clipStartTime)"
         :is-subtitle-transcribing="poiSubtitleTranscribing"
         :subtitle-transcribe-progress="poiSubtitleTranscribeProgress"
         :subtitle-transcribe-stage="poiSubtitleTranscribeStage"
@@ -48,6 +50,8 @@
 </template>
 
 <script setup lang="ts">
+  import { isDesktopAutoFramingAvailable } from '@/composables/useAutoFraming';
+  import { useFramingPreviewSource } from '@/composables/useFramingPreviewSource';
   import { ref, reactive, toRefs, computed, watch, onMounted, onUnmounted, nextTick } from 'vue';
   import {
     WrenchIcon,
@@ -179,7 +183,6 @@
     outro: IntroOutroItem | null;
     watermark: WatermarkSettings | null;
     framingMode?: 'auto' | 'manual';
-    manualFramingConfig?: import('@/types').ManualFramingConfig;
     manualFramingConfigs?: import('@/types').ManualFramingConfigs;
     /** Full subtitle styling to burn in (when enabled). */
     subtitleSettings?: SubtitleSettings | null;
@@ -261,8 +264,11 @@
   const showIntroDropdown = ref(false);
   const showOutroDropdown = ref(false);
 
-  // Framing mode state (forced to manual since auto is not implemented)
+  // Auto and Manual both export the framing reviewed in the POI editor.
   const framingMode = ref<'auto' | 'manual'>('manual');
+  const autoFramingAvailable = isDesktopAutoFramingAvailable();
+  const framingPreview = useFramingPreviewSource();
+  const autoFramingReady = computed(() => framingMode.value !== 'auto' || selectedPortraitRatios.value.every(ratio => getConfigForRatio(ratio)?.autoFraming?.reviewed));
   const manualFramingConfigs = ref<import('@/types').ManualFramingConfigs>({});
   const showManualPOIEditor = ref(false);
   /** Synced from DB on dialog open; updated when POI editor persists clip text box */
@@ -537,7 +543,8 @@
     previousStep,
   } = useClipBuildNavigation(
     selectedRatios,
-    () => hasPortraitRatio.value || hasSubtitlesEnabled.value || hasClipTextBoxEnabled.value
+    () => hasPortraitRatio.value || hasSubtitlesEnabled.value || hasClipTextBoxEnabled.value,
+    () => autoFramingReady.value
   );
 
   // Get selected portrait ratios that need configuration
@@ -548,6 +555,7 @@
 
   // Check if a specific ratio has been configured
   function isRatioConfigured(ratio: string): boolean {
+    if (framingMode.value === 'auto') return !!getConfigForRatio(ratio)?.autoFraming?.reviewed;
     const config = manualFramingConfigs.value[ratio as keyof import('@/types').ManualFramingConfigs];
     const hasFraming = config !== undefined && config.regions.length > 0;
     const clipText = parseClipTextOverlayJson(clipTextOverlayRaw.value);
@@ -564,6 +572,7 @@
 
   // Open POI editor for a specific ratio
   async function openPOIEditorForRatio(ratio: string) {
+    if (framingPreview.busy.value) return;
     editingAspectRatio.value = ratio;
     const config = getConfigForRatio(ratio);
     console.log('[ClipBuildSettingsDialog] Opening POI editor for ratio:', ratio);
@@ -572,12 +581,17 @@
 
     // Always reload so a prior clip's cached path cannot leak into POI editor.
     await loadVideoFrame();
+    if (!props.modelValue || !props.clip) return;
+    if (framingMode.value === 'auto' || config?.autoFraming) {
+      if (!await framingPreview.prepare(props.clip, videoPath.value ?? '', clipStartTime.value, clipEndTime.value, isSelfContainedClip.value)) return;
+    } else { await framingPreview.clear(); }
 
     // Self-contained clips load transcript async; wait so B-roll/subtitles have words in POI.
     if (isSelfContainedClip.value && !selfContainedTranscriptData.value) {
       await loadSelfContainedTranscriptForClip();
     }
 
+    if (!props.modelValue) return;
     showManualPOIEditor.value = true;
   }
 
@@ -914,6 +928,7 @@
         await loadVideoFrame();
       } else {
         // Reset selections when dialog closes
+        void framingPreview.clear();
         selectedIntro.value = null;
         selectedOutro.value = null;
         videoPath.value = null;
@@ -1767,7 +1782,7 @@
 
   function confirmBuild() {
     // Prevent double submissions
-    if (isSubmitting.value) return;
+    if (isSubmitting.value || !autoFramingReady.value) return;
     if (selectedRatios.value.length === 0) return;
 
     isSubmitting.value = true;
@@ -1779,14 +1794,7 @@
 
     // Determine framing mode and configs
     const finalFramingMode = hasPortraitRatio.value ? framingMode.value : undefined;
-    const finalManualConfigs =
-      hasPortraitRatio.value && framingMode.value === 'manual' ? manualFramingConfigs.value : undefined;
-
-    // For backward compatibility, also set the primary config
-    const finalManualConfig =
-      finalManualConfigs && Object.keys(finalManualConfigs).length > 0
-        ? Object.values(finalManualConfigs)[0]
-        : undefined;
+    const finalManualConfigs = hasPortraitRatio.value ? manualFramingConfigs.value : undefined;
 
     // Include subtitle overrides only if user has customized any
     const finalSubtitleOverrides =
@@ -1869,7 +1877,6 @@
       outro: selectedOutro.value,
       watermark: watermarkSettings,
       framingMode: finalFramingMode,
-      manualFramingConfig: finalManualConfig ?? undefined,
       manualFramingConfigs: finalManualConfigs,
       subtitleOverrides: finalSubtitleOverrides,
       layoutOverlays: props.vodPresetConfig?.layoutOverlays?.length ? props.vodPresetConfig.layoutOverlays : undefined,
@@ -1901,6 +1908,9 @@
     }
   }
   const viewModel = reactive({
+    framingPreviewBusy: framingPreview.busy,
+    framingPreviewError: framingPreview.error,
+    autoFramingAvailable,
     ...toRefs(props),
     availableCampaignSelections,
     availableOrgs,

@@ -107,7 +107,7 @@ jobs:
       - name: Verify deployed workspace revision
         run: |
           for attempt in $(seq 1 40); do
-            if curl -fsS https://clippster-web.openworth.workers.dev/api/health | jq -e --arg revision "$GITHUB_SHA" '.status == "ok" and .revision == $revision'; then exit 0; fi
+            if curl -fsS https://app.clippster.app/api/health | jq -e --arg revision "$GITHUB_SHA" '.status == "ok" and .revision == $revision'; then exit 0; fi
             sleep 15
           done
           exit 1
@@ -845,6 +845,16 @@ jobs:
 
           # Notarize the .app bundle
           echo "=== Notarizing .app bundle ==="
+          # Print a masked-safe shape so we can confirm which account CI is using.
+          # GitHub redacts exact secret values; splitting the email/team id avoids that.
+          echo "APPLE_ID: $(printf '%s' "$APPLE_ID" | sed 's/@/ [at] /')"
+          echo "APPLE_TEAM_ID: $(printf '%s' "$APPLE_TEAM_ID" | sed 's/./& /g')"
+          echo "APPLE_PASSWORD length: ${#APPLE_PASSWORD}"
+          if printf '%s' "$APPLE_PASSWORD" | grep -Eq '^[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}-[A-Za-z0-9]{4}$'; then
+            echo "APPLE_PASSWORD format: app-specific"
+          else
+            echo "APPLE_PASSWORD format: NOT app-specific (will 401)"
+          fi
           ZIP_PATH="$RUNNER_TEMP/Clippster-notarize.zip"
           ditto -c -k --keepParent "$APP_BUNDLE" "$ZIP_PATH"
           xcrun notarytool submit "$ZIP_PATH" \

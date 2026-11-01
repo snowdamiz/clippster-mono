@@ -1,3 +1,5 @@
+import type { AutoFramingInfo, FramingKeyframe } from './framingTracking';
+
 export interface ManualRegionRect {
   x: number;
   y: number;
@@ -10,6 +12,7 @@ export interface ManualRegion {
   color: string;
   label?: string;
   source: ManualRegionRect;
+  sourceKeyframes?: FramingKeyframe[];
   output: ManualRegionRect;
   cornerRadiusEnabled?: boolean;
   cornerRadiusPx?: number;
@@ -37,6 +40,7 @@ export interface BrollRegionConfig {
 }
 
 export interface ManualFramingConfig {
+  autoFraming?: AutoFramingInfo;
   mode: 'manual';
   regions: ManualRegion[];
   targetAspectRatio: string;

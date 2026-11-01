@@ -34,9 +34,9 @@
   "submit": {
     "production": {
       "ios": {
-        "appleId": "support@clippster.app",
+        "appleId": "support@team556.com",
         "ascAppId": "PLACEHOLDER_ASC_APP_ID",
-        "appleTeamId": "PLACEHOLDER_APPLE_TEAM_ID"
+        "appleTeamId": "CD2RXM358N"
       },
       "android": {
         "serviceAccountKeyPath": "./google-service-account.json",

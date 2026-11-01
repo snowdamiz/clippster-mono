@@ -672,6 +672,7 @@ export interface ManualRegionRect {
 }
 
 export interface ManualRegion {
+  sourceKeyframes?: import('../../../packages/shared-types/src/framingTracking').FramingKeyframe[];
   id: string;
   color: string; // e.g., "#4F9DFF" for visual distinction
   label?: string; // Optional label like "Speaker", "Gameplay"
@@ -727,6 +728,7 @@ export interface ManualSourceFramingPayload {
 }
 
 export interface ManualFramingConfig {
+  autoFraming?: import('../../../packages/shared-types/src/framingTracking').AutoFramingInfo;
   mode: 'manual';
   regions: ManualRegion[]; // Default/fallback regions
   targetAspectRatio: string; // "9:16", "4:5", etc.

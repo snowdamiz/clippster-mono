@@ -1,4 +1,5 @@
 import { ref, type Ref } from 'vue';
+import { assertReviewedAutoFraming } from '@/services/auto-framing/validation';
 import { invoke } from '@tauri-apps/api/core';
 import { listen, type UnlistenFn } from '@tauri-apps/api/event';
 import type { ClipWithVersion } from '@/services/database';
@@ -167,6 +168,8 @@ export function useClipBuildPipeline() {
           }];
         }
       }
+
+      assertReviewedAutoFraming(settings, videoPath, segments);
 
       // Resolve watermark settings
       let watermarkSettings = null;

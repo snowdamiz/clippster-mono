@@ -740,11 +740,24 @@ impl Default for FramingStrategy {
 // MANUAL POI / MULTI-REGION FRAMING TYPES
 // ============================================================================
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FramingKeyframe {
+    pub time: f64,
+    pub x: f64,
+    pub y: f64,
+    #[serde(default)]
+    pub cut: bool,
+}
+
 /// A single region for manual multi-region framing
 /// Contains both the source crop and output position
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct ManualRegion {
+    /// Smooth source crop path; timestamps are relative to the composed clip.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_keyframes: Option<Vec<FramingKeyframe>>,
     /// Unique identifier for the region
     pub id: String,
     /// Color for visual distinction (hex string)

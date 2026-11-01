@@ -29,7 +29,6 @@ export * from './audio-assets';
 export * from './audio-settings';
 export * from './image-assets';
 export * from './project-media';
-export * from './speaker-detection';
 export * from './video-editor-projects';
 export * from './video-editor-edits';
 export * from './watermark-presets';

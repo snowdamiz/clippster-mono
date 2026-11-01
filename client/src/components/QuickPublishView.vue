@@ -187,6 +187,10 @@
         </header>
 
         <div v-if="hasPortraitRatio" class="flex flex-col gap-2">
+          <FramingModeSelect v-model="framingMode" :available="autoFramingAvailable" />
+          <p v-if="framingPreviewBusy" class="text-xs text-fg-muted" role="status">Preparing the clip preview with your cuts…</p>
+          <p v-if="framingPreviewError" class="text-xs text-warning" role="alert">{{ framingPreviewError }}</p>
+          <p v-if="framingMode === 'auto'" class="text-xs text-fg-muted">Generate, preview, and apply each ratio before continuing.</p>
           <SectionHeader title="Portrait cropping" :icon="CropIcon" description="Configure each aspect ratio" />
           <ListGroup>
             <ListItem
@@ -196,7 +200,7 @@
               :description="
                 isRatioConfigured(ratio)
                   ? `${getConfigForRatio(ratio)?.regions.length} region${getConfigForRatio(ratio)?.regions.length !== 1 ? 's' : ''} configured`
-                  : 'Click to configure'
+                  : framingMode === 'auto' ? 'Generate & preview' : 'Click to configure'
               "
               @click="openPOIEditorForRatio(ratio)"
             >
@@ -478,6 +482,7 @@
   <slot name="ManualPOIEditor" />
 </template>
 <script lang="ts">
+  import FramingModeSelect from './poi/FramingModeSelect.vue';
   import QuickPublishStep from './QuickPublishStep.vue';
   import { defineComponent, markRaw } from 'vue';
   import { quickPublishPresentation } from '@/lib/sharedViewPresentation';
@@ -514,6 +519,7 @@
   import SubtitlePreviewCanvas from '@/components/SubtitlePreviewCanvas.vue';
   export default defineComponent({
     components: {
+      FramingModeSelect,
       QuickPublishStep,
       X,
       Rocket,
