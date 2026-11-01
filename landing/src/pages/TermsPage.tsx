@@ -104,7 +104,7 @@ Dispute Resolution: Any disputes arising from these Terms or your use of the Ser
 
 Class Action Waiver: You agree to resolve disputes individually and waive any right to participate in class action lawsuits.
 
-Contact: For legal inquiries, contact OpenWorth Technologies Inc. at legal@clippster.io
+Contact: For legal inquiries, contact OpenWorth Technologies Inc. at legal@clippster.app
 
 These Terms of Service were last updated on October 17, 2026.`,
   },

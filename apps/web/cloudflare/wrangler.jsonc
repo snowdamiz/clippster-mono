@@ -19,6 +19,8 @@
   },
   "migrations": [{ "tag": "v1", "new_sqlite_classes": ["ClippsterWeb"] }],
   "triggers": { "crons": ["*/5 * * * *"] },
+  // The workspace's own hostname: WEB_ORIGIN, and the only origin the API accepts for workspace Google sign-in.
+  "routes": [{ "pattern": "app.clippster.app", "custom_domain": true }],
   "vars": {
     "NODE_ENV": "production",
     "WEB_ORIGIN": "https://app.clippster.app",
