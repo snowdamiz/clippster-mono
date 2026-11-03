@@ -44,7 +44,7 @@ async function handle(request, env) {
   const pathname = normalizePath(url.pathname)
 
   if (isProxyPath(pathname, '/api')) {
-    return proxy(request, API_URL, '/api', 'The account API is unavailable. Please try again shortly.')
+    return proxy(request, API_URL, '/api', 'The account API is unavailable. Please try again shortly.', env.API)
   }
 
   if (isProxyPath(pathname, '/workspace')) {
