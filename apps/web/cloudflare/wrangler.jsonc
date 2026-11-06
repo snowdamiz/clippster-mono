@@ -31,5 +31,7 @@
     "WEB_R2_BUCKET": "clippster",
     "WEB_R2_ENDPOINT": "https://a1bd7481785784bf4a67d6fd5371397c.r2.cloudflarestorage.com"
   },
+  // Its id changes with every deploy, which tells cloudflare/container.mjs to restart the container on the new version.
+  "version_metadata": { "binding": "CF_VERSION_METADATA" },
   "observability": { "enabled": true }
 }

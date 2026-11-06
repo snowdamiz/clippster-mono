@@ -42,7 +42,7 @@ yarn deploy:web   # cd apps/web/cloudflare && npm ci && npx wrangler deploy
 curl --fail https://app.clippster.app/api/health
 ```
 
-The Worker runs one `standard-3` container (2 vCPU, 8 GiB) through the shared Durable Object in `cloudflare/container.mjs`. It keeps the container awake with an alarm, and restarts it when a deploy changes its secrets or vars (Cloudflare can take a few minutes to swap in a new deploy). Never run more than one instance with this storage design.
+The Worker runs one `standard-3` container (2 vCPU, 8 GiB) through the shared Durable Object in `cloudflare/container.mjs`. It keeps the container awake with an alarm, and restarts it on every deploy and every change of secrets or vars, since a running container keeps the image and environment it started with (Cloudflare can take a few minutes to swap in a new deploy; the restart sends SIGTERM first, so writes finish). Never run more than one instance with this storage design.
 
 Secrets: `SESSION_SECRET` (keep it stable and backed up) and `AWS_ACCESS_KEY_ID` / `AWS_SECRET_ACCESS_KEY`, an R2 key for the `clippster` bucket. `CLIPPSTER_API_URL`, `WEB_ORIGIN`, `ACCOUNT_ORIGIN` and the storage settings are vars in `wrangler.jsonc`. Browser requests use same-origin `/api`, so no new Phoenix browser CORS permission is necessary.
 
