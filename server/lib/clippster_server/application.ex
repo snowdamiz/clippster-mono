@@ -13,13 +13,13 @@ defmodule ClippsterServer.Application do
   @impl true
   def start(_type, _args) do
     # Load environment variables from .env file in development only
-    # In production (Fly.io), env vars come from fly secrets
+    # In production, env vars are the Cloudflare Worker's secrets and vars
     if Application.get_env(:clippster_server, :load_dotenv, false) do
       load_dotenv()
     end
 
     # Run migrations automatically on startup in dev only
-    # In production, migrations are run via release_command in fly.toml
+    # In production, server/cloudflare/worker.mjs runs migrations before each container start
     if Application.get_env(:clippster_server, :auto_migrate, false) do
       ClippsterServer.Release.migrate()
     end
