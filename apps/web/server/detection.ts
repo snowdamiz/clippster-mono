@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import type { WebClip, WebProject, WordInfo } from '@clippster/shared-types'
+import { creatorSkillFormatForDuration, normalizeCreatorSkillTranscriptionWords, type WebClip, type WebProject, type WordInfo } from '@clippster/shared-types'
 import { clipInput } from './validation'
 interface DetectionResponse {
   success: boolean
@@ -14,21 +14,7 @@ export function normalizeDetection(
 ): { clips: WebClip[]; words: WordInfo[] } {
   const detected = Array.isArray(result.clips) ? result.clips : result.clips?.clips
   if (!Array.isArray(detected)) throw new Error('The AI returned an invalid clip response.')
-  const words = (
-    result.transcript?.words ||
-    result.transcript?.segments?.flatMap((segment) => segment.words || []) ||
-    []
-  ).filter(
-    (word): word is WordInfo =>
-      !!word &&
-      typeof word === 'object' &&
-      typeof (word as WordInfo).word === 'string' &&
-      Number.isFinite((word as WordInfo).start) &&
-      Number.isFinite((word as WordInfo).end) &&
-      (word as WordInfo).start >= 0 &&
-      (word as WordInfo).end > (word as WordInfo).start &&
-      (word as WordInfo).end <= project.duration + 1
-  )
+  const words = normalizeCreatorSkillTranscriptionWords(result.transcript, project.duration)
   const clips: WebClip[] = []
   for (const candidate of detected.slice(0, 50)) {
     if (!candidate || typeof candidate !== 'object') continue
@@ -42,7 +28,10 @@ export function normalizeDetection(
         {
           name: String(data.name || data.title || `AI clip ${clips.length + 1}`).slice(0, 120),
           segments: rawSegments,
-          aspectRatio: '9:16',
+          aspectRatio: creatorSkillFormatForDuration(rawSegments.reduce((total, segment) => {
+            const value = segment as { start_time?: unknown; end_time?: unknown }
+            return total + Math.max(0, Number(value.end_time) - Number(value.start_time) || 0)
+          }, 0)),
           captions: words.length > 0
         },
         project.duration

@@ -35,6 +35,16 @@ export function getApiBaseUrl(): string {
   return 'https://api.clippster.app/api';
 }
 
+/** Media processing runs in the account site's web workspace service. */
+export function getWorkspaceApiBaseUrl(): string {
+  const configured = process.env.EXPO_PUBLIC_WORKSPACE_API_URL;
+  if (configured) return stripTrailingSlash(resolveDevApiUrl(configured));
+  if (__DEV__) return Platform.OS === 'android'
+    ? 'http://10.0.2.2:5173/workspace/api'
+    : 'http://localhost:5173/workspace/api';
+  return 'https://clippster.app/workspace/api';
+}
+
 /** Phoenix port parsed from the configured API URL (default 4000). */
 export function getDevServerPort(): number {
   try {

@@ -52,6 +52,13 @@
           </span>
           <Switch v-model="subtitlesEnabled" />
         </label>
+        <label class="flex cursor-pointer items-center gap-3 py-2.5">
+          <span class="min-w-0 flex-1">
+            <span class="block text-sm font-medium text-fg">Pre-edit clips using Clippster Skill <Badge variant="ai">3× total</Badge></span>
+            <span class="mt-0.5 block text-xs text-fg-muted">Prepare an AI edit and publishing drafts for every detected clip. Raw remains available. The total is 5× with Enhanced detection; retries add no credits.</span>
+          </span>
+          <Switch v-model="creatorSkillEnabled" />
+        </label>
       </div>
 
       <!-- Subtitle style (shown when subtitles are enabled) -->
@@ -95,10 +102,23 @@
         @select-organization="selectOrganization"
       />
 
+      <div class="rounded-lg border border-line-subtle bg-surface px-3 py-2 text-xs text-fg-muted">
+        <div class="flex justify-between"><span>Standard detection</span><span>{{ standardCredits }} credits</span></div>
+        <div v-if="enhancedDetection" class="mt-1 flex justify-between"><span>Enhanced detection</span><span>2× total</span></div>
+        <div v-if="creatorSkillEnabled" class="mt-1 flex justify-between"><span>Clippster Skill pre-edits</span><span>{{ enhancedDetection ? '5× combined total' : '3× total' }}</span></div>
+        <div class="mt-2 flex justify-between border-t border-line-subtle pt-2 font-semibold text-fg"><span>Total for this detection job</span><span>{{ isAdmin ? 'Free (Admin)' : `${calculatedCredits} credits` }}</span></div>
+        <p v-if="creatorSkillEnabled" class="mt-1 text-fg-subtle">Includes every detected clip and free retries. No per-clip AI charge.</p>
+      </div>
+
       <Alert :variant="!isAdmin && !hasEnoughCredits(calculatedCredits) ? 'warning' : 'info'">
         <Info />
         <AlertTitle>Credit cost</AlertTitle>
         <AlertDescription>{{ creditInfo }}</AlertDescription>
+      </Alert>
+      <Alert v-if="creatorSkillEnabled" variant="info">
+        <Info />
+        <AlertTitle>Clippster Skill editing</AlertTitle>
+        <AlertDescription>{{ `All detected clips will be pre-edited with no charge per clip or on retry. ${isAdmin ? 'Free for your admin account.' : `The total detection job is ${creditMultiplier}× the standard cost.`} Your clip transcript, saved creator preferences, and selected intro or outro files go to the AI editor. Finished audio from clips under 30 minutes goes to Clippster's transcription service for QA. Review all drafts before publishing.` }}</AlertDescription>
       </Alert>
 
       <Alert v-if="error" variant="destructive">
@@ -168,7 +188,8 @@
       startTime: number,
       endTime: number,
       subtitleSettings?: { enabled: boolean; presetId: string } | null,
-      enhanced?: boolean
+      enhanced?: boolean,
+      creatorSkillEnabled?: boolean
     ];
   }>();
 
@@ -182,6 +203,7 @@
 
   // Enhanced detection (transcript + video + audio)
   const enhancedDetection = ref(false);
+  const creatorSkillEnabled = ref(false);
 
   // Subtitle selection
   const subtitlesEnabled = ref(false);
@@ -321,18 +343,17 @@
   const isAdmin = computed(() => selectedSourceHoursRemaining.value === Infinity);
 
   // Calculate credits based on duration and transcription status.
-  // Standard rates (matches server): 0.3/min transcribe + 0.7/min detect, or 0.7/min detect-only.
-  // Enhanced is always exactly 2× the standard total (e.g. 60 min → 60 credits → 120 enhanced).
-  const calculatedCredits = computed(() => {
+  // The server rounds the standard detection cost, then applies the multiplier.
+  const standardCredits = computed(() => {
     const durationToCharge = props.segmentCount ? effectiveDuration.value : selectedDuration.value;
     const minutesToCharge = durationToCharge / 60;
 
-    const standardCredits = props.isTranscribed
-      ? Math.ceil(minutesToCharge * 0.7)
-      : Math.ceil(minutesToCharge * 0.3) + Math.ceil(minutesToCharge * 0.7);
+    const standardCredits = Math.ceil(minutesToCharge * (props.isTranscribed ? 0.7 : 1));
 
-    return enhancedDetection.value ? standardCredits * 2 : standardCredits;
+    return standardCredits;
   });
+  const creditMultiplier = computed(() => creatorSkillEnabled.value ? (enhancedDetection.value ? 5 : 3) : (enhancedDetection.value ? 2 : 1));
+  const calculatedCredits = computed(() => standardCredits.value * creditMultiplier.value);
 
   // Computed credit information based on selected source
   const creditInfo = computed(() => {
@@ -462,7 +483,8 @@
         timeRange.value.startTime,
         timeRange.value.endTime,
         subtitleSettings,
-        enhancedDetection.value
+        enhancedDetection.value,
+        creatorSkillEnabled.value
       );
       emit('update:modelValue', false);
     } catch (err) {
@@ -516,6 +538,7 @@
 
         // Enhanced is opt-in per run — never persist from last detection
         enhancedDetection.value = false;
+        creatorSkillEnabled.value = false;
 
         // Reset time range to full video duration
         timeRange.value = { startTime: 0, endTime: props.videoDuration };

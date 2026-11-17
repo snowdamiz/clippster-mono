@@ -74,6 +74,7 @@ aes = "0.8"
 cbc = "0.1"
 cipher = "0.4"
 hex = "0.4"
+md-5 = "0.10"
 
 [target.'cfg(target_os = "macos")'.dependencies]
 cocoa = "0.26"

@@ -14,6 +14,7 @@
 
 pub mod ai_media;
 pub mod convert_video;
+pub mod creator_skill_sources;
 pub mod delete_local_storage;
 pub mod download_audio;
 pub mod download_broll;

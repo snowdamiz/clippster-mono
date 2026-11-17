@@ -17,7 +17,9 @@ import {
 import { getDatabase, getCurrentUserId } from '@/services/database/core';
 import { getWatermarkImage } from '@/services/database/watermarks';
 import type { ServerUserCreatorProfile } from '@clippster/api-client';
+import { parseCreatorSkillPreferences } from '@/services/creatorSkillPreferences';
 import { creatorTimestamp, importPersonalCreator } from './personalCreatorImport';
+import { ratioAssetIds, remapRatioAssetIds } from './creatorRatioAssets';
 
 const PERSONAL_ORG_MARKER = 'personal';
 
@@ -48,7 +50,13 @@ async function uploadLocalFileAsUserAsset(
   name: string
 ): Promise<number | null> {
   const bytes = await readFile(filePath);
-  const blob = new Blob([bytes]);
+  const extension = filePath.split('.').pop()?.toLowerCase();
+  const mimeType = ({
+    mp4: 'video/mp4', m4v: 'video/mp4', mov: 'video/quicktime', webm: 'video/webm',
+    mkv: 'video/x-matroska', avi: 'video/x-msvideo',
+    png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', webp: 'image/webp', gif: 'image/gif',
+  } as Record<string, string>)[extension ?? ''] ?? 'application/octet-stream';
+  const blob = new Blob([bytes], { type: mimeType });
   const form = new FormData();
   form.append('asset_type', assetType);
   form.append('name', name);
@@ -136,20 +144,17 @@ async function performSync(): Promise<{
         ['intro_id', 'intro'],
         ['outro_id', 'outro'],
       ] as const) {
-        const localId = profile[field];
-        if (!localId || localId.startsWith('org-asset-')) continue;
-        const row = await getIntroOutroById(localId);
-        if (!row?.file_path) continue;
-        if (row.server_id) {
-          localToServerAsset.set(localId, row.server_id);
-          continue;
-        }
-        const serverId = await uploadLocalFileAsUserAsset(
-          row.file_path,
-          assetType,
-          row.name || assetType
-        );
-        if (serverId) {
+        const ratioField = assetType === 'intro' ? profile.intro_ratio_settings : profile.outro_ratio_settings;
+        for (const localId of new Set([profile[field], ...ratioAssetIds(ratioField)])) {
+          if (!localId || localId.startsWith('org-asset-') || localToServerAsset.has(localId)) continue;
+          const row = await getIntroOutroById(localId);
+          if (!row?.file_path) throw new Error(`Creator ${assetType} asset ${localId} is unavailable for sync`);
+          if (row.server_id) {
+            localToServerAsset.set(localId, row.server_id);
+            continue;
+          }
+          const serverId = await uploadLocalFileAsUserAsset(row.file_path, assetType, row.name || assetType);
+          if (!serverId) throw new Error(`Creator ${assetType} asset ${localId} could not be uploaded`);
           await markLocalAssetServerId('intro_outros', row.id, serverId);
           localToServerAsset.set(localId, serverId);
           uploadedAssets += 1;
@@ -207,11 +212,22 @@ async function performSync(): Promise<{
         intro_outro_settings: profile.intro_outro_settings
           ? JSON.parse(profile.intro_outro_settings)
           : null,
-        intro_ratio_settings: profile.intro_ratio_settings,
-        outro_ratio_settings: profile.outro_ratio_settings,
+        intro_ratio_settings: await remapRatioAssetIds(profile.intro_ratio_settings, async id => {
+          const mapped = localToServerAsset.get(id);
+          if (!mapped) throw new Error(`Creator intro asset ${id} is unavailable for sync`);
+          return mapped;
+        }),
+        outro_ratio_settings: await remapRatioAssetIds(profile.outro_ratio_settings, async id => {
+          const mapped = localToServerAsset.get(id);
+          if (!mapped) throw new Error(`Creator outro asset ${id} is unavailable for sync`);
+          return mapped;
+        }),
         layout_overlays: profile.layout_overlays ? JSON.parse(profile.layout_overlays) : [],
         clip_build_defaults: profile.clip_build_defaults
           ? JSON.parse(profile.clip_build_defaults)
+          : null,
+        creator_skill_preferences: profile.creator_skill_preferences
+          ? parseCreatorSkillPreferences(profile.creator_skill_preferences)
           : null,
       };
 

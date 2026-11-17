@@ -24,6 +24,7 @@
     song,
     hasExample,
     aspect,
+    motionGraphics,
     blueprint,
     plan,
     hasPlanChat,
@@ -43,7 +44,7 @@
   const changeDraft = ref('');
   const startedAt = new Date().toISOString();
 
-  const maxSeconds = computed(() => policy.value?.max_output_seconds ?? 60);
+  const maxSeconds = computed(() => policy.value?.max_output_seconds ?? 3600);
   const busy = computed(() => !!running.value || !!planPending.value);
   const composerText = computed({
     get: () => (document.value ? changeDraft.value : planDraft.value),
@@ -52,11 +53,16 @@
 
   /** Opens every chat, like the image creator's first message. Not sent to the AI. */
   const greeting = computed(() => {
-    const length = `Videos can be up to ${maxSeconds.value} seconds.`;
+    const length = `Videos can be up to ${formatDuration(maxSeconds.value)}. Motion graphics: ${motionGraphics.value}.`;
+    const speech = clips.value.some(
+      (clip) => clip.kind === 'video' && clip.hasAudio && !session.value?.speech_index?.[clip.contentHash]
+    )
+      ? ' For a podcast or interview, use Analyze speech in Sources & setup so I can see speaker turns before cutting.'
+      : '';
     if (hasExample.value)
       return `What's your video about? I'll copy how your example is edited and plan the scenes with you before anything is built. ${length}`;
     if (clips.value.length)
-      return `What should this video do? I'll look through your clips and plan the edit with you before anything is built. ${length}`;
+      return `What should this video do? I'll look through your clips and plan the edit with you before anything is built. ${length}${speech}`;
     return `What's the video for, and what should it say? I'll ask only what I need, then show you a scene-by-scene plan. You can add an example in Sources & setup for me to copy. ${length}`;
   });
 
@@ -69,6 +75,17 @@
       inserted_at: startedAt,
     });
     const list: AIChatMessage[] = [message(0, 'assistant', greeting.value), ...(session.value?.messages ?? [])];
+    if (!document.value && !hasExample.value && aspect.value !== '16:9') {
+      list.splice(
+        1,
+        0,
+        message(
+          -100,
+          'assistant',
+          `For videos in several formats, you can create in 16:9 and customize ${aspect.value} framing when exporting. You can also keep ${aspect.value} for this project.`
+        )
+      );
+    }
     const pending = planPending.value ?? pendingMessage.value;
     if (pending) list.push(message(-1, 'user', pending));
 

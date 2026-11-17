@@ -31,6 +31,8 @@ import { useAccount } from '@/context/AccountContext'
 import { settingsFromPresetId } from '@/lib/captionPresets'
 import { tokens } from '@/theme/tokens'
 import { appAlert } from '@/lib/appAlert'
+import { preEditMobileDetection } from '@/services/creatorSkillMobile'
+import { creatorSkillPolicy } from '@/services/creatorSkillWeb'
 
 export default function ProjectDetailScreen() {
   const router = useRouter()
@@ -48,6 +50,7 @@ export default function ProjectDetailScreen() {
   const [showDetectSheet, setShowDetectSheet] = useState(false)
   const [playheadTime, setPlayheadTime] = useState(0)
   const aiPipelineRef = useRef<AiPipeline | null>(null)
+  const skillAbortRef = useRef<AbortController | null>(null)
   const openedDetectRef = useRef(false)
   const thumbGenRef = useRef(false)
 
@@ -69,6 +72,7 @@ export default function ProjectDetailScreen() {
           const fallback = await getClipsByProjectId(id)
           clipRows = fallback.map((clip) => ({
             id: clip.id,
+            detection_session_id: clip.detection_session_id,
             name: clip.name,
             start_time: clip.start_time,
             end_time: clip.end_time,
@@ -175,7 +179,7 @@ export default function ProjectDetailScreen() {
         await pipeline.transcribeProject(id)
         await loadWorkspace({ silent: true })
       }
-      const found = await pipeline.detectClips(id, {
+      const { count: found, sessionId } = await pipeline.detectClips(id, {
         prompt: plan.prompt.content,
         startTime: plan.startTime,
         endTime: plan.endTime
@@ -187,8 +191,30 @@ export default function ProjectDetailScreen() {
         const settings = settingsFromPresetId(plan.subtitlePresetId)
         settings.enabled = true
         await Promise.all(
-          detected.map((clip) => updateClipSubtitleSettings(clip.id, true, plan.subtitlePresetId, settings))
+          detected
+            .filter((clip) => clip.detection_session_id === sessionId)
+            .map((clip) => updateClipSubtitleSettings(clip.id, true, plan.subtitlePresetId, settings))
         )
+      }
+      if (plan.creatorSkillEnabled && found > 0) {
+        const detected = (await getProjectClipRows(id)).filter(clip => clip.detection_session_id === sessionId)
+        if (detected.length) {
+          const policy = await creatorSkillPolicy().catch(() => null)
+          if (!policy) appAlert('Pre-edit cost unavailable', 'Detection finished and Raw clips were saved. No paid edits started. Try Clippster Skill later when the cost is available.')
+          const approved = policy ? await new Promise<boolean>(resolve => appAlert(
+            'Pre-edit detected clips?',
+            `${detected.length} clips were found. Pre-editing all of them may use ${detected.length * policy.credits.generate} personal credits (${policy.credits.generate} per clip). Selected creator intro and outro files for each clip's format, clip speech, and saved preferences go to the AI editor. Finished audio from clips under 30 minutes goes to Clippster's transcription service for QA with no extra personal-credit charge. Detection is complete. Raw clips remain available.`,
+            [{ text: 'Keep Raw', style: 'cancel', onPress: () => resolve(false) }, { text: 'Pre-edit All', onPress: () => resolve(true) }],
+          )) : false
+          if (approved) {
+            const controller = new AbortController()
+            skillAbortRef.current = controller
+            await preEditMobileDetection(id, sessionId, (message, progress) => {
+              setAiProgress({ stage: 'pre_editing', progress, message })
+            }, policy!.credits.generate, controller.signal, plan.creatorProfileId)
+            await loadWorkspace({ silent: true })
+          }
+        }
       }
       if (found === 0) {
         appAlert('No clips found', 'Try a different prompt or a wider time range.')
@@ -204,16 +230,18 @@ export default function ProjectDetailScreen() {
           message: 'Detection failed',
           error: message
         })
-        appAlert('Detection failed', message)
+        appAlert(skillAbortRef.current ? 'Clippster Skill failed' : 'Detection failed', message)
       }
     } finally {
       aiPipelineRef.current = null
+      skillAbortRef.current = null
       setAiBusy(false)
     }
   }
 
   function cancelAi() {
     aiPipelineRef.current?.cancel()
+    skillAbortRef.current?.abort()
     setAiProgress({ stage: 'idle', progress: 0, message: 'Cancelling…' })
   }
 

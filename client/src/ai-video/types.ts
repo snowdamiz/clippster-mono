@@ -135,6 +135,18 @@ export interface SourceSegment {
 /** content hash → chunk key → labelled segments. */
 export type SourceIndex = Record<string, Record<string, { segments: SourceSegment[] }>>;
 
+export interface SpeechSegment {
+  start: number;
+  end: number;
+  text: string;
+  speakerId: string | null;
+  speakerName?: string;
+  speakerPosition?: 'left' | 'center' | 'right' | 'wide';
+}
+
+/** Content hash to timed speech turns. Speaker IDs are provisional within each audio chunk. */
+export type SpeechIndex = Record<string, SpeechSegment[]>;
+
 // -- Edit document ------------------------------------------------------------------
 
 export const SHOT_MOVES = [
@@ -147,12 +159,13 @@ export const SHOT_MOVES = [
   'shake',
 ] as const;
 export const SHOT_TRANSITIONS = ['cut', 'flash', 'dip', 'dissolve'] as const;
-export const OVERLAY_LANES = ['graphics', 'text'] as const;
+export const OVERLAY_LANES = ['graphics', 'text', 'captions', 'sponsor'] as const;
 
 export type ShotMove = (typeof SHOT_MOVES)[number];
 export type ShotTransition = (typeof SHOT_TRANSITIONS)[number];
 export type OverlayLane = (typeof OVERLAY_LANES)[number];
 export type AspectRatio = SupportedTargetAspectRatio;
+export type MotionGraphicsLevel = 'none' | 'light' | 'full';
 
 export interface ShotAlternate {
   mediaId: string;
@@ -182,6 +195,14 @@ export interface EditShot {
   refShot: number | null;
   description: string;
   alternates: ShotAlternate[];
+  /** Optional source crop for a confirmed speaker or visual focal point. */
+  framing?: { x: number; y: number; zoom: number };
+  /** Measured source regions for the playbook's vertical screen/speaker layout. */
+  creatorLayout?: {
+    /** Omit for a speaker-led full-frame shot; do not invent a card to fill space. */
+    top?: { x: number; y: number; width: number; height: number };
+    speaker: { x: number; y: number; width: number; height: number };
+  };
 }
 
 export interface EditOverlay {
@@ -201,6 +222,8 @@ export interface EditFormat {
 }
 
 export interface EditDocument {
+  /** Automatic creator brief revision used to build this edit, for safe retry reuse. */
+  creatorSkillEditorialVersion?: number;
   title: string;
   format: EditFormat;
   music: { mediaId: string; start: number; volume: number } | null;
@@ -265,7 +288,11 @@ export interface VideoSession {
   reference_blueprint: Blueprint | null;
   /** Chosen shape for a video without an example; null uses the clips' shape. */
   aspect_ratio: AspectRatio | null;
+  motion_graphics: MotionGraphicsLevel;
+  playbook_enabled: boolean;
+  creator_profile_id: number | null;
   source_index: SourceIndex | null;
+  speech_index: SpeechIndex | null;
   document: EditDocument | null;
   composition_files: Record<string, string> | null;
   thumbnail_url: string | null;
@@ -302,7 +329,10 @@ export interface ToolCall {
     | 'list_files'
     | 'delete_file'
     | 'check'
-    | 'snapshot';
+    | 'snapshot'
+    | 'read_source_window'
+    | 'read_speech_window'
+    | 'submit_playbook_package';
   arguments: Record<string, unknown>;
 }
 
@@ -313,9 +343,9 @@ export interface ToolResult {
 }
 
 export type TurnResponse =
-  | { type: 'tools'; calls: ToolCall[]; text: string }
-  | { type: 'finish'; message: string }
-  | { type: 'limit' };
+  | { type: 'tools'; calls: ToolCall[]; text: string; research_fetches?: number }
+  | { type: 'finish'; message: string; research_fetches?: number }
+  | { type: 'limit'; research_fetches?: number };
 
 export interface Candidate {
   mediaId: string;

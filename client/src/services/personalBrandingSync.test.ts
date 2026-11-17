@@ -7,6 +7,7 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   execute: vi.fn(),
   importProfile: vi.fn(),
+  assetById: vi.fn(),
   select: vi.fn(async () => [{ name: 'server_id' }]),
 }));
 vi.mock('@tauri-apps/api/core', () => ({ invoke: vi.fn() }));
@@ -24,7 +25,7 @@ vi.mock('@/services/database/core', () => ({
 vi.mock('@/services/database', () => ({
   ensureOrganizationAssetColumns: vi.fn(),
   getAllCreatorProfiles: mocks.profiles,
-  getIntroOutroById: vi.fn(),
+  getIntroOutroById: mocks.assetById,
   getWatermarkImage: vi.fn(),
   createOrganizationIntroOutro: vi.fn(),
   createOrganizationWatermark: vi.fn(),
@@ -58,6 +59,7 @@ describe('desktop creator cloud sync', () => {
     mocks.post.mockResolvedValue({ data: { success: true, profile: { id: 11 } } });
     mocks.put.mockResolvedValue({ data: { success: true, profile: { id: 11 } } });
     mocks.get.mockResolvedValue({ data: { success: true, profiles: [], assets: [] } });
+    mocks.assetById.mockResolvedValue(null);
   });
   it('publishes personal scopes and platform metadata without duplicating assigned creators', async () => {
     expect((await syncPersonalBranding()).upsertedProfiles).toBe(2);
@@ -141,6 +143,26 @@ describe('desktop creator cloud sync', () => {
       );
     }
   );
+  it('uploads saved creator edit preferences as structured profile data', async () => {
+    const preferences = { editing: { preserveEveryWord: true }, sponsors: [{ name: 'Acme', code: 'REAL' }] };
+    mocks.profiles.mockResolvedValue([{ id: 'local-1', name: 'Creator', updated_at: 1700000002,
+      creator_skill_preferences: JSON.stringify(preferences), platform_links: [] }]);
+    mocks.get.mockResolvedValue({ data: { success: true, assets: [], profiles: [] } });
+    await syncPersonalBranding();
+    expect(mocks.post).toHaveBeenCalledWith('/user/creator-profiles',
+      expect.objectContaining({ creator_skill_preferences: preferences }));
+  });
+  it('publishes portrait asset selections using cloud asset IDs', async () => {
+    mocks.profiles.mockResolvedValue([{ id: 'local-1', name: 'Creator', updated_at: 1700000002,
+      intro_ratio_settings: JSON.stringify({ '16:9': null, '9:16': { assetId: 'portrait-intro' } }),
+      outro_ratio_settings: JSON.stringify({ '9:16': { assetId: 'portrait-outro' } }), platform_links: [] }]);
+    mocks.assetById.mockImplementation(async (id: string) => ({ id, file_path: `C:/assets/${id}.mp4`, server_id: id === 'portrait-intro' ? 15 : 16 }));
+    await syncPersonalBranding();
+    expect(mocks.post).toHaveBeenCalledWith('/user/creator-profiles', expect.objectContaining({
+      intro_ratio_settings: JSON.stringify({ '16:9': null, '9:16': { assetId: 15 } }),
+      outro_ratio_settings: JSON.stringify({ '9:16': { assetId: 16 } }),
+    }));
+  });
   it('imports web/mobile creators that have no desktop client ID', async () => {
     mocks.profiles.mockResolvedValue([]);
     const remote = { id: 42, client_id: null, name: 'Mobile creator' };

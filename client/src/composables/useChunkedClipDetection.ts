@@ -24,6 +24,7 @@ export interface ChunkedDetectionOptions {
   subtitleSettings?: { enabled: boolean; presetId: string } | null;
   /** Enhanced VOD detection: transcript + video + audio (2× detection credits). */
   enhanced?: boolean;
+  creatorSkillEnabled?: boolean;
   /** Optional streamer / project context for AI detection (platform, display name, reach tier). */
   streamerMetadata?: Record<string, unknown> | null;
 }
@@ -78,6 +79,7 @@ export function useChunkedClipDetection() {
 
   // Track subtitle settings for clip persistence
   let currentSubtitleSettings: { enabled: boolean; presetId: string } | null = null;
+  let currentCreatorSkillEnabled = false;
 
   // Optional creator reach context for AI detection.
   let currentStreamerMetadata: Record<string, unknown> | null = null;
@@ -213,6 +215,8 @@ export function useChunkedClipDetection() {
 
       console.log('[ChunkedClipDetection] Options received:', JSON.stringify(options));
       currentSubtitleSettings = options.subtitleSettings ?? null;
+      currentCreatorSkillEnabled = options.creatorSkillEnabled === true;
+      currentEnhanced = options.enhanced === true;
       currentStreamerMetadata = options.streamerMetadata ?? null;
 
       isProcessing.value = true;
@@ -753,11 +757,13 @@ export function useChunkedClipDetection() {
         {
           processingTimeMs: 0, // Cached processing is fast
           detectionModel: 'claude-3.5-sonnet-chunked',
-          serverResponseId: result.jobId || null,
+          serverResponseId: String(result.processing_info?.job_id ?? result.jobId ?? ''),
+          prepaidJobId: result.processing_info?.job_id ?? undefined,
           videoFilePath: projectVideo.file_path,
           rawVideoId: projectVideo.id,
         },
-        currentSubtitleSettings
+        currentSubtitleSettings,
+        currentCreatorSkillEnabled
       );
 
       // IMPORTANT: When using cached chunks, the full transcript isn't part of the response.
@@ -975,11 +981,13 @@ export function useChunkedClipDetection() {
         {
           processingTimeMs: 0,
           detectionModel: 'claude-3.5-sonnet-traditional',
-          serverResponseId: result.jobId || null,
+          serverResponseId: String(result.processing_info?.job_id ?? result.jobId ?? ''),
+          prepaidJobId: result.processing_info?.job_id ?? undefined,
           videoFilePath: projectVideo.file_path,
           rawVideoId: projectVideo.id,
         },
-        currentSubtitleSettings
+        currentSubtitleSettings,
+        currentCreatorSkillEnabled
       );
 
       showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`, undefined, 'clips');
@@ -1101,11 +1109,13 @@ export function useChunkedClipDetection() {
           processingTimeMs: 0,
           detectionModel: currentEnhanced ? 'gemini-enhanced-vod' : 'claude-3.5-sonnet-fresh',
           enhanced: currentEnhanced,
-          serverResponseId: result.jobId || null,
+          serverResponseId: String(result.processing_info?.job_id ?? result.jobId ?? ''),
+          prepaidJobId: result.processing_info?.job_id ?? undefined,
           videoFilePath: projectVideo.file_path,
           rawVideoId: projectVideo.id,
         },
-        currentSubtitleSettings
+        currentSubtitleSettings,
+        currentCreatorSkillEnabled
       );
 
       showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`, undefined, 'clips');
@@ -1215,11 +1225,13 @@ export function useChunkedClipDetection() {
           processingTimeMs: 0,
           detectionModel: currentEnhanced ? 'gemini-enhanced-vod' : 'claude-3.5-sonnet-fallback',
           enhanced: currentEnhanced,
-          serverResponseId: result.jobId || null,
+          serverResponseId: String(result.processing_info?.job_id ?? result.jobId ?? ''),
+          prepaidJobId: result.processing_info?.job_id ?? undefined,
           videoFilePath: projectVideo.file_path,
           rawVideoId: projectVideo.id,
         },
-        currentSubtitleSettings
+        currentSubtitleSettings,
+        currentCreatorSkillEnabled
       );
 
       showSuccess('Clips detected', `Found ${result.clips?.length || 0} clips`, undefined, 'clips');
@@ -1251,6 +1263,7 @@ export function useChunkedClipDetection() {
   }
 
   function appendStreamerMetadata(formData: FormData) {
+    if (currentCreatorSkillEnabled) formData.append('creator_skill_enabled', 'true');
     if (currentStreamerMetadata) {
       formData.append('streamer_metadata', JSON.stringify(currentStreamerMetadata));
     }

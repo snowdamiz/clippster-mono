@@ -28,6 +28,13 @@ export function builtClipRoutes(store: Store, config: Config, jobs: Jobs) {
     const latest = clip.builds!.at(-1)?.id === build.id
     clip.builds = clip.builds!.filter(value => value.id !== build.id)
     if (latest) clip.builtRevision = null
+    if (build.origin === 'creator_skill' && latest) {
+      clip.selectedVersion = 'raw'
+      if (clip.creatorSkill) {
+        clip.creatorSkill.status = 'failed'
+        clip.creatorSkill.reviewItems = ['The Clippster Skill render was deleted. Raw remains available.']
+      }
+    }
     store.save(project, owner)
     const directory = projectDirectory(config, project.id)
     await Promise.all([`${build.id}.mp4`, `${build.id}.mov`, `${build.id}-thumbnail.jpg`, ...(latest ? [`${clip.id}.mp4`] : [])].map(file => rm(join(directory, file), { force: true })))

@@ -3,6 +3,8 @@ import type { EditDocument, EditShot, MediaKind, VariableValue } from '../types'
 
 /** Linked media as the compiled project sees it. */
 export interface CompileMedia {
+  width?: number;
+  height?: number;
   /** Project-relative `src` from `linkMedia`. */
   src: string;
   kind: MediaKind;
@@ -50,6 +52,13 @@ const FONT_WEIGHTS: Record<string, number> = {
 };
 
 const num = (value: number) => String(Math.round(value * 1000) / 1000);
+
+function framingStyle(framing: EditShot['framing']): string | null {
+  if (!framing || framing.zoom <= 1) return null;
+  const zoom = framing.zoom;
+  const offset = (focus: number) => num(Math.max(1 - zoom, Math.min(0, 0.5 - zoom * focus)) * 100);
+  return `transform:translate(${offset(framing.x)}%,${offset(framing.y)}%) scale(${num(zoom)});transform-origin:top left`;
+}
 
 export function escapeHtml(value: string): string {
   return value
@@ -218,8 +227,43 @@ export function compileDocument(document: EditDocument, context: CompileContext)
       'data-duration': clipDuration,
       'data-track-index': 0,
     };
-    const source = { ...identity, ...timing, src: media?.src ?? '' };
-    const clip = shot.scene
+    const source = {
+      ...identity,
+      ...timing,
+      src: media?.src ?? '',
+      style: framingStyle(shot.framing),
+    };
+    const panelLayout = shot.creatorLayout && media && !shot.scene
+      ? (shot.creatorLayout.top ? ['top', 'speaker'] as const : ['speaker'] as const).map(role => {
+          if (!media.width || !media.height) throw new Error(`Missing source dimensions for panel layout on ${shot.id}`);
+          const crop = shot.creatorLayout![role]!;
+          const panelWidth = document.format.width;
+          const seam = shot.creatorLayout!.top ? Math.round(document.format.height * 860 / 1920) : 0;
+          const panelHeight = role === 'top' ? seam : document.format.height - seam;
+          const scale = Math.max(panelWidth / (crop.width * media.width), panelHeight / (crop.height * media.height));
+          const width = media.width * scale;
+          const height = media.height * scale;
+          const left = (panelWidth - crop.width * width) / 2 - crop.x * width;
+          const top = (panelHeight - crop.height * height) / 2 - crop.y * height;
+          const panelSource = {
+            ...timing, id: `shot-${shot.id}-${role}`, src: media.src,
+            style: `position:absolute;max-width:none;width:${num(width)}px;height:${num(height)}px;left:${num(left)}px;top:${num(top)}px`,
+          };
+          const element = media.kind === 'photo'
+            ? `<img ${attributes({ ...panelSource, alt: '' })} />`
+            : `<video ${attributes({ ...panelSource,
+                'data-media-start': Math.max(0, shot.sourceIn - overlap * shot.speed),
+                'data-playback-rate': shot.speed !== 1 ? shot.speed : null,
+                ...(role === 'speaker' && document.clipAudio > 0 && media.hasAudio
+                  ? { 'data-has-audio': 'true', 'data-volume': document.clipAudio }
+                  : { muted: true }), playsinline: true,
+              })}></video>`;
+          return `<div data-creator-panel="${role}" style="position:absolute;overflow:hidden;left:0;top:${role === 'top' ? 0 : seam}px;width:${panelWidth}px;height:${panelHeight}px">${element}</div>`;
+        }).join('')
+      : null;
+    const clip = panelLayout
+      ? `<div ${attributes({ ...identity, style: 'position:absolute;inset:0' })}>${panelLayout}</div>`
+      : shot.scene
       ? `<div ${attributes({ ...identity, ...placementAttributes(shot.scene.composition, { ...shot.scene.variables, __editorOwner: shot.id, __editorDuration: shot.duration }, timing, document.format, context) })}></div>`
       : media?.kind === 'photo'
         ? `<img ${attributes({ ...source, alt: '' })} />`
@@ -272,7 +316,7 @@ export function compileDocument(document: EditDocument, context: CompileContext)
           {
             'data-start': overlay.start,
             'data-duration': overlay.duration,
-            'data-track-index': overlay.lane === 'graphics' ? 2 : 3,
+            'data-track-index': overlay.lane === 'graphics' ? 2 : overlay.lane === 'text' ? 3 : overlay.lane === 'captions' ? 4 : 5,
           },
           document.format,
           context
@@ -335,6 +379,8 @@ ${indent(fontFaces, 6)}
       .overlay { position: absolute; inset: 0; }
       .overlay-graphics { z-index: 20; }
       .overlay-text { z-index: 30; }
+      .overlay-captions { z-index: 40; }
+      .overlay-sponsor { z-index: 50; }
     </style>
   </head>
   <body>

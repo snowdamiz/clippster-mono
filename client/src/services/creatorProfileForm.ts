@@ -17,4 +17,5 @@ export type CreatorProfileForm = {
     auto_dvr_enabled: boolean;
     scope: 'streamer' | 'global' | 'personal_studio';
     clip_build_defaults: CreatorClipBuildDefaults;
+    creator_skill_preferences?: string;
   };

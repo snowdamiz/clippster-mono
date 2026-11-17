@@ -29,8 +29,11 @@ export const workspaceClient = {
 }
 export const sourcePath = (id: string) => `${apiPrefix}/web/projects/${id}/source`
 export const clipPreviewPath = (projectId: string, clipId: string) => `${apiPrefix}/web/projects/${projectId}/clips/${clipId}/preview`
+export const clipPlaybackPath = (projectId: string, clipId: string) => `${apiPrefix}/web/projects/${projectId}/clips/${clipId}/playback`
 export const downloadPath = (id: string, clipId: string) =>
   `${apiPrefix}/web/projects/${id}/clips/${clipId}/download`
+export const creatorSkillRawDownloadPath = (id: string, clipId: string) =>
+  `${apiPrefix}/web/projects/${id}/clips/${clipId}/creator-skill/raw`
 export const framingAssetPath = (projectId: string, id?: string) => `${apiPrefix}/web/projects/${projectId}/framing-assets${id ? `/${id}` : ''}`
 function sendFile(method: string, url: string, body: Blob | null, timeout: number, onProgress?: (loaded: number) => void) {
   return new Promise<{ status: number; data: { error?: string; received?: number } }>((resolve, reject) => {

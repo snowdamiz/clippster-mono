@@ -419,6 +419,7 @@ export async function getClipsByProjectId(projectId: string): Promise<Clip[]> {
 
 export interface ProjectClipRow {
   id: string;
+  detection_session_id: string | null;
   name: string | null;
   start_time: number | null;
   end_time: number | null;
@@ -448,6 +449,7 @@ export async function getProjectClipRows(projectId: string): Promise<ProjectClip
   return db.getAllAsync<ProjectClipRow>(
     `SELECT
         c.id,
+        c.detection_session_id,
         c.name,
         c.start_time,
         c.end_time,
@@ -506,6 +508,10 @@ export async function deleteClip(clipId: string): Promise<void> {
   await db.runAsync('DELETE FROM clip_builds WHERE clip_id = ?', [clipId]);
   await db.runAsync('DELETE FROM clip_versions WHERE clip_id = ?', [clipId]);
   await db.runAsync('DELETE FROM clips WHERE id = ?', [clipId]);
+  const { clearClipVersionPreference } = await import('@/services/clipVersionPreference');
+  await clearClipVersionPreference(clipId);
+  const { clearMobileCreatorSkillState } = await import('@/services/creatorSkillMobile');
+  await clearMobileCreatorSkillState(clipId);
   if (clip?.project_id) await touchProject(clip.project_id);
 }
 

@@ -18,6 +18,7 @@ import { useChunkedTranscriptCache } from './useChunkedTranscriptCache';
 import { useToast } from '@/composables/useToast';
 import api from '@/services/api';
 import { type AudioChunk } from './useAudioChunking';
+import { audioChunkFile } from '@/utils/audioChunkFile';
 
 export interface TranscriptionOptions {
   chunkDurationMinutes?: number;
@@ -72,7 +73,8 @@ export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) 
     showCompletionToast: options.showChunkCompletionToast ?? true,
     showCacheReuseToast: options.showCacheReuseToast ?? true,
     showErrorToast: options.showErrorToast ?? true,
-    showAudioChunkingToast: options.showAudioChunkingToast ?? options.showChunkCompletionToast ?? true,
+    showAudioChunkingToast:
+      options.showAudioChunkingToast ?? options.showChunkCompletionToast ?? true,
   });
   let abortController: AbortController | null = null;
   let currentOrganizationId: number | null = null;
@@ -80,7 +82,10 @@ export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) 
   let currentFreeSingleClipTotalDurationSeconds: number | null = null;
 
   function normalizePathForCompare(path: string): string {
-    return path.replace(/\\/g, '/').replace(/^file:\/\//, '').toLowerCase();
+    return path
+      .replace(/\\/g, '/')
+      .replace(/^file:\/\//, '')
+      .toLowerCase();
   }
 
   function findRawVideoByPath(rows: RawVideo[], sourceVideoPath: string): RawVideo | null {
@@ -338,19 +343,9 @@ export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) 
         return;
       }
 
-      // Convert base64 to File
-      const binaryString = atob(chunk.base64_data);
-      const bytes = new Uint8Array(binaryString.length);
-      for (let j = 0; j < binaryString.length; j++) {
-        bytes[j] = binaryString.charCodeAt(j);
-      }
-
-      const blob = new Blob([bytes], { type: 'audio/mpeg' });
-      const audioFile = new File([blob], chunk.filename, { type: 'audio/mpeg' });
-
       const formData = new FormData();
       formData.append('project_id', projectId);
-      formData.append('audio', audioFile);
+      formData.append('audio', audioChunkFile(chunk));
       formData.append('duration', chunk.duration.toString());
       if (currentOrganizationId) {
         formData.append('organization_id', currentOrganizationId.toString());
@@ -406,8 +401,7 @@ export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) 
 
       if (!transcript) {
         throw (
-          lastError ||
-          new Error(`Failed to transcribe chunk ${i + 1} after ${maxRetries} attempts`)
+          lastError || new Error(`Failed to transcribe chunk ${i + 1} after ${maxRetries} attempts`)
         );
       }
 
@@ -462,7 +456,12 @@ export function useTranscriptionOnly(options: UseTranscriptionOnlyOptions = {}) 
       };
       dispatchTranscriptUpdated(projectId);
       if (shouldShowSuccessToast) {
-        showSuccess('Transcription complete', 'Transcript is ready for viewing', undefined, 'clips');
+        showSuccess(
+          'Transcription complete',
+          'Transcript is ready for viewing',
+          undefined,
+          'clips'
+        );
       }
       return { success: true, alreadyTranscribed: true };
     }

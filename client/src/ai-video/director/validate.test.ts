@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { MediaItem } from '../types';
 import { documentDuration, validateDocument, type ValidationContext } from './validate';
+import { creatorLayoutIssues } from './creatorLayout';
 
 const media: MediaItem[] = [
   {
@@ -46,6 +47,23 @@ const context: ValidationContext = {
   requireFiles: false,
 };
 
+it('validates measured playbook panels and rejects out-of-bounds regions', () => {
+  const raw = base();
+  const layout = { top: { x: 0, y: 0, width: .5, height: 1 }, speaker: { x: .5, y: 0, width: .5, height: 1 } };
+  const input = { ...raw, format: { width: 1080, height: 1920, fps: 30 }, shots: [{ ...raw.shots[0], move: 'none', creatorLayout: layout }] };
+  const valid = validateDocument(input, context);
+  expect(validateDocument({ ...input, creatorSkillEditorialVersion: 2 }, context).document.creatorSkillEditorialVersion).toBe(2);
+  expect(valid.errors).toEqual([]);
+  expect(valid.document.shots[0].creatorLayout).toEqual(layout);
+  const speakerOnly = validateDocument({ ...input, shots: [{ ...input.shots[0], creatorLayout: { speaker: layout.speaker } }] }, context);
+  expect(speakerOnly.errors).toEqual([]);
+  expect(creatorLayoutIssues(speakerOnly.document, 'm1')).toEqual([]);
+  expect(creatorLayoutIssues(valid.document, 'm1')).toEqual([]);
+  expect(creatorLayoutIssues({ ...valid.document, shots: [{ ...valid.document.shots[0], creatorLayout: undefined }] }, 'm1')[0]).toContain('center-cropped VOD');
+  const invalid = validateDocument({ ...input, shots: [{ ...input.shots[0], creatorLayout: { ...layout, speaker: { ...layout.speaker, x: .9 } } }] }, context);
+  expect(invalid.errors.some(error => error.includes('creatorLayout'))).toBe(true);
+});
+
 const base = () => ({
   title: 'Night drive',
   format: { width: 1920, height: 1080, fps: 30 },
@@ -89,6 +107,21 @@ const base = () => ({
 });
 
 describe('validateDocument', () => {
+  it('keeps a valid speaker crop and rejects crops outside the source frame', () => {
+    const valid = base();
+    const framed = validateDocument(
+      { ...valid, shots: [{ ...valid.shots[0], framing: { x: 0.25, y: 0.5, zoom: 2 } }] },
+      context
+    );
+    expect(framed.errors).toEqual([]);
+    expect(framed.document.shots[0].framing).toEqual({ x: 0.25, y: 0.5, zoom: 2 });
+    const invalid = validateDocument(
+      { ...valid, shots: [{ ...valid.shots[0], framing: { x: 1.5, y: 0.5, zoom: 2 } }] },
+      context
+    );
+    expect(invalid.errors.some((error) => error.includes('framing needs x and y'))).toBe(true);
+  });
+
   it('normalises a valid document', () => {
     const { document, errors, warnings } = validateDocument(base(), context);
     expect(errors).toEqual([]);

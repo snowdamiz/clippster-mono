@@ -7,13 +7,20 @@ import { useWorkspacePublishSubtitles } from './useWorkspacePublishSubtitles'
 import { useWorkspaceJobWaiter } from './useWorkspaceJobWaiter'
 import { workspaceClient } from './api'
 import { useToast } from './toasts'
+import { creatorSkillPublishBlockers } from '../../../client/src/services/creatorSkillReview'
 type Step = 'subtitles' | 'platforms' | 'framing' | 'export' | 'addons' | 'publish'
 export function useWorkspaceQuickPublish(project: () => WebProject, clip: () => WebClip | null, exporter: ReturnType<typeof useWorkspaceExport>, update: (workspace: WebWorkspace) => void, save: (id: string, patch: Partial<WebClip>) => Promise<void>, report: (cause: unknown) => void) {
   const show = ref(false), currentStep = ref<Step>('subtitles'), building = ref(false), buildProgress = ref(0), buildError = ref<string | null>(null)
   const publish = useWorkspacePublishTargets(project, clip, () => { show.value = false }, report), waitForJob = useWorkspaceJobWaiter(update)
   const subtitles = useWorkspacePublishSubtitles(project, clip, update, save, () => { currentStep.value = 'platforms' })
   const steps = [{ id: 'subtitles', label: 'Subtitles', icon: markRaw(Captions) }, { id: 'platforms', label: 'Platforms', icon: markRaw(LayoutGrid) }, { id: 'framing', label: 'Framing', icon: markRaw(Crop) }, { id: 'export', label: 'Export', icon: markRaw(Settings) }, { id: 'addons', label: 'Add-ons', icon: markRaw(Sparkle) }, { id: 'publish', label: 'Publish', icon: markRaw(Share2) }]
-  const visibleSteps = computed(() => steps.filter(step => step.id !== 'framing' || exporter.model.hasPortraitRatio)), currentStepIndex = computed(() => visibleSteps.value.findIndex(step => step.id === currentStep.value)), isBuilding = computed(() => building.value || publish.publishing.value)
+  const editedSkillBuild = computed(() => {
+    const selected = clip()
+    return selected?.selectedVersion === 'edited' && selected.builtRevision === selected.revision
+      ? selected.builds?.slice().reverse().find(build => build.origin === 'creator_skill' && build.revision === selected.revision)
+      : undefined
+  })
+  const visibleSteps = computed(() => editedSkillBuild.value ? steps.filter(step => step.id === 'publish') : steps.filter(step => step.id !== 'framing' || exporter.model.hasPortraitRatio)), currentStepIndex = computed(() => visibleSteps.value.findIndex(step => step.id === currentStep.value)), isBuilding = computed(() => building.value || publish.publishing.value)
   const canProceed = computed(() => !isBuilding.value && subtitles.model.subtitleSubState.value !== 'transcribing' && (currentStep.value !== 'platforms' || exporter.model.selectedRatios.length > 0))
   function plan() {
     const ratios = exporter.model.selectedRatios
@@ -23,6 +30,7 @@ export function useWorkspaceQuickPublish(project: () => WebProject, clip: () => 
   }
   async function build() {
     if (!clip()) return
+    if (editedSkillBuild.value) { publish.ready([editedSkillBuild.value]); return }
     building.value = true; buildError.value = null; plan()
     const previous = new Set(clip()!.builds?.map(value => value.id) || [])
     try {
@@ -43,6 +51,24 @@ export function useWorkspaceQuickPublish(project: () => WebProject, clip: () => 
     goToStep: (id: Step) => { if (canNavigateToStep(id)) { const previous = currentStep.value; currentStep.value = id; if (id === 'publish' && previous !== id) void build() } }, previousStep: () => { if (currentStep.value === 'subtitles') subtitles.model.subtitleSubState.value = 'choosing'; else currentStep.value = visibleSteps.value[Math.max(0, currentStepIndex.value - 1)].id as Step },
     handleClose: () => { if (!isBuilding.value) show.value = false }, handleNotNow, showManualPOIEditor: exporter.showManualPOIEditor, toggleCampaignSelectionMulti: exporter.model.toggleCampaignSelection,
     buildState: computed(() => ({ status: building.value ? 'building' : buildError.value ? 'error' : 'completed', progress: buildProgress.value, error: buildError.value })) })
-  async function open() { if (!clip()) return; subtitles.reset(); publish.reset(); currentStep.value = 'subtitles'; buildError.value = null; await exporter.open(false); show.value = true; void publish.load().catch(report) }
+  async function open() {
+    if (!clip()) return
+    if (clip()?.selectedVersion === 'edited') {
+      const blockers = creatorSkillPublishBlockers(clip()?.creatorSkill?.playbookPackage, clip()?.creatorSkill?.masterMd5)
+      if (blockers.length) {
+        useToast().error('Reviewer fixes required', `This edited master has ${blockers.length} unresolved review item${blockers.length === 1 ? '' : 's'}. ${blockers[0]}`)
+        return
+      }
+    }
+    subtitles.reset(); publish.reset(); buildError.value = null
+    await exporter.open(false)
+    if (editedSkillBuild.value) {
+      currentStep.value = 'publish'
+      publish.ready([editedSkillBuild.value])
+      publish.model.caption.value = clip()?.creatorSkill?.playbookPackage?.platformCopy[0]?.description ?? ''
+    } else currentStep.value = 'subtitles'
+    show.value = true
+    void publish.load().catch(report)
+  }
   return { model, open }
 }

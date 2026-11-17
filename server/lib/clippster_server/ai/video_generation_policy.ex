@@ -21,7 +21,7 @@ defmodule ClippsterServer.AI.VideoGenerationPolicy do
   @max_label_calls 80
   @max_reference_chunks 40
   @max_plan_runs_per_day 20
-  @max_output_seconds 60
+  @max_output_seconds 3600
   @agent_max_tokens 16_000
   @agent_reasoning_effort "medium"
   @plan_max_tokens 6_000

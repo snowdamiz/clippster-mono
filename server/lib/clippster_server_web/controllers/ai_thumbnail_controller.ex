@@ -26,6 +26,7 @@ defmodule ClippsterServerWeb.AIThumbnailController do
   @edit_credit_cost 2
   @optimize_credit_cost 8
 
+
   # ---------------------------------------------------------------------------
   # List / CRUD
   # ---------------------------------------------------------------------------

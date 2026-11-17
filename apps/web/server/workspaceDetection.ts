@@ -6,14 +6,15 @@ import { run } from './process'
 import { normalizeDetection } from './detection'
 import { captionPresetSettings } from '../../../client/src/utils/captionPresetSettings'
 import { requireValue } from './errors'
-export interface WorkspaceDetectionOptions { organizationId?: number | null; startTime?: number; endTime?: number; subtitlePreset?: string | null; enhanced?: boolean }
+export interface WorkspaceDetectionOptions { organizationId?: number | null; startTime?: number; endTime?: number; subtitlePreset?: string | null; enhanced?: boolean; creatorSkill?: boolean }
 export function detectionOptions(value: any, duration: number): WorkspaceDetectionOptions {
   const startTime = value?.startTime ?? 0, endTime = value?.endTime ?? duration, organizationId = value?.organizationId
   requireValue(Number.isFinite(startTime) && Number.isFinite(endTime) && startTime >= 0 && endTime > startTime && endTime <= duration + .05, 400, 'Choose a time range inside the video.')
   requireValue(organizationId == null || Number.isSafeInteger(organizationId) && organizationId > 0, 400, 'Choose a valid credit source.')
   requireValue(value?.enhanced === undefined || typeof value.enhanced === 'boolean', 400, 'Invalid detection mode.')
+  requireValue(value?.creatorSkill === undefined || typeof value.creatorSkill === 'boolean', 400, 'Invalid Clippster Skill option.')
   requireValue(value?.subtitlePreset == null || typeof value.subtitlePreset === 'string' && !!captionPresetSettings(value.subtitlePreset), 400, 'Choose a valid subtitle preset.')
-  return { startTime, endTime, organizationId, enhanced: value?.enhanced === true, subtitlePreset: value?.subtitlePreset || null }
+  return { startTime, endTime, organizationId, enhanced: value?.enhanced === true, subtitlePreset: value?.subtitlePreset || null, creatorSkill: value?.creatorSkill === true }
 }
 export async function detectWorkspace(project: WebProject, prompt: string, token: string, directory: string, work: string, config: Config, signal: AbortSignal, options: WorkspaceDetectionOptions, transcriptionOnly: boolean, progress: (value: number, message: string) => void) {
   const start = options.startTime ?? 0, end = options.endTime ?? project.duration

@@ -1,7 +1,7 @@
 import { beforeAll, afterAll, it, expect } from 'vitest'
-import { readFile, writeFile, access } from 'node:fs/promises'
+import { readFile, writeFile, access, copyFile, mkdir } from 'node:fs/promises'
 import { join } from 'node:path'
-import { randomUUID } from 'node:crypto'
+import { createHash, randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import type { WebWorkspace } from '@clippster/shared-types'
 import { startFixture, waitForJob } from './fixtures'
@@ -41,7 +41,7 @@ it('assembles spliced preview without gaps and maps clip transcription back to s
   expect(workspace.jobs[0].status, workspace.jobs[0].message).toBe('completed')
   expect(workspace.project.clips[0].subtitleWords?.[0]).toMatchObject({ word: 'Hello', start: .9 })
   const submitted = fixture.aiRequests().at(-1)!
-  expect(submitted.fields).toMatchObject({ free_single_clip: 'true', total_clip_seconds: '2.0000000000000004' })
+  expect(submitted.fields).toMatchObject({ free_single_clip: 'true', free_single_clip_total_duration: '2.0000000000000004' })
   expect(Number(submitted.fields.audio)).toBeGreaterThan(100)
 })
 
@@ -73,6 +73,44 @@ it('builds all formats with their own history and keeps old builds downloadable 
   expect((await request(`${path}/download?buildId=${built.builds![0].id}`)).status).toBe(200)
 }, 60000)
 
+it('blocks publishing an edited master with a current FIX FIRST review finding', async () => {
+  const projectId = workspace.project.id
+  const owner = (fixture.store.db.prepare('SELECT owner FROM projects WHERE id = ?').get(projectId) as { owner: string }).owner
+  const stored = fixture.store.get(projectId, owner)
+  const original = structuredClone(stored.clips[0])
+  const checksum = 'a'.repeat(32)
+  try {
+    const clip = stored.clips[0]
+    clip.builtRevision = clip.revision
+    clip.selectedVersion = 'edited'
+    clip.creatorSkill = {
+      status: 'needs_review', reviewItems: [], masterMd5: checksum,
+      playbookPackage: {
+        funnel: { stage: 'trust', reason: 'Source review', metric: 'saves' }, claims: [], sources: [], sponsors: [],
+        thumbnailConcepts: [], thumbnailHeadlines: [], platformCopy: [], reviewItems: [],
+        independentReview: [{ reviewer: 'Alex', severity: 'fix_first', outputTime: 1, finding: 'Private notification visible in the master.', masterMd5: checksum, reviewedAt: new Date().toISOString() }],
+      },
+    }
+    fixture.store.save(stored, owner)
+    const requestId = randomUUID()
+    const count = fixture.publishCalls()
+    const response = await request(`/projects/${projectId}/clips/${clip.id}/publish`, 'POST', { accountId: 10, requestId })
+    expect(response.status).toBe(409)
+    expect(await response.text()).toContain('FIX FIRST')
+    expect(fixture.publishCalls()).toBe(count)
+    expect(fixture.store.db.prepare('SELECT * FROM publications WHERE id = ?').get(requestId)).toBeUndefined()
+    const reviewPath = `/projects/${projectId}/clips/${clip.id}/creator-skill`
+    expect((await request(`${reviewPath}/independent-signoff`, 'PATCH', { reviewer: 'Alex', note: 'Watched the entire master and reviewed every flagged frame.' })).status).toBe(400)
+    expect((await request(`${reviewPath}/independent-review`, 'PATCH', { reviewer: 'Alex', severity: 'ok', outputTime: 1, finding: 'Rechecked the frame; the notification was not private.' })).status).toBe(200)
+    expect((await request(`${reviewPath}/independent-signoff`, 'PATCH', { reviewer: 'Alex', note: 'Watched the entire master against Raw, including speech and privacy.' })).status).toBe(200)
+    expect((await request(`/projects/${projectId}/clips/${clip.id}/publish`, 'POST', { accountId: 0, requestId: randomUUID() })).status).toBe(400)
+  } finally {
+    const current = fixture.store.get(projectId, owner)
+    current.clips[0] = original
+    fixture.store.save(current, owner)
+  }
+})
+
 it('saves Not Now as an owned manual project and cleans links when it is deleted', async () => {
   const clip = workspace.project.clips[0], path = `/projects/${workspace.project.id}/clips/${clip.id}/project`
   expect((await request(path, 'POST', undefined, other)).status).toBe(404)
@@ -103,6 +141,51 @@ it('forwards enhanced detection, range, credit source and subtitle preset and re
   workspace = await waitForJob(fixture.url, cookie, workspace.project.id)
   expect(workspace.jobs[0].status, workspace.jobs[0].message).toBe('completed')
   expect(fixture.aiRequests().filter(value => value.endpoint === '/api/clips/transcribe')).toHaveLength(transcriptions)
+})
+
+it('downloads the owned full playbook archive with Raw, Edited, notes and checksums', async () => {
+  const projectId = workspace.project.id
+  const owner = (fixture.store.db.prepare('SELECT owner FROM projects WHERE id = ?').get(projectId) as { owner: string }).owner
+  const stored = fixture.store.get(projectId, owner)
+  const original = structuredClone(stored.clips[0])
+  const clip = stored.clips[0]
+  const directory = join(fixture.directory, 'media', projectId)
+  const skillDir = join(directory, 'creator-skill', clip.id)
+  await mkdir(skillDir, { recursive: true })
+  const rawPath = join(skillDir, `creator-skill-${clip.id}.mp4`)
+  const masterPath = join(directory, `${clip.id}.mp4`)
+  await copyFile(fixture.source, rawPath)
+  await copyFile(fixture.source, masterPath)
+  const md5 = createHash('md5').update(await readFile(fixture.source)).digest('hex')
+  try {
+    clip.builtRevision = clip.revision
+    clip.selectedVersion = 'edited'
+    clip.builds ||= []
+    clip.builds.push({ id: randomUUID(), revision: clip.revision, aspectRatio: '16:9', format: 'mp4', origin: 'creator_skill', completedAt: Date.now(), duration: 2 })
+    clip.creatorSkill = { status: 'needs_review', reviewItems: [], rawClipMd5: md5, masterMd5: md5, playbookPackage: {
+      funnel: { stage: 'trust', reason: 'Source review', metric: 'saves' }, claims: [], sources: [], sponsors: [],
+      thumbnailConcepts: [], thumbnailHeadlines: [], platformCopy: [], reviewItems: [],
+    } }
+    fixture.store.save(stored, owner)
+    const path = `/projects/${projectId}/clips/${clip.id}/creator-skill/delivery`
+    expect((await request(path, 'GET', undefined, other)).status).toBe(404)
+    const response = await request(path)
+    expect(response.status, await response.clone().text().then(value => value.slice(0, 100))).toBe(200)
+    expect(response.headers.get('content-type')).toContain('application/zip')
+    const archive = join(fixture.directory, 'creator-skill-delivery.zip')
+    await writeFile(archive, Buffer.from(await response.arrayBuffer()))
+    const names = execFileSync('tar', ['-tf', archive], { encoding: 'utf8' })
+    expect(names).toContain('/raw.mp4')
+    expect(names).toContain('/edited-master.mp4')
+    expect(names).toContain('/claims.md')
+    expect(names).toContain('/checksums.md')
+    const checksumName = names.trim().split(/\r?\n/).find(name => name.endsWith('/checksums.md'))!
+    expect(execFileSync('tar', ['-xOf', archive, checksumName], { encoding: 'utf8' })).toContain(`${md5}  edited-master.mp4`)
+  } finally {
+    const current = fixture.store.get(projectId, owner)
+    current.clips[0] = original
+    fixture.store.save(current, owner)
+  }
 })
 
 it('persists B-roll suggestions privately and removes media builds with a clip', async () => {

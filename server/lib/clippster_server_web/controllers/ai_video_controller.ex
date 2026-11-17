@@ -5,8 +5,11 @@ defmodule ClippsterServerWeb.AIVideoController do
   """
 
   use ClippsterServerWeb, :controller
+  import Ecto.Query, warn: false
 
   require Logger
+  alias ClippsterServer.{Repo, Credits.ProcessingJob}
+  alias ClippsterServer.AI.VideoSession
 
   alias ClippsterServer.AI.{
     EditorAccess,
@@ -59,12 +62,42 @@ defmodule ClippsterServerWeb.AIVideoController do
 
   def create(conn, params) do
     with {:ok, attrs} <- session_attrs(params),
-         {:ok, session} <- VideoSessions.create_session(user_id(conn), attrs) do
+         :ok <- valid_creator_profile(user_id(conn), attrs),
+         {:ok, session} <- create_session_with_entitlement(user_id(conn), params, attrs) do
       json(conn, serialize_session(VideoSessions.with_messages(session)))
     else
       error -> render_error(conn, error)
     end
   end
+
+  defp create_session_with_entitlement(user_id, %{"creator_skill_job_id" => job_id}, attrs)
+       when is_integer(job_id) and job_id > 0 do
+    Repo.transaction(fn ->
+      job = Repo.one(from j in ProcessingJob, where: j.id == ^job_id and j.user_id == ^user_id, lock: "FOR UPDATE")
+      count = if job, do: Repo.aggregate(from(s in VideoSession, where: s.creator_skill_job_id == ^job_id), :count, :id), else: 0
+      limit = get_in(job && job.result_data, ["clip_count"])
+
+      if job && job.job_type == "clip_detection_creator_skill" && job.status == "completed" &&
+           attrs[:playbook_enabled] == true && is_integer(limit) && count < limit do
+        case VideoSessions.create_session(user_id, Map.merge(attrs, %{creator_skill_job_id: job_id, creator_skill_prepaid: true})) do
+          {:ok, session} -> session
+          {:error, changeset} -> Repo.rollback(changeset)
+        end
+      else
+        Repo.rollback({:error, "This detection job has no available Clippster Skill edits."})
+      end
+    end)
+    |> case do
+      {:ok, session} -> {:ok, session}
+      {:error, {:error, message}} -> {:error, message}
+      {:error, other} -> {:error, other}
+    end
+  end
+
+  defp create_session_with_entitlement(_user_id, %{"creator_skill_job_id" => _}, _attrs),
+    do: {:error, "Invalid Clippster Skill detection job."}
+
+  defp create_session_with_entitlement(user_id, _params, attrs), do: VideoSessions.create_session(user_id, attrs)
 
   def show(conn, %{"id" => id}) do
     with {:ok, session} <- fetch_video_session(conn, id) do
@@ -78,8 +111,10 @@ defmodule ClippsterServerWeb.AIVideoController do
   def update(conn, %{"id" => id} = params) do
     with {:ok, session} <- fetch_video_session(conn, id),
          {:ok, attrs} <- session_attrs(params),
+         :ok <- valid_creator_profile(user_id(conn), attrs),
          :ok <- ensure_no_run_for_edit(session, attrs),
-         {:ok, session} <- VideoSessions.update_session(session, forget_replaced_example(session, attrs)) do
+         {:ok, session} <-
+           VideoSessions.update_session(session, forget_replaced_example(session, attrs)) do
       json(conn, serialize_session(VideoSessions.with_messages(session)))
     end
     |> respond(conn)
@@ -98,13 +133,23 @@ defmodule ClippsterServerWeb.AIVideoController do
   def start_reference(conn, %{"id" => id}) do
     with {:ok, session} <- fetch_video_session(conn, id),
          {:ok, run} <- VideoRuns.start_reference_run(user_id(conn), session),
-         {:ok, _} <- VideoSessions.update_session(session, %{reference_labels: %{}, reference_blueprint: nil}) do
+         {:ok, _} <-
+           VideoSessions.update_session(session, %{
+             reference_labels: %{},
+             reference_blueprint: nil
+           }) do
       json(conn, %{run_id: run.id})
     end
     |> respond(conn)
   end
 
-  def reference_chunk(conn, %{"id" => id, "run_id" => run_id, "chunk_index" => chunk_index, "video" => video, "shots" => shots})
+  def reference_chunk(conn, %{
+        "id" => id,
+        "run_id" => run_id,
+        "chunk_index" => chunk_index,
+        "video" => video,
+        "shots" => shots
+      })
       when is_integer(chunk_index) and is_list(shots) do
     with {:ok, session} <- fetch_video_session(conn, id),
          {:ok, run} <- fetch_run(conn, run_id, "reference", session.id),
@@ -118,7 +163,11 @@ defmodule ClippsterServerWeb.AIVideoController do
 
   def reference_chunk(conn, _params), do: render_error(conn, {:error, "Missing chunk fields."})
 
-  def finish_reference(conn, %{"id" => id, "run_id" => run_id, "measurement" => %{"shots" => [_ | _]} = measurement} = params) do
+  def finish_reference(
+        conn,
+        %{"id" => id, "run_id" => run_id, "measurement" => %{"shots" => [_ | _]} = measurement} =
+          params
+      ) do
     with {:ok, session} <- fetch_video_session(conn, id),
          {:ok, run} <- fetch_run(conn, run_id, "reference", session.id) do
       blueprint = VideoBlueprint.build(measurement, session.reference_labels, params["beats"])
@@ -126,7 +175,8 @@ defmodule ClippsterServerWeb.AIVideoController do
       with {:ok, summary} <- VideoLabeler.summarize_reference(run, blueprint),
            blueprint = Map.merge(blueprint, summary),
            {:ok, _} <- VideoRuns.charge_reference_run(run),
-           {:ok, session} <- VideoSessions.update_session(session, %{reference_blueprint: blueprint}) do
+           {:ok, session} <-
+             VideoSessions.update_session(session, %{reference_blueprint: blueprint}) do
         json(conn, %{blueprint: session.reference_blueprint})
       else
         error ->
@@ -137,16 +187,26 @@ defmodule ClippsterServerWeb.AIVideoController do
     |> respond(conn)
   end
 
-  def finish_reference(conn, _params), do: render_error(conn, {:error, "The example measurement has no shots."})
+  def finish_reference(conn, _params),
+    do: render_error(conn, {:error, "The example measurement has no shots."})
 
   # -- Clips and planning ------------------------------------------------------------
 
   # Label one chunk of the user's footage, paid by the running build or, before one, the free planning run.
   def label_source(
         conn,
-        %{"id" => id, "content_hash" => hash, "chunk_key" => chunk_key, "chunk_start" => chunk_start, "kind" => kind, "media" => media, "segments" => segments}
+        %{
+          "id" => id,
+          "content_hash" => hash,
+          "chunk_key" => chunk_key,
+          "chunk_start" => chunk_start,
+          "kind" => kind,
+          "media" => media,
+          "segments" => segments
+        }
       )
-      when is_binary(hash) and is_binary(chunk_key) and is_number(chunk_start) and is_list(segments) do
+      when is_binary(hash) and is_binary(chunk_key) and is_number(chunk_start) and
+             is_list(segments) do
     with {:ok, session} <- fetch_video_session(conn, id),
          {:ok, run} <- label_run(conn, session),
          :ok <- VideoRuns.reserve_label_call(run, VideoGenerationPolicy.max_label_calls()),
@@ -157,7 +217,8 @@ defmodule ClippsterServerWeb.AIVideoController do
     |> respond(conn)
   end
 
-  def label_source(conn, _params), do: render_error(conn, {:error, "Missing source label fields."})
+  def label_source(conn, _params),
+    do: render_error(conn, {:error, "Missing source label fields."})
 
   # One message in the free planning chat: the AI's reply, with the updated plan when it changed.
   def plan(conn, %{"id" => id, "message" => message}) when is_binary(message) do
@@ -170,7 +231,15 @@ defmodule ClippsterServerWeb.AIVideoController do
          {:ok, reply} <- planner_reply(run, session, message) do
       phase = %{"phase" => VideoPlanner.phase()}
       {:ok, _} = VideoSessions.create_message(session.id, "user", message, phase)
-      {:ok, _} = VideoSessions.create_message(session.id, "assistant", reply.message, if(reply.plan, do: Map.put(phase, "plan", reply.plan), else: phase))
+
+      {:ok, _} =
+        VideoSessions.create_message(
+          session.id,
+          "assistant",
+          reply.message,
+          if(reply.plan, do: Map.put(phase, "plan", reply.plan), else: phase)
+        )
+
       {:ok, session} = apply_plan_shape(session, reply.plan)
       json(conn, serialize_session(VideoSessions.with_messages(session)))
     end
@@ -181,13 +250,15 @@ defmodule ClippsterServerWeb.AIVideoController do
 
   # -- Agent runs ------------------------------------------------------------------
 
-  def start_run(conn, %{"id" => id, "kind" => kind, "request" => request})
+  def start_run(conn, %{"id" => id, "kind" => kind, "request" => request} = params)
       when kind in ~w(generate revise) and is_binary(request) do
     request = String.trim(request)
+    max_credits = Map.get(params, "max_credits")
 
-    with {:ok, session} <- fetch_video_session(conn, id),
+    with :ok <- validate_max_credits(max_credits),
+         {:ok, session} <- fetch_video_session(conn, id),
          :ok <- ensure_can_run(session, kind, request),
-         {:ok, run} <- VideoRuns.start_agent_run(user_id(conn), session, kind, request) do
+         {:ok, run} <- VideoRuns.start_agent_run(user_id(conn), session, kind, request, max_credits) do
       if kind == "generate", do: :ok = VideoRuns.close_plan_run(session.id)
       {:ok, _} = VideoSessions.create_message(session.id, "user", request, %{"run_id" => run.id})
       {:ok, _} = VideoSessions.update_session(session, %{status: "working"})
@@ -196,7 +267,12 @@ defmodule ClippsterServerWeb.AIVideoController do
     |> respond(conn)
   end
 
-  def start_run(conn, _params), do: render_error(conn, {:error, "Choose generate or revise and include a request."})
+  def start_run(conn, _params),
+    do: render_error(conn, {:error, "Choose generate or revise and include a request."})
+
+  defp validate_max_credits(nil), do: :ok
+  defp validate_max_credits(value) when is_integer(value) and value >= 0, do: :ok
+  defp validate_max_credits(_), do: {:error, "Confirm a valid maximum credit cost."}
 
   def turn(conn, %{"run_id" => run_id} = params) do
     with {:ok, run} <- fetch_agent_run(conn, run_id),
@@ -205,34 +281,73 @@ defmodule ClippsterServerWeb.AIVideoController do
       input = %{brief: params["brief"], results: params["results"]}
 
       case VideoAgent.turn(run, session, input) do
-        {:tools, calls, text, _run} -> json(conn, %{type: "tools", calls: calls, text: text})
-        {:finish, message, _run} -> json(conn, %{type: "finish", message: message})
-        {:limit, _run} -> json(conn, %{type: "limit"})
-        {:error, :invalid, reason} -> {:error, reason}
-        {:error, reason} -> {:error, :bad_gateway, reason}
+        {:tools, calls, text, _run} ->
+          json(conn, %{
+            type: "tools",
+            calls: calls,
+            text: text,
+            research_fetches: research_fetches(run, conn)
+          })
+
+        {:finish, message, _run} ->
+          json(conn, %{
+            type: "finish",
+            message: message,
+            research_fetches: research_fetches(run, conn)
+          })
+
+        {:limit, _run} ->
+          json(conn, %{type: "limit", research_fetches: research_fetches(run, conn)})
+
+        {:error, :invalid, reason} ->
+          {:error, reason}
+
+        {:error, reason} ->
+          {:error, :bad_gateway, reason}
       end
     end
     |> respond(conn)
   end
 
-  def complete_run(conn, %{"run_id" => run_id, "document" => document, "composition_files" => files}) do
+  defp research_fetches(run, conn) do
+    VideoRuns.get_user_run(run.id, user_id(conn)).research_fetches
+  end
+
+  def complete_run(conn, %{
+        "run_id" => run_id,
+        "document" => document,
+        "composition_files" => files
+      }) do
     with {:ok, run} <- fetch_agent_run(conn, run_id),
          {:ok, session} <- fetch_video_session(conn, run.session_id),
          {:ok, attrs} <- session_attrs(%{"document" => document, "composition_files" => files}) do
-      unchanged? = attrs.document == session.document and attrs.composition_files == session.composition_files
+      unchanged? =
+        attrs.document == session.document and
+          attrs.composition_files == session.composition_files
+
       refund? = run.kind == "revise" and unchanged?
       message = (run.finish || %{})["message"] || default_finish_message(run.kind, refund?)
 
       {:ok, session} = VideoSessions.update_session(session, Map.put(attrs, :status, "ready"))
-      {:ok, _} = VideoSessions.create_message(session.id, "assistant", message, %{"run_id" => run.id, "refunded" => refund?})
+
+      {:ok, _} =
+        VideoSessions.create_message(session.id, "assistant", message, %{
+          "run_id" => run.id,
+          "refunded" => refund?
+        })
+
       {:ok, run} = VideoRuns.complete(run, refund?)
 
-      json(conn, %{run: serialize_run(run), session: serialize_session(VideoSessions.with_messages(session))})
+      json(conn, %{
+        run: serialize_run(run),
+        session: serialize_session(VideoSessions.with_messages(session))
+      })
     end
     |> respond(conn)
   end
 
-  def complete_run(conn, _params), do: render_error(conn, {:error, "The finished edit is missing."})
+  def complete_run(conn, _params),
+    do: render_error(conn, {:error, "The finished edit is missing."})
 
   def fail_run(conn, %{"run_id" => run_id} = params) do
     with {:ok, run} <- fetch_user_run(conn, run_id) do
@@ -279,19 +394,33 @@ defmodule ClippsterServerWeb.AIVideoController do
 
   defp fetch_run(conn, run_id, kind, session_id) do
     case fetch_user_run(conn, run_id) do
-      {:ok, %VideoRun{kind: ^kind, session_id: ^session_id, status: "running"} = run} -> {:ok, run}
-      {:ok, %VideoRun{status: "running"}} -> {:error, :not_found}
-      {:ok, %VideoRun{error: error}} -> {:error, :conflict, error || "This run has already ended."}
-      error -> error
+      {:ok, %VideoRun{kind: ^kind, session_id: ^session_id, status: "running"} = run} ->
+        {:ok, run}
+
+      {:ok, %VideoRun{status: "running"}} ->
+        {:error, :not_found}
+
+      {:ok, %VideoRun{error: error}} ->
+        {:error, :conflict, error || "This run has already ended."}
+
+      error ->
+        error
     end
   end
 
   defp fetch_agent_run(conn, run_id) do
     case fetch_user_run(conn, run_id) do
-      {:ok, %VideoRun{kind: kind, status: "running"} = run} when kind in ~w(generate revise) -> {:ok, run}
-      {:ok, %VideoRun{kind: "reference"}} -> {:error, :not_found}
-      {:ok, %VideoRun{error: error}} -> {:error, :conflict, error || "This run has already ended."}
-      error -> error
+      {:ok, %VideoRun{kind: kind, status: "running"} = run} when kind in ~w(generate revise) ->
+        {:ok, run}
+
+      {:ok, %VideoRun{kind: "reference"}} ->
+        {:error, :not_found}
+
+      {:ok, %VideoRun{error: error}} ->
+        {:error, :conflict, error || "This run has already ended."}
+
+      error ->
+        error
     end
   end
 
@@ -305,11 +434,20 @@ defmodule ClippsterServerWeb.AIVideoController do
 
   defp ensure_can_plan(session, message) do
     cond do
-      message == "" -> {:error, "Write a message."}
-      String.length(message) > @max_plan_message_chars -> {:error, "Keep messages under #{@max_plan_message_chars} characters."}
-      VideoRuns.running_agent_run(session.id) -> {:error, :run_in_progress}
-      session.reference && is_nil(session.reference_blueprint) -> {:error, "The example video hasn't been analyzed yet."}
-      true -> :ok
+      message == "" ->
+        {:error, "Write a message."}
+
+      String.length(message) > @max_plan_message_chars ->
+        {:error, "Keep messages under #{@max_plan_message_chars} characters."}
+
+      VideoRuns.running_agent_run(session.id) ->
+        {:error, :run_in_progress}
+
+      session.reference && is_nil(session.reference_blueprint) ->
+        {:error, "The example video hasn't been analyzed yet."}
+
+      true ->
+        :ok
     end
   end
 
@@ -322,8 +460,9 @@ defmodule ClippsterServerWeb.AIVideoController do
   end
 
   # Without an example, the plan decides the shape (for example 9:16 once the user says TikTok).
-  defp apply_plan_shape(%{reference: nil, aspect_ratio: current} = session, %{"aspect" => aspect}) when aspect != current,
-    do: VideoSessions.update_session(session, %{aspect_ratio: aspect})
+  defp apply_plan_shape(%{reference: nil, aspect_ratio: current} = session, %{"aspect" => aspect})
+       when aspect != current,
+       do: VideoSessions.update_session(session, %{aspect_ratio: aspect})
 
   defp apply_plan_shape(session, _plan), do: {:ok, session}
 
@@ -337,11 +476,15 @@ defmodule ClippsterServerWeb.AIVideoController do
   end
 
   defp ensure_can_run(session, "revise", _request) do
-    if is_map(session.document), do: :ok, else: {:error, "There's no video to change yet. Press Go first."}
+    if is_map(session.document),
+      do: :ok,
+      else: {:error, "There's no video to change yet. Press Go first."}
   end
 
   defp ensure_no_run_for_edit(session, attrs) do
-    editing? = Map.has_key?(attrs, :document) or Map.has_key?(attrs, :composition_files) or Map.has_key?(attrs, :media_items)
+    editing? =
+      Map.has_key?(attrs, :document) or Map.has_key?(attrs, :composition_files) or
+        Map.has_key?(attrs, :media_items)
 
     if editing? and VideoRuns.running_agent_run(session.id),
       do: {:error, :conflict, "Wait for the AI to finish before editing."},
@@ -352,7 +495,11 @@ defmodule ClippsterServerWeb.AIVideoController do
     if VideoRuns.running_agent_run(session.id) do
       session
     else
-      {:ok, session} = VideoSessions.update_session(session, %{status: if(session.document, do: "ready", else: "draft")})
+      {:ok, session} =
+        VideoSessions.update_session(session, %{
+          status: if(session.document, do: "ready", else: "draft")
+        })
+
       session
     end
   end
@@ -360,41 +507,99 @@ defmodule ClippsterServerWeb.AIVideoController do
   defp reset_status_if_idle(session), do: session
 
   # What the AI learned from an example belongs to that example; a removed or replaced one takes it along.
-  defp forget_replaced_example(session, %{reference: reference} = attrs) when reference != session.reference,
-    do: Map.merge(attrs, %{reference_blueprint: nil, reference_labels: %{}})
+  defp forget_replaced_example(session, %{reference: reference} = attrs)
+       when reference != session.reference,
+       do: Map.merge(attrs, %{reference_blueprint: nil, reference_labels: %{}})
 
   defp forget_replaced_example(_session, attrs), do: attrs
 
   defp session_attrs(params) do
-    Enum.reduce_while(~w(name aspect_ratio media_items reference document composition_files), {:ok, %{}}, fn key, {:ok, acc} ->
-      if Map.has_key?(params, key) do
-        case cast_attr(key, params[key]) do
-          {:ok, value} -> {:cont, {:ok, Map.put(acc, String.to_existing_atom(key), value)}}
-          {:error, _} = error -> {:halt, error}
+    Enum.reduce_while(
+      ~w(name aspect_ratio motion_graphics playbook_enabled creator_profile_id media_items reference speech_index document composition_files),
+      {:ok, %{}},
+      fn key, {:ok, acc} ->
+        if Map.has_key?(params, key) do
+          case cast_attr(key, params[key]) do
+            {:ok, value} -> {:cont, {:ok, Map.put(acc, String.to_existing_atom(key), value)}}
+            {:error, _} = error -> {:halt, error}
+          end
+        else
+          {:cont, {:ok, acc}}
         end
-      else
-        {:cont, {:ok, acc}}
       end
-    end)
+    )
   end
 
-  defp cast_attr(key, value) when key in ~w(name aspect_ratio) and (is_binary(value) or is_nil(value)), do: {:ok, value}
+  defp valid_creator_profile(_user_id, %{creator_profile_id: nil}), do: :ok
 
-  defp cast_attr("media_items", items) when is_list(items) and length(items) <= @max_media_items do
+  defp valid_creator_profile(user_id, %{creator_profile_id: id}) do
+    if ClippsterServer.UserBranding.get_user_creator_profile(user_id, id),
+      do: :ok,
+      else: {:error, "Creator profile not found."}
+  end
+
+  defp valid_creator_profile(_user_id, _attrs), do: :ok
+
+  defp cast_attr(key, value)
+       when key in ~w(name aspect_ratio) and (is_binary(value) or is_nil(value)), do: {:ok, value}
+
+  defp cast_attr("motion_graphics", value) when value in ~w(none light full), do: {:ok, value}
+  defp cast_attr("playbook_enabled", value) when is_boolean(value), do: {:ok, value}
+
+  defp cast_attr("creator_profile_id", value) when is_integer(value) and value > 0,
+    do: {:ok, value}
+
+  defp cast_attr("creator_profile_id", nil), do: {:ok, nil}
+
+  defp cast_attr("media_items", items)
+       when is_list(items) and length(items) <= @max_media_items do
     if Enum.all?(items, &(is_map(&1) and is_binary(&1["id"]) and &1["kind"] in @media_kinds)),
       do: {:ok, Enum.map(items, &Map.take(&1, @media_item_keys))},
       else: {:error, "Each media item needs an id and a kind (video, photo or audio)."}
   end
 
-  defp cast_attr("reference", reference) when is_map(reference), do: {:ok, Map.take(reference, @reference_keys)}
+  defp cast_attr("reference", reference) when is_map(reference),
+    do: {:ok, Map.take(reference, @reference_keys)}
+
   defp cast_attr("reference", nil), do: {:ok, nil}
 
+  defp cast_attr("speech_index", index) when is_map(index) do
+    valid? =
+      map_size(index) <= @max_media_items and
+        Enum.all?(index, fn {hash, segments} ->
+          is_binary(hash) and byte_size(hash) <= 128 and is_list(segments) and
+            length(segments) <= 5_000 and
+            Enum.all?(segments, fn segment ->
+              is_map(segment) and is_number(segment["start"]) and
+                is_number(segment["end"]) and segment["start"] >= 0 and
+                segment["end"] > segment["start"] and is_binary(segment["text"]) and
+                byte_size(segment["text"]) <= 2_000 and
+                (is_nil(segment["speakerId"]) or
+                   (is_binary(segment["speakerId"]) and byte_size(segment["speakerId"]) <= 100)) and
+                (is_nil(segment["speakerName"]) or
+                   (is_binary(segment["speakerName"]) and byte_size(segment["speakerName"]) <= 100)) and
+                (is_nil(segment["speakerPosition"]) or
+                   segment["speakerPosition"] in ~w(left center right wide))
+            end)
+        end)
+
+    if valid? and byte_size(Jason.encode!(index)) <= 3_000_000,
+      do: {:ok, index},
+      else: {:error, "The speech analysis is too large or invalid."}
+  end
+
   defp cast_attr("document", document) when is_map(document) do
-    if byte_size(Jason.encode!(document)) <= @max_document_bytes, do: {:ok, document}, else: {:error, "The edit is too large."}
+    if byte_size(Jason.encode!(document)) <= @max_document_bytes,
+      do: {:ok, document},
+      else: {:error, "The edit is too large."}
   end
 
   defp cast_attr("composition_files", files) when is_map(files) do
-    valid? = Enum.all?(files, fn {path, content} -> is_binary(content) and Regex.match?(@composition_path, path) end)
+    valid? =
+      Enum.all?(files, fn {path, content} ->
+        is_binary(content) and Regex.match?(@composition_path, path)
+      end)
+
     size = files |> Map.values() |> Enum.map(&byte_size(to_string(&1))) |> Enum.sum()
 
     cond do
@@ -406,8 +611,12 @@ defmodule ClippsterServerWeb.AIVideoController do
 
   defp cast_attr(key, _value), do: {:error, "Invalid #{key}."}
 
-  defp default_finish_message("revise", true), do: "I couldn't make that change, so you weren't charged. Try describing it another way."
-  defp default_finish_message(_kind, _refunded), do: "Here's your video. Tell me anything you'd like changed."
+  defp default_finish_message("revise", true),
+    do: "I couldn't make that change, so you weren't charged. Try describing it another way."
+
+  defp default_finish_message(_kind, _refunded),
+    do: "Here's your video. Tell me anything you'd like changed."
+
   defp serialize_session(session) do
     running = VideoRuns.running_agent_run(session.id)
 
@@ -416,17 +625,25 @@ defmodule ClippsterServerWeb.AIVideoController do
       name: session.name,
       status: session.status,
       aspect_ratio: session.aspect_ratio,
+      motion_graphics: session.motion_graphics,
+      playbook_enabled: session.playbook_enabled,
+      creator_profile_id: session.creator_profile_id,
       media_items: session.media_items,
       reference: session.reference,
       reference_blueprint: session.reference_blueprint,
       source_index: session.source_index,
+      speech_index: session.speech_index,
       document: session.document,
       composition_files: session.composition_files,
       thumbnail_url: session.thumbnail_url,
       running_run: running && serialize_run(running),
       messages:
         if(Ecto.assoc_loaded?(session.messages),
-          do: Enum.map(session.messages, &Map.take(&1, [:id, :role, :content, :metadata, :inserted_at])),
+          do:
+            Enum.map(
+              session.messages,
+              &Map.take(&1, [:id, :role, :content, :metadata, :inserted_at])
+            ),
           else: []
         ),
       inserted_at: session.inserted_at,
@@ -442,25 +659,45 @@ defmodule ClippsterServerWeb.AIVideoController do
   defp respond({:error, _, _} = error, conn), do: render_error(conn, error)
   defp respond(%Plug.Conn{} = conn, _conn), do: conn
 
-  defp render_error(conn, {:error, :not_found}), do: conn |> put_status(:not_found) |> json(%{error: "Not found"})
+  defp render_error(conn, {:error, :not_found}),
+    do: conn |> put_status(:not_found) |> json(%{error: "Not found"})
 
   defp render_error(conn, {:error, :insufficient_credits, balance}),
-    do: conn |> put_status(:payment_required) |> json(%{error: "Not enough credits", remaining: balance})
+    do:
+      conn
+      |> put_status(:payment_required)
+      |> json(%{error: "Not enough credits", remaining: balance})
 
   defp render_error(conn, {:error, :run_in_progress}),
-    do: conn |> put_status(:conflict) |> json(%{error: "The AI is already working on this video."})
+    do:
+      conn |> put_status(:conflict) |> json(%{error: "The AI is already working on this video."})
+
+  defp render_error(conn, {:error, :price_increased, cost}),
+    do: conn |> put_status(:conflict) |> json(%{error: "The AI edit price is now #{cost} credits. Review the new cost before starting."})
 
   defp render_error(conn, {:error, :label_limit}),
-    do: conn |> put_status(:too_many_requests) |> json(%{error: "The AI has looked at as much footage as it can for now."})
+    do:
+      conn
+      |> put_status(:too_many_requests)
+      |> json(%{error: "The AI has looked at as much footage as it can for now."})
 
   defp render_error(conn, {:error, :plan_limit}),
-    do: conn |> put_status(:too_many_requests) |> json(%{error: "You've reached today's limit for free planning. Press Build to make the video."})
+    do:
+      conn
+      |> put_status(:too_many_requests)
+      |> json(%{
+        error: "You've reached today's limit for free planning. Press Build to make the video."
+      })
 
-  defp render_error(conn, {:error, :conflict, message}), do: conn |> put_status(:conflict) |> json(%{error: message})
+  defp render_error(conn, {:error, :conflict, message}),
+    do: conn |> put_status(:conflict) |> json(%{error: message})
 
   defp render_error(conn, {:error, :bad_gateway, message}) do
     Logger.warning("[AIVideo] agent turn failed: #{message}")
-    conn |> put_status(:bad_gateway) |> json(%{error: "The AI service had a problem. Try again in a moment."})
+
+    conn
+    |> put_status(:bad_gateway)
+    |> json(%{error: "The AI service had a problem. Try again in a moment."})
   end
 
   defp render_error(conn, {:error, %Ecto.Changeset{} = changeset}) do

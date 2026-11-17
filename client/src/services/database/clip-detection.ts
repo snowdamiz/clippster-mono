@@ -10,6 +10,7 @@ import { getRawVideosByProjectId } from './raw-videos';
 import { getProject } from './projects';
 import { getProjectVodPresetConfig } from './vod-presets';
 import { updateClipFullSubtitleSettings, updateClipSubtitleSettings } from './clips';
+import { saveCreatorSkillEdit } from './creator-skill-edits';
 import type { ClipWithVersion, ClipSegment, ClipWithVersionAndSegment } from './types';
 import type { SubtitleSettings } from '@/types';
 import { invoke } from '@tauri-apps/api/core';
@@ -549,11 +550,13 @@ export async function persistClipDetectionResults(
     processingTimeMs?: number;
     detectionModel?: string;
     serverResponseId?: string | null;
+    prepaidJobId?: number;
     enhanced?: boolean;
     videoFilePath?: string;
     rawVideoId?: string;
   },
-  subtitleSettings?: { enabled: boolean; presetId: string } | null
+  subtitleSettings?: { enabled: boolean; presetId: string } | null,
+  creatorSkillEnabled = false
 ): Promise<string> {
   const startTime = Date.now();
   
@@ -824,8 +827,29 @@ export async function persistClipDetectionResults(
         thumbnailPath
       );
       await applyDetectionSubtitleChoiceToClip(clipId, projectId, subtitleSettings);
+      if (creatorSkillEnabled) {
+        await saveCreatorSkillEdit({
+          clipId,
+          detectionSessionId: sessionId,
+          prepaidJobId: metadata?.prepaidJobId,
+          status: 'awaiting_approval',
+          selectedVersion: 'raw',
+          rawSource: {
+            path: metadata?.videoFilePath || '',
+            segments: clipInfo.segments.length
+              ? clipInfo.segments.map((segment: { start_time: number; end_time: number }) => ({
+                  start: segment.start_time,
+                  end: segment.end_time,
+                }))
+              : [{ start: clipInfo.startTime, end: clipInfo.endTime }],
+          },
+          sources: [],
+          reviewItems: [],
+        });
+      }
     } catch (e) {
       console.error(`[Database] Failed to create clip ${i + 1}:`, e);
+      throw new Error(`Clip ${i + 1} could not be saved${creatorSkillEnabled ? ' with its Clippster Skill edit' : ''}. Detection is incomplete; check saved clips before retrying.`);
     }
   }
 

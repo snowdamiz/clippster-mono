@@ -15,6 +15,8 @@ import { applyBranding } from './branding'
 import { run } from './process'
 import { transcribeClip } from './clipTranscription'
 import { waveformData } from './waveform'
+import { processCreatorSkillClip } from './creatorSkillProcess'
+import { CreatorSkillApi } from './creatorSkillApi'
 export class Jobs {
   private running: { job: StoredJob; abort: AbortController; promise: Promise<void> } | null = null
   private stopped = false
@@ -34,6 +36,28 @@ export class Jobs {
         'The service restarted. Review the project before retrying; an AI request may have used credits.'
       this.store.saveJob(job)
       const project = this.store.get(job.projectId, job.owner)
+      const session = this.store.session(job.sessionId)
+      let api: CreatorSkillApi | null = null
+      if (session) {
+        try { api = new CreatorSkillApi(this.config, this.auth.token(session)) } catch { /* Surface refund uncertainty on the clip. */ }
+      }
+      for (const clip of project.clips) {
+        if (clip.creatorSkill && ['queued', 'editing', 'rendering'].includes(clip.creatorSkill.status)) {
+          let refundUnconfirmed = false
+          if (api && clip.creatorSkill.aiSessionId) {
+            const remote = await api.session(clip.creatorSkill.aiSessionId).catch(() => null)
+            if (remote?.running_run) {
+              const refunded = await api.fail(remote.running_run.id, 'Web worker restarted').catch(() => null)
+              refundUnconfirmed = !refunded
+            } else if (!remote) refundUnconfirmed = true
+          } else if (clip.creatorSkill.aiSessionId) refundUnconfirmed = true
+          clip.creatorSkill.status = 'failed'
+          clip.creatorSkill.reviewItems = [refundUnconfirmed
+            ? 'Editing was interrupted and a credit refund could not be confirmed. Check Billing before retrying.'
+            : 'Editing was interrupted. Review this clip before starting a new paid run.']
+        }
+      }
+      this.store.save(project, job.owner)
       if (project.status === 'importing') {
         project.status = 'error'
         project.error = 'Import interrupted. Please retry.'
@@ -201,9 +225,38 @@ export class Jobs {
         for (const clip of result.clips) clip.detection = { ...clip.detection, sessionId: job.id, promptName: String(job.payload.prompt || '').slice(0, 100) }
         project.words = result.words
         ;(project.transcriptRanges ||= []).push({ start: Number(job.payload.startTime ?? 0), end: Number(job.payload.endTime ?? project.duration) })
+        if (job.kind === 'detect' && job.payload.creatorSkill === true) {
+          for (const clip of result.clips) {
+            clip.selectedVersion = 'raw'
+            clip.creatorSkill = { status: 'awaiting_approval', reviewItems: [] }
+          }
+          this.store.save(project, job.owner)
+        }
         job.message = result.clips.length
           ? `${result.clips.length} clips found`
           : 'Analysis complete. No matching moments found. Try a different prompt.'
+      } else if (job.kind === 'creator_skill') {
+        const clip = project.clips.find(value => value.id === job.clipId)
+        requireValue(clip?.creatorSkill?.status === 'queued', 409, 'This clip is not queued for Clippster Skill.')
+        await processCreatorSkillClip({
+          project, clip, directory, config: this.config, token: this.auth.token(session), signal,
+          maxCreditsPerClip: Number(job.payload.maxCreditsPerClip),
+          save: () => this.store.save(project, job.owner), progress,
+        })
+        job.message = 'Clippster Skill processing finished. Review the clip status.'
+      } else if (job.kind === 'creator_skill_batch') {
+        const ids = Array.isArray(job.payload.clipIds) ? job.payload.clipIds.filter((id): id is string => typeof id === 'string') : []
+        requireValue(ids.length > 0, 400, 'No detected clips were selected.')
+        for (const [index, id] of ids.entries()) {
+          signal.throwIfAborted()
+          const clip = project.clips.find(value => value.id === id)
+          if (clip?.creatorSkill?.status !== 'queued') continue
+          progress(Math.round(index / ids.length * 95), `Pre-editing ${index + 1} of ${ids.length}…`)
+          await processCreatorSkillClip({ project, clip, directory, config: this.config, token: this.auth.token(session), signal,
+            maxCreditsPerClip: Number(job.payload.maxCreditsPerClip),
+            save: () => this.store.save(project, job.owner), progress })
+        }
+        job.message = 'Clippster Skill processing finished. Review each clip.'
       } else {
         const clip = project.clips.find((clip) => clip.id === job.payload.clipId)
         requireValue(clip, 404, 'Clip not found.')

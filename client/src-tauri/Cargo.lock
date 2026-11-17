@@ -868,6 +868,7 @@ dependencies = [
  "image",
  "log",
  "lru",
+ "md-5",
  "num_cpus",
  "objc",
  "once_cell",

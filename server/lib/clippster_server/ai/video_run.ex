@@ -22,6 +22,7 @@ defmodule ClippsterServer.AI.VideoRun do
     field :refunded, :boolean, default: false
     field :turns, :integer, default: 0
     field :label_calls, :integer, default: 0
+    field :research_fetches, :integer, default: 0
     field :messages, {:array, :map}, default: []
     field :finish, :map
     field :cost_usd, :decimal, default: Decimal.new(0)
@@ -45,6 +46,7 @@ defmodule ClippsterServer.AI.VideoRun do
       :refunded,
       :turns,
       :label_calls,
+      :research_fetches,
       :messages,
       :finish,
       :cost_usd,
@@ -55,7 +57,7 @@ defmodule ClippsterServer.AI.VideoRun do
     |> validate_required([:kind, :status, :user_id])
     |> validate_inclusion(:kind, @kinds)
     |> validate_inclusion(:status, @statuses)
-    |> validate_length(:request, max: 2_000)
+    |> validate_length(:request, max: 50_000)
     |> foreign_key_constraint(:session_id)
     |> foreign_key_constraint(:user_id)
     |> unique_constraint(:session_id, name: :ai_video_runs_one_running_agent_run)

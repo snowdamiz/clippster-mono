@@ -7,11 +7,15 @@ import { execFileSync } from 'node:child_process'
 import { readConfig } from '../server/config'
 import { createWebApp } from '../server/app'
 import type { AuthUser, PlanAccount } from '@clippster/shared-types'
+import { mockCreatorSkillEditor } from './mockCreatorSkillEditor'
 /** Test-only upstream. Exercises the real web service/FFmpeg without billing accounts. */
 export async function startFixture(
   options: { port?: number; origin?: string; accountOrigin?: string; directory?: string;
     restrictions?: { restricted?: boolean; restrictions?: { allow_custom_prompts?: boolean; allow_personal_social?: boolean; require_clip_approval?: boolean; restricting_org_id?: number } };
     campaignsEnabled?: boolean;
+    mockCreatorSkillEditor?: boolean;
+    creatorAssets?: Array<{ id: number; asset_type: 'intro' | 'outro'; url: string; mime_type: string }>;
+    detectedClips?: Array<{ name: string; segments: Array<{ start_time: number; end_time: number }> }>;
     creatorProfiles?: Array<Record<string, unknown>>;
     user?: Omit<Partial<AuthUser>, 'subscription'> & PlanAccount } = {}
 ) {
@@ -21,6 +25,7 @@ export async function startFixture(
   let detectionCalls = 0
   const aiRequests: { endpoint: string; fields: Record<string, string | number>; video?: { height: number; codecs: string[] } }[] = []
   let publishCalls = 0
+  const editor = options.mockCreatorSkillEditor ? mockCreatorSkillEditor() : null
   const kickRequests: string[] = []
   const brandingAssets = new Map<string, Array<Record<string, unknown>>>()
   const brandingUploads: { owner: string; type: string; bytes: number }[] = []
@@ -33,6 +38,7 @@ export async function startFixture(
     for await (const chunk of req) chunks.push(Buffer.from(chunk))
     const creatorProfiles = req.headers.authorization === 'Bearer fixture-token-1'
       ? options.creatorProfiles || [] : []
+    if (editor?.handle(req, res, Buffer.concat(chunks))) return
     if (req.url === '/api/auth/google/start') {
       const input = JSON.parse(Buffer.concat(chunks).toString())
       oauth.set(`fixture-google-${input.client_state}`, input)
@@ -142,7 +148,7 @@ export async function startFixture(
     } else if (req.url === '/api/user/creator-profiles' && req.method === 'GET') {
       res.end(JSON.stringify({ success: true, profiles: creatorProfiles }))
     } else if (req.url === '/api/user/branding') {
-      res.end(JSON.stringify({ success: true, profiles: creatorProfiles, assets: [] }))
+      res.end(JSON.stringify({ success: true, profiles: creatorProfiles, assets: options.creatorAssets ?? [] }))
     } else if (req.url === '/api/user/campaigns/global-branding' || req.url?.startsWith('/api/user/campaigns/by-creator/')) {
       res.end(JSON.stringify({ success: true, campaigns: [] }))
     } else if (req.url === '/api/user/assigned-creator-profiles') {
@@ -188,7 +194,7 @@ export async function startFixture(
         JSON.stringify({
           success: true,
           clips: {
-            clips: [
+            clips: options.detectedClips ?? [
               {
                 name: 'AI highlight',
                 segments: [
@@ -279,6 +285,7 @@ export async function startFixture(
     publishCalls: () => publishCalls,
     kickRequests: () => kickRequests,
     brandingUploads: () => brandingUploads,
+    creatorSkillSessions: () => editor?.sessions() ?? [],
     dispose: async () => {
       await web.close()
       await Promise.all(
@@ -294,8 +301,8 @@ export async function startFixture(
     }
   }
 }
-export async function waitForJob(url: string, cookie: string, projectId: string) {
-  const deadline = Date.now() + 80_000
+export async function waitForJob(url: string, cookie: string, projectId: string, timeoutMs = 80_000) {
+  const deadline = Date.now() + timeoutMs
   while (Date.now() < deadline) {
     const response = await fetch(`${url}/api/web/projects/${projectId}`, {
       headers: { Cookie: cookie }

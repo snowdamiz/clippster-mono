@@ -44,6 +44,18 @@ defmodule ClippsterServer.AI.VideoAgentTest do
 
   defp queue(responses), do: Process.put(:openrouter_responses, responses)
 
+  test "decodes JSON string document and package parameters before sending client tools", %{session: session, run: run} do
+    document = %{"title" => "Clip", "format" => %{"width" => 1080, "height" => 1920, "fps" => 30}, "shots" => [%{"id" => "a", "mediaId" => "m1", "duration" => 19.6}]}
+    package = %{"claims" => [], "sources" => []}
+    queue([completion(%{"content" => nil, "tool_calls" => [
+      tool_call("edit", "set_edit", %{"document" => Jason.encode!(document)}),
+      tool_call("package", "submit_playbook_package", %{"package" => Jason.encode!(package)})
+    ]}, 0.1)])
+    assert {:tools, [edit, research], _, _} = VideoAgent.turn(run, session, %{brief: %{}})
+    assert edit["arguments"]["document"] == document
+    assert research["arguments"]["package"] == package
+  end
+
   defp completion(message, cost) do
     %{
       "choices" => [%{"message" => Map.put(message, "role", "assistant"), "finish_reason" => "stop"}],
@@ -78,14 +90,14 @@ defmodule ClippsterServer.AI.VideoAgentTest do
           "reasoning_details" => [%{"type" => "reasoning.encrypted", "data" => "sig"}],
           "tool_calls" => [
             tool_call("call_1", "read_skill", %{"name" => "hyperframes-core/references/sub-compositions"}),
-            tool_call("call_2", "write_file", %{"path" => "compositions/title.html", "content" => "<html></html>"})
+            tool_call("call_2", "set_edit", %{"document" => %{}})
           ]
         },
         0.5
       )
     ])
 
-    assert {:tools, [%{"id" => "call_2", "name" => "write_file", "arguments" => %{"path" => "compositions/title.html"}}], "", run} =
+    assert {:tools, [%{"id" => "call_2", "name" => "set_edit", "arguments" => %{"document" => %{}}}], "", run} =
              VideoAgent.turn(run, session, %{brief: %{"format" => %{"width" => 1920, "height" => 1080, "fps" => 30}, "candidates" => []}})
 
     assert_received {:openrouter_request, first}
@@ -104,7 +116,7 @@ defmodule ClippsterServer.AI.VideoAgentTest do
     image = %{"label" => "1.0s yours vs example", "data" => Base.encode64("jpeg-bytes")}
 
     assert {:finish, "Here's your video.", run} =
-             VideoAgent.turn(run, session, %{results: [%{"id" => "call_2", "content" => "Wrote compositions/title.html", "images" => [image]}]})
+             VideoAgent.turn(run, session, %{results: [%{"id" => "call_2", "content" => "Saved and compiled: 1 shot", "images" => [image]}]})
 
     assert_received {:openrouter_request, second}
     assert second["messages"] |> strip_breakpoints() |> Enum.take(length(first["messages"])) == strip_breakpoints(first["messages"])
@@ -134,6 +146,43 @@ defmodule ClippsterServer.AI.VideoAgentTest do
 
     assert {:error, :invalid, _} = VideoAgent.turn(run, session, %{results: [%{"id" => "other", "content" => "x"}]})
     assert {:error, :invalid, _} = VideoAgent.turn(run, session, %{results: []})
+  end
+
+  test "asks for a valid edit when the model finishes before set_edit", %{session: session, run: run} do
+    queue([
+      completion(%{"content" => "Done", "tool_calls" => [tool_call("early", "finish", %{"message" => "Done"})]}, 0.1),
+      completion(%{"content" => nil, "tool_calls" => [tool_call("edit", "set_edit", %{"document" => %{}})]}, 0.1)
+    ])
+
+    assert {:tools, [%{"name" => "set_edit"}], _, _} = VideoAgent.turn(run, session, %{brief: %{}})
+    assert_received {:openrouter_request, _first}
+    assert_received {:openrouter_request, second}
+    assert Jason.encode!(second["messages"]) =~ "No valid edit was saved"
+    assert Repo.get!(VideoRun, run.id).finish == nil
+  end
+
+  test "creator playbook finish waits for a saved publishing package", %{session: session, run: run} do
+    {:ok, session} = VideoSessions.update_session(session, %{playbook_enabled: true})
+    queue([completion(%{"content" => nil, "tool_calls" => [tool_call("edit", "set_edit", %{"document" => %{}})]}, 0.1)])
+    assert {:tools, [%{"name" => "set_edit"}], _, run} = VideoAgent.turn(run, session, %{brief: %{}})
+
+    assert_received {:openrouter_request, payload}
+    sent = Jason.encode!(payload["messages"])
+    assert sent =~ "Original creator workflow (required for this edit)"
+    assert sent =~ "y 0 to 860"
+    assert sent =~ "creatorLayout"
+
+    queue([
+      completion(%{"content" => nil, "tool_calls" => [tool_call("early", "finish", %{"message" => "Done"})]}, 0.1),
+      completion(%{"content" => nil, "tool_calls" => [tool_call("package", "submit_playbook_package", %{"package" => %{}})]}, 0.1)
+    ])
+    assert {:tools, [%{"name" => "submit_playbook_package"}], _, run} =
+             VideoAgent.turn(run, session, %{results: [%{"id" => "edit", "content" => "Saved and compiled: 1 shot"}]})
+    assert Repo.get!(VideoRun, run.id).finish == nil
+
+    queue([completion(%{"content" => nil, "tool_calls" => [tool_call("done", "finish", %{"message" => "Done"})]}, 0.1)])
+    assert {:finish, "Done", _} = VideoAgent.turn(run, session,
+      %{results: [%{"id" => "package", "content" => "Saved playbook package: 0 claims, 0 sources, 0 copy drafts."}]})
   end
 
   test "nudges on the last turn and stops at the limit", %{session: session, run: run} do

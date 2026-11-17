@@ -24,4 +24,12 @@ defmodule ClippsterServer.UserCreatorProfileSettingsTest do
     assert updated.watermark_settings == watermark
     assert is_nil(UserBranding.get_user_creator_profile(google_user_fixture().id, updated.id))
   end
+
+  test "creator preview limit must fit the supported encoder range" do
+    user = google_user_fixture()
+    assert {:ok, profile} = UserBranding.create_user_creator_profile(user.id, %{"name" => "Creator", "creator_skill_preferences" => %{"delivery" => %{"previewMaxMb" => 8}}})
+    assert profile.creator_skill_preferences["delivery"]["previewMaxMb"] == 8
+    assert {:error, changeset} = UserBranding.update_user_creator_profile(profile, %{"creator_skill_preferences" => %{"delivery" => %{"previewMaxMb" => 250}}})
+    assert {"has invalid creator edit preferences", _} = changeset.errors[:creator_skill_preferences]
+  end
 end

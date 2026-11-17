@@ -92,7 +92,7 @@ export function resolveVodPathForClipExtraction(
 	const rows = filterPlausibleVodRawVideos(rawVideos);
 
 	if (videoSrc) {
-		const decoded = tryDecodeVideoServerUrl(videoSrc);
+		const decoded = isAbsoluteFilesystemPath(videoSrc) ? videoSrc : tryDecodeVideoServerUrl(videoSrc);
 		if (
 			decoded &&
 			isAbsoluteFilesystemPath(decoded) &&
@@ -199,6 +199,29 @@ export interface ExtractUnbuiltClipSegmentParams {
 	videoSrc?: string | null;
 	/** When clip.project_id is a child/segment project with no raw_videos, pass parent project id. */
 	rawVideoParentProjectId?: string | null;
+}
+
+export async function extractUnbuiltClipSegmentsToPath(
+	params: Pick<ExtractUnbuiltClipSegmentParams, 'clipId' | 'outputPath' | 'videoSrc' | 'rawVideoParentProjectId'> & {
+		segments: Array<{ start: number; end: number }>;
+	},
+): Promise<void> {
+	if (params.segments.length === 1) {
+		const segment = params.segments[0];
+		return extractUnbuiltClipSegmentToPath({
+			...params,
+			clipStartTime: segment.start,
+			clipEndTime: segment.end,
+		});
+	}
+	if (!params.segments.length || params.segments.some((segment) => !Number.isFinite(segment.start) || !Number.isFinite(segment.end) || segment.end <= segment.start)) {
+		throw new Error('Clip has no valid source segments');
+	}
+	const clip = await getClip(params.clipId);
+	if (!clip?.project_id) throw new Error('Clip has no project source video');
+	const rawVideos = await loadRawVideosForClipProject(clip.project_id, params.rawVideoParentProjectId ?? null);
+	const sourcePath = resolveVodPathForClipExtraction(clip, rawVideos, params.videoSrc);
+	await invoke('extract_clip_segments', { sourcePath, outputPath: params.outputPath, segments: params.segments });
 }
 
 /**
