@@ -13,7 +13,15 @@
     "html_handling": "none",
     "not_found_handling": "none"
   },
-  // clippster.app/workspace is served by the clippster-web Worker, reached directly rather than over its public URL.
-  "services": [{ "binding": "WORKSPACE", "service": "clippster-web" }],
+  // clippster.app/api and /workspace are served by the clippster-server and clippster-web Workers, reached directly:
+  // Cloudflare doesn't let a Worker fetch another Worker on the same zone through its public hostname.
+  "services": [
+    { "binding": "API", "service": "clippster-server" },
+    { "binding": "WORKSPACE", "service": "clippster-web" }
+  ],
+  "routes": [
+    { "pattern": "clippster.app", "custom_domain": true },
+    { "pattern": "www.clippster.app", "custom_domain": true }
+  ],
   "observability": { "enabled": true }
 }

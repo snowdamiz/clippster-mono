@@ -4,8 +4,8 @@ import { DurableObject } from 'cloudflare:workers'
 // The container lives only while its Durable Object is active, so an alarm keeps both up between requests.
 const KEEPALIVE_MS = 60_000
 
-async function digest(env) {
-  const bytes = new TextEncoder().encode(JSON.stringify(Object.entries(env).sort()))
+async function digest(value) {
+  const bytes = new TextEncoder().encode(JSON.stringify(value))
   return [...new Uint8Array(await crypto.subtle.digest('SHA-256', bytes))].map((b) => b.toString(16).padStart(2, '0')).join('')
 }
 
@@ -38,9 +38,10 @@ export function containerServer({ name, port, instance, entrypoint, healthPath, 
       this.ready = false
       // Worker secrets and vars become the container's environment, as `fly secrets` did.
       const env = Object.fromEntries(Object.entries(this.env).filter(([, value]) => typeof value === 'string'))
-      // A container reads its environment only at start, so a deploy that changed secrets or vars restarts it.
-      const envHash = await digest(env)
-      if (container.running && (await this.ctx.storage.get('envHash')) !== envHash) {
+      // A running container keeps the image and environment it started with, so every deploy (a new Worker version,
+      // which may carry a new image) and every change of secrets or vars restarts it.
+      const startHash = await digest([Object.entries(env).sort(), this.env.CF_VERSION_METADATA?.id ?? null])
+      if (container.running && (await this.ctx.storage.get('startHash')) !== startHash) {
         // SIGTERM first, so the server finishes its writes and R2 mounts upload pending files; destroy() kills at once.
         container.signal(15)
         for (let wait = 0; container.running && wait < 60; wait++) await scheduler.wait(1000)
@@ -49,7 +50,7 @@ export function containerServer({ name, port, instance, entrypoint, healthPath, 
       }
       if (!container.running) {
         container.start({ image: container.images.base, instance, entrypoint, enableInternet: true, env })
-        await this.ctx.storage.put('envHash', envHash)
+        await this.ctx.storage.put('startHash', startHash)
       }
       // Container stdout isn't visible from here, so start failures report the exit and the last health check instead.
       const exited = container.monitor().then(() => 'exited cleanly', (error) => String(error))

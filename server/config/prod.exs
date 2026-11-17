@@ -10,8 +10,8 @@ config :swoosh, local: false
 config :logger, level: :info
 
 # Production settings:
-# - Don't load .env file (use fly secrets instead)
-# - Don't auto-migrate on startup (use release_command in fly.toml)
+# - Don't load .env file (the Cloudflare Worker's secrets and vars are the container's environment)
+# - Don't auto-migrate on startup (server/cloudflare/worker.mjs runs migrations before each start)
 config :clippster_server,
   load_dotenv: false,
   auto_migrate: false

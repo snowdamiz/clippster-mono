@@ -372,7 +372,6 @@ if config_env() == :prod do
     secret_key_base: secret_key_base,
     # Allow WebSocket connections from Tauri desktop app
     check_origin: [
-      "//clippster-server.fly.dev",
       "//api.clippster.app",
       # Landing app origins (production web app)
       "//clippster.app",
