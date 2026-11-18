@@ -3,6 +3,7 @@ defmodule ClippsterServer.Accounts.ChangeEmailTest do
 
   import Swoosh.TestAssertions
   import ClippsterServer.AccountsFixtures
+  import ClippsterServer.EmailFixtures
 
   alias ClippsterServer.Accounts
   alias ClippsterServer.Credits
@@ -14,15 +15,6 @@ defmodule ClippsterServer.Accounts.ChangeEmailTest do
       %Swoosh.Email{} = email -> email
       {:email, %Swoosh.Email{} = email} -> email
       other -> flunk("Unexpected assert_email_sent result: #{inspect(other)}")
-    end
-  end
-
-  defp extract_otp(email) do
-    body = email.html_body || email.text_body || ""
-
-    case Regex.run(~r/\b(\d{6})\b/, body) do
-      [_, otp] -> otp
-      _ -> flunk("Expected 6-digit OTP in email body, got: #{inspect(body)}")
     end
   end
 

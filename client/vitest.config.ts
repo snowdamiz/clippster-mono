@@ -1,7 +1,6 @@
-import path from 'path';
-import { fileURLToPath } from 'node:url';
 import { defineConfig } from 'vitest/config';
 import vue from '@vitejs/plugin-vue';
+import { resolve } from './vite.config';
 
 export default defineConfig({
   plugins: [vue()],
@@ -10,9 +9,5 @@ export default defineConfig({
     include: ['src/**/*.test.ts'],
     passWithNoTests: true,
   },
-  resolve: {
-    alias: {
-      '@': path.resolve(path.dirname(fileURLToPath(import.meta.url)), './src'),
-    },
-  },
+  resolve,
 });

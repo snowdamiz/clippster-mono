@@ -5,6 +5,20 @@ import path from "path";
 // @ts-expect-error process is a nodejs global
 const host = process.env.TAURI_DEV_HOST;
 
+export const resolve = {
+  alias: {
+    "@mediapipe-wasm": path.resolve(__dirname, "node_modules/@mediapipe/tasks-vision/wasm"),
+    "@clippster/shared-types": path.resolve(__dirname, "../packages/shared-types/src/index.ts"),
+    "@": path.resolve(__dirname, "./src"),
+    "@clippster/api-client": path.resolve(__dirname, "../packages/api-client/src/index.ts"),
+    "@clippster/cloud-sync-schema": path.resolve(
+      __dirname,
+      "../packages/cloud-sync-schema/src/index.ts",
+    ),
+    "@clippster/app-tour": path.resolve(__dirname, "../packages/app-tour/src/index.ts"),
+  },
+};
+
 // https://vite.dev/config/
 function stripeReturnHtml() {
   return {
@@ -29,19 +43,7 @@ export default defineConfig(async () => ({
     vue(),
     stripeReturnHtml(),
   ],
-  resolve: {
-    alias: {
-      "@mediapipe-wasm": path.resolve(__dirname, "node_modules/@mediapipe/tasks-vision/wasm"),
-      "@clippster/shared-types": path.resolve(__dirname, "../packages/shared-types/src/index.ts"),
-      "@": path.resolve(__dirname, "./src"),
-      "@clippster/api-client": path.resolve(__dirname, "../packages/api-client/src/index.ts"),
-      "@clippster/cloud-sync-schema": path.resolve(
-        __dirname,
-        "../packages/cloud-sync-schema/src/index.ts",
-      ),
-      "@clippster/app-tour": path.resolve(__dirname, "../packages/app-tour/src/index.ts"),
-    },
-  },
+  resolve,
   // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
   //
   // 1. prevent Vite from obscuring rust errors
