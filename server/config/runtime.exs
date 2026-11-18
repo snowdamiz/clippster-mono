@@ -295,7 +295,11 @@ if System.get_env("PHX_SERVER") do
 end
 
 # BACKGROUND_WORKERS=false starts the app without its scheduled jobs (see Application.background_workers/0).
-config :clippster_server, :background_workers, System.get_env("BACKGROUND_WORKERS") not in ~w(false 0)
+background_workers_default = if config_env() == :test, do: "false", else: "true"
+
+config :clippster_server,
+       :background_workers,
+       System.get_env("BACKGROUND_WORKERS", background_workers_default) not in ~w(false 0)
 
 if config_env() == :prod do
   database_url =

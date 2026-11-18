@@ -6,7 +6,7 @@ defmodule ClippsterServerWeb.AIVideoPlanTest do
 
   alias ClippsterServer.Auth.TokenGenerator
   alias ClippsterServer.{Credits, Repo}
-  alias ClippsterServer.AI.{VideoAgent, VideoRun, VideoRuns, VideoSessions}
+  alias ClippsterServer.AI.{VideoAgent, VideoGenerationPolicy, VideoRun, VideoRuns, VideoSessions}
 
   @media [%{"id" => "m1", "name" => "demo.mp4", "kind" => "video", "duration" => 30.0, "contentHash" => "h1"}]
 
@@ -31,7 +31,11 @@ defmodule ClippsterServerWeb.AIVideoPlanTest do
       if previous_key, do: System.put_env("OPENROUTER_API_KEY", previous_key), else: System.delete_env("OPENROUTER_API_KEY")
     end)
 
-    user = email_user_fixture() |> Ecto.Changeset.change(is_admin: true) |> Repo.update!() |> with_credits!(50)
+    user =
+      email_user_fixture()
+      |> Ecto.Changeset.change(subscription_tier: "creator", ai_editor_enabled: true)
+      |> Repo.update!()
+      |> with_credits!(50)
     {:ok, session} = VideoSessions.create_session(user.id, %{media_items: @media})
     %{conn: auth_conn(conn, user), user: user, session: session}
   end
@@ -87,7 +91,13 @@ defmodule ClippsterServerWeb.AIVideoPlanTest do
   defp plan_runs(session), do: Repo.all(from r in VideoRun, where: r.session_id == ^session.id and r.kind == "plan")
 
   test "plans for free: retries an invalid plan, saves it, sets the shape and keeps one planning run", %{conn: conn, user: user, session: session} do
-    queue([set_plan("call_1", plan(70)), set_plan("call_2", plan(3), "Here's a first plan for TikTok.")])
+    max = VideoGenerationPolicy.max_output_seconds()
+    too_long = plan(300)
+    [scene, footage] = too_long["beats"]
+    scenes = List.duplicate(scene, div(max, 300) + 1)
+    too_long = Map.put(too_long, "beats", scenes ++ [footage])
+    total = length(scenes) * 300 + 6.0
+    queue([set_plan("call_1", too_long), set_plan("call_2", plan(3), "Here's a first plan for TikTok.")])
 
     planned = conn |> post(~p"/api/ai/video/sessions/#{session.id}/plan", %{message: "A launch video for Acme on TikTok"}) |> json_response(200)
 
@@ -95,7 +105,7 @@ defmodule ClippsterServerWeb.AIVideoPlanTest do
     assert [%{"cache_control" => %{"ttl" => "1h"}}, %{"cache_control" => %{"ttl" => "1h"}}] = hd(first["messages"])["content"]
     assert List.last(first["messages"])["content"] =~ ~s("currentPlan":null)
     assert_received {:openrouter_request, retry}
-    assert List.last(retry["messages"])["content"] =~ "Plan not saved: The beats add up to 76.0 s"
+    assert List.last(retry["messages"])["content"] =~ "Plan not saved: The beats add up to #{total} s"
 
     assert planned["aspect_ratio"] == "9:16"
     assert [%{"role" => "user", "metadata" => %{"phase" => "plan"}}, %{"role" => "assistant", "content" => content, "metadata" => metadata}] = planned["messages"]
