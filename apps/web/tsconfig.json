@@ -49,6 +49,9 @@
       "axios": ["node_modules/axios"],
       "pinia": ["node_modules/pinia"],
       "@tauri-apps/api/core": ["node_modules/@tauri-apps/api/core"],
+      "@tauri-apps/api/event": ["node_modules/@tauri-apps/api/event"],
+      "qr": ["node_modules/qr/index"],
+      "qr/decode.js": ["node_modules/qr/decode"],
       "@tauri-apps/plugin-sql": ["node_modules/@tauri-apps/plugin-sql"],
       "@clippster/cloud-sync-schema": ["../../packages/cloud-sync-schema/src/index.ts"],
       "zod": ["node_modules/zod"]

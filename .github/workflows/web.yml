@@ -7,6 +7,7 @@ on:
       - 'landing/**'
       - 'packages/**'
       - 'client/src/**'
+      - 'client/src-tauri/sidecars/hyperframes-renderer/**'
       - 'client/public/**'
       - 'tsconfig.json'
       - 'server/lib/clippster_server/auth/**'
@@ -49,12 +50,19 @@ jobs:
           cache: npm
           cache-dependency-path: apps/web/package-lock.json
       - run: npm ci --workspaces=false
-      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core libarchive-tools
       - run: npm run typecheck --workspaces=false
+      - run: npx playwright install --with-deps chromium
+      - name: Set up the Creator Skill renderer for integration tests
+        working-directory: client/src-tauri/sidecars/hyperframes-renderer
+        env:
+          HYPERFRAMES_NO_TELEMETRY: '1'
+        run: |
+          corepack yarn install --production --frozen-lockfile
+          node node_modules/hyperframes/bin/hyperframes.mjs browser ensure
       - run: npm test --workspaces=false
       - run: node --test ../../scripts/dev-setup.test.mjs ../../scripts/cloudflare-deploy.test.mjs
       - run: npm run build --workspaces=false
-      - run: npx playwright install --with-deps chromium
       - run: npm run test:e2e --workspaces=false
       - name: Build account website and test embedded workspace
         run: |

@@ -46,9 +46,14 @@ fn main() {
 
     // Configure FFmpeg paths for ffmpeg-sys-next (Windows only)
     if target_os == "windows" {
-        let ffmpeg_dir = manifest_dir
-            .join("ffmpeg-dev")
-            .join("ffmpeg-master-latest-win64-gpl-shared");
+        println!("cargo:rerun-if-env-changed=FFMPEG_DIR");
+        let ffmpeg_dir = env::var_os("FFMPEG_DIR")
+            .map(PathBuf::from)
+            .unwrap_or_else(|| {
+                manifest_dir
+                    .join("ffmpeg-dev")
+                    .join("ffmpeg-master-latest-win64-gpl-shared")
+            });
         if ffmpeg_dir.exists() {
             println!("cargo:warning=Found FFmpeg at: {}", ffmpeg_dir.display());
             env::set_var("FFMPEG_DIR", &ffmpeg_dir);
@@ -97,10 +102,7 @@ fn main() {
 
         // Auto-copy FFmpeg DLLs to the Cargo output directory so the binary can find them at runtime.
         // This ensures DLLs survive cargo clean and are always present after any build.
-        let ffmpeg_bin_dir = manifest_dir
-            .join("ffmpeg-dev")
-            .join("ffmpeg-master-latest-win64-gpl-shared")
-            .join("bin");
+        let ffmpeg_bin_dir = ffmpeg_dir.join("bin");
         if ffmpeg_bin_dir.exists() {
             let out_dir = PathBuf::from(env::var("OUT_DIR").unwrap());
             // OUT_DIR is something like target/debug/build/<pkg>/out — walk up 3 levels to get target/debug
