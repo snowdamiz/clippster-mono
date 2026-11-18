@@ -1,0 +1,1 @@
+ALTER TABLE user_creator_profiles_cache ADD COLUMN creator_skill_preferences TEXT;

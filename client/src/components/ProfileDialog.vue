@@ -38,6 +38,58 @@
             "
           />
         </Field>
+        <section v-if="mode === 'local' && formData.scope !== 'global'" class="flex flex-col gap-3 rounded-lg border border-line-subtle p-3">
+          <SectionHeader title="Clippster Skill" />
+          <p class="text-xs text-fg-muted">Optional preferences for VOD pre-edits. Public branding can be researched for each clip.</p>
+          <SectionHeader title="Creator brand" />
+          <Field label="Channel name"><Input v-model="skillPreferences.brand!.channelName" placeholder="Public channel name" /></Field>
+          <Field label="Brand colors" hint="Comma-separated"><Input v-model="skillBrandColorsText" placeholder="#123456, #abcdef" /></Field>
+          <Field label="Fonts" hint="Comma-separated"><Input v-model="skillBrandFontsText" placeholder="Brand fonts" /></Field>
+          <Field label="Company or product URL"><Input v-model="skillPreferences.brand!.companyUrl" placeholder="https://…" /></Field>
+          <SettingRow label="Preserve every spoken word" description="Keep the creator's speech intact when editing.">
+            <Switch v-model="skillPreferences.editing!.preserveEveryWord" />
+          </SettingRow>
+          <SettingRow label="Allow music" description="Permit background music in generated edits.">
+            <Switch v-model="skillPreferences.editing!.musicAllowed" />
+          </SettingRow>
+          <SettingRow label="Allow sound effects" description="Permit added sound effects.">
+            <Switch v-model="skillPreferences.editing!.soundEffectsAllowed" />
+          </SettingRow>
+          <Field label="Editing rules" hint="One rule per line">
+            <Textarea v-model="skillRulesText" rows="3" placeholder="Caption style, pacing, graphics, topics to avoid…" />
+          </Field>
+          <Field label="Graphic density">
+            <Select v-model="skillPreferences.editing!.graphicDensity">
+              <SelectTrigger><SelectValue /></SelectTrigger>
+              <SelectContent>
+                <SelectItem value="minimal">Minimal</SelectItem>
+                <SelectItem value="standard">Standard</SelectItem>
+                <SelectItem value="high">High</SelectItem>
+              </SelectContent>
+            </Select>
+          </Field>
+          <Field label="Audience"><Input v-model="skillPreferences.publishing!.audience" placeholder="Who these clips are for" /></Field>
+          <Field label="Publishing tone"><Input v-model="skillPreferences.publishing!.tone" placeholder="e.g. direct and playful" /></Field>
+          <Field label="Call to action"><Input v-model="skillPreferences.publishing!.callToAction" placeholder="Optional closing message" /></Field>
+          <Field label="Publishing platforms" hint="Comma-separated"><Input v-model="skillPlatformsText" placeholder="TikTok, YouTube Shorts, Instagram Reels" /></Field>
+          <Field label="Publishing schedule"><Input v-model="skillPreferences.publishing!.schedule" placeholder="Shorts mornings, long videos midday" /></Field>
+          <SectionHeader title="Delivery" />
+          <Field label="Delivery destination"><Input v-model="skillPreferences.delivery!.destination" placeholder="Folder or team handoff" /></Field>
+          <Field label="Phone preview size (MB)"><Input :model-value="skillPreferences.delivery!.previewMaxMb ?? ''" type="number" @update:model-value="(value: string | number) => skillPreferences.delivery!.previewMaxMb = Number(value) || undefined" placeholder="30" /></Field>
+          <SectionHeader title="Confirmed sponsors" :count="skillPreferences.sponsors?.length || undefined">
+            <Button variant="ghost" size="xs" @click="addSkillSponsor"><Plus />Add sponsor</Button>
+          </SectionHeader>
+          <div v-for="(sponsor, index) in skillPreferences.sponsors" :key="index" class="flex flex-col gap-2 rounded-lg border border-line-subtle p-3">
+            <div class="flex items-center justify-between"><span class="text-sm font-medium">Sponsor {{ index + 1 }}</span><Button variant="ghost" size="xs" @click="skillPreferences.sponsors!.splice(index, 1)">Remove</Button></div>
+            <Field label="Name"><Input v-model="sponsor.name" placeholder="Sponsor name" /></Field>
+            <Field label="Referral URL"><Input v-model="sponsor.referralUrl" placeholder="https://…" /></Field>
+            <Field label="Code"><Input v-model="sponsor.code" placeholder="Optional sponsor code" /></Field>
+            <Field label="Disclosure"><Input v-model="sponsor.disclosure" placeholder="Required disclosure wording" /></Field>
+            <Field label="Risk line"><Input v-model="sponsor.riskLine" placeholder="Required risk wording" /></Field>
+            <SettingRow label="Allow discount wording in descriptions"><Switch v-model="sponsor.discountInDescriptionAllowed" /></SettingRow>
+            <Field label="Platforms" hint="Comma-separated"><Input :model-value="sponsor.platforms?.join(', ') ?? ''" @update:model-value="(value: string | number) => sponsor.platforms = String(value).split(',').map((platform) => platform.trim()).filter(Boolean)" placeholder="Platforms where this sponsor applies" /></Field>
+          </div>
+        </section>
 
         <div
           v-if="mode === 'local' && formData.scope !== 'global'"
@@ -543,6 +595,7 @@
   import { SectionHeader } from '@/components/ui/section-header';
   import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
   import { Switch } from '@/components/ui/switch';
+  import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
   import AssetSelect from './creators/AssetSelect.vue';
   import OverlayRow from './branding/OverlayRow.vue';
   import { Textarea } from '@/components/ui/textarea';
@@ -609,6 +662,8 @@
   } from '@/lib/creatorClipBuildDefaults';
 
   import type { CreatorProfileForm, PlatformLinkInput } from '@/services/creatorProfileForm';
+  import type { CreatorSkillPreferences } from '@clippster/shared-types';
+  import { parseCreatorSkillPreferences, serializeCreatorSkillPreferences } from '@/services/creatorSkillPreferences';
 
   type PlatformId = 'pumpfun' | 'kick' | 'twitch' | 'youtube' | 'rumble';
 
@@ -727,6 +782,42 @@
     scope: 'streamer',
     clip_build_defaults: createEmptyClipBuildDefaults(),
   });
+  function editableSkillPreferences(value?: string | null): CreatorSkillPreferences {
+    const parsed = parseCreatorSkillPreferences(value);
+    return {
+      brand: { channelName: parsed.brand?.channelName ?? '', colors: parsed.brand?.colors ?? [], fonts: parsed.brand?.fonts ?? [], companyUrl: parsed.brand?.companyUrl ?? '' },
+      editing: {
+        preserveEveryWord: parsed.editing?.preserveEveryWord ?? true,
+        musicAllowed: parsed.editing?.musicAllowed ?? false,
+        soundEffectsAllowed: parsed.editing?.soundEffectsAllowed ?? false,
+        graphicDensity: parsed.editing?.graphicDensity ?? 'standard',
+        rules: parsed.editing?.rules ?? [],
+      },
+      sponsors: parsed.sponsors ?? [],
+      publishing: { audience: parsed.publishing?.audience ?? '', tone: parsed.publishing?.tone ?? '', callToAction: parsed.publishing?.callToAction ?? '', platforms: parsed.publishing?.platforms ?? [], schedule: parsed.publishing?.schedule ?? '' },
+      delivery: { destination: parsed.delivery?.destination ?? '', previewMaxMb: parsed.delivery?.previewMaxMb },
+    };
+  }
+  const skillPreferences = ref<CreatorSkillPreferences>(editableSkillPreferences());
+  const skillBrandColorsText = computed({
+    get: () => skillPreferences.value.brand?.colors?.join(', ') ?? '',
+    set: (value: string) => { skillPreferences.value.brand!.colors = value.split(','); },
+  });
+  const skillBrandFontsText = computed({
+    get: () => skillPreferences.value.brand?.fonts?.join(', ') ?? '',
+    set: (value: string) => { skillPreferences.value.brand!.fonts = value.split(','); },
+  });
+  const skillRulesText = computed({
+    get: () => skillPreferences.value.editing?.rules?.join('\n') ?? '',
+    set: (value: string) => { skillPreferences.value.editing!.rules = value.split('\n'); },
+  });
+  const skillPlatformsText = computed({
+    get: () => skillPreferences.value.publishing?.platforms?.join(', ') ?? '',
+    set: (value: string) => { skillPreferences.value.publishing!.platforms = value.split(','); },
+  });
+  function addSkillSponsor() {
+    (skillPreferences.value.sponsors ??= []).push({ name: '', referralUrl: '', code: '', disclosure: '' });
+  }
 
   // Clip defaults editor state
   const showClipDefaultsEditor = ref(false);
@@ -1073,7 +1164,9 @@
             clip_build_defaults:
               parseCreatorClipBuildDefaults(props.creator.clip_build_defaults ?? null) ??
               createEmptyClipBuildDefaults(),
+            creator_skill_preferences: props.creator.creator_skill_preferences ?? '',
           };
+          skillPreferences.value = editableSkillPreferences(props.creator.creator_skill_preferences);
         } else {
           formData.value = {
             name: '',
@@ -1091,6 +1184,7 @@
             scope: props.scope || 'streamer',
             clip_build_defaults: createEmptyClipBuildDefaults(),
           };
+          skillPreferences.value = editableSkillPreferences();
         }
 
         // Load overlay previews
@@ -2171,6 +2265,7 @@
   }
 
   async function handleLocalSubmit() {
+    formData.value.creator_skill_preferences = serializeCreatorSkillPreferences(skillPreferences.value);
     await saveLocalCreator(formData.value, props.creator || null, hasClipDefaultsConfig.value);
     showSuccess(
       isEditing.value ? 'Profile Updated' : 'Profile Created',

@@ -280,6 +280,42 @@ CREATE TABLE IF NOT EXISTS user_creator_profiles_cache (
 CREATE INDEX IF NOT EXISTS idx_user_creator_profiles_cache_client
   ON user_creator_profiles_cache(client_id);`,
   },
+  {
+    version: 14,
+    name: 'creator_skill_edits',
+    sql: `CREATE TABLE IF NOT EXISTS creator_skill_edits (
+  clip_id TEXT PRIMARY KEY REFERENCES clips(id) ON DELETE CASCADE,
+  detection_session_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  selected_version TEXT NOT NULL DEFAULT 'raw',
+  raw_source TEXT NOT NULL,
+  edited TEXT,
+  sources TEXT NOT NULL DEFAULT '[]',
+  review_items TEXT NOT NULL DEFAULT '[]',
+  updated_at INTEGER NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_creator_skill_edits_session ON creator_skill_edits(detection_session_id);`,
+  },
+  {
+    version: 15,
+    name: 'creator_skill_ai_session',
+    sql: `ALTER TABLE creator_skill_edits ADD COLUMN ai_session_id INTEGER;`,
+  },
+  {
+    version: 16,
+    name: 'creator_skill_package',
+    sql: `ALTER TABLE creator_skill_edits ADD COLUMN playbook_package TEXT;`,
+  },
+  {
+    version: 17,
+    name: 'creator_skill_thumbnails',
+    sql: `ALTER TABLE creator_skill_edits ADD COLUMN thumbnail_candidates TEXT;`,
+  },
+  {
+    version: 18,
+    name: 'creator_skill_profile_cache',
+    sql: `ALTER TABLE user_creator_profiles_cache ADD COLUMN creator_skill_preferences TEXT;`,
+  },
 ];
 
 export const LATEST_SCHEMA_VERSION = MIGRATIONS[MIGRATIONS.length - 1]?.version ?? 0;

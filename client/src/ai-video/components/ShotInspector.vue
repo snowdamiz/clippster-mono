@@ -97,11 +97,23 @@
     :media="media"
     :files="files"
     :selected="selected"
-    :max-seconds="maxSeconds ?? 60"
+    :max-seconds="maxSeconds ?? 3600"
     @apply="emit('apply', $event)"
   />
-  <SceneLayerInspector v-if="selected?.startsWith('layer:')" :document="document" :selected="selected" :inventories="inventories ?? []" @apply="emit('apply', $event)" @deselect="emit('deselect')" />
-  <TransitionInspector v-else-if="selected?.startsWith('transition:')" :document="document" :selected="selected" @apply="emit('apply', $event)" />
+  <SceneLayerInspector
+    v-if="selected?.startsWith('layer:')"
+    :document="document"
+    :selected="selected"
+    :inventories="inventories ?? []"
+    @apply="emit('apply', $event)"
+    @deselect="emit('deselect')"
+  />
+  <TransitionInspector
+    v-else-if="selected?.startsWith('transition:')"
+    :document="document"
+    :selected="selected"
+    @apply="emit('apply', $event)"
+  />
   <div v-else-if="copyField" class="flex flex-col gap-3">
     <span class="text-sm font-semibold text-fg">Text</span>
     <label class="flex flex-col gap-1.5 text-xs text-fg-muted">
@@ -203,7 +215,7 @@
 
   <div v-else-if="overlay" class="flex flex-col gap-2.5">
     <div class="flex flex-col gap-0.5">
-      <span class="text-sm font-semibold text-fg">{{ overlay.lane === 'text' ? 'Text' : 'Graphic' }}</span>
+      <span class="text-sm font-semibold text-fg">{{ overlay.lane === 'text' ? 'Text' : overlay.lane === 'captions' ? 'Captions' : overlay.lane === 'sponsor' ? 'Sponsor' : 'Graphic' }}</span>
       <span class="text-xs text-fg-subtle">
         {{ formatClock(overlay.start) }} to {{ formatClock(overlay.start + overlay.duration) }}
       </span>

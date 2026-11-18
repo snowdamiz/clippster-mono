@@ -23,8 +23,12 @@ export async function createWebApp(config: Config) {
       'Content-Security-Policy':
         "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; media-src 'self' blob:; font-src 'self' data:; connect-src 'self'; worker-src 'self' blob:; frame-ancestors 'self'; base-uri 'none'; form-action 'self'"
     })
+    const mobileWorkspaceRequest = req.path.startsWith('/api/web/') &&
+      req.headers['x-client-platform'] === 'mobile' &&
+      /^Bearer \S+$/.test(req.headers.authorization || '')
     if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method) &&
-        ![config.origin, config.accountOrigin].includes(req.headers.origin || '')) {
+        ![config.origin, config.accountOrigin].includes(req.headers.origin || '') &&
+        !mobileWorkspaceRequest) {
       next(new HttpError(403, 'Request origin is not allowed.'))
       return
     }

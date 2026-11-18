@@ -619,7 +619,7 @@ async fn validate_public_host(url: &Url) -> Result<(), String> {
     resolve_public_addresses(url).await.map(|_| ())
 }
 
-async fn resolve_public_addresses(url: &Url) -> Result<Vec<IpAddr>, String> {
+pub(crate) async fn resolve_public_addresses(url: &Url) -> Result<Vec<IpAddr>, String> {
     let host = url.host_str().ok_or("Reference URL is missing a host.")?;
     if host.eq_ignore_ascii_case("localhost") || host.ends_with(".localhost") {
         return Err("Local and private-network reference URLs are not allowed.".into());

@@ -6,6 +6,7 @@ defmodule ClippsterServer.PromoCodes do
   alias ClippsterServer.Repo
   alias ClippsterServer.PromoCodes.PromoCode
   alias ClippsterServer.PromoCodes.PromoRedemption
+  alias ClippsterServer.AdminMessaging.{EmailCampaign, EmailCampaignRecipient, SubscriptionOffers}
 
   # ============================================================================
   # Validation
@@ -15,7 +16,7 @@ defmodule ClippsterServer.PromoCodes do
   Validates a promo code for use with a specific tier and user.
   Returns {:ok, promo_code} if valid, {:error, reason} if invalid.
   """
-  def validate_promo(code, tier, user_id) when is_binary(code) do
+  def validate_promo(code, tier, user_id, payment_method \\ :stripe) when is_binary(code) do
     normalized_code = String.upcase(String.trim(code))
 
     case get_active_code(normalized_code) do
@@ -31,6 +32,10 @@ defmodule ClippsterServer.PromoCodes do
           is_expired?(promo) ->
             {:error, :expired_code}
 
+          promo.campaign_recipient_id &&
+              not campaign_offer_allowed?(promo, user_id, payment_method) ->
+            {:error, :offer_not_available}
+
           !tier_allowed?(promo, tier) ->
             {:error, :tier_not_allowed}
 
@@ -43,6 +48,39 @@ defmodule ClippsterServer.PromoCodes do
           true ->
             {:ok, promo}
         end
+    end
+  end
+
+  defp campaign_offer_allowed?(_promo, _user_id, :crypto), do: false
+
+  defp campaign_offer_allowed?(promo, user_id, :stripe) do
+    audience =
+      Repo.one(
+        from r in EmailCampaignRecipient,
+          join: c in EmailCampaign,
+          on: c.id == r.campaign_id,
+          where: r.id == ^promo.campaign_recipient_id and r.user_id == ^user_id,
+          select: c.audience
+      )
+
+    SubscriptionOffers.audience?(audience) and SubscriptionOffers.eligible?(audience, user_id)
+  end
+
+  def subscription_offer(code, user_id) when is_binary(code) do
+    normalized = code |> String.trim() |> String.upcase()
+
+    with %PromoCode{campaign_recipient_id: id, allowed_tiers: [tier | _]} when not is_nil(id) <-
+           get_active_code(normalized),
+         {:ok, promo} <- validate_promo(normalized, tier, user_id) do
+      {:ok,
+       %{
+         code: promo.code,
+         percent: promo.percent_off,
+         months: promo.duration_months,
+         tiers: promo.allowed_tiers
+       }}
+    else
+      _ -> {:error, :offer_not_available}
     end
   end
 
@@ -276,6 +314,37 @@ defmodule ClippsterServer.PromoCodes do
     |> Repo.insert()
   end
 
+  def record_subscription_checkout_redemption(promo_code_id, user_id, stripe_data) do
+    Repo.transaction(fn ->
+      promo =
+        Repo.one!(from p in PromoCode, where: p.id == ^promo_code_id, lock: "FOR UPDATE")
+
+      if promo.campaign_recipient_id do
+        recipient = Repo.get!(EmailCampaignRecipient, promo.campaign_recipient_id)
+        if recipient.user_id != user_id, do: Repo.rollback(:offer_not_available)
+      end
+
+      existing =
+        Repo.one(
+          from r in PromoRedemption,
+            where:
+              r.promo_code_id == ^promo_code_id and r.user_id == ^user_id and
+                is_nil(r.organization_id),
+            order_by: r.id,
+            limit: 1
+        )
+
+      if existing do
+        :existing
+      else
+        case create_redemption(promo_code_id, user_id, stripe_data) do
+          {:ok, _} -> :recorded
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end
+    end)
+  end
+
   @doc """
   Creates a redemption record when a promo code is used by an organization.
   Returns {:ok, redemption} or {:error, changeset}.
@@ -418,11 +487,19 @@ defmodule ClippsterServer.PromoCodes do
   Creates a Stripe promotion code.
   Returns {:ok, promotion_code_id} or {:error, reason}.
   """
-  def create_stripe_promotion_code(%PromoCode{} = promo, coupon_id) do
+  def create_stripe_promotion_code(
+        %PromoCode{} = promo,
+        coupon_id,
+        customer_id \\ nil,
+        opts \\ []
+      ) do
     promo_params = %{
       coupon: coupon_id,
       code: promo.code
     }
+
+    promo_params =
+      if customer_id, do: Map.put(promo_params, :customer, customer_id), else: promo_params
 
     # Only include max_redemptions if it has a value
     promo_params =
@@ -439,7 +516,7 @@ defmodule ClippsterServer.PromoCodes do
         promo_params
       end
 
-    case Stripe.PromotionCode.create(promo_params) do
+    case Stripe.PromotionCode.create(promo_params, opts) do
       {:ok, promo_code} -> {:ok, promo_code.id}
       {:error, %Stripe.Error{message: message}} -> {:error, message}
       {:error, error} -> {:error, inspect(error)}
@@ -628,6 +705,10 @@ defmodule ClippsterServer.PromoCodes do
       {:ok, %{data: [stripe_promo | _]}} ->
         # Found the code in Stripe, now validate it
         cond do
+          # Customer-bound campaign codes must pass the local account and plan checks.
+          stripe_promo.customer ->
+            {:error, :offer_not_available}
+
           # Check if active
           !stripe_promo.active ->
             {:error, :inactive_code}

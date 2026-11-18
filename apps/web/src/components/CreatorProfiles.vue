@@ -94,6 +94,7 @@ function edit(creator?: Creator) {
     outro_ratio_settings: jsonSettings((creator as any).outro_ratio_settings),
     layout_overlays: jsonSettings((creator as any).layout_overlays),
     clip_build_defaults: jsonSettings((creator as any).clip_build_defaults),
+    creator_skill_preferences: jsonSettings((creator as any).creator_skill_preferences),
     platform_links: creator.platform_links.map(link => ({ ...link, id: String(link.id), platform: link.platform === 'YouTube' ? 'youtube' : link.platform }))
   } as unknown as CreatorProfileWithLinks : null
   showEditor.value = true

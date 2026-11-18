@@ -26,6 +26,7 @@
   } from '../analysis/media';
   import { ASPECT_RATIOS } from '../director/aspect';
   import { formatDuration } from '../format';
+  import type { MotionGraphicsLevel } from '../types';
   import type { LibrarySource } from '../library';
   import { useProject } from '../projectContext';
   import LibraryPicker from './LibraryPicker.vue';
@@ -43,6 +44,9 @@
     needsExampleAnalysis,
     analysis,
     aspect,
+    motionGraphics,
+    speechPending,
+    speechError,
     running,
     ...project
   } = useProject();
@@ -57,6 +61,25 @@
 
   const locked = computed(() => !!running.value);
   const aspectOptions = computed(() => ASPECT_RATIOS.map((value) => ({ value, label: value, disabled: locked.value })));
+  const graphicsOptions = computed(() => [
+    { value: 'none', label: 'None', disabled: locked.value },
+    { value: 'light', label: 'Light', disabled: locked.value },
+    { value: 'full', label: 'Full', disabled: locked.value },
+  ]);
+
+  function setGraphics(value: string) {
+    void project.setMotionGraphics(value as MotionGraphicsLevel);
+  }
+  function speakersFor(hash: string) {
+    const turns = session.value?.speech_index?.[hash] ?? [];
+    return [...new Set(turns.map((turn) => turn.speakerId).filter((id): id is string => !!id))].map((id, index) => ({
+      id,
+      label: `Speaker ${index + 1}`,
+      name: turns.find((turn) => turn.speakerId === id)?.speakerName ?? '',
+      position: turns.find((turn) => turn.speakerId === id)?.speakerPosition ?? 'wide',
+      example: turns.find((turn) => turn.speakerId === id)?.text ?? '',
+    }));
+  }
   const reference = computed(() => session.value?.reference ?? null);
   const example = computed(() => {
     const draft = exampleDraft.value;
@@ -199,6 +222,82 @@
         </Button>
         <span class="text-2xs text-fg-subtle">or drop files here</span>
       </div>
+      <div
+        v-for="item in clips.filter((clip) => clip.kind === 'video' && clip.hasAudio)"
+        :key="`${item.id}-speech`"
+        class="flex items-center justify-between gap-2 rounded-md border border-line-subtle px-2 py-1.5 text-xs"
+      >
+        <span class="min-w-0 truncate text-fg-muted">
+          {{ item.name }}:
+          {{
+            session?.speech_index?.[item.contentHash]
+              ? `${session.speech_index[item.contentHash].length} speech turns analyzed`
+              : 'Speech not analyzed'
+          }}
+        </span>
+        <Button
+          variant="secondary"
+          size="xs"
+          :disabled="locked || !!speechPending"
+          @click="project.analyzeSpeech(item.id)"
+        >
+          {{
+            speechPending === item.id
+              ? 'Analyzing…'
+              : session?.speech_index?.[item.contentHash]
+                ? 'Analyze again'
+                : 'Analyze speech'
+          }}
+        </Button>
+      </div>
+      <div
+        v-for="item in clips.filter(
+          (clip) => clip.kind === 'video' && clip.hasAudio && session?.speech_index?.[clip.contentHash]
+        )"
+        :key="`${item.id}-speakers`"
+        class="space-y-1 rounded-md border border-line-subtle p-2"
+      >
+        <p class="truncate text-xs font-medium text-fg">Speakers in {{ item.name }}</p>
+        <label
+          v-for="speaker in speakersFor(item.contentHash)"
+          :key="speaker.id"
+          class="flex flex-wrap items-center gap-2 text-xs text-fg-muted"
+        >
+          <span class="w-20 shrink-0">{{ speaker.label }}</span>
+          <input
+            :value="speaker.name"
+            :placeholder="'Name if known'"
+            maxlength="100"
+            class="min-w-0 flex-1 rounded border border-line bg-surface px-2 py-1 text-fg"
+            @change="project.nameSpeaker(item.id, speaker.id, ($event.target as HTMLInputElement).value)"
+          />
+          <select
+            :value="speaker.position"
+            title="Where is this speaker on screen?"
+            class="rounded border border-line bg-surface px-1 py-1 text-fg"
+            @change="
+              project.positionSpeaker(
+                item.id,
+                speaker.id,
+                ($event.target as HTMLSelectElement).value as 'left' | 'center' | 'right' | 'wide'
+              )
+            "
+          >
+            <option value="wide">Wide</option>
+            <option value="left">Left</option>
+            <option value="center">Center</option>
+            <option value="right">Right</option>
+          </select>
+          <span class="w-full truncate pl-[5.5rem] text-2xs text-fg-subtle" :title="speaker.example">
+            “{{ speaker.example }}”
+          </span>
+        </label>
+      </div>
+      <p v-if="clips.some((clip) => clip.kind === 'video' && clip.hasAudio)" class="text-2xs text-fg-subtle">
+        Speech analysis uses transcription credits. It labels up to four voices per audio chunk; review the names before
+        editing.
+      </p>
+      <p v-if="speechError" role="alert" class="text-xs text-danger">{{ speechError }}</p>
       <div v-if="analysis.clipsError" class="flex items-center gap-2">
         <span class="text-xs text-danger">{{ analysis.clipsError }}</span>
         <Button variant="link" size="xs" @click="project.retryClips()">Try again</Button>
@@ -263,6 +362,19 @@
         size="sm"
         @update:model-value="project.setAspect"
       />
+    </section>
+
+    <section class="flex flex-col gap-2">
+      <SectionHeader title="Motion graphics" variant="eyebrow" class="min-h-5" />
+      <SegmentedControl
+        :model-value="motionGraphics"
+        :options="graphicsOptions"
+        size="sm"
+        @update:model-value="setGraphics"
+      />
+      <p class="text-2xs text-fg-subtle">
+        None keeps the edit natural. Light adds occasional titles. Full uses designed animated scenes.
+      </p>
     </section>
 
     <section class="flex flex-col gap-2">

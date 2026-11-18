@@ -53,6 +53,7 @@
     "mp4box": "^2.3.0",
     "phoenix": "^1.8.1",
     "pinia": "^2.3.0",
+    "qr": "0.7.2",
     "radix-vue": "^1.9.17",
     "reka-ui": "^2.6.0",
     "tailwindcss-animate": "^1.0.7",

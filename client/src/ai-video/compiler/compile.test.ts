@@ -83,6 +83,44 @@ describe('fontFace', () => {
 describe('compileDocument', () => {
   const html = compileDocument(document, context);
 
+  it('renders speaker-led footage full frame without reserving a card panel', () => {
+    const output = compileDocument({ ...document, music: null, clipAudio: 1,
+      format: { width: 1080, height: 1920, fps: 30 }, overlays: [],
+      shots: [shot('speaker', { creatorLayout: { speaker: { x: .5, y: 0, width: .5, height: 1 } } })],
+    }, { ...context, media: { ...context.media, m1: { ...context.media.m1, width: 1920, height: 1080 } } });
+    expect(output).not.toContain('data-creator-panel="top"');
+    expect(output).toContain('top:0px;width:1080px;height:1920px');
+    expect(output.match(/data-has-audio="true"/g)).toHaveLength(1);
+  });
+
+  it('keeps both measured source panels visible and emits source audio only once', () => {
+    const output = compileDocument({ ...document, music: null, clipAudio: 1,
+      format: { width: 1080, height: 1920, fps: 30 }, overlays: [],
+      shots: [shot('panels', { creatorLayout: {
+        top: { x: 0, y: 0, width: .5, height: 1 },
+        speaker: { x: .5, y: 0, width: .5, height: 1 },
+      } })],
+    }, { ...context, media: { ...context.media, m1: { ...context.media.m1, width: 1920, height: 1080 } } });
+    expect(output).toContain('data-creator-panel="top"');
+    expect(output).toContain('data-creator-panel="speaker"');
+    expect(output).toContain('top:860px;width:1080px;height:1060px');
+    expect(output.match(/data-has-audio="true"/g)).toHaveLength(1);
+    expect(output.match(/data-media-start="5"/g)).toHaveLength(2);
+    expect(output).toContain('left:-1080px');
+  });
+
+  it('crops a footage shot toward a reviewed speaker position', () => {
+    const framed = compileDocument(
+      {
+        ...document,
+        shots: [shot('speaker', { framing: { x: 0.75, y: 0.5, zoom: 2 } })],
+        overlays: [],
+      },
+      context
+    );
+    expect(framed).toContain('transform:translate(-100%,-50%) scale(2)');
+  });
+
   it('registers the root animation before the preview runtime has initialized', () => {
     const script = html.match(/<script>([\s\S]*?)<\/script>/)?.[1];
     expect(script).toBeDefined();

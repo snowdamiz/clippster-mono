@@ -70,7 +70,21 @@ defmodule ClippsterServer.Subscriptions do
       {:error, :invalid_tier}
     else
       Repo.transaction(fn ->
-        user = Repo.get!(User, user_id)
+        user = Repo.one!(from u in User, where: u.id == ^user_id, lock: "FOR UPDATE")
+
+        if is_binary(stripe_subscription_id) do
+          existing =
+            Repo.one(
+              from s in Subscription,
+                where:
+                  s.user_id == ^user_id and s.stripe_subscription_id == ^stripe_subscription_id,
+                order_by: s.id,
+                limit: 1
+            )
+
+          if existing,
+            do: Repo.rollback({:already_created, %{user: user, subscription: existing}})
+        end
 
         # Cancel any pre-existing Stripe subscription to prevent duplicate recurring charges.
         # This handles the case where a user subscribed multiple times during testing or
@@ -144,6 +158,10 @@ defmodule ClippsterServer.Subscriptions do
 
         %{user: updated_user, subscription: subscription}
       end)
+      |> case do
+        {:error, {:already_created, result}} -> {:ok, result}
+        result -> result
+      end
     end
   end
 
@@ -407,7 +425,9 @@ defmodule ClippsterServer.Subscriptions do
       Subscription
       |> where([s], s.user_id == ^user_id)
       |> where([s], s.status == "active")
-      |> Repo.update_all(set: [status: "cancelled"])
+      |> Repo.update_all(
+        set: [status: "cancelled", cancelled_at: DateTime.utc_now() |> DateTime.truncate(:second)]
+      )
 
       IO.puts(
         "[Subscriptions] Cancelled subscription for user #{user_id}, access until #{user.subscription_end_date}"
@@ -468,7 +488,9 @@ defmodule ClippsterServer.Subscriptions do
       Subscription
       |> where([s], s.user_id == ^user_id)
       |> where([s], s.status == "active")
-      |> Repo.update_all(set: [status: "cancelled"])
+      |> Repo.update_all(
+        set: [status: "cancelled", cancelled_at: DateTime.utc_now() |> DateTime.truncate(:second)]
+      )
 
       IO.puts("[Subscriptions] ADMIN: Cancelled subscription for user #{user_id}")
 
@@ -1284,6 +1306,28 @@ defmodule ClippsterServer.Subscriptions do
   # ============================================================================
   # Stripe Customer Management
   # ============================================================================
+
+  def ensure_stripe_customer(user_id) do
+    Repo.transaction(fn ->
+      user = Repo.one!(from u in User, where: u.id == ^user_id, lock: "FOR UPDATE")
+
+      if user.stripe_customer_id do
+        user.stripe_customer_id
+      else
+        params = %{email: user.email, metadata: %{user_id: to_string(user.id)}}
+        params = if user.name, do: Map.put(params, :name, user.name), else: params
+
+        with {:ok, customer} <-
+               Stripe.Customer.create(params, idempotency_key: "personal-customer-#{user.id}"),
+             {:ok, _} <-
+               Repo.update(User.subscription_changeset(user, %{stripe_customer_id: customer.id})) do
+          customer.id
+        else
+          {:error, reason} -> Repo.rollback(reason)
+        end
+      end
+    end)
+  end
 
   @doc """
   Updates user's Stripe customer ID.

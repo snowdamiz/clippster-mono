@@ -346,6 +346,7 @@ defmodule ClippsterServerWeb.Router do
     post("/subscription/select-free", SubscriptionController, :select_free)
     post("/subscription/checkout", SubscriptionController, :create_checkout)
     post("/subscription/promo/validate", SubscriptionController, :validate_promo)
+    post("/subscription/offer", SubscriptionController, :get_subscription_offer)
     post("/subscription/crypto-quote", SubscriptionController, :get_crypto_quote)
     post("/subscription/crypto-confirm", SubscriptionController, :confirm_crypto_payment)
     put("/subscription/tier", SubscriptionController, :change_tier)
@@ -1618,6 +1619,7 @@ defmodule ClippsterServerWeb.Router do
     )
 
     get("/admin/messaging/campaigns", AdminMessagingController, :list_campaigns)
+    get("/admin/messaging/campaigns/:id/recipients", AdminMessagingController, :campaign_report)
 
     # Platform campaigns management
     get("/admin/platform-campaigns", PlatformCampaignController, :list_campaigns)

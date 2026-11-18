@@ -6,6 +6,7 @@ import type {
   GenerateBrief,
   MediaItem,
   ReferenceInfo,
+  SpeechIndex,
   SessionSummary,
   SourceSegment,
   ToolResult,
@@ -19,11 +20,42 @@ import type {
 export type SessionPatch = Partial<{
   name: string | null;
   media_items: MediaItem[];
+  speech_index: SpeechIndex;
   reference: ReferenceInfo | null;
   aspect_ratio: AspectRatio | null;
+  motion_graphics: import('./types').MotionGraphicsLevel;
+  playbook_enabled: boolean;
+  creator_profile_id: number | null;
+  creator_skill_job_id: number | null;
   document: EditDocument | null;
   composition_files: Record<string, string>;
 }>;
+
+export interface CreatorVideoPlaybook {
+  audience: string;
+  editing_style: string;
+  hard_rules: string;
+  captions: 'ask' | 'yes' | 'no';
+}
+
+export interface VideoCreatorProfile {
+  id: number;
+  name: string;
+  disabled?: boolean;
+  video_playbook: CreatorVideoPlaybook | null;
+}
+
+export async function listCreatorProfiles(): Promise<VideoCreatorProfile[]> {
+  const response = await api.get('/user/creator-profiles');
+  return response.data.profiles.filter((profile: VideoCreatorProfile) => !profile.disabled);
+}
+
+export async function saveCreatorVideoPlaybook(
+  id: number,
+  playbook: CreatorVideoPlaybook
+): Promise<void> {
+  await api.patch(`/user/creator-profiles/${id}`, { video_playbook: playbook });
+}
 
 export async function getPolicy(): Promise<VideoPolicy> {
   return (await api.get('/ai/video/policy')).data;
@@ -114,9 +146,10 @@ export async function sendPlanMessage(sessionId: number, message: string): Promi
 export async function startRun(
   sessionId: number,
   kind: 'generate' | 'revise',
-  request: string
+  request: string,
+  maxCredits?: number
 ): Promise<VideoRun> {
-  return (await api.post(`/ai/video/sessions/${sessionId}/runs`, { kind, request })).data.run;
+  return (await api.post(`/ai/video/sessions/${sessionId}/runs`, { kind, request, ...(maxCredits === undefined ? {} : { max_credits: maxCredits }) })).data.run;
 }
 
 export async function turn(

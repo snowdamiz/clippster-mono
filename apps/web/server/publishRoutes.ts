@@ -9,6 +9,8 @@ import type { Config } from './config'
 import type { Jobs } from './jobs'
 import { requireValue } from './errors'
 import { projectDirectory } from './storage'
+import { creatorSkillTikTokRestrictedSponsors } from '../../../client/src/services/creatorSkillPlatformCut'
+import { creatorSkillPublishBlockers } from '../../../client/src/services/creatorSkillReview'
 
 export function publishRoutes(store: Store, auth: Auth, config: Config, jobs: Jobs) {
   const router = Router()
@@ -19,6 +21,10 @@ export function publishRoutes(store: Store, auth: Auth, config: Config, jobs: Jo
     const clip = project.clips.find(clip => clip.id === req.params.clipId)
     requireValue(clip, 404, 'Clip not found.')
     requireValue(req.body?.buildId || clip.builtRevision === clip.revision, 409, 'Build the latest clip before publishing.')
+    if (clip.selectedVersion === 'edited' && clip.creatorSkill) {
+      const blockers = creatorSkillPublishBlockers(clip.creatorSkill.playbookPackage, clip.creatorSkill.masterMd5)
+      requireValue(!blockers.length, 409, `The edited master has ${blockers.length} unresolved review item${blockers.length === 1 ? '' : 's'}: ${blockers[0] ?? ''}. Correct the edit and record a follow-up review before publishing.`)
+    }
     const { accountId, organizationId, caption = '', scheduledAt, requestId } = req.body || {}
     requireValue(typeof requestId === 'string' && /^[\da-f-]{36}$/i.test(requestId), 400, 'Invalid publish request.')
     requireValue(Number.isSafeInteger(accountId) && accountId > 0, 400, 'Choose a social account.')
@@ -37,8 +43,14 @@ export function publishRoutes(store: Store, auth: Auth, config: Config, jobs: Jo
     const accounts = await upstream.get<{ success: boolean; social_accounts?: SocialAccount[]; accounts?: SocialAccount[] }>(organizationId ? `/organizations/${organizationId}/social-accounts` : '/user/social-accounts')
     const account = (organizationId ? accounts.accounts : accounts.social_accounts)?.find(account => account.id === accountId && account.is_active !== false)
     requireValue(accounts.success && account && WEB_PUBLISH_PLATFORMS.includes(account.platform), 400, 'Choose an active supported social account.')
+    const restrictedSponsors = creatorSkillTikTokRestrictedSponsors(clip.creatorSkill?.playbookPackage)
+    requireValue(account.platform !== 'tiktok' || !restrictedSponsors.length, 409, `${restrictedSponsors.join(', ')} is excluded from TikTok by the saved creator profile. Use the reviewed sponsor-free cut instead.`)
     const build = req.body?.buildId ? clip.builds?.find(value => value.id === req.body.buildId) : undefined
     requireValue(!req.body?.buildId || build, 404, 'This build is no longer available. Rebuild the clip before publishing.')
+    if (clip.creatorSkill) {
+      requireValue(build && build.revision === clip.revision, 409, 'Choose a current build of the selected clip version before publishing.')
+      requireValue((build.origin === 'creator_skill') === (clip.selectedVersion === 'edited'), 409, 'This build does not match the selected Raw or Edited version.')
+    }
     const fingerprint = createHash('sha256').update(JSON.stringify([project.id, clip.id, build?.revision ?? clip.revision, req.body?.buildId || null, accountId, organizationId || null, caption, scheduledAt || null])).digest('hex')
     const previous = store.db.prepare('SELECT * FROM publications WHERE id = ?').get(requestId) as { owner: string; fingerprint: string; status: string; result: string } | undefined
     if (previous) {

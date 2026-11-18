@@ -1,9 +1,12 @@
 import { computed, reactive, ref, shallowRef } from 'vue';
 import { invoke } from '@tauri-apps/api/core';
 import { join, videoDir } from '@tauri-apps/api/path';
+import { stat } from '@tauri-apps/plugin-fs';
 import { useToast } from '@/composables/useToast';
 import { createClip } from '@/services/database/clips';
 import { updateClipBuildStatus } from '@/services/database/clip-build';
+import { getConfiguredFramingConfigs, pairExportVariants } from '@/editor/lib/export-framing';
+import type { ManualFramingConfigs } from '@/types';
 import * as videoApi from './api';
 import { runAgent, type SourceSummary } from './agent/run';
 import type { AgentProgress } from './agent/tools';
@@ -16,10 +19,12 @@ import {
   type ExampleProgress,
 } from './analysis/reference';
 import { indexSources, type SourceProgress } from './analysis/sources';
+import { analyzeVideoSpeech } from './analysis/speech';
 import type { CompileContext } from './compiler/compile';
 import { exportFiles, linkProjectMedia, syncWorkspace } from './runtime/project';
 import { HyperframesWorkspace } from './runtime/workspace';
 import { mediaAspect } from './director/aspect';
+import { documentDuration } from './director/validate';
 import type {
   AspectRatio,
   EditDocument,
@@ -64,6 +69,7 @@ export interface ExportState {
   progress: number;
   path: string | null;
   error: string | null;
+  variants?: Array<{ ratio: string; path: string }>;
 }
 
 interface Version {
@@ -109,6 +115,8 @@ export function useAIVideoProject() {
   const revision = ref(0);
   const history = ref<Version[]>([]);
   const exportState = ref<ExportState | null>(null);
+  const speechPending = ref<string | null>(null);
+  const speechError = ref<string | null>(null);
 
   const workspace = shallowRef<HyperframesWorkspace | null>(null);
   let compileContext: CompileContext | null = null;
@@ -151,6 +159,7 @@ export function useAIVideoProject() {
   const aspect = computed<AspectRatio>(
     () => session.value?.aspect_ratio ?? mediaAspect(clips.value)
   );
+  const motionGraphics = computed(() => session.value?.motion_graphics ?? 'light');
   /** Building needs something to go on: the planning chat, an example or clips. */
   const canBuild = computed(
     () =>
@@ -443,6 +452,80 @@ export function useAIVideoProject() {
     }
   }
 
+  async function analyzeSpeech(id: string) {
+    const current = session.value;
+    const item = current?.media_items.find((media) => media.id === id);
+    if (
+      !current ||
+      !item ||
+      item.kind !== 'video' ||
+      !item.hasAudio ||
+      running.value ||
+      speechPending.value
+    )
+      return;
+    speechPending.value = id;
+    speechError.value = null;
+    try {
+      const turns = await analyzeVideoSpeech(
+        current.id,
+        item,
+        Boolean(current.speech_index?.[item.contentHash])
+      );
+      const previous = new Map(
+        (current.speech_index?.[item.contentHash] ?? [])
+          .filter((turn) => turn.speakerId)
+          .map((turn) => [turn.speakerId, turn])
+      );
+      const reviewed = turns.map((turn) => {
+        const match = previous.get(turn.speakerId);
+        return match
+          ? { ...turn, speakerName: match.speakerName, speakerPosition: match.speakerPosition }
+          : turn;
+      });
+      const speechIndex = { ...(session.value?.speech_index ?? {}), [item.contentHash]: reviewed };
+      session.value = await videoApi.updateSession(current.id, { speech_index: speechIndex });
+    } catch (error) {
+      speechError.value = videoApi.apiErrorMessage(error, 'Could not analyze speech.');
+    } finally {
+      speechPending.value = null;
+    }
+  }
+
+  async function updateSpeaker(
+    mediaId: string,
+    speakerId: string,
+    changes: { speakerName?: string; speakerPosition?: 'left' | 'center' | 'right' | 'wide' }
+  ) {
+    const current = session.value;
+    const item = current?.media_items.find((media) => media.id === mediaId);
+    if (!current || !item || !speakerId || running.value) return;
+    const turns = current.speech_index?.[item.contentHash];
+    if (!turns) return;
+    const updated = turns.map((turn) =>
+      turn.speakerId === speakerId ? { ...turn, ...changes } : turn
+    );
+    try {
+      session.value = await videoApi.updateSession(current.id, {
+        speech_index: { ...(current.speech_index ?? {}), [item.contentHash]: updated },
+      });
+    } catch (error) {
+      speechError.value = videoApi.apiErrorMessage(error, 'Could not save speaker details.');
+    }
+  }
+
+  function nameSpeaker(mediaId: string, speakerId: string, name: string) {
+    return updateSpeaker(mediaId, speakerId, { speakerName: name.trim().slice(0, 100) });
+  }
+
+  function positionSpeaker(
+    mediaId: string,
+    speakerId: string,
+    position: 'left' | 'center' | 'right' | 'wide'
+  ) {
+    return updateSpeaker(mediaId, speakerId, { speakerPosition: position });
+  }
+
   /** A pasted link is analyzed once the user stops typing. */
   function setExampleUrl(url: string) {
     const value = url.trim();
@@ -497,6 +580,16 @@ export function useAIVideoProject() {
       session.value = await videoApi.updateSession(current.id, { aspect_ratio: value });
     } catch (error) {
       reportError(error, "Couldn't change the shape");
+    }
+  }
+
+  async function setMotionGraphics(value: 'none' | 'light' | 'full') {
+    const current = session.value;
+    if (!current || running.value || current.motion_graphics === value) return;
+    try {
+      session.value = await videoApi.updateSession(current.id, { motion_graphics: value });
+    } catch (error) {
+      reportError(error, "Couldn't change the graphics setting");
     }
   }
 
@@ -778,13 +871,55 @@ export function useAIVideoProject() {
           exportState.value && (exportState.value.progress = Math.round(progress * 100)),
       });
       exportState.value = { progress: 100, path: result.outputPath, error: null };
-      void saveToLibrary(result.outputPath, name, result.duration, result.bytes);
+      await saveToLibrary(result.outputPath, name, result.duration, result.bytes);
     } catch (error) {
       exportState.value = {
         progress: 0,
         path: null,
         error: videoApi.apiErrorMessage(error, 'The export failed.'),
       };
+    }
+  }
+
+  /** Frame alternate outputs from the finished composition, preserving every scene and its audio. */
+  async function exportVariants(ratios: string[], configs: ManualFramingConfigs) {
+    const state = exportState.value;
+    const current = session.value;
+    if (!state?.path || !current?.document || ratios.length === 0) return;
+    const masterPath = state.path;
+    try {
+      exportState.value = { ...state, progress: 78, path: null, error: null };
+      const paths = await invoke<string[]>('build_editor_export_variants', {
+        videoPath: masterPath,
+        duration: documentDuration(current.document),
+        aspectRatios: ratios,
+        manualFramingConfigs: getConfiguredFramingConfigs(ratios, configs),
+        quality: 'high',
+        frameRate: current.document.format.fps,
+      });
+      const variants = pairExportVariants(ratios, paths);
+      if (variants.length !== ratios.length)
+        throw new Error('Some aspect ratio outputs were not created.');
+      exportState.value = { progress: 100, path: masterPath, error: null, variants };
+      const name = current.name || current.document.title || 'AI video';
+      const duration = documentDuration(current.document);
+      for (const variant of variants) {
+        void stat(variant.path)
+          .then(({ size }) =>
+            saveToLibrary(variant.path, `${name} (${variant.ratio})`, duration, size)
+          )
+          .catch((error) =>
+            console.warn('[AIVideo] Failed to register aspect ratio export:', error)
+          );
+      }
+      return variants;
+    } catch (error) {
+      exportState.value = {
+        progress: 0,
+        path: masterPath,
+        error: videoApi.apiErrorMessage(error, 'Could not create the other aspect ratios.'),
+      };
+      throw error;
     }
   }
 
@@ -833,6 +968,8 @@ export function useAIVideoProject() {
     revision,
     history,
     exportState,
+    speechPending,
+    speechError,
     document,
     blueprint,
     media,
@@ -841,6 +978,7 @@ export function useAIVideoProject() {
     hasExample,
     needsExampleAnalysis,
     aspect,
+    motionGraphics,
     canBuild,
     goCost,
     stage,
@@ -855,6 +993,7 @@ export function useAIVideoProject() {
     retryClips: () => void indexClipsNow().catch(() => {}),
     rename,
     setAspect,
+    setMotionGraphics,
     sendPlan,
     build,
     revise,
@@ -864,6 +1003,10 @@ export function useAIVideoProject() {
     editText,
     undo,
     exportVideo,
+    exportVariants,
+    analyzeSpeech,
+    nameSpeaker,
+    positionSpeaker,
     retryPreview: () => preparePreview(),
   };
 }

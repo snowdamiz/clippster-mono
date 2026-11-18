@@ -4,6 +4,8 @@ export * from './billing';
 export * from './api';
 export * from './project';
 export * from './clip';
+export * from './creatorSkill';
+export * from './creatorSkillReview';
 export * from './transcript';
 export * from './media';
 export * from './manualFraming';

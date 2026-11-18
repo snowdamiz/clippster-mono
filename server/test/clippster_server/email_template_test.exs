@@ -14,7 +14,10 @@ defmodule ClippsterServer.EmailTemplateTest do
 
     text =
       html
-      |> EmailTemplate.render(unsubscribe_url: "https://example.com/unsubscribe")
+      |> EmailTemplate.render(
+        preheader: "Inbox-only preview",
+        unsubscribe_url: "https://example.com/unsubscribe"
+      )
       |> EmailTemplate.to_text()
 
     assert text =~ "News & updates"
@@ -26,11 +29,14 @@ defmodule ClippsterServer.EmailTemplateTest do
     assert text =~ "https://example.com/unsubscribe"
     refute text =~ "<table"
     refute text =~ "color-scheme"
+    refute text =~ "Inbox-only preview"
   end
 
   test "shared chrome includes support, Discord and the company without a postal address" do
     html = EmailTemplate.render("<p>Custom message</p>", reason: "Account notification")
     assert html =~ "<p>Custom message</p>"
+    assert html =~ ~s(src="https://clippster.app/email-brand.png")
+    assert html =~ ~s(alt="Clippster")
     assert html =~ "https://discord.gg/4kTCvKEVuV"
     assert html =~ "mailto:support@clippster.app"
     assert html =~ "OpenWorth Technologies Inc"

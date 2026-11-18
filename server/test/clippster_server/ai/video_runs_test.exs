@@ -31,15 +31,56 @@ defmodule ClippsterServer.AI.VideoRunsTest do
     assert balance(user) == 5.0
   end
 
-  test "refunds failures before the edit was delivered, not after", %{user: user, session: session} do
+  test "admin AI runs use unlimited credits without deducting a balance", %{user: user, session: session} do
+    Repo.update!(Ecto.Changeset.change(user, is_admin: true))
+    {:ok, _} = Credits.deduct_credits(user.id, 30)
+
+    assert {:ok, %VideoRun{credits_charged: 0} = run} =
+             VideoRuns.start_agent_run(user.id, session, "generate", "x", 10)
+    assert balance(user) == 0.0
+    assert {:ok, %VideoRun{status: "failed", credits_charged: 0}} = VideoRuns.fail(run, "stopped")
+    assert balance(user) == 0.0
+  end
+
+  test "prepaid creator skill runs and retries do not deduct credits", %{user: user, session: session} do
+    prepaid = session |> Ecto.Changeset.change(creator_skill_prepaid: true) |> Repo.update!()
+
+    assert {:ok, %VideoRun{credits_charged: 0} = first} =
+             VideoRuns.start_agent_run(user.id, prepaid, "generate", "edit", 0)
+    assert balance(user) == 30.0
+    assert {:ok, %VideoRun{status: "failed"}} = VideoRuns.fail(first, "retry")
+
+    assert {:ok, %VideoRun{credits_charged: 0}} =
+             VideoRuns.start_agent_run(user.id, prepaid, "generate", "retry", 0)
+    assert balance(user) == 30.0
+  end
+
+  test "accepts a full creator playbook request and reports validation errors honestly", %{user: user, session: session} do
+    assert {:ok, %VideoRun{credits_charged: 10}} =
+             VideoRuns.start_agent_run(user.id, session, "generate", String.duplicate("a", 4_000))
+
+    {:ok, other_session} = VideoSessions.create_session(user.id, %{})
+    assert {:error, %Ecto.Changeset{errors: [request: _]}} =
+             VideoRuns.start_agent_run(user.id, other_session, "generate", String.duplicate("a", 50_001))
+    assert balance(user) == 20.0
+  end
+
+  test "never charges above the caller's approved maximum", %{user: user, session: session} do
+    assert {:error, :price_increased, 10} = VideoRuns.start_agent_run(user.id, session, "generate", "x", 8)
+    assert balance(user) == 30.0
+    assert {:ok, %VideoRun{credits_charged: 10}} = VideoRuns.start_agent_run(user.id, session, "generate", "x", 10)
+    assert balance(user) == 20.0
+  end
+
+  test "refunds failures until an edit is completed, even after a finish message", %{user: user, session: session} do
     {:ok, run} = VideoRuns.start_agent_run(user.id, session, "generate", "x")
     assert {:ok, %VideoRun{status: "failed", refunded: true}} = VideoRuns.fail(run, "boom")
     assert balance(user) == 30.0
 
     {:ok, run} = VideoRuns.start_agent_run(user.id, session, "generate", "x")
     {:ok, run} = VideoRuns.record_finish(run, %{"message" => "done"})
-    assert {:ok, %VideoRun{status: "failed", refunded: false}} = VideoRuns.fail(run, "client crashed")
-    assert balance(user) == 20.0
+    assert {:ok, %VideoRun{status: "failed", refunded: true}} = VideoRuns.fail(run, "client crashed")
+    assert balance(user) == 30.0
   end
 
   test "complete refunds a revision that changed nothing", %{user: user, session: session} do

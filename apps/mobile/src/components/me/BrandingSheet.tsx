@@ -17,6 +17,7 @@ import {
   type CachedUserCreatorProfile
 } from '@/services/userBrandingSync'
 import { tokens } from '@/theme/tokens'
+import { CreatorSkillProfileEditor } from './CreatorSkillProfileEditor'
 
 interface BrandingSheetProps {
   visible: boolean
@@ -34,6 +35,7 @@ export function BrandingSheet({ visible, onClose }: BrandingSheetProps) {
   const [profileName, setProfileName] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
   const [uploadOpen, setUploadOpen] = useState(false)
+  const [skillOpen, setSkillOpen] = useState(false)
   const selectedProfile = profiles.find((profile) => profile.server_id === selectedId) ?? profiles[0]
 
   const refresh = useCallback(async () => {
@@ -269,6 +271,13 @@ export function BrandingSheet({ visible, onClose }: BrandingSheetProps) {
           />
         </View>
       </SectionCard>
+      {selectedProfile ? (
+        <SectionCard>
+          <Text className="text-base font-semibold text-foreground">Clippster Skill</Text>
+          <Text className="mt-1 text-sm leading-5 text-muted">Optional editing rules, publishing preferences, and confirmed sponsor terms for {selectedProfile.name}.</Text>
+          <Button title="Edit preferences" variant="outline" onPress={() => setSkillOpen(true)} />
+        </SectionCard>
+      ) : null}
       {uploading ? (
         <View className="flex-row items-center gap-3">
           <ActivityIndicator color={tokens.colors.accent} />
@@ -306,6 +315,8 @@ export function BrandingSheet({ visible, onClose }: BrandingSheetProps) {
           />
         ))}
       </BottomSheet>
+      <CreatorSkillProfileEditor visible={skillOpen} profile={selectedProfile} onClose={() => setSkillOpen(false)}
+        onSaved={async () => { await syncPersonalBrandingFromCloud(); await refresh() }} />
     </BottomSheet>
   )
 }

@@ -4,6 +4,7 @@ import type { CreatorProfileForm } from '@/services/creatorProfileForm'
 import type { CreatorProfileWithLinks, IntroOutro, WatermarkImage } from '@/services/database/types'
 import type { ServerOrganizationAsset } from '@/services/organizationAssetsApi'
 import type { ServerOrganizationCreatorProfile } from '@/services/organizationProfilesApi'
+import { parseCreatorSkillPreferences } from '@/services/creatorSkillPreferences'
 export { extractMintId, extractChannelSlug, extractChannelName, extractYouTubeChannel, extractRumbleChannel } from '@/lib/creatorPlatformIds'
 
 const account = '/web/account'
@@ -178,6 +179,7 @@ export async function saveLocalCreator(form: CreatorProfileForm, creator: Creato
     intro_outro_settings: parseSettings(form.intro_outro_settings), intro_ratio_settings: form.intro_ratio_settings,
     outro_ratio_settings: form.outro_ratio_settings, layout_overlays: overlays, auto_dvr_enabled: form.auto_dvr_enabled,
     clip_build_defaults: hasDefaults || defaults.referenceImageSource !== 'none' ? defaults : null,
+    creator_skill_preferences: form.creator_skill_preferences?.trim() ? parseCreatorSkillPreferences(form.creator_skill_preferences) : null,
     platform_links: form.platformLinks.filter(link => link.platform_id.trim()).map(({ platform, platform_id, display_name, profile_image_url, is_primary }) => ({ platform, platform_id: platform_id.trim(), display_name, profile_image_url, is_primary })),
     profile_image_url: form.platformLinks.find(link => link.is_primary && link.profile_image_url)?.profile_image_url || form.platformLinks.find(link => link.profile_image_url)?.profile_image_url || null
   }

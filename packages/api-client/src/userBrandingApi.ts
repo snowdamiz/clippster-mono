@@ -1,4 +1,5 @@
 import type { ApiClient } from './createApiClient';
+import type { CreatorSkillPreferences } from '@clippster/shared-types';
 
 export type UserAssetType = 'intro' | 'outro' | 'watermark' | 'audio' | 'image' | 'overlay';
 
@@ -41,6 +42,7 @@ export interface ServerUserCreatorProfile {
   scope: UserCreatorProfileScope;
   disabled: boolean;
   clip_build_defaults: Record<string, unknown> | null;
+  creator_skill_preferences: CreatorSkillPreferences | null;
   inserted_at: string;
   updated_at: string;
 }

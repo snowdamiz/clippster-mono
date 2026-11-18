@@ -32,6 +32,7 @@ export interface CachedUserCreatorProfile {
   scope: string;
   disabled: number;
   clip_build_defaults: string | null;
+  creator_skill_preferences: string | null;
   updated_at: string;
 }
 
@@ -123,8 +124,8 @@ async function upsertCachedProfile(profile: ServerUserCreatorProfile): Promise<v
       server_id, client_id, name, description, profile_image_url,
       intro_id, outro_id, watermark_id, watermark_settings, intro_outro_settings,
       intro_ratio_settings, outro_ratio_settings, layout_overlays, scope, disabled,
-      clip_build_defaults, updated_at
-    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      clip_build_defaults, creator_skill_preferences, updated_at
+    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
     ON CONFLICT(server_id) DO UPDATE SET
       client_id = excluded.client_id,
       name = excluded.name,
@@ -141,6 +142,7 @@ async function upsertCachedProfile(profile: ServerUserCreatorProfile): Promise<v
       scope = excluded.scope,
       disabled = excluded.disabled,
       clip_build_defaults = excluded.clip_build_defaults,
+      creator_skill_preferences = excluded.creator_skill_preferences,
       updated_at = excluded.updated_at`,
     [
       profile.id,
@@ -159,6 +161,7 @@ async function upsertCachedProfile(profile: ServerUserCreatorProfile): Promise<v
       profile.scope,
       profile.disabled ? 1 : 0,
       profile.clip_build_defaults ? JSON.stringify(profile.clip_build_defaults) : null,
+      profile.creator_skill_preferences ? JSON.stringify(profile.creator_skill_preferences) : null,
       profile.updated_at,
     ],
   );

@@ -28,6 +28,8 @@ describe('built clip branding', () => {
       const clip = { aspectRatio: '16:9', branding: { creatorId: 1, watermarkX: 0.9, watermarkY: 0.1, watermarkWidth: 0.15 } } as WebClip
       const signal = new AbortController().signal
       const before = await probe(clipPath, fixture.config, signal)
+      expect(Number.isFinite(before.videoStart)).toBe(true)
+      expect(Number.isFinite(before.audioStart)).toBe(true)
       await applyBranding(clip, clipPath, work, fixture.config, signal, upstream, { subscription: { status: 'active' } })
       const after = await probe(clipPath, fixture.config, signal)
       expect(after.duration).toBeCloseTo(before.duration * 3, 0)

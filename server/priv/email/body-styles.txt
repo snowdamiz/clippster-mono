@@ -1,0 +1,6 @@
+category=margin:0 0 10px;color:#80dcff;font-size:11px;letter-spacing:1.55px;font-weight:700;line-height:1.5;text-transform:uppercase
+heading=margin:0 0 17px;max-width:410px;color:#f3f7ff;font-size:40px;line-height:1.08;letter-spacing:-1.4px;font-weight:700;overflow-wrap:anywhere
+message=margin:0 0 18px;color:#b9c7d8;font-size:15px;line-height:1.55;overflow-wrap:anywhere
+signoff=margin:0;color:#f3f7ff;font-size:15px;line-height:1.55;overflow-wrap:anywhere
+action=margin:0 0 17px
+button=display:inline-block;background-color:#5cd7fc;color:#081827;padding:12px 17px;border-radius:7px;font-size:14px;line-height:1.2;font-weight:700;text-decoration:none

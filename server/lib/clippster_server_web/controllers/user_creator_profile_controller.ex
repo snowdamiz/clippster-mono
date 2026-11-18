@@ -154,6 +154,8 @@ defmodule ClippsterServerWeb.UserCreatorProfileController do
       disabled: profile.disabled,
       auto_dvr_enabled: profile.auto_dvr_enabled,
       clip_build_defaults: resolve_reference_image(profile.clip_build_defaults, profile.user_id),
+      video_playbook: profile.video_playbook,
+      creator_skill_preferences: profile.creator_skill_preferences,
       inserted_at: profile.inserted_at,
       updated_at: profile.updated_at
     }
@@ -174,9 +176,15 @@ defmodule ClippsterServerWeb.UserCreatorProfileController do
 
       case overlay["perRatioSettings"] do
         settings when is_map(settings) ->
-          resolved = Map.new(settings, fn {ratio, config} -> {ratio, resolve_overlay_asset(config, user_id)} end)
+          resolved =
+            Map.new(settings, fn {ratio, config} ->
+              {ratio, resolve_overlay_asset(config, user_id)}
+            end)
+
           Map.put(overlay, "perRatioSettings", resolved)
-        _ -> overlay
+
+        _ ->
+          overlay
       end
     end)
   end
@@ -184,11 +192,14 @@ defmodule ClippsterServerWeb.UserCreatorProfileController do
   defp resolve_overlay_asset(%{"assetId" => id} = overlay, user_id) when is_integer(id) do
     Map.put(overlay, "imagePath", owned_asset_url(user_id, id))
   end
+
   defp resolve_overlay_asset(overlay, _user_id), do: overlay
 
-  defp resolve_reference_image(%{"referenceImageAssetId" => id} = defaults, user_id) when is_integer(id) do
+  defp resolve_reference_image(%{"referenceImageAssetId" => id} = defaults, user_id)
+       when is_integer(id) do
     Map.put(defaults, "referenceImageUrl", owned_asset_url(user_id, id))
   end
+
   defp resolve_reference_image(defaults, _user_id), do: defaults
 
   defp changeset_errors(changeset) do

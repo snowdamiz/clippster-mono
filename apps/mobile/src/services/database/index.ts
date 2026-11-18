@@ -207,6 +207,11 @@ export async function deleteProjectWithRetention(
     await db.runAsync('DELETE FROM clip_versions WHERE clip_id = ?', [clipId]);
     await db.runAsync('DELETE FROM clips WHERE id = ?', [clipId]);
   }
+  if (deletedClipIds.length) {
+    const { clearClipVersionPreference } = await import('@/services/clipVersionPreference');
+    const { clearMobileCreatorSkillState } = await import('@/services/creatorSkillMobile');
+    await Promise.all(deletedClipIds.flatMap(clipId => [clearClipVersionPreference(clipId), clearMobileCreatorSkillState(clipId)]));
+  }
 
   if (retainedClipIds.length > 0) {
     if (projectName) {

@@ -35,6 +35,8 @@ export function swapShot(
         sourceIn: item?.kind === 'photo' ? 0 : alternate.sourceIn,
         speed,
         description: alternate.description,
+        framing: undefined,
+        creatorLayout: undefined,
         alternates: shot.alternates.map((entry, index) =>
           index === alternateIndex ? previous : entry
         ),

@@ -1,11 +1,31 @@
-import { FaceDetector, FilesetResolver } from '@mediapipe/tasks-vision';
+import { FaceDetector, FilesetResolver, ImageSegmenter } from '@mediapipe/tasks-vision';
 import simdLoader from '@mediapipe-wasm/vision_wasm_internal.js?url';
 import simdBinary from '@mediapipe-wasm/vision_wasm_internal.wasm?url';
 import scalarLoader from '@mediapipe-wasm/vision_wasm_nosimd_internal.js?url';
 import scalarBinary from '@mediapipe-wasm/vision_wasm_nosimd_internal.wasm?url';
-import model from './blaze_face_short_range.tflite?url';
+import model from '../../../src-tauri/sidecars/hyperframes-renderer/lib/blaze_face_short_range.tflite?url';
+import portraitModel from '../../../src-tauri/sidecars/hyperframes-renderer/lib/selfie_segmenter.tflite?url';
 import { openAnalysisVideo } from './video';
 import type { FramingSample } from './planner';
+
+/** Reuse the packaged face model for framing and same-day VOD thumbnail selection. */
+export async function createLocalFaceDetector(): Promise<FaceDetector> {
+  return FaceDetector.createFromOptions(await localVisionFileset(),
+    { baseOptions: { modelAssetPath: model, delegate: 'CPU' }, runningMode: 'IMAGE', minDetectionConfidence: 0.6 }
+  );
+}
+
+async function localVisionFileset() {
+  const simd = await FilesetResolver.isSimdSupported();
+  return { wasmLoaderPath: simd ? simdLoader : scalarLoader, wasmBinaryPath: simd ? simdBinary : scalarBinary };
+}
+
+export async function createLocalPortraitSegmenter(): Promise<ImageSegmenter> {
+  return ImageSegmenter.createFromOptions(await localVisionFileset(), {
+    baseOptions: { modelAssetPath: portraitModel, delegate: 'CPU' }, runningMode: 'IMAGE',
+    outputCategoryMask: false, outputConfidenceMasks: true,
+  });
+}
 
 /** All model/runtime URLs are Vite assets packaged with the desktop app. */
 export async function analyzeLocalFaces(
@@ -18,19 +38,8 @@ export async function analyzeLocalFaces(
 ) {
   if (!(end > start && start >= 0) || end - start > 1800)
     throw new Error('Auto framing supports clips up to 30 minutes. Trim the clip first.');
-  const simd = await FilesetResolver.isSimdSupported();
   signal.throwIfAborted();
-  const detector = await FaceDetector.createFromOptions(
-    {
-      wasmLoaderPath: simd ? simdLoader : scalarLoader,
-      wasmBinaryPath: simd ? simdBinary : scalarBinary,
-    },
-    {
-      baseOptions: { modelAssetPath: model, delegate: 'CPU' },
-      runningMode: 'IMAGE',
-      minDetectionConfidence: 0.6,
-    }
-  );
+  const detector = await createLocalFaceDetector();
   let media: Awaited<ReturnType<typeof openAnalysisVideo>> | undefined;
   try {
     signal.throwIfAborted();

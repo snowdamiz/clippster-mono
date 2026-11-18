@@ -50,6 +50,7 @@ async function ensureCreatorProfilesSchema(db: any): Promise<void> {
     await addColumnIfMissing(db, 'creator_profiles', 'layout_overlays', 'TEXT DEFAULT NULL');
     await addColumnIfMissing(db, 'creator_profiles', 'disabled', 'INTEGER NOT NULL DEFAULT 0');
     await addColumnIfMissing(db, 'creator_profiles', 'clip_build_defaults', 'TEXT DEFAULT NULL');
+    await addColumnIfMissing(db, 'creator_profiles', 'creator_skill_preferences', 'TEXT DEFAULT NULL');
   })();
 
   try {
@@ -244,6 +245,7 @@ export async function updateCreatorProfile(
     scope: 'streamer' | 'global' | 'personal_studio';
     layout_overlays: string | null;
     clip_build_defaults: string | null;
+    creator_skill_preferences: string | null;
   }>
 ): Promise<void> {
   const db = await getDatabase();
@@ -319,6 +321,11 @@ export async function updateCreatorProfile(
   if (updates.clip_build_defaults !== undefined) {
     fields.push('clip_build_defaults = ?');
     values.push(updates.clip_build_defaults);
+  }
+
+  if (updates.creator_skill_preferences !== undefined) {
+    fields.push('creator_skill_preferences = ?');
+    values.push(updates.creator_skill_preferences);
   }
 
   if (fields.length === 0) {

@@ -31,6 +31,11 @@ export function personalPlanQuote(price: number, minutes: number, yearly: boolea
   };
 }
 
+export function discountedMonthlyPrice(price: number, percent: number) {
+  const cents = Math.round(price * 100);
+  return ((cents - Math.round(cents * percent / 100)) / 100).toFixed(2);
+}
+
 export const BUSINESS_PLAN_NAMES: Record<string, string> = {
   solo: 'Business Solo',
   enterprise_base: 'Business',

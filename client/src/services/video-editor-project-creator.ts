@@ -19,7 +19,7 @@ import {
   createVideoEditorWatermark,
   type VideoEditorSource,
 } from '@/services/database';
-import { extractUnbuiltClipSegmentToPath } from '@/services/clip-vod-extract';
+import { extractUnbuiltClipSegmentsToPath } from '@/services/clip-vod-extract';
 import {
 	pickPrimaryRawVideo,
 	resolveRawVideosForProject,
@@ -38,6 +38,8 @@ export interface CreateProjectFromClipOptions {
   clipStartTime: number;
   clipEndTime: number;
   clipSegments?: ClipSegmentInput[];
+  /** Use the original VOD ranges even when a built export or prior clip edits exist. */
+  forceRawSource?: boolean;
   /** When clips live on a segment/child project, raw VODs are often on the parent — pass `parent_id`. */
   rawVideoParentProjectId?: string | null;
 }
@@ -72,19 +74,21 @@ export interface CreateProjectFromProjectOptions {
 export async function createVideoEditorProjectFromClip(
   options: CreateProjectFromClipOptions
 ): Promise<CreateProjectFromClipResult> {
-  const { clipId, clipTitle, videoSrc, clipStartTime, clipEndTime, rawVideoParentProjectId } = options;
-
-  // Create a new video editor project with the clip's name
-  const projectName = `${clipTitle || 'Untitled'} - Video Project`;
-  const newProjectId = await createVideoEditorProject(projectName);
-
-  // Get video server port for constructing video URLs
-  const videoServerPort = await invoke<number>('get_video_server_port');
+  const { clipId, clipTitle, videoSrc, clipStartTime, clipEndTime, rawVideoParentProjectId, forceRawSource = false } = options;
 
   // Resolve the clip's extracted video file path.
   // We ALWAYS extract the clip segment from the VOD so the editor
   // only ever works with the short clip file — never the full VOD.
-  const clipDuration = clipEndTime - clipStartTime;
+  const ranges = options.clipSegments?.length
+    ? options.clipSegments.map(({ start_time, end_time }) => ({ start: start_time, end: end_time }))
+    : [{ start: clipStartTime, end: clipEndTime }];
+  if (ranges.some(({ start, end }) => !Number.isFinite(start) || !Number.isFinite(end) || end <= start)) {
+    throw new Error('The clip has an invalid source range');
+  }
+  const clipDuration = ranges.reduce((total, range) => total + range.end - range.start, 0);
+  const projectName = `${clipTitle || 'Untitled'} - Video Project`;
+  const newProjectId = await createVideoEditorProject(projectName);
+  const videoServerPort = await invoke<number>('get_video_server_port');
   let clipVideoPath = '';
   let clipThumbnailPath: string | null = null;
 
@@ -93,12 +97,12 @@ export async function createVideoEditorProjectFromClip(
       const clip = await getClip(clipId);
 
       // Capture thumbnail path from the clip if available
-      if (clip?.built_thumbnail_path) {
+      if (!forceRawSource && clip?.built_thumbnail_path) {
         clipThumbnailPath = clip.built_thumbnail_path;
       }
 
       // If the clip was already built, use the built file directly
-      if (clip?.built_file_path) {
+      if (!forceRawSource && clip?.built_file_path) {
         clipVideoPath = clip.built_file_path;
         console.log('[video-editor-project-creator] Using existing built clip file:', clipVideoPath);
       } else {
@@ -108,10 +112,9 @@ export async function createVideoEditorProjectFromClip(
           clipId,
         });
 
-        await extractUnbuiltClipSegmentToPath({
+        await extractUnbuiltClipSegmentsToPath({
           clipId,
-          clipStartTime,
-          clipEndTime,
+          segments: ranges,
           outputPath,
           videoSrc,
           rawVideoParentProjectId: rawVideoParentProjectId ?? null,
@@ -158,7 +161,7 @@ export async function createVideoEditorProjectFromClip(
   const videoEditorEditId = editRecord.id;
 
   // Migrate existing clip edits to the video editor project
-  if (clipId) {
+  if (clipId && !forceRawSource) {
     await migrateClipEditsToVideoProject(clipId, videoEditorEditId);
   }
 

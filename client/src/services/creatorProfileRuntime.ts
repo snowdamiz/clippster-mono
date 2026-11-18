@@ -143,6 +143,7 @@ export async function saveLocalCreator(form: CreatorProfileForm, creator: Creato
         clip_build_defaults: hasDefaults
           ? serializeCreatorClipBuildDefaults(form.clip_build_defaults)
           : null,
+        creator_skill_preferences: form.creator_skill_preferences?.trim() || null,
       });
 
       // Delete removed links
@@ -181,6 +182,12 @@ export async function saveLocalCreator(form: CreatorProfileForm, creator: Creato
           ? serializeCreatorClipBuildDefaults(form.clip_build_defaults)
           : null
       );
+
+      if (form.creator_skill_preferences?.trim()) {
+        await updateCreatorProfile(creatorId, {
+          creator_skill_preferences: form.creator_skill_preferences.trim(),
+        });
+      }
 
       // Add platform links
       for (const link of validLinks) {

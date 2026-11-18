@@ -165,6 +165,43 @@ export function validateDocument(input: unknown, context: ValidationContext): Va
       ? []
       : validateAlternates(shot.alternates, duration, speed, media, label, warnings);
 
+    let framing: EditShot['framing'];
+    if (shot.framing !== undefined && shot.framing !== null) {
+      const value = isObject(shot.framing) ? shot.framing : {};
+      if (
+        scene ||
+        !isNumber(value.x) ||
+        !isNumber(value.y) ||
+        !isNumber(value.zoom) ||
+        value.x < 0 ||
+        value.x > 1 ||
+        value.y < 0 ||
+        value.y > 1 ||
+        value.zoom < 1 ||
+        value.zoom > 4
+      ) {
+        errors.push(`${label}: framing needs x and y from 0 to 1 and zoom from 1 to 4 on footage.`);
+      } else {
+        framing = { x: value.x, y: value.y, zoom: value.zoom };
+      }
+    }
+
+    let creatorLayout: EditShot['creatorLayout'];
+    if (shot.creatorLayout != null) {
+      const layout = isObject(shot.creatorLayout) ? shot.creatorLayout : {};
+      const validRegion = (region: unknown) => isObject(region) &&
+        ['x', 'y', 'width', 'height'].every(key => isNumber(region[key])) &&
+        (region.x as number) >= 0 && (region.y as number) >= 0 &&
+        (region.width as number) > 0 && (region.height as number) > 0 &&
+        (region.x as number) + (region.width as number) <= 1.000001 &&
+        (region.y as number) + (region.height as number) <= 1.000001;
+      if (scene || format.width >= format.height || (layout.top !== undefined && !validRegion(layout.top)) || !validRegion(layout.speaker) || framing || move !== 'none') {
+        errors.push(`${label}: creatorLayout requires a measured speaker rectangle and optional top rectangle (x/y/width/height within 0–1) on vertical footage, without framing or camera moves.`);
+      } else {
+        creatorLayout = layout as unknown as NonNullable<EditShot['creatorLayout']>;
+      }
+    }
+
     return {
       id,
       mediaId: scene ? null : typeof shot.mediaId === 'string' ? shot.mediaId : '',
@@ -177,6 +214,8 @@ export function validateDocument(input: unknown, context: ValidationContext): Va
       refShot,
       description: typeof shot.description === 'string' ? shot.description.slice(0, 200) : '',
       alternates,
+      ...(framing && { framing }),
+      ...(creatorLayout && { creatorLayout }),
     };
   });
 
@@ -203,6 +242,8 @@ export function validateDocument(input: unknown, context: ValidationContext): Va
       clipAudio,
       shots,
       overlays,
+      ...(Number.isInteger(raw.creatorSkillEditorialVersion) && (raw.creatorSkillEditorialVersion as number) > 0
+        ? { creatorSkillEditorialVersion: raw.creatorSkillEditorialVersion as number } : {}),
     },
     errors,
     warnings,
@@ -362,7 +403,7 @@ function validateOverlay(value: unknown, index: number, context: OverlayContext)
   const lane = OVERLAY_LANES.includes(overlay.lane as never)
     ? (overlay.lane as EditOverlay['lane'])
     : 'graphics';
-  if (lane !== overlay.lane) errors.push(`${label}: lane must be graphics or text.`);
+  if (lane !== overlay.lane) errors.push(`${label}: lane must be graphics, text, captions, or sponsor.`);
 
   const start = isNumber(overlay.start) ? context.snap(overlay.start) : -1;
   let duration = isNumber(overlay.duration) ? context.snap(overlay.duration) : 0;

@@ -42,6 +42,7 @@ export interface LoadEditorEntryDependencies {
   fingerprint(uri: string): Promise<string>;
   probeMedia: MediaProbe;
   now(): number;
+  getSelectedClipEditSource?: (clipId: string) => Promise<{ path: string; duration: number; buildId: string; aspectRatio?: '9:16' | '16:9' } | null>;
 }
 
 export interface LoadedEditorEntry {
@@ -63,12 +64,13 @@ export async function loadEditorEntry(
     kind === 'clip'
       ? await loadClipContext(targetId, dependencies)
       : await loadProjectContext(targetId, dependencies);
-  const stored = await dependencies.drafts.load(kind, targetId);
-  const document = withSourceThumbnail(
+  const stored = await dependencies.drafts.load(kind, context.targetId);
+  let document = withSourceThumbnail(
     stored?.document ?? (await createFromContext(context, dependencies)),
     context.raw.thumbnail_path,
     dependencies.now(),
   );
+  if (context.clip && document.linkedClipId !== context.clip.id) document = { ...document, linkedClipId: context.clip.id };
   const missingMedia = await findUnavailableMedia(document, dependencies.probeMedia);
   return {
     title: context.title,
@@ -93,6 +95,8 @@ interface EditorSourceContext {
   words: WordInfo[];
   subtitleSettings?: SubtitleSettings | null;
   textOverlay?: ClipTextBoxState | null;
+  preEdited?: boolean;
+  editedAspectRatio?: '9:16' | '16:9';
 }
 
 async function loadClipContext(
@@ -112,6 +116,17 @@ async function loadClipContext(
   ]);
   if (!project) throw new Error('Clip project not found');
   if (!raw?.file_path && !clip.file_path) throw new Error('Clip source media reference is missing');
+  const edited = await dependencies.getSelectedClipEditSource?.(targetId);
+  if (edited) {
+    if (edited.duration > 120) throw new Error('This long-form Clippster Skill edit exceeds the 120-second mobile editor limit. Review or download it here, or continue editing on web or desktop.');
+    return {
+      kind: 'clip', targetId: `${targetId}:creator-skill-edited:${edited.buildId}`, title: `${clip.name || project.name || 'Clip'} (Edited)`,
+      project, clip: { ...clip, subtitle_enabled: 0 },
+      raw: { ...(raw ?? { id: clip.id, project_id: clip.project_id, file_path: clip.file_path, duration: edited.duration, width: null, height: null, codec: null, file_size: null, created_at: clip.created_at, updated_at: clip.updated_at }), file_path: edited.path, duration: edited.duration, thumbnail_path: null },
+      sourceUri: edited.path, ranges: [{ startSeconds: 0, endSeconds: edited.duration }],
+      words: [], subtitleSettings: null, textOverlay: null, preEdited: true, editedAspectRatio: edited.aspectRatio,
+    };
+  }
   const start = clip.start_time ?? 0;
   const end = clip.end_time ?? start + Math.min(30, clip.duration ?? 30);
   return {
@@ -184,6 +199,7 @@ async function createFromContext(
     kind: context.kind,
     targetId: context.targetId,
     projectId: context.project.id,
+    linkedClipId: context.clip?.id,
     source: {
       uri: context.sourceUri,
       fingerprint: sourceFingerprint,
@@ -196,6 +212,7 @@ async function createFromContext(
       thumbnailUri: context.raw.thumbnail_path ?? undefined,
     },
     ranges: context.ranges,
+    ratio: context.preEdited ? context.editedAspectRatio ?? '9:16' : undefined,
     now: dependencies.now(),
     idFactory: dependencies.idFactory,
   });
@@ -221,7 +238,7 @@ async function createFromContext(
   }
   document = withLegacyTextOverlay(document, context.textOverlay, dependencies.idFactory);
   const preset = parseActiveVodPresetConfig(context.project.active_vod_preset_config);
-  if (preset) {
+  if (preset && !context.preEdited) {
     document = {
       ...document,
       branding: {

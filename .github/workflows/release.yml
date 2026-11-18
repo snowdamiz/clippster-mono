@@ -52,7 +52,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version-file: '.node-version'
           cache: yarn
           cache-dependency-path: client/yarn.lock
 
@@ -215,7 +215,7 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@v6
         with:
-          node-version: lts/*
+          node-version-file: '.node-version'
           cache: yarn
           cache-dependency-path: client/yarn.lock
 

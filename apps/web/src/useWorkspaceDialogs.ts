@@ -6,7 +6,7 @@ import { createDefaultSubtitleSettings } from '@clippster/shared-types'
 import { useToast } from './toasts'
 import { useWorkspaceJobWaiter } from './useWorkspaceJobWaiter'
 import { queueWorkspaceMutation } from './workspaceMutations'
-export interface DetectionOptions { prompt: string; organizationId?: number | null; startTime?: number; endTime?: number; subtitlePreset?: string | null; enhanced?: boolean }
+export interface DetectionOptions { prompt: string; organizationId?: number | null; startTime?: number; endTime?: number; subtitlePreset?: string | null; enhanced?: boolean; creatorSkill?: boolean }
 export function useWorkspaceDialogs(project: () => WebProject, update: (workspace: WebWorkspace) => void, detect: (options: DetectionOptions) => void, transcribe: (organizationId: number | null) => void) {
   function serialize(operation: () => Promise<void>) { return queueWorkspaceMutation(project().id, operation).catch(cause => { useToast().error('Could not save clip changes', cause instanceof Error ? cause.message : 'Please try again.') }) }
   const showDetect = ref(false), showTranscribe = ref(false), showSubtitles = ref(false), showDelete = ref(false), deletingId = ref<string | null>(null)
@@ -22,7 +22,7 @@ export function useWorkspaceDialogs(project: () => WebProject, update: (workspac
     catch (cause) { useToast().error('Clip transcription failed', cause instanceof Error ? cause.message : 'Please try again.') }
     finally { transcribingClip.value = false }
   }
-  function confirmDetect(_id: string, prompt: string, organizationId: number | null, startTime: number, endTime: number, subtitle?: { enabled: boolean; presetId: string } | null, enhanced = false) { detect({ prompt, organizationId, startTime, endTime, subtitlePreset: subtitle?.enabled ? subtitle.presetId : null, enhanced }) }
+  function confirmDetect(_id: string, prompt: string, organizationId: number | null, startTime: number, endTime: number, subtitle?: { enabled: boolean; presetId: string } | null, enhanced = false, creatorSkill = false) { detect({ prompt, organizationId, startTime, endTime, subtitlePreset: subtitle?.enabled ? subtitle.presetId : null, enhanced, creatorSkill }) }
   async function applySubtitles(ids: string[], presetId: string) {
     const preset = captionPresetSettings(presetId); if (!preset) throw new Error('Choose a valid subtitle preset.')
     const settings = project().vodPresetConfig?.subtitleDefaults ? { ...JSON.parse(JSON.stringify(project().vodPresetConfig!.subtitleDefaults)), enabled: true, selectedPresetId: presetId } : preset

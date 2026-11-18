@@ -416,11 +416,6 @@
         // A refresh after trimming must retain the selected row, not reveal every clip.
         const ids = new Set(newClips.map((clip) => clip.id));
         visibleClipIds.value = new Set([...visibleClipIds.value].filter((id) => ids.has(id)));
-        if (!visibleClipIds.value.size && localClips.value.length) {
-          visibleClipIds.value.add(
-            props.hoveredClipId && ids.has(props.hoveredClipId) ? props.hoveredClipId : localClips.value[0].id
-          );
-        }
       }
     },
     { immediate: true, deep: true }
@@ -715,8 +710,9 @@
     }
   }
 
-  async function focusSelectedClip() {
+  async function focusSelectedClip(clipId?: string) {
     const clip =
+      displayClips.value.find((c) => c.id === clipId) ??
       displayClips.value.find((c) => c.id === props.currentlyPlayingClipId || c.id === props.hoveredClipId) ??
       displayClips.value[0];
     if (!clip?.segments.length || !props.duration) return;
@@ -762,6 +758,7 @@
   // Expose functions to parent
   defineExpose({
     scrollTimelineClipIntoView,
+    focusSelectedClip,
     zoomLevel,
     loadTranscriptData,
     revealClip,

@@ -23,16 +23,17 @@ async function publicAddress(host: string) {
 }
 
 /** Download authorized media assets with a pinned public address and a byte limit. */
-export async function openAsset(raw: string, signal: AbortSignal, range?: string, redirects = 0): Promise<import('node:http').IncomingMessage> {
+export async function openAsset(raw: string, signal: AbortSignal, range?: string, redirects = 0, allowedHost?: string): Promise<import('node:http').IncomingMessage> {
   const url = new URL(raw)
   if (url.protocol !== 'https:' || url.username || url.password || url.port && url.port !== '443' || redirects > 3) throw new Error('Unsupported branding asset URL.')
+  if (allowedHost && url.hostname.toLowerCase() !== allowedHost.toLowerCase()) throw new Error('Brand logo redirected away from the cited domain.')
   const address = await publicAddress(url.hostname)
   const response = await new Promise<import('node:http').IncomingMessage>((resolve, reject) => {
     const request = httpsRequest({ hostname: address, servername: url.hostname, headers: { Host: url.host, ...(range ? { Range: range } : {}) }, path: url.pathname + url.search, port: 443, signal, timeout: 30_000 }, resolve)
     request.on('error', reject); request.on('timeout', () => request.destroy(new Error('Asset download timed out.'))); request.end()
   })
   if ([301, 302, 303, 307, 308].includes(response.statusCode || 0) && response.headers.location) {
-    response.destroy(); return openAsset(new URL(response.headers.location, url).href, signal, range, redirects + 1)
+    response.destroy(); return openAsset(new URL(response.headers.location, url).href, signal, range, redirects + 1, allowedHost)
   }
   if (response.statusCode !== 200 && !(range && response.statusCode === 206)) { response.destroy(); throw new Error('Unable to download branding asset.') }
   return response

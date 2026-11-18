@@ -168,6 +168,15 @@ describe('private browser workspace with real FFmpeg', () => {
     expect(info.streams[0].codec_name).toBe('h264')
     expect(info.streams[0].width).toBe(1080)
     expect(info.streams[0].height).toBe(1920)
+    const versionPath = `/projects/${workspace.project.id}/clips/${clip.id}/version`
+    expect((await request(versionPath, 'PATCH', { version: 'edited' }, second)).status).toBe(404)
+    expect((await request(versionPath, 'PATCH', { version: 'invalid' })).status).toBe(400)
+    const selected = await request(versionPath, 'PATCH', { version: 'edited' })
+    expect(selected.status).toBe(200)
+    expect(((await selected.json()) as WebWorkspace).project.clips[0].selectedVersion).toBe('edited')
+    const raw = await request(versionPath, 'PATCH', { version: 'raw' })
+    expect(raw.status).toBe(200)
+    expect(((await raw.json()) as WebWorkspace).project.clips[0].selectedVersion).toBe('raw')
   })
   it('rejects stale edits, invalid ranges, cross-user downloads, and outdated builds', async () => {
     const clip = workspace.project.clips[0]
@@ -179,6 +188,33 @@ describe('private browser workspace with real FFmpeg', () => {
     expect((await request(base + '/download', 'GET', undefined, second)).status).toBe(404)
     expect((await request(base, 'PUT', { ...clip, name: 'Revised highlight' })).status).toBe(200)
     expect((await request(base + '/download')).status).toBe(409)
+  })
+  it('serves the owner-scoped Raw VOD excerpt after Clippster Skill is disabled', async () => {
+    const stored = fixture.store.get(workspace.project.id, '1')
+    const clip = stored.clips[0]
+    clip.creatorSkill = { status: 'awaiting_approval', reviewItems: [] }
+    clip.selectedVersion = 'raw'
+    fixture.store.save(stored, '1')
+    const path = `/projects/${stored.id}/clips/${clip.id}/creator-skill/raw`
+    expect((await request(path, 'GET', undefined, second)).status).toBe(404)
+    const response = await request(path)
+    expect(response.status).toBe(200)
+    expect(response.headers.get('content-disposition')).toContain('Raw.mp4')
+    const output = join(fixture.directory, 'raw-clip-download.mp4')
+    await writeFile(output, Buffer.from(await response.arrayBuffer()))
+    const info = JSON.parse(execFileSync(fixture.config.ffprobe, ['-v', 'error', '-show_entries', 'format=duration', '-of', 'json', output], { encoding: 'utf8' }))
+    expect(Number(info.format.duration)).toBeCloseTo(2, 0)
+  })
+  it('saves every newly detected Clippster Skill clip as Raw pending cost approval', async () => {
+    expect((await request(`/projects/${workspace.project.id}/detect`, 'POST', { prompt: 'Find highlights', creatorSkill: true })).status).toBe(202)
+    workspace = await waitForJob(fixture.url, cookie, workspace.project.id)
+    expect(workspace.jobs[0].status, workspace.jobs[0].message).toBe('completed')
+    const newClips = workspace.project.clips.filter(clip => clip.detection?.sessionId === workspace.jobs[0].id)
+    expect(newClips.length).toBeGreaterThan(0)
+    expect(newClips.every(clip => clip.selectedVersion === 'raw' && clip.creatorSkill?.status === 'awaiting_approval')).toBe(true)
+    expect((await request(`/projects/${workspace.project.id}/creator-skill/batch`, 'POST', { maxCreditsPerClip: -1 })).status).toBe(400)
+    const raw = await request(`/projects/${workspace.project.id}/clips/${newClips[0].id}/creator-skill/raw`)
+    expect(raw.status).toBe(200)
   })
 })
 describe('media boundary validation', () => {

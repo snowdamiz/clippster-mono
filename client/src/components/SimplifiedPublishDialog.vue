@@ -34,6 +34,7 @@
 
     <Field label="Platforms" required :hint="selectedPublishPlatforms.length === 0 ? 'Select at least one platform' : undefined">
       <PublishPlatformPicker :platforms="availablePlatforms" :selected="selectedPublishPlatforms" @toggle="togglePlatform" />
+      <p v-if="excludedPlatforms.includes('tiktok')" class="mt-2 text-xs text-muted">TikTok is unavailable for this clip because the saved sponsor rules exclude it. Use the reviewed sponsor-free cut.</p>
     </Field>
 
     <Field v-if="selectedPublishPlatforms.length > 0" label="Accounts" required>
@@ -115,6 +116,7 @@ const props = withDefaults(
     title?: string;
     /** Override aspect ratio when no build is provided. */
     aspectRatio?: string;
+    excludedPlatforms?: string[];
   }>(),
   {
     clip: null,
@@ -122,6 +124,7 @@ const props = withDefaults(
     mediaType: 'video',
     title: undefined,
     aspectRatio: undefined,
+    excludedPlatforms: () => [],
   }
 );
 
@@ -181,7 +184,7 @@ const allPlatforms = [
 const tokendPublishEnabled = ref(false);
 const availablePlatforms = computed(() =>
   allPlatforms.filter(
-    (p) => p.id !== 'tokend' || (tokendPublishEnabled.value && canAccessTokend(authStore.user))
+    (p) => !props.excludedPlatforms.includes(p.id) && (p.id !== 'tokend' || (tokendPublishEnabled.value && canAccessTokend(authStore.user)))
   )
 );
 
@@ -357,6 +360,7 @@ function selectAccount(platformId: string, accountId: string) {
 
 const canPublish = computed(() => {
   if (selectedPublishPlatforms.value.length === 0) return false;
+  if (selectedPublishPlatforms.value.some(platformId => props.excludedPlatforms.includes(platformId))) return false;
   
   for (const platformId of selectedPublishPlatforms.value) {
     if (!platformConfigs.value[platformId]?.accountId) return false;
@@ -512,7 +516,11 @@ onMounted(loadDialogData);
 watch(
   () => props.modelValue,
   (isOpen) => {
-    if (isOpen) loadDialogData();
+    if (isOpen) {
+      for (const platformId of props.excludedPlatforms) delete platformConfigs.value[platformId];
+      selectedPublishPlatforms.value = selectedPublishPlatforms.value.filter(platformId => !props.excludedPlatforms.includes(platformId));
+      loadDialogData();
+    }
   }
 );
 

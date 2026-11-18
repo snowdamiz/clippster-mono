@@ -1,5 +1,6 @@
 import api from './api';
 
+
 export type ThumbnailGenerationMode = 'quick' | 'editable';
 export type TranscriptSource = 'existing' | 'youtube_captions' | 'whisper';
 

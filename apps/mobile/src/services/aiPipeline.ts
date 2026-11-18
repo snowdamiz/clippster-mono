@@ -19,6 +19,7 @@ export interface AiPipelineProgress {
     | 'extracting_audio'
     | 'transcribing'
     | 'detecting'
+    | 'pre_editing'
     | 'complete'
     | 'error';
   progress: number;
@@ -579,7 +580,7 @@ export class AiPipeline {
       startTime?: number;
       endTime?: number;
     },
-  ): Promise<number> {
+  ): Promise<{ count: number; sessionId: string }> {
     this.cancelled = false;
     this.activeProjectId = projectId;
     const prompt = options?.prompt ?? DEFAULT_PROMPT;
@@ -635,7 +636,7 @@ export class AiPipeline {
     }
 
     const normalized = normalizeDetectedClips(response);
-    await persistDetectedClips(projectId, prompt, normalized, rawVideo.file_path);
+    const sessionId = await persistDetectedClips(projectId, prompt, normalized, rawVideo.file_path);
     const { queueProjectSync } = await import('./cloudSync');
     void queueProjectSync(projectId);
 
@@ -645,6 +646,6 @@ export class AiPipeline {
       progress: 100,
       message: `Found ${normalized.length} clips`,
     });
-    return normalized.length;
+    return { count: normalized.length, sessionId };
   }
 }
