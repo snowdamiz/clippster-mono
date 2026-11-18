@@ -11,7 +11,16 @@
 **/data
 **/test-results
 **/playwright-report
-client/src-tauri
+client/src-tauri/*
+!client/src-tauri/sidecars/
+client/src-tauri/sidecars/*
+!client/src-tauri/sidecars/hyperframes-renderer/
+client/src-tauri/sidecars/hyperframes-renderer/*
+!client/src-tauri/sidecars/hyperframes-renderer/index.mjs
+!client/src-tauri/sidecars/hyperframes-renderer/package.json
+!client/src-tauri/sidecars/hyperframes-renderer/yarn.lock
+!client/src-tauri/sidecars/hyperframes-renderer/lib/
+!client/src-tauri/sidecars/hyperframes-renderer/lib/**
 apps/mobile
 landing
 server

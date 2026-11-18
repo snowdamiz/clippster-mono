@@ -28,7 +28,7 @@ import { downloadAsset, openAsset } from './network'
 import { auditCreatorSkillLabels } from '../../../client/src/services/creatorSkillLabelAudit'
 import { addCreatorSkillSourceCards } from '../../../client/src/services/creatorSkillSourceCards'
 import { applyCreatorSkillFootageCrops } from '../../../client/src/services/creatorSkillFootageCrop'
-import { addCreatorSkillOnScreenCaptions, setCreatorSkillFinalOnScreenCaptions } from '../../../client/src/services/creatorSkillOnScreenCaptions'
+import { creatorSkillCaptionTiming, prepareCreatorSkillAiCaptions } from '../../../client/src/services/creatorSkillAiCaptions'
 import { addCreatorSkillSponsorDisclosure } from '../../../client/src/services/creatorSkillSponsorDisclosure'
 import { auditCreatorSkillRemovedAudio } from '../../../client/src/services/creatorSkillRemovedAudio'
 import { creatorSkillTikTokCut } from '../../../client/src/services/creatorSkillPlatformCut'
@@ -168,7 +168,7 @@ export async function processCreatorSkillClip(options: {
     bridge = new HyperframesBridge(config.hyperframesScript)
     const workspace = await WebHyperframesWorkspace.open(bridge, join(skillDir, 'workspace'))
     const result = resumeRender ? { session } : await runCreatorSkillAgent({
-      api, session, workspace, config, request: creatorSkillRequest(profile ? { ...profile, availableAssets } : null, skillFormat), maxCreditsPerClip, signal,
+      api, session, workspace, config, request: creatorSkillRequest(profile ? { ...profile, availableAssets } : null, skillFormat) + '\n\n' + creatorSkillCaptionTiming(sourceWords), maxCreditsPerClip, signal,
       onPlaybookPackage: async (item, fetches) => {
         state.playbookPackage = reconcileCreatorSkillResearch(reconcileCreatorSkillSponsors(item, profile?.preferences), fetches)
         save()
@@ -194,12 +194,11 @@ export async function processCreatorSkillClip(options: {
     const crops = applyCreatorSkillFootageCrops(cards.document, media[0], state.playbookPackage)
     const hook = addCreatorSkillHookTitle(crops.document, cards.files)
     const chapters = addCreatorSkillChapterCards(hook.document, hook.files, state.playbookPackage)
-    const onScreenCaptions = addCreatorSkillOnScreenCaptions(chapters.document, chapters.files, media[0].id, sourceWords)
-    let captionReviewItems = onScreenCaptions.reviewItems
-    let editedSession = audioPermissions.removedMusic || sponsor.added || cards.added || crops.applied || hook.added || chapters.added || onScreenCaptions.added
+    const onScreenCaptions = prepareCreatorSkillAiCaptions(chapters.document, chapters.files)
+    const editedSession = audioPermissions.removedMusic || sponsor.added || cards.added || crops.applied || hook.added || chapters.added || onScreenCaptions.changed
       ? await api.updateSession(result.session.id, onScreenCaptions.document, onScreenCaptions.files, signal)
       : result.session
-    let document = editedSession.document
+    const document = editedSession.document
     if (!document) throw new Error('Could not save the source label timeline.')
     const selectedOutro = media.find(item => item.name === 'Creator outro')
     state.status = 'rendering'
@@ -208,14 +207,13 @@ export async function processCreatorSkillClip(options: {
     const buildId = randomUUID()
     const outputPath = join(directory, `${buildId}.mp4`)
     const context = await linkProjectMedia(workspace, result.session.media_items)
-    let render = await workspace.render(outputPath, {
+    const render = await workspace.render(outputPath, {
       fps: document.format.fps,
       files: exportFiles(editedSession.composition_files ?? {}, document, context),
       signal,
     })
     const tiktok = creatorSkillTikTokCut(document, media[0].id, speech, state.playbookPackage, editedSession.composition_files ?? {})
-    const tiktokCaptions = tiktok.document ? addCreatorSkillOnScreenCaptions(tiktok.document, editedSession.composition_files ?? {}, media[0].id, sourceWords) : null
-    if (tiktokCaptions) tiktok.reviewItems.push(...tiktokCaptions.reviewItems)
+    const tiktokCaptions = tiktok.document ? prepareCreatorSkillAiCaptions(tiktok.document, editedSession.composition_files ?? {}) : null
     state.tiktokSafeAvailable = false
     state.tiktokCaptionsAvailable = false
     let tiktokRenderIssue: string | null = null
@@ -245,8 +243,8 @@ export async function processCreatorSkillClip(options: {
     const normalized = renderedProbe.hasAudio
       ? await normalizeCreatorSkillAudio(render.outputPath, skillDir, config, signal)
       : null
-    let masterPath = normalized?.path ?? render.outputPath
-    let output = masterPath === render.outputPath ? renderedProbe : await probe(masterPath, config, signal)
+    const masterPath = normalized?.path ?? render.outputPath
+    const output = masterPath === render.outputPath ? renderedProbe : await probe(masterPath, config, signal)
     const expected = document.shots.reduce((total, shot) => total + shot.duration, 0)
     const fullDecode = await run(config.ffmpeg, ['-v', 'error', '-i', masterPath, '-map', '0:v:0', '-map', '0:a?', '-f', 'null', '-'], signal, 10 * 60_000).then(() => true, () => false)
     if (!fullDecode) throw new Error('The edited export failed a full decode. Raw remains available; retry the edit after checking the render.')
@@ -266,43 +264,6 @@ export async function processCreatorSkillClip(options: {
       } catch (error) {
         if (signal.aborted) throw error
         finalSpeechReview = `Final audio re-transcription failed: ${error instanceof Error ? error.message : String(error)}. Compare speech with Raw before publishing.`
-      }
-    }
-    if (finalWords.length && document.format.width < document.format.height) {
-      const finalCaptions = setCreatorSkillFinalOnScreenCaptions(document, editedSession.composition_files ?? {}, finalWords)
-      if (finalCaptions.added) {
-        captionReviewItems = finalCaptions.reviewItems
-        editedSession = await api.updateSession(result.session.id, finalCaptions.document, finalCaptions.files, signal)
-        document = editedSession.document
-        if (!document) throw new Error('Could not save the final-audio caption timeline.')
-        render = await workspace.render(outputPath, { fps: document.format.fps, files: exportFiles(finalCaptions.files, document, context), signal })
-        const finalCaptionedMaster = join(skillDir, 'final-captioned-master.mp4')
-        await run(config.ffmpeg, ['-nostdin', '-v', 'error', '-i', render.outputPath, '-i', masterPath, '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', '-movflags', '+faststart', '-y', finalCaptionedMaster], signal, 10 * 60_000)
-        masterPath = finalCaptionedMaster
-        output = await probe(masterPath, config, signal)
-        await run(config.ffmpeg, ['-v', 'error', '-i', masterPath, '-map', '0:v:0', '-map', '0:a?', '-f', 'null', '-'], signal, 10 * 60_000)
-        if (source.hasAudio && !output.hasAudio) throw new Error('The final-caption export lost source audio. Raw remains available; retry the edit.')
-        if (state.tiktokSafeAvailable && tiktokCaptions?.document) {
-          const cutDuration = tiktokCaptions.document.shots.reduce((sum, shot) => sum + shot.duration, 0)
-          const cutWords = finalWords.filter(word => word.end <= cutDuration + .01)
-          const revised = setCreatorSkillFinalOnScreenCaptions(tiktokCaptions.document, tiktokCaptions.files, cutWords)
-          if (revised.added) {
-            const path = join(skillDir, 'tiktok-no-sponsor.mp4')
-            state.tiktokSafeAvailable = await workspace.render(path, { fps: revised.document.format.fps, files: exportFiles(revised.files, revised.document, context), signal })
-              .then(async variant => {
-                const finalCut = join(skillDir, 'tiktok-final-captioned.mp4')
-                await run(config.ffmpeg, ['-nostdin', '-v', 'error', '-i', variant.outputPath, '-i', path, '-map', '0:v:0', '-map', '1:a:0', '-c', 'copy', '-movflags', '+faststart', '-y', finalCut], signal, 10 * 60_000)
-                await run(config.ffmpeg, ['-v', 'error', '-i', finalCut, '-map', '0:v:0', '-map', '0:a:0', '-f', 'null', '-'], signal, 10 * 60_000)
-                await copyVerified(finalCut, path)
-                return true
-              }).catch(error => {
-                if (signal.aborted) throw error
-                tiktokRenderIssue = 'Could not render the final-audio captions on the sponsor-free TikTok cut; do not post it yet.'
-                state.tiktokCaptionsAvailable = false
-                return false
-              })
-          }
-        }
       }
     }
     if (state.tiktokSafeAvailable && tiktok.document && finalWords.length) {
@@ -410,13 +371,13 @@ export async function processCreatorSkillClip(options: {
         : source.hasAudio ? ['Could not complete the 5 ms source silence scan; inspect all removed audio ranges.'] : []),
       ...wordIssues,
       finalSpeechReview,
-      ...(finalWords.length ? ['Final-audio captions use re-transcribed word times; proofread names, tickers, profanity masking, and cue breaks before publishing.'] : []),
+      ...(finalWords.length ? ['The SRT uses re-transcribed word times. Proofread names, tickers, profanity masking, and cue breaks before publishing.'] : []),
       ...auditCreatorSkillEditorialPackage(state.playbookPackage, source.duration, output.duration),
       ...chapterResult.reviewItems,
       ...auditCreatorSkillLabels(document, media[0].id, state.playbookPackage, editedSession.composition_files ?? {}),
       ...cards.reviewItems,
       ...crops.reviewItems,
-      ...captionReviewItems,
+      'Review the AI-designed caption timing, wording, and placement against the finished audio.',
       ...audioPermissions.reviewItems,
       ...hook.reviewItems,
       ...chapters.reviewItems,

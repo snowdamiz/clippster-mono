@@ -54,7 +54,9 @@ it('runs detected VOD clips through a credit-free fixture edit and keeps Raw sel
   expect((await request(`/projects/${projectId}/creator-skill/batch`, 'POST', { maxCreditsPerClip: 3 })).status).toBe(202)
   workspace = await waitForJob(fixture.url, cookie, projectId, 180_000)
   expect(workspace.jobs[0].status, workspace.jobs[0].message).toBe('completed')
-  expect(workspace.project.clips.every(clip => clip.creatorSkill?.status === 'needs_review')).toBe(true)
+  for (const clip of workspace.project.clips) {
+    expect(clip.creatorSkill?.status, clip.creatorSkill?.reviewItems.join('\n')).toBe('needs_review')
+  }
   expect(workspace.project.clips.every(clip => clip.creatorSkill?.playbookPackage?.automatedQa?.masterMd5 === clip.creatorSkill?.masterMd5)).toBe(true)
   expect(workspace.project.clips.every(clip => clip.creatorSkill?.phonePreviewAvailable)).toBe(true)
   expect(workspace.project.clips.every(clip => clip.creatorSkill?.reviewItems.some(item => item.includes('selected creator outro contains audio')))).toBe(true)
