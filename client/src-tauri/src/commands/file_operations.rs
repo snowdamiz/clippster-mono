@@ -1,4 +1,5 @@
-use std::path::Path;
+use std::{fs::File, io::Read, path::Path};
+use md5::{Digest, Md5};
 use tauri::AppHandle;
 
 use crate::ffmpeg_utils::{
@@ -9,6 +10,263 @@ use crate::storage;
 #[derive(serde::Serialize)]
 pub struct ProxyGenerationResult {
     pub proxy_path: String,
+}
+
+#[derive(serde::Serialize)]
+pub struct CreatorSkillExportCheck {
+    pub duration: f64,
+    pub width: u64,
+    pub height: u64,
+    pub has_audio: bool,
+    pub fully_decoded: bool,
+    pub error: Option<String>,
+    pub integrated_lufs: Option<f64>,
+    pub true_peak_dbtp: Option<f64>,
+    pub audio_measurement_error: Option<String>,
+    pub contact_sheet_path: Option<String>,
+    pub stream_duration_delta_ms: Option<f64>,
+    pub stream_start_delta_ms: Option<f64>,
+    pub phone_preview_path: Option<String>,
+}
+
+/** Hash one local artifact in bounded chunks for the creator delivery manifest. */
+#[tauri::command]
+pub async fn hash_creator_skill_file(file_path: String) -> Result<String, String> {
+    tokio::task::spawn_blocking(move || {
+        let mut file = File::open(&file_path).map_err(|error| format!("Could not open artifact for hashing: {error}"))?;
+        let mut digest = Md5::new();
+        let mut chunk = [0u8; 1024 * 1024];
+        loop {
+            let read = file.read(&mut chunk).map_err(|error| format!("Could not hash artifact: {error}"))?;
+            if read == 0 { break; }
+            digest.update(&chunk[..read]);
+        }
+        Ok::<_, String>(hex::encode(digest.finalize()))
+    }).await.map_err(|error| format!("Could not finish artifact hash: {error}"))?
+}
+
+/// Measure quiet source spans at a 5 ms detection threshold for removed-audio review.
+#[tauri::command]
+pub async fn scan_creator_skill_source_silence(app: AppHandle, file_path: String) -> Result<String, String> {
+    if !Path::new(&file_path).is_file() { return Err("Source clip does not exist.".into()); }
+    let output = crate::ffmpeg_sidecar::run_ffmpeg(
+        &app,
+        &["-nostdin", "-hide_banner", "-i", &file_path, "-map", "0:a:0", "-af", "silencedetect=noise=-50dB:d=0.005", "-f", "null", "-"],
+    ).await?;
+    if !output.status.success() { return Err(format!("Source silence scan failed: {}", String::from_utf8_lossy(&output.stderr))); }
+    if output.stderr.len() > 1024 * 1024 { return Err("Source silence scan output exceeded its limit.".into()); }
+    Ok(String::from_utf8_lossy(&output.stderr).into_owned())
+}
+
+/// Raise or lower the rendered voice with static gain and a safety limiter.
+/// The original render is never modified; callers must verify the returned file.
+#[tauri::command]
+pub async fn normalize_creator_skill_audio(app: AppHandle, file_path: String) -> Result<String, String> {
+    let input = Path::new(&file_path);
+    if !input.is_file() { return Err("Rendered master does not exist.".into()); }
+    let measured = crate::ffmpeg_sidecar::run_ffmpeg(&app,
+        &["-nostdin", "-hide_banner", "-i", &file_path, "-map", "0:a:0", "-af", "ebur128=peak=true", "-f", "null", "-"],
+    ).await?;
+    if !measured.status.success() { return Err("Could not measure rendered audio.".into()); }
+    let (Some(lufs), Some(peak)) = parse_ebur128_summary(&String::from_utf8_lossy(&measured.stderr)) else {
+        return Err("Could not read rendered audio loudness and true peak.".into());
+    };
+    let gain = (-14.0 - lufs).clamp(-12.0, 12.0);
+    if gain.abs() <= 0.5 && peak <= -1.0 { return Ok(file_path); }
+    let stem = input.file_stem().and_then(|value| value.to_str()).ok_or("Invalid master filename.")?;
+    let output = input.with_file_name(format!("{stem}-normalized.mp4"));
+    let output_path = output.to_str().ok_or("Invalid normalized master path.")?;
+    let filter = format!("volume={gain:.2}dB,alimiter=limit=0.841395:level=false");
+    let result = crate::ffmpeg_sidecar::run_ffmpeg(&app,
+        &["-nostdin", "-v", "error", "-i", &file_path, "-map", "0:v:0", "-map", "0:a:0", "-c:v", "copy", "-af", &filter, "-c:a", "aac", "-b:a", "192k", "-movflags", "+faststart", "-y", output_path],
+    ).await?;
+    if !result.status.success() { let _ = std::fs::remove_file(&output); return Err("Could not normalize rendered audio.".into()); }
+    let verified = crate::ffmpeg_sidecar::run_ffmpeg(&app,
+        &["-nostdin", "-hide_banner", "-i", output_path, "-map", "0:a:0", "-af", "ebur128=peak=true", "-f", "null", "-"],
+    ).await?;
+    let (_, verified_peak) = parse_ebur128_summary(&String::from_utf8_lossy(&verified.stderr));
+    if !verified.status.success() || !verified_peak.is_some_and(|value| value <= -1.0) {
+        let _ = std::fs::remove_file(&output);
+        return Err("Normalized audio did not pass the -1 dBTP true-peak check.".into());
+    }
+    Ok(output_path.to_string())
+}
+
+/// Keep the already transcribed and normalized audio byte-for-byte while replacing only captioned video.
+#[tauri::command]
+pub async fn remux_creator_skill_final_audio(app: AppHandle, video_path: String, audio_path: String) -> Result<String, String> {
+    let video = Path::new(&video_path);
+    if !video.is_file() || !Path::new(&audio_path).is_file() { return Err("Captioned video or approved audio is missing.".into()); }
+    let stem = video.file_stem().and_then(|value| value.to_str()).ok_or("Invalid captioned video filename.")?;
+    let output = video.with_file_name(format!("{stem}-final-audio.mp4"));
+    let output_path = output.to_str().ok_or("Invalid final-audio path.")?;
+    let result = crate::ffmpeg_sidecar::run_ffmpeg(&app,
+        &["-nostdin", "-v", "error", "-i", &video_path, "-i", &audio_path, "-map", "0:v:0", "-map", "1:a:0", "-c", "copy", "-movflags", "+faststart", "-y", output_path],
+    ).await?;
+    if !result.status.success() { let _ = std::fs::remove_file(&output); return Err("Could not combine the final captions with the verified audio.".into()); }
+    Ok(output_path.to_string())
+}
+
+fn parse_ebur128_summary(log: &str) -> (Option<f64>, Option<f64>) {
+    let Some(summary) = log.rsplit("Summary:").next().filter(|part| *part != log) else {
+        return (None, None);
+    };
+    let mut section = "";
+    let mut integrated = None;
+    let mut peak = None;
+    for line in summary.lines() {
+        let line = line.trim();
+        if line.starts_with("Integrated loudness:") { section = "integrated"; }
+        else if line.starts_with("True peak:") { section = "peak"; }
+        else if line.ends_with(':') { section = ""; }
+        else if let Some(value) = line.strip_prefix("I:").filter(|_| section == "integrated") {
+            integrated = value.trim().split_whitespace().next().and_then(|number| number.parse::<f64>().ok()).filter(|number| number.is_finite());
+        } else if let Some(value) = line.strip_prefix("Peak:").filter(|_| section == "peak") {
+            peak = value.trim().split_whitespace().next().and_then(|number| number.parse::<f64>().ok()).filter(|number| number.is_finite());
+        }
+    }
+    (integrated, peak)
+}
+
+async fn create_creator_skill_phone_preview(app: &AppHandle, source: &str, duration: f64, max_preview_mb: f64, landscape: bool) -> Option<String> {
+    let input = Path::new(source);
+    let stem = input.file_stem()?.to_str()?;
+    let output = input.with_file_name(format!("{stem}-phone-preview.mp4"));
+    let passlog = input.with_file_name(format!("{stem}-phone-preview-pass"));
+    let output_path = output.to_str()?;
+    let passlog_path = passlog.to_str()?;
+    let video_budget_mb = max_preview_mb - (max_preview_mb * 0.1).min(2.0);
+    let video_kbps = ((video_budget_mb * 8.0 * 1024.0 / duration) - 140.0).floor().clamp(200.0, 7000.0) as u64;
+    let bitrate = format!("{video_kbps}k");
+    let scale = if landscape { "scale=1280:720" } else { "scale=720:1280" };
+    let common = ["-nostdin", "-v", "error", "-i", source, "-vf", scale, "-c:v", "libx264", "-preset", "medium", "-pix_fmt", "yuv420p", "-b:v", bitrate.as_str(), "-passlogfile", passlog_path, "-threads", "2"];
+    let mut first_args = common.to_vec();
+    first_args.extend(["-pass", "1", "-an", "-f", "null", "-"]);
+    let first = crate::ffmpeg_sidecar::run_ffmpeg(app, &first_args).await;
+    let result = if first.as_ref().is_ok_and(|run| run.status.success()) {
+        let mut second_args = common.to_vec();
+        second_args.extend(["-pass", "2", "-c:a", "aac", "-b:a", "128k", "-movflags", "+faststart", "-y", output_path]);
+        crate::ffmpeg_sidecar::run_ffmpeg(app, &second_args).await
+    } else { first };
+    for suffix in ["-0.log", "-0.log.mbtree"] {
+        let _ = std::fs::remove_file(format!("{passlog_path}{suffix}"));
+    }
+    let ready = result.as_ref().is_ok_and(|run| run.status.success())
+        && output.metadata().is_ok_and(|file| (file.len() as f64) < max_preview_mb * 1024.0 * 1024.0);
+    if ready {
+        Some(output_path.to_string())
+    } else {
+        let _ = std::fs::remove_file(&output);
+        None
+    }
+}
+
+#[cfg(test)]
+mod creator_skill_audio_tests {
+    use super::parse_ebur128_summary;
+
+    #[test]
+    fn parses_final_ebur128_summary() {
+        let log = "[Parsed_ebur128_0] Summary:\n\n  Integrated loudness:\n    I:         -14.2 LUFS\n    Threshold: -24.2 LUFS\n\n  True peak:\n    Peak:      -1.5 dBFS\n";
+        assert_eq!(parse_ebur128_summary(log), (Some(-14.2), Some(-1.5)));
+    }
+}
+
+/// Probe the streams and decode the full rendered export before it is offered for review.
+#[tauri::command]
+pub async fn check_creator_skill_export(
+    app: AppHandle,
+    file_path: String,
+    max_preview_mb: f64,
+) -> Result<CreatorSkillExportCheck, String> {
+    if !max_preview_mb.is_finite() || !(1.0..=200.0).contains(&max_preview_mb) {
+        return Err("Phone preview size must be between 1 and 200 MB".into());
+    }
+    if !Path::new(&file_path).is_file() {
+        return Err("Rendered export does not exist".into());
+    }
+    let probe = crate::ffmpeg_sidecar::run_ffprobe(
+        &app,
+        &["-v", "error", "-show_entries", "format=duration:stream=codec_type,width,height,duration,start_time", "-of", "json", &file_path],
+    ).await?;
+    if !probe.status.success() {
+        return Err(format!("Could not probe rendered export: {}", String::from_utf8_lossy(&probe.stderr)));
+    }
+    let data: serde_json::Value = serde_json::from_slice(&probe.stdout)
+        .map_err(|e| format!("Could not read export metadata: {}", e))?;
+    let streams = data["streams"].as_array().ok_or("Export has no media streams")?;
+    let video = streams.iter().find(|stream| stream["codec_type"] == "video")
+        .ok_or("Export has no video stream")?;
+    let duration = data["format"]["duration"].as_str().and_then(|value| value.parse::<f64>().ok())
+        .ok_or("Export has no measurable duration")?;
+    let width = video["width"].as_u64().unwrap_or(0);
+    let height = video["height"].as_u64().unwrap_or(0);
+    if !duration.is_finite() || duration <= 0.0 || width == 0 || height == 0 {
+        return Err("Export has invalid duration or dimensions".into());
+    }
+    let decoded = crate::ffmpeg_sidecar::run_ffmpeg(
+        &app,
+        &["-nostdin", "-v", "error", "-xerror", "-i", &file_path, "-map", "0:v:0", "-map", "0:a:0?", "-f", "null", "-"],
+    ).await?;
+    let has_audio = streams.iter().any(|stream| stream["codec_type"] == "audio");
+    let audio_stream = streams.iter().find(|stream| stream["codec_type"] == "audio");
+    let stream_duration_delta_ms = audio_stream
+        .and_then(|audio| audio["duration"].as_str())
+        .and_then(|value| value.parse::<f64>().ok())
+        .zip(video["duration"].as_str().and_then(|value| value.parse::<f64>().ok()))
+        .map(|(audio_duration, video_duration)| (audio_duration - video_duration).abs() * 1000.0)
+        .filter(|delta| delta.is_finite());
+    let stream_start_delta_ms = audio_stream
+        .and_then(|audio| audio["start_time"].as_str())
+        .and_then(|value| value.parse::<f64>().ok())
+        .zip(video["start_time"].as_str().and_then(|value| value.parse::<f64>().ok()))
+        .map(|(audio_start, video_start)| (audio_start - video_start).abs() * 1000.0)
+        .filter(|delta| delta.is_finite());
+    let (integrated_lufs, true_peak_dbtp, audio_measurement_error) = if has_audio {
+        match crate::ffmpeg_sidecar::run_ffmpeg(
+            &app,
+            &["-nostdin", "-hide_banner", "-i", &file_path, "-map", "0:a:0", "-af", "ebur128=peak=true", "-f", "null", "-"],
+        ).await {
+            Ok(measured) if measured.status.success() => {
+                let (lufs, peak) = parse_ebur128_summary(&String::from_utf8_lossy(&measured.stderr));
+                let error = if lufs.is_none() || peak.is_none() { Some("FFmpeg did not report integrated loudness and true peak".into()) } else { None };
+                (lufs, peak, error)
+            }
+            Ok(measured) => (None, None, Some(String::from_utf8_lossy(&measured.stderr).trim().to_string())),
+            Err(error) => (None, None, Some(error)),
+        }
+    } else { (None, None, None) };
+    let contact_sheet = Path::new(&file_path).with_file_name(format!(
+        "{}-contact-sheet.jpg",
+        Path::new(&file_path).file_stem().and_then(|name| name.to_str()).unwrap_or("creator-skill"),
+    ));
+    let contact_sheet_path = if let Some(path) = contact_sheet.to_str() {
+        let sheet_rows = ((duration / 12.0).ceil() as u64).clamp(1, 100);
+        let sheet_filter = format!("fps=0.5,scale=480:-2,tile=6x{sheet_rows}:padding=4:margin=4");
+        match crate::ffmpeg_sidecar::run_ffmpeg(
+            &app,
+            &["-nostdin", "-v", "error", "-i", &file_path, "-vf", &sheet_filter, "-frames:v", "1", "-y", path],
+        ).await {
+            Ok(result) if result.status.success() && contact_sheet.is_file() => Some(path.to_string()),
+            _ => None,
+        }
+    } else { None };
+    let phone_preview_path = create_creator_skill_phone_preview(&app, &file_path, duration, max_preview_mb, width > height).await;
+    Ok(CreatorSkillExportCheck {
+        duration,
+        width,
+        height,
+        has_audio,
+        fully_decoded: decoded.status.success(),
+        error: if decoded.status.success() { None } else { Some(String::from_utf8_lossy(&decoded.stderr).trim().to_string()) },
+        integrated_lufs,
+        true_peak_dbtp,
+        audio_measurement_error,
+        contact_sheet_path,
+        stream_duration_delta_ms,
+        stream_start_delta_ms,
+        phone_preview_path,
+    })
 }
 
 /// Generate a proxy file for a source video.

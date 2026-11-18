@@ -52,8 +52,12 @@ defmodule ClippsterServerWeb.AdminMessagingController do
         json(conn, %{
           success: true,
           message:
-            "Campaign sent to #{stats.sent_count} recipient(s)" <>
-              failed_message(stats.failed_count),
+            if(stats[:queued],
+              do: "Campaign queued for #{campaign.recipient_count} recipient(s)",
+              else:
+                "Campaign sent to #{stats.sent_count} recipient(s)" <>
+                  failed_message(stats.failed_count)
+            ),
           campaign: serialize_campaign(campaign)
         })
 
@@ -74,8 +78,12 @@ defmodule ClippsterServerWeb.AdminMessagingController do
         json(conn, %{
           success: true,
           message:
-            "Retried #{stats.sent_count} failed recipient(s)" <>
-              failed_message(stats.failed_count),
+            if(stats[:queued],
+              do: "Failed recipients queued for retry",
+              else:
+                "Retried #{stats.sent_count} failed recipient(s)" <>
+                  failed_message(stats.failed_count)
+            ),
           campaign: serialize_campaign(campaign)
         })
 
@@ -96,6 +104,13 @@ defmodule ClippsterServerWeb.AdminMessagingController do
     json(conn, %{
       campaigns: Enum.map(campaigns, &serialize_campaign/1)
     })
+  end
+
+  def campaign_report(conn, %{"id" => id}) do
+    case AdminMessaging.campaign_report(id) do
+      {:ok, report} -> json(conn, report)
+      {:error, reason} -> conn |> put_status(404) |> json(%{error: reason})
+    end
   end
 
   @doc """
@@ -130,6 +145,7 @@ defmodule ClippsterServerWeb.AdminMessagingController do
       body: campaign.body,
       preheader: campaign.preheader,
       audience: campaign.audience,
+      offer: campaign.offer,
       target_email: campaign.target_email,
       recipient_count: campaign.recipient_count,
       sent_count: campaign.sent_count,

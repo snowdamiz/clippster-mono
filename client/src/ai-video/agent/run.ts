@@ -5,7 +5,6 @@ import { indexSources, songBeats } from '../analysis/sources';
 import { throwIfAborted } from '../analysis/shared';
 import { aspectFormat, mediaAspect, outputFormat } from '../director/aspect';
 import { buildCandidates } from '../director/candidates';
-import { validateDocument } from '../director/validate';
 import {
   compositionPaths,
   linkProjectMedia,
@@ -15,15 +14,16 @@ import {
 } from '../runtime/project';
 import { ensureRenderBrowser, type HyperframesWorkspace } from '../runtime/workspace';
 import type {
-  EditDocument,
   GenerateBrief,
   SourceSegment,
-  TurnResponse,
   VideoMeasurement,
   VideoPolicy,
   VideoSession,
 } from '../types';
 import { AgentTools, type AgentProgress } from './tools';
+import { driveAgentTurns } from './turnLoop';
+import { finalAgentDocument } from './finalDocument';
+import type { CreatorSkillPackage } from '@clippster/shared-types';
 
 const STILL_SIZE = 768;
 
@@ -42,6 +42,8 @@ export interface AgentRunCallbacks {
   onProgress?: (progress: AgentProgress) => void;
   /** Interim text the AI wrote between tool calls. */
   onNote?: (text: string) => void;
+  /** Persist a submitted package before another paid agent turn begins. */
+  onPlaybookPackage?: (item: CreatorSkillPackage, researchFetches: number) => Promise<void> | void;
 }
 
 export interface AgentRunOptions {
@@ -51,6 +53,8 @@ export interface AgentRunOptions {
   workspace: HyperframesWorkspace;
   policy: VideoPolicy;
   exampleMeasurement: VideoMeasurement | null;
+  requirePlaybookPackage?: boolean;
+  maxCredits?: number;
   callbacks?: AgentRunCallbacks;
   signal?: AbortSignal;
 }
@@ -72,7 +76,6 @@ function summarizeSources(
     skipped,
   };
 }
-
 /**
  * Drive one paid agent run end to end: charge, index sources (new edits), relay tool calls to the
  * workspace turn by turn, then save the finished document and composition files. Any failure or
@@ -80,9 +83,9 @@ function summarizeSources(
  */
 export async function runAgent(
   options: AgentRunOptions
-): Promise<{ session: VideoSession; message: string }> {
+): Promise<{ session: VideoSession; message: string; playbookPackage: CreatorSkillPackage | null }> {
   const { session, kind, request, workspace, policy, callbacks = {}, signal } = options;
-  const run = await videoApi.startRun(session.id, kind, request);
+  const run = await videoApi.startRun(session.id, kind, request, options.maxCredits);
   callbacks.onStarted?.();
 
   try {
@@ -91,7 +94,8 @@ export async function runAgent(
       linkProjectMedia(workspace, media),
       ensureRenderBrowser({ signal }),
     ]);
-    const brief = kind === 'generate' ? await prepareGenerate(options) : {};
+    const prepared = kind === 'generate' ? await prepareGenerate(options) : null;
+    const brief = prepared?.brief ?? {};
     throwIfAborted(signal);
 
     if (kind === 'generate') {
@@ -110,7 +114,21 @@ export async function runAgent(
         workspace,
         compileContext,
         media,
+        sourceSegments:
+          prepared?.sources ??
+          Object.fromEntries(
+            media.map((item) => [
+              item.id,
+              Object.values(session.source_index?.[item.contentHash] ?? {}).flatMap(
+                (chunk) => chunk.segments
+              ),
+            ])
+          ),
+        speechSegments: Object.fromEntries(
+          media.map((item) => [item.id, session.speech_index?.[item.contentHash] ?? []])
+        ),
         maxSeconds: policy.max_output_seconds,
+        creatorLayoutSourceId: options.requirePlaybookPackage ? media[0]?.id : undefined,
         exampleKeyframes: (session.reference_blueprint?.shots ?? []).map(
           (shot) => options.exampleMeasurement?.shots[shot.index]?.keyframePath ?? null
         ),
@@ -122,26 +140,27 @@ export async function runAgent(
       kind === 'revise' ? session.document : null
     );
 
-    let response: TurnResponse = await videoApi.turn(run.id, { brief });
-    while (response.type === 'tools') {
-      throwIfAborted(signal);
-      if (response.text.trim()) callbacks.onNote?.(response.text.trim());
-      const results = await tools.run(response.calls);
-      callbacks.onProgress?.({ ...tools.progress });
-      throwIfAborted(signal);
-      response = await videoApi.turn(run.id, { results });
-    }
+    const response = await driveAgentTurns(
+      await videoApi.turn(run.id, { brief }),
+      tools,
+      results => videoApi.turn(run.id, { results }),
+      callbacks,
+      signal,
+    );
 
     if (!tools.document) throw new Error("The AI didn't produce an edit. You weren't charged.");
+    if (options.requirePlaybookPackage && !tools.playbookPackage) {
+      throw new Error('The AI editor did not submit the required research and publishing package.');
+    }
     const files = await readCompositionFiles(workspace);
-    const document = finalDocument(tools.document, files, options);
+    const document = finalAgentDocument(tools.document, files, session.media_items, policy.max_output_seconds, session.reference_blueprint?.shots.length ?? 0);
     await writeCompiledDocument(workspace, document, compileContext);
     const completed = await videoApi.completeRun(run.id, document, files);
     const messages = completed.session.messages;
     const message =
       messages[messages.length - 1]?.content ??
       (response.type === 'finish' ? response.message : '');
-    return { session: completed.session, message };
+    return { session: completed.session, message, playbookPackage: tools.playbookPackage };
   } catch (error) {
     const reason = signal?.aborted
       ? 'Cancelled'
@@ -152,7 +171,9 @@ export async function runAgent(
 }
 
 /** With an example: its shape and the best footage per example shot. Without one: the chosen shape. */
-async function prepareGenerate(options: AgentRunOptions): Promise<GenerateBrief> {
+async function prepareGenerate(
+  options: AgentRunOptions
+): Promise<{ brief: GenerateBrief; sources: Record<string, SourceSegment[]> }> {
   const { session, callbacks = {}, signal } = options;
   const blueprint = session.reference_blueprint;
 
@@ -171,38 +192,20 @@ async function prepareGenerate(options: AgentRunOptions): Promise<GenerateBrief>
   const song = session.media_items.find((item) => item.kind === 'audio');
   const beats = song ? await songBeats(song) : null;
   return {
-    format: blueprint
-      ? outputFormat(blueprint)
-      : aspectFormat(session.aspect_ratio ?? mediaAspect(session.media_items)),
-    ...(blueprint && { candidates: buildCandidates(blueprint, session.media_items, sources) }),
-    music: song
-      ? {
-          mediaId: song.id,
-          duration: song.duration,
-          bpm: beats?.bpm ?? null,
-          beats: beats?.beats.map((beat) => beat.time) ?? [],
-        }
-      : null,
+    sources,
+    brief: {
+      format: blueprint
+        ? outputFormat(blueprint)
+        : aspectFormat(session.aspect_ratio ?? mediaAspect(session.media_items)),
+      ...(blueprint && { candidates: buildCandidates(blueprint, session.media_items, sources) }),
+      music: song
+        ? {
+            mediaId: song.id,
+            duration: song.duration,
+            bpm: beats?.bpm ?? null,
+            beats: beats?.beats.map((beat) => beat.time) ?? [],
+          }
+        : null,
+    },
   };
-}
-
-/** Final validation with every composition required; overlays whose file is missing are dropped. */
-function finalDocument(
-  document: EditDocument,
-  files: Record<string, string>,
-  options: AgentRunOptions
-): EditDocument {
-  const usable = {
-    ...document,
-    overlays: document.overlays.filter((overlay) => overlay.composition in files),
-  };
-  const { document: normalized, errors } = validateDocument(usable, {
-    media: options.session.media_items,
-    maxSeconds: options.policy.max_output_seconds,
-    exampleShots: options.session.reference_blueprint?.shots.length ?? 0,
-    files: Object.keys(files),
-    requireFiles: true,
-  });
-  if (errors.length) throw new Error(`The finished edit is invalid: ${errors[0]}`);
-  return normalized;
 }

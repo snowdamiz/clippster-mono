@@ -151,6 +151,7 @@ defmodule ClippsterServerWeb.ClipsController do
               end
 
             enhanced = parse_enhanced_param(params)
+            creator_skill = Map.get(params, "creator_skill_enabled") == "true"
             video_chunk_uploads = if enhanced, do: parse_video_chunk_uploads(params), else: %{}
 
             IO.puts("[ClipsController] Enhanced model: #{enhanced}")
@@ -256,7 +257,9 @@ defmodule ClippsterServerWeb.ClipsController do
                 case deduct_credits_and_create_job(user_id, duration_hours, is_first_run,
                        project_id: project_id,
                        organization_id: organization_id,
-                       enhanced: enhanced
+                       enhanced: enhanced,
+                       creator_skill: creator_skill,
+                       job_type: if(creator_skill, do: "clip_detection_creator_skill", else: "clip_detection")
                      ) do
                   {:ok, result} ->
                     {:ok, result}
@@ -398,7 +401,7 @@ defmodule ClippsterServerWeb.ClipsController do
     case retry_with_backoff(operation, 3, project_id) do
       {:ok, result_map} ->
         # Mark job as completed
-        complete_job(job_id)
+        complete_job(job_id, %{clip_count: length(result_map.clips || [])})
 
         # Get updated user balance after credit deduction (or show unlimited for admins)
         remaining_credits =
@@ -1444,6 +1447,7 @@ defmodule ClippsterServerWeb.ClipsController do
             is_first_run = not using_cached_transcript and Map.has_key?(params, "audio")
 
             enhanced = parse_enhanced_param(params)
+            creator_skill = Map.get(params, "creator_skill_enabled") == "true"
             video_chunk_uploads = if enhanced, do: parse_video_chunk_uploads(params), else: %{}
 
             IO.puts("[ClipsController] Using cached transcript: #{using_cached_transcript}")
@@ -1472,7 +1476,9 @@ defmodule ClippsterServerWeb.ClipsController do
                 case deduct_credits_and_create_job(user_id, duration_hours, is_first_run,
                        project_id: project_id,
                        organization_id: organization_id,
-                       enhanced: enhanced
+                       enhanced: enhanced,
+                       creator_skill: creator_skill,
+                       job_type: if(creator_skill, do: "clip_detection_creator_skill", else: "clip_detection")
                      ) do
                   {:ok, result} ->
                     {:ok, result}
@@ -1578,7 +1584,7 @@ defmodule ClippsterServerWeb.ClipsController do
     case retry_with_backoff(operation, 3, project_id) do
       {:ok, result_map} ->
         # Mark job as completed
-        complete_job(job_id)
+        complete_job(job_id, %{clip_count: length(result_map.clips || [])})
 
         # Track analytics
         Analytics.track_event("clip_detection", user_id, %{
@@ -3066,21 +3072,27 @@ defmodule ClippsterServerWeb.ClipsController do
   # Deduct credits based on processing type and duration
   # Now supports optional organization_id for org credit deduction
   # Credits are rounded up to whole minutes
-  # Enhanced mode applies a 2x multiplier
+  # Enhanced and creator pre-editing are additive against the standard VOD cost.
   defp deduct_credits_for_processing(
          user_id,
          duration_minutes,
          is_first_run,
          organization_id,
-         enhanced
+         enhanced,
+         creator_skill
        ) do
     # Determine base credit rate based on processing type
     base_rate = if is_first_run, do: 1.0, else: 0.7
 
-    # Apply 2x multiplier for enhanced mode
-    credit_rate = if enhanced, do: base_rate * 2.0, else: base_rate
-
-    credits_to_deduct = Float.ceil(duration_minutes * credit_rate)
+    multiplier =
+      cond do
+        enhanced and creator_skill -> 5.0
+        creator_skill -> 3.0
+        enhanced -> 2.0
+        true -> 1.0
+      end
+    credit_rate = base_rate * multiplier
+    credits_to_deduct = Float.ceil(duration_minutes * base_rate) * multiplier
 
     IO.puts("[ClipsController] Credit deduction calculation:")
     IO.puts("[ClipsController]   Duration: #{Float.round(duration_minutes, 3)} minutes")
@@ -3092,7 +3104,7 @@ defmodule ClippsterServerWeb.ClipsController do
     IO.puts("[ClipsController]   Enhanced mode: #{enhanced}")
 
     IO.puts(
-      "[ClipsController]   Credit rate: #{credit_rate}x#{if enhanced, do: " (2x enhanced multiplier)", else: ""}"
+      "[ClipsController]   Credit rate: #{credit_rate} credits/minute (#{multiplier}x detection total)"
     )
 
     IO.puts("[ClipsController]   Credits to deduct: #{Float.round(credits_to_deduct, 3)}")
@@ -3163,6 +3175,7 @@ defmodule ClippsterServerWeb.ClipsController do
     job_type = Keyword.get(opts, :job_type, "clip_detection")
     organization_id = Keyword.get(opts, :organization_id)
     enhanced = Keyword.get(opts, :enhanced, false)
+    creator_skill = Keyword.get(opts, :creator_skill, false)
 
     # First deduct credits (with optional org context and enhanced multiplier)
     case deduct_credits_for_processing(
@@ -3170,7 +3183,8 @@ defmodule ClippsterServerWeb.ClipsController do
            duration_hours,
            is_first_run,
            organization_id,
-           enhanced
+           enhanced,
+           creator_skill
          ) do
       {:ok, credits_deducted, credit_source}
       when is_number(credits_deducted) and credits_deducted > 0 ->
@@ -3201,8 +3215,16 @@ defmodule ClippsterServerWeb.ClipsController do
 
       {:ok, credits_deducted, credit_source}
       when credits_deducted == 0 or credits_deducted == 0.0 ->
-        # Admin user or unlimited - no job needed
-        {:ok, %{credits: 0.0, job_id: nil, credit_source: credit_source}}
+        if creator_skill do
+          job_opts = [project_id: project_id, video_url: video_url, job_type: job_type]
+          job_opts = if organization_id, do: [{:organization_id, organization_id} | job_opts], else: job_opts
+          case Credits.create_processing_job(user_id, 0, duration_hours, job_opts) do
+            {:ok, job} -> {:ok, %{credits: 0.0, job_id: job.id, credit_source: credit_source}}
+            {:error, reason} -> {:error, :deduction_failed, reason}
+          end
+        else
+          {:ok, %{credits: 0.0, job_id: nil, credit_source: credit_source}}
+        end
 
       error ->
         error
@@ -3210,10 +3232,11 @@ defmodule ClippsterServerWeb.ClipsController do
   end
 
   # Marks a processing job as completed.
-  defp complete_job(nil), do: :ok
+  defp complete_job(job_id, result_data \\ nil)
+  defp complete_job(nil, _result_data), do: :ok
 
-  defp complete_job(job_id) do
-    case Credits.complete_processing_job(job_id) do
+  defp complete_job(job_id, result_data) do
+    case Credits.complete_processing_job(job_id, result_data) do
       {:ok, _job} ->
         IO.puts("[ClipsController] Marked job #{job_id} as completed")
         :ok

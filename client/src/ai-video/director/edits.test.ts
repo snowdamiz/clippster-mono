@@ -116,6 +116,18 @@ describe('timeline edits', () => {
     });
   });
 
+  it('clears a speaker crop when swapping to a different source', () => {
+    const start = doc({
+      shots: [
+        shot('s1', {
+          framing: { x: 0.25, y: 0.5, zoom: 2 },
+          alternates: [{ mediaId: 'm2', sourceIn: 0, description: 'Guest camera' }],
+        }),
+      ],
+    });
+    expect(swapShot(start, 's1', 0, media).shots[0].framing).toBeUndefined();
+  });
+
   it('refuses an alternate whose source no longer fits', () => {
     const start = doc({
       shots: [

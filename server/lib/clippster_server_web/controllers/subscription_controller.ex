@@ -50,7 +50,11 @@ defmodule ClippsterServerWeb.SubscriptionController do
       {:error, changeset} ->
         conn
         |> put_status(422)
-        |> json(%{success: false, error: "Failed to select free plan", details: inspect(changeset)})
+        |> json(%{
+          success: false,
+          error: "Failed to select free plan",
+          details: inspect(changeset)
+        })
     end
   end
 
@@ -176,6 +180,23 @@ defmodule ClippsterServerWeb.SubscriptionController do
     |> json(%{success: false, error: "Missing required parameters: code and tier"})
   end
 
+  def get_subscription_offer(conn, params) do
+    with {:ok, user_id} <- get_user_id_from_token(conn),
+         code when is_binary(code) <- params["code"],
+         {:ok, offer} <- PromoCodes.subscription_offer(code, user_id) do
+      json(conn, %{success: true, offer: offer})
+    else
+      _ ->
+        conn
+        |> put_status(422)
+        |> json(%{
+          success: false,
+          error:
+            "This offer is unavailable. Check that you are signed in with the account that received it."
+        })
+    end
+  end
+
   @doc """
   Create a Stripe Checkout session for a subscription.
   """
@@ -242,6 +263,12 @@ defmodule ClippsterServerWeb.SubscriptionController do
 
       # Return error if promo code is invalid (and not an affiliate code)
       case promo_code_info do
+        {:ok, %{campaign_recipient_id: id}}
+        when not is_nil(id) and billing_interval != "monthly" ->
+          conn
+          |> put_status(400)
+          |> json(%{success: false, error: "This offer is valid on monthly subscriptions only"})
+
         {:error, reason} when is_nil(affiliate_code_info) ->
           error_message =
             case reason do
@@ -263,6 +290,9 @@ defmodule ClippsterServerWeb.SubscriptionController do
               :already_redeemed ->
                 "You have already used this code"
 
+              :offer_not_available ->
+                "This offer is unavailable for your account"
+
               _ ->
                 "Invalid code"
             end
@@ -272,67 +302,44 @@ defmodule ClippsterServerWeb.SubscriptionController do
           |> json(%{success: false, error: error_message})
 
         _ ->
-          nil
-      end
+          customer_id =
+            case Subscriptions.ensure_stripe_customer(user_id) do
+              {:ok, id} ->
+                id
 
-      Logger.debug(
-        "Creating checkout for tier: #{tier}, user: #{user_id}, promo_code: #{inspect(promo_code)}"
-      )
-
-      # Create or get Stripe customer
-      customer_id =
-        case user.stripe_customer_id do
-          nil ->
-            Logger.debug("Creating new Stripe customer for user #{user_id}")
-
-            case create_stripe_customer(user) do
-              {:ok, customer} ->
-                Logger.debug("Created Stripe customer: #{customer.id}")
-                customer.id
-
-              {:error, err} ->
-                Logger.error("Failed to create Stripe customer: #{inspect(err)}")
+              {:error, reason} ->
+                Logger.error("Failed to create Stripe customer: #{inspect(reason)}")
                 nil
             end
 
-          id ->
-            Logger.debug("Using existing Stripe customer: #{id}")
-            id
-        end
+          case promo_code_info do
+            {:ok, %{promo_type: "bundle"} = promo} ->
+              create_bundle_checkout(
+                conn,
+                user_id,
+                tier,
+                promo,
+                tier_info,
+                customer_id,
+                user,
+                params
+              )
 
-      # Update user with customer ID if new
-      if customer_id && is_nil(user.stripe_customer_id) do
-        Subscriptions.update_stripe_customer(user_id, customer_id)
-      end
-
-      # Bundle promos use a one-time payment checkout (fixed price + access + credits)
-      case promo_code_info do
-        {:ok, promo} when promo.promo_type == "bundle" ->
-          create_bundle_checkout(
-            conn,
-            user_id,
-            tier,
-            promo,
-            tier_info,
-            customer_id,
-            user,
-            params
-          )
-
-        _ ->
-          create_subscription_checkout(
-            conn,
-            user_id,
-            tier,
-            tier_info,
-            promo_code_info,
-            affiliate_code_info,
-            billing_interval,
-            customer_id,
-            user,
-            promo_code,
-            params
-          )
+            _ ->
+              create_subscription_checkout(
+                conn,
+                user_id,
+                tier,
+                tier_info,
+                promo_code_info,
+                affiliate_code_info,
+                billing_interval,
+                customer_id,
+                user,
+                promo_code,
+                params
+              )
+          end
       end
     else
       {:error, :unauthorized} ->
@@ -541,7 +548,6 @@ defmodule ClippsterServerWeb.SubscriptionController do
           base_session_params
           |> Map.put(:discounts, [%{promotion_code: promo.stripe_promo_code_id}])
           |> update_in([:metadata], &Map.put(&1, :promo_code_id, promo.id))
-          |> update_in([:metadata], &Map.put(&1, :promo_code, promo.code))
 
         {_, {:ok, affiliate}} ->
           apply_affiliate_code_discount(base_session_params, affiliate, promo_code)
@@ -712,7 +718,7 @@ defmodule ClippsterServerWeb.SubscriptionController do
       # Apply promo code discount if provided and valid
       {final_usd, credits_to_grant, promo_info} =
         if promo_code do
-          case PromoCodes.validate_promo(promo_code, tier, user_id) do
+          case PromoCodes.validate_promo(promo_code, tier, user_id, :crypto) do
             {:ok, promo} when promo.promo_type == "bundle" ->
               bundle_usd = promo.fixed_price_cents / 100
 
@@ -817,7 +823,7 @@ defmodule ClippsterServerWeb.SubscriptionController do
       # Calculate expected amount with promo code discount if provided
       {expected_usd, validated_promo} =
         if promo_code do
-          case PromoCodes.validate_promo(promo_code, tier, user_id) do
+          case PromoCodes.validate_promo(promo_code, tier, user_id, :crypto) do
             {:ok, promo} when promo.promo_type == "bundle" ->
               {promo.fixed_price_cents / 100, promo}
 
@@ -1166,21 +1172,6 @@ defmodule ClippsterServerWeb.SubscriptionController do
 
   defp generate_quote_id do
     :crypto.strong_rand_bytes(16) |> Base.encode16(case: :lower)
-  end
-
-  defp create_stripe_customer(user) do
-    params = %{
-      email: user.email,
-      metadata: %{
-        user_id: to_string(user.id)
-      }
-    }
-
-    if user.name do
-      Stripe.Customer.create(Map.put(params, :name, user.name))
-    else
-      Stripe.Customer.create(params)
-    end
   end
 
   defp verify_crypto_payment(tx_signature, from_address, expected_sol_amount) do

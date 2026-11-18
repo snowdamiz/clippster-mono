@@ -60,6 +60,18 @@ defmodule ClippsterServerWeb.AIVideoControllerTest do
     assert conn |> patch(~p"/api/ai/video/sessions/#{session["id"]}", %{aspect_ratio: "3:2"}) |> json_response(422)
   end
 
+  test "prepaid detection permits one free AI session per detected clip", %{conn: conn, user: user} do
+    {:ok, job} = Credits.create_processing_job(user.id, 3, 1,
+      job_type: "clip_detection_creator_skill")
+    {:ok, _} = Credits.complete_processing_job(job.id, %{clip_count: 1})
+
+    params = %{creator_skill_job_id: job.id, playbook_enabled: true, media_items: @media}
+    %{"id" => session_id} = conn |> post(~p"/api/ai/video/sessions", params) |> json_response(200)
+    assert conn |> post(~p"/api/ai/video/sessions/#{session_id}/runs", %{kind: "generate", request: "Edit", max_credits: 0}) |> json_response(200)
+    assert balance(user) == 50.0
+    assert conn |> post(~p"/api/ai/video/sessions", params) |> json_response(422)
+  end
+
   test "replacing or removing the example forgets what was learned from it", %{conn: conn} do
     %{"id" => id} =
       conn |> post(~p"/api/ai/video/sessions", %{reference: %{"path" => "a.mp4", "duration" => 12.5}}) |> json_response(200)
@@ -105,7 +117,7 @@ defmodule ClippsterServerWeb.AIVideoControllerTest do
     %{"run" => run} =
       conn |> post(~p"/api/ai/video/sessions/#{id}/runs", %{kind: "generate", request: "Go"}) |> json_response(200)
 
-    assert balance(user) == 40.0
+    assert balance(user) == 50.0
 
     busy = conn |> patch(~p"/api/ai/video/sessions/#{id}", %{document: @document})
     assert json_response(busy, 409)
@@ -123,7 +135,7 @@ defmodule ClippsterServerWeb.AIVideoControllerTest do
     %{"run" => revise} =
       conn |> post(~p"/api/ai/video/sessions/#{id}/runs", %{kind: "revise", request: "No change"}) |> json_response(200)
 
-    assert balance(user) == 35.0
+    assert balance(user) == 50.0
 
     %{"run" => revised} =
       conn
@@ -131,7 +143,7 @@ defmodule ClippsterServerWeb.AIVideoControllerTest do
       |> json_response(200)
 
     assert revised["refunded"]
-    assert balance(user) == 40.0
+    assert balance(user) == 50.0
   end
 
   test "failing a run refunds it and resets the project", %{conn: conn, user: user} do
@@ -145,13 +157,13 @@ defmodule ClippsterServerWeb.AIVideoControllerTest do
       conn |> post(~p"/api/ai/video/sessions/#{id}/runs", %{kind: "generate", request: "Go"}) |> json_response(200)
 
     failed = conn |> post(~p"/api/ai/video/runs/#{run["id"]}/fail", %{reason: "Cancelled"}) |> json_response(200)
-    assert failed["run"]["refunded"]
+    refute failed["run"]["refunded"]
     assert balance(user) == 50.0
 
     session = conn |> get(~p"/api/ai/video/sessions/#{id}") |> json_response(200)
     assert session["status"] == "draft"
     assert session["running_run"] == nil
-    assert [%{"role" => "user", "content" => "Go"}, %{"role" => "assistant", "content" => "Stopped. You weren't charged."}] = session["messages"]
+    assert [%{"role" => "user", "content" => "Go"}, %{"role" => "assistant", "content" => "Stopped."}] = session["messages"]
 
     conn |> post(~p"/api/ai/video/runs/#{run["id"]}/fail", %{reason: "Cancelled"}) |> json_response(200)
     assert length((conn |> get(~p"/api/ai/video/sessions/#{id}") |> json_response(200))["messages"]) == 2

@@ -14,7 +14,7 @@
           size="sm"
           :disabled="!project.document.value || !!project.running.value"
           :loading="exporting"
-          @click="project.exportVideo()"
+          @click="showExport = true"
         >
           <Download v-if="!exporting" />
           Export
@@ -77,6 +77,7 @@
       @close="confirmLeave = false"
       @confirm="leave"
     />
+    <AIVideoExportDialog v-model="showExport" />
   </div>
 </template>
 
@@ -97,6 +98,7 @@
   import { provideProject } from '@/ai-video/projectContext';
   import { takeStartingSources } from '@/ai-video/startingSources';
   import { useAIVideoProject } from '@/ai-video/useAIVideoProject';
+  import AIVideoExportDialog from '@/ai-video/components/AIVideoExportDialog.vue';
 
   const route = useRoute();
   const router = useRouter();
@@ -105,6 +107,7 @@
 
   const bootError = ref<string | null>(null);
   const confirmLeave = ref(false);
+  const showExport = ref(false);
 
   const title = computed(() => project.session.value?.name || 'Untitled project');
   const exporting = computed(() => {

@@ -1,7 +1,18 @@
 import { compileDocument, placeShots, type CompileContext } from '../compiler/compile';
 import { COMPOSITION_PATH, documentDuration, validateDocument } from '../director/validate';
-import type { CheckFinding, CheckReport, HyperframesWorkspace } from '../runtime/workspace';
-import type { EditDocument, MediaItem, ToolCall, ToolResult } from '../types';
+import { creatorLayoutIssues } from '../director/creatorLayout';
+import { hasCreatorSkillAiCaptions } from '../../services/creatorSkillAiCaptions';
+import type { CheckFinding, CheckReport, VideoWorkspace } from '../runtime/workspace';
+import type {
+  EditDocument,
+  MediaItem,
+  SourceSegment,
+  SpeechSegment,
+  ToolCall,
+  ToolResult,
+} from '../types';
+import type { CreatorSkillPackage } from '@clippster/shared-types';
+import { parseCreatorSkillPackage } from '../../services/creatorSkillPackage';
 
 const MAX_STILLS = 12;
 const MAX_IMAGES_PER_TURN = 24;
@@ -10,12 +21,15 @@ const MAX_FILE_CHARS = 200_000;
 
 export interface AgentToolDeps {
   workspace: Pick<
-    HyperframesWorkspace,
+    VideoWorkspace,
     'writeFile' | 'readFile' | 'deleteFile' | 'listFiles' | 'check' | 'snapshot'
   >;
   compileContext: CompileContext;
   media: MediaItem[];
+  sourceSegments?: Record<string, SourceSegment[]>;
+  speechSegments?: Record<string, SpeechSegment[]>;
   maxSeconds: number;
+  creatorLayoutSourceId?: string;
   /** Keyframe path of every example shot, by shot index. */
   exampleKeyframes: Array<string | null>;
   snapshotDir: string;
@@ -42,6 +56,7 @@ export interface AgentProgress {
 /** Executes the agent's client-side tools against the Hyperframes workspace. */
 export class AgentTools {
   document: EditDocument | null;
+  playbookPackage: CreatorSkillPackage | null = null;
   readonly progress: AgentProgress = {
     edited: false,
     built: false,
@@ -98,9 +113,59 @@ export class AgentTools {
         return { content: await this.check() };
       case 'snapshot':
         return this.snapshot(args.times, imageBudget);
+      case 'read_source_window':
+        return { content: this.readSourceWindow(args.mediaId, args.start, args.end) };
+      case 'read_speech_window':
+        return { content: this.readSpeechWindow(args.mediaId, args.start, args.end) };
+      case 'submit_playbook_package': {
+        const parsed = parseCreatorSkillPackage(args.package);
+        if (parsed.error || !parsed.package) return { content: `Package not saved: ${parsed.error}` };
+        this.playbookPackage = parsed.package;
+        return { content: `Saved playbook package: ${parsed.package.claims.length} claims, ${parsed.package.sources.length} sources, ${parsed.package.platformCopy.length} copy drafts.` };
+      }
       default:
         return { content: `Unknown tool ${String(call.name)}.` };
     }
+  }
+
+  private readSourceWindow(mediaId: unknown, start: unknown, end: unknown): string {
+    if (
+      typeof mediaId !== 'string' ||
+      typeof start !== 'number' ||
+      typeof end !== 'number' ||
+      !Number.isFinite(start) ||
+      !Number.isFinite(end) ||
+      start < 0 ||
+      end <= start ||
+      end - start > 120
+    ) {
+      return 'Provide a mediaId and a source time window up to 120 seconds.';
+    }
+    if (!this.deps.media.some((item) => item.id === mediaId)) return 'Unknown mediaId.';
+    const segments = (this.deps.sourceSegments?.[mediaId] ?? [])
+      .filter((segment) => segment.end > start && segment.start < end)
+      .slice(0, 60);
+    return segments.length ? JSON.stringify(segments) : 'No indexed segments in that window.';
+  }
+
+  private readSpeechWindow(mediaId: unknown, start: unknown, end: unknown): string {
+    if (
+      typeof mediaId !== 'string' ||
+      typeof start !== 'number' ||
+      typeof end !== 'number' ||
+      !Number.isFinite(start) ||
+      !Number.isFinite(end) ||
+      start < 0 ||
+      end <= start ||
+      end - start > 120
+    ) {
+      return 'Provide a mediaId and a speech time window up to 120 seconds.';
+    }
+    if (!this.deps.media.some((item) => item.id === mediaId)) return 'Unknown mediaId.';
+    const turns = (this.deps.speechSegments?.[mediaId] ?? [])
+      .filter((turn) => turn.end > start && turn.start < end)
+      .slice(0, 100);
+    return turns.length ? JSON.stringify(turns) : 'No analyzed speech in that window.';
   }
 
   private async authoredFiles(): Promise<string[]> {
@@ -121,6 +186,10 @@ export class AgentTools {
       files: await this.compositionFiles(),
       requireFiles: false,
     });
+    if (this.deps.creatorLayoutSourceId) errors.push(...creatorLayoutIssues(document, this.deps.creatorLayoutSourceId));
+    if (this.deps.creatorLayoutSourceId && this.deps.speechSegments?.[this.deps.creatorLayoutSourceId]?.length && !hasCreatorSkillAiCaptions(document)) {
+      errors.push('Create the AI-designed speech caption track on the captions lane using the supplied word timing. The app does not add captions for you.');
+    }
     if (errors.length)
       return `Not saved. Fix these and resubmit the whole document:\n- ${errors.join('\n- ')}`;
 

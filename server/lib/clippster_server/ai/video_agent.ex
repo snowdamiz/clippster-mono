@@ -34,7 +34,9 @@ defmodule ClippsterServer.AI.VideoAgent do
   @plan_chat_messages 30
   @chat_messages 40
 
-  @client_tools ~w(set_edit write_file read_file list_files delete_file check snapshot)
+  @client_tools ~w(set_edit write_file read_file list_files delete_file check snapshot read_source_window read_speech_window submit_playbook_package)
+
+  @research_tools [%{"type" => "openrouter:web_search"}, %{"type" => "openrouter:web_fetch"}]
 
   @tools [
     %{
@@ -134,6 +136,176 @@ defmodule ClippsterServer.AI.VideoAgent do
     %{
       "type" => "function",
       "function" => %{
+        "name" => "read_speech_window",
+        "description" =>
+          "Read timed speech and provisional speaker IDs in a selected 120-second source window. Use before cutting a conversation or assigning a camera to a speaker.",
+        "parameters" => %{
+          "type" => "object",
+          "properties" => %{
+            "mediaId" => %{"type" => "string"},
+            "start" => %{"type" => "number"},
+            "end" => %{"type" => "number"}
+          },
+          "required" => ["mediaId", "start", "end"]
+        }
+      }
+    },
+    %{
+      "type" => "function",
+      "function" => %{
+        "name" => "read_source_window",
+        "description" =>
+          "Read detailed source labels in a selected 120-second time window. Use after choosing a promising window from a long recording before placing exact footage cuts.",
+        "parameters" => %{
+          "type" => "object",
+          "properties" => %{
+            "mediaId" => %{"type" => "string"},
+            "start" => %{"type" => "number"},
+            "end" => %{"type" => "number"}
+          },
+          "required" => ["mediaId", "start", "end"]
+        }
+      }
+    },
+    %{
+      "type" => "function",
+      "function" => %{
+        "name" => "submit_playbook_package",
+        "description" =>
+          "For an automatic creator playbook clip, submit a funnel stage and outcome, structured claims, dated sources, public brand references, sponsor review, thumbnail concepts, platform copy with pinned comments, and unresolved review items before finishing. Reach clips need a bridge to a later stage. Research mentioned companies using official public sources where possible; record source URLs, logo references, colors, and rights questions separately from creator branding and sponsorship. Do not invent URLs, dates, sponsor codes, or endorsements. Every verified or partial claim needs a dated source URL listed in sources. Uncertain claims need a visible label.",
+        "parameters" => %{
+          "type" => "object",
+          "properties" => %{
+            "package" => %{
+              "type" => "object",
+              "properties" => %{
+                "funnel" => %{
+                  "type" => "object",
+                  "properties" => %{
+                    "stage" => %{"type" => "string", "enum" => ~w(reach trust sponsor creator_product)},
+                    "reason" => %{"type" => "string"},
+                    "bridge" => %{"type" => "string"},
+                    "metric" => %{"type" => "string"}
+                  },
+                  "required" => ~w(stage reason metric)
+                },
+                "claims" => %{
+                  "type" => "array",
+                  "items" => %{
+                    "type" => "object",
+                    "properties" => %{
+                      "time" => %{"type" => "number"},
+                      "text" => %{"type" => "string"},
+                      "verdict" => %{
+                        "type" => "string",
+                        "enum" =>
+                          ~w(verified partial unconfirmed rumor opinion prediction not_found)
+                      },
+                      "sourceUrl" => %{"type" => "string"},
+                      "publishedAt" => %{"type" => "string"},
+                      "onScreenLabel" => %{"type" => "string"}
+                    },
+                    "required" => ~w(time text verdict)
+                  }
+                },
+                "sources" => %{
+                  "type" => "array",
+                  "items" => %{
+                    "type" => "object",
+                    "properties" => %{
+                      "url" => %{"type" => "string"},
+                      "title" => %{"type" => "string"},
+                      "publishedAt" => %{"type" => "string"},
+                      "retrievedAt" => %{"type" => "string"}
+                    },
+                    "required" => ~w(url title retrievedAt)
+                  }
+                },
+                "brandReferences" => %{
+                  "type" => "array",
+                  "items" => %{
+                    "type" => "object",
+                    "properties" => %{
+                      "name" => %{"type" => "string"},
+                      "sourceUrl" => %{"type" => "string"},
+                      "logoUrl" => %{"type" => "string"},
+                      "colors" => %{"type" => "array", "items" => %{"type" => "string"}},
+                      "notes" => %{"type" => "string"}
+                    },
+                    "required" => ~w(name sourceUrl colors notes)
+                  }
+                },
+                "footageReview" => %{
+                  "type" => "array",
+                  "items" => %{
+                    "type" => "object",
+                    "properties" => %{
+                      "start" => %{"type" => "number"},
+                      "end" => %{"type" => "number"},
+                      "crop" => %{
+                        "type" => "object",
+                        "properties" => %{
+                          "x" => %{"type" => "number"},
+                          "y" => %{"type" => "number"},
+                          "width" => %{"type" => "number"},
+                          "height" => %{"type" => "number"}
+                        },
+                        "required" => ~w(x y width height)
+                      },
+                      "show" => %{"type" => "string"},
+                      "hide" => %{"type" => "array", "items" => %{"type" => "string"}},
+                      "note" => %{"type" => "string"}
+                    },
+                    "required" => ~w(start end show hide note)
+                  }
+                },
+                "sponsors" => %{
+                  "type" => "array",
+                  "items" => %{
+                    "type" => "object",
+                    "properties" => %{
+                      "name" => %{"type" => "string"},
+                      "confirmed" => %{"type" => "boolean"},
+                      "referralUrl" => %{"type" => "string"},
+                      "code" => %{"type" => "string"},
+                      "disclosure" => %{"type" => "string"},
+                      "review" => %{"type" => "string"}
+                    },
+                    "required" => ~w(name confirmed)
+                  }
+                },
+                "thumbnailConcepts" => %{"type" => "array", "items" => %{"type" => "string"}},
+                "thumbnailHeadlines" => %{"type" => "array", "items" => %{"type" => "string"}, "minItems" => 2, "maxItems" => 4},
+                "chapters" => %{
+                  "type" => "array",
+                  "items" => %{"type" => "object", "properties" => %{"time" => %{"type" => "number"}, "title" => %{"type" => "string"}}, "required" => ~w(time title)}
+                },
+                "platformCopy" => %{
+                  "type" => "array",
+                  "items" => %{
+                    "type" => "object",
+                    "properties" => %{
+                      "platform" => %{"type" => "string"},
+                      "title" => %{"type" => "string"},
+                      "description" => %{"type" => "string"},
+                      "tags" => %{"type" => "array", "items" => %{"type" => "string"}},
+                      "pinnedComment" => %{"type" => "string"}
+                    },
+                    "required" => ~w(platform title description tags pinnedComment)
+                  }
+                },
+                "reviewItems" => %{"type" => "array", "items" => %{"type" => "string"}}
+              },
+              "required" => ~w(funnel claims sources brandReferences footageReview sponsors thumbnailConcepts thumbnailHeadlines platformCopy reviewItems)
+            }
+          },
+          "required" => ["package"]
+        }
+      }
+    },
+    %{
+      "type" => "function",
+      "function" => %{
         "name" => "read_skill",
         "description" =>
           "Load a reference skill by path without .md, for example hyperframes-core/references/sub-compositions or hyperframes-animation/SKILL.",
@@ -148,7 +320,8 @@ defmodule ClippsterServer.AI.VideoAgent do
       "type" => "function",
       "function" => %{
         "name" => "finish",
-        "description" => "End the run with your message to the user (1-3 plain sentences).",
+        "description" =>
+          "End the run with your message to the user. Usually 1-3 plain sentences; when the user requested upload copy, chapters, source notes, or thumbnail concepts, include the requested deliverables with links.",
         "parameters" => %{
           "type" => "object",
           "properties" => %{"message" => %{"type" => "string"}},
@@ -166,7 +339,7 @@ defmodule ClippsterServer.AI.VideoAgent do
           | {:error, :invalid, String.t()}
           | {:error, String.t()}
 
-  def tools, do: @tools
+  def tools, do: @tools ++ @research_tools
 
   @doc """
   Advance a running agent run: append the client's tool results (or start the conversation from
@@ -175,7 +348,7 @@ defmodule ClippsterServer.AI.VideoAgent do
   @spec turn(VideoRun.t(), VideoSession.t(), turn_input()) :: outcome()
   def turn(%VideoRun{status: "running"} = run, %VideoSession{} = session, input) do
     with {:ok, messages} <- prepare(run, session, input) do
-      loop(run, messages)
+      loop(run, messages, session.playbook_enabled)
     end
   end
 
@@ -215,11 +388,47 @@ defmodule ClippsterServer.AI.VideoAgent do
   def session_context(%VideoSession{} = session) do
     media = Enum.map(session.media_items || [], &model_media/1)
 
+    profile =
+      if session.creator_profile_id,
+        do:
+          ClippsterServer.UserBranding.get_user_creator_profile(
+            session.user_id,
+            session.creator_profile_id
+          ),
+        else: nil
+
+    playbook =
+      if session.playbook_enabled do
+        {:ok, skill} = VideoAgentPrompts.skill("creator-edit-playbook")
+        {:ok, workflow} = VideoAgentPrompts.skill("creator-edit-playbook/references/original-creator-workflow")
+        skill <> "\n\n# Original creator workflow (required for this edit)\n\n" <> workflow
+      else
+        nil
+      end
+
     "# Session context\n" <>
       canonical_json(%{
         "example" => session.reference_blueprint,
+        "motionGraphics" => session.motion_graphics,
+        "creatorProfileId" => session.creator_profile_id,
+        "creatorProfile" =>
+          if(profile,
+            do:
+              Map.take(profile, [
+                :name,
+                :description,
+                :platform_links,
+                :clip_build_defaults,
+                :layout_overlays,
+                :video_playbook,
+                :creator_skill_preferences
+              ]),
+            else: nil
+          ),
+        "creatorPlaybook" => playbook,
         "media" => media,
-        "sources" => model_sources(session)
+        "sources" => model_sources(session),
+        "speech" => model_speech(session)
       })
   end
 
@@ -276,7 +485,51 @@ defmodule ClippsterServer.AI.VideoAgent do
         |> Enum.flat_map(&List.wrap(&1["segments"]))
         |> Enum.sort_by(&(&1["start"] || 0))
 
-      {id, segments}
+      {id, if(length(segments) > 180, do: summarize_source_windows(segments), else: segments)}
+    end
+  end
+
+  defp summarize_source_windows(segments) do
+    segments
+    |> Enum.chunk_every(15)
+    |> Enum.map(fn chunk ->
+      descriptions =
+        chunk
+        |> Enum.map(&(&1["description"] || &1["subject"]))
+        |> Enum.filter(&is_binary/1)
+        |> Enum.uniq()
+        |> Enum.take(3)
+
+      %{
+        "start" => hd(chunk)["start"],
+        "end" => List.last(chunk)["end"],
+        "summary" => Enum.join(descriptions, "; "),
+        "detail" => "Use read_source_window for precise cuts"
+      }
+    end)
+  end
+
+  defp model_speech(%VideoSession{media_items: items, speech_index: index}) do
+    index = index || %{}
+
+    for %{"id" => id, "contentHash" => hash} <- items || [], is_list(index[hash]), into: %{} do
+      windows =
+        index[hash]
+        |> Enum.chunk_by(&(trunc(&1["start"] || 0) |> div(60)))
+        |> Enum.map(fn turns ->
+          %{
+            "start" => hd(turns)["start"],
+            "end" => List.last(turns)["end"],
+            "speakers" =>
+              turns
+              |> Enum.filter(& &1["speakerId"])
+              |> Enum.uniq_by(& &1["speakerId"])
+              |> Enum.map(&Map.take(&1, ~w(speakerId speakerName speakerPosition))),
+            "sample" => turns |> Enum.map(& &1["text"]) |> Enum.join(" ") |> String.slice(0, 240)
+          }
+        end)
+
+      {id, windows}
     end
   end
 
@@ -367,57 +620,98 @@ defmodule ClippsterServer.AI.VideoAgent do
 
   # -- Model loop --------------------------------------------------------------
 
-  defp loop(%VideoRun{} = run, messages) do
-    max_turns = VideoGenerationPolicy.max_turns(run.kind)
+  defp loop(%VideoRun{} = run, messages, playbook_enabled) do
+    max_turns = VideoGenerationPolicy.max_turns(run.kind) + if(playbook_enabled && run.kind == "generate", do: 8, else: 0)
 
     if run.turns >= max_turns do
       {:ok, run} = VideoRuns.save_messages(run, messages)
       {:limit, run}
     else
-      messages = if run.turns == max_turns - 1, do: add_final_turn_nudge(messages), else: messages
-      call_model(run, messages)
+      messages =
+        if playbook_enabled && run.kind == "generate" && run.turns >= VideoGenerationPolicy.max_turns(run.kind) - 1 && !saved_playbook_package?(messages),
+          do: add_playbook_nudge(messages),
+          else: if(run.turns == max_turns - 1, do: add_final_turn_nudge(messages), else: messages)
+      call_model(run, messages, playbook_enabled)
     end
   end
 
-  defp call_model(run, messages) do
+  defp call_model(run, messages, playbook_enabled) do
     model = VideoGenerationPolicy.agent_model()
 
     case OpenRouterChat.complete(request_payload(messages), title: "Clippster AI Video Editor") do
       {:ok, %{message: message, usage: usage}} ->
         VideoRuns.record_usage(run, model, "video_agent_#{run.kind}", usage)
         assistant = assistant_message(message)
-        handle_reply(run, messages ++ [assistant], assistant)
+        handle_reply(run, messages ++ [assistant], assistant, playbook_enabled)
 
       {:error, reason} ->
         {:error, reason}
     end
   end
 
-  defp handle_reply(run, messages, assistant) do
+  defp handle_reply(run, messages, assistant, playbook_enabled) do
     calls = assistant["tool_calls"] || []
     text = OpenRouterChat.message_text(assistant) |> String.trim()
+    {client_calls, server_calls} =
+      Enum.split_with(calls, &(&1["function"]["name"] in @client_tools))
 
-    case Enum.find(calls, &(&1["function"]["name"] == "finish")) do
-      %{} = finish ->
-        message = finish |> call_arguments() |> Map.get("message") |> present_or(text)
-        finish_run(run, messages, message)
-
-      nil when calls == [] ->
-        finish_run(run, messages, text)
-
-      nil ->
-        {client_calls, server_calls} =
-          Enum.split_with(calls, &(&1["function"]["name"] in @client_tools))
-
+    cond do
+      client_calls != [] ->
+        # The model can submit set_edit and finish in one response. Execute the edit first;
+        # finish is only accepted after the client confirms it saved successfully.
         messages = messages ++ Enum.map(server_calls, &resolve_server_call/1)
         {:ok, run} = VideoRuns.save_turn(run, messages)
+        {:tools, Enum.map(client_calls, &client_call/1), text, run}
 
-        if client_calls == [] do
-          loop(run, messages ++ [user_message(["Continue."])])
-        else
-          {:tools, Enum.map(client_calls, &client_call/1), text, run}
-        end
+      finish = Enum.find(calls, &(&1["function"]["name"] == "finish")) ->
+        message = finish |> call_arguments() |> Map.get("message") |> present_or(text)
+        finish_or_continue(run, messages, message, playbook_enabled)
+
+      calls == [] ->
+        finish_or_continue(run, messages, text, playbook_enabled)
+
+      true ->
+        messages = messages ++ Enum.map(server_calls, &resolve_server_call/1)
+        {:ok, run} = VideoRuns.save_turn(run, messages)
+        loop(run, messages ++ [user_message(["Continue."])], playbook_enabled)
     end
+  end
+
+  defp finish_or_continue(%VideoRun{kind: "generate"} = run, messages, message, playbook_enabled) do
+    saved_edit? = Enum.any?(messages, fn
+      %{"role" => "tool", "content" => "Saved and compiled:" <> _} -> true
+      _ -> false
+    end)
+
+    package_saved? = !playbook_enabled || saved_playbook_package?(messages)
+
+    if saved_edit? && package_saved? do
+      finish_run(run, messages, message)
+    else
+      messages = messages ++ deferred_finish_results(messages)
+      {:ok, run} = VideoRuns.save_turn(run, messages)
+      instruction = if saved_edit?,
+        do: "The edit is saved, but the required creator playbook package is missing. Call submit_playbook_package with a valid package before finishing.",
+        else: "No valid edit was saved. Call set_edit with a complete valid document, fix any validation errors, then finish."
+      loop(run, messages ++ [user_message([instruction])], playbook_enabled)
+    end
+  end
+
+  defp finish_or_continue(run, messages, message, _playbook_enabled), do: finish_run(run, messages, message)
+
+  defp saved_playbook_package?(messages) do
+    Enum.any?(messages, fn
+      %{"role" => "tool", "content" => "Saved playbook package:" <> _} -> true
+      _ -> false
+    end)
+  end
+
+  defp deferred_finish_results(messages) do
+    messages
+    |> List.last()
+    |> Map.get("tool_calls", [])
+    |> Enum.filter(&(&1["function"]["name"] == "finish"))
+    |> Enum.map(&tool_message(&1["id"], "Finish deferred: no valid edit has been saved yet."))
   end
 
   defp finish_run(_run, _messages, ""), do: {:error, "The AI returned an empty reply."}
@@ -438,13 +732,32 @@ defmodule ClippsterServer.AI.VideoAgent do
     tool_message(id, content)
   end
 
+  defp resolve_server_call(%{"id" => id, "function" => %{"name" => "finish"}}),
+    do: tool_message(id, "Finish deferred until the edit tool results are processed.")
+
   defp resolve_server_call(%{"id" => id, "function" => %{"name" => name}}) do
     tool_message(id, "Unknown tool #{inspect(name)}.")
   end
 
   defp client_call(%{"id" => id, "function" => %{"name" => name}} = call) do
-    %{"id" => id, "name" => name, "arguments" => call_arguments(call)}
+    args = call_arguments(call)
+    args = case name do
+      "set_edit" -> Map.update(args, "document", nil, &decode_object_argument/1)
+      "submit_playbook_package" -> Map.update(args, "package", nil, &decode_object_argument/1)
+      _ -> args
+    end
+    %{"id" => id, "name" => name, "arguments" => args}
   end
+
+  # Some providers encode object-valued tool parameters as JSON strings.
+  # Decode only these structured parameters; keep validation and ordinary text intact.
+  defp decode_object_argument(value) when is_binary(value) do
+    case Jason.decode(value) do
+      {:ok, decoded} when is_map(decoded) -> decoded
+      _ -> value
+    end
+  end
+  defp decode_object_argument(value), do: value
 
   defp call_arguments(%{"function" => %{"arguments" => arguments}}) when is_binary(arguments) do
     case Jason.decode(arguments) do
@@ -463,10 +776,14 @@ defmodule ClippsterServer.AI.VideoAgent do
 
     note = %{
       "type" => "text",
-      "text" => "This is your last turn. Call finish now with your message to the user."
+      "text" => "This is your last turn. If you have not saved a valid edit, call set_edit now. Only call finish after the edit has been saved."
     }
 
     head ++ [Map.update!(last, "content", &(&1 ++ [note]))]
+  end
+
+  defp add_playbook_nudge(messages) do
+    messages ++ [user_message(["The required creator playbook package has not been saved. Submit it now with submit_playbook_package. Include only sourced claims; flag uncertain details for review."])]
   end
 
   # -- Request shape ---------------------------------------------------------------
@@ -476,7 +793,7 @@ defmodule ClippsterServer.AI.VideoAgent do
     %{
       "model" => VideoGenerationPolicy.agent_model(),
       "messages" => with_conversation_breakpoints(messages),
-      "tools" => @tools,
+      "tools" => tools(),
       "tool_choice" => "auto",
       "max_tokens" => VideoGenerationPolicy.agent_max_tokens(),
       "reasoning" => %{"effort" => VideoGenerationPolicy.agent_reasoning_effort()}

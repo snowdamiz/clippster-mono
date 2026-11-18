@@ -9,7 +9,8 @@ defmodule ClippsterServer.AdminMessaging do
     EmailCampaign,
     EmailCampaignRecipient,
     EmailAddress,
-    EmailSuppression
+    EmailSuppression,
+    SubscriptionOffers
   }
 
   alias ClippsterServer.Accounts.User
@@ -38,19 +39,28 @@ defmodule ClippsterServer.AdminMessaging do
   """
   def preview_campaign(attrs) do
     audience = input(attrs, "audience")
-    target_email = input(attrs, "target_email")
 
-    with {:ok, recipients} <- resolve_recipients(audience, target_email) do
+    with {:ok, recipients} <- resolve_campaign_recipients(audience, attrs) do
       {deliverable, suppressed} = partition_suppressed(recipients)
 
-      {:ok,
-       %{
-         audience: audience,
-         requested_count: length(recipients),
-         recipient_count: length(deliverable),
-         suppressed_count: length(suppressed),
-         sample: Enum.take(deliverable, 3)
-       }}
+      preview = %{
+        audience: audience,
+        requested_count: length(recipients),
+        recipient_count: length(deliverable),
+        suppressed_count: length(suppressed),
+        sample: deliverable |> Enum.take(3) |> Enum.map(&recipient_email/1)
+      }
+
+      if SubscriptionOffers.audience?(audience) do
+        {:ok,
+         Map.merge(preview, %{
+           recipients: deliverable,
+           suppressed: suppressed,
+           plans: SubscriptionOffers.monthly_plans()
+         })}
+      else
+        {:ok, preview}
+      end
     end
   end
 
@@ -65,12 +75,22 @@ defmodule ClippsterServer.AdminMessaging do
 
     audience =
       case input(attrs, "audience") do
-        value when value in ["waitlist", "all_users", "individual"] -> value
-        _ -> "individual"
+        value
+        when value in ["waitlist", "all_users", "individual", "never_subscribed", "win_back"] ->
+          value
+
+        _ ->
+          "individual"
       end
 
     with :ok <- validate_campaign_content(subject, body),
+         {:ok, offer} <- SubscriptionOffers.validate(audience, attrs["offer"]),
          {:ok, [recipient]} <- resolve_recipients("individual", test_email) do
+      body =
+        if offer,
+          do: SubscriptionOffers.render(body, offer, "#{offer["prefix"]}-SAMPLE", true),
+          else: body
+
       case deliver_email(recipient, subject, body, preheader, audience) do
         :ok -> {:ok, recipient}
         {:error, reason} -> {:error, reason}
@@ -88,26 +108,34 @@ defmodule ClippsterServer.AdminMessaging do
     body = input(attrs, "body")
     preheader = input(attrs, "preheader")
     audience = input(attrs, "audience")
-    target_email = input(attrs, "target_email")
 
     with :ok <- validate_campaign_content(subject, body),
-         {:ok, recipients} <- resolve_recipients(audience, target_email),
+         {:ok, offer} <- SubscriptionOffers.validate(audience, attrs["offer"]),
+         {:ok, recipients} <- resolve_campaign_recipients(audience, attrs),
          {deliverable, suppressed} <- partition_suppressed(recipients),
          :ok <- validate_deliverable_recipients(deliverable, suppressed),
-         {:ok, campaign} <-
-           create_campaign_record(
-             attrs,
-             user_id,
-             length(deliverable),
-             length(suppressed),
-             "sending"
-           ) do
-      recipient_records = create_recipient_records!(campaign, deliverable)
-      stats = deliver_recipients(recipient_records, campaign, subject, body, preheader)
+         {:ok, {campaign, records}} <-
+           Repo.transaction(fn ->
+             case create_campaign_record(
+                    attrs,
+                    user_id,
+                    length(deliverable),
+                    length(suppressed),
+                    offer
+                  ) do
+               {:ok, campaign} -> {campaign, create_recipient_records!(campaign, deliverable)}
+               {:error, reason} -> Repo.rollback(reason)
+             end
+           end) do
+      if offer do
+        {:ok, campaign, %{sent_count: 0, failed_count: 0, queued: true}}
+      else
+        stats = deliver_recipients(records, campaign, subject, body, preheader)
 
-      case finalize_campaign(campaign) do
-        {:ok, updated_campaign} -> {:ok, updated_campaign, stats}
-        {:error, changeset} -> {:error, changeset}
+        case finalize_campaign(campaign) do
+          {:ok, updated_campaign} -> {:ok, updated_campaign, stats}
+          {:error, changeset} -> {:error, changeset}
+        end
       end
     end
   end
@@ -118,9 +146,96 @@ defmodule ClippsterServer.AdminMessaging do
   def retry_failed_recipients(campaign_id) do
     with {:ok, campaign_id} <- parse_campaign_id(campaign_id),
          %EmailCampaign{} = campaign <- Repo.get(EmailCampaign, campaign_id) do
-      retry_failed_recipients_for_campaign(campaign)
+      if campaign.offer,
+        do: queue_offer_retry(campaign),
+        else: retry_failed_recipients_for_campaign(campaign)
     else
       _ -> {:error, "Campaign not found"}
+    end
+  end
+
+  def campaign_report(id) do
+    with {:ok, id} <- parse_campaign_id(id),
+         %EmailCampaign{offer: offer} when not is_nil(offer) <- Repo.get(EmailCampaign, id) do
+      {:ok, SubscriptionOffers.report(id)}
+    else
+      _ -> {:error, "Offer campaign not found"}
+    end
+  end
+
+  defp queue_offer_retry(campaign) do
+    case Repo.transaction(fn ->
+           campaign =
+             Repo.one!(from c in EmailCampaign, where: c.id == ^campaign.id, lock: "FOR UPDATE")
+
+           if campaign.status == "sending", do: Repo.rollback("Campaign is already sending")
+
+           {count, _} =
+             Repo.update_all(
+               from(r in EmailCampaignRecipient,
+                 where: r.campaign_id == ^campaign.id and r.status == "failed"
+               ),
+               set: [status: "pending", error: nil]
+             )
+
+           if count == 0, do: Repo.rollback("No failed recipients to retry")
+           Repo.update!(Ecto.Changeset.change(campaign, status: "sending"))
+         end) do
+      {:ok, campaign} -> {:ok, campaign, %{sent_count: 0, failed_count: 0, queued: true}}
+      error -> error
+    end
+  end
+
+  def process_queued_offers do
+    ids =
+      Repo.all(
+        from c in EmailCampaign,
+          where: c.status == "sending" and not is_nil(c.offer),
+          order_by: c.id,
+          select: c.id
+      )
+
+    Enum.each(ids, fn id ->
+      Repo.checkout(
+        fn ->
+          # The session lock allows Swoosh and Stripe requests outside a DB transaction.
+          %{rows: [[locked?]]} = Repo.query!("SELECT pg_try_advisory_lock($1::bigint)", [-id])
+
+          if locked? do
+            try do
+              process_queued_offer(id)
+            after
+              Repo.query!("SELECT pg_advisory_unlock($1::bigint)", [-id])
+            end
+          end
+        end,
+        timeout: :infinity
+      )
+    end)
+  end
+
+  defp process_queued_offer(id) do
+    case Repo.get(EmailCampaign, id) do
+      %EmailCampaign{status: "sending"} = campaign ->
+        recipients =
+          Repo.all(
+            from r in EmailCampaignRecipient,
+              where: r.campaign_id == ^id and r.status == "pending",
+              order_by: r.id
+          )
+
+        deliver_recipients(
+          recipients,
+          campaign,
+          campaign.subject,
+          campaign.body,
+          campaign.preheader
+        )
+
+        finalize_campaign(campaign)
+
+      _ ->
+        :ok
     end
   end
 
@@ -187,6 +302,28 @@ defmodule ClippsterServer.AdminMessaging do
 
   defp validate_deliverable_recipients(_deliverable, _suppressed), do: :ok
 
+  defp resolve_campaign_recipients(audience, attrs) do
+    if SubscriptionOffers.audience?(audience) do
+      case Map.get(attrs, "recipient_ids") do
+        nil ->
+          {:ok, SubscriptionOffers.recipients(audience, nil)}
+
+        ids when is_list(ids) ->
+          if Enum.all?(ids, &(is_integer(&1) and &1 > 0)),
+            do: {:ok, SubscriptionOffers.recipients(audience, ids)},
+            else: {:error, "Invalid recipient selection"}
+
+        _ ->
+          {:error, "Invalid recipient selection"}
+      end
+    else
+      resolve_recipients(audience, input(attrs, "target_email"))
+    end
+  end
+
+  defp recipient_email(%{email: email}), do: email
+  defp recipient_email(email), do: email
+
   defp resolve_recipients("waitlist", _target_email) do
     emails =
       Repo.all(
@@ -222,7 +359,7 @@ defmodule ClippsterServer.AdminMessaging do
 
   defp partition_suppressed(recipients) do
     suppressed = MapSet.new(suppressed_emails())
-    Enum.split_with(recipients, &(not MapSet.member?(suppressed, &1)))
+    Enum.split_with(recipients, &(not MapSet.member?(suppressed, recipient_email(&1))))
   end
 
   defp suppressed_emails do
@@ -320,7 +457,12 @@ defmodule ClippsterServer.AdminMessaging do
   end
 
   defp deliver_recipient(recipient, campaign, subject, body, preheader) do
-    case deliver_email(recipient.email, subject, body, preheader, campaign.audience) do
+    result =
+      with {:ok, body} <- recipient_body(recipient, campaign, body) do
+        deliver_email(recipient.email, subject, body, preheader, campaign.audience)
+      end
+
+    case result do
       :ok ->
         update_recipient!(recipient, %{
           status: "sent",
@@ -341,6 +483,18 @@ defmodule ClippsterServer.AdminMessaging do
         })
 
         {:error, reason}
+    end
+  end
+
+  defp recipient_body(_recipient, %{offer: nil}, body), do: {:ok, body}
+
+  defp recipient_body(recipient, campaign, body) do
+    if Repo.exists?(from s in EmailSuppression, where: s.email == ^recipient.email) do
+      {:error, "Recipient unsubscribed or is suppressed"}
+    else
+      with {:ok, code} <- SubscriptionOffers.issue(campaign, recipient) do
+        {:ok, SubscriptionOffers.render(body, campaign.offer, code)}
+      end
     end
   end
 
@@ -379,7 +533,7 @@ defmodule ClippsterServer.AdminMessaging do
     end
   end
 
-  defp create_campaign_record(attrs, user_id, recipient_count, suppressed_count, status) do
+  defp create_campaign_record(attrs, user_id, recipient_count, suppressed_count, offer) do
     %EmailCampaign{}
     |> EmailCampaign.changeset(%{
       "subject" => input(attrs, "subject"),
@@ -390,19 +544,27 @@ defmodule ClippsterServer.AdminMessaging do
       "sent_by" => user_id,
       "recipient_count" => recipient_count,
       "suppressed_count" => suppressed_count,
-      "status" => status
+      "status" => "sending",
+      "offer" => offer
     })
     |> Repo.insert()
   end
 
   defp create_recipient_records!(campaign, recipients) do
-    Enum.map(recipients, fn email ->
+    Enum.map(recipients, fn recipient ->
+      attrs = %{campaign_id: campaign.id, email: recipient_email(recipient), status: "pending"}
+
+      attrs =
+        if campaign.offer,
+          do:
+            Map.merge(attrs, %{
+              user_id: recipient.user_id,
+              offer_code: SubscriptionOffers.code(campaign.offer)
+            }),
+          else: attrs
+
       %EmailCampaignRecipient{}
-      |> EmailCampaignRecipient.changeset(%{
-        campaign_id: campaign.id,
-        email: email,
-        status: "pending"
-      })
+      |> EmailCampaignRecipient.changeset(attrs)
       |> Repo.insert!()
     end)
   end

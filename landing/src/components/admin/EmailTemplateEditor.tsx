@@ -20,6 +20,6 @@ export function EmailTemplateEditor(props: ComposerProps & { onChange: (body: st
   }, [])
   useEffect(() => {
     composer.current?.update(props)
-  }, [props.body, props.subject, props.preheader, props.audience])
+  }, [props.body, props.subject, props.preheader, props.audience, props.offerBlock])
   return <div ref={host} />
 }

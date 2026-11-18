@@ -2,6 +2,7 @@ import type { ServerUserCreatorProfile } from '@clippster/api-client';
 import type { CreatorProfileWithLinks } from './database/types';
 import { getDatabase, getCurrentUserId, generateId } from './database/core';
 import { getIntroOutroByServerId, getWatermarkByServerId } from './database';
+import { remapRatioAssetIds } from './creatorRatioAssets';
 
 export const creatorTimestamp = (value: number) => (value < 1e12 ? value * 1000 : value);
 const json = (value: unknown) =>
@@ -31,6 +32,18 @@ export async function importPersonalCreator(
     assetId(remote.outro_id),
     assetId(remote.watermark_id, true),
   ]);
+  const [introRatios, outroRatios] = await Promise.all([
+    remapRatioAssetIds(remote.intro_ratio_settings, async id => {
+      const localId = await assetId(Number(id));
+      if (!localId) throw new Error(`Creator intro asset ${id} has not downloaded yet`);
+      return localId;
+    }),
+    remapRatioAssetIds(remote.outro_ratio_settings, async id => {
+      const localId = await assetId(Number(id));
+      if (!localId) throw new Error(`Creator outro asset ${id} has not downloaded yet`);
+      return localId;
+    }),
+  ]);
   if (getCurrentUserId() !== userId) throw new Error('Account changed during creator sync');
   const db = await getDatabase();
   const fields = [
@@ -47,6 +60,7 @@ export async function importPersonalCreator(
     'outro_ratio_settings',
     'layout_overlays',
     'clip_build_defaults',
+    'creator_skill_preferences',
     'scope',
     'disabled',
     'auto_dvr_enabled',
@@ -62,10 +76,11 @@ export async function importPersonalCreator(
     watermark,
     json(remote.watermark_settings),
     json(remote.intro_outro_settings),
-    json(remote.intro_ratio_settings),
-    json(remote.outro_ratio_settings),
+    introRatios,
+    outroRatios,
     json(remote.layout_overlays),
     json(remote.clip_build_defaults),
+    json(remote.creator_skill_preferences),
     remote.scope || 'streamer',
     remote.disabled ? 1 : 0,
     remote.auto_dvr_enabled ? 1 : 0,

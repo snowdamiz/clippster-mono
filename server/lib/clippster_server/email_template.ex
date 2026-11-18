@@ -2,12 +2,21 @@ defmodule ClippsterServer.EmailTemplate do
   @moduledoc "Shared email layout, also consumed by the desktop and web campaign composers."
   @external_resource Path.expand("../../priv/email/layout.html", __DIR__)
   @layout File.read!(@external_resource)
+  @styles_path Path.expand("../../priv/email/body-styles.txt", __DIR__)
+  @external_resource @styles_path
+  @styles @styles_path
+          |> File.read!()
+          |> String.split(~r/\r?\n/, trim: true)
+          |> Map.new(fn line ->
+            [field, style] = String.split(line, "=", parts: 2)
+            {field, style}
+          end)
 
   @doc "Readable plain text generated from the same content as the HTML email."
   def to_text(html) do
     html
     |> String.replace(~r/<head\b[^>]*>[\s\S]*?<\/head>/i, "")
-    |> String.replace(~r/<div style="display:none[^>]*>[\s\S]*?<\/div>/i, "")
+    |> String.replace(~r/<div hidden[^>]*>[\s\S]*?<\/div>/i, "")
     |> String.replace(~r/<img\b[^>]*alt="([^"]*)"[^>]*>/i, "\\1")
     |> String.replace(~r/<a\b[^>]*href="([^"]*)"[^>]*>([\s\S]*?)<\/a>/i, "\\2 (\\1)")
     |> String.replace(~r/<br\s*\/?\s*>/i, "\n")
@@ -37,7 +46,7 @@ defmodule ClippsterServer.EmailTemplate do
       "UNSUBSCRIBE" =>
         if(unsubscribe,
           do:
-            " &nbsp;·&nbsp; <a href=\"#{escape(unsubscribe)}\" style=\"color:#a1a9b7\">Unsubscribe</a>",
+            " &nbsp;·&nbsp; <a href=\"#{escape(unsubscribe)}\" style=\"color:#80dcff\">Unsubscribe</a>",
           else: ""
         )
     }
@@ -52,21 +61,21 @@ defmodule ClippsterServer.EmailTemplate do
 
   def message(category, title, text, extra \\ "", action \\ nil) do
     """
-    <p style="margin:0 0 18px;color:#38bdf8;font-size:11px;letter-spacing:1.8px">#{escape(category)}</p>
-    <h1 style="margin:0 0 26px;color:#eef0f4;font-size:32px;font-weight:600;letter-spacing:-0.7px;line-height:1.2">#{escape(title)}</h1>
-    <p style="margin:0 0 24px;color:#a1a9b7;font-size:15px;line-height:1.75">#{escape(text) |> String.replace("\n", "<br>")}</p>
+    <p style="#{@styles["category"]}">#{escape(category)}</p>
+    <h1 class="email-heading" style="#{@styles["heading"]}">#{escape(title)}</h1>
+    <p style="#{@styles["message"]}">#{escape(text) |> String.replace("\n", "<br>")}</p>
     #{extra}
     #{button(action)}
-    <p style="margin:8px 0 0;color:#eef0f4;font-size:14px;line-height:1.75">See you in the studio,<br>The Clippster team</p>
+    <p style="#{@styles["signoff"]}">See you in the studio,<br>The Clippster team</p>
     """
   end
 
   def code(label, value, note) do
     """
-    <div style="margin:0 0 24px;padding:20px;background-color:#191c23;border:1px solid #292d35;border-radius:8px">
-    <p style="margin:0;color:#a1a9b7;font-size:12px">#{escape(label)}</p>
-    <p style="margin:8px 0;color:#eef0f4;font-family:monospace;font-size:28px;letter-spacing:3px">#{escape(value)}</p>
-    <p style="margin:0;color:#a1a9b7;font-size:12px">#{escape(note)}</p></div>
+    <div style="margin:0 0 18px;padding:20px;background-color:#192637;border:1px solid #2c3b50;border-radius:8px">
+    <p style="margin:0;color:#b9c7d8;font-size:12px">#{escape(label)}</p>
+    <p style="margin:8px 0;color:#f3f7ff;font-family:monospace;font-size:28px;letter-spacing:3px">#{escape(value)}</p>
+    <p style="margin:0;color:#b9c7d8;font-size:12px">#{escape(note)}</p></div>
     """
   end
 
@@ -74,7 +83,7 @@ defmodule ClippsterServer.EmailTemplate do
 
   defp button({label, url}) do
     """
-    <p style="margin:0 0 24px"><a href="#{escape(url)}" style="display:inline-block;background-color:#eef0f4;color:#0b0d11;padding:14px 22px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none">#{escape(label)}</a></p>
+    <p style="#{@styles["action"]}"><a href="#{escape(url)}" style="#{@styles["button"]}">#{escape(label)}</a></p>
     """
   end
 

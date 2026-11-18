@@ -178,6 +178,43 @@ describe('loadEditorEntry', () => {
     assert.ok(loaded.document.tracks.some((track) => track.kind === 'audio'));
   });
 
+  it('opens the selected Clippster Skill build as a separate 9:16 editor draft', async () => {
+    const deps = dependencies({ targetClip: clip('detected-1') });
+    deps.getSelectedClipEditSource = async () => ({ path: '/skill-edited.mp4', duration: 22, buildId: 'build-1' });
+    const edited = await loadEditorEntry('clip', 'detected-1', deps);
+    const asset = Object.values(edited.document.assets).find(item => item.kind === 'video');
+    assert.equal(edited.document.targetId, 'detected-1:creator-skill-edited:build-1');
+    assert.equal(edited.document.linkedClipId, 'detected-1');
+    assert.equal(asset?.sourceUri, '/skill-edited.mp4');
+    assert.equal(getVideoTrack(edited.document).items[0].sourceStart, 0);
+    assert.equal(getVideoTrack(edited.document).items[0].sourceEnd, 1_320_000);
+    assert.equal(edited.document.canvas.activeRatio, '9:16');
+    assert.deepEqual(edited.document.captionDocument?.words, []);
+    await deps.drafts.save({ ...edited.document, linkedClipId: undefined });
+    deps.getSelectedClipEditSource = async () => null;
+    const rawLoaded = await loadEditorEntry('clip', 'detected-1', deps);
+    assert.equal(rawLoaded.document.targetId, 'detected-1');
+    assert.equal(Object.values(rawLoaded.document.assets).find(item => item.kind === 'video')?.sourceUri, '/source.mp4');
+    deps.getSelectedClipEditSource = async () => ({ path: '/skill-edited.mp4', duration: 22, buildId: 'build-1' });
+    const reopened = await loadEditorEntry('clip', 'detected-1', deps);
+    assert.equal(reopened.revision, 1);
+    assert.equal(reopened.document.linkedClipId, 'detected-1');
+    assert.equal(Object.values(reopened.document.assets).find(item => item.kind === 'video')?.sourceUri, '/skill-edited.mp4');
+    deps.getSelectedClipEditSource = async () => ({ path: '/skill-edited-retry.mp4', duration: 23, buildId: 'build-2' });
+    const retried = await loadEditorEntry('clip', 'detected-1', deps);
+    assert.equal(retried.revision, 0);
+    assert.equal(Object.values(retried.document.assets).find(item => item.kind === 'video')?.sourceUri, '/skill-edited-retry.mp4');
+  });
+
+  it('keeps an edited landscape ratio and explains the long-form mobile limit', async () => {
+    const deps = dependencies({ targetClip: clip('detected-1') });
+    deps.getSelectedClipEditSource = async () => ({ path: '/landscape.mp4', duration: 100, buildId: 'landscape', aspectRatio: '16:9' });
+    const edited = await loadEditorEntry('clip', 'detected-1', deps);
+    assert.equal(edited.document.canvas.activeRatio, '16:9');
+    deps.getSelectedClipEditSource = async () => ({ path: '/long-form.mp4', duration: 180, buildId: 'long-form', aspectRatio: '16:9' });
+    await assert.rejects(loadEditorEntry('clip', 'detected-1', deps), /120-second mobile editor limit/);
+  });
+
   it('keeps a missing source reference and returns a recoverable media state', async () => {
     const loaded = await loadEditorEntry(
       'clip',

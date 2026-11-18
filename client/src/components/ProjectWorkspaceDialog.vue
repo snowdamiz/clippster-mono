@@ -29,6 +29,91 @@
                 class="workspace-dialog__player-column"
                 :class="{ 'workspace-dialog__player-column--fullscreen': isFullscreen }"
               >
+                <div v-if="selectedCreatorSkillEdit" class="border-b border-line-subtle px-3 py-2 text-xs text-fg-muted">
+                  <div class="flex flex-wrap items-center gap-2">
+                    <span class="font-medium text-fg">Clip version</span>
+                    <div class="inline-flex rounded-md border border-line-subtle bg-surface p-0.5">
+                      <button type="button" class="rounded px-2.5 py-1" :class="selectedCreatorSkillEdit.selectedVersion === 'raw' ? 'bg-brand-soft text-brand' : 'text-fg-muted'" @click="onSelectCreatorSkillVersion('raw')">Raw clip</button>
+                      <button type="button" class="rounded px-2.5 py-1 disabled:opacity-40" :class="selectedCreatorSkillEdit.selectedVersion === 'edited' ? 'bg-brand-soft text-brand' : 'text-fg-muted'" :disabled="!selectedCreatorSkillEdit.edited?.path" @click="onSelectCreatorSkillVersion('edited')">AI edit</button>
+                    </div>
+                    <span v-if="!selectedCreatorSkillEdit.edited?.path" class="text-fg-subtle">{{ selectedCreatorSkillEdit.status === 'failed' ? 'AI edit unavailable' : selectedCreatorSkillEdit.status === 'needs_review' ? 'AI edit ready for review' : `AI edit ${selectedCreatorSkillEdit.status.replace('_', ' ')}` }}</span>
+                    <button type="button" class="ml-auto rounded-md border border-line-subtle px-2.5 py-1 text-fg hover:bg-surface-hover" :disabled="isCreatingProject" @click="onEditClip(selectedCreatorSkillEdit.clipId)">Open selected clip in editor</button>
+                  </div>
+                  <div v-if="selectedCreatorSkillEdit.status === 'failed'" role="alert" class="mt-2 flex flex-wrap items-center justify-between gap-2 rounded bg-red-500/10 px-2 py-1.5 text-red-400">
+                    <span>{{ selectedCreatorSkillEdit.reviewItems[0] || 'The AI edit failed. Your raw clip is still available.' }}</span>
+                    <button type="button" class="rounded border border-red-400/40 px-2 py-1 font-medium hover:bg-red-500/10" @click="onRetryCreatorSkillEdit">Retry AI edit</button>
+                  </div>
+                  <div v-else-if="selectedCreatorSkillEdit.status === 'awaiting_approval'" class="mt-2 flex items-center justify-between gap-2 rounded bg-brand-soft px-2 py-1.5 text-brand">
+                    <span>AI editing has not started. Your raw clip is ready.</span>
+                    <button type="button" class="rounded border border-brand-line px-2 py-1 font-medium" @click="onApproveCreatorSkillEdits">Start AI editing</button>
+                  </div>
+                  <p v-else-if="['queued', 'editing', 'rendering'].includes(selectedCreatorSkillEdit.status)" role="status" class="mt-2 rounded bg-brand-soft px-2 py-1.5 text-brand">
+                    AI editing is {{ selectedCreatorSkillEdit.status }}. You can keep using the raw clip while it runs. The AI edit will become selectable when it is ready.
+                  </p>
+                  <details v-if="selectedCreatorSkillEdit.playbookPackage || selectedCreatorSkillEdit.edited || selectedCreatorSkillEdit.reviewItems.length && selectedCreatorSkillEdit.status !== 'failed'" class="mt-2">
+                    <summary class="cursor-pointer text-fg-muted">Review &amp; export AI materials</summary>
+                    <div class="mt-2 flex flex-wrap gap-2">
+                    <button v-if="selectedCreatorSkillEdit.edited?.captionsPath" type="button" class="rounded px-2 py-1 text-brand" @click="onSaveCreatorSkillCaptions">Save draft captions</button>
+                    <button v-if="selectedCreatorSkillEdit.edited?.contactSheetPath" type="button" class="rounded px-2 py-1 text-brand" @click="onSaveCreatorSkillContactSheet">Save visual contact sheet</button>
+                    <button v-if="selectedCreatorSkillEdit.edited?.phonePreviewPath" type="button" class="rounded px-2 py-1 text-brand" @click="onSaveCreatorSkillPhonePreview">Save phone preview</button>
+                    <button v-if="selectedCreatorSkillEdit.edited?.tiktokSafePath" type="button" class="rounded px-2 py-1 text-brand" @click="onSaveCreatorSkillTikTokCut">Save TikTok cut before sponsor read</button>
+                    <button v-if="selectedCreatorSkillEdit.edited?.tiktokCaptionsPath" type="button" class="rounded px-2 py-1 text-brand" @click="onSaveCreatorSkillTikTokCaptions">Save TikTok cut captions</button>
+                    <button v-if="selectedCreatorSkillEdit.playbookPackage" type="button" class="rounded px-2 py-1 text-brand" @click="onSaveCreatorSkillDocuments">Save playbook files</button>
+                    <button v-if="selectedCreatorSkillEdit.playbookPackage && selectedCreatorSkillEdit.edited?.path" type="button" class="rounded px-2 py-1 text-brand" @click="onSaveCreatorSkillDelivery">Save full delivery folder</button>
+                    </div>
+                  <details v-if="selectedCreatorSkillEdit.reviewItems.length && selectedCreatorSkillEdit.status !== 'failed'" class="mt-1">
+                    <summary class="cursor-pointer">{{ selectedCreatorSkillEdit.reviewItems.length }} review item{{ selectedCreatorSkillEdit.reviewItems.length === 1 ? '' : 's' }}</summary>
+                    <ul class="mt-1 list-disc space-y-1 pl-4"><li v-for="(item, index) in selectedCreatorSkillEdit.reviewItems" :key="index">{{ item }}</li></ul>
+                  </details>
+                  <details v-if="selectedCreatorSkillEdit.edited?.editorNotes" class="mt-1">
+                    <summary class="cursor-pointer">AI editor notes</summary>
+                    <p class="mt-1 max-h-40 overflow-y-auto whitespace-pre-wrap">{{ selectedCreatorSkillEdit.edited.editorNotes }}</p>
+                  </details>
+                  <CreatorSkillPackageReview v-if="selectedCreatorSkillEdit.playbookPackage" :item="selectedCreatorSkillEdit.playbookPackage" :source-captures="selectedCreatorSkillEdit.sourceCaptures" :claim-evidence="selectedCreatorSkillEdit.claimEvidence" :master-md5="selectedCreatorSkillEdit.edited?.masterMd5" @review="onReviewCreatorSkillClaim" @review-footage="onReviewCreatorSkillFootage" @review-finding="onReviewCreatorSkillFinding" @review-signoff="onReviewCreatorSkillSignoff" />
+                  <details v-if="selectedCreatorSkillEdit.sourceCaptures?.length" class="mt-1">
+                    <summary class="cursor-pointer">Captured public pages for review</summary>
+                    <p class="mt-1">Read each page before relying on a claim or brand asset. Static screenshots omit external images, fonts, and styles; inspect the live page for exact appearance. A saved page does not verify a claim.</p>
+                    <div v-for="capture in selectedCreatorSkillEdit.sourceCaptures" :key="capture.index" class="mt-1">
+                      {{ capture.title }} · {{ capture.kind }} · {{ capture.fetchedAt }} · Page date: {{ capture.pagePublishedAt || 'not found' }}
+                      <button type="button" class="ml-1 text-brand" @click="onSaveCreatorSkillSourceCapture(capture)">Save text</button>
+                      <button v-if="capture.screenshotPath" type="button" class="ml-2 text-brand" @click="saveCreatorSkillBinaryFile(capture.screenshotPath!, `${selectedCreatorSkillEdit?.clipId ?? 'clip'}-source-${capture.index}.png`, 'Save static page screenshot', 'PNG image', 'png')">Save screenshot</button>
+                      <img v-if="capture.screenshotPath" :src="convertFileSrc(capture.screenshotPath)" :alt="`Static capture of ${capture.title}`" class="mt-1 w-full rounded border border-line-subtle" />
+                    </div>
+                  </details>
+                  <details v-if="selectedCreatorSkillEdit.edited?.contactSheetPath" class="mt-1">
+                    <summary class="cursor-pointer">Visual contact sheet</summary>
+                    <p class="mt-1">Scan the rendered clip for unsafe screens, bad crops, and graphic glitches.</p>
+                    <img :src="convertFileSrc(selectedCreatorSkillEdit.edited.contactSheetPath)" alt="Rendered clip contact sheet" class="mt-2 w-full rounded border border-line-subtle" />
+                  </details>
+                  <details v-if="selectedCreatorSkillEdit.thumbnailCandidates?.length" class="mt-1">
+                    <summary class="cursor-pointer">Thumbnail frame options</summary>
+                    <p class="mt-1">Frames from the source clip. Choose or design a final thumbnail after review.</p>
+                    <div class="mt-2 grid grid-cols-4 gap-2">
+                      <img
+                        v-for="candidate in selectedCreatorSkillEdit.thumbnailCandidates"
+                        :key="candidate.path"
+                        :src="convertFileSrc(candidate.path)"
+                        :alt="`Source frame at ${candidate.sourceTime.toFixed(1)} seconds`"
+                        class="w-full rounded border border-line-subtle object-cover"
+                      />
+                    </div>
+                  </details>
+                  <details v-if="selectedCreatorSkillEdit.thumbnailVariants?.length" class="mt-1">
+                    <summary class="cursor-pointer">Thumbnail A–D review drafts</summary>
+                    <p class="mt-1">Built locally from this VOD. Check the frame, wording, and asset rights before publishing.</p>
+                    <div class="mt-2 grid grid-cols-2 gap-2">
+                      <div v-for="variant in selectedCreatorSkillEdit.thumbnailVariants" :key="variant.index">
+                        <img :src="convertFileSrc(variant.path)" :alt="`Thumbnail draft ${String.fromCharCode(65 + variant.index)}: ${variant.headline}`" class="w-full rounded border border-line-subtle" />
+                        <div class="mt-2 flex flex-wrap items-start gap-2">
+                          <div><span class="block text-[10px]">320 × 180</span><img :src="convertFileSrc(variant.path)" :alt="`Draft ${String.fromCharCode(65 + variant.index)} at 320 pixels`" width="320" height="180" class="max-w-full rounded border border-line-subtle" /></div>
+                          <div><span class="block text-[10px]">168 × 94</span><img :src="convertFileSrc(variant.path)" :alt="`Draft ${String.fromCharCode(65 + variant.index)} at 168 pixels`" width="168" height="94" class="rounded border border-line-subtle" /></div>
+                        </div>
+                        <button type="button" class="text-brand" @click="onSaveCreatorSkillThumbnail(variant)">Save draft {{ String.fromCharCode(65 + variant.index) }}</button>
+                      </div>
+                    </div>
+                  </details>
+                  </details>
+                </div>
                 <WorkspacePreviewControls
                   v-if="vodPresetConfig"
                   v-model:ratio="previewAspectRatio"
@@ -44,24 +129,24 @@
                     :video-loading="videoLoading"
                     :video-error="videoError"
                     :is-playing="isPlaying"
-                    :aspect-ratio="selectedAspectRatio"
+                    :aspect-ratio="videoPlayerAspectRatio"
                     :focal-point="effectiveFocalPoint"
                     :framing-regions="currentFramingRegions"
                     :manual-framing-config="vodManualFramingConfigForPlayer"
-                    :watermark-settings="watermarkSettings"
-                    :watermark-data="currentWatermarkData"
+                    :watermark-settings="workspacePlaybackIsBuiltExport ? undefined : watermarkSettings"
+                    :watermark-data="workspacePlaybackIsBuiltExport ? null : currentWatermarkData"
                     :subtitle-settings="videoPlayerSubtitleSettings"
                     :subtitle-initial-position="videoPlayerSubtitleInitialPosition"
                     :transcript-words="videoPlayerTranscriptWordsForPlayer"
                     :transcript-segments="videoPlayerTranscriptSegmentsForPlayer"
                     :current-time="currentTime"
-                    :clip-text-box-state="clipTextBoxForVideoPlayer"
+                    :clip-text-box-state="workspacePlaybackIsBuiltExport ? null : clipTextBoxForVideoPlayer"
                     :clip-text-box-interactive="clipTextBoxPlayerInteractive"
                     :clip-text-box-ignore-timing="rightPanelTab === 'text'"
                     :clip-absolute-start="clipTextBoxAbsoluteStart"
                     @togglePlayPause="togglePlayPause"
                     @timeUpdate="onTimeUpdate"
-                    @loadedMetadata="onLoadedMetadata"
+                    @loadedMetadata="onWorkspaceLoadedMetadata"
                     @videoEnded="onVideoEnded"
                     @videoError="onVideoError"
                     @loadStart="onLoadStart"
@@ -83,8 +168,8 @@
                   >
                     <SocialOverlay
                       :preset="activeSocialOverlay"
-                      :canvas-width="selectedAspectRatio.width"
-                      :canvas-height="selectedAspectRatio.height"
+                      :canvas-width="videoPlayerAspectRatio.width"
+                      :canvas-height="videoPlayerAspectRatio.height"
                     />
                   </div>
                 </div>
@@ -259,6 +344,7 @@
     @confirm="deleteClipConfirmed"
   />
 
+
   <!-- Clip Detection Confirmation Dialog -->
   <ClipDetectionConfirmDialog
     :model-value="showDetectConfirmDialog"
@@ -308,6 +394,15 @@
     :project-id="project?.id || ''"
     :thumbnail-url="clipToPublishThumbnail"
     @close="onPublishWizardClose"
+  />
+  <SimplifiedPublishDialog
+    v-model="showSkillPublishDialog"
+    :file-path="skillPublishPath"
+    :title="skillPublishTitle"
+    :aspect-ratio="skillPublishAspectRatio"
+    :thumbnail-url="skillPublishThumbnail"
+    :excluded-platforms="skillPublishExcludedPlatforms"
+    @close="onSkillPublishClose"
   />
 </template>
 
@@ -382,6 +477,7 @@
   import { useRouter } from 'vue-router';
   import ExistingProjectDialog from './clip-editor/ExistingProjectDialog.vue';
   import QuickPublishWizard from './QuickPublishWizard.vue';
+  import SimplifiedPublishDialog from './SimplifiedPublishDialog.vue';
   import {
     createVideoEditorProjectFromClip,
     createVideoEditorProjectFromProject,
@@ -402,6 +498,9 @@
   import { getUserOrganizationAssets } from '@/services/organizationAssetsApi';
   import { ensureAssetDownloaded } from '@/services/orgAssetSync';
   import { useClipDetectionTracking } from '@/composables/useClipDetectionTracking';
+  import { getCreatorSkillEdit, selectCreatorSkillVersion } from '@/services/database/creator-skill-edits';
+  import CreatorSkillPackageReview from '@/components/CreatorSkillPackageReview.vue';
+  import { CREATOR_SKILL_DOCUMENT_NAMES, type CreatorSkillClipEdit } from '@clippster/shared-types';
   import { useAuthStore } from '@/stores/auth';
   import {
     getClipIdsWithTranscripts,
@@ -506,6 +605,12 @@
   const showPublishWizard = ref(false);
   const clipToPublish = ref<ClipWithVersion | null>(null);
   const clipToPublishPath = ref<string>('');
+  const showSkillPublishDialog = ref(false);
+  const skillPublishPath = ref('');
+  const skillPublishTitle = ref('');
+  const skillPublishAspectRatio = ref('16:9');
+  const skillPublishThumbnail = ref<string | null>(null);
+  const skillPublishExcludedPlatforms = ref<string[]>([]);
   const clipToPublishThumbnail = ref<string | null>(null);
 
   // Segmented playback tracking
@@ -514,6 +619,262 @@
 
   // Selected clip for subtitle editing (separate from playback)
   const selectedClipId = ref<string | null>(null);
+  const selectedCreatorSkillEdit = ref<CreatorSkillClipEdit | null>(null);
+
+  watch([() => props.modelValue, selectedClipId], ([open, clipId], _previous, onCleanup) => {
+    if (!open || !clipId) return;
+    const timer = window.setInterval(async () => {
+      const current = selectedCreatorSkillEdit.value;
+      if (current?.clipId !== clipId || ['queued', 'researching', 'editing', 'rendering'].includes(current.status)) {
+        try {
+          const updated = await getCreatorSkillEdit(clipId);
+          if (selectedClipId.value === clipId && props.modelValue) {
+            selectedCreatorSkillEdit.value = updated;
+            if (updated?.edited?.path && !current?.edited?.path && updated.selectedVersion === 'edited') {
+              const clip = timelineClips.value.find((item) => item.id === clipId);
+              if (clip) await onPlayClip(clip);
+            }
+          }
+        } catch (error) {
+          console.warn('[ProjectWorkspaceDialog] Could not refresh Clippster Skill status:', error);
+        }
+      }
+    }, 3000);
+    onCleanup(() => window.clearInterval(timer));
+  });
+
+  async function onSelectCreatorSkillVersion(version: CreatorSkillClipEdit['selectedVersion']) {
+    const clipId = selectedClipId.value;
+    if (!clipId) return;
+    await selectCreatorSkillVersion(clipId, version);
+    selectedCreatorSkillEdit.value = await getCreatorSkillEdit(clipId);
+    const clip = timelineClips.value.find((item) => item.id === clipId);
+    if (clip) await onPlayClip(clip);
+  }
+
+  async function onReviewCreatorSkillClaim(index: number, decision: 'source_checked' | 'label_checked' | 'needs_changes', note: string) {
+    const clipId = selectedCreatorSkillEdit.value?.clipId;
+    if (!clipId) return;
+    try {
+      const { reviewCreatorSkillClaim } = await import('@/services/creatorSkillClaimReviewDesktop');
+      selectedCreatorSkillEdit.value = await reviewCreatorSkillClaim(clipId, index, decision, note);
+    } catch (error) {
+      showError('Could not save claim review', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function onReviewCreatorSkillFootage(index: number, decision: 'frame_checked' | 'needs_changes', note: string) {
+    const clipId = selectedCreatorSkillEdit.value?.clipId;
+    if (!clipId) return;
+    try {
+      const { reviewCreatorSkillFootage } = await import('@/services/creatorSkillClaimReviewDesktop');
+      selectedCreatorSkillEdit.value = await reviewCreatorSkillFootage(clipId, index, decision, note);
+    } catch (error) {
+      showError('Could not save footage review', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function onReviewCreatorSkillFinding(finding: { reviewer: string; severity: 'fix_first' | 'should_fix' | 'ok'; outputTime: number; finding: string }) {
+    const clipId = selectedCreatorSkillEdit.value?.clipId;
+    if (!clipId) return;
+    try {
+      const { reviewCreatorSkillIndependentFinding } = await import('@/services/creatorSkillClaimReviewDesktop');
+      selectedCreatorSkillEdit.value = await reviewCreatorSkillIndependentFinding(clipId, finding);
+    } catch (error) {
+      showError('Could not save reviewer finding', error instanceof Error ? error.message : String(error));
+    }
+  }
+  async function onReviewCreatorSkillSignoff(input: { reviewer: string; note: string }) {
+    const clipId = selectedCreatorSkillEdit.value?.clipId;
+    if (!clipId) return;
+    try {
+      const { signOffCreatorSkillIndependentReview } = await import('@/services/creatorSkillClaimReviewDesktop');
+      selectedCreatorSkillEdit.value = await signOffCreatorSkillIndependentReview(clipId, input);
+    } catch (error) {
+      showError('Could not save reviewer signoff', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function onRetryCreatorSkillEdit() {
+    const clipId = selectedClipId.value;
+    if (!clipId) return;
+    try {
+      const { retryCreatorSkillEdit } = await import('@/services/creator-skill-worker');
+      await retryCreatorSkillEdit(clipId);
+      selectedCreatorSkillEdit.value = await getCreatorSkillEdit(clipId);
+    } catch (error) {
+      showError('Clippster Skill retry failed', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function onApproveCreatorSkillEdits() {
+    const sessionId = selectedCreatorSkillEdit.value?.detectionSessionId;
+    if (!sessionId) return;
+    try {
+      const { confirmCreatorSkillEdits } = await import('@/services/creatorSkillApproval');
+      await confirmCreatorSkillEdits([sessionId], props.project?.parent_id, error => showError('Clippster Skill edit failed', error instanceof Error ? error.message : String(error)));
+      selectedCreatorSkillEdit.value = await getCreatorSkillEdit(selectedCreatorSkillEdit.value!.clipId);
+    } catch (error) {
+      showError('Could not start pre-editing', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function onSaveCreatorSkillCaptions() {
+    const captionsPath = selectedCreatorSkillEdit.value?.edited?.captionsPath;
+    if (!captionsPath) return;
+    try {
+      await saveCreatorSkillBinaryFile(captionsPath, `${selectedCreatorSkillEdit.value?.clipId ?? 'clip'}.srt`, 'Save draft captions', 'SubRip captions', 'srt');
+    } catch (error) {
+      showError('Could not save draft captions', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function creatorSkillDocumentContents(edit: CreatorSkillClipEdit): Promise<Record<string, string>> {
+      const item = edit.playbookPackage;
+      if (!item) return {};
+      const { creatorSkillDocuments } = await import('@/services/creatorSkillDocuments');
+      const timeline = edit.edited?.timeline;
+      const shots = timeline && typeof timeline === 'object' && 'shots' in timeline ? timeline.shots : null;
+      const durationSeconds = Array.isArray(shots) && shots.every(shot => Number.isFinite(shot?.duration) && shot.duration > 0)
+        ? shots.reduce((total, shot) => total + shot.duration, 0) : undefined;
+      const availableFiles = [
+        ...(edit.edited?.path ? ['Edited master MP4'] : []),
+        ...(edit.edited?.captionsPath ? ['Draft captions SRT'] : []),
+        ...(edit.edited?.contactSheetPath ? ['Visual contact sheet JPEG'] : []),
+        ...(edit.edited?.phonePreviewPath ? ['Phone preview MP4'] : []),
+        ...(edit.edited?.noMusicPath ? ['No-music edited master MP4'] : []),
+        ...(edit.edited?.tiktokSafePath ? ['TikTok cut before sponsor read MP4'] : []),
+        ...(edit.edited?.tiktokCaptionsPath ? ['Sponsor-free TikTok captions SRT'] : []),
+        ...(edit.thumbnailVariants?.map(variant => `Thumbnail review draft ${String.fromCharCode(65 + variant.index)} PNG`) ?? []),
+        ...(edit.sourceCaptures?.map(capture => `Public ${capture.kind} page capture ${capture.index + 1} TXT`) ?? []),
+        ...(edit.sourceCaptures?.filter(capture => capture.screenshotPath).map(capture => `Static public page screenshot ${capture.index + 1} PNG`) ?? []),
+        ...CREATOR_SKILL_DOCUMENT_NAMES,
+      ];
+      return creatorSkillDocuments(item, { selectedVersion: edit.selectedVersion, durationSeconds, availableFiles, reviewItems: edit.reviewItems, rawClipMd5: edit.rawClipMd5, masterMd5: edit.edited?.masterMd5, sourceCaptures: edit.sourceCaptures, claimEvidence: edit.claimEvidence, speechDiff: edit.edited?.speechDiff, soundScan: edit.edited?.soundScan, creatorProfile: edit.creatorProfile });
+  }
+
+  async function onSaveCreatorSkillDocuments() {
+    const edit = selectedCreatorSkillEdit.value;
+    if (!edit?.playbookPackage) return;
+    try {
+      const [{ open }, { writeTextFile }, { join }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/plugin-fs'), import('@tauri-apps/api/path')]);
+      const folder = await open({ title: 'Choose a folder for the Clippster Skill playbook', directory: true, multiple: false });
+      if (typeof folder !== 'string') return;
+      for (const [name, content] of Object.entries(await creatorSkillDocumentContents(edit))) await writeTextFile(await join(folder, name), content);
+    } catch (error) {
+      showError('Could not save playbook files', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function onSaveCreatorSkillDelivery() {
+    const edit = selectedCreatorSkillEdit.value;
+    if (!edit?.playbookPackage || !edit.edited?.path) return;
+    try {
+      const [{ open }, { mkdir, copyFile, writeTextFile }, { join }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/plugin-fs'), import('@tauri-apps/api/path')]);
+      const parent = await open({ title: 'Choose where to save the full Clippster Skill delivery', directory: true, multiple: false });
+      if (typeof parent !== 'string') return;
+      const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+      const folder = await join(parent, `${stamp}-${edit.clipId}`);
+      await mkdir(folder);
+      const rawPath = await invoke<string>('get_editor_clip_extract_path', { projectId: `creator-skill-${edit.detectionSessionId}`, clipId: edit.clipId });
+      const assets = [
+        { name: 'raw.mp4', path: rawPath, expected: edit.rawClipMd5 },
+        { name: 'edited-master.mp4', path: edit.edited.path, expected: edit.edited.masterMd5 },
+        ...(edit.edited.captionsPath ? [{ name: 'captions.srt', path: edit.edited.captionsPath }] : []),
+        ...(edit.edited.contactSheetPath ? [{ name: 'contact-sheet.jpg', path: edit.edited.contactSheetPath }] : []),
+        ...(edit.edited.phonePreviewPath ? [{ name: 'phone-preview.mp4', path: edit.edited.phonePreviewPath }] : []),
+        ...(edit.edited.noMusicPath ? [{ name: 'edited-no-music.mp4', path: edit.edited.noMusicPath }] : []),
+        ...(edit.edited.tiktokSafePath ? [{ name: 'tiktok-no-sponsor.mp4', path: edit.edited.tiktokSafePath }] : []),
+        ...(edit.edited.tiktokCaptionsPath ? [{ name: 'tiktok-no-sponsor.srt', path: edit.edited.tiktokCaptionsPath }] : []),
+        ...(edit.thumbnailCandidates?.map((candidate, index) => ({ name: `thumbnail-source-frames/${index}.jpg`, path: candidate.path })) ?? []),
+        ...(edit.thumbnailVariants?.map(variant => ({ name: `thumbnails/${String.fromCharCode(65 + variant.index)}.png`, path: variant.path })) ?? []),
+        ...(edit.sourceCaptures?.map(capture => ({ name: `source-captures/${capture.index}.txt`, path: capture.path })) ?? []),
+        ...(edit.sourceCaptures?.filter(capture => capture.screenshotPath).map(capture => ({ name: `source-captures/${capture.index}.png`, path: capture.screenshotPath! })) ?? []),
+      ];
+      const manifest: string[] = ['# Delivery checksums', '', `Exported: ${new Date().toISOString()}`, 'MD5 is verified after each local copy. The original Raw and Edited files remain in the project.', ''];
+      for (const asset of assets) {
+        const parts = asset.name.split('/');
+        if (parts.length > 1) await mkdir(await join(folder, parts[0]), { recursive: true });
+        const destination = await join(folder, ...parts);
+        const sourceHash = await invoke<string>('hash_creator_skill_file', { filePath: asset.path });
+        if ('expected' in asset && asset.expected && sourceHash !== asset.expected) throw new Error(`${asset.name} has changed since the edit was prepared. Review the current file before delivery.`);
+        await copyFile(asset.path, destination);
+        const deliveredHash = await invoke<string>('hash_creator_skill_file', { filePath: destination });
+        if (deliveredHash !== sourceHash) throw new Error(`${asset.name} changed during transfer. The delivery folder is incomplete.`);
+        manifest.push(`${deliveredHash}  ${asset.name}`);
+      }
+      for (const [name, content] of Object.entries(await creatorSkillDocumentContents(edit))) {
+        const destination = await join(folder, name);
+        await writeTextFile(destination, content);
+        manifest.push(`${await invoke<string>('hash_creator_skill_file', { filePath: destination })}  ${name}`);
+      }
+      await writeTextFile(await join(folder, 'checksums.md'), `${manifest.join('\n')}\n`);
+    } catch (error) {
+      showError('Could not save full delivery', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function onSaveCreatorSkillThumbnail(variant: { path: string; index: number; headline: string }) {
+    try {
+      await saveCreatorSkillBinaryFile(variant.path, `${selectedCreatorSkillEdit.value?.clipId ?? 'clip'}-thumbnail-${String.fromCharCode(65 + variant.index)}.png`, 'Save thumbnail review draft', 'PNG image', 'png');
+    } catch (error) {
+      showError('Could not save thumbnail draft', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function onSaveCreatorSkillContactSheet() {
+    const path = selectedCreatorSkillEdit.value?.edited?.contactSheetPath;
+    if (!path) return;
+    try {
+      await saveCreatorSkillBinaryFile(path, `${selectedCreatorSkillEdit.value?.clipId ?? 'clip'}-contact-sheet.jpg`, 'Save visual contact sheet', 'JPEG image', 'jpg');
+    } catch (error) {
+      showError('Could not save visual contact sheet', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function onSaveCreatorSkillPhonePreview() {
+    const path = selectedCreatorSkillEdit.value?.edited?.phonePreviewPath;
+    if (!path) return;
+    try {
+      await saveCreatorSkillBinaryFile(path, `${selectedCreatorSkillEdit.value?.clipId ?? 'clip'}-phone-preview.mp4`, 'Save phone preview', 'MP4 video', 'mp4');
+    } catch (error) {
+      showError('Could not save phone preview', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function onSaveCreatorSkillTikTokCut() {
+    const path = selectedCreatorSkillEdit.value?.edited?.tiktokSafePath;
+    if (!path) return;
+    try {
+      await saveCreatorSkillBinaryFile(path, `${selectedCreatorSkillEdit.value?.clipId ?? 'clip'}-tiktok-no-sponsor.mp4`, 'Save sponsor-free TikTok cut', 'MP4 video', 'mp4');
+    } catch (error) {
+      showError('Could not save TikTok cut', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function onSaveCreatorSkillTikTokCaptions() {
+    const path = selectedCreatorSkillEdit.value?.edited?.tiktokCaptionsPath;
+    if (!path) return;
+    try {
+      await saveCreatorSkillBinaryFile(path, `${selectedCreatorSkillEdit.value?.clipId ?? 'clip'}-tiktok-no-sponsor.srt`, 'Save TikTok cut captions', 'SubRip captions', 'srt');
+    } catch (error) {
+      showError('Could not save TikTok captions', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function onSaveCreatorSkillSourceCapture(capture: { path: string; index: number }) {
+    try {
+      await saveCreatorSkillBinaryFile(capture.path, `${selectedCreatorSkillEdit.value?.clipId ?? 'clip'}-source-${capture.index}.txt`, 'Save public source capture', 'Text document', 'txt');
+    } catch (error) {
+      showError('Could not save source capture', error instanceof Error ? error.message : String(error));
+    }
+  }
+
+  async function saveCreatorSkillBinaryFile(path: string, defaultPath: string, title: string, filterName: string, extension: string) {
+    const [{ save }, { readFile, writeFile }] = await Promise.all([import('@tauri-apps/plugin-dialog'), import('@tauri-apps/plugin-fs')]);
+    const destination = await save({ title, defaultPath, filters: [{ name: filterName, extensions: [extension] }] });
+    if (destination) await writeFile(destination, await readFile(path));
+  }
 
   // Timeline clips state
   const timelineClips = ref<any[]>([]);
@@ -674,6 +1035,12 @@
    * stacks "Use 16:9" on top → nested 9:16 look.
    */
   const workspacePlaybackIsBuiltExport = ref(false);
+  const loadedVideoDimensions = ref<{ width: number; height: number } | null>(null);
+  const videoPlayerAspectRatio = computed(() =>
+    workspacePlaybackIsBuiltExport.value && loadedVideoDimensions.value
+      ? loadedVideoDimensions.value
+      : selectedAspectRatio.value,
+  );
 
   /** Full framing config for VideoPlayer (Use 16:9 blur path + POI regions use `framing-regions`). */
   const vodManualFramingConfigForPlayer = computed((): ManualFramingConfig | null => {
@@ -1542,7 +1909,17 @@
 
   // Initialize focal point composable
   const { currentFocalPoint, loadFocalPoints, updateTime, reset: resetFocalPoint } = useVideoFocalPoint();
-  const effectiveFocalPoint = computed(() => vodFocalPointOverride.value || currentFocalPoint.value);
+  const effectiveFocalPoint = computed(() => workspacePlaybackIsBuiltExport.value
+    ? { x: 0.5, y: 0.5 }
+    : vodFocalPointOverride.value || currentFocalPoint.value);
+
+  function onWorkspaceLoadedMetadata() {
+    const video = videoElement.value;
+    loadedVideoDimensions.value = video?.videoWidth && video.videoHeight
+      ? { width: video.videoWidth, height: video.videoHeight }
+      : null;
+    onLoadedMetadata();
+  }
 
   // Watch for project changes to load focal points
   watch(
@@ -2469,7 +2846,8 @@
     startTime: number = 0,
     endTime: number = 0,
     subtitleSettings: { enabled: boolean; presetId: string } | null = null,
-    enhanced: boolean = false
+    enhanced: boolean = false,
+    creatorSkillEnabled: boolean = false
   ) {
     console.log('[ProjectWorkspaceDialog] === DETECT CLIPS CONFIRMED ===');
     console.log('[ProjectWorkspaceDialog] _promptId:', _promptId);
@@ -2558,6 +2936,7 @@
           endTime,
           subtitleSettings,
           enhanced,
+          creatorSkillEnabled,
           streamerMetadata: {
             display_name: props.project?.name,
             platform: props.project?.platform,
@@ -2567,6 +2946,14 @@
 
         if (result.success) {
           console.log('[ProjectWorkspaceDialog] Clip detection successful');
+          if (creatorSkillEnabled && result.sessionId) {
+            try {
+              const { confirmCreatorSkillEdits } = await import('@/services/creatorSkillApproval');
+              await confirmCreatorSkillEdits([result.sessionId], props.project?.parent_id, error => showError('Clippster Skill edit failed', error instanceof Error ? error.message : String(error)));
+            } catch (error) {
+              showError('Could not confirm Clippster Skill cost', error instanceof Error ? error.message : String(error));
+            }
+          }
 
           // Show finalizing state while we prepare thumbnails
           if (props.project?.id === projectId) {
@@ -2770,6 +3157,8 @@
   async function onClipHover(clipId: string | null) {
     if (clipId == null) {
       hoveredClipId.value = null;
+      if (selectedClipId.value) timelineRef.value?.revealClip(selectedClipId.value);
+      else timelineRef.value?.hideAllClips();
       return;
     }
     // If a clip is currently playing and user selects a different clip, stop playback
@@ -2784,13 +3173,12 @@
 
     // Then set the new state
     hoveredClipId.value = clipId;
-    selectedClipId.value = clipId;
     const clip = getTimelineClipById(clipId);
     if (clip && usesProjectSource(clip, currentVideo.value)) {
       if (!sameMediaPath(currentFilePath.value, currentVideo.value?.file_path)) {
         await loadVideoForProject();
         await nextTick();
-        if (selectedClipId.value !== clipId) return;
+        if (hoveredClipId.value !== clipId) return;
       }
       workspaceVideoTimeIsSourceAbsolute.value = true;
       workspacePlaybackIsBuiltExport.value = false;
@@ -4111,6 +4499,7 @@
     currentlyPlayingClipId.value = clip.id;
     lastPlayedClipId.value = clip.id;
     selectedClipId.value = clip.id;
+    selectedCreatorSkillEdit.value = await getCreatorSkillEdit(clip.id);
 
     // Set hover states to the playing clip so it highlights in both panel and timeline
     hoveredClipId.value = clip.id;
@@ -4218,8 +4607,12 @@
     // 2. If it's a manual/auto clip with its own file, load and play that with segments
     // 3. Otherwise, load the project's source video and play segments
 
-    const sourceBacked = usesProjectSource(fullClip, currentVideo.value);
-    const builtFilePath = clip.built_file_path;
+    const rawSkillSelection = selectedCreatorSkillEdit.value?.selectedVersion === 'raw';
+    const editedPath = selectedCreatorSkillEdit.value?.selectedVersion === 'edited'
+      ? selectedCreatorSkillEdit.value.edited?.path
+      : null;
+    const sourceBacked = !editedPath && (rawSkillSelection || usesProjectSource(fullClip, currentVideo.value));
+    const builtFilePath = editedPath || (rawSkillSelection ? null : clip.built_file_path);
     const hasBuiltFile = builtFilePath && builtFilePath.trim() !== '';
 
     // Manual/auto clips from livestream have their own extracted file
@@ -4374,12 +4767,23 @@
     if (needsSourceVideo) {
       // Check if the current video is different from the project's raw video
       const projectVideo = currentVideo.value;
-      const projectFilePath = projectVideo?.file_path;
+      const projectFilePath = rawSkillSelection
+        ? selectedCreatorSkillEdit.value?.rawSource.path || projectVideo?.file_path
+        : projectVideo?.file_path;
 
       // If we don't have the right source video loaded, load it
       if (!projectFilePath || !sameMediaPath(currentFilePath.value, projectFilePath)) {
         console.log('[ProjectWorkspaceDialog] Loading project source video for non-built VOD clip');
-        await loadVideoForProject();
+        if (rawSkillSelection && selectedCreatorSkillEdit.value?.rawSource.path) {
+          const loaded = await loadVideoFromPath(selectedCreatorSkillEdit.value.rawSource.path);
+          if (!loaded) {
+            skipPlaybackEndedClear = false;
+            showError('Raw clip unavailable', 'The original VOD file could not be opened.');
+            return;
+          }
+        } else {
+          await loadVideoForProject();
+        }
 
         // Wait for video to be ready and metadata to load
         await nextTick();
@@ -4421,7 +4825,18 @@
       currentVersion: clip.current_version,
     });
 
-    if (clip.segments && Array.isArray(clip.segments) && clip.segments.length > 0) {
+    if (rawSkillSelection && selectedCreatorSkillEdit.value?.rawSource.segments.length) {
+      segments = selectedCreatorSkillEdit.value.rawSource.segments.map((segment, index) => ({
+        id: `skill-raw-${clip.id}-${index}`,
+        clip_version_id: clip.current_version_id || clip.id,
+        segment_index: index,
+        start_time: segment.start,
+        end_time: segment.end,
+        duration: segment.end - segment.start,
+        transcript: null,
+        created_at: Date.now(),
+      }));
+    } else if (clip.segments && Array.isArray(clip.segments) && clip.segments.length > 0) {
       // Use segments from transformed clip format (Timeline clips)
       console.log('[ProjectWorkspaceDialog] Using clip.segments');
       segments = clip.segments.map((segment: any, index: number) => ({
@@ -4546,7 +4961,10 @@
 
       if (validSegments.length > 0) {
         console.log('[ProjectWorkspaceDialog] Playing', validSegments.length, 'valid segments');
+        currentTime.value = validSegments[0].start_time;
         playClipSegments(validSegments);
+        await nextTick();
+        await timelineRef.value?.focusSelectedClip(clip.id);
       } else {
         console.warn('[ProjectWorkspaceDialog] No valid segments found for clip:', clip.id);
         currentlyPlayingClipId.value = null;
@@ -4667,6 +5085,16 @@
       return;
     }
 
+    const skillEdit = await getCreatorSkillEdit(clipId);
+    if (skillEdit?.selectedVersion === 'edited') {
+      if (!skillEdit.aiSessionId || !skillEdit.edited?.path) {
+        showError('Edit still processing', 'Choose Raw to edit the original clip now.');
+        return;
+      }
+      await router.push({ path: '/ai-video/session', query: { session: String(skillEdit.aiSessionId) } });
+      return;
+    }
+
     // Get the clip's start and end times from segments
     let startTime = 0;
     let endTime = duration.value;
@@ -4688,6 +5116,11 @@
     }
 
     const clipTitle = clip.title || 'Untitled Clip';
+    if (skillEdit?.selectedVersion === 'raw') {
+      const rawSegments = skillEdit.rawSource.segments.map(({ start, end }) => ({ start_time: start, end_time: end }));
+      await openClipInNewProject(clipId, `${clipTitle} (Raw)`, startTime, endTime, rawSegments, true, skillEdit.rawSource.path);
+      return;
+    }
 
     // Check if there are existing video editor projects for this clip
     try {
@@ -4721,7 +5154,9 @@
     clipTitle: string,
     startTime: number,
     endTime: number,
-    segments: { start_time: number; end_time: number }[]
+    segments: { start_time: number; end_time: number }[],
+    forceRawSource = false,
+    sourcePath?: string,
   ) {
     isCreatingProject.value = true;
 
@@ -4729,10 +5164,11 @@
       const result = await createVideoEditorProjectFromClip({
         clipId,
         clipTitle,
-        videoSrc: videoSrc.value,
+        videoSrc: sourcePath || videoSrc.value,
         clipStartTime: startTime,
         clipEndTime: endTime,
         clipSegments: segments,
+        forceRawSource,
         rawVideoParentProjectId: props.project?.parent_id ?? null,
       });
 
@@ -4748,7 +5184,7 @@
         projectId: props.project?.id ?? null,
         projectNameSnapshot: props.project?.name ?? null,
         origin: 'project',
-        assetPath: videoSrc.value,
+        assetPath: sourcePath || videoSrc.value,
       });
 
       console.log('[ProjectWorkspaceDialog] Navigating to editor with projectId:', result.projectId);
@@ -4864,11 +5300,49 @@
 
   // Handle Publish Now action
   async function onPublishNow(clip: ClipWithVersion) {
+    const skillEdit = await getCreatorSkillEdit(clip.id);
+    if (skillEdit) {
+      if (skillEdit.selectedVersion === 'edited') {
+        const { creatorSkillPublishBlockers } = await import('@/services/creatorSkillReview');
+        const blockers = creatorSkillPublishBlockers(skillEdit.playbookPackage, skillEdit.edited?.masterMd5);
+        if (blockers.length) {
+          showError('Reviewer fixes required', `The edited master has ${blockers.length} unresolved review item${blockers.length === 1 ? '' : 's'}. ${blockers[0]}`);
+          return;
+        }
+      }
+      const filePath = skillEdit.selectedVersion === 'edited' ? skillEdit.edited?.path : skillEdit.rawSource.path;
+      if (!filePath) {
+        showError('Clip version unavailable', `The selected ${skillEdit.selectedVersion === 'edited' ? 'Edited' : 'Raw'} file is not ready. Choose another version or retry the edit.`);
+        return;
+      }
+      const { importMediaFiles } = await import('@/ai-video/analysis/media');
+      const { items, failed } = await importMediaFiles([{ path: filePath }], []);
+      if (!items.length) {
+        showError('Clip version unavailable', failed[0]?.error || 'The selected clip file could not be opened.');
+        return;
+      }
+      const { creatorSkillTikTokRestrictedSponsors } = await import('@/services/creatorSkillPlatformCut');
+      skillPublishPath.value = filePath;
+      skillPublishTitle.value = `${clip.name || 'Clip'} (${skillEdit.selectedVersion === 'edited' ? 'Edited' : 'Raw'})`;
+      skillPublishAspectRatio.value = items[0].width > items[0].height ? '16:9' : '9:16';
+      skillPublishThumbnail.value = skillEdit.selectedVersion === 'edited' ? clip.built_thumbnail_path || null : null;
+      skillPublishExcludedPlatforms.value = creatorSkillTikTokRestrictedSponsors(skillEdit.playbookPackage).length ? ['tiktok'] : [];
+      showSkillPublishDialog.value = true;
+      return;
+    }
     clipToPublish.value = clip;
     const { resolveClipPublishPath } = await import('@/utils/selfContainedClip');
     clipToPublishPath.value = resolveClipPublishPath(clip, currentVideo.value?.file_path || '');
     clipToPublishThumbnail.value = clip.built_thumbnail_path || null;
     showPublishWizard.value = true;
+  }
+
+  function onSkillPublishClose() {
+    showSkillPublishDialog.value = false;
+    skillPublishPath.value = '';
+    skillPublishTitle.value = '';
+    skillPublishThumbnail.value = null;
+    skillPublishExcludedPlatforms.value = [];
   }
 
   // Handle Publish Wizard close
@@ -5065,6 +5539,9 @@
       } else {
         // Reset video state when dialog closes
         resetVideoState();
+        selectedClipId.value = null;
+        selectedCreatorSkillEdit.value = null;
+        timelineRef.value?.hideAllClips();
         showProgress.value = false;
         // Clear timeline clips
         timelineClips.value = [];
@@ -5142,6 +5619,9 @@
       if (shouldReloadAssets) {
         // Reset local playback state
         resetVideoState();
+        selectedClipId.value = null;
+        selectedCreatorSkillEdit.value = null;
+        timelineRef.value?.hideAllClips();
         timelineClips.value = [];
         allProjectClips.value = [];
         hoveredClipId.value = null;

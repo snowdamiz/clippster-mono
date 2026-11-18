@@ -31,6 +31,10 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
 
     belongs_to(:created_by_admin, User, foreign_key: :created_by_admin_id, type: :id)
 
+    belongs_to(:campaign_recipient, ClippsterServer.AdminMessaging.EmailCampaignRecipient,
+      type: :id
+    )
+
     has_many(:redemptions, ClippsterServer.PromoCodes.PromoRedemption)
 
     timestamps(type: :utc_datetime)
@@ -69,6 +73,7 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
       :is_active,
       :stripe_coupon_id,
       :stripe_promo_code_id,
+      :campaign_recipient_id,
       :notes,
       :created_by_admin_id
     ])
@@ -83,6 +88,7 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
     |> validate_at_least_one_tier_or_pack()
     |> validate_redeem_by_future()
     |> unique_constraint(:code)
+    |> unique_constraint(:campaign_recipient_id)
     |> normalize_code()
   end
 
@@ -182,7 +188,10 @@ defmodule ClippsterServer.PromoCodes.PromoCode do
         changeset
 
       tiers ->
-        valid_tiers = ["starter", "creator", "pro"]
+        valid_tiers =
+          if get_field(changeset, :campaign_recipient_id),
+            do: ["basic", "starter", "creator", "pro"],
+            else: ["starter", "creator", "pro"]
 
         case Enum.all?(tiers, fn t -> t in valid_tiers end) do
           true -> changeset

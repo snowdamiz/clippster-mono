@@ -11,6 +11,9 @@ console.log = console.info = console.debug = console.error;
 const { beats } = await import('./lib/beats.mjs');
 const cli = await import('./lib/cli.mjs');
 const { render } = await import('./lib/render.mjs');
+const { detectFaces, cutoutPortrait } = await import('./lib/face-score.mjs');
+const { classifyAudioEvents } = await import('./lib/audio-score.mjs');
+const { capturePageScreenshot } = await import('./lib/page-capture.mjs');
 const server = await import('./lib/server.mjs');
 const workspace = await import('./lib/workspace.mjs');
 
@@ -32,6 +35,10 @@ const handlers = {
   snapshot: (p, ctx) => cli.snapshot(p, ctx),
   beats: (p, ctx) => beats(p, ctx),
   render: (p, ctx) => render(p, ctx),
+  detectFaces: (p, ctx) => detectFaces(p, ctx),
+  cutoutPortrait: (p, ctx) => cutoutPortrait(p, ctx),
+  classifyAudioEvents: (p, ctx) => classifyAudioEvents(p, ctx),
+  capturePageScreenshot: (p, ctx) => capturePageScreenshot(p, ctx),
 };
 
 const running = new Map();

@@ -3,7 +3,7 @@ import { createRequire } from 'node:module';
 import type { ServerUserCreatorProfile } from '@clippster/api-client';
 import type { CreatorProfileWithLinks } from './database/types';
 
-const Database = createRequire(import.meta.url)('better-sqlite3');
+const Database = createRequire(import.meta.url)('node:sqlite').DatabaseSync;
 
 const state = vi.hoisted(() => ({ db: null as any, userId: 7 }));
 vi.mock('./database/core', () => ({
@@ -35,6 +35,7 @@ const remote = (changes = {}): ServerUserCreatorProfile => ({
   outro_ratio_settings: null,
   layout_overlays: [],
   clip_build_defaults: null,
+  creator_skill_preferences: null,
   scope: 'streamer',
   disabled: false,
   inserted_at: '2026-01-01T00:00:00Z',
@@ -61,7 +62,7 @@ describe('cloud creator imports', () => {
       .exec(`CREATE TABLE creator_profiles (id TEXT PRIMARY KEY, server_id INTEGER, name TEXT, description TEXT,
       profile_image_path TEXT, intro_id TEXT, outro_id TEXT, watermark_id TEXT, watermark_settings TEXT,
       intro_outro_settings TEXT, intro_ratio_settings TEXT, outro_ratio_settings TEXT, layout_overlays TEXT,
-      clip_build_defaults TEXT, scope TEXT, disabled INTEGER, auto_dvr_enabled INTEGER, user_id INTEGER, created_at REAL, updated_at REAL);
+      clip_build_defaults TEXT, creator_skill_preferences TEXT, scope TEXT, disabled INTEGER, auto_dvr_enabled INTEGER, user_id INTEGER, created_at REAL, updated_at REAL);
       CREATE TABLE creator_platform_links (id TEXT PRIMARY KEY, creator_profile_id TEXT, platform TEXT, platform_id TEXT,
       display_name TEXT, profile_image_url TEXT, is_primary INTEGER, created_at REAL, monitored_streamer_id TEXT);`);
   });
@@ -102,6 +103,19 @@ describe('cloud creator imports', () => {
   it('resolves cloud branding IDs to local assets', async () => {
     await importPersonalCreator(remote({ intro_id: 15, watermark_id: 16 }), undefined, 7);
     expect(read()).toMatchObject({ intro_id: 'local-intro', watermark_id: 'local-watermark' });
+  });
+  it('resolves cloud per-ratio intro and outro IDs to local assets', async () => {
+    await importPersonalCreator(remote({
+      intro_ratio_settings: JSON.stringify({ '9:16': { assetId: 15 }, '16:9': null }),
+      outro_ratio_settings: JSON.stringify({ '9:16': { assetId: 17 } }),
+    }), undefined, 7);
+    expect(JSON.parse(read().intro_ratio_settings!)).toEqual({ '9:16': { assetId: 'local-intro' }, '16:9': null });
+    expect(JSON.parse(read().outro_ratio_settings!)).toEqual({ '9:16': { assetId: 'local-intro' } });
+  });
+  it('keeps optional creator edit rules and sponsor terms on import', async () => {
+    const preferences = { editing: { preserveEveryWord: true }, sponsors: [{ name: 'Acme', code: 'REAL' }] };
+    await importPersonalCreator(remote({ creator_skill_preferences: preferences }), undefined, 7);
+    expect(JSON.parse(read().creator_skill_preferences!)).toEqual(preferences);
   });
   it('rejects an account switch before writing profiles', async () => {
     state.userId = 8;

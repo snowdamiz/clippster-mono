@@ -20,6 +20,13 @@ macro_rules! with_native_commands {
             // File operations commands
             check_file_exists,
             validate_video_file,
+            check_creator_skill_export,
+            normalize_creator_skill_audio,
+            remux_creator_skill_final_audio,
+            hash_creator_skill_file,
+            scan_creator_skill_source_silence,
+            commands::creator_skill_sources::capture_creator_skill_page,
+            commands::creator_skill_sources::capture_creator_skill_logo,
             generate_proxy_file,
 
             // File utility commands
@@ -301,6 +308,7 @@ macro_rules! with_native_commands {
 
             // Clip Extractor commands
             clip_extractor_commands::extract_clip,
+            clip_extractor_commands::extract_clip_segments,
             clip_extractor_commands::generate_clip_thumbnail,
             clip_extractor_commands::generate_waveform,
             clip_extractor_commands::delete_file,

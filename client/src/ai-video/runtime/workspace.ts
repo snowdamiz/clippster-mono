@@ -34,8 +34,23 @@ export interface CheckReport {
 
 export type LintReport = CheckSection;
 
+/** Renderer operations shared by the desktop and web AI edit workers. */
+export interface VideoWorkspace {
+  readonly projectDir: string;
+  readonly gsapSrc: string;
+  readonly fonts: string[];
+  linkMedia(items: Array<{ id: string; path: string }>): Promise<{ linked: Array<{ id: string; src: string }> }>;
+  writeFile(path: string, content: string): Promise<{ path: string; bytes: number }>;
+  readFile(path: string): Promise<string>;
+  deleteFile(path: string): Promise<unknown>;
+  listFiles(): Promise<string[]>;
+  check(options?: RequestOptions): Promise<CheckReport>;
+  snapshot(times: number[], outDir: string, against?: string, options?: RequestOptions): Promise<{ outDir: string; files: string[] }>;
+  render(outputPath: string, options?: RequestOptions & { fps?: number; crf?: number; files?: Record<string, string> }): Promise<{ outputPath: string; bytes: number; duration: number | null; warnings: string[] }>;
+}
+
 /** Typed access to one session's Hyperframes project directory through the sidecar. */
-export class HyperframesWorkspace {
+export class HyperframesWorkspace implements VideoWorkspace {
   private constructor(
     readonly projectDir: string,
     readonly gsapSrc: string,

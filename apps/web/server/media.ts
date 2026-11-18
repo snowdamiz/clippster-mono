@@ -34,6 +34,7 @@ export async function probe(path: string, config: Config, signal: AbortSignal) {
   const video = result.streams?.find(
     (stream: { codec_type: string }) => stream.codec_type === 'video'
   )
+  const audio = result.streams?.find((stream: { codec_type: string }) => stream.codec_type === 'audio')
   const duration = Number(result.format?.duration)
   if (
     !video ||
@@ -47,11 +48,15 @@ export async function probe(path: string, config: Config, signal: AbortSignal) {
   }
   return {
     duration,
+    videoDuration: Number.parseFloat(String(video.duration ?? '')),
+    audioDuration: Number.parseFloat(String(audio?.duration ?? '')),
+    videoStart: Number.parseFloat(String(video.start_time ?? '')),
+    audioStart: Number.parseFloat(String(audio?.start_time ?? '')),
     width: Number(video.width),
     height: Number(video.height),
     hasAudio: result.streams.some((stream: { codec_type: string }) => stream.codec_type === 'audio'),
     videoCodec: video.codec_name, pixelFormat: video.pix_fmt,
-    audioCodec: result.streams.find((stream: { codec_type: string }) => stream.codec_type === 'audio')?.codec_name
+    audioCodec: audio?.codec_name
   }
 }
 export async function downloadSource(

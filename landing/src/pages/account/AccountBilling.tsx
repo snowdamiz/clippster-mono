@@ -4,7 +4,7 @@ import { AlertCircle, Check, Loader2, Zap } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { api } from '@/lib/api'
 import { needsPlanSelection, subscriptionCoversAccess } from '@/lib/accountRouting'
-import { PERSONAL_PLAN_ORDER, PLAN_PRESENTATION, personalPlanQuote } from '../../../../packages/shared-types/src/pricingPresentation'
+import { PERSONAL_PLAN_ORDER, PLAN_PRESENTATION, discountedMonthlyPrice, personalPlanQuote } from '../../../../packages/shared-types/src/pricingPresentation'
 
 interface SubscriptionTier {
   id: string
@@ -14,6 +14,12 @@ interface SubscriptionTier {
 }
 
 type BillingInterval = 'monthly' | 'yearly'
+interface SubscriptionOffer {
+  code: string
+  percent: number
+  months: number
+  tiers: string[]
+}
 
 const FREE_FEATURES = [
   'Web workspace access',
@@ -34,6 +40,10 @@ export function AccountBilling() {
   const [billingInterval, setBillingInterval] = useState<BillingInterval>('monthly')
   const [busyTier, setBusyTier] = useState<string | null>(null)
   const [error, setError] = useState<string | null>(null)
+  const [offer, setOffer] = useState<SubscriptionOffer | null>(null)
+  const [offerError, setOfferError] = useState('')
+  const offerCode = searchParams.get('promo')?.trim().toUpperCase()
+  const activeOffer = offer?.code === offerCode ? offer : null
 
   const isNewUserFlow = searchParams.get('new_user') === 'true'
   const gateMode = isNewUserFlow || needsPlanSelection(user)
@@ -64,6 +74,22 @@ export function AccountBilling() {
     }
   }, [])
 
+  useEffect(() => {
+    if (!offerCode) return
+    let active = true
+    setOfferError('')
+    api.post<{ success: boolean; offer?: SubscriptionOffer; error?: string }>('/subscription/offer', { code: offerCode })
+      .then(result => {
+        if (!active) return
+        if (result.success && result.offer) setOffer(result.offer)
+        else setOfferError(result.error ?? 'This offer is unavailable.')
+      })
+      .catch(() => {
+        if (active) setOfferError('Could not check this offer. Refresh to try again.')
+      })
+    return () => { active = false }
+  }, [offerCode, user?.id])
+
   const basicTier = useMemo(() => tiers.find((t) => t.id === 'basic'), [tiers])
   const apiTiers = useMemo(
     () => PERSONAL_PLAN_ORDER.flatMap(id => tiers.filter(t => t.id === id)),
@@ -86,6 +112,7 @@ export function AccountBilling() {
   }
 
   async function checkout(tierId: string) {
+    if (offerCode && !activeOffer?.tiers.includes(tierId)) return
     setBusyTier(tierId)
     setError(null)
     try {
@@ -93,7 +120,8 @@ export function AccountBilling() {
         '/subscription/checkout',
         {
           tier: tierId,
-          billing_interval: billingInterval,
+          billing_interval: offerCode ? 'monthly' : billingInterval,
+          promo_code: offerCode,
           return_context: 'web',
         },
       )
@@ -143,7 +171,15 @@ export function AccountBilling() {
         {!gateMode && <button type="button" onClick={() => navigate(user?.owned_organization_id ? `/dashboard/org/${user.owned_organization_id}/billing` : '/pricing?audience=business')} className="rounded-lg bg-zinc-800 px-4 py-2 text-sm text-white hover:bg-zinc-700">Business plans</button>}
       </div>
 
-      <div className="flex items-center gap-1 p-1 rounded-lg bg-zinc-900 border border-zinc-800 w-fit mb-6">
+      {offerCode ? (
+        <div className="mb-6 rounded-xl border border-cyan-500/30 bg-cyan-950/30 p-4 text-sm text-cyan-100" aria-live="polite">
+          {activeOffer ? (
+            <><strong>{activeOffer.percent}% off {activeOffer.months === 1 ? 'your first month' : `your first ${activeOffer.months} months`}</strong>
+            <p className="mt-1 mb-0">Choose an eligible monthly plan below. Regular pricing resumes after the offer.</p></>
+          ) : offerError || 'Checking your offer…'}
+          <button type="button" onClick={() => navigate('/account/billing', { replace: true })} className="mt-2 block text-xs underline">View plans without this offer</button>
+        </div>
+      ) : <div className="flex items-center gap-1 p-1 rounded-lg bg-zinc-900 border border-zinc-800 w-fit mb-6">
         <button
           type="button"
           onClick={() => setBillingInterval('monthly')}
@@ -167,7 +203,7 @@ export function AccountBilling() {
           Yearly
           <span className="ml-1.5 text-[10px] text-cyan-400 font-semibold">Save 1 mo</span>
         </button>
-      </div>
+      </div>}
 
       {error && (
         <div className="mb-4 px-4 py-3 rounded-lg bg-red-500/10 border border-red-500/20">
@@ -181,19 +217,20 @@ export function AccountBilling() {
         </div>
       ) : (
         <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-4">
-          {apiTiers.map((tier) => (
-            <TierCard key={tier.id} tier={tier} billingInterval={billingInterval}
+          {apiTiers.filter(tier => !offerCode || activeOffer?.tiers.includes(tier.id)).map((tier) => (
+            <TierCard key={tier.id} tier={tier} billingInterval={offerCode ? 'monthly' : billingInterval}
               isCurrent={isCurrent(tier.id)} busy={busyTier === tier.id}
+              offer={activeOffer}
               onSelect={() => checkout(tier.id)} />
           ))}
-          {basicTier && (
+          {basicTier && (!offerCode || activeOffer?.tiers.includes('basic')) && (
             <div className="sm:col-span-2 lg:col-span-3">
-              <TierCard tier={basicTier} billingInterval={billingInterval}
-                isCurrent={isCurrent('basic')} busy={busyTier === 'basic'} onSelect={() => checkout('basic')} compact />
+              <TierCard tier={basicTier} billingInterval={offerCode ? 'monthly' : billingInterval}
+                isCurrent={isCurrent('basic')} busy={busyTier === 'basic'} offer={activeOffer} onSelect={() => checkout('basic')} compact />
             </div>
           )}
           {/* Free */}
-          <div
+          {!offerCode && <div
             className={`sm:col-span-2 lg:col-span-3 rounded-xl border p-5 flex flex-col ${
               !hasActiveSubscription ? 'border-cyan-500/40 bg-cyan-500/5' : 'border-zinc-800 bg-zinc-900/40'
             }`}
@@ -235,7 +272,7 @@ export function AccountBilling() {
                 'Manage in desktop app'
               )}
             </button>
-          </div>
+          </div>}
 
           <p className="sm:col-span-2 lg:col-span-3 text-xs text-zinc-500">1 credit = 1 processing minute. AI Video Creator usage is separate. Paid minutes roll over; downgrading to Basic resets your balance.</p>
         </div>
@@ -249,6 +286,7 @@ function TierCard({
   billingInterval,
   isCurrent,
   busy,
+  offer,
   onSelect,
   compact = false,
 }: {
@@ -256,6 +294,7 @@ function TierCard({
   billingInterval: BillingInterval
   isCurrent: boolean
   busy: boolean
+  offer: SubscriptionOffer | null
   onSelect: () => void
   compact?: boolean
 }) {
@@ -276,12 +315,14 @@ function TierCard({
       {tier.id === 'creator' && !isCurrent && <span className="text-xs font-semibold text-cyan-400">Recommended</span>}
       <p className="text-xs text-zinc-400 mt-2">{presentation?.description}</p>
       <p className="text-3xl font-bold text-white m-0 mt-2">
-        ${quote.monthlyPrice}
+        ${offer ? discountedMonthlyPrice(tier.price_usd, offer.percent) : quote.monthlyPrice}
         <span className="text-sm font-medium text-zinc-500">
           /mo
         </span>
       </p>
-      <p className="text-xs text-zinc-500 m-0 mt-1">${quote.billedPrice} {quote.billingLabel}</p>
+      <p className="text-xs text-zinc-400 m-0 mt-1">{offer
+        ? `For ${offer.months === 1 ? 'the first month' : `${offer.months} months`}, then $${quote.monthlyPrice}/month before tax`
+        : `$${quote.billedPrice} ${quote.billingLabel}`}</p>
       <div className="flex items-center gap-1.5 mt-3 text-sm text-zinc-400">
         <Zap className="w-4 h-4 text-cyan-400" />
         {quote.minutes.toLocaleString()} {quote.allowanceLabel}

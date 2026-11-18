@@ -1,10 +1,13 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { Loader2, Mail, RefreshCw, Send, User, UserPlus, Users } from 'lucide-react'
 import { PageLayout } from '@/components/dashboard/PageLayout'
 import { api } from '@/lib/api'
 import './AdminMessagingPage.css'
 import { EmailTemplateEditor } from '@/components/admin/EmailTemplateEditor'
-import { DEFAULT_EMAIL, renderEmail } from '../../../../packages/email-composer/src/template'
+import { DEFAULT_EMAIL, insertOffer, renderEmail } from '../../../../packages/email-composer/src/template'
+import { isOfferAudience, offerAudiences, offerDefaults, previewOffer, validOffer, type OfferPlanPrice, type OfferRecipient, type OfferReport, type OfferSettings } from '../../../../packages/email-composer/src/subscriptionOffer'
+import { mountOfferSettings, renderOfferReport, renderRecipientReview } from '../../../../packages/email-composer/src/offerSettings'
+import { styleEmailPreview } from '../../../../packages/email-composer/src/preview'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -19,6 +22,7 @@ interface Campaign {
   suppressed_count: number
   status: string
   sent_at: string | null
+  offer?: OfferSettings | null
 }
 
 interface FormState {
@@ -28,6 +32,7 @@ interface FormState {
   preheader: string
   body: string
   testEmail: string
+  offer: OfferSettings
 }
 
 interface RecipientPreview {
@@ -35,6 +40,9 @@ interface RecipientPreview {
   recipient_count: number
   suppressed_count: number
   sample: string[]
+  recipients?: OfferRecipient[]
+  suppressed?: OfferRecipient[]
+  plans?: OfferPlanPrice[]
 }
 
 // ── Constants ──────────────────────────────────────────────────────────────
@@ -42,7 +50,8 @@ interface RecipientPreview {
 const AUDIENCE_OPTIONS = [
   { value: 'all_users', label: 'All Users', desc: 'Every registered user', icon: Users },
   { value: 'waitlist', label: 'Waitlist', desc: 'Waitlist signups only', icon: UserPlus },
-  { value: 'individual', label: 'Individual', desc: 'Single email address', icon: User }
+  { value: 'individual', label: 'Individual', desc: 'Single email address', icon: User },
+  ...offerAudiences.map(option => ({ ...option, icon: Users }))
 ]
 
 function defaultForm(): FormState {
@@ -52,7 +61,8 @@ function defaultForm(): FormState {
     subject: DEFAULT_EMAIL.subject,
     preheader: DEFAULT_EMAIL.preheader,
     body: DEFAULT_EMAIL.body,
-    testEmail: ''
+    testEmail: '',
+    offer: offerDefaults('never_subscribed').offer
   }
 }
 
@@ -84,6 +94,11 @@ export function AdminMessagingPage() {
   const [testing, setTesting] = useState(false)
   const [loadingPreview, setLoadingPreview] = useState(false)
   const [previewError, setPreviewError] = useState('')
+  const [selectedIds, setSelectedIds] = useState<number[] | null>(null)
+  const [report, setReport] = useState<{ id: number; data?: OfferReport; error?: string }>()
+  const offerHost = useRef<HTMLDivElement>(null)
+  const offerEditor = useRef<ReturnType<typeof mountOfferSettings>>(null)
+  const previewRequest = useRef(0)
   const [recipientPreview, setRecipientPreview] = useState<RecipientPreview>({
     requested_count: 0,
     recipient_count: 0,
@@ -91,7 +106,15 @@ export function AdminMessagingPage() {
     sample: []
   })
 
-  const emailPreviewHtml = renderEmail(form.body, form.preheader, form.audience)
+  const offerActive = isOfferAudience(form.audience)
+  const offerBlock = offerActive ? previewOffer(form.offer) : undefined
+  const offerRecipients = recipientPreview.recipients ?? []
+  const offerSuppressed = recipientPreview.suppressed ?? []
+  const selectedRecipients = selectedIds === null
+    ? offerRecipients
+    : offerRecipients.filter(recipient => selectedIds.includes(recipient.user_id))
+  const deliverableCount = offerActive ? selectedRecipients.length : recipientPreview.recipient_count
+  const emailPreviewHtml = renderEmail(insertOffer(form.body, offerBlock), form.preheader, form.audience)
 
   const canSend =
     contentValid &&
@@ -100,16 +123,18 @@ export function AdminMessagingPage() {
     form.subject.trim() &&
     form.body.trim() &&
     (form.audience !== 'individual' || form.targetEmail.trim()) &&
-    recipientPreview.recipient_count > 0
+    (!offerActive || validOffer(form.offer)) &&
+    deliverableCount > 0
 
-  const canSendTest = contentValid && form.subject.trim() && form.body.trim() && form.testEmail.trim()
+  const canSendTest = contentValid && form.subject.trim() && form.body.trim() && form.testEmail.trim() &&
+    (!offerActive || validOffer(form.offer))
 
   const confirmRecipientText =
     form.audience === 'all_users'
       ? `${recipientPreview.recipient_count} registered users`
       : form.audience === 'waitlist'
         ? `${recipientPreview.recipient_count} waitlist members`
-        : form.targetEmail
+        : offerActive ? `${deliverableCount} eligible users` : form.targetEmail
 
   // ── API ──────────────────────────────────────────────────────────────────
 
@@ -130,6 +155,7 @@ export function AdminMessagingPage() {
   }, [fetchHistory])
 
   const fetchPreview = useCallback(async () => {
+    const request = ++previewRequest.current
     setLoadingPreview(true)
     setPreviewError('')
     try {
@@ -140,17 +166,22 @@ export function AdminMessagingPage() {
         payload
       )
       if (res.success === false) throw new Error(res.error || 'Failed to resolve recipients')
+      if (request !== previewRequest.current) return
       setRecipientPreview({
         requested_count: res.requested_count ?? 0,
         recipient_count: res.recipient_count ?? 0,
         suppressed_count: res.suppressed_count ?? 0,
-        sample: res.sample ?? []
+        sample: res.sample ?? [],
+        recipients: res.recipients,
+        suppressed: res.suppressed,
+        plans: res.plans
       })
     } catch (err) {
+      if (request !== previewRequest.current) return
       setRecipientPreview({ requested_count: 0, recipient_count: 0, suppressed_count: 0, sample: [] })
       setPreviewError(err instanceof Error ? err.message : 'Failed to resolve recipients')
     } finally {
-      setLoadingPreview(false)
+      if (request === previewRequest.current) setLoadingPreview(false)
     }
   }, [form.audience, form.targetEmail])
 
@@ -167,6 +198,44 @@ export function AdminMessagingPage() {
     setForm((prev) => ({ ...prev, [key]: value }))
   }
 
+  function selectAudience(audience: string) {
+    if (audience === form.audience) return
+    previewRequest.current++
+    setLoadingPreview(true)
+    setSelectedIds(null)
+    setRecipientPreview({ requested_count: 0, recipient_count: 0, suppressed_count: 0, sample: [] })
+    setForm(prev => ({
+      ...prev,
+      ...(isOfferAudience(audience) ? offerDefaults(audience) : isOfferAudience(prev.audience) ? DEFAULT_EMAIL : {}),
+      audience
+    }))
+    setContentValid(true)
+  }
+
+  useEffect(() => {
+    if (!offerActive || !offerHost.current) return
+    const editor = mountOfferSettings(offerHost.current, offer => setForm(prev => ({ ...prev, offer })), setSelectedIds)
+    offerEditor.current = editor
+    return () => {
+      editor.destroy()
+      offerEditor.current = null
+    }
+  }, [offerActive, form.audience])
+
+  useEffect(() => {
+    offerEditor.current?.update({ offer: form.offer, recipients: offerRecipients, selectedIds, plans: recipientPreview.plans ?? [] })
+  }, [form.offer, offerRecipients, selectedIds, recipientPreview.plans])
+
+  async function openOfferReport(id: number) {
+    setReport({ id })
+    try {
+      const data = await api.get<OfferReport & { error?: string }>(`/admin/messaging/campaigns/${id}/recipients`)
+      setReport(current => current?.id === id ? data.error ? { id, error: data.error } : { id, data } : current)
+    } catch {
+      setReport(current => current?.id === id ? { id, error: 'Could not load offer results.' } : current)
+    }
+  }
+
   // ── Send ─────────────────────────────────────────────────────────────────
 
   async function sendCampaign() {
@@ -174,16 +243,21 @@ export function AdminMessagingPage() {
     setShowConfirm(false)
     setSending(true)
     try {
-      const payload: Record<string, string> = {
+      const payload: Record<string, unknown> = {
         subject: form.subject,
         preheader: form.preheader,
         body: form.body,
         audience: form.audience
       }
       if (form.audience === 'individual') payload.target_email = form.targetEmail
-      const res = await api.post<{ success: boolean; error?: string }>('/admin/messaging/send', payload)
+      if (offerActive) {
+        payload.offer = form.offer
+        payload.recipient_ids = selectedRecipients.map(user => user.user_id)
+      }
+      const res = await api.post<{ success: boolean; error?: string; message?: string }>('/admin/messaging/send', payload)
       if (res.success === false) throw new Error(res.error || 'Failed to send campaign')
       setForm(defaultForm())
+      if (offerActive && res.message) window.alert(res.message)
       setContentValid(true)
       await fetchHistory()
       await fetchPreview()
@@ -203,7 +277,8 @@ export function AdminMessagingPage() {
         preheader: form.preheader,
         body: form.body,
         audience: form.audience,
-        test_email: form.testEmail
+        test_email: form.testEmail,
+        ...(offerActive ? { offer: form.offer } : {})
       })
       if (res.success === false) throw new Error(res.error || 'Failed to send test email')
       window.alert(`Test email sent to ${form.testEmail}`)
@@ -280,7 +355,7 @@ export function AdminMessagingPage() {
                     <button
                       key={opt.value}
                       className={`admin-msg__audience-btn${form.audience === opt.value ? ' admin-msg__audience-btn--active' : ''}`}
-                      onClick={() => setField('audience', opt.value)}
+                      onClick={() => selectAudience(opt.value)}
                     >
                       <opt.icon className="admin-msg__audience-icon" />
                       <span className="admin-msg__audience-label">{opt.label}</span>
@@ -293,7 +368,7 @@ export function AdminMessagingPage() {
                     <span className="admin-msg__audience-error">{previewError}</span>
                   ) : (
                     <span className="admin-msg__audience-count">
-                      {recipientPreview.recipient_count} deliverable
+                      {deliverableCount} deliverable
                       {recipientPreview.suppressed_count > 0 && <> · {recipientPreview.suppressed_count} suppressed</>}
                     </span>
                   )}
@@ -339,11 +414,13 @@ export function AdminMessagingPage() {
               </div>
             </div>
 
+            {offerActive && <div ref={offerHost} key={form.audience} />}
             <EmailTemplateEditor
               body={form.body}
               subject={form.subject}
               preheader={form.preheader}
               audience={form.audience}
+              offerBlock={offerBlock}
               onChange={(body, valid) => {
                 setField('body', body)
                 setContentValid(valid)
@@ -439,6 +516,7 @@ export function AdminMessagingPage() {
                         </div>
                       </td>
                       <td className="admin-msg__td">
+                        {campaign.offer && <button className="admin-msg__retry-btn" onClick={() => openOfferReport(campaign.id)}>View redemptions</button>}
                         <span className={`admin-msg__status admin-msg__status--${campaign.status}`}>
                           {campaign.status}
                         </span>
@@ -499,10 +577,12 @@ export function AdminMessagingPage() {
                   {recipientPreview.suppressed_count === 1 ? '' : 's'} will be skipped.
                 </p>
               )}
+              {offerActive && <div dangerouslySetInnerHTML={{ __html: renderRecipientReview(selectedRecipients, offerSuppressed) }} />}
               <iframe
                 title="Final email preview"
-                sandbox=""
+                sandbox="allow-same-origin"
                 srcDoc={emailPreviewHtml}
+                onLoad={(event) => styleEmailPreview(event.currentTarget)}
                 className="admin-msg__final-preview"
               />
               <div className="msg-modal__actions">
@@ -516,6 +596,21 @@ export function AdminMessagingPage() {
                 <button className="msg-modal__btn msg-modal__btn--cancel" onClick={() => setShowConfirm(false)}>
                   Cancel
                 </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {report && (
+        <div className="msg-modal-overlay" onClick={() => setReport(undefined)}>
+          <div className="msg-modal" role="dialog" aria-modal="true" aria-label="Offer results" onClick={event => event.stopPropagation()}>
+            <div className="msg-modal__body">
+              <h3 className="msg-modal__title">Offer results</h3>
+              {report.data ? <div dangerouslySetInnerHTML={{ __html: renderOfferReport(report.data) }} />
+                : <p>{report.error ?? 'Loading results…'}</p>}
+              <div className="msg-modal__actions">
+                <button className="msg-modal__btn msg-modal__btn--cancel" onClick={() => openOfferReport(report.id)}>Refresh</button>
+                <button className="msg-modal__btn msg-modal__btn--cancel" onClick={() => setReport(undefined)}>Close</button>
               </div>
             </div>
           </div>

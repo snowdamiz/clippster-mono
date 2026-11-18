@@ -24,7 +24,7 @@ const section = (findings: CheckReport['lint']['findings'] = []) => ({
   findings,
 });
 
-function setup() {
+function setup(overrides: Partial<AgentToolDeps> = {}) {
   const files = new Map<string, string>();
   const workspace = {
     writeFile: vi.fn(async (path: string, content: string) => {
@@ -70,6 +70,7 @@ function setup() {
     exampleKeyframes: ['C:/ref/keyframes/shot-0000.jpg', null],
     snapshotDir: 'C:/session/snapshots',
     encodeImage: vi.fn(async (path: string) => `b64:${path}`),
+    ...overrides,
   };
   return { tools: new AgentTools(deps, null), workspace, files };
 }
@@ -102,6 +103,40 @@ const document = {
 };
 
 describe('AgentTools', () => {
+  it('requires authored captions for spoken playbook edits instead of relying on an app fallback', async () => {
+    const { tools } = setup({ creatorLayoutSourceId: 'm1', speechSegments: { m1: [{ start: 0, end: 1, text: 'Hello', speakerId: null }] } });
+    const [missing] = await tools.run([call('set_edit', { document })]);
+    expect(missing.content).toContain('The app does not add captions for you');
+    const [saved] = await tools.run([call('set_edit', { document: { ...document, overlays: [{ ...document.overlays[0], lane: 'captions' }] } })]);
+    expect(saved.content).toContain('Saved and compiled');
+  });
+  it('reads only the requested source and speech window, with provisional speaker labels', async () => {
+    const { tools } = setup({
+      sourceSegments: {
+        m1: [
+          { index: 0, start: 0, end: 4, motion: 0, brightness: 0.5, saturation: 0.5 },
+          { index: 1, start: 4, end: 8, motion: 0, brightness: 0.5, saturation: 0.5 },
+        ],
+      },
+      speechSegments: {
+        m1: [
+          { start: 0, end: 2, text: 'Opening', speakerId: '0:1' },
+          { start: 5, end: 7, text: 'Reply', speakerId: '0:2', speakerName: 'Guest' },
+        ],
+      },
+    });
+    const [source, speech, invalid] = await tools.run([
+      call('read_source_window', { mediaId: 'm1', start: 4, end: 8 }),
+      call('read_speech_window', { mediaId: 'm1', start: 4, end: 8 }),
+      call('read_speech_window', { mediaId: 'm1', start: 0, end: 121 }),
+    ]);
+    expect(JSON.parse(source.content)).toHaveLength(1);
+    expect(JSON.parse(speech.content)).toEqual([
+      { start: 5, end: 7, text: 'Reply', speakerId: '0:2', speakerName: 'Guest' },
+    ]);
+    expect(invalid.content).toContain('up to 120 seconds');
+  });
+
   it('validates and compiles set_edit, noting unwritten compositions', async () => {
     const { tools, files } = setup();
     const [bad] = await tools.run([call('set_edit', { document: { ...document, shots: [] } })]);

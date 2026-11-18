@@ -36,6 +36,9 @@ import { uploadMediaWithProgress } from '@/services/mediaUpload'
 import { tokens } from '@/theme/tokens'
 import { appAlert } from '@/lib/appAlert'
 import { canAccessTokend } from '@/lib/tokendAccess'
+import { creatorSkillPublishBlockers } from '@clippster/shared-types'
+import { getMobileCreatorSkillState } from '@/services/creatorSkillMobile'
+import { getClipVersionPreference } from '@/services/clipVersionPreference'
 
 function parseAspectRatios(raw: string | null): string[] {
   if (!raw) return []
@@ -117,6 +120,15 @@ export function PostSheet({ visible, buildId, onClose }: PostSheetProps) {
         appAlert('Export not found', 'This export is not available for scheduling.')
         onCloseRef.current()
         return
+      }
+      const [version, skill] = await Promise.all([getClipVersionPreference(buildRow.clip_id), getMobileCreatorSkillState(buildRow.clip_id)])
+      if (version === 'edited' || skill?.editedPath === buildRow.file_path) {
+        const blockers = creatorSkillPublishBlockers(skill?.playbookPackage, skill?.masterMd5)
+        if (blockers.length) {
+          appAlert('Edited clip needs review', blockers[0])
+          onCloseRef.current()
+          return
+        }
       }
       setBuild(buildRow)
       const clip = await getClipById(buildRow.clip_id)

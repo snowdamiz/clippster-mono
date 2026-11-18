@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
-import { Link, useNavigate } from 'react-router-dom'
+import { Link, useLocation, useNavigate } from 'react-router-dom'
 import { Loader2, AlertCircle, ArrowLeft, Mail } from 'lucide-react'
 import { useAuth } from '@/hooks/useAuth'
 import { getPostAuthPath } from '@/lib/accountRouting'
@@ -22,11 +22,16 @@ export function VerifyEmailPage() {
   } = useAuth()
 
   const navigate = useNavigate()
+  const location = useLocation()
+  const from = (location.state as { from?: { pathname?: string; search?: string } } | null)?.from
+  const offerPath = from?.pathname === '/account/billing' && new URLSearchParams(from.search).has('promo')
+    ? from.pathname + from.search
+    : null
 
   const [wasAuthOnMount] = useState(() => isAuthenticated)
   useEffect(() => {
     if (wasAuthOnMount && isAuthenticated && user) {
-      navigate(getPostAuthPath(user), { replace: true })
+      navigate(offerPath ?? getPostAuthPath(user), { replace: true })
     }
   }, [isAuthenticated, user, navigate]) // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -66,9 +71,9 @@ export function VerifyEmailPage() {
 
     const result = await verifyEmailOtp(pendingVerificationEmail, otp)
     if (result.success && result.user) {
-      navigate(getPostAuthPath(result.user), { replace: true })
+      navigate(offerPath ?? getPostAuthPath(result.user), { replace: true })
     }
-  }, [pendingVerificationEmail, otp, verifyEmailOtp, navigate])
+  }, [pendingVerificationEmail, otp, verifyEmailOtp, navigate, offerPath])
 
   // Auto-submit when 6 digits are entered
   useEffect(() => {

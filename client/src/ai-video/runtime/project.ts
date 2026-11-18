@@ -1,7 +1,7 @@
 import { compileDocument, type CompileContext } from '../compiler/compile';
 import { COMPOSITION_PATH } from '../director/validate';
 import type { EditDocument, MediaItem } from '../types';
-import type { HyperframesWorkspace } from './workspace';
+import type { VideoWorkspace } from './workspace';
 import { withSceneTiming, withoutSceneTiming } from './sceneTiming';
 
 /**
@@ -9,7 +9,7 @@ import { withSceneTiming, withoutSceneTiming } from './sceneTiming';
  * part of the content hash, so a reused media id never points at a stale file.
  */
 export async function linkProjectMedia(
-  workspace: HyperframesWorkspace,
+  workspace: VideoWorkspace,
   media: MediaItem[]
 ): Promise<CompileContext> {
   const items = media.map((item) => ({
@@ -29,6 +29,8 @@ export async function linkProjectMedia(
           kind: item.kind,
           duration: item.duration,
           hasAudio: item.hasAudio,
+          width: item.width,
+          height: item.height,
         },
       ])
     ),
@@ -36,19 +38,19 @@ export async function linkProjectMedia(
 }
 
 export function writeCompiledDocument(
-  workspace: HyperframesWorkspace,
+  workspace: VideoWorkspace,
   document: EditDocument,
   context: CompileContext
 ) {
   return workspace.writeFile('index.html', compileDocument(document, context));
 }
 
-export async function compositionPaths(workspace: HyperframesWorkspace): Promise<string[]> {
+export async function compositionPaths(workspace: VideoWorkspace): Promise<string[]> {
   return (await workspace.listFiles()).filter((path) => COMPOSITION_PATH.test(path));
 }
 
 export async function readCompositionFiles(
-  workspace: HyperframesWorkspace
+  workspace: VideoWorkspace
 ): Promise<Record<string, string>> {
   const paths = await compositionPaths(workspace);
   const contents = await Promise.all(paths.map((path) => workspace.readFile(path)));
@@ -59,7 +61,7 @@ export async function readCompositionFiles(
 
 /** Make the workspace hold exactly the saved composition files (and the compiled root, when there is a document). */
 export async function syncWorkspace(
-  workspace: HyperframesWorkspace,
+  workspace: VideoWorkspace,
   files: Record<string, string>,
   document: EditDocument | null,
   context: CompileContext

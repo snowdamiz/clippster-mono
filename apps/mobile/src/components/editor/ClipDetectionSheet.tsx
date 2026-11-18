@@ -7,6 +7,8 @@ import { CaptionPresetPicker } from '@/components/subtitles/CaptionPresetPicker'
 import { DEFAULT_CAPTION_PRESET_ID } from '@/lib/captionPresets'
 import { DEFAULT_DETECTION_PROMPTS, type DetectionPrompt } from '@/lib/detectionPrompts'
 import { tokens } from '@/theme/tokens'
+import { creatorSkillPolicy } from '@/services/creatorSkillWeb'
+import { userBrandingApi } from '@/services/api'
 
 export interface ClipDetectionPlan {
   prompt: DetectionPrompt
@@ -15,6 +17,8 @@ export interface ClipDetectionPlan {
   enhanced: boolean
   subtitlesEnabled: boolean
   subtitlePresetId: string
+  creatorSkillEnabled: boolean
+  creatorProfileId: number | null
 }
 
 interface ClipDetectionSheetProps {
@@ -33,11 +37,23 @@ export function ClipDetectionSheet({ visible, videoDuration, starting, onClose, 
   const [enhanced, setEnhanced] = useState(false)
   const [subtitlesEnabled, setSubtitlesEnabled] = useState(false)
   const [subtitlePresetId, setSubtitlePresetId] = useState(DEFAULT_CAPTION_PRESET_ID)
+  const [creatorSkillEnabled, setCreatorSkillEnabled] = useState(false)
+  const [creatorSkillCredits, setCreatorSkillCredits] = useState<number | null>(null)
+  const [creatorProfiles, setCreatorProfiles] = useState<{ id: number; name: string }[]>([])
+  const [creatorProfileId, setCreatorProfileId] = useState<number | null>(null)
 
   useEffect(() => {
     if (!visible) return
     setTimeRange({ startTime: 0, endTime: total })
     setShowPrompts(false)
+    setCreatorSkillCredits(null)
+    void userBrandingApi.getBundle().then(bundle => {
+      setCreatorProfiles(bundle.success ? bundle.profiles.filter(profile => !profile.disabled).map(profile => ({ id: profile.id, name: profile.name })) : [])
+    }).catch(() => setCreatorProfiles([]))
+    void creatorSkillPolicy().then(policy => {
+      if (!Number.isFinite(policy.credits.generate) || policy.credits.generate < 0) throw new Error('Invalid AI edit cost')
+      setCreatorSkillCredits(policy.credits.generate)
+    }).catch(() => { setCreatorSkillEnabled(false); setCreatorSkillCredits(null) })
   }, [visible, total])
 
   const selectedPrompt = useMemo(
@@ -46,7 +62,7 @@ export function ClipDetectionSheet({ visible, videoDuration, starting, onClose, 
   )
 
   const selectedDuration = Math.max(0, timeRange.endTime - timeRange.startTime)
-  const canConfirm = !starting && (total <= 0 || selectedDuration >= 10)
+  const canConfirm = !starting && (total <= 0 || selectedDuration >= 10) && (!creatorSkillEnabled || creatorSkillCredits !== null)
 
   return (
     <BottomSheet
@@ -64,7 +80,9 @@ export function ClipDetectionSheet({ visible, videoDuration, starting, onClose, 
             endTime: timeRange.endTime,
             enhanced: false,
             subtitlesEnabled,
-            subtitlePresetId
+            subtitlePresetId,
+            creatorSkillEnabled,
+            creatorProfileId: creatorSkillEnabled ? creatorProfileId : null
           })
       }}
       secondaryAction={{ title: 'Cancel', onPress: onClose, disabled: starting }}
@@ -75,6 +93,18 @@ export function ClipDetectionSheet({ visible, videoDuration, starting, onClose, 
           {Math.floor(total / 60)}m {total % 60}s
         </Text>
       </View>
+
+      {creatorSkillEnabled && creatorProfiles.length ? (
+        <View className="gap-2 rounded-[18px] bg-surface px-3 py-3">
+          <Text className="text-sm font-medium text-foreground">Creator profile (optional)</Text>
+          <Text className="text-xs text-muted">Use saved brand and sponsor preferences for these edits.</Text>
+          {[{ id: null, name: 'No creator profile' }, ...creatorProfiles].map(profile => (
+            <Pressable key={profile.id ?? 'none'} onPress={() => setCreatorProfileId(profile.id)} className={`rounded-lg border px-3 py-2 ${creatorProfileId === profile.id ? 'border-accent bg-accent/10' : 'border-border'}`}>
+              <Text className="text-sm text-foreground">{profile.name}</Text>
+            </Pressable>
+          ))}
+        </View>
+      ) : null}
 
       {total > 0 ? (
         <View className="gap-2">
@@ -132,6 +162,17 @@ export function ClipDetectionSheet({ visible, videoDuration, starting, onClose, 
             trackColor={{ false: tokens.colors.border, true: tokens.colors.accent }}
           />
         </View>
+      </View>
+
+      <View className="rounded-[18px] bg-surface px-3 py-3">
+        <View className="flex-row items-center justify-between">
+          <View className="flex-1 pr-3">
+            <Text className="text-sm font-medium text-foreground">Pre-edit clips using Clippster Skill</Text>
+            <Text className="mt-1 text-xs text-muted">Uploads this downloaded VOD and its transcript to your private web workspace. Each detected clip then gets an AI edit and creator playbook. Raw stays available.</Text>
+          </View>
+          <Switch value={creatorSkillEnabled} onValueChange={setCreatorSkillEnabled} disabled={creatorSkillCredits === null} trackColor={{ false: tokens.colors.border, true: tokens.colors.accent }} />
+        </View>
+        <Text className="mt-2 text-xs text-muted">{creatorSkillCredits === null ? 'AI editing cost is unavailable right now.' : `${creatorSkillCredits} personal credits per detected clip, plus detection. You will review the exact total after detection before edits start. VOD stills have no separate thumbnail charge. Saved creator preferences, clip speech, and selected creator intro or outro files for each clip's format go to the AI editor. Finished audio from clips under 30 minutes goes to Clippster's transcription service for QA with no extra personal-credit charge if you approve.`}</Text>
       </View>
 
       <View className="rounded-[18px] bg-surface px-3 py-3">

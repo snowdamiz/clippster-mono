@@ -16,6 +16,11 @@ defmodule ClippsterServer.AI.VideoSession do
     field :status, :string, default: "draft"
     # Output shape when there is no example; with one, the example's shape is used.
     field :aspect_ratio, :string
+    field :motion_graphics, :string, default: "light"
+    field :playbook_enabled, :boolean, default: false
+    field :creator_skill_job_id, :integer
+    field :creator_skill_prepaid, :boolean, default: false
+    field :creator_profile_id, :integer
     field :media_items, {:array, :map}, default: []
     field :reference, :map
     field :reference_blueprint, :map
@@ -23,6 +28,7 @@ defmodule ClippsterServer.AI.VideoSession do
     field :reference_labels, :map
     # Source labels keyed by content hash so re-runs never re-label the same footage.
     field :source_index, :map, default: %{}
+    field :speech_index, :map, default: %{}
     field :document, :map
     field :composition_files, :map, default: %{}
     field :thumbnail_url, :string
@@ -41,11 +47,17 @@ defmodule ClippsterServer.AI.VideoSession do
       :name,
       :status,
       :aspect_ratio,
+      :motion_graphics,
+      :playbook_enabled,
+      :creator_skill_job_id,
+      :creator_skill_prepaid,
+      :creator_profile_id,
       :media_items,
       :reference,
       :reference_blueprint,
       :reference_labels,
       :source_index,
+      :speech_index,
       :document,
       :composition_files,
       :thumbnail_url,
@@ -54,6 +66,7 @@ defmodule ClippsterServer.AI.VideoSession do
     |> validate_required([:user_id, :status])
     |> validate_inclusion(:status, @statuses)
     |> validate_inclusion(:aspect_ratio, @aspect_ratios)
+    |> validate_inclusion(:motion_graphics, ~w(none light full))
     |> validate_length(:name, max: 120)
     |> foreign_key_constraint(:user_id)
   end

@@ -111,13 +111,90 @@
           @keyup.enter="confirm"
         />
       </Field>
+      <Field label="Creator" for="ai-video-creator">
+        <select
+          id="ai-video-creator"
+          v-model="creatorProfileId"
+          class="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-fg"
+        >
+          <option :value="null">No creator profile</option>
+          <option v-for="profile in creatorProfiles" :key="profile.id" :value="profile.id">{{ profile.name }}</option>
+        </select>
+      </Field>
+      <Field label="Do you want motion graphics?" for="ai-video-motion">
+        <select
+          id="ai-video-motion"
+          v-model="motionGraphics"
+          class="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-fg"
+        >
+          <option value="none">No, just edit the footage</option>
+          <option value="light">A few simple titles and callouts</option>
+          <option value="full">Yes, animated scenes and graphics</option>
+        </select>
+      </Field>
+      <label class="flex items-center gap-2 text-sm text-fg">
+        <input v-model="usePlaybook" type="checkbox" class="accent-brand" />
+        Use the Creator Edit Playbook for this project
+      </label>
+      <Button
+        v-if="usePlaybook && selectedProfile?.video_playbook"
+        variant="link"
+        size="sm"
+        class="self-start"
+        @click="editingPreferences = !editingPreferences"
+      >
+        {{ editingPreferences ? 'Keep saved preferences' : 'Edit saved creator preferences' }}
+      </Button>
+      <div
+        v-if="usePlaybook && selectedProfile && (!selectedProfile.video_playbook || editingPreferences)"
+        class="space-y-3 rounded-lg border border-line p-3"
+      >
+        <p class="text-sm font-medium text-fg">Set up {{ selectedProfile.name }}'s editing preferences</p>
+        <p class="text-xs text-muted">We'll save these to this creator profile. You can change them later.</p>
+        <Field label="Who is this creator's audience?" for="ai-video-audience">
+          <Input
+            id="ai-video-audience"
+            v-model="audience"
+            placeholder="For example, new listeners interested in tech"
+            maxlength="300"
+          />
+        </Field>
+        <Field label="What editing style should we use?" for="ai-video-style">
+          <Input
+            id="ai-video-style"
+            v-model="editingStyle"
+            placeholder="For example, calm and conversational"
+            maxlength="300"
+          />
+        </Field>
+        <Field label="Any rules the AI must follow?" for="ai-video-rules">
+          <Input
+            id="ai-video-rules"
+            v-model="hardRules"
+            placeholder="For example, never cut a speaker mid-sentence"
+            maxlength="1000"
+          />
+        </Field>
+        <Field label="Captions" for="ai-video-captions">
+          <select
+            id="ai-video-captions"
+            v-model="captions"
+            class="w-full rounded-md border border-line bg-surface px-3 py-2 text-sm text-fg"
+          >
+            <option value="ask">Ask each project</option>
+            <option value="yes">Usually on</option>
+            <option value="no">Usually off</option>
+          </select>
+        </Field>
+      </div>
+      <p v-if="saveError" role="alert" class="text-sm text-red-500">{{ saveError }}</p>
     </div>
 
     <template #footer>
-      <Button variant="ghost" :disabled="isCreating" @click="close">Cancel</Button>
-      <Button variant="primary" :loading="isCreating" :disabled="!canCreate" @click="confirm">
-        <Plus v-if="!isCreating" />
-        {{ isCreating ? 'Creating…' : 'Create' }}
+      <Button variant="ghost" :disabled="isCreating || saving" @click="close">Cancel</Button>
+      <Button variant="primary" :loading="isCreating || saving" :disabled="!canCreate || saving" @click="confirm">
+        <Plus v-if="!isCreating && !saving" />
+        {{ isCreating || saving ? 'Creating…' : 'Create' }}
       </Button>
     </template>
 
@@ -165,6 +242,8 @@
   import { isExampleLink } from '../analysis/reference';
   import type { LibrarySource } from '../library';
   import type { StartingSources } from '../startingSources';
+  import { apiErrorMessage, listCreatorProfiles, saveCreatorVideoPlaybook, type VideoCreatorProfile } from '../api';
+  import type { MotionGraphicsLevel } from '../types';
   import LibraryPicker from './LibraryPicker.vue';
 
   const FOOTAGE_SOURCES: LibrarySource[] = ['built-clips', 'projects', 'image-library'];
@@ -173,7 +252,14 @@
   const props = defineProps<{ modelValue: boolean; isCreating?: boolean }>();
   const emit = defineEmits<{
     'update:modelValue': [value: boolean];
-    confirm: [payload: { name: string } & StartingSources];
+    confirm: [
+      payload: {
+        name: string;
+        creatorProfileId: number | null;
+        playbookEnabled: boolean;
+        motionGraphics: MotionGraphicsLevel;
+      } & StartingSources,
+    ];
   }>();
 
   const start = ref<'blank' | 'media'>('blank');
@@ -181,7 +267,29 @@
   const exampleUrl = ref('');
   const exampleFile = ref<string | null>(null);
   const name = ref('');
+  const creatorProfileId = ref<number | null>(null);
+  const creatorProfiles = ref<VideoCreatorProfile[]>([]);
+  const usePlaybook = ref(false);
+  const motionGraphics = ref<MotionGraphicsLevel>('light');
+  const editingPreferences = ref(false);
+  const selectedProfile = computed(() =>
+    creatorProfiles.value.find((profile) => profile.id === creatorProfileId.value)
+  );
+  const audience = ref('');
+  const editingStyle = ref('');
+  const hardRules = ref('');
+  const captions = ref<'ask' | 'yes' | 'no'>('ask');
+  const saving = ref(false);
+  const saveError = ref('');
   const picker = ref<'footage' | 'music' | null>(null);
+
+  watch(selectedProfile, (profile) => {
+    editingPreferences.value = false;
+    audience.value = profile?.video_playbook?.audience ?? '';
+    editingStyle.value = profile?.video_playbook?.editing_style ?? '';
+    hardRules.value = profile?.video_playbook?.hard_rules ?? '';
+    captions.value = profile?.video_playbook?.captions ?? 'ask';
+  });
 
   const isAudio = (path: string) => AUDIO_EXTENSIONS.includes(fileExtension(path));
   const isPhoto = (path: string) => PHOTO_EXTENSIONS.includes(fileExtension(path));
@@ -207,6 +315,21 @@
       exampleUrl.value = '';
       exampleFile.value = null;
       name.value = '';
+      creatorProfileId.value = null;
+      usePlaybook.value = false;
+      motionGraphics.value = 'light';
+      audience.value = '';
+      editingStyle.value = '';
+      hardRules.value = '';
+      captions.value = 'ask';
+      saveError.value = '';
+      void listCreatorProfiles()
+        .then((profiles) => {
+          creatorProfiles.value = profiles;
+        })
+        .catch(() => {
+          creatorProfiles.value = [];
+        });
     }
   );
 
@@ -249,11 +372,37 @@
     emit('update:modelValue', false);
   }
 
-  function confirm() {
-    if (!canCreate.value || props.isCreating) return;
+  async function confirm() {
+    if (!canCreate.value || props.isCreating || saving.value) return;
+    if (
+      usePlaybook.value &&
+      selectedProfile.value &&
+      (!selectedProfile.value.video_playbook || editingPreferences.value)
+    ) {
+      saving.value = true;
+      saveError.value = '';
+      const playbook = {
+        audience: audience.value.trim(),
+        editing_style: editingStyle.value.trim(),
+        hard_rules: hardRules.value.trim(),
+        captions: captions.value,
+      };
+      try {
+        await saveCreatorVideoPlaybook(selectedProfile.value.id, playbook);
+        selectedProfile.value.video_playbook = playbook;
+      } catch (error) {
+        saveError.value = apiErrorMessage(error, 'Could not save creator preferences.');
+        saving.value = false;
+        return;
+      }
+      saving.value = false;
+    }
     const media = start.value === 'media';
     emit('confirm', {
       name: name.value.trim(),
+      creatorProfileId: creatorProfileId.value,
+      playbookEnabled: usePlaybook.value,
+      motionGraphics: motionGraphics.value,
       files: media ? files.value : [],
       example: media ? example.value : null,
     });

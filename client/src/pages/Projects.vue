@@ -5142,7 +5142,8 @@
     startTime: number = 0,
     endTime: number = 0,
     subtitleSettings: { enabled: boolean; presetId: string } | null = null,
-    enhanced: boolean = false
+    enhanced: boolean = false,
+    creatorSkillEnabled: boolean = false
   ) {
     if (!projectToDetect.value || segmentsToDetect.value.length === 0) {
       return;
@@ -5153,6 +5154,7 @@
     const totalSegments = segments.length;
     let successCount = 0;
     let totalClipsFound = 0;
+    const skillSessions: string[] = [];
 
     isDetectingProject.value = true;
 
@@ -5194,6 +5196,7 @@
               endTime: endTime,
               subtitleSettings: subtitleSettings,
               enhanced,
+              creatorSkillEnabled,
               streamerMetadata: {
                 display_name: segment.name,
                 platform: segment.platform,
@@ -5202,6 +5205,9 @@
             });
 
             if (result.success) {
+              if (creatorSkillEnabled && result.sessionId) {
+                skillSessions.push(result.sessionId);
+              }
               successCount++;
               // Get clip count from the result or refresh clip counts
               const clips = await getClipsWithVersionsByProjectId(segment.id);
@@ -5219,6 +5225,15 @@
           console.error(`Failed to detect clips for segment ${segment.name}:`, err);
           completeDetection(segment.id, err instanceof Error ? err.message : 'Detection failed');
           // Continue with remaining segments even if one fails
+        }
+      }
+
+      if (skillSessions.length) {
+        try {
+          const { confirmCreatorSkillEdits } = await import('@/services/creatorSkillApproval');
+          await confirmCreatorSkillEdits(skillSessions, parentProjectId, error => console.error('[Projects] Clippster Skill processing failed:', error));
+        } catch (error) {
+          console.error('[Projects] Could not confirm Clippster Skill cost:', error);
         }
       }
 
@@ -5451,6 +5466,10 @@
 
     await loadProjects();
     await loadFolderPrompts();
+
+    void import('@/services/creator-skill-worker').then(({ resumeCreatorSkillEdits }) =>
+      resumeCreatorSkillEdits()
+    ).catch((error) => console.error('[Projects] Could not resume Clippster Skill edits:', error));
 
     // Silently backfill metadata for any videos imported without duration/thumbnail
     backgroundFixMissingMetadata();

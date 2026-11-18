@@ -78,8 +78,11 @@ export function LoginPage() {
   const location = useLocation()
 
   const getRedirectPath = (u: Parameters<typeof getPostAuthPath>[0]) => {
-    const from = (location.state as { from?: string | { pathname?: string } } | null)?.from
+    const from = (location.state as { from?: string | { pathname?: string; search?: string } } | null)?.from
     const fromPath = typeof from === 'string' ? from : from?.pathname
+    if (typeof from === 'object' && from.pathname === '/account/billing' && new URLSearchParams(from.search).has('promo')) {
+      return from.pathname + from.search
+    }
     if (
       fromPath?.startsWith('/org/apply') ||
       fromPath?.startsWith('/account') ||
@@ -103,7 +106,7 @@ export function LoginPage() {
 
   useEffect(() => {
     if (pendingVerificationEmail) {
-      navigate('/verify-email', { replace: true })
+      navigate('/verify-email', { replace: true, state: location.state })
     }
   }, [pendingVerificationEmail, navigate])
 

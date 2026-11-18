@@ -8,6 +8,7 @@ defmodule ClippsterServer.AI.VideoRuns do
   require Logger
 
   alias ClippsterServer.{AI, Credits, Repo}
+  alias ClippsterServer.Accounts.User
   alias ClippsterServer.AI.{OpenRouterChat, VideoGenerationPolicy, VideoRun, VideoSession, VideoSessions}
 
   # A run whose client vanished (app closed, crash) is failed and refunded after this long.
@@ -15,35 +16,41 @@ defmodule ClippsterServer.AI.VideoRuns do
   @stale_reason "The app stopped responding before the edit finished."
 
   @doc "Charge for and open a generate/revise run. Only one may run per session at a time."
-  def start_agent_run(user_id, %VideoSession{} = session, kind, request) when kind in ~w(generate revise) do
+  def start_agent_run(user_id, %VideoSession{} = session, kind, request, max_credits \\ nil) when kind in ~w(generate revise) do
     expire_stale_runs(session.id)
     cost = VideoGenerationPolicy.credit_cost(kind)
+    charged = if admin?(user_id) or session.creator_skill_prepaid, do: 0, else: cost
 
-    Repo.transaction(fn ->
-      with {:ok, _} <- Credits.deduct_credits(user_id, cost),
-           {:ok, run} <-
-             %VideoRun{}
-             |> VideoRun.changeset(%{
-               kind: kind,
-               status: "running",
-               request: request,
-               credits_charged: cost,
-               session_id: session.id,
-               user_id: user_id
-             })
-             |> Repo.insert() do
-        run
-      else
-        {:error, %Ecto.Changeset{errors: errors}} ->
-          if Keyword.has_key?(errors, :session_id),
-            do: Repo.rollback(:run_in_progress),
-            else: Repo.rollback(:insufficient_credits)
+    if is_integer(max_credits) and max_credits >= 0 and charged > max_credits do
+      {:error, :price_increased, charged}
+    else
+      Repo.transaction(fn ->
+        case deduct_if_needed(user_id, charged) do
+          {:ok, _} ->
+            %VideoRun{}
+            |> VideoRun.changeset(%{
+              kind: kind,
+              status: "running",
+              request: request,
+              credits_charged: charged,
+              session_id: session.id,
+              user_id: user_id
+            })
+            |> Repo.insert()
+            |> case do
+              {:ok, run} -> run
+              {:error, %Ecto.Changeset{errors: errors} = changeset} ->
+                if Keyword.has_key?(errors, :session_id),
+                  do: Repo.rollback(:run_in_progress),
+                  else: Repo.rollback(changeset)
+            end
 
-        {:error, _} ->
-          Repo.rollback(:insufficient_credits)
-      end
-    end)
-    |> normalize_start(user_id)
+          {:error, _} ->
+            Repo.rollback(:insufficient_credits)
+        end
+      end)
+      |> normalize_start(user_id)
+    end
   end
 
   @doc """
@@ -70,12 +77,13 @@ defmodule ClippsterServer.AI.VideoRuns do
   @doc "Charge the analysis fee and close the reference run."
   def charge_reference_run(%VideoRun{kind: "reference", status: "running"} = run) do
     cost = VideoGenerationPolicy.credit_cost("reference")
+    charged = if admin?(run.user_id), do: 0, else: cost
 
     Repo.transaction(fn ->
-      case Credits.deduct_credits(run.user_id, cost) do
+      case deduct_if_needed(run.user_id, charged) do
         {:ok, _} ->
           run
-          |> VideoRun.changeset(%{status: "completed", credits_charged: cost})
+          |> VideoRun.changeset(%{status: "completed", credits_charged: charged})
           |> Repo.update!()
 
         {:error, _} ->
@@ -201,12 +209,12 @@ defmodule ClippsterServer.AI.VideoRuns do
   end
 
   @doc """
-  Fail a run. Credits come back unless the model already delivered a finished edit. A failed
+  Fail a run. Credits come back unless the edit was already completed. A failed
   generate or revise run answers the user's message in the chat, so a reopened project reads the
   way it happened.
   """
   def fail(%VideoRun{status: "running"} = run, reason) do
-    refund? = is_nil(run.finish) and run.credits_charged > 0 and not run.refunded
+    refund? = run.credits_charged > 0 and not run.refunded
     if refund?, do: refund(run)
 
     with {:ok, failed} <-
@@ -255,6 +263,8 @@ defmodule ClippsterServer.AI.VideoRuns do
   @doc "Log one model call against the run and add its cost to the run total."
   def record_usage(%VideoRun{} = run, model, operation, usage) do
     attrs = OpenRouterChat.usage_log_attrs(usage)
+    fetches = get_in(usage, ["server_tool_use", "web_fetch_requests"])
+    fetches = if is_integer(fetches) and fetches > 0, do: fetches, else: 0
 
     AI.log_usage(
       Map.merge(attrs, %{
@@ -273,7 +283,7 @@ defmodule ClippsterServer.AI.VideoRuns do
 
     VideoRun
     |> where([r], r.id == ^run.id)
-    |> update([r], inc: [cost_usd: ^attrs.cost_usd], set: [updated_at: ^now()])
+    |> update([r], inc: [cost_usd: ^attrs.cost_usd, research_fetches: ^fetches], set: [updated_at: ^now()])
     |> Repo.update_all([])
 
     :ok
@@ -305,10 +315,18 @@ defmodule ClippsterServer.AI.VideoRuns do
 
   defp refund(_run), do: :ok
 
+  defp admin?(user_id), do: match?(%User{is_admin: true}, Repo.get(User, user_id))
+  defp deduct_if_needed(_user_id, 0), do: {:ok, :unlimited}
+  defp deduct_if_needed(user_id, cost), do: Credits.deduct_credits(user_id, cost)
+
   defp balance(user_id) do
-    case Credits.get_user_balance(user_id) do
-      {:ok, %{hours_remaining: remaining}} -> Decimal.to_float(remaining)
-      _ -> 0.0
+    if admin?(user_id) do
+      1.0e12
+    else
+      case Credits.get_user_balance(user_id) do
+        {:ok, %{hours_remaining: remaining}} -> Decimal.to_float(remaining)
+        _ -> 0.0
+      end
     end
   end
 
@@ -316,6 +334,9 @@ defmodule ClippsterServer.AI.VideoRuns do
 
   defp normalize_start({:error, :insufficient_credits}, user_id),
     do: {:error, :insufficient_credits, balance(user_id)}
+
+  defp normalize_start({:error, %Ecto.Changeset{} = changeset}, _user_id),
+    do: {:error, changeset}
 
   defp normalize_start({:error, reason}, _user_id), do: {:error, reason}
 

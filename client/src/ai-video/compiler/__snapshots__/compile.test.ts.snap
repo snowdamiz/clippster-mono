@@ -21,6 +21,8 @@ exports[`compileDocument > is deterministic 1`] = `
       .overlay { position: absolute; inset: 0; }
       .overlay-graphics { z-index: 20; }
       .overlay-text { z-index: 30; }
+      .overlay-captions { z-index: 40; }
+      .overlay-sponsor { z-index: 50; }
     </style>
   </head>
   <body>

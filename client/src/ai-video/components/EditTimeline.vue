@@ -44,7 +44,7 @@
     media: () => props.media,
     files: () => props.files ?? {},
     inventories: () => props.inventories ?? [],
-    maxSeconds: () => props.maxSeconds ?? 60,
+    maxSeconds: () => props.maxSeconds ?? 3600,
     commit: (document) => emit('apply', document),
   });
   interface Block {
@@ -118,7 +118,7 @@
           label: shot.transitionIn,
         });
     });
-    for (const overlay of trim.document.value.overlays) result[overlay.lane].push({ ...overlay, trim: true });
+    for (const overlay of trim.document.value.overlays) result[overlay.lane === 'captions' ? 'text' : overlay.lane === 'sponsor' ? 'graphics' : overlay.lane].push({ ...overlay, trim: true });
     for (const block of timelineLayers(trim.document.value, props.inventories ?? []))
       result[block.category].push(block);
     const music = trim.document.value.music;
@@ -201,7 +201,7 @@
       edge,
       (event.key === 'ArrowRight' ? 1 : -1) / props.document.format.fps,
       props.media,
-      props.maxSeconds ?? 60,
+      props.maxSeconds ?? 3600,
       props.files,
       props.inventories
     );
@@ -340,7 +340,7 @@
                   :aria-label="`Trim ${edge}: ${block.label}`"
                   :aria-valuenow="edge === 'start' ? block.start : block.start + block.duration"
                   :aria-valuemin="0"
-                  :aria-valuemax="maxSeconds ?? 60"
+                  :aria-valuemax="maxSeconds ?? 3600"
                   class="absolute inset-y-0 z-20 w-2 cursor-ew-resize touch-none bg-white/10 hover:bg-brand/70 focus:bg-brand/70"
                   :class="edge === 'start' ? 'left-0' : 'right-0'"
                   @click.stop

@@ -462,8 +462,14 @@ defmodule ClippsterServerWeb.StripeController do
         # We pass the raw decoded JSON alongside the struct event so handlers
         # that need newer fields can read them directly.
         raw_object = decode_raw_object(payload)
-        handle_event(event, raw_object)
-        json(conn, %{received: true})
+
+        case handle_event(event, raw_object) do
+          {:error, :subscription_checkout_failed} ->
+            conn |> put_status(500) |> json(%{error: "Subscription checkout processing failed"})
+
+          _ ->
+            json(conn, %{received: true})
+        end
 
       {:error, reason} ->
         IO.puts("[Stripe Webhook] Verification failed: #{inspect(reason)}")
@@ -484,12 +490,16 @@ defmodule ClippsterServerWeb.StripeController do
   defp decode_raw_object(_), do: nil
 
   defp verify_and_construct_event(payload, signature, webhook_secret)
-       when is_binary(webhook_secret) and byte_size(webhook_secret) > 0 do
+       when is_binary(webhook_secret) and byte_size(webhook_secret) > 0 and is_binary(signature) do
     case Stripe.Webhook.construct_event(payload, signature, webhook_secret) do
       {:ok, event} -> {:ok, event}
       {:error, reason} -> {:error, reason}
     end
   end
+
+  defp verify_and_construct_event(_payload, _signature, webhook_secret)
+       when is_binary(webhook_secret) and byte_size(webhook_secret) > 0,
+       do: {:error, :missing_webhook_signature}
 
   defp verify_and_construct_event(payload, _signature, _webhook_secret) do
     # Only allow unverified payloads outside production.
@@ -587,7 +597,8 @@ defmodule ClippsterServerWeb.StripeController do
         )
 
       # Handle user subscription checkout
-      payment_type == "subscription" && user_id && subscription_tier ->
+      payment_type == "subscription" && user_id && subscription_tier &&
+          safe_get(session, "payment_status") != "unpaid" ->
         billing_interval = get_metadata_value(metadata, "billing_interval") || "monthly"
 
         handle_subscription_checkout(
@@ -1273,57 +1284,39 @@ defmodule ClippsterServerWeb.StripeController do
       end
     end
 
-    case Subscriptions.create_stripe_subscription(
-           user_id_int,
-           tier,
-           stripe_subscription_id,
-           stripe_customer_id,
-           billing_interval
-         ) do
-      {:ok, _result} ->
-        IO.puts(
-          "[Stripe Webhook] Successfully created #{tier} subscription for user #{user_id_int}"
-        )
+    with {:ok, %{subscription: subscription}} <-
+           Subscriptions.create_stripe_subscription(
+             user_id_int,
+             tier,
+             stripe_subscription_id,
+             stripe_customer_id,
+             billing_interval
+           ),
+         {:ok, :recorded} <-
+           record_checkout_promo(
+             promo_code_id,
+             user_id_int,
+             stripe_customer_id,
+             stripe_subscription_id
+           ) do
+      IO.puts(
+        "[Stripe Webhook] Successfully created #{tier} subscription for user #{user_id_int}"
+      )
 
-        Appsignal.increment_counter("subscriptions.checkout_completed", 1, %{tier: tier})
+      Appsignal.increment_counter("subscriptions.checkout_completed", 1, %{tier: tier})
 
-        # Create promo code redemption if promo_code_id is provided
-        if promo_code_id do
-          case PromoCodes.create_redemption(promo_code_id, user_id_int, %{
-                 customer_id: stripe_customer_id,
-                 subscription_id: stripe_subscription_id
-               }) do
-            {:ok, _redemption} ->
-              IO.puts(
-                "[Stripe Webhook] Created promo redemption for user #{user_id_int}, promo #{promo_code_id}"
-              )
-
-            {:error, reason} ->
-              IO.puts("[Stripe Webhook] Failed to create promo redemption: #{inspect(reason)}")
-          end
+      # Record affiliate signup commission using the actual amount Stripe charged
+      # (amount_total_cents comes from session.amount_total which reflects any promo discounts)
+      # Fall back to hardcoded tier price only if Stripe didn't report an amount
+      amount =
+        case amount_total_cents do
+          nil -> get_subscription_amount(tier)
+          cents -> Decimal.div(Decimal.new(cents), Decimal.new(100))
         end
 
-        # Record affiliate signup commission using the actual amount Stripe charged
-        # (amount_total_cents comes from session.amount_total which reflects any promo discounts)
-        # Fall back to hardcoded tier price only if Stripe didn't report an amount
-        amount =
-          case amount_total_cents do
-            nil -> get_subscription_amount(tier)
-            0 -> get_subscription_amount(tier)
-            cents -> Decimal.div(Decimal.new(cents), Decimal.new(100))
-          end
-
-        # Allocate revenue to platform fund if enabled
-        case Subscriptions.get_active_subscription(user_id_int) do
-          nil ->
-            :ok
-
-          subscription ->
-            ClippsterServer.PlatformCampaigns.allocate_subscription_revenue(
-              subscription.id,
-              amount
-            )
-        end
+      # Allocate revenue to platform fund if enabled
+      if Decimal.gt?(amount, 0) do
+        ClippsterServer.PlatformCampaigns.allocate_subscription_revenue(subscription.id, amount)
 
         case Affiliates.record_signup_commission(user_id_int, tier, amount) do
           {:ok, _} ->
@@ -1334,10 +1327,24 @@ defmodule ClippsterServerWeb.StripeController do
           _ ->
             :ok
         end
+      end
+    else
+      {:ok, :existing} ->
+        :ok
 
       {:error, reason} ->
-        IO.puts("[Stripe Webhook] Failed to create subscription: #{inspect(reason)}")
+        IO.puts("[Stripe Webhook] Failed to fulfill subscription checkout: #{inspect(reason)}")
+        {:error, :subscription_checkout_failed}
     end
+  end
+
+  defp record_checkout_promo(nil, _user_id, _customer_id, _subscription_id), do: {:ok, :recorded}
+
+  defp record_checkout_promo(promo_id, user_id, customer_id, subscription_id) do
+    PromoCodes.record_subscription_checkout_redemption(promo_id, user_id, %{
+      customer_id: customer_id,
+      subscription_id: subscription_id
+    })
   end
 
   # Handle subscription created event (backup for checkout)

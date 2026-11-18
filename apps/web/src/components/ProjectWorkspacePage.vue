@@ -24,6 +24,10 @@
         </div>
         <progress class="h-1.5 w-full accent-sky-400" :value="activeJob.progress" max="100" />
       </div>
+      <div v-if="pendingSkillClips.length && !activeJob" class="shrink-0 border-b border-sky-400/20 bg-sky-400/10 px-5 py-3 text-sm">
+        {{ pendingSkillClips.length }} detected clips are Raw and ready for optional Clippster Skill pre-editing.
+        <button type="button" class="ml-2 text-sky-400 underline" @click="approveCreatorSkillBatch">Review total cost and pre-edit all</button>
+      </div>
       <div v-if="project.status !== 'ready'" class="min-h-0 flex-1 overflow-y-auto">
         <ImportSource
           :busy="busy"
@@ -37,11 +41,73 @@
         class="workspace-dialog__content"
       >
         <section ref="previewContainer" class="workspace-dialog__player-column" :class="{ 'workspace-dialog__player-column--fullscreen': isFullscreen }">
-          <WorkspacePreviewControls v-if="previewState.preset.value" v-model:ratio="previewState.ratio.value" v-model:social="previewState.social.value" :options="previewState.options.value" />
+          <div v-if="draft && draft.builtRevision === draft.revision" class="flex items-center gap-2 border-b border-white/10 px-3 py-2 text-xs">
+            <span>Clip version</span>
+            <button type="button" :aria-pressed="!editedPreview" :class="!editedPreview ? 'text-sky-400' : 'text-muted'" @click="selectVersion('raw')">Raw</button>
+            <button type="button" :aria-pressed="editedPreview" :class="editedPreview ? 'text-sky-400' : 'text-muted'" @click="selectVersion('edited')">Edited</button>
+          </div>
+          <details v-if="draft?.creatorSkill" class="max-h-56 shrink-0 overflow-y-auto border-b border-white/10 px-3 py-2 text-xs">
+            <summary class="cursor-pointer font-medium">Clippster Skill: {{ draft.creatorSkill.status.replace('_', ' ') }} · Review playbook</summary>
+            <div class="mt-2 space-y-2 text-muted">
+              <button v-if="draft.creatorSkill.status === 'failed'" type="button" class="text-sky-400 underline" @click="retryCreatorSkill">Retry Clippster Skill edit</button>
+              <p v-for="(item, index) in draft.creatorSkill.reviewItems" :key="`review-${index}`">{{ item }}</p>
+              <a v-if="draft.creatorSkill.captionsAvailable" :href="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/captions`" class="underline">Download draft SRT captions</a>
+              <a v-if="draft.creatorSkill.contactSheetAvailable" :href="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/contact-sheet`" target="_blank" class="block underline">Open visual contact sheet</a>
+              <a v-if="draft.creatorSkill.phonePreviewAvailable" :href="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/phone-preview`" class="block underline">Download phone preview</a>
+              <a v-if="draft.creatorSkill.noMusicAvailable" :href="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/no-music`" class="block underline">Download no-music edit</a>
+              <a v-if="draft.creatorSkill.tiktokSafeAvailable" :href="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/tiktok-no-sponsor`" class="block underline">Download TikTok cut before sponsor read</a>
+              <a v-if="draft.creatorSkill.tiktokCaptionsAvailable" :href="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/tiktok-no-sponsor-captions`" class="block underline">Download TikTok cut captions</a>
+              <a v-if="draft.creatorSkill.status === 'needs_review' && draft.creatorSkill.playbookPackage" :href="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/delivery`" class="block underline">Download full dated delivery ZIP with checksums</a>
+              <div v-if="draft.creatorSkill.sourceCaptures?.length"><strong>Captured public pages for review</strong><p>Static screenshots omit external assets; compare with the live page before using an image or claim.</p><p v-for="capture in draft.creatorSkill.sourceCaptures" :key="capture.index"><a :href="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/source-captures/${capture.index}`" class="underline">{{ capture.title }} · {{ capture.kind }} text</a> · {{ capture.fetchedAt }} <a v-if="capture.screenshotAvailable" :href="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/source-captures/${capture.index}/screenshot`" target="_blank" rel="noopener noreferrer" class="underline">Static screenshot</a></p></div>
+              <p v-for="capture in draft.creatorSkill.sourceCaptures?.filter(value => value.pagePublishedAt) ?? []" :key="`page-date-${capture.index}`" class="text-xs">{{ capture.title }} · Page-advertised publication date: {{ capture.pagePublishedAt }} (check against the live page)</p>
+              <div v-if="draft.creatorSkill.thumbnailCandidates?.length" class="flex gap-2 overflow-x-auto">
+                <img v-for="candidate in draft.creatorSkill.thumbnailCandidates" :key="candidate.index" :src="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/thumbnails/${candidate.index}`" :alt="`VOD thumbnail candidate at ${candidate.sourceTime.toFixed(1)} seconds`" class="h-20 w-auto rounded" />
+              </div>
+              <div v-if="draft.creatorSkill.thumbnailVariants?.length" class="flex gap-2 overflow-x-auto">
+                <a v-for="variant in draft.creatorSkill.thumbnailVariants" :key="variant.index" :href="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/thumbnail-variants/${variant.index}`" target="_blank" :title="`Open review draft ${String.fromCharCode(65 + variant.index)}: ${variant.headline}`" class="shrink-0"><span class="block">Draft {{ String.fromCharCode(65 + variant.index) }} · 320 × 180</span><img :src="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/thumbnail-variants/${variant.index}`" :alt="`Thumbnail review draft ${String.fromCharCode(65 + variant.index)}: ${variant.headline}`" width="320" height="180" class="rounded" /><span class="block">168 × 94</span><img :src="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/thumbnail-variants/${variant.index}`" :alt="`Small thumbnail draft ${String.fromCharCode(65 + variant.index)}`" width="168" height="94" class="rounded" /></a>
+              </div>
+              <template v-if="draft.creatorSkill.playbookPackage">
+                <div class="flex flex-wrap gap-2"><a v-for="name in CREATOR_SKILL_DOCUMENT_NAMES" :key="name" :href="`${webApiPath}/projects/${project.id}/clips/${draft.id}/creator-skill/documents/${name}`" class="underline">{{ name }}</a></div>
+                <div><strong>Funnel: {{ draft.creatorSkill.playbookPackage.funnel.stage.replace('_', ' ') }}</strong><p>{{ draft.creatorSkill.playbookPackage.funnel.reason }} · Measure: {{ draft.creatorSkill.playbookPackage.funnel.metric }}</p><p v-if="draft.creatorSkill.playbookPackage.funnel.bridge">Bridge: {{ draft.creatorSkill.playbookPackage.funnel.bridge }}</p></div>
+                <div v-if="draft.creatorSkill.playbookPackage.claims.length">
+                  <strong>Claims and source cards</strong>
+                  <p v-for="evidence in draft.creatorSkill.claimEvidence ?? []" :key="`evidence-${evidence.claimIndex}`" class="rounded border border-white/10 p-1 text-xs">Claim {{ evidence.claimIndex + 1 }} · Captured text candidate (not verified): {{ evidence.excerpt }}</p>
+                  <p v-for="(claim, index) in draft.creatorSkill.playbookPackage.claims" :key="`claim-${index}`">{{ claim.time.toFixed(1) }}s · {{ claim.text }} — {{ claim.verdict }} <a v-if="claim.sourceUrl" :href="claim.sourceUrl" target="_blank" rel="noopener noreferrer" class="underline">Open cited source</a><span v-if="claim.sourceUrl"> · {{ draft.creatorSkill.sourceCaptures?.some(capture => capture.url === claim.sourceUrl) ? 'Page captured for review' : 'Page not captured' }}</span><span v-if="claim.publishedAt"> · Proposed date: {{ claim.publishedAt }}</span><span v-if="draft.creatorSkill.playbookPackage.claimReviews?.some(review => review.claimIndex === index)"> · Human review: {{ draft.creatorSkill.playbookPackage.claimReviews.find(review => review.claimIndex === index)?.decision.replace('_', ' ') }} · {{ draft.creatorSkill.playbookPackage.claimReviews.find(review => review.claimIndex === index)?.note }}</span> <button v-if="claim.sourceUrl" type="button" class="underline" @click="reviewClaim(index, 'source_checked')">Record source check</button> · <button v-if="['unconfirmed', 'rumor', 'not_found'].includes(claim.verdict) && claim.onScreenLabel" type="button" class="underline" @click="reviewClaim(index, 'label_checked')">Record neutral-label check</button> · <button type="button" class="underline" @click="reviewClaim(index, 'needs_changes')">Needs changes</button></p>
+                </div>
+                <div>
+                  <strong>Footage and privacy crop proposals</strong>
+                  <p>Inspect the source ranges and rendered frames before approving a crop.</p>
+                  <p v-if="!draft.creatorSkill.playbookPackage.footageReview?.length">No clip-specific crops were proposed. Review the full source and edit.</p>
+                  <p v-for="(entry, index) in draft.creatorSkill.playbookPackage.footageReview" :key="`footage-${index}`">{{ entry.start.toFixed(1) }}–{{ entry.end.toFixed(1) }}s · Show {{ entry.show }} · Hide {{ entry.hide.join(', ') || 'none noted' }} · Crop {{ entry.crop ? `${entry.crop.x}, ${entry.crop.y}, ${entry.crop.width}, ${entry.crop.height}` : 'not proposed' }} · {{ entry.note }}<span v-if="draft.creatorSkill.playbookPackage.footageReviews?.some(review => review.footageIndex === index)"> · Human review: {{ draft.creatorSkill.playbookPackage.footageReviews.find(review => review.footageIndex === index)?.decision.replace('_', ' ') }} · {{ draft.creatorSkill.playbookPackage.footageReviews.find(review => review.footageIndex === index)?.note }}</span> <button type="button" class="underline" @click="reviewFootage(index, 'frame_checked')">Record frame check</button> · <button type="button" class="underline" @click="reviewFootage(index, 'needs_changes')">Needs changes</button></p>
+                </div>
+                <div>
+                  <strong>Independent reviewer findings</strong>
+                  <p>Ask someone who did not build this edit to inspect Raw, the master, and the review brief. FIX FIRST blocks publishing this edited master; the same reviewer can record OK at the same output time after rechecking a false alarm.</p>
+                  <p v-for="(finding, index) in draft.creatorSkill.playbookPackage.independentReview" :key="`review-${index}`">{{ finding.severity.replace('_', ' ').toUpperCase() }} · {{ finding.outputTime.toFixed(2) }}s · {{ finding.finding }} · {{ finding.reviewer }}<span v-if="finding.masterMd5 !== draft.creatorSkill.masterMd5"> · Stale: master changed</span></p>
+                  <p v-if="draft.creatorSkill.playbookPackage.independentSignoff">Full-master signoff: {{ draft.creatorSkill.playbookPackage.independentSignoff.reviewer }} · {{ draft.creatorSkill.playbookPackage.independentSignoff.reviewedAt }}<span v-if="draft.creatorSkill.playbookPackage.independentSignoff.masterMd5 !== draft.creatorSkill.masterMd5"> · Stale: master changed</span> · {{ draft.creatorSkill.playbookPackage.independentSignoff.note }}</p>
+                  <button type="button" class="underline" @click="reviewFinding">Record reviewer finding</button>
+                  <button type="button" class="ml-3 underline" @click="reviewSignoff">Sign off after full review</button>
+                </div>
+                <div v-if="draft.creatorSkill.playbookPackage.brandReferences?.length">
+                  <strong>Public brand references</strong>
+                  <p v-for="(brand, index) in draft.creatorSkill.playbookPackage.brandReferences" :key="`brand-${index}`">{{ brand.name }}: {{ brand.colors.join(', ') }} · {{ brand.notes }} <a :href="brand.sourceUrl" target="_blank" rel="noopener noreferrer" class="underline">Reference</a></p>
+                </div>
+                <div v-if="draft.creatorSkill.playbookPackage.sponsors.length">
+                  <strong>Sponsor review</strong>
+                  <p v-for="(sponsor, index) in draft.creatorSkill.playbookPackage.sponsors" :key="`sponsor-${index}`">{{ sponsor.name }} — {{ sponsor.confirmed ? 'Saved in creator profile' : 'Unconfirmed' }}. {{ sponsor.review }}</p>
+                </div>
+                <div><strong>Thumbnail concepts</strong><p v-for="(concept, index) in draft.creatorSkill.playbookPackage.thumbnailConcepts" :key="`thumb-${index}`">{{ concept }}</p></div>
+                <div><strong>Platform copy</strong><p v-for="(copy, index) in draft.creatorSkill.playbookPackage.platformCopy" :key="`copy-${index}`">{{ copy.platform }}: {{ copy.title }} — {{ copy.description }} · Pinned comment: {{ copy.pinnedComment }}</p></div>
+              </template>
+            </div>
+          </details>
+          <WorkspacePreviewControls v-if="!editedPreview && previewState.preset.value" v-model:ratio="previewState.ratio.value" v-model:social="previewState.social.value" :options="previewState.options.value" />
           <div
             class="workspace-dialog__video-wrapper"
           >
+            <video v-if="editedPreview && draft" :key="draft.id + ':' + draft.revision" ref="editedPlayer" :src="clipPlaybackPath(project.id, draft.id)" controls playsinline class="h-full w-full object-contain" aria-label="Edited clip preview" />
             <VideoPlayer
+              v-else
               :video-src="videoState.source.value"
               :video-loading="loading"
               :video-error="videoError"
@@ -77,9 +143,10 @@
               @retry-load="retry"
               @watermark-id-change="previewState.loadWatermark"
             />
-            <div v-if="previewState.social.value && previewState.ratio.value === '9:16'" style="position:absolute;inset:0;z-index:100;pointer-events:none;user-select:none"><SocialOverlay :preset="previewState.social.value" :canvas-width="previewState.aspect.value.width" :canvas-height="previewState.aspect.value.height" /></div>
+            <div v-if="!editedPreview && previewState.social.value && previewState.ratio.value === '9:16'" style="position:absolute;inset:0;z-index:100;pointer-events:none;user-select:none"><SocialOverlay :preset="previewState.social.value" :canvas-width="previewState.aspect.value.width" :canvas-height="previewState.aspect.value.height" /></div>
           </div>
           <VideoControls
+            v-if="!editedPreview"
             :video-src="videoState.source.value"
             :video-loading="loading"
             :is-playing="playback.playing.value"
@@ -108,7 +175,7 @@
       </div>
       <div v-if="project.status === 'ready'" class="workspace-dialog__timeline"><Timeline ref="timeline" :allow-editor="false" :video-src="sourcePath(project.id)" :project-id="project.id" :duration="project.duration" :current-time="videoState.sourceTime.value" :timeline-hover-time="timelineHoverTime" :timeline-hover-position="timelineHoverPosition" :clips="timelineClips" :hovered-clip-id="selectedId" :hovered-timeline-clip-id="hoveredTimelineClipId" :currently-playing-clip-id="playback.playing.value ? selectedId : null" @seek-timeline="seekTimeline" @timeline-track-hover="hoverTimeline" @timeline-mouse-leave="timelineHoverTime = null" @timeline-clip-hover="hoveredTimelineClipId = $event" @timeline-segment-click="selectById" @scroll-to-media-panel="selectById" @play-from-time="playFromTime" @refresh-clips-data="refreshWorkspace" @edit-clip="selectById" @toggle-subtitles="toggleSubtitles" @toggle-text="toggleText" /></div>
     </div>
-    <ClipDetectionConfirmDialog v-model="dialogs.showDetect.value" :video-duration="project.duration" :is-transcribed="!!project.words.length" :initial-subtitle-detection-defaults="previewState.detectionDefaults.value" @confirm="dialogs.confirmDetect" />
+    <ClipDetectionConfirmDialog v-model="dialogs.showDetect.value" :video-duration="project.duration" :is-transcribed="!!project.words.length" :creator-skill-policy="creatorSkillPolicy" :initial-subtitle-detection-defaults="previewState.detectionDefaults.value" @confirm="dialogs.confirmDetect" />
     <TranscriptionConfirmDialog v-model="dialogs.showTranscribe.value" :video-duration="project.duration" :segment-count="dialogs.transcriptionClip.value ? 1 : undefined" :total-duration="dialogs.transcriptionClip.value?.segments.reduce((sum, part) => sum + part.end_time - part.start_time, 0)" :item-label="dialogs.transcriptionClip.value ? 'clip' : 'video'" :is-transcribed="dialogs.transcriptionClip.value ? !!dialogs.transcriptionClip.value.subtitleWords?.length : !!project.words.length" @confirm="dialogs.confirmTranscribe" />
     <SubtitleEditorDialog v-model="dialogs.showSubtitles.value" :clips="timelineClips" :project-id="project.id" :default-subtitle-settings="previewState.subtitleDefaults.value" @save="dialogs.applySubtitles" />
     <ConfirmationModal :show="dialogs.showDelete.value" title="Delete Clip" message="Are you sure you want to delete this clip?" suffix="This action cannot be undone." confirm-text="Delete" variant="destructive" @close="dialogs.showDelete.value = false" @confirm="dialogs.confirmDelete" />
@@ -123,7 +190,7 @@
   import WorkspacePreviewControls from '@/components/WorkspacePreviewControls.vue'
   import SocialOverlay from '@/editor/components/preview/SocialOverlay.vue'
   import { Play, Plus, Sparkles } from 'lucide-vue-next'
-  import { createDefaultSubtitleSettings, clipWords } from '@clippster/shared-types'
+  import { CREATOR_SKILL_DOCUMENT_NAMES, createDefaultSubtitleSettings, clipWords } from '@clippster/shared-types'
   import { resolveCaptionSettings } from '@/utils/captionPresetSettings'
   import type { WebProject, WebClip, WebJob } from '@clippster/shared-types'
   import ProjectWorkspaceHeader from '@/components/ProjectWorkspaceHeader.vue'
@@ -158,7 +225,10 @@
   import { useWorkspaceVideo } from '../useWorkspaceVideo'
   import { isShortVideoAutoClipEligible } from '@clippster/shared-types'
   import ClipGenerationProgress from '@/components/ClipGenerationProgress.vue'
-  import { sourcePath, clipPreviewPath, projects } from '../api'
+  import { sourcePath, clipPreviewPath, clipPlaybackPath, downloadPath, projects, workspaceClient, webApiPath } from '../api'
+  import { useWorkspaceJobWaiter } from '../useWorkspaceJobWaiter'
+  import type { VideoPolicy } from '@/ai-video/types'
+  const creatorSkillPolicy = () => workspaceClient.get<VideoPolicy>('/web/ai/video/policy')
   import Timeline from '@/components/Timeline.vue'
   import { registerWorkspace } from '../workspaceRuntime'
   import type { WebWorkspace } from '@clippster/shared-types'
@@ -182,6 +252,7 @@
   }>()
 
   const previewContainer = ref<HTMLElement>()
+  const editedPlayer = ref<HTMLVideoElement>()
   const timeline = ref<InstanceType<typeof Timeline>>()
   const { isAIAllowed } = useAIPermission()
   const isFullscreen = ref(false)
@@ -211,6 +282,102 @@
   const subtitleDrafts = ref<Record<number, string>>({})
   watch(selectedId, () => { subtitleDrafts.value = {} })
   const draft = ref<WebClip | null>(null)
+  const waitForSkillJob = useWorkspaceJobWaiter(workspace => emit('workspaceUpdated', workspace))
+  const pendingSkillClips = computed(() => props.project.clips.filter(clip => clip.creatorSkill?.status === 'awaiting_approval'))
+  async function approveCreatorSkillBatch() {
+    try {
+      const count = pendingSkillClips.value.length
+      if (!count) return
+      const policy = await creatorSkillPolicy()
+      if (!window.confirm(`Pre-edit all ${count} detected clips for up to ${count * policy.credits.generate} personal credits (${policy.credits.generate} per clip)? Detection has already completed. Selected creator intro and outro files for each clip's format, clip speech, and saved preferences go to the AI editor. Finished audio from clips under 30 minutes goes to Clippster's transcription service for QA with no extra personal-credit charge. Thumbnail drafts use VOD frames with no separate charge. Cancel keeps every clip Raw.`)) return
+      const job = await workspaceClient.post<WebJob>(`/web/projects/${props.project.id}/creator-skill/batch`, { maxCreditsPerClip: policy.credits.generate })
+      await waitForSkillJob(job)
+      await refreshWorkspace()
+    } catch (error) {
+      useToast().error('Clippster Skill pre-edit failed', error instanceof Error ? error.message : 'Try again.')
+    }
+  }
+  async function retryCreatorSkill() {
+    if (!draft.value || draft.value.creatorSkill?.status !== 'failed') return
+    try {
+      const policy = await creatorSkillPolicy()
+      if (!window.confirm(`Retry this AI edit for up to ${policy.credits.generate} personal credits? A new run may be charged. Thumbnail drafts use VOD frames with no separate charge. Raw remains available.`)) return
+      const clipId = draft.value.id
+      const job = await workspaceClient.post<WebJob>(`/web/projects/${props.project.id}/clips/${clipId}/creator-skill`, { maxCreditsPerClip: policy.credits.generate })
+      await waitForSkillJob(job)
+      await refreshWorkspace()
+    } catch (error) {
+      useToast().error('Clippster Skill retry failed', error instanceof Error ? error.message : 'Try again.')
+    }
+  }
+  const editedPreview = computed(() => draft.value?.selectedVersion === 'edited' && draft.value.builtRevision === draft.value.revision)
+  async function selectVersion(version: 'raw' | 'edited') {
+    if (!draft.value) return
+    try {
+      playback.pause()
+      const workspace = await workspaceClient.patch<WebWorkspace>(`/web/projects/${props.project.id}/clips/${draft.value.id}/version`, { version })
+      draft.value.selectedVersion = version
+      emit('workspaceUpdated', workspace)
+    } catch (error) {
+      useToast().error('Could not change clip version', error instanceof Error ? error.message : 'Try again.')
+    }
+  }
+  async function reviewClaim(index: number, decision: 'source_checked' | 'label_checked' | 'needs_changes') {
+    if (!draft.value) return
+    const note = window.prompt('Record what you checked, including the source date or the change needed:', draft.value.creatorSkill?.playbookPackage?.claimReviews?.find(review => review.claimIndex === index)?.note ?? '')
+    if (note === null) return
+    try {
+      const workspace = await workspaceClient.patch<WebWorkspace>(`/web/projects/${props.project.id}/clips/${draft.value.id}/creator-skill/claim-review`, { claimIndex: index, decision, note })
+      draft.value = workspace.project.clips.find(clip => clip.id === draft.value?.id) ?? null
+      emit('workspaceUpdated', workspace)
+    } catch (error) {
+      useToast().error('Could not save claim review', error instanceof Error ? error.message : 'Try again.')
+    }
+  }
+  async function reviewFootage(index: number, decision: 'frame_checked' | 'needs_changes') {
+    if (!draft.value) return
+    const note = window.prompt('Record which source and rendered frames you inspected, or what needs changing:', draft.value.creatorSkill?.playbookPackage?.footageReviews?.find(review => review.footageIndex === index)?.note ?? '')
+    if (note === null) return
+    try {
+      const workspace = await workspaceClient.patch<WebWorkspace>(`/web/projects/${props.project.id}/clips/${draft.value.id}/creator-skill/footage-review`, { footageIndex: index, decision, note })
+      draft.value = workspace.project.clips.find(clip => clip.id === draft.value?.id) ?? null
+      emit('workspaceUpdated', workspace)
+    } catch (error) {
+      useToast().error('Could not save footage review', error instanceof Error ? error.message : 'Try again.')
+    }
+  }
+  async function reviewFinding() {
+    if (!draft.value) return
+    const reviewer = window.prompt('Name of the reviewer who did not build this edit:')
+    if (reviewer === null) return
+    const severity = window.prompt('Severity: FIX FIRST, SHOULD FIX, or OK:', 'FIX FIRST')?.trim().toLowerCase().replace(/\s+/g, '_')
+    if (severity !== 'fix_first' && severity !== 'should_fix' && severity !== 'ok') return
+    const time = window.prompt('Output time in seconds:', '0')
+    if (time === null) return
+    const finding = window.prompt('Evidence and specific correction (at least 10 characters):')
+    if (finding === null) return
+    try {
+      const workspace = await workspaceClient.patch<WebWorkspace>(`/web/projects/${props.project.id}/clips/${draft.value.id}/creator-skill/independent-review`, { reviewer, severity, outputTime: Number(time), finding })
+      draft.value = workspace.project.clips.find(clip => clip.id === draft.value?.id) ?? null
+      emit('workspaceUpdated', workspace)
+    } catch (error) {
+      useToast().error('Could not save reviewer finding', error instanceof Error ? error.message : 'Try again.')
+    }
+  }
+  async function reviewSignoff() {
+    if (!draft.value) return
+    const reviewer = window.prompt('Name of the reviewer who watched the full edited master against Raw:')
+    if (reviewer === null) return
+    const note = window.prompt('Describe the full-master review of speech, sources, privacy, captions, audio, sponsors, and thumbnails (at least 20 characters):')
+    if (note === null) return
+    try {
+      const workspace = await workspaceClient.patch<WebWorkspace>(`/web/projects/${props.project.id}/clips/${draft.value.id}/creator-skill/independent-signoff`, { reviewer, note })
+      draft.value = workspace.project.clips.find(clip => clip.id === draft.value?.id) ?? null
+      emit('workspaceUpdated', workspace)
+    } catch (error) {
+      useToast().error('Could not save reviewer signoff', error instanceof Error ? error.message : 'Try again.')
+    }
+  }
   const clipDetectionDisabled = computed(() => isShortVideoAutoClipEligible(props.project.duration))
   const exportDialog = useWorkspaceExport(() => props.project, () => draft.value, workspace => emit('workspaceUpdated', workspace), cause => { useToast().error('Export configuration failed', cause instanceof Error ? cause.message : 'Try again.') })
   const dialogs = useWorkspaceDialogs(() => props.project, workspace => emit('workspaceUpdated', workspace), options => { lastOperation.value = 'detect'; emit('detect', options) }, organizationId => emit('transcribe', organizationId))
@@ -296,9 +463,20 @@
     },
     { immediate: true }
   )
-  function build() { if (draft.value) void exportDialog.open() }
+  function build() {
+    if (!draft.value) return
+    if (editedPreview.value && draft.value.creatorSkill) {
+      const link = document.createElement('a')
+      link.href = downloadPath(props.project.id, draft.value.id)
+      link.download = ''
+      link.click()
+      return
+    }
+    void exportDialog.open()
+  }
   function preview() {
-    if (draft.value) videoState.preview(draft.value)
+    if (editedPreview.value) void editedPlayer.value?.play()
+    else if (draft.value) videoState.preview(draft.value)
   }
   function close() {
     if (props.uploadProgress !== null) return

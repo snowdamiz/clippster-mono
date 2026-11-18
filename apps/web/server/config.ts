@@ -12,6 +12,7 @@ export interface Config {
   ffmpeg: string
   ffprobe: string
   ytdlp: string
+  hyperframesScript: string
   maxSourceBytes: number
   maxDuration: number
   maxProjects: number
@@ -39,6 +40,7 @@ export function readConfig(env = process.env): Config {
     ffmpeg: env.FFMPEG_PATH || 'ffmpeg',
     ffprobe: env.FFPROBE_PATH || 'ffprobe',
     ytdlp: env.YTDLP_PATH || 'yt-dlp',
+    hyperframesScript: resolve(env.WEB_HYPERFRAMES_SCRIPT || (production ? 'sidecar/index.mjs' : '../../client/src-tauri/sidecars/hyperframes-renderer/index.mjs')),
     maxSourceBytes: Number(env.WEB_MAX_SOURCE_BYTES || 16 * 1024 ** 3),
     maxDuration: Number(env.WEB_MAX_SOURCE_DURATION_SECONDS || 24 * 3600),
     maxProjects: 20,

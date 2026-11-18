@@ -37,4 +37,12 @@ describe('shared email template', () => {
     expect(html).toContain('&lt;b&gt;preview&lt;/b&gt;');
     expect(html).toContain('sent it to you directly');
   });
+  it('uses the branded masthead and shared campaign styles in the preview', () => {
+    const html = renderEmail(renderBody(defaultContent), 'Inbox-only preview', 'waitlist');
+    expect(html).toContain('<img src="data:image/png;base64,');
+    expect(html).toContain('alt="Clippster"');
+    expect(html).toContain('<div hidden style="display:none');
+    expect(html).toContain('class="email-heading" data-email-field="heading"');
+    expect(html).toContain('background-color:#5cd7fc');
+  });
 });

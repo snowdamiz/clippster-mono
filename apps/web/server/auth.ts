@@ -65,20 +65,28 @@ export function createAuth(store: Store, config: Config) {
     })
   }
   async function requireSession(req: Request, res: Response, next: NextFunction) {
-    const session = readSession(req)
-    requireValue(session, 401, 'Sign in to continue.')
+    const mobileBearer = req.headers['x-client-platform'] === 'mobile'
+      ? req.headers.authorization?.match(/^Bearer (.+)$/)?.[1]
+      : undefined
+    const mobileSessionId = mobileBearer ? hash(`mobile:${mobileBearer}`) : null
+    let session = mobileSessionId ? store.session(mobileSessionId) : readSession(req)
+    requireValue(session || mobileBearer, 401, 'Sign in to continue.')
     // Revalidate with the existing account service, including expiration and account deletion.
     let bearer: string
     try {
-      bearer = token(session)
+      bearer = mobileBearer || token(session!)
     } catch {
-      store.deleteSession(session.id)
+      if (session) store.deleteSession(session.id)
       throw new HttpError(401, 'Your session expired. Please sign in again.')
     }
     const me = await createAuthApi(upstream(bearer)).me()
-    if (!me?.success || !me.user || String(me.user.id) !== session.owner) {
-      store.deleteSession(session.id)
+    if (!me?.success || !me.user || (session && String(me.user.id) !== session.owner)) {
+      if (session) store.deleteSession(session.id)
       throw new HttpError(401, 'Your session expired. Please sign in again.')
+    }
+    if (!session && mobileSessionId) {
+      session = { id: mobileSessionId, owner: String(me.user.id), token: encrypt(bearer), expires: Date.now() + 7 * 86400_000 }
+      store.saveSession(session)
     }
     res.locals.session = session
     res.locals.user = me.user

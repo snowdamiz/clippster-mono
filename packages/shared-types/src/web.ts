@@ -4,6 +4,7 @@ import type { ManualFramingConfig } from './manualFraming';
 import type { SubtitleSettings } from './subtitle';
 import type { ClipTextBoxState } from './clipTextBox';
 import type { ActiveVodPresetConfig } from './editor';
+import type { CreatorSkillClaimEvidence, CreatorSkillPackage, CreatorSkillPreferences, CreatorSkillSoundScan } from './creatorSkill';
 export interface WebBranding {
   organizationId?: number;
   brandingProfileId?: number;
@@ -21,9 +22,32 @@ export interface WebBranding {
 
 /** Browser workspace records contain opaque IDs, never machine-local media paths. */
 export interface WebClip {
+  selectedVersion?: 'raw' | 'edited';
+  creatorSkill?: {
+    status: 'awaiting_approval' | 'queued' | 'editing' | 'rendering' | 'needs_review' | 'failed';
+    aiSessionId?: number;
+    timeline?: unknown;
+    thumbnailCandidates?: Array<{ index: number; sourceTime: number }>;
+    thumbnailVariants?: Array<{ index: number; headline: string }>;
+    captionsAvailable?: boolean;
+    contactSheetAvailable?: boolean;
+    phonePreviewAvailable?: boolean;
+    noMusicAvailable?: boolean;
+    tiktokSafeAvailable?: boolean;
+    tiktokCaptionsAvailable?: boolean;
+    rawClipMd5?: string;
+    masterMd5?: string;
+    speechDiffAvailable?: boolean;
+    soundScan?: CreatorSkillSoundScan;
+    sourceCaptures?: Array<{ index: number; url: string; title: string; kind: 'source' | 'brand'; fetchedAt: string; linkedLogoUrl?: string; screenshotAvailable?: boolean; pagePublishedAt?: string }>;
+    claimEvidence?: CreatorSkillClaimEvidence[];
+    playbookPackage?: CreatorSkillPackage;
+    creatorProfile?: { name: string; preferences: CreatorSkillPreferences };
+    reviewItems: string[];
+  };
   linkedProjectId?: string;
   detection?: { viralityScore?: number; confidenceScore?: number; reason?: string; promptName?: string; sessionId?: string };
-  builds?: Array<{ id: string; revision: number; aspectRatio: TargetAspectRatio; format: 'mp4' | 'mov'; completedAt: number; duration?: number; publishedAt?: number; organizationId?: number; campaignId?: number }>;
+  builds?: Array<{ id: string; revision: number; aspectRatio: TargetAspectRatio; format: 'mp4' | 'mov'; origin?: 'creator_skill'; completedAt: number; duration?: number; publishedAt?: number; organizationId?: number; campaignId?: number }>;
   id: string;
   name: string;
   segments: ClipSegment[];
@@ -67,7 +91,7 @@ export interface WebJob {
   clipId?: string;
   id: string;
   projectId: string;
-  kind: 'import' | 'detect' | 'transcribe' | 'build';
+  kind: 'import' | 'detect' | 'transcribe' | 'build' | 'creator_skill' | 'creator_skill_batch';
   status: 'queued' | 'running' | 'completed' | 'failed' | 'cancelled';
   progress: number;
   message: string;

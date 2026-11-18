@@ -127,7 +127,7 @@
   import * as videoApi from '@/ai-video/api';
   import CreateAIVideoProjectDialog from '@/ai-video/components/CreateAIVideoProjectDialog.vue';
   import { stashStartingSources, type StartingSources } from '@/ai-video/startingSources';
-  import type { SessionStatus, SessionSummary } from '@/ai-video/types';
+  import type { MotionGraphicsLevel, SessionStatus, SessionSummary } from '@/ai-video/types';
 
   const STATUS_LABELS: Record<SessionStatus, string> = { draft: 'Draft', working: 'Working', ready: 'Ready' };
 
@@ -232,10 +232,26 @@
     void router.push({ path: '/ai-video/session', query: { session: String(id) } });
   }
 
-  async function createProject({ name, ...sources }: { name: string } & StartingSources) {
+  async function createProject({
+    name,
+    creatorProfileId,
+    playbookEnabled,
+    motionGraphics,
+    ...sources
+  }: {
+    name: string;
+    creatorProfileId: number | null;
+    playbookEnabled: boolean;
+    motionGraphics: MotionGraphicsLevel;
+  } & StartingSources) {
     creating.value = true;
     try {
-      const created = await videoApi.createSession(name ? { name } : {});
+      const created = await videoApi.createSession({
+        ...(name ? { name } : {}),
+        creator_profile_id: creatorProfileId,
+        playbook_enabled: playbookEnabled,
+        motion_graphics: motionGraphics,
+      });
       if (sources.files.length || sources.example) stashStartingSources(created.id, sources);
       showCreateDialog.value = false;
       openProject(created.id);

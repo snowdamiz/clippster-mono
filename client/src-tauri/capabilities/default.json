@@ -50,6 +50,10 @@
     "fs:allow-rename",
     "fs:allow-exists",
     "fs:allow-mkdir",
+    {
+      "identifier": "fs:allow-stat",
+      "allow": [{ "path": "$VIDEO/**" }]
+    },
     "shell:default",
     "shell:allow-execute",
     "shell:allow-open",

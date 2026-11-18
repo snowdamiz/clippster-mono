@@ -1,5 +1,6 @@
 import layout from '../../../server/priv/email/layout.html?raw'
-import logoUrl from './logo.svg?url'
+import bodyStyles from '../../../server/priv/email/body-styles.txt?raw'
+import logoUrl from '../../../landing/public/email-brand.png?inline'
 
 export interface EmailContent {
   category: string
@@ -37,28 +38,22 @@ export function validButtonUrl(value: string): boolean {
   }
 }
 
-const fieldStyles = {
-  category: 'margin:0 0 18px;color:#38bdf8;font-size:11px;letter-spacing:1.8px;line-height:1.5',
-  heading:
-    'margin:0 0 26px;color:#eef0f4;font-size:32px;font-weight:600;letter-spacing:-0.7px;line-height:1.2',
-  message: 'margin:0 0 24px;color:#a1a9b7;font-size:15px;line-height:1.75',
-  signoff: 'margin:8px 0 0;color:#eef0f4;font-size:14px;line-height:1.75'
-}
+const styles = Object.fromEntries(bodyStyles.trim().split(/\r?\n/).map((line) => line.split('=')))
 
 /** Only escaped text and validated URLs enter generated campaign HTML. */
 export function renderBody(content: EmailContent, editing = false): string {
-  const field = (key: keyof typeof fieldStyles) => {
+  const field = (key: 'category' | 'heading' | 'message' | 'signoff') => {
     const text = escapeHtml(content[key])
     const tag = key === 'heading' ? 'h1' : 'p'
     return editing
-      ? `<textarea data-field="${key}" aria-label="Email ${key}" rows="1" style="${fieldStyles[key]}">${text}</textarea>`
-      : `<${tag} data-email-field="${key}" style="${fieldStyles[key]}">${text.replace(/\n/g, '<br>')}</${tag}>`
+      ? `<textarea class="email-${key}" data-field="${key}" aria-label="Email ${key}" rows="1" style="${styles[key]}">${text}</textarea>`
+      : `<${tag} class="email-${key}" data-email-field="${key}" style="${styles[key]}">${text.replace(/\n/g, '<br>')}</${tag}>`
   }
   const action = content.includeButton
-    ? `<div style="margin:0 0 24px">${
+    ? `<div style="${styles.action}">${
         editing
-          ? `<input data-field="button" aria-label="Button label" value="${escapeHtml(content.button)}" style="background:#eef0f4;color:#0b0d11;padding:14px 22px;border-radius:8px;font-size:14px;font-weight:600">`
-          : `<a data-email-field="button" href="${escapeHtml(validButtonUrl(content.url) ? content.url : 'https://clippster.app')}" style="display:inline-block;background-color:#eef0f4;color:#0b0d11;padding:14px 22px;border-radius:8px;font-size:14px;font-weight:600;text-decoration:none">${escapeHtml(content.button)}</a>`
+          ? `<input data-field="button" aria-label="Button label" value="${escapeHtml(content.button)}" style="${styles.button}">`
+          : `<a data-email-field="button" href="${escapeHtml(validButtonUrl(content.url) ? content.url : 'https://clippster.app')}" style="${styles.button}">${escapeHtml(content.button)}</a>`
       }</div>`
     : ''
   return field('category') + field('heading') + field('message') + action + field('signoff')
@@ -86,12 +81,18 @@ export function renderEmail(body: string, preheader: string, audience: string): 
     SUPPORT_EMAIL: 'support@clippster.app',
     REASON: escapeHtml(emailReason(audience)),
     UNSUBSCRIBE:
-      ' &nbsp;·&nbsp; <a href="#unsubscribe-preview" style="color:#a1a9b7">Unsubscribe</a>'
+      ' &nbsp;·&nbsp; <a href="#unsubscribe-preview" style="color:#80dcff">Unsubscribe</a>'
   }
   return layout
-    .replace('https://clippster.app/email-logo.png', escapeHtml(logoUrl))
+    .replace('https://clippster.app/email-brand.png', escapeHtml(logoUrl))
     .replace(
       /__(APP_NAME|PREHEADER|BODY|SUPPORT_EMAIL|REASON|UNSUBSCRIBE)__/g,
       (_, key: string) => slots[key]
     )
+}
+
+export function insertOffer(body: string, offerBlock?: string) {
+  if (!offerBlock) return body
+  const signoff = body.search(/<(?:p|textarea) class="email-signoff"/)
+  return signoff < 0 ? body + offerBlock : body.slice(0, signoff) + offerBlock + body.slice(signoff)
 }

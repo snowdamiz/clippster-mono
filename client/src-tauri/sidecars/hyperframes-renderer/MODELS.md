@@ -1,0 +1,7 @@
+# Local thumbnail models
+
+- `lib/blaze_face_short_range.tflite`: MediaPipe BlazeFace short-range detector, used to rank frames from the source VOD.
+- `lib/selfie_segmenter.tflite`: Google MediaPipe Selfie Segmentation model, downloaded from `https://storage.googleapis.com/mediapipe-models/image_segmenter/selfie_segmenter/float16/1/selfie_segmenter.tflite`. SHA-256: `191ac9529ae506ee0beefa6b2c945a172dab9d07d1e802a290a4e4038226658b`. The [model card](https://storage.googleapis.com/mediapipe-assets/Model%20Card%20MediaPipe%20Selfie%20Segmentation.pdf) lists Apache-2.0. It runs locally and creates a review draft; a human must inspect hair, hands, clothing, and background edges.
+- `lib/yamnet.tflite`: Google MediaPipe YAMNet AudioSet classifier, downloaded from `https://storage.googleapis.com/mediapipe-models/audio_classifier/yamnet/float32/1/yamnet.tflite`. SHA-256: `4d8b4a53282dc83ef04e3e7dbc4fbc98082e34e44ed798e16c3a0cdd4c584faf`. It runs locally on the finished master and flags possible coughs and throat clears for human review. See Google's [Audio Classifier sample](https://github.com/google-ai-edge/mediapipe-samples-web/blob/main/src/tasks/audio-classifier.ts) and TensorFlow's [YAMNet class map](https://github.com/tensorflow/models/blob/master/research/audioset/yamnet/yamnet_class_map.csv).
+
+The compact segmenter is not the playbook's BiRefNet portrait model. Its cutouts are review drafts rather than final approved thumbnail assets.

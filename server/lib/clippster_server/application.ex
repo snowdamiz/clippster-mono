@@ -90,6 +90,7 @@ defmodule ClippsterServer.Application do
         ClippsterServer.Organizations.SharedClipCleanupWorker,
         # Free tier monthly credit grant worker
         ClippsterServer.Workers.FreeTierCreditWorker,
+        ClippsterServer.AdminMessaging.SubscriptionOfferWorker,
         # Clipper profile workers
         ClippsterServer.ClipperProfiles.LeaderboardWorker,
         ClippsterServer.ClipperProfiles.BadgeWorker,

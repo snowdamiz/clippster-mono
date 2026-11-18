@@ -44,7 +44,7 @@ ARG TARGETARCH
 # (scripts/container-entrypoint.sh). Checksums are from each project's release.
 ARG TIGRISFS_VERSION=1.2.1
 ARG LITESTREAM_VERSION=0.5.17
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core python3 python3-venv ca-certificates tini util-linux fuse3 curl \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core python3 python3-venv ca-certificates tini util-linux fuse3 curl libnss3 libatk-bridge2.0-0 libx11-xcb1 libxcomposite1 libxdamage1 libxfixes3 libxrandr2 libgbm1 libasound2 libpango-1.0-0 libcairo2 \
     && python3 -m venv /opt/ytdlp \
     && /opt/ytdlp/bin/pip install --no-cache-dir 'yt-dlp[default,curl-cffi]==2026.8.19' \
     && rm -rf /var/lib/apt/lists/* \
@@ -82,6 +82,9 @@ COPY packages/api-client/ /repo/packages/api-client/
 COPY packages/cloud-sync-schema/ /repo/packages/cloud-sync-schema/
 COPY client/src/ /repo/client/src/
 COPY client/public/ /repo/client/public/
+COPY client/src-tauri/sidecars/hyperframes-renderer/ /repo/client/src-tauri/sidecars/hyperframes-renderer/
+RUN cd /repo/client/src-tauri/sidecars/hyperframes-renderer && npm install --omit=dev --no-audit --no-fund
+ENV WEB_HYPERFRAMES_SCRIPT=/repo/client/src-tauri/sidecars/hyperframes-renderer/index.mjs CLIPPSTER_FONTS_DIR=/repo/client/public/fonts HOME=/home/node
 RUN ln -s /repo/apps/web/node_modules /repo/node_modules
 EXPOSE 5175 8090
 CMD ["node", "scripts/dev.mjs"]
@@ -89,10 +92,15 @@ CMD ["node", "scripts/dev.mjs"]
 FROM media AS runtime
 ARG APP_REVISION=development
 ENV APP_REVISION=$APP_REVISION
-ENV NODE_ENV=production PORT=8080 HOST=0.0.0.0 WEB_DATA_DIR=/data
+ENV NODE_ENV=production PORT=8080 HOST=0.0.0.0 WEB_DATA_DIR=/data HOME=/home/node
 WORKDIR /app
 COPY apps/web/package.json apps/web/package-lock.json ./
 RUN npm ci --omit=dev --workspaces=false --no-audit --no-fund && npm cache clean --force
+COPY client/src-tauri/sidecars/hyperframes-renderer/ ./sidecar/
+RUN cd sidecar && npm install --omit=dev --no-audit --no-fund \
+    && chown -R node:node /home/node \
+    && su node -s /bin/sh -c 'node /app/sidecar/node_modules/hyperframes/bin/hyperframes.mjs browser ensure'
+ENV WEB_HYPERFRAMES_SCRIPT=/app/sidecar/index.mjs CLIPPSTER_FONTS_DIR=/usr/local/share/fonts/clippster
 COPY --from=build /repo/apps/web/dist ./dist
 EXPOSE 8080
 CMD ["node", "dist/server.mjs"]
