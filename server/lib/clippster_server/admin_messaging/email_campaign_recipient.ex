@@ -9,6 +9,8 @@ defmodule ClippsterServer.AdminMessaging.EmailCampaignRecipient do
     field :status, :string, default: "pending"
     field :sent_at, :utc_datetime
     field :error, :string
+    field :offer_code, :string
+    belongs_to :user, ClippsterServer.Accounts.User
 
     belongs_to :campaign, ClippsterServer.AdminMessaging.EmailCampaign
 
@@ -19,12 +21,13 @@ defmodule ClippsterServer.AdminMessaging.EmailCampaignRecipient do
 
   def changeset(recipient, attrs) do
     recipient
-    |> cast(attrs, [:campaign_id, :email, :status, :sent_at, :error])
+    |> cast(attrs, [:campaign_id, :email, :status, :sent_at, :error, :user_id, :offer_code])
     |> normalize_email()
     |> validate_required([:campaign_id, :email, :status])
     |> EmailAddress.validate_email()
     |> validate_inclusion(:status, @valid_statuses)
     |> unique_constraint([:campaign_id, :email])
+    |> unique_constraint(:offer_code)
   end
 
   defp normalize_email(changeset) do

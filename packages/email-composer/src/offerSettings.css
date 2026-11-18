@@ -1,0 +1,83 @@
+.subscription-offer-settings {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 300px), 1fr));
+  color: #e2edf9;
+  font: 13px/1.5 Arial, Helvetica, sans-serif;
+}
+.subscription-offer-settings fieldset {
+  border: 1px solid #2c3b50;
+  border-radius: 8px;
+  padding: 10px 14px 14px;
+  min-width: 0;
+}
+.subscription-offer-settings legend {
+  padding: 0 5px;
+  font-weight: 700;
+}
+.subscription-offer-fields {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+  gap: 8px 12px;
+}
+.subscription-offer-settings label {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+.subscription-offer-settings input:not([type='checkbox']),
+.subscription-offer-settings select {
+  width: 100%;
+  border: 1px solid #3b4b61;
+  background: #0c131e;
+  color: #f3f7ff;
+  padding: 7px 8px;
+  border-radius: 6px;
+  font: inherit;
+  color-scheme: dark;
+}
+.subscription-offer-settings [data-picker] {
+  margin-top: 8px;
+}
+.subscription-offer-checks {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  margin-top: 12px;
+}
+.subscription-offer-checks label,
+.subscription-offer-list label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+.subscription-offer-list {
+  overflow: auto;
+  max-height: 190px;
+  margin: 6px 0;
+  overflow-wrap: anywhere;
+}
+.subscription-offer-settings p {
+  margin: 8px 0 0;
+  color: #b9c7d8;
+}
+.subscription-offer-results {
+  max-height: 55vh;
+  overflow: auto;
+}
+.subscription-offer-results table {
+  width: 100%;
+  border-collapse: collapse;
+}
+.subscription-offer-results th,
+.subscription-offer-results td {
+  padding: 8px;
+  text-align: left;
+  border-bottom: 1px solid #2c3b50;
+  overflow-wrap: anywhere;
+}
+.subscription-offer-results small {
+  display: block;
+  color: #b9c7d8;
+}

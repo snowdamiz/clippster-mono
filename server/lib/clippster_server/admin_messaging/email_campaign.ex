@@ -8,6 +8,8 @@ defmodule ClippsterServer.AdminMessaging.EmailCampaign do
     field :preheader, :string
     field :audience, :string
     field :target_email, :string
+    field :offer, :map
+    field :stripe_coupon_id, :string
     field :sent_at, :utc_datetime
     field :recipient_count, :integer, default: 0
     field :sent_count, :integer, default: 0
@@ -23,7 +25,7 @@ defmodule ClippsterServer.AdminMessaging.EmailCampaign do
     timestamps(type: :utc_datetime)
   end
 
-  @valid_audiences ~w(waitlist all_users individual)
+  @valid_audiences ~w(waitlist all_users individual never_subscribed win_back)
   @valid_statuses ~w(draft sending sent partial_failed failed)
 
   def changeset(campaign, attrs) do
@@ -34,6 +36,8 @@ defmodule ClippsterServer.AdminMessaging.EmailCampaign do
       :preheader,
       :audience,
       :target_email,
+      :offer,
+      :stripe_coupon_id,
       :sent_by,
       :sent_at,
       :recipient_count,

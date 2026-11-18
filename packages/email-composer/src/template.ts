@@ -90,3 +90,9 @@ export function renderEmail(body: string, preheader: string, audience: string): 
       (_, key: string) => slots[key]
     )
 }
+
+export function insertOffer(body: string, offerBlock?: string) {
+  if (!offerBlock) return body
+  const signoff = body.search(/<(?:p|textarea) class="email-signoff"/)
+  return signoff < 0 ? body + offerBlock : body.slice(0, signoff) + offerBlock + body.slice(signoff)
+}

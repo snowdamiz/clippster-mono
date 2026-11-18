@@ -1,7 +1,7 @@
 <template>
   <PageLayout
     title="Messaging"
-    description="Send emails to waitlist members, all users, or individual users"
+    description="Send announcements and subscription offers"
     :icon="Mail"
     :breadcrumbs="[{ label: 'Admin', path: '/admin' }, { label: 'Messaging' }]"
   >
@@ -29,7 +29,7 @@
                 <span v-if="previewError" class="text-danger">{{ previewError }}</span>
                 <span v-else class="tabular text-fg-muted">
                   {{ audienceDescription }} ·
-                  <span class="text-fg">{{ recipientPreview.recipient_count }}</span>
+                  <span class="text-fg">{{ deliverableCount }}</span>
                   deliverable
                   <span v-if="recipientPreview.suppressed_count > 0" class="text-fg-subtle">
                     · {{ recipientPreview.suppressed_count }} suppressed
@@ -48,6 +48,7 @@
               </span>
             </div>
           </Field>
+          <div v-if="offerActive" :key="form.audience" ref="offerHost" />
 
           <div class="grid grid-cols-[repeat(auto-fit,minmax(240px,1fr))] gap-3">
             <Field v-if="form.audience === 'individual'" label="Recipient email" for="msg-target" class="col-span-full">
@@ -66,6 +67,7 @@
             :subject="form.subject"
             :preheader="form.preheader"
             :audience="form.audience"
+            :offer-block="offerBlock"
             @valid="contentValid = $event"
           />
         </div>
@@ -135,11 +137,14 @@
           </template>
           <template #actions="{ row: campaign }">
             <AdminRowActions
-              v-if="campaign.failed_count > 0 && campaign.status !== 'sending'"
+              v-if="campaign.offer || (campaign.failed_count > 0 && campaign.status !== 'sending')"
               :label="`Actions for ${campaign.subject}`"
               :loading="retryingCampaignId === campaign.id"
             >
-              <AdminActionItem :icon="RotateCcw" @select="retryFailedCampaign(campaign)">
+              <AdminActionItem v-if="campaign.offer" :icon="Mail" @select="openOfferReport(campaign.id)">
+                View redemptions
+              </AdminActionItem>
+              <AdminActionItem v-if="campaign.failed_count > 0 && campaign.status !== 'sending'" :icon="RotateCcw" @select="retryFailedCampaign(campaign)">
                 Retry {{ campaign.failed_count }} failed
               </AdminActionItem>
             </AdminRowActions>
@@ -165,6 +170,7 @@
         {{ recipientPreview.suppressed_count }} suppressed email{{ recipientPreview.suppressed_count === 1 ? '' : 's' }}
         will be skipped.
       </p>
+      <div v-if="offerActive" v-html="recipientReviewHtml" />
       <iframe
         title="Final email preview"
         sandbox="allow-same-origin"
@@ -175,6 +181,14 @@
       <template #footer>
         <Button variant="ghost" @click="showConfirm = false">Cancel</Button>
         <Button variant="primary" :disabled="!canSend || sending" @click="sendCampaign">Send now</Button>
+      </template>
+    </Modal>
+    <Modal v-model:open="showOfferReport" title="Offer results" :icon="Mail" size="xl">
+      <p v-if="reportError">{{ reportError }}</p>
+      <div v-else-if="offerReport" v-html="renderOfferReport(offerReport)" />
+      <p v-else>Loading results…</p>
+      <template #footer>
+        <Button variant="secondary" @click="openOfferReport(reportId)">Refresh</Button>
       </template>
     </Modal>
   </PageLayout>
@@ -194,7 +208,9 @@
   import { SegmentedControl, type SegmentedOption } from '@/components/ui/segmented-control';
   import { AdminActionItem, AdminRowActions, formatStatus, statusVariant } from '@/components/admin/shared';
   import EmailTemplateEditor from '@/components/admin/EmailTemplateEditor.vue';
-  import { DEFAULT_EMAIL, renderEmail } from '../../../../packages/email-composer/src/template';
+  import { DEFAULT_EMAIL, insertOffer, renderEmail } from '../../../../packages/email-composer/src/template';
+  import { isOfferAudience, offerAudiences, offerDefaults, previewOffer, validOffer, type OfferPlanPrice, type OfferRecipient, type OfferReport } from '../../../../packages/email-composer/src/subscriptionOffer';
+  import { mountOfferSettings, renderOfferReport, renderRecipientReview } from '../../../../packages/email-composer/src/offerSettings';
   import { styleEmailPreview } from '../../../../packages/email-composer/src/preview';
   import { SectionCard } from '@/components/ui/section-card';
   import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
@@ -212,6 +228,7 @@
       preheader: DEFAULT_EMAIL.preheader,
       body: DEFAULT_EMAIL.body,
       testEmail: '',
+      offer: offerDefaults('never_subscribed').offer,
     };
   }
 
@@ -226,11 +243,29 @@
   const loadingPreview = ref(false);
   const previewError = ref('');
   const recipientPreview = ref({ requested_count: 0, recipient_count: 0, suppressed_count: 0, sample: [] as string[] });
+  const offerRecipients = ref<OfferRecipient[]>([]);
+  const offerSuppressed = ref<OfferRecipient[]>([]);
+  const offerPlans = ref<OfferPlanPrice[]>([]);
+  const selectedIds = ref<number[] | null>(null);
+  const offerActive = computed(() => isOfferAudience(form.value.audience));
+  const offerBlock = computed(() => offerActive.value ? previewOffer(form.value.offer) : undefined);
+  const selectedRecipients = computed(() => selectedIds.value === null
+    ? offerRecipients.value
+    : offerRecipients.value.filter(recipient => selectedIds.value?.includes(recipient.user_id)));
+  const deliverableCount = computed(() => offerActive.value ? selectedRecipients.value.length : recipientPreview.value.recipient_count);
+  const recipientReviewHtml = computed(() => renderRecipientReview(selectedRecipients.value, offerSuppressed.value));
+  const offerHost = ref<HTMLElement>();
+  const showOfferReport = ref(false);
+  const offerReport = ref<OfferReport>();
+  const reportId = ref(0);
+  const reportError = ref('');
+  let previewRequest = 0;
 
   const audienceOptions = [
     { value: 'all_users', label: 'All users', desc: 'Every registered user', icon: Users },
     { value: 'waitlist', label: 'Waitlist', desc: 'Waitlist signups only', icon: UserPlus },
     { value: 'individual', label: 'Individual', desc: 'Single email address', icon: User },
+    ...offerAudiences.map(option => ({ ...option, icon: Users })),
   ];
 
   const audienceSegments: SegmentedOption<string>[] = audienceOptions.map((option) => ({
@@ -267,21 +302,37 @@
     )
       return false;
     if (form.value.audience === 'individual' && !form.value.targetEmail.trim()) return false;
-    if (recipientPreview.value.recipient_count <= 0) return false;
+    if (offerActive.value && !validOffer(form.value.offer)) return false;
+    if (deliverableCount.value <= 0) return false;
     return true;
   });
 
   const canSendTest = computed(
     () => contentValid.value && !!form.value.subject.trim() && !!form.value.body.trim() && !!form.value.testEmail.trim()
+      && (!offerActive.value || validOffer(form.value.offer))
   );
 
   const confirmRecipientText = computed(() => {
     if (form.value.audience === 'all_users') return `${recipientPreview.value.recipient_count} registered users`;
     if (form.value.audience === 'waitlist') return `${recipientPreview.value.recipient_count} waitlist members`;
+    if (offerActive.value) return `${deliverableCount.value} eligible users`;
     return form.value.targetEmail;
   });
 
-  const emailPreviewHtml = computed(() => renderEmail(form.value.body, form.value.preheader, form.value.audience));
+  const emailPreviewHtml = computed(() => renderEmail(insertOffer(form.value.body, offerBlock.value), form.value.preheader, form.value.audience));
+
+  async function openOfferReport(id: number) {
+    reportId.value = id;
+    offerReport.value = undefined;
+    reportError.value = '';
+    showOfferReport.value = true;
+    try {
+      const res = await api.get<OfferReport>(`/admin/messaging/campaigns/${id}/recipients`);
+      if (reportId.value === id) offerReport.value = res.data;
+    } catch {
+      if (reportId.value === id) reportError.value = 'Could not load offer results.';
+    }
+  }
 
   function onEmailPreviewLoad(event: Event) {
     styleEmailPreview(event.currentTarget as HTMLIFrameElement);
@@ -300,13 +351,17 @@
     showConfirm.value = false;
     sending.value = true;
     try {
-      const payload: Record<string, string> = {
+      const payload: Record<string, unknown> = {
         subject: form.value.subject,
         preheader: form.value.preheader,
         body: form.value.body,
         audience: form.value.audience,
       };
       if (form.value.audience === 'individual') payload.target_email = form.value.targetEmail;
+      if (offerActive.value) {
+        payload.offer = form.value.offer;
+        payload.recipient_ids = selectedRecipients.value.map(user => user.user_id);
+      }
       const res = await api.post('/admin/messaging/send', payload);
       success(res.data.message ?? 'Campaign sent successfully');
       form.value = defaultForm();
@@ -330,6 +385,7 @@
         body: form.value.body,
         test_email: form.value.testEmail,
         audience: form.value.audience,
+        ...(offerActive.value ? { offer: form.value.offer } : {}),
       });
       success(`Test email sent to ${form.value.testEmail}`);
     } catch (err: any) {
@@ -362,12 +418,17 @@
   }
 
   async function fetchPreview() {
+    const request = ++previewRequest;
     loadingPreview.value = true;
     previewError.value = '';
     try {
       const payload: Record<string, string> = { audience: form.value.audience };
       if (form.value.audience === 'individual') payload.target_email = form.value.targetEmail;
       const res = await api.post('/admin/messaging/preview', payload);
+      if (request !== previewRequest) return;
+      offerRecipients.value = res.data.recipients ?? [];
+      offerSuppressed.value = res.data.suppressed ?? [];
+      offerPlans.value = res.data.plans ?? [];
       recipientPreview.value = {
         requested_count: res.data.requested_count ?? 0,
         recipient_count: res.data.recipient_count ?? 0,
@@ -375,10 +436,14 @@
         sample: res.data.sample ?? [],
       };
     } catch (err: any) {
+      if (request !== previewRequest) return;
+      offerRecipients.value = [];
+      offerSuppressed.value = [];
+      offerPlans.value = [];
       recipientPreview.value = { requested_count: 0, recipient_count: 0, suppressed_count: 0, sample: [] };
       previewError.value = err?.response?.data?.error ?? 'Failed to resolve recipients';
     } finally {
-      loadingPreview.value = false;
+      if (request === previewRequest) loadingPreview.value = false;
     }
   }
 
@@ -393,6 +458,29 @@
       loadingHistory.value = false;
     }
   }
+
+  watch(
+    () => form.value.audience,
+    (audience, previous) => {
+      selectedIds.value = null;
+      offerRecipients.value = [];
+      offerSuppressed.value = [];
+      offerPlans.value = [];
+      if (isOfferAudience(audience)) Object.assign(form.value, offerDefaults(audience));
+      else if (isOfferAudience(previous)) Object.assign(form.value, DEFAULT_EMAIL);
+      contentValid.value = true;
+    }
+  );
+
+  watch(offerHost, (host, _, cleanup) => {
+    if (!host) return;
+    const settings = mountOfferSettings(host, offer => { form.value.offer = offer; }, ids => { selectedIds.value = ids; });
+    const stop = watch(
+      () => ({ offer: form.value.offer, recipients: offerRecipients.value, selectedIds: selectedIds.value, plans: offerPlans.value }),
+      props => settings.update(props), { immediate: true }
+    );
+    cleanup(() => { stop(); settings.destroy(); });
+  });
 
   watch(
     () => [form.value.audience, form.value.targetEmail],

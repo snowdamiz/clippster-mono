@@ -13,6 +13,7 @@ defmodule ClippsterServer.Subscriptions.Subscription do
     field :subscription_tier, :string
     field :start_date, :utc_datetime
     field :end_date, :utc_datetime
+    field :cancelled_at, :utc_datetime
     field :hours_included, :decimal
     field :credits_granted, :decimal
     # stripe, crypto
@@ -51,7 +52,7 @@ defmodule ClippsterServer.Subscriptions.Subscription do
       :payment_method
     ])
     |> validate_inclusion(:status, ["active", "expired", "cancelled"])
-    |> validate_inclusion(:subscription_tier, ["starter", "creator", "pro"])
+    |> validate_inclusion(:subscription_tier, ["basic", "starter", "creator", "pro"])
     |> validate_inclusion(:payment_method, ["stripe", "crypto", "trial", "admin"])
     |> foreign_key_constraint(:user_id)
   end

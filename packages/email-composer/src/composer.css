@@ -164,6 +164,12 @@
 .email-composer[data-preview='true'] .email-composer-options {
   display: none;
 }
+.email-composer[data-offer='true'] .email-composer-workspace {
+  grid-template-columns: minmax(0, 1fr);
+}
+.email-composer[data-offer='true'] .email-composer-options {
+  display: none;
+}
 .email-composer[data-mobile='true'] .email-composer-document,
 .email-composer[data-mobile='true'] .email-composer-preview,
 .email-composer[data-mobile='true'] .email-composer-inbox {

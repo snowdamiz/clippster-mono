@@ -1,4 +1,4 @@
-import { defaultContent, escapeHtml, renderBody, renderEmail, validButtonUrl } from './template'
+import { defaultContent, escapeHtml, insertOffer, renderBody, renderEmail, validButtonUrl } from './template'
 import type { EmailContent } from './template'
 import { applyEmailStyles, styleEmailPreview } from './preview'
 import './composer.css'
@@ -8,6 +8,7 @@ export interface ComposerProps {
   subject: string
   preheader: string
   audience: string
+  offerBlock?: string
 }
 
 /** Framework-independent editor shared by the Vue desktop and React web admin. */
@@ -52,7 +53,7 @@ export function mountEmailComposer(
   }
   function drawEditor() {
     // Only our generated template is inserted into the admin document, never arbitrary campaign HTML.
-    const html = renderEmail(renderBody(content, true), props.preheader, props.audience)
+    const html = renderEmail(insertOffer(renderBody(content, true), props.offerBlock), props.preheader, props.audience)
     documentEl.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML
     applyEmailStyles(documentEl)
     buttonOption.checked = content.includeButton
@@ -62,7 +63,7 @@ export function mountEmailComposer(
   }
   function drawPreview() {
     inbox.innerHTML = `<strong>${escapeHtml(props.subject)}</strong><span>Clippster &lt;updates@clippster.app&gt;</span><span>${escapeHtml(props.preheader)}</span>`
-    frame.srcdoc = renderEmail(lastBody, props.preheader, props.audience)
+    frame.srcdoc = renderEmail(insertOffer(lastBody, props.offerBlock), props.preheader, props.audience)
   }
   function fitPreview() {
     const shell = frame.contentDocument?.querySelector('.email-shell')
@@ -152,13 +153,14 @@ export function mountEmailComposer(
   })
   observer.observe(host)
   function update(next: ComposerProps) {
-    const audienceChanged = next.audience !== props.audience
+    const layoutChanged = next.audience !== props.audience || next.offerBlock !== props.offerBlock
     props = next
+    host.dataset.offer = String(!!next.offerBlock)
     if (next.body !== lastBody) {
       lastBody = next.body
       readBody(next.body)
       drawEditor()
-    } else if (audienceChanged) drawEditor()
+    } else if (layoutChanged) drawEditor()
     if (preview) drawPreview()
   }
   update(initial)
