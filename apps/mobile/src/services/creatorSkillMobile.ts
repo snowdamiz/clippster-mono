@@ -20,14 +20,14 @@ export interface MobileCreatorSkillState {
   editedAspectRatio?: '9:16' | '16:9'
   playbookPackage?: CreatorSkillPackage
   masterMd5?: string
-  thumbnailVariants?: Array<{ index: number; headline: string }>
-  thumbnailCandidates?: Array<{ index: number; sourceTime: number }>
+  thumbnailVariants?: { index: number; headline: string }[]
+  thumbnailCandidates?: { index: number; sourceTime: number }[]
   contactSheetAvailable?: boolean
   phonePreviewAvailable?: boolean
   noMusicAvailable?: boolean
   tiktokSafeAvailable?: boolean
   tiktokCaptionsAvailable?: boolean
-  sourceCaptures?: Array<{ index: number; url: string; title: string; kind: 'source' | 'brand'; fetchedAt: string; screenshotAvailable?: boolean; pagePublishedAt?: string }>
+  sourceCaptures?: { index: number; url: string; title: string; kind: 'source' | 'brand'; fetchedAt: string; screenshotAvailable?: boolean; pagePublishedAt?: string }[]
   claimEvidence?: CreatorSkillClaimEvidence[]
   reviewItems: string[]
 }
@@ -94,11 +94,11 @@ export async function signOffMobileCreatorSkillReview(clipId: string, input: { r
   return next
 }
 
-function transcriptWords(rawJson: string): Array<{ word: string; start: number; end: number }> {
+function transcriptWords(rawJson: string): { word: string; start: number; end: number }[] {
   let parsed: unknown
   try { parsed = JSON.parse(rawJson) } catch { return [] }
   if (!parsed || typeof parsed !== 'object') return []
-  const transcript = parsed as { words?: unknown[]; segments?: Array<{ words?: unknown[]; text?: string; start?: number; end?: number }> }
+  const transcript = parsed as { words?: unknown[]; segments?: { words?: unknown[]; text?: string; start?: number; end?: number }[] }
   const words = transcript.words?.length ? transcript.words : transcript.segments?.flatMap(segment => segment.words?.length ? segment.words : [segment]) ?? []
   return words.flatMap(value => {
     if (!value || typeof value !== 'object') return []

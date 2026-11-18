@@ -10,6 +10,7 @@ on:
       - '.github/actions/**'
       - '.github/workflows/desktop.yml'
       - '.github/workflows/release.yml'
+      - '.node-version'
   workflow_call:
   workflow_dispatch:
 permissions:

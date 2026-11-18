@@ -94,7 +94,7 @@ export async function ensureCreatorSkillWebProject(localProjectId: string, name:
   }
 }
 
-export function setCreatorSkillWebTranscript(projectId: string, words: Array<{ word: string; start: number; end: number }>, signal?: AbortSignal) {
+export function setCreatorSkillWebTranscript(projectId: string, words: { word: string; start: number; end: number }[], signal?: AbortSignal) {
   return request<WebWorkspace>(`/projects/${projectId}/transcript`, 'POST', { words }, signal)
 }
 
@@ -116,7 +116,7 @@ export function signOffCreatorSkillWebReview(projectId: string, clipId: string, 
   return request<WebWorkspace>(`/projects/${projectId}/clips/${clipId}/creator-skill/independent-signoff`, 'PATCH', input)
 }
 
-export function addCreatorSkillWebClip(projectId: string, clip: { name: string; segments: Array<{ start_time: number; end_time: number }> }, signal?: AbortSignal) {
+export function addCreatorSkillWebClip(projectId: string, clip: { name: string; segments: { start_time: number; end_time: number }[] }, signal?: AbortSignal) {
   const duration = clip.segments.reduce((total, segment) => total + Math.max(0, segment.end_time - segment.start_time), 0)
   return request<WebWorkspace>(`/projects/${projectId}/clips`, 'POST', { ...clip, aspectRatio: creatorSkillFormatForDuration(duration), captions: false }, signal)
 }

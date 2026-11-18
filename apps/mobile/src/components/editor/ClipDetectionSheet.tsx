@@ -39,7 +39,7 @@ export function ClipDetectionSheet({ visible, videoDuration, starting, onClose, 
   const [subtitlePresetId, setSubtitlePresetId] = useState(DEFAULT_CAPTION_PRESET_ID)
   const [creatorSkillEnabled, setCreatorSkillEnabled] = useState(false)
   const [creatorSkillCredits, setCreatorSkillCredits] = useState<number | null>(null)
-  const [creatorProfiles, setCreatorProfiles] = useState<Array<{ id: number; name: string }>>([])
+  const [creatorProfiles, setCreatorProfiles] = useState<{ id: number; name: string }[]>([])
   const [creatorProfileId, setCreatorProfileId] = useState<number | null>(null)
 
   useEffect(() => {

@@ -122,7 +122,7 @@ function ClipAdjustWorkspace({
   const [claimReviewSaving, setClaimReviewSaving] = useState(false)
   const [skillRetrying, setSkillRetrying] = useState(false)
   const [skillProfilePickerVisible, setSkillProfilePickerVisible] = useState(false)
-  const [skillProfiles, setSkillProfiles] = useState<Array<{ id: number; name: string }>>([])
+  const [skillProfiles, setSkillProfiles] = useState<{ id: number; name: string }[]>([])
   const [skillProfileId, setSkillProfileId] = useState<number | null>(null)
   const scrollRef = useRef<ScrollView>(null)
 
@@ -872,7 +872,7 @@ function ClipAdjustWorkspace({
       </SafeAreaView>
 
       <BottomSheet visible={skillProfilePickerVisible} title="Creator profile for this edit" onClose={() => setSkillProfilePickerVisible(false)} primaryAction={{ title: 'Review AI edit cost', onPress: () => { setSkillProfilePickerVisible(false); void requestSkillEdit(false, skillProfileId) } }}>
-        <Text className="text-sm text-muted">Optional. Saved branding, editing rules, sponsor details, and selected intro or outro assets for the clip's format are used only when a profile is chosen.</Text>
+        <Text className="text-sm text-muted">Optional. Saved branding, editing rules, sponsor details, and selected intro or outro assets for the clip&apos;s format are used only when a profile is chosen.</Text>
         {[{ id: null, name: 'No creator profile' }, ...skillProfiles].map(profile => <Pressable key={profile.id ?? 'none'} accessibilityRole="button" accessibilityState={{ selected: skillProfileId === profile.id }} onPress={() => setSkillProfileId(profile.id)} className={`mt-2 rounded-lg border px-3 py-2 ${skillProfileId === profile.id ? 'border-accent bg-accent/10' : 'border-border'}`}><Text className="text-sm text-foreground">{profile.name}</Text></Pressable>)}
       </BottomSheet>
 
