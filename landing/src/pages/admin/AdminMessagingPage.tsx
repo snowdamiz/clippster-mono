@@ -5,6 +5,7 @@ import { api } from '@/lib/api'
 import './AdminMessagingPage.css'
 import { EmailTemplateEditor } from '@/components/admin/EmailTemplateEditor'
 import { DEFAULT_EMAIL, renderEmail } from '../../../../packages/email-composer/src/template'
+import { styleEmailPreview } from '../../../../packages/email-composer/src/preview'
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -501,8 +502,9 @@ export function AdminMessagingPage() {
               )}
               <iframe
                 title="Final email preview"
-                sandbox=""
+                sandbox="allow-same-origin"
                 srcDoc={emailPreviewHtml}
+                onLoad={(event) => styleEmailPreview(event.currentTarget)}
                 className="admin-msg__final-preview"
               />
               <div className="msg-modal__actions">

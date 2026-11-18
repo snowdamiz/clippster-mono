@@ -167,8 +167,9 @@
       </p>
       <iframe
         title="Final email preview"
-        sandbox=""
+        sandbox="allow-same-origin"
         :srcdoc="emailPreviewHtml"
+        @load="onEmailPreviewLoad"
         class="h-[65vh] w-full rounded-lg border border-line"
       />
       <template #footer>
@@ -194,6 +195,7 @@
   import { AdminActionItem, AdminRowActions, formatStatus, statusVariant } from '@/components/admin/shared';
   import EmailTemplateEditor from '@/components/admin/EmailTemplateEditor.vue';
   import { DEFAULT_EMAIL, renderEmail } from '../../../../packages/email-composer/src/template';
+  import { styleEmailPreview } from '../../../../packages/email-composer/src/preview';
   import { SectionCard } from '@/components/ui/section-card';
   import { DataTable, type DataTableColumn } from '@/components/ui/data-table';
   import api from '@/services/api';
@@ -280,6 +282,10 @@
   });
 
   const emailPreviewHtml = computed(() => renderEmail(form.value.body, form.value.preheader, form.value.audience));
+
+  function onEmailPreviewLoad(event: Event) {
+    styleEmailPreview(event.currentTarget as HTMLIFrameElement);
+  }
 
   function audienceLabel(a: string) {
     return audienceOptions.find((o) => o.value === a)?.label ?? a;

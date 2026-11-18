@@ -1,5 +1,6 @@
 import { defaultContent, escapeHtml, renderBody, renderEmail, validButtonUrl } from './template'
 import type { EmailContent } from './template'
+import { applyEmailStyles, styleEmailPreview } from './preview'
 import './composer.css'
 
 export interface ComposerProps {
@@ -53,6 +54,7 @@ export function mountEmailComposer(
     // Only our generated template is inserted into the admin document, never arbitrary campaign HTML.
     const html = renderEmail(renderBody(content, true), props.preheader, props.audience)
     documentEl.innerHTML = new DOMParser().parseFromString(html, 'text/html').body.innerHTML
+    applyEmailStyles(documentEl)
     buttonOption.checked = content.includeButton
     urlOption.value = content.url
     urlOption.disabled = !content.includeButton
@@ -61,6 +63,10 @@ export function mountEmailComposer(
   function drawPreview() {
     inbox.innerHTML = `<strong>${escapeHtml(props.subject)}</strong><span>Clippster &lt;updates@clippster.app&gt;</span><span>${escapeHtml(props.preheader)}</span>`
     frame.srcdoc = renderEmail(lastBody, props.preheader, props.audience)
+  }
+  function fitPreview() {
+    const shell = frame.contentDocument?.querySelector('.email-shell')
+    if (shell) frame.style.height = `${Math.ceil(shell.getBoundingClientRect().height)}px`
   }
   function emit() {
     lastBody = renderBody(content)
@@ -126,7 +132,8 @@ export function mountEmailComposer(
         host
           .querySelectorAll<HTMLButtonElement>('[data-width]')
           .forEach((button) => button.setAttribute('aria-pressed', String(button === width)))
-        fit()
+        if (preview) fitPreview()
+        else fit()
       }
     },
     { signal }
@@ -134,23 +141,14 @@ export function mountEmailComposer(
   frame.addEventListener(
     'load',
     () => {
-      const doc = frame.contentDocument
-      if (!doc) return
-      doc.addEventListener(
-        'click',
-        (event) => {
-          if ((event.target as Element).closest('a')) event.preventDefault()
-        },
-        { signal }
-      )
-      frame.style.height = `${Math.max(650, (doc.documentElement?.scrollHeight ?? 0) + 4)}px`
+      styleEmailPreview(frame)
+      fitPreview()
     },
     { signal }
   )
   const observer = new ResizeObserver(() => {
     if (!preview) fit()
-    else if (frame.contentDocument?.documentElement)
-      frame.style.height = `${Math.max(650, frame.contentDocument.documentElement.scrollHeight + 4)}px`
+    else fitPreview()
   })
   observer.observe(host)
   function update(next: ComposerProps) {
