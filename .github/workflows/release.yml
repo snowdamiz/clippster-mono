@@ -16,9 +16,12 @@ jobs:
   verify-desktop:
     uses: ./.github/workflows/desktop.yml
 
+  verify-mobile:
+    uses: ./.github/workflows/mobile-ci.yml
+
   # First, create a draft release and build frontend (shared across all platforms)
   create-release:
-    needs: [verify-web, verify-desktop]
+    needs: [verify-web, verify-desktop, verify-mobile]
     runs-on: ubuntu-latest
     outputs:
       version: ${{ steps.get_version.outputs.version }}

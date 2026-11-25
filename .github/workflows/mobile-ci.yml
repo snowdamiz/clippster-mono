@@ -1,26 +1,7 @@
 name: Mobile CI
 
 on:
-  push:
-    paths:
-      - 'apps/mobile/**'
-      - 'packages/**'
-      - 'scripts/setup-ffmpeg-*.mjs'
-      - 'patches/ffmpeg-expo*'
-      - 'package.json'
-      - 'yarn.lock'
-      - '.node-version'
-      - '.github/workflows/mobile-ci.yml'
-  pull_request:
-    paths:
-      - 'apps/mobile/**'
-      - 'packages/**'
-      - 'scripts/setup-ffmpeg-*.mjs'
-      - 'patches/ffmpeg-expo*'
-      - 'package.json'
-      - 'yarn.lock'
-      - '.node-version'
-      - '.github/workflows/mobile-ci.yml'
+  workflow_call:
 
 jobs:
   typecheck:

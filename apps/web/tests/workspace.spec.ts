@@ -1,4 +1,4 @@
-import { test, expect } from './browser-fixture'
+import { test, expect, expectExpandedTimeline } from './browser-fixture'
 import { execFileSync } from 'node:child_process'
 import { readFileSync, mkdirSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -17,7 +17,7 @@ test('dedicated workspace uses desktop timeline, framing, export and persisted d
   await expect(page.locator('video').first()).toHaveJSProperty('readyState', 4)
   await expect(page.getByTitle('Zoom in', {exact:true})).toBeVisible()
   await expect(page.getByTitle('Add new clip (N key)')).toBeVisible()
-  expect((await page.locator('.workspace-dialog__timeline').boundingBox())!.height).toBeGreaterThanOrEqual(210)
+  await expectExpandedTimeline(page)
   const trackStyle = await page.locator('[data-video-track]').evaluate(element => ({ height: element.getBoundingClientRect().height, border: getComputedStyle(element.parentElement!.parentElement!).borderBottomColor }))
   expect(trackStyle.height).toBe(32)
   expect(trackStyle.border).not.toBe('rgb(255, 255, 255)')
