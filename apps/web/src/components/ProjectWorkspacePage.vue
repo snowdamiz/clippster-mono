@@ -267,7 +267,7 @@
   const unregister = registerWorkspace({ project: () => props.project, update: workspace => emit('workspaceUpdated', workspace) })
   onUnmounted(unregister)
   async function refreshWorkspace() { emit('workspaceUpdated', await projects.get(props.project.id)) }
-  async function selectById(id: string) { const clip = props.project.clips.find(clip => clip.id === id); if (clip) { select(clip); timeline.value?.revealClip(id); await nextTick(); timeline.value?.scrollTimelineClipIntoView(id) } }
+  async function selectById(id: string) { const clip = props.project.clips.find(clip => clip.id === id); if (clip) { select(clip); await nextTick(); timeline.value?.scrollTimelineClipIntoView(id) } }
   function seekTimeline(event: MouseEvent) { const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect(); seekSource(Math.max(0, Math.min(1, (event.clientX - bounds.left) / bounds.width)) * props.project.duration) }
   function hoverTimeline(event: MouseEvent) { const bounds = (event.currentTarget as HTMLElement).getBoundingClientRect(); timelineHoverPosition.value = event.clientX - bounds.left; timelineHoverTime.value = Math.max(0, Math.min(1, timelineHoverPosition.value / bounds.width)) * props.project.duration }
   function playFromTime(time: number) { videoState.restore(time, true) }
@@ -275,6 +275,10 @@
   const loading = ref(false)
   const videoError = ref<string | null>(null)
   const selectedId = ref<string | null>(null)
+  watch([selectedId, timeline], ([id, track]) => {
+    if (id) track?.revealClip(id)
+    else track?.hideAllClips()
+  }, { flush: 'post' })
   const panel = ref('clips')
   const showDetailedProgress = ref(false), lastOperation = ref('')
   watch(() => props.activeJob?.kind, kind => { if (kind) lastOperation.value = kind }, { immediate: true })
