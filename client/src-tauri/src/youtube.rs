@@ -127,7 +127,7 @@ pub async fn check_youtube_livestream(channel: String) -> Result<String, String>
     let ytdlp_path = resolve_ytdlp_binary()?;
 
     // Build the live URL for the channel
-    let live_url = if channel_id.starts_with('@') {
+    let live_url = if channel_id.starts_with('@') || channel_id.starts_with("c/") || channel_id.starts_with("user/") {
         format!("https://www.youtube.com/{}/live", channel_id)
     } else if channel_id.starts_with("UC") {
         format!("https://www.youtube.com/channel/{}/live", channel_id)
@@ -898,7 +898,7 @@ async fn run_youtube_recorder(
     let segment_pattern = PathBuf::from(&output_dir).join("segment_%04d.ts");
     
     // Construct YouTube live URL
-    let stream_url = if channel_id.starts_with('@') {
+    let stream_url = if channel_id.starts_with('@') || channel_id.starts_with("c/") || channel_id.starts_with("user/") {
         format!("https://www.youtube.com/{}/live", channel_id)
     } else {
         format!("https://www.youtube.com/channel/{}/live", channel_id)
@@ -1248,7 +1248,7 @@ pub async fn get_youtube_channel_info(channel: String) -> Result<String, String>
     let ytdlp_path = resolve_ytdlp_binary()?;
 
     // Build channel URL
-    let channel_url = if channel_id.starts_with('@') {
+    let channel_url = if channel_id.starts_with('@') || channel_id.starts_with("c/") || channel_id.starts_with("user/") {
         format!("https://www.youtube.com/{}", channel_id)
     } else if channel_id.starts_with("UC") {
         format!("https://www.youtube.com/channel/{}", channel_id)
@@ -1406,7 +1406,9 @@ fn normalize_channel_input(input: &str) -> String {
         } else if let Some(handle_part) = trimmed.split("/@").nth(1) {
             return format!("@{}", handle_part.split('/').next().unwrap_or(""));
         } else if let Some(user_part) = trimmed.split("/user/").nth(1) {
-            return user_part.split('/').next().unwrap_or(trimmed).to_string();
+            return format!("user/{}", user_part.split('/').next().unwrap_or(""));
+        } else if let Some(custom_part) = trimmed.split("/c/").nth(1) {
+            return format!("c/{}", custom_part.split('/').next().unwrap_or(""));
         }
 
         if let Some(path_part) = trimmed.split("youtube.com/").nth(1) {
@@ -1436,9 +1438,7 @@ fn normalize_channel_input(input: &str) -> String {
 }
 
 fn build_youtube_channel_tab_url(channel_id: &str, tab: &str) -> String {
-    if channel_id.starts_with('@') {
-        format!("https://www.youtube.com/{}/{}", channel_id, tab)
-    } else if channel_id.starts_with("UC") {
+    if channel_id.starts_with("UC") {
         format!("https://www.youtube.com/channel/{}/{}", channel_id, tab)
     } else {
         format!("https://www.youtube.com/{}/{}", channel_id, tab)
