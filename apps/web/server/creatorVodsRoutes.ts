@@ -12,7 +12,7 @@ export function creatorVodsRoutes(auth: Auth) {
   const query = (params: Record<string, unknown>) => {
     const platform = String(params.platform).toLowerCase(), channel = String(params.channel || ''), limit = Number(params.limit || 20), offset = Number(params.offset || 0), tab = String(params.tab || 'streams')
     requireValue(['twitch', 'kick', 'youtube', 'rumble'].includes(platform), 400, 'VOD browsing is not supported for this platform.')
-    requireValue(/^[\w@.-]{1,200}$/.test(channel), 400, 'Invalid creator channel.')
+    requireValue(/^[\w@.-]{1,200}$/.test(channel) || (platform === 'youtube' && /^(c|user)\/[\w.-]{1,200}$/.test(channel)), 400, 'Invalid creator channel.')
     requireValue(Number.isInteger(limit) && limit >= 1 && limit <= 50 && Number.isInteger(offset) && offset >= 0 && offset <= 1000, 400, 'Invalid VOD page.')
     requireValue(['streams', 'videos'].includes(tab), 400, 'Invalid VOD tab.')
     return new URLSearchParams({ platform, channel, limit: String(limit), offset: String(offset), tab }).toString()
