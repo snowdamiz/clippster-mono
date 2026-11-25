@@ -1,33 +1,6 @@
 name: Web workspace
 on:
   workflow_call:
-  pull_request:
-    paths:
-      - 'apps/web/**'
-      - 'landing/**'
-      - 'packages/**'
-      - 'client/src/**'
-      - 'client/src-tauri/sidecars/hyperframes-renderer/**'
-      - 'client/public/**'
-      - 'tsconfig.json'
-      - 'server/lib/clippster_server/auth/**'
-      - 'server/lib/clippster_server_web/controllers/auth_controller.ex'
-      - 'server/lib/clippster_server_web/oauth_callback_target.ex'
-      - 'server/lib/clippster_server_web/router.ex'
-      - 'server/priv/repo/migrations/**'
-      - 'server/test/**'
-      - 'server/config/**'
-      - 'server/docker-compose.yml'
-      - 'package.json'
-      - '.node-version'
-      - 'scripts/dev-setup*'
-      - 'scripts/cloudflare-deploy.test.mjs'
-      - 'apps/web/cloudflare/**'
-      - 'server/cloudflare/**'
-      - 'cloudflare/**'
-      - '.github/workflows/web.yml'
-      - '.github/workflows/release.yml'
-  workflow_dispatch:
 permissions:
   contents: read
 concurrency:

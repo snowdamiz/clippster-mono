@@ -1,4 +1,4 @@
-import { test, expect } from './browser-fixture'
+import { test, expect, expectExpandedTimeline } from './browser-fixture'
 import { execFileSync } from 'node:child_process'
 import { mkdirSync, readFileSync } from 'node:fs'
 import { dirname } from 'node:path'
@@ -20,6 +20,7 @@ test('selected source range stays positioned and bounded while trimming and relo
   const track = page.locator('[data-video-track]'), segment = page.locator('.clip-segment').first()
   await expect(segment).toBeVisible()
   await expect(page.locator('video').first()).toHaveJSProperty('readyState', 4)
+  await expectExpandedTimeline(page)
   const original = (await track.boundingBox())!, clip = (await segment.boundingBox())!
   expect((clip.x - original.x) / original.width).toBeCloseTo(.55, 2)
   expect(clip.width / original.width).toBeCloseTo(.075, 2)
@@ -34,6 +35,7 @@ test('selected source range stays positioned and bounded while trimming and relo
   await expect.poll(async () => (await (await request.get(path)).json()).project.clips[0].segments[0].end_time).toBeCloseTo(27, 1)
   await page.reload()
   await expect(segment).toBeVisible()
+  await expectExpandedTimeline(page)
   const reloadedTrack = (await track.boundingBox())!, reloadedClip = (await segment.boundingBox())!
   expect((reloadedClip.x - reloadedTrack.x) / reloadedTrack.width).toBeCloseTo(.55, 2)
   expect(reloadedClip.width / reloadedTrack.width).toBeCloseTo(.125, 2)

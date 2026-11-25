@@ -1,4 +1,4 @@
-import { test as base, expect } from '@playwright/test'
+import { test as base, expect, type Page } from '@playwright/test'
 import { createDefaultSubtitleSettings } from '@clippster/shared-types'
 import { startFixture } from './fixtures'
 
@@ -33,3 +33,9 @@ export const test = base.extend<{ workspaceServer: void }>({
 
 export { expect }
 export type { Page } from '@playwright/test'
+
+export async function expectExpandedTimeline(page: Page) {
+  // Media readiness can precede the 300ms height transition. Wait before
+  // measuring tracks or calculating coordinates for trim gestures.
+  await expect(page.locator('.workspace-dialog__timeline > div')).toHaveCSS('height', '210px')
+}
