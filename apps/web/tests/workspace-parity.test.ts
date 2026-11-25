@@ -5,6 +5,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { execFileSync } from 'node:child_process'
 import type { WebWorkspace } from '@clippster/shared-types'
 import { startFixture, waitForJob } from './fixtures'
+import { zipArchiveTool } from './zipFixture'
 
 let fixture: Awaited<ReturnType<typeof startFixture>>, cookie: string, other: string, workspace: WebWorkspace
 const request = (path: string, method = 'GET', body?: unknown, session = cookie) => fetch(`${fixture.url}/api/web${path}`, {
@@ -88,6 +89,7 @@ it('blocks publishing an edited master with a current FIX FIRST review finding',
       playbookPackage: {
         funnel: { stage: 'trust', reason: 'Source review', metric: 'saves' }, claims: [], sources: [], sponsors: [],
         thumbnailConcepts: [], thumbnailHeadlines: [], platformCopy: [], reviewItems: [],
+        automatedQa: { masterMd5: checksum, blockers: [] },
         independentReview: [{ reviewer: 'Alex', severity: 'fix_first', outputTime: 1, finding: 'Private notification visible in the master.', masterMd5: checksum, reviewedAt: new Date().toISOString() }],
       },
     }
@@ -174,13 +176,13 @@ it('downloads the owned full playbook archive with Raw, Edited, notes and checks
     expect(response.headers.get('content-type')).toContain('application/zip')
     const archive = join(fixture.directory, 'creator-skill-delivery.zip')
     await writeFile(archive, Buffer.from(await response.arrayBuffer()))
-    const names = execFileSync('tar', ['-tf', archive], { encoding: 'utf8' })
+    const names = execFileSync(zipArchiveTool, ['-tf', archive], { encoding: 'utf8' })
     expect(names).toContain('/raw.mp4')
     expect(names).toContain('/edited-master.mp4')
     expect(names).toContain('/claims.md')
     expect(names).toContain('/checksums.md')
     const checksumName = names.trim().split(/\r?\n/).find(name => name.endsWith('/checksums.md'))!
-    expect(execFileSync('tar', ['-xOf', archive, checksumName], { encoding: 'utf8' })).toContain(`${md5}  edited-master.mp4`)
+    expect(execFileSync(zipArchiveTool, ['-xOf', archive, checksumName], { encoding: 'utf8' })).toContain(`${md5}  edited-master.mp4`)
   } finally {
     const current = fixture.store.get(projectId, owner)
     current.clips[0] = original

@@ -136,6 +136,9 @@ defmodule ClippsterServer.MediaResolver do
   defp build_channel_url("youtube", channel) do
     url =
       cond do
+        String.starts_with?(channel, ["c/", "user/"]) ->
+          "https://www.youtube.com/#{channel}/streams"
+
         String.contains?(channel, "youtube.com") or String.starts_with?(channel, "@") ->
           if String.starts_with?(channel, "@") do
             "https://www.youtube.com/#{channel}/streams"

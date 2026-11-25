@@ -165,12 +165,10 @@ export function extractYouTubeChannel(input: string): string | null {
         }
       }
 
-      // Handle /user/username format
-      if (url.pathname.includes('/user/')) {
-        const parts = url.pathname.split('/user/');
-        if (parts.length > 1) {
-          return parts[1].split('/')[0];
-        }
+      // Preserve custom/user namespaces: their names need not match a modern @handle.
+      const namespacedChannel = url.pathname.match(/^\/(c|user)\/([^/]+)/);
+      if (namespacedChannel) {
+        return `${namespacedChannel[1]}/${namespacedChannel[2]}`;
       }
 
       // Handle legacy/custom channel paths like youtube.com/DilanJay or youtube.com/DilanJay/videos

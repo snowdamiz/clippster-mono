@@ -27,10 +27,14 @@ RUN npm run typecheck && npm run build
 FROM source AS verify
 COPY package.json tsconfig.json /repo/
 COPY client/package.json client/tsconfig*.json /repo/client/
+COPY client/src-tauri/sidecars/hyperframes-renderer/ /repo/client/src-tauri/sidecars/hyperframes-renderer/
 COPY scripts/dev-setup*.mjs /repo/scripts/
-RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core \
+RUN apt-get update && apt-get install -y --no-install-recommends ffmpeg fonts-dejavu-core libarchive-tools \
     && npx playwright install --with-deps chromium \
     && rm -rf /var/lib/apt/lists/*
+RUN cd /repo/client/src-tauri/sidecars/hyperframes-renderer \
+    && corepack yarn install --production --frozen-lockfile \
+    && HYPERFRAMES_NO_TELEMETRY=1 node node_modules/hyperframes/bin/hyperframes.mjs browser ensure
 RUN test ! -e /repo/node_modules && test ! -e /repo/client/node_modules \
     && npm run typecheck --workspaces=false \
     && npm test --workspaces=false \

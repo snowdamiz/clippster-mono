@@ -1,21 +1,44 @@
 name: Setup FFmpeg dev libraries (Windows)
-description: Downloads pinned FFmpeg 8.0 shared libraries for ffmpeg-the-third and bundles the DLLs for runtime.
+description: Sets up pinned LLVM and FFmpeg 8.0 for ffmpeg-the-third and bundles the runtime DLLs.
 runs:
   using: composite
   steps:
+    - name: Set up LLVM for FFmpeg bindings
+      shell: pwsh
+      run: |
+        # The FFmpeg build script loads libclang in-process. Keep its version
+        # independent of the GitHub runner image and other LLVM installations.
+        $llvmVersion = "17.0.6"
+        $llvmDir = Join-Path $env:RUNNER_TEMP "llvm-$llvmVersion"
+        $installer = Join-Path $env:RUNNER_TEMP "LLVM-$llvmVersion-win64.exe"
+        Invoke-WebRequest -Uri "https://github.com/llvm/llvm-project/releases/download/llvmorg-$llvmVersion/LLVM-$llvmVersion-win64.exe" -OutFile $installer
+        $setup = Start-Process -FilePath $installer -ArgumentList @("/S", "/D=$llvmDir") -WindowStyle Hidden -Wait -PassThru
+        if ($setup.ExitCode -ne 0) { throw "LLVM installer failed with exit code $($setup.ExitCode)" }
+        $llvmBin = Join-Path $llvmDir "bin"
+        $libclang = Join-Path $llvmBin "libclang.dll"
+        $clang = Join-Path $llvmBin "clang.exe"
+        if (-not (Test-Path -LiteralPath $libclang)) { throw "libclang.dll not found at $libclang" }
+        & $clang --version
+        if ($LASTEXITCODE -ne 0) { throw "Pinned clang could not run" }
+        "LIBCLANG_PATH=$libclang" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        "CLANG_PATH=$clang" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        $llvmBin | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+        Remove-Item -LiteralPath $installer
+
     - shell: pwsh
       run: |
         $ffmpegDevDir = "client/src-tauri/ffmpeg-dev"
+        $bundle = "ffmpeg-n8.0-16-gd8605a6b55-win64-gpl-shared-8.0"
         New-Item -ItemType Directory -Force -Path $ffmpegDevDir | Out-Null
         Write-Host "Downloading FFmpeg 8.0 shared build for dev libraries..."
         $zipPath = "$env:RUNNER_TEMP/ffmpeg-shared.zip"
         # Pinned to a specific immutable autobuild tag (autobuild-2025-09-30-13-19).
         # Do NOT change to "latest" — the rolling latest tag now ships FFmpeg 8.1+ headers
         # which break the ffmpeg-the-third 4.x crate (FFmpeg 8.0 only).
-        Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2025-09-30-13-19/ffmpeg-n8.0-16-gd8605a6b55-win64-gpl-shared-8.0.zip" -OutFile $zipPath
+        Invoke-WebRequest -Uri "https://github.com/BtbN/FFmpeg-Builds/releases/download/autobuild-2025-09-30-13-19/$bundle.zip" -OutFile $zipPath
         Expand-Archive -Path $zipPath -DestinationPath $ffmpegDevDir -Force
         Remove-Item $zipPath
-        $extractedDir = (Get-ChildItem $ffmpegDevDir -Directory | Select-Object -First 1).FullName
+        $extractedDir = (Resolve-Path -LiteralPath (Join-Path $ffmpegDevDir $bundle)).Path
         Write-Host "FFmpeg dev libs installed at: $extractedDir"
 
         "FFMPEG_DIR=$extractedDir" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append

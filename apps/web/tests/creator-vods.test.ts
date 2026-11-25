@@ -21,6 +21,13 @@ it('lists creator VODs through authenticated account APIs and queues bounded sou
     const listing = await request('/account/media/vods?platform=twitch&channel=fixture')
     expect(listing.status).toBe(200)
     expect((await listing.json()).vods[0].id).toBe('fixture-vod')
+    for (const channel of ['c/ExampleChannel', 'user/ExampleChannel']) {
+      const youtube = await request('/account/media/vods?platform=youtube&channel=' + encodeURIComponent(channel))
+      expect(youtube.status).toBe(200)
+      expect((await youtube.json()).vods[0].id).toBe('fixture-vod')
+    }
+    expect((await request('/account/media/vods?platform=youtube&channel=c/../invalid')).status).toBe(400)
+    expect((await request('/account/media/vods?platform=twitch&channel=c/ExampleChannel')).status).toBe(400)
     const kick = await (await request('/account/media/vods?platform=kick&channel=fixture')).json()
     expect(kick.vods).toHaveLength(19)
     expect(kick.vods[0].duration_seconds).toBe(26073)

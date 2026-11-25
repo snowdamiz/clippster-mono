@@ -118,10 +118,10 @@ export function creatorMediaRoutes(auth: Auth, config: Config, staged: StagedUpl
   })
   router.get('/creator-channel', async (req, res) => {
     const platform = String(req.query.platform), channel = String(req.query.channel || '')
-    requireValue(/^[\w@.-]{1,200}$/.test(channel), 400, 'Invalid channel.')
+    requireValue(/^[\w@.-]{1,200}$/.test(channel) || (platform === 'youtube' && /^(c|user)\/[\w.-]{1,200}$/.test(channel)), 400, 'Invalid channel.')
     const urls: Record<string, string> = {
       kick: 'https://kick.com/' + channel, twitch: 'https://www.twitch.tv/' + channel,
-      youtube: 'https://www.youtube.com/' + (channel.startsWith('UC') ? 'channel/' : channel.startsWith('@') ? '' : '@') + channel,
+      youtube: 'https://www.youtube.com/' + (channel.startsWith('UC') ? 'channel/' : /^(?:@|c\/|user\/)/.test(channel) ? '' : '@') + channel,
       rumble: 'https://rumble.com/c/' + channel
     }
     requireValue(urls[platform], 400, 'Unsupported platform.')
